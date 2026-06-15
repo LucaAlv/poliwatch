@@ -1,1 +1,1 @@
-/Users/Luca/Projects/policyjudge/polcyjudge/.claude/skills/gstack/browse/SKILL.md
+/Users/Luca/Projects/polirate/.claude/skills/gstack/browse/SKILL.md

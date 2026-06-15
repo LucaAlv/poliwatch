@@ -1,1 +1,1 @@
-/Users/Luca/Projects/policyjudge/polcyjudge/.claude/skills/gstack/context-restore/SKILL.md
+/Users/Luca/Projects/polirate/.claude/skills/gstack/context-restore/SKILL.md

@@ -1,1 +1,1 @@
-/Users/Luca/Projects/policyjudge/polcyjudge/.claude/skills/gstack/setup-browser-cookies/SKILL.md
+/Users/Luca/Projects/polirate/.claude/skills/gstack/setup-browser-cookies/SKILL.md

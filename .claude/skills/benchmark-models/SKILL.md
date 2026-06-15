@@ -1,1 +1,1 @@
-/Users/Luca/Projects/policyjudge/polcyjudge/.claude/skills/gstack/benchmark-models/SKILL.md
+/Users/Luca/Projects/polirate/.claude/skills/gstack/benchmark-models/SKILL.md
