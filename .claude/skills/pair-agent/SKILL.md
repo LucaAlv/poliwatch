@@ -1,0 +1,1 @@
+/Users/Luca/Projects/policyjudge/polcyjudge/.claude/skills/gstack/pair-agent/SKILL.md
