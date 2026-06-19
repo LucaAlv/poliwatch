@@ -58,6 +58,7 @@ def write_report_and_page(
     api_key: str,
     sleep: float,
     person_limit: int,
+    vote_scan_pages: int,
 ) -> dict[str, Any]:
     document_number = str(protocol["dokumentnummer"])
     slug = slugify_document_number(document_number)
@@ -70,6 +71,7 @@ def write_report_and_page(
         document_number=None,
         limit_tops=None,
         person_limit=person_limit,
+        vote_scan_pages=vote_scan_pages,
         sleep=sleep,
     )
     report = dip.build_report(args)
@@ -314,6 +316,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
     parser.add_argument("--person-limit", type=int, default=12)
+    parser.add_argument(
+        "--vote-scan-pages",
+        type=int,
+        default=30,
+        help="Number of Bundestag roll-call vote list pages to scan per sitting.",
+    )
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
     return parser.parse_args()
 
@@ -339,6 +347,7 @@ def main() -> int:
                 api_key=api_key,
                 sleep=args.sleep,
                 person_limit=args.person_limit,
+                vote_scan_pages=args.vote_scan_pages,
             )
             for protocol in protocols
         ]

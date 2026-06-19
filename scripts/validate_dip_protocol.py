@@ -19,11 +19,15 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from html import unescape
 from typing import Any
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
+BT_BASE_URL = "https://www.bundestag.de"
+ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"
 QUADRANT_ORDER = {"A": 1, "B": 2, "C": 3, "D": 4}
+VOTE_KEYS = ("yes", "no", "abstain", "absent")
 
 
 class DipError(RuntimeError):
@@ -79,10 +83,38 @@ def fetch_text(url: str) -> str:
         raise DipError(f"Failed to fetch XML {url}: {exc}") from exc
 
 
+def fetch_html(url: str) -> str:
+    req = urllib.request.Request(url, headers={"Accept": "text/html,*/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as res:
+            return res.read().decode("utf-8")
+    except urllib.error.URLError as exc:
+        raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
+
+
 def clean_text(value: str | None) -> str:
     if not value:
         return ""
     return re.sub(r"\s+", " ", value.replace("\xa0", " ")).strip()
+
+
+def strip_tags(value: str | None) -> str:
+    if not value:
+        return ""
+    return clean_text(unescape(re.sub(r"<[^>]+>", " ", value)))
+
+
+def iso_date(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = clean_text(value)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return value
+    match = re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{4})", value)
+    if match:
+        day, month, year = match.groups()
+        return f"{year}-{month}-{day}"
+    return None
 
 
 def elem_text(elem: ET.Element | None) -> str:
@@ -384,15 +416,199 @@ def unique_by(items: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[s
     return result
 
 
+def normalize_faction(value: str | None) -> str:
+    value = clean_text(value)
+    upper = value.upper()
+    if upper in {"B90/GRÜNE", "GRÜNE", "BÜNDNIS 90/DIE GRÜNEN"}:
+        return "BÜNDNIS 90/DIE GRÜNEN"
+    if upper in {"LINKE", "DIE LINKE"}:
+        return "Die Linke"
+    if upper in {"FRAKTIONSLOSE", "FRAKTIONSLOS"}:
+        return "fraktionslos"
+    return value or "Unbekannt"
+
+
+def vote_counts_from_csv(value: str | None) -> dict[str, int]:
+    numbers = [int(part) for part in re.findall(r"\d+", value or "")[:4]]
+    numbers.extend([0] * (4 - len(numbers)))
+    return dict(zip(VOTE_KEYS, numbers))
+
+
+def vote_total(counts: dict[str, int]) -> int:
+    return sum(int(counts.get(key) or 0) for key in VOTE_KEYS)
+
+
+def leading_vote(counts: dict[str, int]) -> str:
+    cast = {key: int(counts.get(key) or 0) for key in ("yes", "no", "abstain")}
+    if not any(cast.values()):
+        return "absent"
+    return max(cast, key=cast.get)
+
+
+def roll_call_vote_url(vote_id: str) -> str:
+    return f"{BT_BASE_URL}/parlament/plenum/abstimmung/abstimmung?id={urllib.parse.quote(vote_id)}"
+
+
+def parse_roll_call_list_page(html_text: str) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    blocks = re.split(r'(?=<div class="col-xs-12 bt-slide">)', html_text)
+    for block in blocks:
+        vote_id_match = re.search(r"canvas-na-(\d+)", block)
+        date_match = re.search(r'<span class="bt-date">([^<]+)</span>', block)
+        if not vote_id_match or not date_match:
+            continue
+
+        topic_match = re.search(r'<span class="bt-dachzeile">\s*(.*?)\s*</span>', block, re.S)
+        heading_matches = re.findall(r"<h3>\s*(.*?)\s*</h3>", block, re.S)
+        description_match = re.search(r'<div class="bt-teaser-haupttext">\s*<p>\s*(.*?)\s*</p>', block, re.S)
+        counts_match = re.search(r'data-chart-values="([^"]+)"', block)
+
+        topic = strip_tags(topic_match.group(1)) if topic_match else ""
+        heading = strip_tags(heading_matches[-1]) if heading_matches else ""
+        if topic and heading.startswith(topic):
+            heading = clean_text(heading[len(topic) :])
+        document_numbers = sorted(set(re.findall(r"\b\d{1,2}/\d{1,6}\b", strip_tags(block))))
+        vote_id = vote_id_match.group(1)
+        entries.append(
+            {
+                "id": vote_id,
+                "date": iso_date(date_match.group(1)),
+                "topic": topic,
+                "title": heading,
+                "description": strip_tags(description_match.group(1)) if description_match else "",
+                "document_numbers": document_numbers,
+                "detail_url": roll_call_vote_url(vote_id),
+                "total": vote_counts_from_csv(counts_match.group(1) if counts_match else None),
+            }
+        )
+    return entries
+
+
+def fetch_roll_call_vote_candidates(protocol_date: str | None, scan_pages: int) -> list[dict[str, Any]]:
+    target_date = iso_date(protocol_date)
+    if not target_date or scan_pages <= 0:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    page_size = 10
+    for page_index in range(scan_pages):
+        params = urllib.parse.urlencode({"offset": page_index * page_size, "limit": page_size})
+        html_text = fetch_html(f"{BT_BASE_URL}{ROLL_CALL_LIST_PATH}?{params}")
+        page_entries = parse_roll_call_list_page(html_text)
+        if not page_entries:
+            break
+        candidates.extend(entry for entry in page_entries if entry.get("date") == target_date)
+        dated = [entry.get("date") for entry in page_entries if entry.get("date")]
+        if dated and min(dated) < target_date:
+            break
+    return candidates
+
+
+def parse_fraction_votes(detail_html: str) -> list[dict[str, Any]]:
+    fractions: list[dict[str, Any]] = []
+    pattern = re.compile(
+        r'data-value="([^"]+)".*?<h4 class="bt-chart-fraktion">(.*?)<br\s*/?>.*?data-chart-values="([^"]+)"',
+        re.S,
+    )
+    for match in pattern.finditer(detail_html):
+        counts = vote_counts_from_csv(match.group(3))
+        name = normalize_faction(strip_tags(match.group(2)) or match.group(1))
+        fractions.append(
+            {
+                "name": name,
+                "counts": counts,
+                "total": vote_total(counts),
+                "leading_vote": leading_vote(counts),
+            }
+        )
+    return unique_by(fractions, ("name",))
+
+
+def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
+    members: list[dict[str, Any]] = []
+    blocks = re.split(r'(?=<div class="col-xs-4 col-sm-3 col-md-2 bt-slide">)', member_html)
+    for block in blocks:
+        name_match = re.search(r"<h3>(.*?)</h3>", block, re.S)
+        faction_match = re.search(r'<p class="bt-person-fraktion">\s*(.*?)\s*</p>', block, re.S)
+        vote_match = re.search(r'bt-person-abstimmung bt-abstimmung-([a-z]+)"[^>]*>\s*(.*?)\s*</p>', block, re.S)
+        if not name_match or not faction_match or not vote_match:
+            continue
+        profile_match = re.search(r'<a href="([^"]+)"', block)
+        profile_url = None
+        if profile_match:
+            href = unescape(profile_match.group(1))
+            profile_url = href if href.startswith("http") else f"{BT_BASE_URL}{href}"
+        vote_key = {
+            "ja": "yes",
+            "nein": "no",
+            "enthalten": "abstain",
+            "na": "absent",
+        }.get(vote_match.group(1), vote_match.group(1))
+        members.append(
+            {
+                "name": strip_tags(name_match.group(1)),
+                "faction": normalize_faction(strip_tags(faction_match.group(1))),
+                "vote": vote_key,
+                "profile_url": profile_url,
+            }
+        )
+    return members
+
+
+def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
+    vote_id = str(vote["id"])
+    detail_html = fetch_html(roll_call_vote_url(vote_id))
+    member_html = fetch_html(f"{BT_BASE_URL}/apps/na/namensliste.form?id={urllib.parse.quote(vote_id)}&ajax=true")
+    enriched_vote = dict(vote)
+    enriched_vote["fractions"] = parse_fraction_votes(detail_html)
+    enriched_vote["members"] = parse_member_votes(member_html)
+    return enriched_vote
+
+
+def top_document_numbers(top: dict[str, Any], linked_drucksachen: list[dict[str, Any]]) -> set[str]:
+    numbers = {
+        str(doc.get("dokumentnummer"))
+        for doc in top.get("drucksachen", [])
+        if doc.get("dokumentnummer")
+    }
+    numbers.update(
+        str(doc.get("dokumentnummer"))
+        for doc in linked_drucksachen
+        if doc.get("dokumentnummer")
+    )
+    return numbers
+
+
+def match_roll_call_votes(
+    top: dict[str, Any],
+    linked_drucksachen: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    cache: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    top_numbers = top_document_numbers(top, linked_drucksachen)
+    matches: list[dict[str, Any]] = []
+    for candidate in candidates:
+        vote_numbers = set(candidate.get("document_numbers") or [])
+        if top_numbers and vote_numbers and top_numbers & vote_numbers:
+            vote_id = str(candidate["id"])
+            if vote_id not in cache:
+                cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+            matches.append(cache[vote_id])
+    return matches
+
+
 def enrich_with_api(
     client: ApiClient,
     protocol: dict[str, Any],
     parsed_xml: dict[str, Any],
     person_limit: int,
+    vote_scan_pages: int = 30,
 ) -> dict[str, Any]:
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
     activities = client.list_all("/aktivitaet", {"f.plenarprotokoll": protocol_id})
+    roll_call_candidates = fetch_roll_call_vote_candidates(protocol.get("datum"), vote_scan_pages)
+    roll_call_cache: dict[str, dict[str, Any]] = {}
 
     positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
     linked_drucksachen_by_vorgang: dict[str, list[dict[str, Any]]] = {}
@@ -458,6 +674,9 @@ def enrich_with_api(
         for vorgang_id in sorted(vorgang_ids):
             linked_drucksachen.extend(linked_drucksachen_for_vorgang(vorgang_id))
 
+        linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
+        votes = match_roll_call_votes(top, linked_drucksachen, roll_call_candidates, roll_call_cache)
+
         enriched_tops.append(
             {
                 "index": top["index"],
@@ -493,8 +712,9 @@ def enrich_with_api(
                     "positions": [compact_position(position) for position in matching_positions],
                     "activities_count": len(matching_activities),
                     "activities_first": [compact_activity(activity) for activity in matching_activities[:5]],
-                    "linked_drucksachen": unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url")),
+                    "linked_drucksachen": linked_drucksachen,
                 },
+                "votes": votes,
             }
         )
 
@@ -526,6 +746,8 @@ def enrich_with_api(
         warnings.append("At least one XML TOP with speeches had no matching DIP activities by page range.")
     if len(activities) >= 100:
         warnings.append("Activity count exceeded one API page; cursor pagination was exercised.")
+    if roll_call_candidates and not roll_call_cache:
+        warnings.append("Roll-call votes were found for this sitting date, but none matched a TOP by Drucksache number.")
 
     return {
         "api_totals": {
@@ -533,6 +755,8 @@ def enrich_with_api(
             "aktivitaet_count": len(activities),
             "unique_person_ids": len(unique_person_ids),
             "sampled_person_count": len(sampled_people),
+            "roll_call_vote_candidate_count": len(roll_call_candidates),
+            "matched_roll_call_vote_count": len(roll_call_cache),
         },
         "sampled_people": sampled_people,
         "agenda_items": enriched_tops,
@@ -554,7 +778,13 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
 
     xml_text = fetch_text(xml_url)
     parsed_xml = parse_protocol_xml(xml_text)
-    enrichment = enrich_with_api(client, protocol, parsed_xml, args.person_limit)
+    enrichment = enrich_with_api(
+        client,
+        protocol,
+        parsed_xml,
+        args.person_limit,
+        getattr(args, "vote_scan_pages", 30),
+    )
 
     agenda_items = enrichment["agenda_items"]
     if args.limit_tops is not None:
@@ -600,6 +830,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
     parser.add_argument("--limit-tops", type=int, help="Only print the first N XML agenda items.")
     parser.add_argument("--person-limit", type=int, default=25, help="Number of distinct person records to sample.")
+    parser.add_argument(
+        "--vote-scan-pages",
+        type=int,
+        default=30,
+        help="Number of Bundestag roll-call vote list pages to scan for same-day matches.",
+    )
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
     return parser.parse_args()
 
