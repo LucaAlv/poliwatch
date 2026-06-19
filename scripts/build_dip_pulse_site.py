@@ -88,16 +88,16 @@ def write_report_and_page(
 def render_front_page(entries: list[dict[str, Any]]) -> str:
     if not entries:
         return """<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse</title>
+  <title>Bundestag-Puls</title>
 </head>
 <body>
   <main>
-    <h1>Bundestag Pulse</h1>
-    <p>No Sitzungen have been generated yet.</p>
+    <h1>Bundestag-Puls</h1>
+    <p>Es wurden noch keine Sitzungen erzeugt.</p>
   </main>
 </body>
 </html>
@@ -126,7 +126,7 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
             for party, count in stats["party_counts"].most_common(5)
         ]
         if len(stats["party_counts"]) > 5:
-            party_labels.append(f"+{len(stats['party_counts']) - 5} more")
+            party_labels.append(f"+{len(stats['party_counts']) - 5} weitere")
         doc_count = len(item.get("xml_drucksachen") or [])
         attention_rows.append(
             f"""
@@ -137,11 +137,11 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
               </a>
               <div class="bar-grid">
                 <div>
-                  <label>Speeches <strong>{stats['speech_count']} · {speech_share:.1f}%</strong></label>
+                  <label>Reden <strong>{stats['speech_count']} · {speech_share:.1f}%</strong></label>
                   <div class="bar"><span style="width:{speech_share:.2f}%"></span></div>
                 </div>
                 <div>
-                  <label>Speech text <strong>{pulse_html.format_int(stats['total_chars'])} chars · {text_share:.1f}%</strong></label>
+                  <label>Redetext <strong>{pulse_html.format_int(stats['total_chars'])} Zeichen · {text_share:.1f}%</strong></label>
                   <div class="bar alt"><span style="width:{text_share:.2f}%"></span></div>
                 </div>
               </div>
@@ -150,9 +150,9 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
                 <div class="party-labels">{pulse_html.render_badges(party_labels)}</div>
               </div>
               <div class="card-meta">
-                <span>{doc_count} XML Drucksachen</span>
-                <span>{len(item.get('api', {}).get('positions') or [])} API positions</span>
-                <a href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">Inspect</a>
+                <span>{doc_count} XML-Drucksachen</span>
+                <span>{len(item.get('api', {}).get('positions') or [])} API-Positionen</span>
+                <a href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">Prüfen</a>
               </div>
             </article>
             """
@@ -163,17 +163,17 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
     if warnings:
         warning_html = (
             '<div class="notice">'
-            f"{pulse_html.esc(str(len(warnings)))} validation warning"
-            f"{'' if len(warnings) == 1 else 's'} on this generated sitting."
+            f"{pulse_html.esc(str(len(warnings)))} Validierungswarnung"
+            f"{'' if len(warnings) == 1 else 'en'} zu dieser erzeugten Sitzung."
             "</div>"
         )
 
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse · Latest Sitzung</title>
+  <title>Bundestag-Puls · Neueste Sitzung</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -384,13 +384,13 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <span class="eyebrow">Latest Sitzung</span>
-        <h1>Bundestag Pulse</h1>
-        <p class="subtitle">The newest generated Plenarprotokoll, ranked by where parliamentary attention concentrated in the sitting.</p>
+        <span class="eyebrow">Neueste Sitzung</span>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">Das neueste erzeugte Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit in der Sitzung konzentrierte.</p>
       </div>
       <nav class="nav-links" aria-label="Primary">
-        <a class="primary-link" href="{protocol_href}">Open latest details</a>
-        <a href="overview.html">All Sitzungen</a>
+        <a class="primary-link" href="{protocol_href}">Details öffnen</a>
+        <a href="overview.html">Alle Sitzungen</a>
       </nav>
     </header>
 
@@ -398,29 +398,29 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
       <div class="latest-panel">
         <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
         <h2 class="latest-title">{pulse_html.esc(protocol.get('titel'))}</h2>
-        <p>{pulse_html.esc(protocol.get('datum'))} · distributed {pulse_html.esc(protocol.get('verteildatum'))}</p>
+        <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
         <div class="metric-grid">
-          <div class="metric"><span>Agenda Items</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-          <div class="metric"><span>Speeches</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+          <div class="metric"><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+          <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
           <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-          <div class="metric"><span>People IDs</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+          <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
         </div>
         <div class="session-links">
-          <a href="{protocol_href}">Detailed sitting page</a>
-          <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML transcript</a>
-          <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF transcript</a>
-          <a href="{report_href}">Generated JSON</a>
+          <a href="{protocol_href}">Sitzungsdetails</a>
+          <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
+          <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
+          <a href="{report_href}">Erzeugtes JSON</a>
         </div>
       </div>
       <div class="latest-panel source-panel">
         <div>
-          <span class="eyebrow">Source posture</span>
-          <h2>Primary-source pulse</h2>
-          <p>Speech counts, text volume, Drucksachen, and speaker metadata are generated from the official transcript and DIP records for this sitting.</p>
+          <span class="eyebrow">Quellenlage</span>
+          <h2>Primärquellen-Puls</h2>
+          <p>Redezahlen, Textumfang, Drucksachen und Rednerdaten werden aus dem offiziellen Protokoll und DIP-Daten dieser Sitzung erzeugt.</p>
         </div>
         <div>
-          <span class="eyebrow">Next comparison slot</span>
-          <p>This area is reserved for week-over-week topic movement once multiple sitting weeks are normalized.</p>
+          <span class="eyebrow">Nächster Vergleich</span>
+          <p>Dieser Bereich ist für Wochenvergleiche reserviert, sobald mehrere Sitzungswochen normalisiert sind.</p>
         </div>
       </div>
     </section>
@@ -429,38 +429,38 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
       <main>
         <div class="section-head">
           <div>
-            <span class="eyebrow">Newest information</span>
-            <h2>Attention Ranking</h2>
+            <span class="eyebrow">Neueste Informationen</span>
+            <h2>Aufmerksamkeitsranking</h2>
           </div>
-          <p>Top agenda items in the latest sitting, sorted by extracted speech count.</p>
+          <p>Die wichtigsten Tagesordnungspunkte der neuesten Sitzung, sortiert nach extrahierter Redezahl.</p>
         </div>
         {warning_html}
         {''.join(attention_rows)}
       </main>
       <aside>
         <section class="future-panel">
-          <span>Reserved</span>
-          <h2>Topic movement</h2>
-          <p>Compare which themes received more attention this week than last week.</p>
+          <span>Reserviert</span>
+          <h2>Themenbewegung</h2>
+          <p>Vergleiche, welche Themen diese Woche mehr Aufmerksamkeit erhielten als letzte Woche.</p>
           <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
         </section>
         <section class="future-panel">
-          <span>Reserved</span>
-          <h2>Vote shifts</h2>
-          <p>Highlight roll-call votes and faction splits as the vote parser matures.</p>
+          <span>Reserviert</span>
+          <h2>Abstimmungsverschiebungen</h2>
+          <p>Hebt namentliche Abstimmungen und Fraktionsabweichungen hervor, sobald der Parser dafür reift.</p>
           <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
         </section>
         <section class="future-panel">
-          <span>Archive</span>
-          <h2>Past Sitzungen</h2>
-          <p>Use the overview page to discover earlier generated sittings and their source files.</p>
-          <div class="session-links"><a href="overview.html">Browse overview</a></div>
+          <span>Archiv</span>
+          <h2>Frühere Sitzungen</h2>
+          <p>Nutze die Übersichtsseite, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
+          <div class="session-links"><a href="overview.html">Übersicht öffnen</a></div>
         </section>
       </aside>
     </div>
 
     <footer>
-      Static prototype. XML transcript is canonical; DIP API data enriches each sitting.
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
     </footer>
   </div>
 </body>
@@ -481,13 +481,14 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 "<li>"
                 f"<span>{pulse_html.esc(item.get('top_id'))}</span>"
                 f"<strong>{pulse_html.esc(pulse_html.short(item.get('heading'), 110))}</strong>"
-                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} speeches</em>"
+                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} Reden</em>"
                 "</li>"
             )
         warnings = report.get("warnings") or []
         warning_html = ""
         if warnings:
-            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} warning</span>'
+            warning_label = "Warnung" if len(warnings) == 1 else "Warnungen"
+            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
 
         rows.append(
             f"""
@@ -496,15 +497,15 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 <div>
                   <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · distributed {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
                 </div>
-                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Open</a>
+                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-                <div><span>Speeches</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+                <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
                 <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-                <div><span>People</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+                <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
               <div class="session-links">
@@ -519,11 +520,11 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse · Sitzungen Overview</title>
+  <title>Bundestag-Puls · Sitzungen</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -686,15 +687,15 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <h1>Bundestag Pulse</h1>
-        <p class="subtitle">Overview of generated sittings for exploring past agenda items, speeches, factions, and linked primary-source documents.</p>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">Übersicht der erzeugten Sitzungen, um frühere Tagesordnungspunkte, Reden, Fraktionen und verknüpfte Primärquellen zu prüfen.</p>
       </div>
       <div>
         <nav class="nav-links" aria-label="Overview navigation">
-          <a href="index.html">Latest Sitzung</a>
+          <a href="index.html">Neueste Sitzung</a>
         </nav>
         <div class="latest">
-          <span>Latest generated</span>
+          <span>Zuletzt erzeugt</span>
           <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
           <em>{pulse_html.esc(latest.get('datum', ''))}</em>
         </div>
@@ -704,7 +705,7 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       {''.join(rows)}
     </section>
     <footer>
-      Static prototype. XML transcript is canonical; DIP API data enriches each sitting.
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
     </footer>
   </div>
 </body>
