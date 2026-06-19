@@ -36,6 +36,14 @@ def short(value: str | None, limit: int = 150) -> str:
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
 
 
+def format_int(value: int) -> str:
+    return f"{value:,}"
+
+
+def percent(value: int, total: int) -> float:
+    return value / total * 100 if total > 0 else 0.0
+
+
 def page_range_text(item: dict[str, Any]) -> str:
     page_range = item.get("page_range") or {}
     start = page_range.get("start") or {}
@@ -234,26 +242,26 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
     stats_by_index = {item["index"]: item_stats(item) for item in items}
-    max_speeches = max((stats["speech_count"] for stats in stats_by_index.values()), default=1)
-    max_chars = max((stats["total_chars"] for stats in stats_by_index.values()), default=1)
+    total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
+    total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
 
     attention_rows = []
     for item in sorted(items, key=lambda x: stats_by_index[x["index"]]["speech_count"], reverse=True):
         stats = stats_by_index[item["index"]]
-        speech_width = stats["speech_count"] / max_speeches * 100
-        char_width = stats["total_chars"] / max_chars * 100
+        speech_share = percent(stats["speech_count"], total_speeches)
+        text_share = percent(stats["total_chars"], total_chars)
         attention_rows.append(
             '<a class="attention-row" href="#top-{index}">'
             '<span class="row-top">{top}</span>'
             '<span class="row-title">{title}</span>'
-            '<span class="mini-bars"><i style="width:{speech_width:.2f}%"></i><b style="width:{char_width:.2f}%"></b></span>'
-            '<span class="row-metric">{speeches} speeches</span>'
+            '<span class="mini-bars" title="Teal: share of all speeches in this sitting. Amber: share of all extracted speech text."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
+            '<span class="row-metric">{speeches} speeches · {speech_share:.1f}% of sitting</span>'
             "</a>".format(
                 index=item["index"],
                 top=esc(item.get("top_id")),
                 title=esc(short(item.get("heading"), 78)),
-                speech_width=speech_width,
-                char_width=char_width,
+                speech_share=speech_share,
+                text_share=text_share,
                 speeches=stats["speech_count"],
             )
         )
@@ -262,6 +270,8 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     for item in items:
         stats = stats_by_index[item["index"]]
         party_total = sum(stats["party_counts"].values())
+        speech_share = percent(stats["speech_count"], total_speeches)
+        text_share = percent(stats["total_chars"], total_chars)
         party_labels = [
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
@@ -288,12 +298,14 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
               </div>
               <div class="top-bars">
                 <div>
-                  <label>Speech share</label>
-                  <div class="bar"><span style="width:{stats['speech_count'] / max_speeches * 100:.2f}%"></span></div>
+                  <label>Speech share <strong>{speech_share:.1f}%</strong></label>
+                  <div class="bar" title="{stats['speech_count']} of {total_speeches} speeches in this sitting"><span style="width:{speech_share:.2f}%"></span></div>
+                  <p>{stats['speech_count']} of {total_speeches} extracted speeches belong to this agenda item.</p>
                 </div>
                 <div>
-                  <label>Text volume</label>
-                  <div class="bar alt"><span style="width:{stats['total_chars'] / max_chars * 100:.2f}%"></span></div>
+                  <label>Text volume <strong>{text_share:.1f}%</strong></label>
+                  <div class="bar alt" title="{stats['total_chars']} of {total_chars} extracted speech characters in this sitting"><span style="width:{text_share:.2f}%"></span></div>
+                  <p>{format_int(stats['total_chars'])} speech-text characters, {text_share:.1f}% of the sitting transcript text extracted from XML.</p>
                 </div>
               </div>
               <div class="party-block">
@@ -424,6 +436,33 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       border-bottom:1px solid #edf0f4;
       color:var(--ink);
     }}
+    .ranking-note {{
+      display:grid;
+      gap:7px;
+      padding:12px 16px;
+      border-bottom:1px solid #edf0f4;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }}
+    .legend {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px 12px;
+      align-items:center;
+    }}
+    .legend span {{
+      display:inline-flex;
+      gap:5px;
+      align-items:center;
+    }}
+    .legend i {{
+      width:18px;
+      height:3px;
+      border-radius:999px;
+      background:var(--teal);
+    }}
+    .legend span:last-child i {{ background:var(--amber); }}
     .attention-row:last-child {{ border-bottom:0; }}
     .row-top, .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
     .row-title {{ font-weight:650; line-height:1.25; }}
@@ -468,10 +507,24 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       gap:16px;
       margin-top:16px;
     }}
-    label {{ display:block; color:var(--muted); font-size:12px; margin-bottom:6px; }}
+    label {{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      color:var(--muted);
+      font-size:12px;
+      margin-bottom:6px;
+    }}
+    label strong {{ color:var(--ink); font-size:12px; }}
     .bar {{ height:11px; background:#edf0f4; border-radius:999px; overflow:hidden; }}
     .bar span {{ display:block; height:100%; background:var(--teal); border-radius:999px; }}
     .bar.alt span {{ background:var(--amber); }}
+    .top-bars p {{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }}
     .party-block {{ margin-top:14px; }}
     .stack {{ display:flex; overflow:hidden; height:14px; background:#edf0f4; border-radius:999px; }}
     .stack span {{ min-width:3px; }}
@@ -642,6 +695,10 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     <div class="layout">
       <aside>
         <h2>Attention Ranking</h2>
+        <div class="ranking-note">
+          <span>Sorted by speech count. Bar widths show each agenda item's share of the whole sitting.</span>
+          <div class="legend"><span><i></i>Speeches</span><span><i></i>Speech text</span></div>
+        </div>
         {''.join(attention_rows)}
       </aside>
       <main>
