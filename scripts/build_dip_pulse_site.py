@@ -101,13 +101,14 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 "<li>"
                 f"<span>{pulse_html.esc(item.get('top_id'))}</span>"
                 f"<strong>{pulse_html.esc(pulse_html.short(item.get('heading'), 110))}</strong>"
-                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} speeches</em>"
+                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} Reden</em>"
                 "</li>"
             )
         warnings = report.get("warnings") or []
         warning_html = ""
         if warnings:
-            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} warning</span>'
+            warning_label = "Warnung" if len(warnings) == 1 else "Warnungen"
+            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
 
         rows.append(
             f"""
@@ -116,15 +117,15 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 <div>
                   <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · distributed {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
                 </div>
-                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Open</a>
+                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-                <div><span>Speeches</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+                <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
                 <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-                <div><span>People</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+                <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
               <div class="session-links">
@@ -139,11 +140,11 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse · Sitzungen</title>
+  <title>Bundestag-Puls · Sitzungen</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -303,12 +304,12 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="sources.html">Sources</a></nav>
-        <h1>Bundestag Pulse</h1>
-        <p class="subtitle">Choose a sitting to inspect agenda items, speeches, factions, and linked primary-source documents.</p>
+        <nav class="nav-links"><a href="sources.html">Quellen</a></nav>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">Wähle eine Sitzung, um Tagesordnungspunkte, Reden, Fraktionen und verknüpfte Primärquellen zu prüfen.</p>
       </div>
       <div class="latest">
-        <span>Latest generated</span>
+        <span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(latest.get('datum', ''))}</em>
       </div>
@@ -317,7 +318,7 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       {''.join(rows)}
     </section>
     <footer>
-      Static prototype. XML transcript is canonical; DIP API data enriches each sitting. <a href="sources.html">See sources and method</a>.
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -357,15 +358,15 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
         )
 
     if not generated_rows:
-        generated_rows.append('<tr><td colspan="5" class="muted">No sittings were generated in this build.</td></tr>')
+        generated_rows.append('<tr><td colspan="5" class="muted">In diesem Build wurden keine Sitzungen erzeugt.</td></tr>')
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse · Sources</title>
+  <title>Bundestag-Puls · Quellen</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -534,71 +535,71 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="index.html">All Sitzungen</a></nav>
-        <h1>Sources</h1>
-        <p class="subtitle">Bundestag Pulse is built from official parliamentary records. This page documents what is used, how it is transformed, and what is intentionally excluded.</p>
+        <nav class="nav-links"><a href="index.html">Alle Sitzungen</a></nav>
+        <h1>Quellen</h1>
+        <p class="subtitle">Bundestag-Puls basiert auf offiziellen Parlamentsunterlagen. Diese Seite dokumentiert, welche Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt.</p>
       </div>
       <div class="latest">
-        <span>Latest generated</span>
+        <span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(latest.get('datum', ''))}</em>
       </div>
     </header>
     <main>
       <section class="panel">
-        <h2>Primary Sources</h2>
+        <h2>Primärquellen</h2>
         <div class="source-grid">
           <article class="source-card">
-            <span class="eyebrow">Canonical transcript</span>
+            <span class="eyebrow">Maßgebliches Protokoll</span>
             <h3>Bundestag Plenarprotokoll XML</h3>
-            <p>Agenda items, speech text, speakers, page references, and Drucksachen mentioned inside a sitting are parsed from the official XML transcript.</p>
+            <p>Tagesordnungspunkte, Redetext, Redner, Seitenangaben und in der Sitzung genannte Drucksachen werden aus dem offiziellen XML-Protokoll gelesen.</p>
             <a href="https://search.dip.bundestag.de/api/v1/plenarprotokoll">DIP Plenarprotokoll API</a>
           </article>
           <article class="source-card">
-            <span class="eyebrow">Metadata enrichment</span>
-            <h3>DIP API records</h3>
-            <p>Proceeding positions, parliamentary activities, document metadata, and linked Drucksachen are fetched from the Bundestag DIP API and attached to the matching agenda item.</p>
-            <a href="https://search.dip.bundestag.de/api/v1">DIP API base</a>
+            <span class="eyebrow">Metadaten-Anreicherung</span>
+            <h3>DIP-API-Datensätze</h3>
+            <p>Vorgangspositionen, parlamentarische Aktivitäten, Dokumentmetadaten und verknüpfte Drucksachen kommen aus der Bundestag-DIP-API und werden dem passenden Tagesordnungspunkt zugeordnet.</p>
+            <a href="https://search.dip.bundestag.de/api/v1">DIP-API-Basis</a>
           </article>
           <article class="source-card">
-            <span class="eyebrow">Original documents</span>
-            <h3>Drucksachen and PDFs</h3>
-            <p>Document numbers are extracted from transcript links and cross-checked against DIP positions. PDF links are shown when the official record provides one.</p>
-            <a href="https://dip.bundestag.de">DIP document search</a>
+            <span class="eyebrow">Originaldokumente</span>
+            <h3>Drucksachen und PDFs</h3>
+            <p>Dokumentnummern werden aus Protokoll-Links extrahiert und mit DIP-Positionen abgeglichen. PDF-Links erscheinen, wenn der offizielle Datensatz sie enthält.</p>
+            <a href="https://dip.bundestag.de">DIP-Dokumentensuche</a>
           </article>
           <article class="source-card">
-            <span class="eyebrow">Recorded votes</span>
+            <span class="eyebrow">Namentliche Abstimmungen</span>
             <h3>Namentliche Abstimmungen</h3>
-            <p>Roll-call vote totals, faction totals, and individual member votes come from the Bundestag roll-call pages and are matched by sitting date plus Drucksache numbers.</p>
-            <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag roll-call votes</a>
+            <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet.</p>
+            <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag namentliche Abstimmungen</a>
           </article>
         </div>
       </section>
       <section class="panel">
-        <h2>How The Site Uses Them</h2>
+        <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
-          <li><strong>Agenda items</strong><span>Parsed from the Plenarprotokoll XML Tagesordnungspunkt structure. The parliament's own segmentation is used as the topic boundary.</span></li>
-          <li><strong>Attention ranking</strong><span>Derived mechanically from extracted speech counts and extracted speech-text character counts per agenda item.</span></li>
-          <li><strong>Speaker and faction data</strong><span>Read from the Redner nodes in the XML transcript. Government roles are shown when the XML gives a role instead of a faction.</span></li>
-          <li><strong>Linked documents</strong><span>Combined from Drucksachen explicitly linked in the transcript and related DIP Vorgangsposition records for the sitting.</span></li>
-          <li><strong>Vote panels</strong><span>Rendered only when a roll-call vote on the same date can be matched to the agenda item through overlapping Drucksache numbers.</span></li>
-          <li><strong>Generated JSON</strong><span>Each sitting page links to the intermediate JSON report so the extraction and enrichment payload can be inspected directly.</span></li>
+          <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
+          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet.</span></li>
+          <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
+          <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
+          <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
+          <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
         </ul>
       </section>
       <section class="panel note">
-        <h2>What Is Not Used</h2>
-        <p>No news articles, polling aggregators, campaign material, social media posts, or editorial commentary are used as sources for the current prototype. The current pages show extracted records and mechanical metrics; they do not make unsourced stance claims.</p>
+        <h2>Was nicht genutzt wird</h2>
+        <p>Für den aktuellen Prototyp werden keine Nachrichtenartikel, Umfrage-Aggregatoren, Wahlkampfmaterialien, Social-Media-Posts oder redaktionellen Kommentare als Quellen genutzt. Die aktuellen Seiten zeigen extrahierte Datensätze und mechanische Kennzahlen; sie treffen keine unbelegten Haltungs-Aussagen.</p>
       </section>
       <section class="panel">
-        <h2>Generated Sitting Records</h2>
+        <h2>Erzeugte Sitzungsdatensätze</h2>
         <table>
           <thead>
             <tr>
-              <th>Protocol</th>
-              <th>Date</th>
+              <th>Protokoll</th>
+              <th>Datum</th>
               <th>TOPs</th>
-              <th>Speeches</th>
-              <th>Receipts</th>
+              <th>Reden</th>
+              <th>Belege</th>
             </tr>
           </thead>
           <tbody>
@@ -608,7 +609,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
       </section>
     </main>
     <footer>
-      Source links point to public Bundestag and DIP records. Availability and exact contents are controlled by those official services.
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt.
     </footer>
   </div>
 </body>

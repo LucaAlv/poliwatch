@@ -21,7 +21,7 @@ OUTPUT_DIR="${DIP_PULSE_OUTPUT_DIR:-.context/dip-pulse-site}"
 python3 scripts/build_dip_pulse_site.py --output-dir "$OUTPUT_DIR" "$@"
 
 URL="http://localhost:${PORT}/"
-echo "Bundestag Pulse preview: ${URL}"
+echo "Bundestag-Puls-Vorschau: ${URL}"
 
 if command -v open >/dev/null 2>&1 && [ "${OPEN_BROWSER:-1}" != "0" ]; then
   open "$URL" || true
