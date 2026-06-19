@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,14 @@ def short(value: str | None, limit: int = 150) -> str:
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
 
 
+def format_int(value: int) -> str:
+    return f"{value:,}"
+
+
+def percent(value: int, total: int) -> float:
+    return value / total * 100 if total > 0 else 0.0
+
+
 def page_range_text(item: dict[str, Any]) -> str:
     page_range = item.get("page_range") or {}
     start = page_range.get("start") or {}
@@ -51,6 +60,21 @@ def page_range_text(item: dict[str, Any]) -> str:
     start_ref = f"{start.get('page')}{start.get('quadrant') or ''}"
     end_ref = f"{end.get('page')}{end.get('quadrant') or ''}"
     return start_ref if start_ref == end_ref else f"{start_ref}-{end_ref}"
+
+
+def source_page_text(page: dict[str, Any] | None) -> str:
+    if not page:
+        return ""
+    return f"{page.get('page')}{page.get('quadrant') or ''}"
+
+
+def speech_anchor(item: dict[str, Any], speech: dict[str, Any], sequence: int) -> str:
+    speech_id = speech.get("rede_id")
+    if speech_id:
+        suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(speech_id)).strip("-")
+    else:
+        suffix = str(sequence + 1)
+    return f"speech-{item.get('index')}-{suffix or sequence + 1}"
 
 
 def speaker_party(speaker: dict[str, Any] | None) -> str:
@@ -259,18 +283,18 @@ def render_positions(item: dict[str, Any]) -> str:
 
 def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
     rows = []
-    for speech in stats["speakers"]:
+    for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
         name = esc(speaker.get("display_name") or "Unknown")
         party = speaker_party(speaker)
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
-        page = speech.get("source_page") or {}
-        source = f"{page.get('page')}{page.get('quadrant') or ''}" if page else ""
+        source = source_page_text(speech.get("source_page"))
+        anchor = speech_anchor(item, speech, sequence)
         rows.append(
             '<li class="speaker-row">'
             f'<span class="party-dot" style="background:{color}"></span>'
-            f'<strong>{name}</strong>'
+            f'<strong><a class="speaker-link" href="#{esc(anchor)}">{name}</a></strong>'
             f'<span>{esc(role)}</span>'
             f'<em>{esc(source)}</em>'
             "</li>"
@@ -278,31 +302,68 @@ def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
 
 
+def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
+    cards = []
+    for sequence, speech in enumerate(stats["speakers"]):
+        speaker = speech.get("speaker") or {}
+        name = esc(speaker.get("display_name") or "Unknown")
+        party = speaker_party(speaker)
+        color = PARTY_COLORS.get(party, "#6b7280")
+        role = speaker.get("role") or speaker.get("role_short") or party
+        source = source_page_text(speech.get("source_page"))
+        paragraphs = speech.get("paragraphs") or []
+        if not paragraphs and speech.get("text"):
+            paragraphs = [speech.get("text")]
+        if not paragraphs and speech.get("snippet"):
+            paragraphs = [speech.get("snippet")]
+        paragraph_html = "".join(f"<p>{esc(paragraph)}</p>" for paragraph in paragraphs)
+        if not paragraph_html:
+            paragraph_html = '<p class="muted">No speech text was included in this report. Rebuild the JSON with the current validator to render this speech inline.</p>'
+        meta = " · ".join(part for part in [esc(role), f"page {esc(source)}" if source else ""] if part)
+        cards.append(
+            f"""
+            <details class="speech-card" id="{esc(speech_anchor(item, speech, sequence))}">
+              <summary>
+                <span class="party-dot" style="background:{color}"></span>
+                <strong>{name}</strong>
+                <em>{meta}</em>
+              </summary>
+              <div class="speech-text">
+                {paragraph_html}
+              </div>
+            </details>
+            """
+        )
+    if not cards:
+        return '<span class="muted">No speeches in XML</span>'
+    return f'<div class="speech-cards">{"".join(cards)}</div>'
+
+
 def render_html(report: dict[str, Any], overview_href: str | None = None) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
     stats_by_index = {item["index"]: item_stats(item) for item in items}
-    max_speeches = max(1, max((stats["speech_count"] for stats in stats_by_index.values()), default=1))
-    max_chars = max(1, max((stats["total_chars"] for stats in stats_by_index.values()), default=1))
+    total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
+    total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
 
     attention_rows = []
     for item in sorted(items, key=lambda x: stats_by_index[x["index"]]["speech_count"], reverse=True):
         stats = stats_by_index[item["index"]]
-        speech_width = stats["speech_count"] / max_speeches * 100
-        char_width = stats["total_chars"] / max_chars * 100
+        speech_share = percent(stats["speech_count"], total_speeches)
+        text_share = percent(stats["total_chars"], total_chars)
         attention_rows.append(
             '<a class="attention-row" href="#top-{index}">'
             '<span class="row-top">{top}</span>'
             '<span class="row-title">{title}</span>'
-            '<span class="mini-bars"><i style="width:{speech_width:.2f}%"></i><b style="width:{char_width:.2f}%"></b></span>'
-            '<span class="row-metric">{speeches} speeches</span>'
+            '<span class="mini-bars" title="Teal: share of all speeches in this sitting. Amber: share of all extracted speech text."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
+            '<span class="row-metric">{speeches} speeches · {speech_share:.1f}% of sitting</span>'
             "</a>".format(
                 index=item["index"],
                 top=esc(item.get("top_id")),
                 title=esc(short(item.get("heading"), 78)),
-                speech_width=speech_width,
-                char_width=char_width,
+                speech_share=speech_share,
+                text_share=text_share,
                 speeches=stats["speech_count"],
             )
         )
@@ -311,6 +372,8 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     for item in items:
         stats = stats_by_index[item["index"]]
         party_total = sum(stats["party_counts"].values())
+        speech_share = percent(stats["speech_count"], total_speeches)
+        text_share = percent(stats["total_chars"], total_chars)
         party_labels = [
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
@@ -337,12 +400,14 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
               </div>
               <div class="top-bars">
                 <div>
-                  <label>Speech share</label>
-                  <div class="bar"><span style="width:{stats['speech_count'] / max_speeches * 100:.2f}%"></span></div>
+                  <label>Speech share <strong>{speech_share:.1f}%</strong></label>
+                  <div class="bar" title="{stats['speech_count']} of {total_speeches} speeches in this sitting"><span style="width:{speech_share:.2f}%"></span></div>
+                  <p>{stats['speech_count']} of {total_speeches} extracted speeches belong to this agenda item.</p>
                 </div>
                 <div>
-                  <label>Text volume</label>
-                  <div class="bar alt"><span style="width:{stats['total_chars'] / max_chars * 100:.2f}%"></span></div>
+                  <label>Text volume <strong>{text_share:.1f}%</strong></label>
+                  <div class="bar alt" title="{stats['total_chars']} of {total_chars} extracted speech characters in this sitting"><span style="width:{text_share:.2f}%"></span></div>
+                  <p>{format_int(stats['total_chars'])} speech-text characters, {text_share:.1f}% of the sitting transcript text extracted from XML.</p>
                 </div>
               </div>
               <div class="party-block">
@@ -369,6 +434,10 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
                   {render_linked_docs(item)}
                 </section>
               </div>
+              <section class="speech-section">
+                <h3>Speeches</h3>
+                {render_speech_details(item, stats)}
+              </section>
             </article>
             """
         )
@@ -470,6 +539,33 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       border-bottom:1px solid #edf0f4;
       color:var(--ink);
     }}
+    .ranking-note {{
+      display:grid;
+      gap:7px;
+      padding:12px 16px;
+      border-bottom:1px solid #edf0f4;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }}
+    .legend {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px 12px;
+      align-items:center;
+    }}
+    .legend span {{
+      display:inline-flex;
+      gap:5px;
+      align-items:center;
+    }}
+    .legend i {{
+      width:18px;
+      height:3px;
+      border-radius:999px;
+      background:var(--teal);
+    }}
+    .legend span:last-child i {{ background:var(--amber); }}
     .attention-row:last-child {{ border-bottom:0; }}
     .row-top, .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
     .row-title {{ font-weight:650; line-height:1.25; }}
@@ -514,10 +610,24 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       gap:16px;
       margin-top:16px;
     }}
-    label {{ display:block; color:var(--muted); font-size:12px; margin-bottom:6px; }}
+    label {{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      color:var(--muted);
+      font-size:12px;
+      margin-bottom:6px;
+    }}
+    label strong {{ color:var(--ink); font-size:12px; }}
     .bar {{ height:11px; background:#edf0f4; border-radius:999px; overflow:hidden; }}
     .bar span {{ display:block; height:100%; background:var(--teal); border-radius:999px; }}
     .bar.alt span {{ background:var(--amber); }}
+    .top-bars p {{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }}
     .party-block {{ margin-top:14px; }}
     .stack {{ display:flex; overflow:hidden; height:14px; background:#edf0f4; border-radius:999px; }}
     .stack span {{ min-width:3px; }}
@@ -678,6 +788,8 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     .speaker-row strong, .position-list strong, .doc-list strong {{ font-weight:680; }}
     .speaker-row span, .position-list span, .doc-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
     .speaker-row em, .position-list em, .doc-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
+    .speaker-link {{ color:var(--ink); text-decoration:none; }}
+    .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
     .position-list li, .doc-list li {{
       display:grid;
       grid-template-columns:minmax(78px,.45fr) minmax(0,1fr) minmax(54px,.35fr) minmax(0,.8fr);
@@ -687,6 +799,52 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     }}
     .position-list li {{ grid-template-columns:minmax(88px,.5fr) minmax(0,1.5fr) minmax(90px,.7fr); }}
     .position-list li:last-child, .doc-list li:last-child {{ border-bottom:0; }}
+    .speech-section {{
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid #eef1f5;
+    }}
+    .speech-cards {{
+      display:grid;
+      gap:8px;
+    }}
+    .speech-card {{
+      border:1px solid #e1e6ee;
+      border-radius:8px;
+      background:#fbfcfd;
+      scroll-margin-top:16px;
+    }}
+    .speech-card[open] {{
+      background:#fff;
+      border-color:#c8d7eb;
+      box-shadow:0 1px 0 rgba(23, 26, 31, .04);
+    }}
+    .speech-card summary {{
+      display:grid;
+      grid-template-columns:10px minmax(120px, .5fr) minmax(0,1fr);
+      gap:8px;
+      align-items:center;
+      min-height:36px;
+      padding:7px 10px;
+      cursor:pointer;
+      font-size:13px;
+      list-style:none;
+    }}
+    .speech-card summary::-webkit-details-marker {{ display:none; }}
+    .speech-card summary em {{
+      color:var(--muted);
+      font-style:normal;
+      overflow-wrap:anywhere;
+    }}
+    .speech-text {{
+      padding:0 14px 12px 28px;
+      font-size:14px;
+      line-height:1.55;
+      color:#252b33;
+    }}
+    .speech-text p {{
+      margin:10px 0 0;
+    }}
     .muted {{ color:var(--muted); }}
     .status.warn {{ color:var(--red); }}
     footer {{ padding:22px 0 4px; color:var(--muted); font-size:12px; }}
@@ -710,6 +868,9 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       .vote-fraction-row em {{ display:none; }}
       .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px; }}
       .speaker-row span:nth-of-type(2) {{ display:none; }}
+      .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
+      .speech-card summary em {{ grid-column:2; }}
+      .speech-text {{ padding-left:14px; }}
       .position-list li, .doc-list li {{ grid-template-columns:1fr; }}
     }}
   </style>
@@ -732,6 +893,10 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     <div class="layout">
       <aside>
         <h2>Attention Ranking</h2>
+        <div class="ranking-note">
+          <span>Sorted by speech count. Bar widths show each agenda item's share of the whole sitting.</span>
+          <div class="legend"><span><i></i>Speeches</span><span><i></i>Speech text</span></div>
+        </div>
         {''.join(attention_rows)}
       </aside>
       <main>
@@ -743,6 +908,23 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       XML transcript is treated as canonical; DIP API records enrich proceedings, activities, people, and linked documents.
     </footer>
   </div>
+  <script>
+    (() => {{
+      const openHashTarget = () => {{
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        if (!id) return;
+        const target = document.getElementById(id);
+        if (!target) return;
+        const details = target.tagName.toLowerCase() === "details" ? target : target.closest("details");
+        if (details) {{
+          details.open = true;
+          details.scrollIntoView({{ block: "start" }});
+        }}
+      }};
+      window.addEventListener("hashchange", openHashTarget);
+      openHashTarget();
+    }})();
+  </script>
 </body>
 </html>
 """
