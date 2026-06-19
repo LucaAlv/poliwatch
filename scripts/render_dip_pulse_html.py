@@ -23,6 +23,13 @@ PARTY_COLORS = {
     "Unbekannt": "#8b949e",
 }
 
+VOTE_LABELS = {
+    "yes": "ja",
+    "no": "nein",
+    "abstain": "enthalten",
+    "absent": "nicht abg.",
+}
+
 
 def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
@@ -92,6 +99,101 @@ def render_party_stack(counter: Counter[str], total: int) -> str:
             f'title="{esc(party)}: {count}"></span>'
         )
     return f'<div class="stack">{"".join(parts)}</div>'
+
+
+def render_vote_stack(counts: dict[str, Any], total: int | None = None) -> str:
+    total = total if total is not None else sum(int(counts.get(key) or 0) for key in VOTE_LABELS)
+    if total <= 0:
+        return '<div class="vote-stack empty"></div>'
+    parts = []
+    for key, label in VOTE_LABELS.items():
+        count = int(counts.get(key) or 0)
+        if count <= 0:
+            continue
+        width = max(3, count / total * 100)
+        parts.append(
+            f'<span class="vote-{key}" style="width:{width:.2f}%" '
+            f'title="{esc(label)}: {count}"></span>'
+        )
+    return f'<div class="vote-stack">{"".join(parts)}</div>'
+
+
+def render_vote_pills(counts: dict[str, Any]) -> str:
+    return "".join(
+        f'<span class="vote-pill vote-{key}">{esc(label)} <strong>{esc(counts.get(key) or 0)}</strong></span>'
+        for key, label in VOTE_LABELS.items()
+    )
+
+
+def render_vote_summary(item: dict[str, Any]) -> str:
+    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    if not votes:
+        return ""
+
+    panels = []
+    for vote in votes:
+        fractions = vote.get("fractions") or []
+        fraction_rows = []
+        for fraction in fractions:
+            name = fraction.get("name") or "Unbekannt"
+            counts = fraction.get("counts") or {}
+            leading = fraction.get("leading_vote") or "absent"
+            color = PARTY_COLORS.get(name, "#6b7280")
+            fraction_rows.append(
+                '<div class="vote-fraction-row">'
+                f'<span class="party-dot" style="background:{color}"></span>'
+                f'<strong>{esc(name)}</strong>'
+                f'{render_vote_stack(counts, int(fraction.get("total") or 0))}'
+                f'<em class="vote-pill vote-{esc(leading)}">{esc(VOTE_LABELS.get(leading, leading))}</em>'
+                "</div>"
+            )
+
+        member_groups: dict[str, list[dict[str, Any]]] = {}
+        for member in vote.get("members") or []:
+            member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
+
+        member_sections = []
+        for faction in sorted(member_groups, key=lambda f: (f == "fraktionslos", f)):
+            members = sorted(member_groups[faction], key=lambda m: str(m.get("name") or ""))
+            rows = []
+            for member in members:
+                vote_key = str(member.get("vote") or "")
+                name = esc(member.get("name"))
+                url = member.get("profile_url")
+                name_html = f'<a href="{esc(url)}">{name}</a>' if url else name
+                rows.append(
+                    '<li class="member-vote-row">'
+                    f"<strong>{name_html}</strong>"
+                    f'<span class="vote-pill vote-{esc(vote_key)}">{esc(VOTE_LABELS.get(vote_key, vote_key))}</span>'
+                    "</li>"
+                )
+            member_sections.append(
+                '<section class="member-vote-group">'
+                f"<h4>{esc(faction)}</h4>"
+                f'<ul class="member-vote-list">{"".join(rows)}</ul>'
+                "</section>"
+            )
+
+        total = vote.get("total") or {}
+        docs = ", ".join(vote.get("document_numbers") or [])
+        docs_text = f" · Drucksachen {esc(docs)}" if docs else ""
+        panels.append(
+            '<section class="vote-panel">'
+            '<div class="vote-head">'
+            '<div>'
+            '<h3>Namentliche Abstimmung</h3>'
+            f'<p><a href="{esc(vote.get("detail_url"))}">{esc(short(vote.get("title"), 140))}</a>{docs_text}</p>'
+            "</div>"
+            f'<div class="vote-total">{render_vote_stack(total)}{render_vote_pills(total)}</div>'
+            "</div>"
+            f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
+            '<details class="member-votes">'
+            f'<summary>Individual votes ({esc(len(vote.get("members") or []))} MPs)</summary>'
+            f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
+            "</details>"
+            "</section>"
+        )
+    return "".join(panels)
 
 
 def render_source_links(item: dict[str, Any]) -> str:
@@ -181,8 +283,8 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
     stats_by_index = {item["index"]: item_stats(item) for item in items}
-    max_speeches = max((stats["speech_count"] for stats in stats_by_index.values()), default=1)
-    max_chars = max((stats["total_chars"] for stats in stats_by_index.values()), default=1)
+    max_speeches = max(1, max((stats["speech_count"] for stats in stats_by_index.values()), default=1))
+    max_chars = max(1, max((stats["total_chars"] for stats in stats_by_index.values()), default=1))
 
     attention_rows = []
     for item in sorted(items, key=lambda x: stats_by_index[x["index"]]["speech_count"], reverse=True):
@@ -247,6 +349,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
                 {render_party_stack(stats['party_counts'], party_total)}
                 <div class="party-labels">{render_badges(party_labels)}</div>
               </div>
+              {render_vote_summary(item)}
               <div class="source-strip">
                 <div><span>XML Drucksachen</span>{render_source_links(item)}</div>
                 <div><span>API enrichment</span>{api_positions_count} positions · {item.get('api', {}).get('activities_count', 0)} activities · {linked_docs_count} linked docs</div>
@@ -419,6 +522,97 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     .stack {{ display:flex; overflow:hidden; height:14px; background:#edf0f4; border-radius:999px; }}
     .stack span {{ min-width:3px; }}
     .party-labels {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
+    .vote-panel {{
+      margin-top:16px;
+      padding:14px;
+      border:1px solid #d7e3df;
+      border-radius:8px;
+      background:#f7fbfa;
+    }}
+    .vote-head {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(260px,.42fr);
+      gap:16px;
+      align-items:start;
+    }}
+    .vote-head h3 {{ margin-bottom:5px; color:#0f5f59; }}
+    .vote-head p {{ margin:0; font-size:13px; }}
+    .vote-total {{ display:grid; gap:8px; }}
+    .vote-stack {{
+      display:flex;
+      overflow:hidden;
+      height:13px;
+      background:#edf0f4;
+      border-radius:999px;
+    }}
+    .vote-stack span {{ min-width:3px; }}
+    .vote-yes {{ background:#0f766e; }}
+    .vote-no {{ background:#b91c1c; }}
+    .vote-abstain {{ background:#b06b00; }}
+    .vote-absent {{ background:#7a8699; }}
+    .vote-pill {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:22px;
+      padding:2px 7px;
+      border-radius:999px;
+      color:white;
+      font-size:12px;
+      font-style:normal;
+      font-weight:680;
+      white-space:nowrap;
+    }}
+    .vote-pill strong {{ margin-left:4px; color:inherit; }}
+    .vote-total .vote-pill {{ margin-right:5px; }}
+    .vote-fractions {{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:9px 14px;
+      margin-top:14px;
+    }}
+    .vote-fraction-row {{
+      display:grid;
+      grid-template-columns:10px minmax(88px,.55fr) minmax(120px,1fr) auto;
+      gap:8px;
+      align-items:center;
+      min-width:0;
+      font-size:13px;
+    }}
+    .vote-fraction-row strong {{ overflow-wrap:anywhere; }}
+    .member-votes {{
+      margin-top:14px;
+      border-top:1px solid #dce7e3;
+      padding-top:10px;
+      font-size:13px;
+    }}
+    .member-votes summary {{
+      cursor:pointer;
+      color:#174ea6;
+      font-weight:700;
+    }}
+    .member-vote-grid {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:14px;
+      margin-top:12px;
+    }}
+    .member-vote-group h4 {{
+      margin:0 0 7px;
+      font-size:12px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .member-vote-list {{ display:grid; gap:5px; }}
+    .member-vote-row {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:8px;
+      align-items:center;
+      min-height:25px;
+    }}
+    .member-vote-row strong {{ min-width:0; overflow-wrap:anywhere; }}
     .badge {{
       display:inline-flex;
       align-items:center;
@@ -501,6 +695,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       aside {{ position:static; }}
       .detail-grid {{ grid-template-columns:1fr; }}
       .source-strip {{ grid-template-columns:1fr; }}
+      .member-vote-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     }}
     @media (max-width: 720px) {{
       .shell {{ padding:14px; }}
@@ -510,6 +705,9 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       h2 {{ font-size:18px; }}
       .score {{ text-align:left; border-left:0; padding-left:0; }}
       .top-bars {{ grid-template-columns:1fr; }}
+      .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:1fr; }}
+      .vote-fraction-row {{ grid-template-columns:10px minmax(0,.7fr) minmax(90px,1fr); }}
+      .vote-fraction-row em {{ display:none; }}
       .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px; }}
       .speaker-row span:nth-of-type(2) {{ display:none; }}
       .position-list li, .doc-list li {{ grid-template-columns:1fr; }}
