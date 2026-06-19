@@ -741,13 +741,13 @@ def enrich_with_api(
 
     warnings: list[str] = []
     if any(not top["api"]["positions"] for top in enriched_tops):
-        warnings.append("At least one XML TOP could not be matched to a DIP Vorgangsposition by page range.")
+        warnings.append("Mindestens ein XML-TOP konnte über den Seitenbereich keiner DIP-Vorgangsposition zugeordnet werden.")
     if any(top["xml_speech_count"] and top["api"]["activities_count"] == 0 for top in enriched_tops):
-        warnings.append("At least one XML TOP with speeches had no matching DIP activities by page range.")
+        warnings.append("Mindestens ein XML-TOP mit Reden hatte keine passenden DIP-Aktivitäten im Seitenbereich.")
     if len(activities) >= 100:
-        warnings.append("Activity count exceeded one API page; cursor pagination was exercised.")
+        warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
     if roll_call_candidates and not roll_call_cache:
-        warnings.append("Roll-call votes were found for this sitting date, but none matched a TOP by Drucksache number.")
+        warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
 
     return {
         "api_totals": {
