@@ -98,13 +98,14 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 "<li>"
                 f"<span>{pulse_html.esc(item.get('top_id'))}</span>"
                 f"<strong>{pulse_html.esc(pulse_html.short(item.get('heading'), 110))}</strong>"
-                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} speeches</em>"
+                f"<em>{pulse_html.esc(item.get('xml_speech_count'))} Reden</em>"
                 "</li>"
             )
         warnings = report.get("warnings") or []
         warning_html = ""
         if warnings:
-            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} warning</span>'
+            warning_label = "Warnung" if len(warnings) == 1 else "Warnungen"
+            warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
 
         rows.append(
             f"""
@@ -113,15 +114,15 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
                 <div>
                   <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
-                  <p>{pulse_html.esc(protocol.get('datum'))} · distributed {pulse_html.esc(protocol.get('verteildatum'))}</p>
+                  <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
                 </div>
-                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Open</a>
+                <a class="open-button" href="protocols/{pulse_html.esc(entry['page_path'].name)}">Öffnen</a>
               </div>
               <div class="metrics">
                 <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-                <div><span>Speeches</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+                <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
                 <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-                <div><span>People</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+                <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
               <div class="session-links">
@@ -136,11 +137,11 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag Pulse · Sitzungen</title>
+  <title>Bundestag-Puls · Sitzungen</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -283,11 +284,11 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <h1>Bundestag Pulse</h1>
-        <p class="subtitle">Choose a sitting to inspect agenda items, speeches, factions, and linked primary-source documents.</p>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">Wähle eine Sitzung, um Tagesordnungspunkte, Reden, Fraktionen und verknüpfte Primärquellen zu prüfen.</p>
       </div>
       <div class="latest">
-        <span>Latest generated</span>
+        <span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(latest.get('datum', ''))}</em>
       </div>
@@ -296,7 +297,7 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       {''.join(rows)}
     </section>
     <footer>
-      Static prototype. XML transcript is canonical; DIP API data enriches each sitting.
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
     </footer>
   </div>
 </body>
