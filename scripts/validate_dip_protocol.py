@@ -390,6 +390,21 @@ def compact_activity(activity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compact_person(person: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": person.get("id"),
+        "titel": person.get("titel"),
+        "namenszusatz": person.get("namenszusatz"),
+        "vorname": person.get("vorname"),
+        "nachname": person.get("nachname"),
+        "fraktion": person.get("fraktion"),
+        "funktion": person.get("funktion"),
+        "wahlperiode": person.get("wahlperiode"),
+        "basisdatum": person.get("basisdatum"),
+        "aktualisiert": person.get("aktualisiert"),
+    }
+
+
 def compact_drucksache_position(position: dict[str, Any]) -> dict[str, Any]:
     fundstelle = position.get("fundstelle") or {}
     return {
@@ -711,8 +726,13 @@ def enrich_with_api(
                 "api": {
                     "positions": [compact_position(position) for position in matching_positions],
                     "activities_count": len(matching_activities),
+                    "activities": [compact_activity(activity) for activity in matching_activities],
                     "activities_first": [compact_activity(activity) for activity in matching_activities[:5]],
                     "linked_drucksachen": linked_drucksachen,
+                    "raw": {
+                        "positions": matching_positions,
+                        "activities": matching_activities,
+                    },
                 },
                 "votes": votes,
             }
@@ -726,18 +746,11 @@ def enrich_with_api(
             seen_person_ids.add(person_id)
             unique_person_ids.append(str(person_id))
 
-    sampled_people: list[dict[str, Any]] = []
-    for person_id in unique_person_ids[:person_limit]:
+    people_to_fetch = unique_person_ids if person_limit <= 0 else unique_person_ids[:person_limit]
+    person_records: list[dict[str, Any]] = []
+    for person_id in people_to_fetch:
         person = client.get_json(f"/person/{person_id}")
-        sampled_people.append(
-            {
-                "id": person.get("id"),
-                "titel": person.get("titel"),
-                "fraktion": person.get("fraktion"),
-                "funktion": person.get("funktion"),
-                "wahlperiode": person.get("wahlperiode"),
-            }
-        )
+        person_records.append(person)
 
     warnings: list[str] = []
     if any(not top["api"]["positions"] for top in enriched_tops):
@@ -754,11 +767,21 @@ def enrich_with_api(
             "vorgangsposition_count": len(positions),
             "aktivitaet_count": len(activities),
             "unique_person_ids": len(unique_person_ids),
-            "sampled_person_count": len(sampled_people),
+            "person_record_count": len(person_records),
+            "sampled_person_count": len(person_records),
+            "person_records_complete": person_limit <= 0 or len(person_records) >= len(unique_person_ids),
             "roll_call_vote_candidate_count": len(roll_call_candidates),
             "matched_roll_call_vote_count": len(roll_call_cache),
         },
-        "sampled_people": sampled_people,
+        "sampled_people": [compact_person(person) for person in person_records],
+        "api_records": {
+            "protocol": protocol,
+            "vorgangspositionen": positions,
+            "aktivitaeten": activities,
+            "persons": person_records,
+            "roll_call_vote_candidates": roll_call_candidates,
+            "matched_roll_call_votes": list(roll_call_cache.values()),
+        },
         "agenda_items": enriched_tops,
         "warnings": warnings,
     }
@@ -818,6 +841,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         },
         "warnings": enrichment["warnings"],
         "sampled_people": enrichment["sampled_people"],
+        "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
     }
 
@@ -829,7 +853,12 @@ def parse_args() -> argparse.Namespace:
     selector.add_argument("--document-number", help="DIP document number, e.g. 21/84")
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
     parser.add_argument("--limit-tops", type=int, help="Only print the first N XML agenda items.")
-    parser.add_argument("--person-limit", type=int, default=25, help="Number of distinct person records to sample.")
+    parser.add_argument(
+        "--person-limit",
+        type=int,
+        default=25,
+        help="Number of distinct person records to fetch. Use 0 to fetch all person records seen in activities.",
+    )
     parser.add_argument(
         "--vote-scan-pages",
         type=int,

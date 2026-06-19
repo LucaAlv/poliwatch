@@ -6,7 +6,7 @@ cd "$ROOT"
 
 if [ -f ".env.local" ]; then
   set -a
-  . ".env.local"
+  . "./.env.local"
   set +a
 fi
 
