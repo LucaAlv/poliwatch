@@ -171,7 +171,7 @@ def parse_toc(root: ET.Element) -> dict[str, dict[str, Any]]:
     return toc
 
 
-def speech_text_and_paragraphs(rede: ET.Element) -> tuple[str, int]:
+def speech_text_and_paragraphs(rede: ET.Element) -> tuple[str, list[str]]:
     paragraphs: list[str] = []
     for paragraph in rede.findall("p"):
         if paragraph.attrib.get("klasse") == "redner":
@@ -179,7 +179,7 @@ def speech_text_and_paragraphs(rede: ET.Element) -> tuple[str, int]:
         text = elem_text(paragraph)
         if text:
             paragraphs.append(text)
-    return clean_text(" ".join(paragraphs)), len(paragraphs)
+    return clean_text(" ".join(paragraphs)), paragraphs
 
 
 def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
@@ -209,7 +209,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         for rede in top.findall("rede"):
             rid = rede.attrib.get("id")
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
-            text, paragraph_count = speech_text_and_paragraphs(rede)
+            text, paragraphs = speech_text_and_paragraphs(rede)
             page_ref = rid_pages.get(rid or "")
             if page_ref:
                 pages.append(page_ref)
@@ -218,8 +218,10 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                     "rede_id": rid,
                     "source_page": page_ref,
                     "speaker": redner,
-                    "paragraph_count": paragraph_count,
+                    "paragraph_count": len(paragraphs),
                     "char_count": len(text),
+                    "text": text,
+                    "paragraphs": paragraphs,
                     "snippet": text[:240],
                 }
             )
@@ -469,7 +471,11 @@ def enrich_with_api(
                         "rede_id": speech["rede_id"],
                         "source_page": speech["source_page"],
                         "speaker": speech["speaker"],
+                        "paragraph_count": speech["paragraph_count"],
                         "char_count": speech["char_count"],
+                        "text": speech["text"],
+                        "paragraphs": speech["paragraphs"],
+                        "snippet": speech["snippet"],
                     }
                     for speech in top["speeches"]
                 ],

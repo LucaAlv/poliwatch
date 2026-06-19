@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,21 @@ def page_range_text(item: dict[str, Any]) -> str:
     start_ref = f"{start.get('page')}{start.get('quadrant') or ''}"
     end_ref = f"{end.get('page')}{end.get('quadrant') or ''}"
     return start_ref if start_ref == end_ref else f"{start_ref}-{end_ref}"
+
+
+def source_page_text(page: dict[str, Any] | None) -> str:
+    if not page:
+        return ""
+    return f"{page.get('page')}{page.get('quadrant') or ''}"
+
+
+def speech_anchor(item: dict[str, Any], speech: dict[str, Any], sequence: int) -> str:
+    speech_id = speech.get("rede_id")
+    if speech_id:
+        suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(speech_id)).strip("-")
+    else:
+        suffix = str(sequence + 1)
+    return f"speech-{item.get('index')}-{suffix or sequence + 1}"
 
 
 def speaker_party(speaker: dict[str, Any] | None) -> str:
@@ -157,23 +173,60 @@ def render_positions(item: dict[str, Any]) -> str:
 
 def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
     rows = []
-    for speech in stats["speakers"]:
+    for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
         name = esc(speaker.get("display_name") or "Unknown")
         party = speaker_party(speaker)
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
-        page = speech.get("source_page") or {}
-        source = f"{page.get('page')}{page.get('quadrant') or ''}" if page else ""
+        source = source_page_text(speech.get("source_page"))
+        anchor = speech_anchor(item, speech, sequence)
         rows.append(
             '<li class="speaker-row">'
             f'<span class="party-dot" style="background:{color}"></span>'
-            f'<strong>{name}</strong>'
+            f'<strong><a class="speaker-link" href="#{esc(anchor)}">{name}</a></strong>'
             f'<span>{esc(role)}</span>'
             f'<em>{esc(source)}</em>'
             "</li>"
         )
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
+
+
+def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
+    cards = []
+    for sequence, speech in enumerate(stats["speakers"]):
+        speaker = speech.get("speaker") or {}
+        name = esc(speaker.get("display_name") or "Unknown")
+        party = speaker_party(speaker)
+        color = PARTY_COLORS.get(party, "#6b7280")
+        role = speaker.get("role") or speaker.get("role_short") or party
+        source = source_page_text(speech.get("source_page"))
+        paragraphs = speech.get("paragraphs") or []
+        if not paragraphs and speech.get("text"):
+            paragraphs = [speech.get("text")]
+        if not paragraphs and speech.get("snippet"):
+            paragraphs = [speech.get("snippet")]
+        paragraph_html = "".join(f"<p>{esc(paragraph)}</p>" for paragraph in paragraphs)
+        if not paragraph_html:
+            paragraph_html = '<p class="muted">No speech text was included in this report. Rebuild the JSON with the current validator to render this speech inline.</p>'
+        meta = " · ".join(part for part in [esc(role), f"page {esc(source)}" if source else ""] if part)
+        cards.append(
+            f"""
+            <details class="speech-card" id="{esc(speech_anchor(item, speech, sequence))}">
+              <summary>
+                <span class="party-dot" style="background:{color}"></span>
+                <strong>{name}</strong>
+                <em>{meta}</em>
+              </summary>
+              <div class="speech-text">
+                {paragraph_html}
+              </div>
+            </details>
+            """
+        )
+    if not cards:
+        return '<span class="muted">No speeches in XML</span>'
+    return f'<div class="speech-cards">{"".join(cards)}</div>'
 
 
 def render_html(report: dict[str, Any], overview_href: str | None = None) -> str:
@@ -266,6 +319,10 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
                   {render_linked_docs(item)}
                 </section>
               </div>
+              <section class="speech-section">
+                <h3>Speeches</h3>
+                {render_speech_details(item, stats)}
+              </section>
             </article>
             """
         )
@@ -484,6 +541,8 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     .speaker-row strong, .position-list strong, .doc-list strong {{ font-weight:680; }}
     .speaker-row span, .position-list span, .doc-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
     .speaker-row em, .position-list em, .doc-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
+    .speaker-link {{ color:var(--ink); text-decoration:none; }}
+    .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
     .position-list li, .doc-list li {{
       display:grid;
       grid-template-columns:minmax(78px,.45fr) minmax(0,1fr) minmax(54px,.35fr) minmax(0,.8fr);
@@ -493,6 +552,52 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     }}
     .position-list li {{ grid-template-columns:minmax(88px,.5fr) minmax(0,1.5fr) minmax(90px,.7fr); }}
     .position-list li:last-child, .doc-list li:last-child {{ border-bottom:0; }}
+    .speech-section {{
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid #eef1f5;
+    }}
+    .speech-cards {{
+      display:grid;
+      gap:8px;
+    }}
+    .speech-card {{
+      border:1px solid #e1e6ee;
+      border-radius:8px;
+      background:#fbfcfd;
+      scroll-margin-top:16px;
+    }}
+    .speech-card[open] {{
+      background:#fff;
+      border-color:#c8d7eb;
+      box-shadow:0 1px 0 rgba(23, 26, 31, .04);
+    }}
+    .speech-card summary {{
+      display:grid;
+      grid-template-columns:10px minmax(120px, .5fr) minmax(0,1fr);
+      gap:8px;
+      align-items:center;
+      min-height:36px;
+      padding:7px 10px;
+      cursor:pointer;
+      font-size:13px;
+      list-style:none;
+    }}
+    .speech-card summary::-webkit-details-marker {{ display:none; }}
+    .speech-card summary em {{
+      color:var(--muted);
+      font-style:normal;
+      overflow-wrap:anywhere;
+    }}
+    .speech-text {{
+      padding:0 14px 12px 28px;
+      font-size:14px;
+      line-height:1.55;
+      color:#252b33;
+    }}
+    .speech-text p {{
+      margin:10px 0 0;
+    }}
     .muted {{ color:var(--muted); }}
     .status.warn {{ color:var(--red); }}
     footer {{ padding:22px 0 4px; color:var(--muted); font-size:12px; }}
@@ -512,6 +617,9 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       .top-bars {{ grid-template-columns:1fr; }}
       .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px; }}
       .speaker-row span:nth-of-type(2) {{ display:none; }}
+      .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
+      .speech-card summary em {{ grid-column:2; }}
+      .speech-text {{ padding-left:14px; }}
       .position-list li, .doc-list li {{ grid-template-columns:1fr; }}
     }}
   </style>
@@ -545,6 +653,23 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       XML transcript is treated as canonical; DIP API records enrich proceedings, activities, people, and linked documents.
     </footer>
   </div>
+  <script>
+    (() => {{
+      const openHashTarget = () => {{
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        if (!id) return;
+        const target = document.getElementById(id);
+        if (!target) return;
+        const details = target.tagName.toLowerCase() === "details" ? target : target.closest("details");
+        if (details) {{
+          details.open = true;
+          details.scrollIntoView({{ block: "start" }});
+        }}
+      }};
+      window.addEventListener("hashchange", openHashTarget);
+      openHashTarget();
+    }})();
+  </script>
 </body>
 </html>
 """
