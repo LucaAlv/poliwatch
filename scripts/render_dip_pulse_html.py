@@ -339,7 +339,11 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
 
-def render_html(report: dict[str, Any], overview_href: str | None = None) -> str:
+def render_html(
+    report: dict[str, Any],
+    overview_href: str | None = None,
+    sources_href: str | None = None,
+) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
@@ -449,6 +453,9 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     overview_link = ""
     if overview_href:
         overview_link = f'<a class="overview-link" href="{esc(overview_href)}">All Sitzungen</a>'
+    sources_link = ""
+    if sources_href:
+        sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Sources</a>'
 
     return f"""<!doctype html>
 <html lang="en">
@@ -491,7 +498,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       display:inline-flex;
       align-items:center;
       min-height:30px;
-      margin-bottom:10px;
+      margin:0 8px 10px 0;
       padding:4px 9px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -879,7 +886,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
   <div class="shell">
     <header>
       <div>
-        {overview_link}
+        <nav>{overview_link}{sources_link}</nav>
         <h1>Bundestag Pulse</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · sitting {esc(protocol.get('datum'))} · distributed {esc(protocol.get('verteildatum'))}</p>
       </div>
