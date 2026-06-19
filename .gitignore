@@ -2,5 +2,9 @@
 __pycache__/
 *.pyc
 
+# Local secrets and generated previews
+.env.local
+.context/
+
 # macOS
 .DS_Store
