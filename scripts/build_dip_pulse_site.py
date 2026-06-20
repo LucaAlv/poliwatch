@@ -70,6 +70,9 @@ def write_report_and_page(
     sleep: float,
     person_limit: int,
     vote_scan_pages: int,
+    summary_mode: str,
+    anthropic_api_key: str | None,
+    summary_model: str | None,
 ) -> dict[str, Any]:
     document_number = str(protocol["dokumentnummer"])
     slug = slugify_document_number(document_number)
@@ -83,6 +86,9 @@ def write_report_and_page(
         limit_tops=None,
         person_limit=person_limit,
         vote_scan_pages=vote_scan_pages,
+        summary_mode=summary_mode,
+        anthropic_api_key=anthropic_api_key,
+        summary_model=summary_model,
         sleep=sleep,
     )
     report = dip.build_report(args)
@@ -1292,6 +1298,20 @@ def parse_args() -> argparse.Namespace:
         help="Number of distinct person records to fetch for each detailed dossier. Use 0 for all seen person records.",
     )
     parser.add_argument(
+        "--summary-mode",
+        choices=("auto", "required", "off"),
+        default="auto",
+        help="Generate per-TOP LLM summaries when ANTHROPIC_API_KEY is available, require them, or disable them.",
+    )
+    parser.add_argument("--anthropic-api-key", help="Anthropic API key. Prefer ANTHROPIC_API_KEY for local use.")
+    parser.add_argument(
+        "--summary-model",
+        help=(
+            "Comma-separated Anthropic model IDs to try for summaries. "
+            "Defaults to Claude Opus 4.8, then Sonnet 4.6."
+        ),
+    )
+    parser.add_argument(
         "--vote-scan-pages",
         type=int,
         default=30,
@@ -1325,6 +1345,9 @@ def main() -> int:
                 sleep=args.sleep,
                 person_limit=args.person_limit,
                 vote_scan_pages=args.vote_scan_pages,
+                summary_mode=args.summary_mode,
+                anthropic_api_key=args.anthropic_api_key,
+                summary_model=args.summary_model,
             )
             for protocol in detail_protocols
         ]

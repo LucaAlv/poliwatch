@@ -387,6 +387,55 @@ def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
 
 
+def source_chunk_anchor(item: dict[str, Any], stats: dict[str, Any], chunk: dict[str, Any]) -> str | None:
+    chunk_rede_id = chunk.get("rede_id")
+    for sequence, speech in enumerate(stats["speakers"]):
+        if chunk_rede_id and speech.get("rede_id") == chunk_rede_id:
+            return speech_anchor(item, speech, sequence)
+    return None
+
+
+def render_llm_summary(item: dict[str, Any], stats: dict[str, Any]) -> str:
+    summary = item.get("llm_summary") or {}
+    text = summary.get("text")
+    chunks = summary.get("source_chunks") or []
+    if not text or not chunks:
+        return (
+            '<section class="llm-summary unavailable">'
+            "<h3><span>Automatische Zusammenfassung — zur Quelle</span></h3>"
+            "<p>Zusammenfassung aktuell nicht verfügbar. Bitte versuchen Sie es später noch einmal.</p>"
+            "</section>"
+        )
+
+    first_anchor = source_chunk_anchor(item, stats, chunks[0])
+    label = esc(summary.get("label") or "Automatische Zusammenfassung — zur Quelle")
+    label_html = f'<a href="#{esc(first_anchor)}">{label}</a>' if first_anchor else f"<span>{label}</span>"
+    chunk_rows = []
+    for chunk in chunks:
+        speaker = chunk.get("speaker") or {}
+        name = speaker.get("display_name") or "Unbekannt"
+        party_or_role = speaker.get("fraktion") or speaker.get("role_short") or speaker.get("role") or "unbekannt"
+        source = source_page_text(chunk.get("source_page"))
+        anchor = source_chunk_anchor(item, stats, chunk)
+        source_ref = f"Seite {source}" if source else "Quelle"
+        source_html = f'<a href="#{esc(anchor)}">{esc(source_ref)}</a>' if anchor else esc(source_ref)
+        chunk_rows.append(
+            "<li>"
+            f"<strong>{esc(chunk.get('id'))}</strong>"
+            f"<span>{esc(name)} · {esc(party_or_role)} · {source_html}</span>"
+            f"<p>{esc(chunk.get('text'))}</p>"
+            "</li>"
+        )
+
+    return (
+        '<section class="llm-summary">'
+        f'<h3>{label_html}</h3>'
+        f"<p>{esc(text)}</p>"
+        f'<ul class="summary-sources">{"".join(chunk_rows)}</ul>'
+        "</section>"
+    )
+
+
 def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
@@ -504,6 +553,7 @@ def render_html(
                 {render_party_stack(stats['party_counts'], party_total)}
                 <div class="party-labels">{render_badges(party_labels)}</div>
               </div>
+              {render_llm_summary(item, stats)}
               {render_vote_summary(item)}
               <div class="source-strip">
                 <div><span>XML Drucksachen</span>{render_source_links(item)}</div>
@@ -737,6 +787,60 @@ def render_html(
     .stack {{ display:flex; overflow:hidden; height:14px; background:#edf0f4; border-radius:999px; }}
     .stack span {{ min-width:3px; }}
     .party-labels {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
+    .llm-summary {{
+      display:grid;
+      gap:10px;
+      margin-top:16px;
+      padding:14px;
+      border:1px solid #d5dde8;
+      border-radius:8px;
+      background:#f9fafb;
+    }}
+    .llm-summary h3 {{
+      margin:0;
+      color:#3f4a59;
+    }}
+    .llm-summary h3 a {{
+      color:#3f4a59;
+      text-decoration:underline;
+      text-decoration-style:dotted;
+      text-underline-offset:3px;
+    }}
+    .llm-summary > p {{
+      margin:0;
+      color:#252b33;
+      font-size:15px;
+      line-height:1.5;
+    }}
+    .llm-summary.unavailable > p {{
+      color:var(--muted);
+    }}
+    .summary-sources {{
+      display:grid;
+      gap:8px;
+    }}
+    .summary-sources li {{
+      display:grid;
+      grid-template-columns:34px minmax(0,1fr);
+      gap:6px 10px;
+      padding-top:8px;
+      border-top:1px solid #e5e9ef;
+      font-size:12px;
+    }}
+    .summary-sources strong {{
+      grid-row:span 2;
+      color:#3f4a59;
+      font-weight:760;
+    }}
+    .summary-sources span {{
+      color:var(--muted);
+      overflow-wrap:anywhere;
+    }}
+    .summary-sources p {{
+      margin:0;
+      color:#343b46;
+      line-height:1.45;
+    }}
     .vote-panel {{
       margin-top:16px;
       padding:14px;
@@ -1033,6 +1137,8 @@ def render_html(
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
       .speech-text {{ padding-left:14px; }}
+      .summary-sources li {{ grid-template-columns:1fr; }}
+      .summary-sources strong {{ grid-row:auto; }}
       .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
     }}
   </style>
