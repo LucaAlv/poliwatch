@@ -423,7 +423,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">Das neueste erzeugte Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit in der Sitzung konzentrierte.</p>
       </div>
-      <nav class="nav-links" aria-label="Primary">
+      <nav class="nav-links" aria-label="Hauptnavigation">
         <a class="primary-link" href="{protocol_href}">Details öffnen</a>
         <a href="overview.html">Alle Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
@@ -512,14 +512,14 @@ def protocol_source_links(protocol: dict[str, Any]) -> str:
         url = fundstelle.get(key)
         if url:
             links.append(f'<a href="{pulse_html.esc(url)}">{label}</a>')
-    return "".join(links) or '<span class="muted">No source links</span>'
+    return "".join(links) or '<span class="muted">Keine Quelllinks</span>'
 
 
 def render_catalog_json(protocol: dict[str, Any]) -> str:
     text = json.dumps(protocol, ensure_ascii=False, indent=2, sort_keys=True)
     return (
         '<details class="api-details">'
-        '<summary>API fields</summary>'
+        '<summary>API-Felder</summary>'
         f"<pre>{pulse_html.esc(text)}</pre>"
         "</details>"
     )
@@ -1031,10 +1031,10 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
       </div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Recent bills</span><strong>{pulse_html.esc(len(bills))}</strong></div>
-      <div class="metric"><span>Documents</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
-      <div class="metric"><span>Protocol refs</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
-      <div class="metric"><span>Votes</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
+      <div class="metric"><span>Aktuelle Gesetze</span><strong>{pulse_html.esc(len(bills))}</strong></div>
+      <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
+      <div class="metric"><span>Plenarstellen</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
+      <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
     </section>
     <section class="bill-list">
       {''.join(rows) if rows else '<p>In den erzeugten Detaildossiers wurden noch keine Gesetzgebungsvorgänge erkannt.</p>'}
@@ -1114,8 +1114,8 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
       </div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Latest step</span><strong>{pulse_html.esc(bill.get('latest_step'))}</strong></div>
-      <div class="metric"><span>Latest date</span><strong>{pulse_html.esc(bill.get('latest_date'))}</strong></div>
+      <div class="metric"><span>Letzter Schritt</span><strong>{pulse_html.esc(bill.get('latest_step'))}</strong></div>
+      <div class="metric"><span>Letztes Datum</span><strong>{pulse_html.esc(bill.get('latest_date'))}</strong></div>
       <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(len(bill.get('documents') or []))}</strong></div>
       <div class="metric"><span>Vorgang</span><strong>{pulse_html.esc(bill.get('vorgang_id') or 'n/a')}</strong></div>
     </section>
@@ -1239,16 +1239,16 @@ def render_overview(
         by_period[period] = by_period.get(period, 0) + 1
         fundstelle = protocol.get("fundstelle") or {}
         entry = entries_by_id.get(str(protocol.get("id")))
-        dossier = '<span class="muted">Not generated</span>'
-        metrics = '<span class="muted">Source metadata only</span>'
+        dossier = '<span class="muted">Nicht erzeugt</span>'
+        metrics = '<span class="muted">Nur Quell-Metadaten</span>'
         if entry:
             report = entry["report"]
             summary = report.get("validation_summary") or {}
-            dossier = f'<a class="open-button" href="protocols/{pulse_html.esc(entry["page_path"].name)}">Open dossier</a>'
+            dossier = f'<a class="open-button" href="protocols/{pulse_html.esc(entry["page_path"].name)}">Dossier öffnen</a>'
             metrics = (
                 f'{pulse_html.esc(summary.get("xml_top_count"))} TOPs · '
-                f'{pulse_html.esc(summary.get("xml_speech_count"))} speeches · '
-                f'{pulse_html.esc(summary.get("aktivitaet_count"))} activities'
+                f'{pulse_html.esc(summary.get("xml_speech_count"))} Reden · '
+                f'{pulse_html.esc(summary.get("aktivitaet_count"))} Aktivitäten'
             )
 
         catalog_rows.append(
@@ -1257,15 +1257,15 @@ def render_overview(
               <div>
                 <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
-                <p>{pulse_html.esc(protocol.get('datum'))} · updated {pulse_html.esc(protocol.get('aktualisiert'))}</p>
+                <p>{pulse_html.esc(protocol.get('datum'))} · aktualisiert {pulse_html.esc(protocol.get('aktualisiert'))}</p>
               </div>
               <div class="catalog-meta">
                 <span>{pulse_html.esc(protocol.get('dokumentart') or protocol.get('typ'))}</span>
                 <strong>{pulse_html.esc(protocol.get('vorgangsbezug_anzahl', 0))}</strong>
-                <em>proceeding refs</em>
+                <em>Vorgangsbezüge</em>
               </div>
               <div class="catalog-meta">
-                <span>Distributed</span>
+                <span>Verteilt</span>
                 <strong>{pulse_html.esc(fundstelle.get('verteildatum') or '')}</strong>
                 <em>ID {pulse_html.esc(protocol.get('id'))}</em>
               </div>
@@ -1622,7 +1622,7 @@ def render_overview(
         <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
       <div>
-        <nav class="nav-links" aria-label="Overview navigation">
+        <nav class="nav-links" aria-label="Sitzungsnavigation">
           <a href="index.html">Neueste Sitzung</a>
         </nav>
         <div class="latest">
@@ -1633,25 +1633,25 @@ def render_overview(
       </div>
     </header>
     <section class="summary-band">
-      <div><span>API sittings</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
-      <div><span>Generated dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
-      <div><span>Bill tracker</span><strong>{pulse_html.esc(bill_count)}</strong></div>
-      <div><span>Latest generated</span>
+      <div><span>API-Sitzungen</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
+      <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
+      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(generated_latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(generated_latest.get('datum', ''))}</em>
       </div>
     </section>
     <div class="periods">{period_badges}</div>
     <div class="section-head">
-      <h2>Generated Sitting Dossiers</h2>
-      <p>These pages include XML transcript extraction, agenda item attention, speakers, speeches, matched DIP positions and activities, linked Drucksachen, roll-call votes, people records, and raw API payloads.</p>
+      <h2>Erzeugte Sitzungsdossiers</h2>
+      <p>Diese Seiten enthalten die XML-Protokollauswertung, die Aufmerksamkeit je Tagesordnungspunkt, Rednerinnen und Redner, Reden, zugeordnete DIP-Positionen und -Aktivitäten, verknüpfte Drucksachen, namentliche Abstimmungen, Personendatensätze und die Roh-API-Nutzdaten.</p>
     </div>
     <section class="sessions">
-      {''.join(generated_cards) if generated_cards else '<p class="muted">No detailed dossiers generated in this run.</p>'}
+      {''.join(generated_cards) if generated_cards else '<p class="muted">In diesem Build wurden keine Detaildossiers erzeugt.</p>'}
     </section>
     <div class="section-head">
-      <h2>All API Sittings</h2>
-      <p>Every fetched Plenarprotokoll record is listed below. The full catalog JSON is also written to <a href="data/{pulse_html.esc(catalog_path.name)}">data/{pulse_html.esc(catalog_path.name)}</a>.</p>
+      <h2>Alle API-Sitzungen</h2>
+      <p>Unten sind alle geholten Plenarprotokoll-Datensätze aufgeführt. Der vollständige Katalog wird zusätzlich als JSON nach <a href="data/{pulse_html.esc(catalog_path.name)}">data/{pulse_html.esc(catalog_path.name)}</a> geschrieben.</p>
     </div>
     <section class="catalog">
       {''.join(catalog_rows)}
@@ -2029,13 +2029,13 @@ def main() -> int:
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
     (output_dir / "bills").mkdir(parents=True, exist_ok=True)
+    database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
         protocols = fetch_protocols(client, args.limit, args.document_number)
         detail_limit = None if args.document_number else args.detail_limit
         detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
-        database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
         store = None if args.no_persist else pulse_store.connect(database_path)
         try:
             entries = [
@@ -2062,7 +2062,6 @@ def main() -> int:
 
     database_href = None
     if not args.no_persist:
-        database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
         try:
             database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
         except ValueError:

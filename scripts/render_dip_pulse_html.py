@@ -312,7 +312,7 @@ def render_json_details(title: str, payload: Any, class_name: str = "api-json") 
     if isinstance(payload, list):
         count = f" ({len(payload)})"
     elif isinstance(payload, dict):
-        count = f" ({len(payload)} fields)"
+        count = f" ({len(payload)} Felder)"
     if empty:
         return f'<details class="{class_name}"><summary>{esc(title)}{esc(count)}</summary><pre>Keine API-Datensätze.</pre></details>'
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
@@ -437,18 +437,46 @@ def source_chunk_anchor(item: dict[str, Any], stats: dict[str, Any], chunk: dict
     return None
 
 
-def render_llm_summary(item: dict[str, Any], stats: dict[str, Any]) -> str:
+def summary_unavailable_message(
+    stats: dict[str, Any],
+    summary_generation: dict[str, Any] | None,
+) -> str:
+    gen = summary_generation or {}
+    if gen.get("enabled") is False:
+        if gen.get("reason") == "ANTHROPIC_API_KEY not set":
+            return "Automatische Zusammenfassungen sind für diese Sitzung nicht aktiviert."
+        return "Automatische Zusammenfassungen wurden für diese Sitzung deaktiviert."
+    citable_speeches = sum(
+        1
+        for speech in stats.get("speakers") or []
+        if (speech.get("text") or " ".join(speech.get("paragraphs") or [])).strip()
+    )
+    if citable_speeches < 3:
+        return (
+            "Für diesen Tagesordnungspunkt liegen zu wenige zitierfähige Redebeiträge "
+            "für eine belegte Zusammenfassung vor."
+        )
+    return "Die automatische Zusammenfassung ist derzeit nicht verfügbar."
+
+
+def render_llm_summary(
+    item: dict[str, Any],
+    stats: dict[str, Any],
+    summary_generation: dict[str, Any] | None = None,
+    protocol: dict[str, Any] | None = None,
+) -> str:
     summary = item.get("llm_summary") or {}
     text = summary.get("text")
     chunks = summary.get("source_chunks") or []
     if not text or not chunks:
         return (
             '<section class="llm-summary unavailable">'
-            "<h3><span>Automatische Zusammenfassung — zur Quelle</span></h3>"
-            "<p>Zusammenfassung aktuell nicht verfügbar. Bitte versuchen Sie es später noch einmal.</p>"
+            "<h3><span>Automatische Zusammenfassung</span></h3>"
+            f"<p>{esc(summary_unavailable_message(stats, summary_generation))}</p>"
             "</section>"
         )
 
+    pdf_url = (protocol or {}).get("pdf_url")
     first_anchor = source_chunk_anchor(item, stats, chunks[0])
     label = esc(summary.get("label") or "Automatische Zusammenfassung — zur Quelle")
     label_html = f'<a href="#{esc(first_anchor)}">{label}</a>' if first_anchor else f"<span>{label}</span>"
@@ -459,8 +487,13 @@ def render_llm_summary(item: dict[str, Any], stats: dict[str, Any]) -> str:
         party_or_role = speaker.get("fraktion") or speaker.get("role_short") or speaker.get("role") or "unbekannt"
         source = source_page_text(chunk.get("source_page"))
         anchor = source_chunk_anchor(item, stats, chunk)
-        source_ref = f"Seite {source}" if source else "Quelle"
-        source_html = f'<a href="#{esc(anchor)}">{esc(source_ref)}</a>' if anchor else esc(source_ref)
+        source_ref = f"Seite {source}" if source else "Redebeitrag"
+        source_parts = [
+            f'<a href="#{esc(anchor)}">{esc(source_ref)}</a>' if anchor else esc(source_ref)
+        ]
+        if pdf_url:
+            source_parts.append(f'<a href="{esc(pdf_url)}">Originalprotokoll (PDF)</a>')
+        source_html = " · ".join(source_parts)
         chunk_rows.append(
             "<li>"
             f"<strong>{esc(chunk.get('id'))}</strong>"
@@ -523,6 +556,7 @@ def render_html(
 ) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
+    summary_generation = report.get("summary_generation") or {}
     items = report.get("agenda_items") or []
     stats_by_index = {item["index"]: item_stats(item) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
@@ -593,7 +627,7 @@ def render_html(
                 {render_party_stack(stats['party_counts'], party_total)}
                 <div class="party-labels">{render_badges(party_labels)}</div>
               </div>
-              {render_llm_summary(item, stats)}
+              {render_llm_summary(item, stats, summary_generation, protocol)}
               {render_vote_summary(item)}
               <div class="detail-grid">
                 <section>
