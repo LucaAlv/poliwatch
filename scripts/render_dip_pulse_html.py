@@ -518,6 +518,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
 def render_html(
     report: dict[str, Any],
     overview_href: str | None = None,
+    bills_href: str | None = None,
     sources_href: str | None = None,
 ) -> str:
     protocol = report.get("protocol") or {}
@@ -620,6 +621,9 @@ def render_html(
     overview_link = ""
     if overview_href:
         overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Alle Sitzungen</a>'
+    bills_link = ""
+    if bills_href:
+        bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
     sources_link = ""
     if sources_href:
         sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Quellen</a>'
@@ -665,7 +669,6 @@ def render_html(
       display:inline-flex;
       align-items:center;
       min-height:30px;
-      margin:0 8px 10px 0;
       padding:4px 9px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -673,6 +676,12 @@ def render_html(
       color:#174ea6;
       font-size:13px;
       font-weight:650;
+    }}
+    .page-nav {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:10px;
     }}
     h1 {{ margin:0; font-size:34px; line-height:1.1; font-weight:760; }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:15px; }}
@@ -1201,7 +1210,7 @@ def render_html(
   <div class="shell">
     <header>
       <div>
-        <nav>{overview_link}{sources_link}</nav>
+        <nav class="page-nav">{overview_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>

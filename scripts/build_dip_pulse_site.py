@@ -98,7 +98,12 @@ def write_report_and_page(
         pulse_store.persist_report(store, report)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     page_path.write_text(
-        pulse_html.render_html(report, overview_href="../overview.html", sources_href="../sources.html"),
+        pulse_html.render_html(
+            report,
+            overview_href="../overview.html",
+            bills_href="../bills/index.html",
+            sources_href="../sources.html",
+        ),
         encoding="utf-8",
     )
     return {
@@ -421,6 +426,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
       <nav class="nav-links" aria-label="Primary">
         <a class="primary-link" href="{protocol_href}">Details öffnen</a>
         <a href="overview.html">Alle Sitzungen</a>
+        <a href="bills/index.html">Gesetze verfolgen</a>
       </nav>
     </header>
 
@@ -519,10 +525,659 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
     )
 
 
+def first_value(*values: Any) -> str:
+    for value in values:
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def unique_values(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip() if value is not None else ""
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def unique_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    result: list[dict[str, Any]] = []
+    for record in records:
+        key = tuple(record.get(k) for k in keys)
+        if key not in seen:
+            seen.add(key)
+            result.append(record)
+    return result
+
+
+def bill_slug(bill: dict[str, Any]) -> str:
+    identity = first_value(bill.get("vorgang_id"), bill.get("primary_document"), bill.get("title"), "bill")
+    return "bill-" + slugify_document_number(identity)
+
+
+def bill_like(position: dict[str, Any], docs: list[dict[str, Any]]) -> bool:
+    haystack = " ".join(
+        [
+            str(position.get("vorgangstyp") or ""),
+            str(position.get("vorgangsposition") or ""),
+            str(position.get("titel") or ""),
+            " ".join(str(doc.get("drucksachetyp") or "") for doc in docs),
+            " ".join(str(doc.get("titel") or "") for doc in docs),
+        ]
+    ).lower()
+    return any(marker in haystack for marker in ("gesetz", "gesetzentwurf", "entwurf eines gesetzes"))
+
+
+def doc_numbers(docs: list[dict[str, Any]]) -> set[str]:
+    return {str(doc.get("dokumentnummer")) for doc in docs if doc.get("dokumentnummer")}
+
+
+def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    bills: dict[str, dict[str, Any]] = {}
+    speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
+
+    for entry in detail_entries:
+        report = entry["report"]
+        protocol = report.get("protocol") or {}
+        protocol_href = f"../protocols/{entry['page_path'].name}"
+        for item in report.get("agenda_items") or []:
+            api = item.get("api") or {}
+            linked_docs = api.get("linked_drucksachen") or []
+            positions = api.get("positions") or []
+            item_votes = item.get("votes") or []
+            for position in positions:
+                vorgang_id = str(position.get("vorgang_id") or "")
+                position_docs = [doc for doc in linked_docs if str(doc.get("vorgang_id") or "") == vorgang_id]
+                source = position.get("source") or {}
+                if source.get("dokumentnummer") and not any(
+                    doc.get("dokumentnummer") == source.get("dokumentnummer") for doc in position_docs
+                ):
+                    position_docs.append(
+                        {
+                            "vorgang_id": vorgang_id,
+                            "vorgangsposition_id": position.get("id"),
+                            "vorgangsposition": position.get("vorgangsposition"),
+                            "titel": position.get("titel"),
+                            "dokumentnummer": source.get("dokumentnummer"),
+                            "drucksachetyp": position.get("dokumentart") or position.get("vorgangsposition"),
+                            "datum": protocol.get("datum"),
+                            "url": source.get("pdf_url"),
+                            "urheber": [],
+                        }
+                    )
+                if not bill_like(position, position_docs):
+                    continue
+
+                fallback_key = first_value(
+                    vorgang_id,
+                    *(doc.get("dokumentnummer") for doc in position_docs),
+                    position.get("titel"),
+                )
+                key = f"vorgang:{fallback_key}"
+                bill = bills.setdefault(
+                    key,
+                    {
+                        "id": key,
+                        "vorgang_id": vorgang_id,
+                        "title": first_value(position.get("titel"), item.get("heading"), "Unbenannter Vorgang"),
+                        "type": first_value(position.get("vorgangstyp"), "Gesetzgebung"),
+                        "primary_document": "",
+                        "introduced_by": [],
+                        "latest_date": "",
+                        "latest_step": "",
+                        "protocol_refs": [],
+                        "documents": [],
+                        "positions": [],
+                        "events": [],
+                        "votes": [],
+                        "raw": {"agenda_items": []},
+                    },
+                )
+                bill["title"] = first_value(bill.get("title"), position.get("titel"), item.get("heading"))
+                bill["type"] = first_value(position.get("vorgangstyp"), bill.get("type"))
+                bill["documents"].extend(position_docs)
+                bill["positions"].append(position)
+                bill["introduced_by"].extend(
+                    origin
+                    for doc in position_docs
+                    for origin in (doc.get("urheber") or [])
+                )
+                if not bill.get("primary_document"):
+                    bill["primary_document"] = first_value(*(doc.get("dokumentnummer") for doc in position_docs))
+
+                ref = {
+                    "protocol_number": protocol.get("dokumentnummer"),
+                    "protocol_date": protocol.get("datum"),
+                    "protocol_title": protocol.get("titel"),
+                    "top_id": item.get("top_id"),
+                    "heading": item.get("heading"),
+                    "href": f"{protocol_href}#top-{item.get('index')}",
+                    "speech_count": item.get("xml_speech_count") or 0,
+                }
+                bill["protocol_refs"].append(ref)
+                bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
+
+                for doc in position_docs:
+                    bill["events"].append(
+                        {
+                            "date": first_value(doc.get("datum"), protocol.get("datum")),
+                            "kind": first_value(doc.get("drucksachetyp"), "Drucksache"),
+                            "title": first_value(doc.get("titel"), position.get("titel")),
+                            "source": first_value(doc.get("dokumentnummer")),
+                            "url": doc.get("url"),
+                        }
+                    )
+                bill["events"].append(
+                    {
+                        "date": protocol.get("datum"),
+                        "kind": first_value(position.get("vorgangsposition"), "Plenarberatung"),
+                        "title": first_value(position.get("titel"), item.get("heading")),
+                        "source": f"BT-PlPr {protocol.get('dokumentnummer')} · {item.get('top_id')}",
+                        "url": ref["href"],
+                    }
+                )
+
+                numbers = doc_numbers(position_docs)
+                for vote in item_votes:
+                    vote_numbers = set(vote.get("document_numbers") or [])
+                    if numbers and vote_numbers and not (numbers & vote_numbers):
+                        continue
+                    bill["votes"].append(vote)
+                    bill["events"].append(
+                        {
+                            "date": first_value(vote.get("date"), protocol.get("datum")),
+                            "kind": "Namentliche Abstimmung",
+                            "title": vote.get("title"),
+                            "source": ", ".join(vote.get("document_numbers") or []),
+                            "url": vote.get("detail_url"),
+                        }
+                    )
+
+                speaker_bucket = speaker_counts.setdefault(key, {})
+                for speech in item.get("xml_speakers") or []:
+                    speaker = speech.get("speaker") or {}
+                    name = first_value(speaker.get("display_name"), "Unbekannt")
+                    party = pulse_html.speaker_party(speaker)
+                    speaker_key = f"{name}|{party}"
+                    entry_count = speaker_bucket.setdefault(
+                        speaker_key,
+                        {"name": name, "party": party, "speech_count": 0, "char_count": 0},
+                    )
+                    entry_count["speech_count"] += 1
+                    entry_count["char_count"] += int(speech.get("char_count") or 0)
+
+    for key, bill in bills.items():
+        bill["documents"] = unique_records(bill["documents"], ("vorgang_id", "dokumentnummer", "url"))
+        bill["positions"] = unique_records(bill["positions"], ("id", "vorgang_id", "vorgangsposition"))
+        bill["protocol_refs"] = unique_records(bill["protocol_refs"], ("protocol_number", "top_id", "heading"))
+        bill["votes"] = unique_records(bill["votes"], ("id",))
+        bill["introduced_by"] = unique_values(bill["introduced_by"])
+        bill["slug"] = bill_slug(bill)
+        bill["speakers"] = sorted(
+            speaker_counts.get(key, {}).values(),
+            key=lambda speaker: (int(speaker.get("speech_count") or 0), int(speaker.get("char_count") or 0)),
+            reverse=True,
+        )
+        bill["events"] = unique_records(bill["events"], ("date", "kind", "title", "source"))
+        bill["events"].sort(key=lambda event: str(event.get("date") or ""), reverse=True)
+        latest = bill["events"][0] if bill["events"] else {}
+        bill["latest_date"] = first_value(latest.get("date"), *(ref.get("protocol_date") for ref in bill["protocol_refs"]))
+        bill["latest_step"] = first_value(latest.get("kind"), "Erfasst")
+
+    return sorted(
+        bills.values(),
+        key=lambda bill: (str(bill.get("latest_date") or ""), str(bill.get("title") or "")),
+        reverse=True,
+    )
+
+
+def render_bill_json_details(title: str, payload: Any) -> str:
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    return (
+        '<details class="raw-block">'
+        f"<summary>{pulse_html.esc(title)}</summary>"
+        f"<pre>{pulse_html.esc(text)}</pre>"
+        "</details>"
+    )
+
+
+def render_bill_script() -> str:
+    return """
+  <script>
+    (() => {
+      const key = "bundestag-pulse-followed-bills";
+      const read = () => {
+        try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); }
+        catch { return new Set(); }
+      };
+      const write = (followed) => localStorage.setItem(key, JSON.stringify([...followed]));
+      const sync = () => {
+        const followed = read();
+        document.querySelectorAll("[data-follow-id]").forEach((button) => {
+          const active = followed.has(button.dataset.followId);
+          button.classList.toggle("is-followed", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+          button.textContent = active ? "Gefolgt" : "Folgen";
+        });
+        document.querySelectorAll("[data-bill-card]").forEach((card) => {
+          card.classList.toggle("is-followed", followed.has(card.dataset.billCard));
+        });
+        const count = document.querySelector("[data-follow-count]");
+        if (count) count.textContent = String(followed.size);
+      };
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-follow-id]");
+        if (!button) return;
+        const followed = read();
+        const id = button.dataset.followId;
+        if (followed.has(id)) followed.delete(id);
+        else followed.add(id);
+        write(followed);
+        sync();
+      });
+      sync();
+    })();
+  </script>
+"""
+
+
+def bill_styles() -> str:
+    return """
+    :root {
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --green:#0f766e;
+      --amber:#9a5a00;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+      letter-spacing:0;
+    }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .shell { max-width:1280px; margin:0 auto; padding:26px 22px; }
+    header {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:22px;
+      align-items:end;
+      padding-bottom:20px;
+      border-bottom:1px solid var(--line);
+    }
+    nav { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    nav a, .source-link {
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:650;
+    }
+    h1 { margin:0; font-size:34px; line-height:1.1; }
+    h2 { margin:0; font-size:21px; line-height:1.25; }
+    h3 { margin:0; font-size:14px; line-height:1.25; }
+    p { margin:7px 0 0; color:var(--muted); line-height:1.45; }
+    .eyebrow, .metric span, .field span {
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .follow-summary {
+      display:grid;
+      gap:3px;
+      min-width:190px;
+      padding:12px 14px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+    }
+    .follow-summary strong { font-size:24px; }
+    .summary-grid {
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0,1fr));
+      gap:10px;
+      margin-top:16px;
+    }
+    .metric, .field {
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+      padding:11px 12px;
+    }
+    .metric strong, .field strong { display:block; margin-top:4px; font-size:21px; overflow-wrap:anywhere; }
+    .bill-list, .content-grid, .timeline, .speaker-list, .doc-list {
+      display:grid;
+      gap:12px;
+      margin-top:18px;
+    }
+    .bill-card, .panel {
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+      padding:16px;
+    }
+    .bill-card {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:16px;
+      align-items:start;
+    }
+    .bill-card.is-followed { border-color:#8bc8bd; box-shadow:inset 4px 0 0 var(--green); }
+    .bill-meta {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+    }
+    .badge {
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      padding:3px 8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fbfcfd;
+      color:#333a45;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+    .follow-button, .open-button {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:34px;
+      padding:5px 12px;
+      border:1px solid #bdd0ea;
+      border-radius:6px;
+      background:#eef5ff;
+      color:var(--blue);
+      font:inherit;
+      font-size:13px;
+      font-weight:750;
+      cursor:pointer;
+    }
+    .follow-button.is-followed {
+      border-color:#89c5ba;
+      background:#e7f6f3;
+      color:#0f5f59;
+    }
+    .content-grid {
+      grid-template-columns:minmax(0,1fr) 360px;
+      align-items:start;
+    }
+    .field-grid {
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:10px;
+      margin-top:14px;
+    }
+    .timeline-row, .speaker-row, .doc-row {
+      display:grid;
+      grid-template-columns:120px minmax(0,1fr) minmax(120px,.45fr);
+      gap:10px;
+      padding-bottom:10px;
+      border-bottom:1px solid #eef1f5;
+      font-size:13px;
+    }
+    .timeline-row:last-child, .speaker-row:last-child, .doc-row:last-child { border-bottom:0; padding-bottom:0; }
+    .timeline-row time, .timeline-row em, .speaker-row em, .doc-row em {
+      color:var(--muted);
+      font-style:normal;
+      overflow-wrap:anywhere;
+    }
+    .raw-block {
+      margin-top:12px;
+      border:1px solid #dfe5ed;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }
+    .raw-block summary {
+      min-height:34px;
+      padding:8px 10px;
+      cursor:pointer;
+      color:var(--blue);
+      font-size:13px;
+      font-weight:700;
+    }
+    .raw-block pre {
+      max-height:420px;
+      overflow:auto;
+      margin:0;
+      padding:10px;
+      border-top:1px solid #e6ebf2;
+      font-size:12px;
+      line-height:1.45;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }
+    footer { padding-top:24px; color:var(--muted); font-size:12px; }
+    @media (max-width: 900px) {
+      header, .bill-card, .content-grid { grid-template-columns:1fr; }
+      .actions { justify-content:flex-start; }
+      .summary-grid, .field-grid { grid-template-columns:1fr 1fr; }
+      .timeline-row, .speaker-row, .doc-row { grid-template-columns:1fr; gap:4px; }
+    }
+    @media (max-width: 640px) {
+      .shell { padding:18px 14px; }
+      h1 { font-size:28px; }
+      .summary-grid, .field-grid { grid-template-columns:1fr; }
+    }
+"""
+
+
+def render_bills_index(bills: list[dict[str, Any]]) -> str:
+    rows = []
+    for bill in bills:
+        introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
+        rows.append(
+            f"""
+            <article class="bill-card" data-bill-card="{pulse_html.esc(bill['id'])}">
+              <div>
+                <span class="eyebrow">{pulse_html.esc(bill.get('type'))} · {pulse_html.esc(bill.get('latest_date'))}</span>
+                <h2><a href="{pulse_html.esc(bill['slug'])}.html">{pulse_html.esc(bill.get('title'))}</a></h2>
+                <p>{pulse_html.esc(introduced)}</p>
+                <div class="bill-meta">
+                  <span class="badge">{pulse_html.esc(bill.get('latest_step'))}</span>
+                  <span class="badge">{pulse_html.esc(len(bill.get('documents') or []))} Drucksachen</span>
+                  <span class="badge">{pulse_html.esc(len(bill.get('protocol_refs') or []))} Plenarstellen</span>
+                  <span class="badge">{pulse_html.esc(len(bill.get('votes') or []))} Abstimmungen</span>
+                </div>
+              </div>
+              <div class="actions">
+                <button class="follow-button" type="button" data-follow-id="{pulse_html.esc(bill['id'])}" aria-pressed="false">Folgen</button>
+                <a class="open-button" href="{pulse_html.esc(bill['slug'])}.html">Details</a>
+              </div>
+            </article>
+            """
+        )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Gesetze verfolgen</title>
+  <style>{bill_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <nav><a href="../index.html">Alle Sitzungen</a></nav>
+        <h1>Gesetze verfolgen</h1>
+        <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
+      </div>
+      <div class="follow-summary">
+        <span class="eyebrow">Gefolgt in diesem Browser</span>
+        <strong data-follow-count>0</strong>
+      </div>
+    </header>
+    <section class="summary-grid">
+      <div class="metric"><span>Recent bills</span><strong>{pulse_html.esc(len(bills))}</strong></div>
+      <div class="metric"><span>Documents</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
+      <div class="metric"><span>Protocol refs</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
+      <div class="metric"><span>Votes</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
+    </section>
+    <section class="bill-list">
+      {''.join(rows) if rows else '<p>In den erzeugten Detaildossiers wurden noch keine Gesetzgebungsvorgänge erkannt.</p>'}
+    </section>
+    <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden.</footer>
+  </div>
+  {render_bill_script()}
+</body>
+</html>
+"""
+
+
+def render_bill_detail(bill: dict[str, Any]) -> str:
+    introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
+    events = []
+    for event in bill.get("events") or []:
+        title = pulse_html.esc(event.get("title") or "")
+        if event.get("url"):
+            title = f'<a href="{pulse_html.esc(event.get("url"))}">{title}</a>'
+        events.append(
+            '<li class="timeline-row">'
+            f'<time>{pulse_html.esc(event.get("date") or "")}</time>'
+            f'<strong>{title}<br><span class="eyebrow">{pulse_html.esc(event.get("kind") or "")}</span></strong>'
+            f'<em>{pulse_html.esc(event.get("source") or "")}</em>'
+            "</li>"
+        )
+
+    docs = []
+    for doc in bill.get("documents") or []:
+        number = pulse_html.esc(doc.get("dokumentnummer") or "")
+        label = f'<a href="{pulse_html.esc(doc.get("url"))}">{number}</a>' if doc.get("url") else number
+        docs.append(
+            '<li class="doc-row">'
+            f"<strong>{label}</strong>"
+            f'<span>{pulse_html.esc(doc.get("drucksachetyp") or "")}</span>'
+            f'<em>{pulse_html.esc(", ".join(doc.get("urheber") or []))}</em>'
+            "</li>"
+        )
+
+    speakers = []
+    for speaker in (bill.get("speakers") or [])[:12]:
+        speakers.append(
+            '<li class="speaker-row">'
+            f'<strong>{pulse_html.esc(speaker.get("name"))}</strong>'
+            f'<span>{pulse_html.esc(speaker.get("party"))}</span>'
+            f'<em>{pulse_html.esc(speaker.get("speech_count"))} Reden · {pulse_html.esc(pulse_html.format_int(int(speaker.get("char_count") or 0)))} Zeichen</em>'
+            "</li>"
+        )
+
+    refs = []
+    for ref in bill.get("protocol_refs") or []:
+        refs.append(
+            f'<a class="source-link" href="{pulse_html.esc(ref.get("href"))}">'
+            f'BT-PlPr {pulse_html.esc(ref.get("protocol_number"))} · {pulse_html.esc(ref.get("top_id"))}'
+            "</a>"
+        )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{pulse_html.esc(bill.get('title'))} · Bundestag-Puls</title>
+  <style>{bill_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <nav><a href="index.html">Alle Gesetze</a><a href="../index.html">Alle Sitzungen</a></nav>
+        <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
+        <h1>{pulse_html.esc(bill.get('title'))}</h1>
+        <p>Rohdatenübersicht zu Vorgang, Drucksachen, Plenarstellen, Rednern und Abstimmungen.</p>
+      </div>
+      <div class="actions">
+        <button class="follow-button" type="button" data-follow-id="{pulse_html.esc(bill['id'])}" aria-pressed="false">Folgen</button>
+      </div>
+    </header>
+    <section class="summary-grid">
+      <div class="metric"><span>Latest step</span><strong>{pulse_html.esc(bill.get('latest_step'))}</strong></div>
+      <div class="metric"><span>Latest date</span><strong>{pulse_html.esc(bill.get('latest_date'))}</strong></div>
+      <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(len(bill.get('documents') or []))}</strong></div>
+      <div class="metric"><span>Vorgang</span><strong>{pulse_html.esc(bill.get('vorgang_id') or 'n/a')}</strong></div>
+    </section>
+    <div class="content-grid">
+      <main>
+        <section class="panel">
+          <h2>Überblick</h2>
+          <div class="field-grid">
+            <div class="field"><span>Eingebracht von</span><strong>{pulse_html.esc(introduced)}</strong></div>
+            <div class="field"><span>Primäre Drucksache</span><strong>{pulse_html.esc(bill.get('primary_document') or 'n/a')}</strong></div>
+            <div class="field"><span>Plenarstellen</span><strong>{pulse_html.esc(len(bill.get('protocol_refs') or []))}</strong></div>
+            <div class="field"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(len(bill.get('votes') or []))}</strong></div>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Verlauf</h2>
+          <ul class="timeline">{''.join(events) if events else '<li>Keine Verlaufseinträge.</li>'}</ul>
+        </section>
+        <section class="panel">
+          <h2>Drucksachen</h2>
+          <ul class="doc-list">{''.join(docs) if docs else '<li>Keine verknüpften Drucksachen.</li>'}</ul>
+        </section>
+        <section class="panel">
+          <h2>Rohdaten</h2>
+          {render_bill_json_details("Normalisierter Bill-Datensatz", bill)}
+        </section>
+      </main>
+      <aside>
+        <section class="panel">
+          <h2>Plenarstellen</h2>
+          <div class="bill-meta">{''.join(refs) if refs else '<span class="badge">Keine Plenarstelle</span>'}</div>
+        </section>
+        <section class="panel">
+          <h2>Rednerinnen und Redner</h2>
+          <ul class="speaker-list">{''.join(speakers) if speakers else '<li>Keine Reden zugeordnet.</li>'}</ul>
+        </section>
+      </aside>
+    </div>
+    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten.</footer>
+  </div>
+  {render_bill_script()}
+</body>
+</html>
+"""
+
+
+def write_bill_pages(output_dir: Path, bills: list[dict[str, Any]]) -> dict[str, Any]:
+    bills_dir = output_dir / "bills"
+    bills_dir.mkdir(parents=True, exist_ok=True)
+    for bill in bills:
+        (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill), encoding="utf-8")
+    (bills_dir / "index.html").write_text(render_bills_index(bills), encoding="utf-8")
+    data_path = output_dir / "data" / "bills.json"
+    data_path.write_text(json.dumps(bills, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"count": len(bills), "index_path": bills_dir / "index.html", "data_path": data_path}
+
+
 def render_overview(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
+    bill_count: int = 0,
     database_href: str | None = "data/bundestag-pulse.sqlite",
 ) -> str:
     entries_by_id = {str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries}
@@ -659,6 +1314,23 @@ def render_overview(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
+    .page-nav {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:12px;
+    }}
+    .page-nav a {{
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:650;
+    }}
     header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
@@ -707,7 +1379,7 @@ def render_overview(
     }}
     .summary-band {{
       display:grid;
-      grid-template-columns:repeat(3, minmax(0,1fr));
+      grid-template-columns:repeat(4, minmax(0,1fr));
       gap:12px;
       margin-top:18px;
     }}
@@ -945,7 +1617,7 @@ def render_overview(
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="sources.html">Quellen</a></nav>
+        <nav class="nav-links"><a href="bills/index.html">Gesetze verfolgen</a><a href="sources.html">Quellen</a></nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
@@ -963,6 +1635,7 @@ def render_overview(
     <section class="summary-band">
       <div><span>API sittings</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
       <div><span>Generated dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
+      <div><span>Bill tracker</span><strong>{pulse_html.esc(bill_count)}</strong></div>
       <div><span>Latest generated</span>
         <strong>{pulse_html.esc(generated_latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(generated_latest.get('datum', ''))}</em>
@@ -1201,7 +1874,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="index.html">Neueste Sitzung</a><a href="overview.html">Alle Sitzungen</a></nav>
+        <nav class="nav-links"><a href="index.html">Neueste Sitzung</a><a href="overview.html">Alle Sitzungen</a><a href="bills/index.html">Gesetze verfolgen</a></nav>
         <h1>Quellen</h1>
         <p class="subtitle">Bundestag-Puls basiert auf offiziellen Parlamentsunterlagen. Diese Seite dokumentiert, welche Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt.</p>
       </div>
@@ -1355,6 +2028,7 @@ def main() -> int:
     output_dir = args.output_dir
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
+    (output_dir / "bills").mkdir(parents=True, exist_ok=True)
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
@@ -1396,11 +2070,22 @@ def main() -> int:
 
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    bills = collect_bill_pages(entries)
+    bill_output = write_bill_pages(output_dir, bills)
     index_path = output_dir / "index.html"
     overview_path = output_dir / "overview.html"
     sources_path = output_dir / "sources.html"
     index_path.write_text(render_front_page(entries, database_href=database_href), encoding="utf-8")
-    overview_path.write_text(render_overview(protocols, entries, catalog_path, database_href=database_href), encoding="utf-8")
+    overview_path.write_text(
+        render_overview(
+            protocols,
+            entries,
+            catalog_path,
+            bill_count=int(bill_output["count"]),
+            database_href=database_href,
+        ),
+        encoding="utf-8",
+    )
     sources_path.write_text(render_sources_page(entries), encoding="utf-8")
     print(index_path)
     return 0
