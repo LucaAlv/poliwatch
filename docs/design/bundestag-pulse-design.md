@@ -144,7 +144,8 @@ avoids the trap that stalled offenesparlament.de.
    same DB the frontend reads. Decide at /plan-eng-review.
 3. **Which LLM for summarization?** Default to the latest, most capable Claude model
    (e.g. Claude Opus / Sonnet 4.x via the Anthropic API) for faithful, citation-anchored
-   summaries; revisit cost vs. a smaller model once volume per sitting week is known.
+   summaries; Gemini is supported as an alternate provider. Revisit cost vs. a smaller
+   model once volume per sitting week is known.
 4. **Stance labeling — how far to go in v1?** Recommendation: in v1, show *who spoke and
    their party* and a one-line summary anchored to cited text; avoid algorithmic "stance
    scores" until the citation/trust UX is solid. Stance is a v2 feature.
@@ -189,8 +190,8 @@ avoids the trap that stalled offenesparlament.de.
   committees, polls/votes — for later lenses); Bundestag Open Data (Plenarprotokolle/
   Drucksachen XML/JSON, namentliche Abstimmungen XLSX/XML); Open Discourse corpus
   (speaker-attributed speeches, for backfill/baseline).
-- **LLM API:** Anthropic (Claude) for summarization; budget unknown until per-sitting
-  volume is measured.
+- **LLM API:** Anthropic (Claude) by default, with Google Gemini available for
+  summarization; budget unknown until per-sitting volume is measured.
 - **No blocking external dependency on offenesparlament.de** — treat as prior art only.
 
 ## The Assignment

@@ -443,7 +443,7 @@ def summary_unavailable_message(
 ) -> str:
     gen = summary_generation or {}
     if gen.get("enabled") is False:
-        if gen.get("reason") == "ANTHROPIC_API_KEY not set":
+        if gen.get("reason"):
             return "Automatische Zusammenfassungen sind für diese Sitzung nicht aktiviert."
         return "Automatische Zusammenfassungen wurden für diese Sitzung deaktiviert."
     citable_speeches = sum(
