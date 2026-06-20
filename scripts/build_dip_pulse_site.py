@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import render_dip_pulse_html as pulse_html
+import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 
 
@@ -73,6 +74,7 @@ def write_report_and_page(
     summary_mode: str,
     anthropic_api_key: str | None,
     summary_model: str | None,
+    store: Any | None,
 ) -> dict[str, Any]:
     document_number = str(protocol["dokumentnummer"])
     slug = slugify_document_number(document_number)
@@ -92,6 +94,8 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args)
+    if store is not None:
+        pulse_store.persist_report(store, report)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     page_path.write_text(
         pulse_html.render_html(report, overview_href="../overview.html", sources_href="../sources.html"),
@@ -105,7 +109,7 @@ def write_report_and_page(
     }
 
 
-def render_front_page(entries: list[dict[str, Any]]) -> str:
+def render_front_page(entries: list[dict[str, Any]], database_href: str | None = "data/bundestag-pulse.sqlite") -> str:
     if not entries:
         return """<!doctype html>
 <html lang="de">
@@ -134,6 +138,12 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
     ranked_items = sorted(items, key=lambda item: stats_by_index[item["index"]]["speech_count"], reverse=True)
     protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
     report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
+    sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite-Graph</a>' if database_href else ""
+    store_note = (
+        " Die SQLite-Datei enthält MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze."
+        if database_href
+        else ""
+    )
 
     attention_rows = []
     for item in ranked_items[:6]:
@@ -430,6 +440,7 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
           <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
           <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
           <a href="{report_href}">Erzeugtes JSON</a>
+          {sqlite_link}
         </div>
       </div>
       <div class="latest-panel source-panel">
@@ -480,7 +491,7 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
     </div>
 
     <footer>
-      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
     </footer>
   </div>
 </body>
@@ -512,9 +523,11 @@ def render_overview(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
+    database_href: str | None = "data/bundestag-pulse.sqlite",
 ) -> str:
     entries_by_id = {str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries}
     generated_cards = []
+    sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
     for entry in detail_entries:
         report = entry["report"]
         protocol = report.get("protocol") or {}
@@ -557,6 +570,7 @@ def render_overview(
                 <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML</a>
                 <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF</a>
                 <a href="data/{pulse_html.esc(entry['report_path'].name)}">JSON</a>
+                {sqlite_link}
                 {warning_html}
               </div>
             </article>
@@ -1292,6 +1306,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
     parser.add_argument(
+        "--database-path",
+        type=Path,
+        help="SQLite graph store path. Defaults to OUTPUT_DIR/data/bundestag-pulse.sqlite.",
+    )
+    parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Skip writing the SQLite graph store.",
+    )
+    parser.add_argument(
         "--person-limit",
         type=int,
         default=0,
@@ -1337,31 +1361,46 @@ def main() -> int:
         protocols = fetch_protocols(client, args.limit, args.document_number)
         detail_limit = None if args.document_number else args.detail_limit
         detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
-        entries = [
-            write_report_and_page(
-                protocol=protocol,
-                output_dir=output_dir,
-                api_key=api_key,
-                sleep=args.sleep,
-                person_limit=args.person_limit,
-                vote_scan_pages=args.vote_scan_pages,
-                summary_mode=args.summary_mode,
-                anthropic_api_key=args.anthropic_api_key,
-                summary_model=args.summary_model,
-            )
-            for protocol in detail_protocols
-        ]
+        database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
+        store = None if args.no_persist else pulse_store.connect(database_path)
+        try:
+            entries = [
+                write_report_and_page(
+                    protocol=protocol,
+                    output_dir=output_dir,
+                    api_key=api_key,
+                    sleep=args.sleep,
+                    person_limit=args.person_limit,
+                    vote_scan_pages=args.vote_scan_pages,
+                    summary_mode=args.summary_mode,
+                    anthropic_api_key=args.anthropic_api_key,
+                    summary_model=args.summary_model,
+                    store=store,
+                )
+                for protocol in detail_protocols
+            ]
+        finally:
+            if store is not None:
+                store.close()
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+    database_href = None
+    if not args.no_persist:
+        database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
+        try:
+            database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
+        except ValueError:
+            database_href = None
 
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     index_path = output_dir / "index.html"
     overview_path = output_dir / "overview.html"
     sources_path = output_dir / "sources.html"
-    index_path.write_text(render_front_page(entries), encoding="utf-8")
-    overview_path.write_text(render_overview(protocols, entries, catalog_path), encoding="utf-8")
+    index_path.write_text(render_front_page(entries, database_href=database_href), encoding="utf-8")
+    overview_path.write_text(render_overview(protocols, entries, catalog_path, database_href=database_href), encoding="utf-8")
     sources_path.write_text(render_sources_page(entries), encoding="utf-8")
     print(index_path)
     return 0
