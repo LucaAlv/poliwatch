@@ -654,13 +654,22 @@ def render_html(
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
     overview_link = ""
     if overview_href:
-        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Alle Sitzungen</a>'
+        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>'
     bills_link = ""
     if bills_href:
         bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
     sources_link = ""
     if sources_href:
-        sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Quellen</a>'
+        sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Quellen und Methode</a>'
+    footer_links = []
+    if overview_href:
+        footer_links.append(f'<a href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>')
+    if bills_href:
+        footer_links.append(f'<a href="{esc(bills_href)}">Gesetze verfolgen</a>')
+    if sources_href:
+        footer_links.append(f'<a href="{esc(sources_href)}">Quellen und Methode</a>')
+    footer_nav = " · ".join(footer_links)
+    footer_nav_html = f" {footer_nav}" if footer_nav else ""
 
     return f"""<!doctype html>
 <html lang="de">
@@ -1244,7 +1253,7 @@ def render_html(
   <div class="shell">
     <header>
       <div>
-        <nav class="page-nav">{overview_link}{bills_link}{sources_link}</nav>
+        <nav class="page-nav" aria-label="Hauptnavigation">{overview_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
@@ -1271,7 +1280,7 @@ def render_html(
       </main>
     </div>
     <footer>
-      <span>Das XML-Protokoll gilt als maßgeblich; verknüpfte DIP-Daten können über die Dev-Ansicht geprüft werden.</span>
+      <span>Das XML-Protokoll gilt als maßgeblich; verknüpfte DIP-Daten können über die Dev-Ansicht geprüft werden.{footer_nav_html}</span>
       <button class="dev-toggle" type="button" aria-pressed="false">Dev-Ansicht</button>
     </footer>
   </div>

@@ -124,10 +124,20 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
   <title>Bundestag-Puls</title>
 </head>
 <body>
-  <main>
+  <header>
     <h1>Bundestag-Puls</h1>
+    <nav aria-label="Hauptnavigation">
+      <a href="overview.html">Plenarprotokoll-Katalog</a>
+      <a href="bills/index.html">Gesetze verfolgen</a>
+      <a href="sources.html">Quellen und Methode</a>
+    </nav>
+  </header>
+  <main>
     <p>Es wurden noch keine Sitzungen erzeugt.</p>
   </main>
+  <footer>
+    Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+  </footer>
 </body>
 </html>
 """
@@ -425,8 +435,9 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
       </div>
       <nav class="nav-links" aria-label="Hauptnavigation">
         <a class="primary-link" href="{protocol_href}">Details öffnen</a>
-        <a href="overview.html">Alle Sitzungen</a>
+        <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
+        <a href="sources.html">Quellen und Methode</a>
       </nav>
     </header>
 
@@ -489,15 +500,16 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
         </section>
         <section class="future-panel">
           <span>Archiv</span>
-          <h2>Frühere Sitzungen</h2>
-          <p>Nutze die Übersichtsseite, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
-          <div class="session-links"><a href="overview.html">Übersicht öffnen</a></div>
+          <h2>Plenarprotokoll-Katalog</h2>
+          <p>Nutze den Katalog, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
+          <div class="session-links"><a href="overview.html">Katalog öffnen</a></div>
         </section>
       </aside>
     </div>
 
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
+      <span class="session-links"><a href="overview.html">Plenarprotokoll-Katalog</a><a href="bills/index.html">Gesetze verfolgen</a><a href="sources.html">Quellen und Methode</a></span>
     </footer>
   </div>
 </body>
@@ -1021,7 +1033,11 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav><a href="../index.html">Alle Sitzungen</a></nav>
+        <nav aria-label="Hauptnavigation">
+          <a href="../index.html">Neueste Sitzung</a>
+          <a href="../overview.html">Plenarprotokoll-Katalog</a>
+          <a href="../sources.html">Quellen und Methode</a>
+        </nav>
         <h1>Gesetze verfolgen</h1>
         <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
       </div>
@@ -1039,7 +1055,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
     <section class="bill-list">
       {''.join(rows) if rows else '<p>In den erzeugten Detaildossiers wurden noch keine Gesetzgebungsvorgänge erkannt.</p>'}
     </section>
-    <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden.</footer>
+    <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_bill_script()}
 </body>
@@ -1104,7 +1120,12 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav><a href="index.html">Alle Gesetze</a><a href="../index.html">Alle Sitzungen</a></nav>
+        <nav aria-label="Hauptnavigation">
+          <a href="index.html">Alle Gesetze</a>
+          <a href="../index.html">Neueste Sitzung</a>
+          <a href="../overview.html">Plenarprotokoll-Katalog</a>
+          <a href="../sources.html">Quellen und Methode</a>
+        </nav>
         <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
         <h1>{pulse_html.esc(bill.get('title'))}</h1>
         <p>Rohdatenübersicht zu Vorgang, Drucksachen, Plenarstellen, Rednern und Abstimmungen.</p>
@@ -1154,7 +1175,7 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
         </section>
       </aside>
     </div>
-    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten.</footer>
+    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetze verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
   </div>
   {render_bill_script()}
 </body>
@@ -1617,14 +1638,16 @@ def render_overview(
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="bills/index.html">Gesetze verfolgen</a><a href="sources.html">Quellen</a></nav>
+        <nav class="nav-links" aria-label="Hauptnavigation">
+          <a href="index.html">Neueste Sitzung</a>
+          <a href="overview.html">Plenarprotokoll-Katalog</a>
+          <a href="bills/index.html">Gesetze verfolgen</a>
+          <a href="sources.html">Quellen und Methode</a>
+        </nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
       <div>
-        <nav class="nav-links" aria-label="Sitzungsnavigation">
-          <a href="index.html">Neueste Sitzung</a>
-        </nav>
         <div class="latest">
           <span>Neueste API-Sitzung</span>
           <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
@@ -1657,7 +1680,7 @@ def render_overview(
       {''.join(catalog_rows)}
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="index.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a> · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -1874,7 +1897,12 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="index.html">Neueste Sitzung</a><a href="overview.html">Alle Sitzungen</a><a href="bills/index.html">Gesetze verfolgen</a></nav>
+        <nav class="nav-links" aria-label="Hauptnavigation">
+          <a href="index.html">Neueste Sitzung</a>
+          <a href="overview.html">Plenarprotokoll-Katalog</a>
+          <a href="bills/index.html">Gesetze verfolgen</a>
+          <a href="sources.html">Quellen und Methode</a>
+        </nav>
         <h1>Quellen</h1>
         <p class="subtitle">Bundestag-Puls basiert auf offiziellen Parlamentsunterlagen. Diese Seite dokumentiert, welche Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt.</p>
       </div>
@@ -1948,7 +1976,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt.
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Plenarprotokoll-Katalog</a> · <a href="bills/index.html">Gesetze verfolgen</a>
     </footer>
   </div>
 </body>
