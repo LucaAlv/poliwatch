@@ -243,7 +243,7 @@ def render_linked_docs(item: dict[str, Any]) -> str:
     if not docs:
         return '<span class="muted">Keine API-Verknüpfung</span>'
     rows = []
-    for doc in docs[:8]:
+    for doc in docs:
         number = esc(doc.get("dokumentnummer"))
         kind = esc(doc.get("drucksachetyp") or doc.get("vorgangsposition") or "Drucksache")
         date = esc(doc.get("datum") or "")
@@ -258,9 +258,6 @@ def render_linked_docs(item: dict[str, Any]) -> str:
             f"<em>{esc(short(origin, 80))}</em>"
             "</li>"
         )
-    overflow = len(docs) - 8
-    if overflow > 0:
-        rows.append(f'<li class="muted">+ {overflow} weitere verknüpfte Dokumente</li>')
     return f'<ul class="doc-list">{"".join(rows)}</ul>'
 
 
@@ -283,6 +280,90 @@ def render_positions(item: dict[str, Any]) -> str:
         mit_text = f" · {len(mit)} mitberaten" if mit else ""
         parts.append(f"<li><strong>{kind}</strong><span>{title_html}</span><em>Vorgang {vorgang}{mit_text}</em></li>")
     return f'<ul class="position-list">{"".join(parts)}</ul>'
+
+
+def render_activities(item: dict[str, Any]) -> str:
+    activities = item.get("api", {}).get("activities") or item.get("api", {}).get("activities_first") or []
+    if not activities:
+        return '<span class="status warn">Keine passende API-Aktivität</span>'
+    rows = []
+    for activity in activities:
+        title = esc(short(activity.get("titel"), 130))
+        kind = esc(activity.get("aktivitaetsart") or "Aktivität")
+        person = esc(activity.get("person_id") or "")
+        page = esc(activity.get("seite") or "")
+        pdf = activity.get("pdf_url")
+        label = f'<a href="{esc(pdf)}">{title}</a>' if pdf else title
+        person_text = f"Person {person}" if person else "Keine Personen-ID"
+        page_text = f"Seite {page}" if page else "Keine Seite"
+        rows.append(
+            "<li>"
+            f"<strong>{kind}</strong>"
+            f"<span>{label}</span>"
+            f"<em>{person_text} · {page_text}</em>"
+            "</li>"
+        )
+    return f'<ul class="activity-list">{"".join(rows)}</ul>'
+
+
+def render_json_details(title: str, payload: Any, class_name: str = "api-json") -> str:
+    empty = payload is None or payload == {} or payload == []
+    count = ""
+    if isinstance(payload, list):
+        count = f" ({len(payload)})"
+    elif isinstance(payload, dict):
+        count = f" ({len(payload)} fields)"
+    if empty:
+        return f'<details class="{class_name}"><summary>{esc(title)}{esc(count)}</summary><pre>Keine API-Datensätze.</pre></details>'
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    return f'<details class="{class_name}"><summary>{esc(title)}{esc(count)}</summary><pre>{esc(text)}</pre></details>'
+
+
+def render_protocol_api_overview(report: dict[str, Any]) -> str:
+    records = report.get("api_records") or {}
+    people = report.get("sampled_people") or []
+    people_rows = []
+    for person in people:
+        name = " ".join(
+            part
+            for part in [
+                str(person.get("titel") or ""),
+                str(person.get("vorname") or ""),
+                str(person.get("nachname") or ""),
+            ]
+            if part
+        )
+        people_rows.append(
+            "<li>"
+            f"<strong>{esc(name or person.get('id'))}</strong>"
+            f"<span>{esc(person.get('fraktion') or '')}</span>"
+            f"<em>{esc(person.get('funktion') or '')}</em>"
+            "</li>"
+        )
+    people_html = '<span class="muted">Keine Personendatensätze geholt.</span>'
+    if people_rows:
+        people_html = f'<ul class="people-list">{"".join(people_rows)}</ul>'
+
+    return f"""
+      <section class="api-overview">
+        <div>
+          <h2>API-Datensätze</h2>
+          <p>DIP-API-Nutzdaten bleiben im erzeugten JSON erhalten. Kompakte Tabellen halten die Seite lesbar; ausklappbare JSON-Blöcke zeigen die ursprünglichen Felder.</p>
+        </div>
+        <div class="api-record-grid">
+          {render_json_details("Protokoll-Datensatz", records.get("protocol"))}
+          {render_json_details("Alle Vorgangspositionen", records.get("vorgangspositionen"))}
+          {render_json_details("Alle Aktivitäten", records.get("aktivitaeten"))}
+          {render_json_details("Personendatensätze", records.get("persons"))}
+          {render_json_details("Kandidaten für namentliche Abstimmungen", records.get("roll_call_vote_candidates"))}
+          {render_json_details("Zugeordnete namentliche Abstimmungen", records.get("matched_roll_call_votes"))}
+        </div>
+        <section class="people-section">
+          <h3>Personen aus Aktivitäten</h3>
+          {people_html}
+        </section>
+      </section>
+    """
 
 
 def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
@@ -439,10 +520,22 @@ def render_html(
                   {render_positions(item)}
                 </section>
                 <section>
+                  <h3>API-Aktivitäten</h3>
+                  {render_activities(item)}
+                </section>
+                <section>
                   <h3>Verknüpfte Dokumente</h3>
                   {render_linked_docs(item)}
                 </section>
               </div>
+              <section class="raw-top-api">
+                <h3>Rohdaten der zugeordneten API-Datensätze</h3>
+                <div class="api-record-grid">
+                  {render_json_details("Zugeordnete Positionen", item.get('api', {}).get('raw', {}).get('positions'))}
+                  {render_json_details("Zugeordnete Aktivitäten", item.get('api', {}).get('raw', {}).get('activities'))}
+                  {render_json_details("Abstimmungen", item.get('votes'))}
+                </div>
+              </section>
               <section class="speech-section">
                 <h3>Reden</h3>
                 {render_speech_details(item, stats)}
@@ -778,13 +871,13 @@ def render_html(
     }}
     .detail-grid {{
       display:grid;
-      grid-template-columns:1.05fr 1fr 1.2fr;
+      grid-template-columns:repeat(2, minmax(0,1fr));
       gap:18px;
       margin-top:18px;
       align-items:start;
     }}
     ul {{ list-style:none; margin:0; padding:0; }}
-    .speaker-list, .position-list, .doc-list {{
+    .speaker-list, .position-list, .doc-list, .activity-list, .people-list {{
       display:grid;
       gap:7px;
       font-size:13px;
@@ -797,12 +890,12 @@ def render_html(
       min-height:24px;
     }}
     .party-dot {{ width:8px; height:8px; border-radius:50%; }}
-    .speaker-row strong, .position-list strong, .doc-list strong {{ font-weight:680; }}
-    .speaker-row span, .position-list span, .doc-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
-    .speaker-row em, .position-list em, .doc-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
+    .speaker-row strong, .position-list strong, .doc-list strong, .activity-list strong, .people-list strong {{ font-weight:680; }}
+    .speaker-row span, .position-list span, .doc-list span, .activity-list span, .people-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
+    .speaker-row em, .position-list em, .doc-list em, .activity-list em, .people-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
     .speaker-link {{ color:var(--ink); text-decoration:none; }}
     .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
-    .position-list li, .doc-list li {{
+    .position-list li, .doc-list li, .activity-list li, .people-list li {{
       display:grid;
       grid-template-columns:minmax(78px,.45fr) minmax(0,1fr) minmax(54px,.35fr) minmax(0,.8fr);
       gap:8px;
@@ -810,7 +903,63 @@ def render_html(
       border-bottom:1px solid #eef1f5;
     }}
     .position-list li {{ grid-template-columns:minmax(88px,.5fr) minmax(0,1.5fr) minmax(90px,.7fr); }}
-    .position-list li:last-child, .doc-list li:last-child {{ border-bottom:0; }}
+    .activity-list li, .people-list li {{ grid-template-columns:minmax(96px,.55fr) minmax(0,1.4fr) minmax(110px,.8fr); }}
+    .position-list li:last-child, .doc-list li:last-child, .activity-list li:last-child, .people-list li:last-child {{ border-bottom:0; }}
+    .api-overview {{
+      margin-top:18px;
+      padding:16px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+    }}
+    .api-overview h2 {{
+      margin:0;
+      font-size:18px;
+      line-height:1.25;
+    }}
+    .api-overview p {{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+    }}
+    .api-record-grid {{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:10px;
+      margin-top:12px;
+    }}
+    .api-json {{
+      border:1px solid #dfe5ed;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }}
+    .api-json summary {{
+      min-height:34px;
+      padding:8px 10px;
+      cursor:pointer;
+      color:#174ea6;
+      font-size:13px;
+      font-weight:700;
+    }}
+    .api-json pre {{
+      max-height:360px;
+      overflow:auto;
+      margin:0;
+      padding:10px;
+      border-top:1px solid #e6ebf2;
+      color:#202833;
+      font-size:12px;
+      line-height:1.45;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }}
+    .people-section, .raw-top-api {{
+      margin-top:16px;
+      padding-top:14px;
+      border-top:1px solid #eef1f5;
+    }}
     .speech-section {{
       margin-top:18px;
       padding-top:16px;
@@ -864,6 +1013,7 @@ def render_html(
       .layout {{ grid-template-columns:1fr; }}
       aside {{ position:static; }}
       .detail-grid {{ grid-template-columns:1fr; }}
+      .api-record-grid {{ grid-template-columns:1fr; }}
       .source-strip {{ grid-template-columns:1fr; }}
       .member-vote-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     }}
@@ -883,7 +1033,7 @@ def render_html(
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
       .speech-text {{ padding-left:14px; }}
-      .position-list li, .doc-list li {{ grid-template-columns:1fr; }}
+      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
     }}
   </style>
 </head>
@@ -899,9 +1049,10 @@ def render_html(
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
         <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
         <div class="metric"><span>Drucksachen</span><strong>{esc(summary.get('xml_drucksache_count'))}</strong></div>
-        <div class="metric"><span>Personen-IDs</span><strong>{esc(summary.get('unique_person_ids'))}</strong></div>
+        <div class="metric"><span>Personendatensätze</span><strong>{esc(summary.get('person_record_count', summary.get('unique_person_ids')))}</strong></div>
       </div>
     </header>
+    {render_protocol_api_overview(report)}
     <div class="layout">
       <aside>
         <h2>Aufmerksamkeitsrang</h2>
