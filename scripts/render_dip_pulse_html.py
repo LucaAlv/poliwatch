@@ -424,7 +424,11 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
 
-def render_html(report: dict[str, Any], overview_href: str | None = None) -> str:
+def render_html(
+    report: dict[str, Any],
+    overview_href: str | None = None,
+    bills_href: str | None = None,
+) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
@@ -547,6 +551,9 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     overview_link = ""
     if overview_href:
         overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Alle Sitzungen</a>'
+    bills_link = ""
+    if bills_href:
+        bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
 
     return f"""<!doctype html>
 <html lang="de">
@@ -589,7 +596,6 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       display:inline-flex;
       align-items:center;
       min-height:30px;
-      margin-bottom:10px;
       padding:4px 9px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -597,6 +603,12 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       color:#174ea6;
       font-size:13px;
       font-weight:650;
+    }}
+    .page-nav {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:10px;
     }}
     h1 {{ margin:0; font-size:34px; line-height:1.1; font-weight:760; }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:15px; }}
@@ -1034,7 +1046,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
   <div class="shell">
     <header>
       <div>
-        {overview_link}
+        <nav class="page-nav">{overview_link}{bills_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
