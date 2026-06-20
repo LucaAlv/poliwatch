@@ -41,7 +41,8 @@ def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[st
     protocols: list[dict[str, Any]] = []
     params: dict[str, Any] = {"f.zuordnung": "BT"}
     previous_cursor = None
-    while len(protocols) < limit:
+    fetch_all = limit <= 0
+    while fetch_all or len(protocols) < limit:
         page = client.get_json("/plenarprotokoll", params)
         protocols.extend(page.get("documents") or [])
         cursor = page.get("cursor")
@@ -49,7 +50,17 @@ def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[st
             break
         previous_cursor = cursor
         params["cursor"] = cursor
-    return protocols[:limit]
+    return protocols if fetch_all else protocols[:limit]
+
+
+def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: int | None) -> list[dict[str, Any]]:
+    if detail_limit is None:
+        return protocols
+    if detail_limit < 0:
+        return []
+    if detail_limit <= 0:
+        return protocols
+    return protocols[:detail_limit]
 
 
 def write_report_and_page(
@@ -465,12 +476,37 @@ def render_front_page(entries: list[dict[str, Any]]) -> str:
   </div>
 </body>
 </html>
-"""
+    """
 
 
-def render_overview(entries: list[dict[str, Any]]) -> str:
-    rows = []
-    for entry in entries:
+def protocol_source_links(protocol: dict[str, Any]) -> str:
+    fundstelle = protocol.get("fundstelle") or {}
+    links = []
+    for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
+        url = fundstelle.get(key)
+        if url:
+            links.append(f'<a href="{pulse_html.esc(url)}">{label}</a>')
+    return "".join(links) or '<span class="muted">No source links</span>'
+
+
+def render_catalog_json(protocol: dict[str, Any]) -> str:
+    text = json.dumps(protocol, ensure_ascii=False, indent=2, sort_keys=True)
+    return (
+        '<details class="api-details">'
+        '<summary>API fields</summary>'
+        f"<pre>{pulse_html.esc(text)}</pre>"
+        "</details>"
+    )
+
+
+def render_overview(
+    protocols: list[dict[str, Any]],
+    detail_entries: list[dict[str, Any]],
+    catalog_path: Path,
+) -> str:
+    entries_by_id = {str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries}
+    generated_cards = []
+    for entry in detail_entries:
         report = entry["report"]
         protocol = report.get("protocol") or {}
         summary = report.get("validation_summary") or {}
@@ -490,7 +526,7 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
             warning_label = "Warnung" if len(warnings) == 1 else "Warnungen"
             warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
 
-        rows.append(
+        generated_cards.append(
             f"""
             <article class="session-card">
               <div class="session-main">
@@ -518,7 +554,61 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
             """
         )
 
-    latest = entries[0]["report"].get("protocol", {}) if entries else {}
+    catalog_rows = []
+    by_period: dict[str, int] = {}
+    for protocol in protocols:
+        period = str(protocol.get("wahlperiode") or "unknown")
+        by_period[period] = by_period.get(period, 0) + 1
+        fundstelle = protocol.get("fundstelle") or {}
+        entry = entries_by_id.get(str(protocol.get("id")))
+        dossier = '<span class="muted">Not generated</span>'
+        metrics = '<span class="muted">Source metadata only</span>'
+        if entry:
+            report = entry["report"]
+            summary = report.get("validation_summary") or {}
+            dossier = f'<a class="open-button" href="protocols/{pulse_html.esc(entry["page_path"].name)}">Open dossier</a>'
+            metrics = (
+                f'{pulse_html.esc(summary.get("xml_top_count"))} TOPs · '
+                f'{pulse_html.esc(summary.get("xml_speech_count"))} speeches · '
+                f'{pulse_html.esc(summary.get("aktivitaet_count"))} activities'
+            )
+
+        catalog_rows.append(
+            f"""
+            <article class="catalog-row">
+              <div>
+                <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
+                <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
+                <p>{pulse_html.esc(protocol.get('datum'))} · updated {pulse_html.esc(protocol.get('aktualisiert'))}</p>
+              </div>
+              <div class="catalog-meta">
+                <span>{pulse_html.esc(protocol.get('dokumentart') or protocol.get('typ'))}</span>
+                <strong>{pulse_html.esc(protocol.get('vorgangsbezug_anzahl', 0))}</strong>
+                <em>proceeding refs</em>
+              </div>
+              <div class="catalog-meta">
+                <span>Distributed</span>
+                <strong>{pulse_html.esc(fundstelle.get('verteildatum') or '')}</strong>
+                <em>ID {pulse_html.esc(protocol.get('id'))}</em>
+              </div>
+              <div class="catalog-actions">
+                {dossier}
+                <div class="session-links">
+                  {protocol_source_links(protocol)}
+                </div>
+              </div>
+              <div class="catalog-status">{metrics}</div>
+              {render_catalog_json(protocol)}
+            </article>
+            """
+        )
+
+    period_badges = "".join(
+        f'<span class="badge">WP {pulse_html.esc(period)} <strong>{pulse_html.esc(count)}</strong></span>'
+        for period, count in sorted(by_period.items(), key=lambda item: item[0], reverse=True)
+    )
+    latest = protocols[0] if protocols else {}
+    generated_latest = detail_entries[0]["report"].get("protocol", {}) if detail_entries else {}
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -533,7 +623,6 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       --paper:#f7f8fa;
       --panel:#ffffff;
       --blue:#174ea6;
-      --teal:#0f766e;
       --amber:#9a5a00;
     }}
     * {{ box-sizing:border-box; }}
@@ -546,7 +635,7 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
     }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
-    .shell {{ max-width:1180px; margin:0 auto; padding:28px 22px; }}
+    .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
     header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
@@ -592,6 +681,48 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       background:#fff;
       font-size:13px;
       font-weight:700;
+    }}
+    .summary-band {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:12px;
+      margin-top:18px;
+    }}
+    .summary-band div {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:white;
+      padding:13px 14px;
+    }}
+    .summary-band span, .catalog-meta span {{
+      display:block;
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .summary-band strong {{
+      display:block;
+      margin-top:4px;
+      font-size:25px;
+    }}
+    .periods {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:12px;
+    }}
+    .badge {{
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+      min-height:26px;
+      padding:3px 8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fff;
+      color:#333a45;
+      font-size:12px;
     }}
     .sessions {{ display:grid; gap:14px; margin-top:18px; }}
     .session-card {{
@@ -671,7 +802,94 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
       font-weight:650;
     }}
     .warn {{ color:#8a4a00; }}
+    .catalog {{
+      display:grid;
+      gap:10px;
+      margin-top:18px;
+    }}
+    .section-head {{
+      margin-top:26px;
+      padding-top:20px;
+      border-top:1px solid var(--line);
+    }}
+    .section-head h2 {{
+      margin:0;
+      font-size:24px;
+      line-height:1.2;
+    }}
+    .section-head p {{
+      max-width:780px;
+      line-height:1.45;
+    }}
+    .catalog-row {{
+      display:grid;
+      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
+      gap:14px;
+      align-items:start;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:14px;
+    }}
+    .catalog-row h3 {{
+      margin:5px 0 0;
+      font-size:17px;
+      line-height:1.25;
+      overflow-wrap:anywhere;
+    }}
+    .catalog-meta strong {{
+      display:block;
+      margin-top:4px;
+      font-size:18px;
+      overflow-wrap:anywhere;
+    }}
+    .catalog-meta em, .catalog-status {{
+      color:var(--muted);
+      font-size:12px;
+      font-style:normal;
+    }}
+    .catalog-actions {{
+      display:grid;
+      justify-items:start;
+      gap:8px;
+    }}
+    .catalog-status {{
+      grid-column:1 / -1;
+      padding-top:10px;
+      border-top:1px solid #eef1f5;
+    }}
+    .api-details {{
+      grid-column:1 / -1;
+      border:1px solid #e3e8ef;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }}
+    .api-details summary {{
+      min-height:32px;
+      padding:7px 10px;
+      color:var(--blue);
+      cursor:pointer;
+      font-size:13px;
+      font-weight:700;
+    }}
+    .api-details pre {{
+      max-height:300px;
+      overflow:auto;
+      margin:0;
+      padding:10px;
+      border-top:1px solid #e6ebf2;
+      font-size:12px;
+      line-height:1.45;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }}
+    .muted {{ color:var(--muted); }}
     footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
+    @media (max-width: 940px) {{
+      .summary-band, .catalog-row {{ grid-template-columns:1fr; }}
+      .catalog-status, .api-details {{ grid-column:auto; }}
+    }}
     @media (max-width: 740px) {{
       .shell {{ padding:18px 14px; }}
       header, .session-main {{ grid-template-columns:1fr; }}
@@ -688,24 +906,44 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
     <header>
       <div>
         <h1>Bundestag-Puls</h1>
-        <p class="subtitle">Übersicht der erzeugten Sitzungen, um frühere Tagesordnungspunkte, Reden, Fraktionen und verknüpfte Primärquellen zu prüfen.</p>
+        <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
       <div>
         <nav class="nav-links" aria-label="Overview navigation">
           <a href="index.html">Neueste Sitzung</a>
         </nav>
         <div class="latest">
-          <span>Zuletzt erzeugt</span>
+          <span>Neueste API-Sitzung</span>
           <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
           <em>{pulse_html.esc(latest.get('datum', ''))}</em>
         </div>
       </div>
     </header>
+    <section class="summary-band">
+      <div><span>API sittings</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
+      <div><span>Generated dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
+      <div><span>Latest generated</span>
+        <strong>{pulse_html.esc(generated_latest.get('dokumentnummer', ''))}</strong>
+        <em>{pulse_html.esc(generated_latest.get('datum', ''))}</em>
+      </div>
+    </section>
+    <div class="periods">{period_badges}</div>
+    <div class="section-head">
+      <h2>Generated Sitting Dossiers</h2>
+      <p>These pages include XML transcript extraction, agenda item attention, speakers, speeches, matched DIP positions and activities, linked Drucksachen, roll-call votes, people records, and raw API payloads.</p>
+    </div>
     <section class="sessions">
-      {''.join(rows)}
+      {''.join(generated_cards) if generated_cards else '<p class="muted">No detailed dossiers generated in this run.</p>'}
+    </section>
+    <div class="section-head">
+      <h2>All API Sittings</h2>
+      <p>Every fetched Plenarprotokoll record is listed below. The full catalog JSON is also written to <a href="data/{pulse_html.esc(catalog_path.name)}">data/{pulse_html.esc(catalog_path.name)}</a>.</p>
+    </div>
+    <section class="catalog">
+      {''.join(catalog_rows)}
     </section>
     <footer>
-      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog.
     </footer>
   </div>
 </body>
@@ -716,7 +954,18 @@ def render_overview(entries: list[dict[str, Any]]) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
-    parser.add_argument("--limit", type=int, default=5, help="Number of recent Bundestag protocols to generate.")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Number of recent Bundestag protocols to include in the catalog. Use 0 for every available BT protocol.",
+    )
+    parser.add_argument(
+        "--detail-limit",
+        type=int,
+        default=5,
+        help="Number of fetched protocols to enrich into detailed dossier pages. Use 0 for every fetched protocol, or -1 for none.",
+    )
     parser.add_argument(
         "--document-number",
         action="append",
@@ -724,7 +973,12 @@ def parse_args() -> argparse.Namespace:
         help="Specific protocol document number to include, e.g. 21/84. Can be repeated.",
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
-    parser.add_argument("--person-limit", type=int, default=12)
+    parser.add_argument(
+        "--person-limit",
+        type=int,
+        default=0,
+        help="Number of distinct person records to fetch for each detailed dossier. Use 0 for all seen person records.",
+    )
     parser.add_argument(
         "--vote-scan-pages",
         type=int,
@@ -749,6 +1003,8 @@ def main() -> int:
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
         protocols = fetch_protocols(client, args.limit, args.document_number)
+        detail_limit = None if args.document_number else args.detail_limit
+        detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
         entries = [
             write_report_and_page(
                 protocol=protocol,
@@ -758,16 +1014,18 @@ def main() -> int:
                 person_limit=args.person_limit,
                 vote_scan_pages=args.vote_scan_pages,
             )
-            for protocol in protocols
+            for protocol in detail_protocols
         ]
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
+    catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     index_path = output_dir / "index.html"
     overview_path = output_dir / "overview.html"
     index_path.write_text(render_front_page(entries), encoding="utf-8")
-    overview_path.write_text(render_overview(entries), encoding="utf-8")
+    overview_path.write_text(render_overview(protocols, entries, catalog_path), encoding="utf-8")
     print(index_path)
     return 0
 
