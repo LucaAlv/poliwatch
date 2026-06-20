@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from validate_dip_protocol import normalize_faction
+
 
 SCHEMA_VERSION = 1
 
@@ -264,7 +266,7 @@ def speaker_party_name(speaker: dict[str, Any] | None) -> str | None:
     if not speaker:
         return None
     if speaker.get("fraktion"):
-        return clean(speaker.get("fraktion"))
+        return normalize_faction(speaker.get("fraktion"))
     if speaker.get("role") or speaker.get("role_short"):
         return "Regierung"
     return None
@@ -441,7 +443,8 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
     for person in report.get("sampled_people") or []:
-        party_id = upsert_party(conn, clean(person.get("fraktion")), now)
+        fraktion = clean(person.get("fraktion"))
+        party_id = upsert_party(conn, normalize_faction(fraktion) if fraktion else None, now)
         display_name = clean(person.get("titel")) or clean(person.get("id")) or "Unbekannt"
         upsert_mp(
             conn,
@@ -523,6 +526,19 @@ def persist_agenda_documents(
             origin=doc.get("urheber") or [],
         )
         if document_id:
+            proceeding_id = clean(doc.get("vorgang_id"))
+            # Linked Drucksachen can belong to a co-advised (mitberatener) Vorgang
+            # that never appears as a matched position, so the proceedings row may
+            # not exist yet. Record it as a graph node first to satisfy the FK; any
+            # later position upsert enriches it via COALESCE.
+            if proceeding_id:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO proceedings(id, created_at, updated_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (proceeding_id, now, now),
+                )
             conn.execute(
                 """
                 INSERT OR IGNORE INTO agenda_item_documents(
@@ -533,7 +549,7 @@ def persist_agenda_documents(
                 (
                     agenda_item_id,
                     document_id,
-                    clean(doc.get("vorgang_id")),
+                    proceeding_id,
                     clean(doc.get("vorgangsposition_id")),
                 ),
             )
@@ -736,7 +752,7 @@ def persist_votes(
                 )
 
         for fraction in vote.get("fractions") or []:
-            party_id = upsert_party(conn, clean(fraction.get("name")) or "Unbekannt", now)
+            party_id = upsert_party(conn, normalize_faction(fraction.get("name")), now)
             if party_id is None:
                 continue
             counts = fraction.get("counts") or {}
@@ -761,7 +777,7 @@ def persist_votes(
             )
 
         for member in vote.get("members") or []:
-            party_name = clean(member.get("faction")) or "Unbekannt"
+            party_name = normalize_faction(member.get("faction"))
             party_id = upsert_party(conn, party_name, now)
             mp_id = upsert_mp(
                 conn,
@@ -779,6 +795,9 @@ def persist_votes(
                 """
                 INSERT INTO vote_members(vote_id, mp_id, party_id, vote)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(vote_id, mp_id) DO UPDATE SET
+                  party_id = excluded.party_id,
+                  vote = excluded.vote
                 """,
                 (vote_id, mp_id, party_id, clean(member.get("vote")) or "unknown"),
             )
@@ -805,8 +824,11 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
 
 def persist_report_file(db_path: Path, report_path: Path) -> None:
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    with connect(db_path) as conn:
+    conn = connect(db_path)
+    try:
         persist_report(conn, report)
+    finally:
+        conn.close()
 
 
 def parse_args() -> argparse.Namespace:
