@@ -44,11 +44,15 @@ def short(value: str | None, limit: int = 150) -> str:
 
 
 def format_int(value: int) -> str:
-    return f"{value:,}"
+    return f"{value:,}".replace(",", ".")
 
 
 def percent(value: int, total: int) -> float:
     return value / total * 100 if total > 0 else 0.0
+
+
+def format_percent(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + "%"
 
 
 def page_range_text(item: dict[str, Any]) -> str:
@@ -56,7 +60,7 @@ def page_range_text(item: dict[str, Any]) -> str:
     start = page_range.get("start") or {}
     end = page_range.get("end") or {}
     if not start or not end:
-        return "no page range"
+        return "keine Seitenangabe"
     start_ref = f"{start.get('page')}{start.get('quadrant') or ''}"
     end_ref = f"{end.get('page')}{end.get('quadrant') or ''}"
     return start_ref if start_ref == end_ref else f"{start_ref}-{end_ref}"
@@ -104,7 +108,7 @@ def item_stats(item: dict[str, Any]) -> dict[str, Any]:
 
 def protocol_title(report: dict[str, Any]) -> str:
     protocol = report.get("protocol") or {}
-    return f"Bundestag Pulse · {protocol.get('dokumentnummer', 'Plenarprotokoll')}"
+    return f"Bundestag-Puls · {protocol.get('dokumentnummer', 'Plenarprotokoll')}"
 
 
 def render_badges(items: list[dict[str, Any]], class_name: str = "badge") -> str:
@@ -212,7 +216,7 @@ def render_vote_summary(item: dict[str, Any]) -> str:
             "</div>"
             f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
             '<details class="member-votes">'
-            f'<summary>Individual votes ({esc(len(vote.get("members") or []))} MPs)</summary>'
+            f'<summary>Einzelstimmen ({esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
             "</details>"
             "</section>"
@@ -230,16 +234,16 @@ def render_source_links(item: dict[str, Any]) -> str:
         else:
             links.append(f'<span class="doc-link muted">{esc(number)}</span>')
     if not links:
-        return '<span class="muted">No Drucksache in XML</span>'
+        return '<span class="muted">Keine Drucksache im XML</span>'
     return "".join(links)
 
 
 def render_linked_docs(item: dict[str, Any]) -> str:
     docs = item.get("api", {}).get("linked_drucksachen") or []
     if not docs:
-        return '<span class="muted">None linked by API</span>'
+        return '<span class="muted">Keine API-Verknüpfung</span>'
     rows = []
-    for doc in docs[:8]:
+    for doc in docs:
         number = esc(doc.get("dokumentnummer"))
         kind = esc(doc.get("drucksachetyp") or doc.get("vorgangsposition") or "Drucksache")
         date = esc(doc.get("datum") or "")
@@ -254,16 +258,13 @@ def render_linked_docs(item: dict[str, Any]) -> str:
             f"<em>{esc(short(origin, 80))}</em>"
             "</li>"
         )
-    overflow = len(docs) - 8
-    if overflow > 0:
-        rows.append(f'<li class="muted">+ {overflow} more linked documents</li>')
     return f'<ul class="doc-list">{"".join(rows)}</ul>'
 
 
 def render_positions(item: dict[str, Any]) -> str:
     positions = item.get("api", {}).get("positions") or []
     if not positions:
-        return '<span class="status warn">No API position match</span>'
+        return '<span class="status warn">Keine passende API-Position</span>'
     parts = []
     for position in positions:
         source = position.get("source") or {}
@@ -281,11 +282,95 @@ def render_positions(item: dict[str, Any]) -> str:
     return f'<ul class="position-list">{"".join(parts)}</ul>'
 
 
+def render_activities(item: dict[str, Any]) -> str:
+    activities = item.get("api", {}).get("activities") or item.get("api", {}).get("activities_first") or []
+    if not activities:
+        return '<span class="status warn">Keine passende API-Aktivität</span>'
+    rows = []
+    for activity in activities:
+        title = esc(short(activity.get("titel"), 130))
+        kind = esc(activity.get("aktivitaetsart") or "Aktivität")
+        person = esc(activity.get("person_id") or "")
+        page = esc(activity.get("seite") or "")
+        pdf = activity.get("pdf_url")
+        label = f'<a href="{esc(pdf)}">{title}</a>' if pdf else title
+        person_text = f"Person {person}" if person else "Keine Personen-ID"
+        page_text = f"Seite {page}" if page else "Keine Seite"
+        rows.append(
+            "<li>"
+            f"<strong>{kind}</strong>"
+            f"<span>{label}</span>"
+            f"<em>{person_text} · {page_text}</em>"
+            "</li>"
+        )
+    return f'<ul class="activity-list">{"".join(rows)}</ul>'
+
+
+def render_json_details(title: str, payload: Any, class_name: str = "api-json") -> str:
+    empty = payload is None or payload == {} or payload == []
+    count = ""
+    if isinstance(payload, list):
+        count = f" ({len(payload)})"
+    elif isinstance(payload, dict):
+        count = f" ({len(payload)} fields)"
+    if empty:
+        return f'<details class="{class_name}"><summary>{esc(title)}{esc(count)}</summary><pre>Keine API-Datensätze.</pre></details>'
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    return f'<details class="{class_name}"><summary>{esc(title)}{esc(count)}</summary><pre>{esc(text)}</pre></details>'
+
+
+def render_protocol_api_overview(report: dict[str, Any]) -> str:
+    records = report.get("api_records") or {}
+    people = report.get("sampled_people") or []
+    people_rows = []
+    for person in people:
+        name = " ".join(
+            part
+            for part in [
+                str(person.get("titel") or ""),
+                str(person.get("vorname") or ""),
+                str(person.get("nachname") or ""),
+            ]
+            if part
+        )
+        people_rows.append(
+            "<li>"
+            f"<strong>{esc(name or person.get('id'))}</strong>"
+            f"<span>{esc(person.get('fraktion') or '')}</span>"
+            f"<em>{esc(person.get('funktion') or '')}</em>"
+            "</li>"
+        )
+    people_html = '<span class="muted">Keine Personendatensätze geholt.</span>'
+    if people_rows:
+        people_html = f'<ul class="people-list">{"".join(people_rows)}</ul>'
+
+    return f"""
+      <section class="api-overview">
+        <div>
+          <h2>API-Datensätze</h2>
+          <p>DIP-API-Nutzdaten bleiben im erzeugten JSON erhalten. Kompakte Tabellen halten die Seite lesbar; ausklappbare JSON-Blöcke zeigen die ursprünglichen Felder.</p>
+        </div>
+        <div class="api-record-grid">
+          {render_json_details("Protokoll-Datensatz", records.get("protocol"))}
+          {render_json_details("Alle Vorgangspositionen", records.get("vorgangspositionen"))}
+          {render_json_details("Alle Aktivitäten", records.get("aktivitaeten"))}
+          {render_json_details("Personendatensätze", records.get("persons"))}
+          {render_json_details("Kandidaten für namentliche Abstimmungen", records.get("roll_call_vote_candidates"))}
+          {render_json_details("Zugeordnete namentliche Abstimmungen", records.get("matched_roll_call_votes"))}
+        </div>
+        <section class="people-section">
+          <h3>Personen aus Aktivitäten</h3>
+          {people_html}
+        </section>
+      </section>
+    """
+
+
 def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
     rows = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unknown")
+        name = esc(speaker.get("display_name") or "Unbekannt")
         party = speaker_party(speaker)
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
@@ -355,7 +440,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unknown")
+        name = esc(speaker.get("display_name") or "Unbekannt")
         party = speaker_party(speaker)
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
@@ -367,8 +452,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
             paragraphs = [speech.get("snippet")]
         paragraph_html = "".join(f"<p>{esc(paragraph)}</p>" for paragraph in paragraphs)
         if not paragraph_html:
-            paragraph_html = '<p class="muted">No speech text was included in this report. Rebuild the JSON with the current validator to render this speech inline.</p>'
-        meta = " · ".join(part for part in [esc(role), f"page {esc(source)}" if source else ""] if part)
+            paragraph_html = '<p class="muted">Dieser Bericht enthält keinen Redetext. Erzeuge das JSON mit dem aktuellen Validator neu, um die Rede direkt anzuzeigen.</p>'
+        meta = " · ".join(part for part in [esc(role), f"Seite {esc(source)}" if source else ""] if part)
         cards.append(
             f"""
             <details class="speech-card" id="{esc(speech_anchor(item, speech, sequence))}">
@@ -384,11 +469,15 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
             """
         )
     if not cards:
-        return '<span class="muted">No speeches in XML</span>'
+        return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
 
-def render_html(report: dict[str, Any], overview_href: str | None = None) -> str:
+def render_html(
+    report: dict[str, Any],
+    overview_href: str | None = None,
+    sources_href: str | None = None,
+) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     items = report.get("agenda_items") or []
@@ -405,14 +494,15 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
             '<a class="attention-row" href="#top-{index}">'
             '<span class="row-top">{top}</span>'
             '<span class="row-title">{title}</span>'
-            '<span class="mini-bars" title="Teal: share of all speeches in this sitting. Amber: share of all extracted speech text."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
-            '<span class="row-metric">{speeches} speeches · {speech_share:.1f}% of sitting</span>'
+            '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
+            '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
                 index=item["index"],
                 top=esc(item.get("top_id")),
                 title=esc(short(item.get("heading"), 78)),
                 speech_share=speech_share,
                 text_share=text_share,
+                speech_share_label=format_percent(speech_share),
                 speeches=stats["speech_count"],
             )
         )
@@ -444,19 +534,19 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
                 </div>
                 <div class="score">
                   <strong>{stats['speech_count']}</strong>
-                  <span>speeches</span>
+                  <span>Reden</span>
                 </div>
               </div>
               <div class="top-bars">
                 <div>
-                  <label>Speech share <strong>{speech_share:.1f}%</strong></label>
-                  <div class="bar" title="{stats['speech_count']} of {total_speeches} speeches in this sitting"><span style="width:{speech_share:.2f}%"></span></div>
-                  <p>{stats['speech_count']} of {total_speeches} extracted speeches belong to this agenda item.</p>
+                  <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
+                  <div class="bar" title="{stats['speech_count']} von {total_speeches} Reden in dieser Sitzung"><span style="width:{speech_share:.2f}%"></span></div>
+                  <p>{stats['speech_count']} von {total_speeches} extrahierten Reden gehören zu diesem Tagesordnungspunkt.</p>
                 </div>
                 <div>
-                  <label>Text volume <strong>{text_share:.1f}%</strong></label>
-                  <div class="bar alt" title="{stats['total_chars']} of {total_chars} extracted speech characters in this sitting"><span style="width:{text_share:.2f}%"></span></div>
-                  <p>{format_int(stats['total_chars'])} speech-text characters, {text_share:.1f}% of the sitting transcript text extracted from XML.</p>
+                  <label>Textumfang <strong>{format_percent(text_share)}</strong></label>
+                  <div class="bar alt" title="{stats['total_chars']} von {total_chars} extrahierten Redezeichen in dieser Sitzung"><span style="width:{text_share:.2f}%"></span></div>
+                  <p>{format_int(stats['total_chars'])} Zeichen Redetext, {format_percent(text_share)} des aus XML extrahierten Sitzungsprotokolls.</p>
                 </div>
               </div>
               <div class="party-block">
@@ -467,25 +557,37 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
               {render_vote_summary(item)}
               <div class="source-strip">
                 <div><span>XML Drucksachen</span>{render_source_links(item)}</div>
-                <div><span>API enrichment</span>{api_positions_count} positions · {item.get('api', {}).get('activities_count', 0)} activities · {linked_docs_count} linked docs</div>
-                <div><span>Transcript</span>{f'<a href="{esc(source_url)}">PDF source</a>' if source_url else '<span class="muted">No direct PDF anchor</span>'}</div>
+                <div><span>API-Anreicherung</span>{api_positions_count} Positionen · {item.get('api', {}).get('activities_count', 0)} Aktivitäten · {linked_docs_count} verknüpfte Dokumente</div>
+                <div><span>Protokoll</span>{f'<a href="{esc(source_url)}">PDF-Quelle</a>' if source_url else '<span class="muted">Keine direkte PDF-Verknüpfung</span>'}</div>
               </div>
               <div class="detail-grid">
                 <section>
-                  <h3>Speakers</h3>
+                  <h3>Rednerinnen und Redner</h3>
                   {render_speakers(item, stats)}
                 </section>
                 <section>
-                  <h3>API Positions</h3>
+                  <h3>API-Positionen</h3>
                   {render_positions(item)}
                 </section>
                 <section>
-                  <h3>Linked Documents</h3>
+                  <h3>API-Aktivitäten</h3>
+                  {render_activities(item)}
+                </section>
+                <section>
+                  <h3>Verknüpfte Dokumente</h3>
                   {render_linked_docs(item)}
                 </section>
               </div>
+              <section class="raw-top-api">
+                <h3>Rohdaten der zugeordneten API-Datensätze</h3>
+                <div class="api-record-grid">
+                  {render_json_details("Zugeordnete Positionen", item.get('api', {}).get('raw', {}).get('positions'))}
+                  {render_json_details("Zugeordnete Aktivitäten", item.get('api', {}).get('raw', {}).get('activities'))}
+                  {render_json_details("Abstimmungen", item.get('votes'))}
+                </div>
+              </section>
               <section class="speech-section">
-                <h3>Speeches</h3>
+                <h3>Reden</h3>
                 {render_speech_details(item, stats)}
               </section>
             </article>
@@ -498,10 +600,13 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
     overview_link = ""
     if overview_href:
-        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">All Sitzungen</a>'
+        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Alle Sitzungen</a>'
+    sources_link = ""
+    if sources_href:
+        sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Quellen</a>'
 
     return f"""<!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -541,7 +646,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       display:inline-flex;
       align-items:center;
       min-height:30px;
-      margin-bottom:10px;
+      margin:0 8px 10px 0;
       padding:4px 9px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -870,13 +975,13 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
     }}
     .detail-grid {{
       display:grid;
-      grid-template-columns:1.05fr 1fr 1.2fr;
+      grid-template-columns:repeat(2, minmax(0,1fr));
       gap:18px;
       margin-top:18px;
       align-items:start;
     }}
     ul {{ list-style:none; margin:0; padding:0; }}
-    .speaker-list, .position-list, .doc-list {{
+    .speaker-list, .position-list, .doc-list, .activity-list, .people-list {{
       display:grid;
       gap:7px;
       font-size:13px;
@@ -889,12 +994,12 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       min-height:24px;
     }}
     .party-dot {{ width:8px; height:8px; border-radius:50%; }}
-    .speaker-row strong, .position-list strong, .doc-list strong {{ font-weight:680; }}
-    .speaker-row span, .position-list span, .doc-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
-    .speaker-row em, .position-list em, .doc-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
+    .speaker-row strong, .position-list strong, .doc-list strong, .activity-list strong, .people-list strong {{ font-weight:680; }}
+    .speaker-row span, .position-list span, .doc-list span, .activity-list span, .people-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
+    .speaker-row em, .position-list em, .doc-list em, .activity-list em, .people-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
     .speaker-link {{ color:var(--ink); text-decoration:none; }}
     .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
-    .position-list li, .doc-list li {{
+    .position-list li, .doc-list li, .activity-list li, .people-list li {{
       display:grid;
       grid-template-columns:minmax(78px,.45fr) minmax(0,1fr) minmax(54px,.35fr) minmax(0,.8fr);
       gap:8px;
@@ -902,7 +1007,63 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       border-bottom:1px solid #eef1f5;
     }}
     .position-list li {{ grid-template-columns:minmax(88px,.5fr) minmax(0,1.5fr) minmax(90px,.7fr); }}
-    .position-list li:last-child, .doc-list li:last-child {{ border-bottom:0; }}
+    .activity-list li, .people-list li {{ grid-template-columns:minmax(96px,.55fr) minmax(0,1.4fr) minmax(110px,.8fr); }}
+    .position-list li:last-child, .doc-list li:last-child, .activity-list li:last-child, .people-list li:last-child {{ border-bottom:0; }}
+    .api-overview {{
+      margin-top:18px;
+      padding:16px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+    }}
+    .api-overview h2 {{
+      margin:0;
+      font-size:18px;
+      line-height:1.25;
+    }}
+    .api-overview p {{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+    }}
+    .api-record-grid {{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:10px;
+      margin-top:12px;
+    }}
+    .api-json {{
+      border:1px solid #dfe5ed;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }}
+    .api-json summary {{
+      min-height:34px;
+      padding:8px 10px;
+      cursor:pointer;
+      color:#174ea6;
+      font-size:13px;
+      font-weight:700;
+    }}
+    .api-json pre {{
+      max-height:360px;
+      overflow:auto;
+      margin:0;
+      padding:10px;
+      border-top:1px solid #e6ebf2;
+      color:#202833;
+      font-size:12px;
+      line-height:1.45;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }}
+    .people-section, .raw-top-api {{
+      margin-top:16px;
+      padding-top:14px;
+      border-top:1px solid #eef1f5;
+    }}
     .speech-section {{
       margin-top:18px;
       padding-top:16px;
@@ -956,6 +1117,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       .layout {{ grid-template-columns:1fr; }}
       aside {{ position:static; }}
       .detail-grid {{ grid-template-columns:1fr; }}
+      .api-record-grid {{ grid-template-columns:1fr; }}
       .source-strip {{ grid-template-columns:1fr; }}
       .member-vote-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     }}
@@ -977,7 +1139,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       .speech-text {{ padding-left:14px; }}
       .summary-sources li {{ grid-template-columns:1fr; }}
       .summary-sources strong {{ grid-row:auto; }}
-      .position-list li, .doc-list li {{ grid-template-columns:1fr; }}
+      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
     }}
   </style>
 </head>
@@ -985,23 +1147,24 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
   <div class="shell">
     <header>
       <div>
-        {overview_link}
-        <h1>Bundestag Pulse</h1>
-        <p class="subtitle">{esc(protocol.get('titel'))} · sitting {esc(protocol.get('datum'))} · distributed {esc(protocol.get('verteildatum'))}</p>
+        <nav>{overview_link}{sources_link}</nav>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
       <div class="meta-grid">
-        <div class="metric"><span>Agenda Items</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
-        <div class="metric"><span>Speeches</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
+        <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
+        <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
         <div class="metric"><span>Drucksachen</span><strong>{esc(summary.get('xml_drucksache_count'))}</strong></div>
-        <div class="metric"><span>People IDs</span><strong>{esc(summary.get('unique_person_ids'))}</strong></div>
+        <div class="metric"><span>Personendatensätze</span><strong>{esc(summary.get('person_record_count', summary.get('unique_person_ids')))}</strong></div>
       </div>
     </header>
+    {render_protocol_api_overview(report)}
     <div class="layout">
       <aside>
-        <h2>Attention Ranking</h2>
+        <h2>Aufmerksamkeitsrang</h2>
         <div class="ranking-note">
-          <span>Sorted by speech count. Bar widths show each agenda item's share of the whole sitting.</span>
-          <div class="legend"><span><i></i>Speeches</span><span><i></i>Speech text</span></div>
+          <span>Sortiert nach Anzahl der Reden. Die Balken zeigen den Anteil jedes Tagesordnungspunktes an der gesamten Sitzung.</span>
+          <div class="legend"><span><i></i>Reden</span><span><i></i>Redetext</span></div>
         </div>
         {''.join(attention_rows)}
       </aside>
@@ -1011,7 +1174,7 @@ def render_html(report: dict[str, Any], overview_href: str | None = None) -> str
       </main>
     </div>
     <footer>
-      XML transcript is treated as canonical; DIP API records enrich proceedings, activities, people, and linked documents.
+      Das XML-Protokoll gilt als maßgeblich; DIP-API-Datensätze ergänzen Vorgänge, Aktivitäten, Personen und verknüpfte Dokumente.
     </footer>
   </div>
   <script>
