@@ -88,7 +88,7 @@ def write_report_and_page(
     report = dip.build_report(args)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     page_path.write_text(
-        pulse_html.render_html(report, overview_href="../index.html", sources_href="../sources.html"),
+        pulse_html.render_html(report, overview_href="../overview.html", sources_href="../sources.html"),
         encoding="utf-8",
     )
     return {
@@ -97,6 +97,389 @@ def write_report_and_page(
         "page_path": page_path,
         "slug": slug,
     }
+
+
+def render_front_page(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return """<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls</title>
+</head>
+<body>
+  <main>
+    <h1>Bundestag-Puls</h1>
+    <p>Es wurden noch keine Sitzungen erzeugt.</p>
+  </main>
+</body>
+</html>
+"""
+
+    entry = entries[0]
+    report = entry["report"]
+    protocol = report.get("protocol") or {}
+    summary = report.get("validation_summary") or {}
+    items = report.get("agenda_items") or []
+    stats_by_index = {item["index"]: pulse_html.item_stats(item) for item in items}
+    total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
+    total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
+    ranked_items = sorted(items, key=lambda item: stats_by_index[item["index"]]["speech_count"], reverse=True)
+    protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
+    report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
+
+    attention_rows = []
+    for item in ranked_items[:6]:
+        stats = stats_by_index[item["index"]]
+        party_total = sum(stats["party_counts"].values())
+        speech_share = pulse_html.percent(stats["speech_count"], total_speeches)
+        text_share = pulse_html.percent(stats["total_chars"], total_chars)
+        party_labels = [
+            f"{party} {count}"
+            for party, count in stats["party_counts"].most_common(5)
+        ]
+        if len(stats["party_counts"]) > 5:
+            party_labels.append(f"+{len(stats['party_counts']) - 5} weitere")
+        doc_count = len(item.get("xml_drucksachen") or [])
+        attention_rows.append(
+            f"""
+            <article class="attention-card">
+              <a class="top-link" href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">
+                <span>{pulse_html.esc(item.get('top_id'))} · {pulse_html.esc(pulse_html.page_range_text(item))}</span>
+                <strong>{pulse_html.esc(pulse_html.short(item.get('heading'), 132))}</strong>
+              </a>
+              <div class="bar-grid">
+                <div>
+                  <label>Reden <strong>{stats['speech_count']} · {speech_share:.1f}%</strong></label>
+                  <div class="bar"><span style="width:{speech_share:.2f}%"></span></div>
+                </div>
+                <div>
+                  <label>Redetext <strong>{pulse_html.format_int(stats['total_chars'])} Zeichen · {text_share:.1f}%</strong></label>
+                  <div class="bar alt"><span style="width:{text_share:.2f}%"></span></div>
+                </div>
+              </div>
+              <div class="party-block">
+                {pulse_html.render_party_stack(stats['party_counts'], party_total)}
+                <div class="party-labels">{pulse_html.render_badges(party_labels)}</div>
+              </div>
+              <div class="card-meta">
+                <span>{doc_count} XML-Drucksachen</span>
+                <span>{len(item.get('api', {}).get('positions') or [])} API-Positionen</span>
+                <a href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">Prüfen</a>
+              </div>
+            </article>
+            """
+        )
+
+    warnings = report.get("warnings") or []
+    warning_html = ""
+    if warnings:
+        warning_html = (
+            '<div class="notice">'
+            f"{pulse_html.esc(str(len(warnings)))} Validierungswarnung"
+            f"{'' if len(warnings) == 1 else 'en'} zu dieser erzeugten Sitzung."
+            "</div>"
+        )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Neueste Sitzung</title>
+  <style>
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --teal:#0f766e;
+      --amber:#9a5a00;
+      --green-soft:#eff8f6;
+      --blue-soft:#eef5ff;
+      --amber-soft:#fff7e6;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+      letter-spacing:0;
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:1280px; margin:0 auto; padding:26px 22px; }}
+    header {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:20px;
+      align-items:start;
+      padding-bottom:20px;
+      border-bottom:1px solid var(--line);
+    }}
+    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; }}
+    h2 {{ margin:0; font-size:18px; line-height:1.25; }}
+    p {{ margin:7px 0 0; color:var(--muted); }}
+    .subtitle {{ max-width:760px; font-size:15px; }}
+    .nav-links {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-end; }}
+    .nav-links a, .primary-link, .session-links a {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-weight:700;
+      font-size:13px;
+    }}
+    .primary-link {{ border-color:#bdd0ea; background:var(--blue-soft); }}
+    .latest-strip {{
+      display:grid;
+      grid-template-columns:1.15fr minmax(420px,.85fr);
+      gap:18px;
+      margin-top:18px;
+      align-items:stretch;
+    }}
+    .latest-panel, .future-panel {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+      padding:18px;
+    }}
+    .eyebrow, .metric span, .top-link span, label, .card-meta, .future-panel span {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .latest-title {{ margin:5px 0 0; font-size:25px; line-height:1.18; }}
+    .metric-grid {{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(92px,1fr));
+      gap:10px;
+      margin-top:18px;
+    }}
+    .metric {{
+      min-height:68px;
+      border:1px solid #e2e7ef;
+      border-radius:8px;
+      background:#fbfcfd;
+      padding:10px 11px;
+    }}
+    .metric strong {{ display:block; margin-top:5px; font-size:24px; }}
+    .session-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+      margin-top:16px;
+    }}
+    .source-panel {{
+      display:grid;
+      gap:12px;
+      border-left:4px solid var(--teal);
+    }}
+    .source-panel p {{ margin-top:4px; font-size:14px; line-height:1.45; }}
+    .layout {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 330px;
+      gap:18px;
+      margin-top:18px;
+      align-items:start;
+    }}
+    main {{ display:grid; gap:12px; }}
+    .section-head {{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:end;
+      margin-bottom:2px;
+    }}
+    .section-head p {{ font-size:13px; }}
+    .attention-card {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+      padding:15px;
+    }}
+    .top-link {{
+      display:grid;
+      gap:5px;
+      color:var(--ink);
+    }}
+    .top-link strong {{ font-size:17px; line-height:1.27; overflow-wrap:anywhere; }}
+    .bar-grid {{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+      margin-top:13px;
+    }}
+    label {{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:6px;
+    }}
+    label strong {{ color:var(--ink); font-size:12px; }}
+    .bar {{ height:10px; overflow:hidden; border-radius:999px; background:#edf0f4; }}
+    .bar span {{ display:block; height:100%; border-radius:999px; background:var(--teal); }}
+    .bar.alt span {{ background:var(--amber); }}
+    .party-block {{ margin-top:13px; }}
+    .stack {{ display:flex; overflow:hidden; height:13px; background:#edf0f4; border-radius:999px; }}
+    .stack span {{ min-width:3px; }}
+    .party-labels {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
+    .badge {{
+      display:inline-flex;
+      align-items:center;
+      min-height:23px;
+      padding:3px 8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fbfcfd;
+      color:#333a45;
+      font-size:12px;
+      white-space:nowrap;
+    }}
+    .card-meta {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      margin-top:12px;
+    }}
+    .card-meta a {{ margin-left:auto; font-weight:750; }}
+    aside {{ display:grid; gap:12px; }}
+    .future-panel:nth-child(1) {{ background:var(--green-soft); }}
+    .future-panel:nth-child(2) {{ background:var(--amber-soft); }}
+    .future-panel:nth-child(3) {{ background:#f5f7fb; }}
+    .future-panel h2 {{ margin-top:6px; }}
+    .future-panel p {{ font-size:13px; line-height:1.45; }}
+    .placeholder-lines {{ display:grid; gap:7px; margin-top:14px; }}
+    .placeholder-lines i {{
+      display:block;
+      height:8px;
+      border-radius:999px;
+      background:rgba(23,26,31,.12);
+    }}
+    .placeholder-lines i:nth-child(2) {{ width:76%; }}
+    .placeholder-lines i:nth-child(3) {{ width:54%; }}
+    .notice {{
+      padding:11px 13px;
+      border:1px solid #e3c46a;
+      border-radius:8px;
+      background:#fff7d6;
+      color:#614a00;
+      font-size:13px;
+    }}
+    footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
+    @media (max-width: 980px) {{
+      header, .latest-strip, .layout {{ grid-template-columns:1fr; }}
+      .nav-links {{ justify-content:flex-start; }}
+    }}
+    @media (max-width: 700px) {{
+      .shell {{ padding:16px 14px; }}
+      h1 {{ font-size:29px; }}
+      .latest-title {{ font-size:21px; }}
+      .metric-grid, .bar-grid {{ grid-template-columns:1fr 1fr; }}
+      .section-head {{ display:grid; }}
+    }}
+    @media (max-width: 460px) {{
+      .metric-grid, .bar-grid {{ grid-template-columns:1fr; }}
+      .card-meta a {{ margin-left:0; width:100%; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <span class="eyebrow">Neueste Sitzung</span>
+        <h1>Bundestag-Puls</h1>
+        <p class="subtitle">Das neueste erzeugte Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit in der Sitzung konzentrierte.</p>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="primary-link" href="{protocol_href}">Details öffnen</a>
+        <a href="overview.html">Alle Sitzungen</a>
+      </nav>
+    </header>
+
+    <section class="latest-strip">
+      <div class="latest-panel">
+        <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
+        <h2 class="latest-title">{pulse_html.esc(protocol.get('titel'))}</h2>
+        <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
+        <div class="metric-grid">
+          <div class="metric"><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+          <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+          <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+          <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+        </div>
+        <div class="session-links">
+          <a href="{protocol_href}">Sitzungsdetails</a>
+          <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
+          <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
+          <a href="{report_href}">Erzeugtes JSON</a>
+        </div>
+      </div>
+      <div class="latest-panel source-panel">
+        <div>
+          <span class="eyebrow">Quellenlage</span>
+          <h2>Primärquellen-Puls</h2>
+          <p>Redezahlen, Textumfang, Drucksachen und Rednerdaten werden aus dem offiziellen Protokoll und DIP-Daten dieser Sitzung erzeugt.</p>
+        </div>
+        <div>
+          <span class="eyebrow">Nächster Vergleich</span>
+          <p>Dieser Bereich ist für Wochenvergleiche reserviert, sobald mehrere Sitzungswochen normalisiert sind.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <main>
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Neueste Informationen</span>
+            <h2>Aufmerksamkeitsranking</h2>
+          </div>
+          <p>Die wichtigsten Tagesordnungspunkte der neuesten Sitzung, sortiert nach extrahierter Redezahl.</p>
+        </div>
+        {warning_html}
+        {''.join(attention_rows)}
+      </main>
+      <aside>
+        <section class="future-panel">
+          <span>Reserviert</span>
+          <h2>Themenbewegung</h2>
+          <p>Vergleiche, welche Themen diese Woche mehr Aufmerksamkeit erhielten als letzte Woche.</p>
+          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+        </section>
+        <section class="future-panel">
+          <span>Reserviert</span>
+          <h2>Abstimmungsverschiebungen</h2>
+          <p>Hebt namentliche Abstimmungen und Fraktionsabweichungen hervor, sobald der Parser dafür reift.</p>
+          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+        </section>
+        <section class="future-panel">
+          <span>Archiv</span>
+          <h2>Frühere Sitzungen</h2>
+          <p>Nutze die Übersichtsseite, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
+          <div class="session-links"><a href="overview.html">Übersicht öffnen</a></div>
+        </section>
+      </aside>
+    </div>
+
+    <footer>
+      Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+    </footer>
+  </div>
+</body>
+</html>
+    """
 
 
 def protocol_source_links(protocol: dict[str, Any]) -> str:
@@ -270,6 +653,7 @@ def render_overview(
       display:grid;
       gap:4px;
       min-width:220px;
+      margin-top:9px;
       padding:12px 14px;
       border:1px solid var(--line);
       border-radius:8px;
@@ -283,6 +667,24 @@ def render_overview(
       letter-spacing:.04em;
     }}
     .latest strong {{ font-size:18px; }}
+    .nav-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+      justify-content:flex-end;
+    }}
+    .nav-links a {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:700;
+    }}
     .summary-band {{
       display:grid;
       grid-template-columns:repeat(3, minmax(0,1fr));
@@ -511,6 +913,7 @@ def render_overview(
     @media (max-width: 740px) {{
       .shell {{ padding:18px 14px; }}
       header, .session-main {{ grid-template-columns:1fr; }}
+      .nav-links {{ justify-content:flex-start; }}
       h1 {{ font-size:29px; }}
       h2 {{ font-size:19px; }}
       .metrics {{ grid-template-columns:1fr 1fr; }}
@@ -526,10 +929,15 @@ def render_overview(
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
-      <div class="latest">
-        <span>Neueste API-Sitzung</span>
-        <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
-        <em>{pulse_html.esc(latest.get('datum', ''))}</em>
+      <div>
+        <nav class="nav-links" aria-label="Overview navigation">
+          <a href="index.html">Neueste Sitzung</a>
+        </nav>
+        <div class="latest">
+          <span>Neueste API-Sitzung</span>
+          <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
+          <em>{pulse_html.esc(latest.get('datum', ''))}</em>
+        </div>
       </div>
     </header>
     <section class="summary-band">
@@ -773,7 +1181,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
   <div class="shell">
     <header>
       <div>
-        <nav class="nav-links"><a href="index.html">Alle Sitzungen</a></nav>
+        <nav class="nav-links"><a href="index.html">Neueste Sitzung</a><a href="overview.html">Alle Sitzungen</a></nav>
         <h1>Quellen</h1>
         <p class="subtitle">Bundestag-Puls basiert auf offiziellen Parlamentsunterlagen. Diese Seite dokumentiert, welche Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt.</p>
       </div>
@@ -927,8 +1335,10 @@ def main() -> int:
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     index_path = output_dir / "index.html"
-    index_path.write_text(render_overview(protocols, entries, catalog_path), encoding="utf-8")
+    overview_path = output_dir / "overview.html"
     sources_path = output_dir / "sources.html"
+    index_path.write_text(render_front_page(entries), encoding="utf-8")
+    overview_path.write_text(render_overview(protocols, entries, catalog_path), encoding="utf-8")
     sources_path.write_text(render_sources_page(entries), encoding="utf-8")
     print(index_path)
     return 0
