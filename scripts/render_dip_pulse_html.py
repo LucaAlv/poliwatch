@@ -345,7 +345,7 @@ def render_protocol_api_overview(report: dict[str, Any]) -> str:
         people_html = f'<ul class="people-list">{"".join(people_rows)}</ul>'
 
     return f"""
-      <section class="api-overview">
+      <section class="api-overview dev-only">
         <div>
           <h2>API-Datensätze</h2>
           <p>DIP-API-Nutzdaten bleiben im erzeugten JSON erhalten. Kompakte Tabellen halten die Seite lesbar; ausklappbare JSON-Blöcke zeigen die ursprünglichen Felder.</p>
@@ -363,6 +363,48 @@ def render_protocol_api_overview(report: dict[str, Any]) -> str:
           {people_html}
         </section>
       </section>
+    """
+
+
+def render_top_dev_details(item: dict[str, Any]) -> str:
+    api_positions_count = len(item.get("api", {}).get("positions") or [])
+    linked_docs_count = len(item.get("api", {}).get("linked_drucksachen") or [])
+    source_url = None
+    positions = item.get("api", {}).get("positions") or []
+    if positions:
+        source_url = (positions[0].get("source") or {}).get("pdf_url")
+
+    return f"""
+              <section class="dev-only dev-top-details">
+                <h3>Technische Einordnung</h3>
+                <div class="source-strip">
+                  <div><span>XML Drucksachen</span>{render_source_links(item)}</div>
+                  <div><span>API-Anreicherung</span>{api_positions_count} Positionen · {item.get('api', {}).get('activities_count', 0)} Aktivitäten · {linked_docs_count} verknüpfte Dokumente</div>
+                  <div><span>Protokoll</span>{f'<a href="{esc(source_url)}">PDF-Quelle</a>' if source_url else '<span class="muted">Keine direkte PDF-Verknüpfung</span>'}</div>
+                </div>
+                <div class="detail-grid">
+                  <section>
+                    <h3>API-Positionen</h3>
+                    {render_positions(item)}
+                  </section>
+                  <section>
+                    <h3>API-Aktivitäten</h3>
+                    {render_activities(item)}
+                  </section>
+                  <section>
+                    <h3>Verknüpfte Dokumente</h3>
+                    {render_linked_docs(item)}
+                  </section>
+                </div>
+                <section class="raw-top-api">
+                  <h3>Rohdaten der zugeordneten API-Datensätze</h3>
+                  <div class="api-record-grid">
+                    {render_json_details("Zugeordnete Positionen", item.get('api', {}).get('raw', {}).get('positions'))}
+                    {render_json_details("Zugeordnete Aktivitäten", item.get('api', {}).get('raw', {}).get('activities'))}
+                    {render_json_details("Abstimmungen", item.get('votes'))}
+                  </div>
+                </section>
+              </section>
     """
 
 
@@ -484,6 +526,10 @@ def render_html(
     stats_by_index = {item["index"]: item_stats(item) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
+    total_votes = sum(
+        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
+        for item in items
+    )
 
     attention_rows = []
     for item in sorted(items, key=lambda x: stats_by_index[x["index"]]["speech_count"], reverse=True):
@@ -517,13 +563,6 @@ def render_html(
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
         ]
-        xml_docs = [doc.get("dokumentnummer") for doc in item.get("xml_drucksachen") or [] if doc.get("dokumentnummer")]
-        api_positions_count = len(item.get("api", {}).get("positions") or [])
-        linked_docs_count = len(item.get("api", {}).get("linked_drucksachen") or [])
-        source_url = None
-        positions = item.get("api", {}).get("positions") or []
-        if positions:
-            source_url = (positions[0].get("source") or {}).get("pdf_url")
         top_sections.append(
             f"""
             <article class="top-card" id="top-{item['index']}">
@@ -555,37 +594,17 @@ def render_html(
               </div>
               {render_llm_summary(item, stats)}
               {render_vote_summary(item)}
-              <div class="source-strip">
-                <div><span>XML Drucksachen</span>{render_source_links(item)}</div>
-                <div><span>API-Anreicherung</span>{api_positions_count} Positionen · {item.get('api', {}).get('activities_count', 0)} Aktivitäten · {linked_docs_count} verknüpfte Dokumente</div>
-                <div><span>Protokoll</span>{f'<a href="{esc(source_url)}">PDF-Quelle</a>' if source_url else '<span class="muted">Keine direkte PDF-Verknüpfung</span>'}</div>
-              </div>
               <div class="detail-grid">
                 <section>
                   <h3>Rednerinnen und Redner</h3>
                   {render_speakers(item, stats)}
                 </section>
                 <section>
-                  <h3>API-Positionen</h3>
-                  {render_positions(item)}
-                </section>
-                <section>
-                  <h3>API-Aktivitäten</h3>
-                  {render_activities(item)}
-                </section>
-                <section>
-                  <h3>Verknüpfte Dokumente</h3>
-                  {render_linked_docs(item)}
+                  <h3>Drucksachen</h3>
+                  {render_source_links(item)}
                 </section>
               </div>
-              <section class="raw-top-api">
-                <h3>Rohdaten der zugeordneten API-Datensätze</h3>
-                <div class="api-record-grid">
-                  {render_json_details("Zugeordnete Positionen", item.get('api', {}).get('raw', {}).get('positions'))}
-                  {render_json_details("Zugeordnete Aktivitäten", item.get('api', {}).get('raw', {}).get('activities'))}
-                  {render_json_details("Abstimmungen", item.get('votes'))}
-                </div>
-              </section>
+              {render_top_dev_details(item)}
               <section class="speech-section">
                 <h3>Reden</h3>
                 {render_speech_details(item, stats)}
@@ -730,6 +749,8 @@ def render_html(
     .mini-bars i {{ background:var(--teal); }}
     .mini-bars b {{ background:var(--amber); }}
     main {{ display:grid; gap:16px; }}
+    .dev-only {{ display:none !important; }}
+    body.dev-view .dev-only {{ display:block !important; }}
     .notice {{
       padding:12px 14px;
       border:1px solid #e3c46a;
@@ -1064,6 +1085,11 @@ def render_html(
       padding-top:14px;
       border-top:1px solid #eef1f5;
     }}
+    .dev-top-details {{
+      margin-top:16px;
+      padding-top:16px;
+      border-top:1px solid #eef1f5;
+    }}
     .speech-section {{
       margin-top:18px;
       padding-top:16px;
@@ -1112,7 +1138,34 @@ def render_html(
     }}
     .muted {{ color:var(--muted); }}
     .status.warn {{ color:var(--red); }}
-    footer {{ padding:22px 0 4px; color:var(--muted); font-size:12px; }}
+    footer {{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:center;
+      padding:22px 0 4px;
+      color:var(--muted);
+      font-size:12px;
+    }}
+    .dev-toggle {{
+      appearance:none;
+      flex:0 0 auto;
+      min-height:28px;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:#4b5563;
+      font:inherit;
+      font-weight:700;
+      cursor:pointer;
+    }}
+    .dev-toggle:hover {{ border-color:#b9c3d0; color:#174ea6; }}
+    .dev-toggle[aria-pressed="true"] {{
+      border-color:#202833;
+      background:#202833;
+      color:#fff;
+    }}
     @media (max-width: 1120px) {{
       .layout {{ grid-template-columns:1fr; }}
       aside {{ position:static; }}
@@ -1140,6 +1193,7 @@ def render_html(
       .summary-sources li {{ grid-template-columns:1fr; }}
       .summary-sources strong {{ grid-row:auto; }}
       .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
+      footer {{ align-items:flex-start; flex-direction:column; }}
     }}
   </style>
 </head>
@@ -1155,7 +1209,7 @@ def render_html(
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
         <div class="metric"><span>Reden</span><strong>{esc(summary.get('xml_speech_count'))}</strong></div>
         <div class="metric"><span>Drucksachen</span><strong>{esc(summary.get('xml_drucksache_count'))}</strong></div>
-        <div class="metric"><span>Personendatensätze</span><strong>{esc(summary.get('person_record_count', summary.get('unique_person_ids')))}</strong></div>
+        <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>
     {render_protocol_api_overview(report)}
@@ -1174,16 +1228,44 @@ def render_html(
       </main>
     </div>
     <footer>
-      Das XML-Protokoll gilt als maßgeblich; DIP-API-Datensätze ergänzen Vorgänge, Aktivitäten, Personen und verknüpfte Dokumente.
+      <span>Das XML-Protokoll gilt als maßgeblich; verknüpfte DIP-Daten können über die Dev-Ansicht geprüft werden.</span>
+      <button class="dev-toggle" type="button" aria-pressed="false">Dev-Ansicht</button>
     </footer>
   </div>
   <script>
     (() => {{
+      const storageKey = "bundestag-pulse-dev-view";
+      const toggle = document.querySelector(".dev-toggle");
+      const setDevView = (enabled, persist = true) => {{
+        document.body.classList.toggle("dev-view", enabled);
+        if (toggle) {{
+          toggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+          toggle.textContent = enabled ? "Dev-Ansicht aus" : "Dev-Ansicht";
+        }}
+        if (persist) {{
+          try {{
+            window.localStorage.setItem(storageKey, enabled ? "1" : "0");
+          }} catch (_) {{}}
+        }}
+      }};
+      try {{
+        setDevView(window.localStorage.getItem(storageKey) === "1", false);
+      }} catch (_) {{
+        setDevView(false, false);
+      }}
+      if (toggle) {{
+        toggle.addEventListener("click", () => {{
+          setDevView(!document.body.classList.contains("dev-view"));
+        }});
+      }}
       const openHashTarget = () => {{
         const id = decodeURIComponent(window.location.hash.slice(1));
         if (!id) return;
         const target = document.getElementById(id);
         if (!target) return;
+        if (target.closest(".dev-only")) {{
+          setDevView(true);
+        }}
         const details = target.tagName.toLowerCase() === "details" ? target : target.closest("details");
         if (details) {{
           details.open = true;
