@@ -24,13 +24,23 @@ from typing import Any
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+DEFAULT_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-4-6")
 BT_BASE_URL = "https://www.bundestag.de"
 ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"
 QUADRANT_ORDER = {"A": 1, "B": 2, "C": 3, "D": 4}
 VOTE_KEYS = ("yes", "no", "abstain", "absent")
+SUMMARY_CHUNK_MIN = 3
+SUMMARY_CHUNK_MAX = 5
+SUMMARY_CHUNK_CHARS = 900
 
 
 class DipError(RuntimeError):
+    pass
+
+
+class SummaryError(RuntimeError):
     pass
 
 
@@ -92,10 +102,34 @@ def fetch_html(url: str) -> str:
         raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
 
 
+def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> Any:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as res:
+            return json.loads(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SummaryError(f"Anthropic API HTTP {exc.code}: {body[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise SummaryError(f"Anthropic API request failed: {exc}") from exc
+
+
 def clean_text(value: str | None) -> str:
     if not value:
         return ""
     return re.sub(r"\s+", " ", value.replace("\xa0", " ")).strip()
+
+
+def clamp_text(value: str, limit: int) -> str:
+    value = clean_text(value)
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
 
 
 def strip_tags(value: str | None) -> str:
@@ -612,6 +646,192 @@ def match_roll_call_votes(
     return matches
 
 
+def summary_model_chain(args: argparse.Namespace) -> list[str]:
+    configured = getattr(args, "summary_model", None) or os.environ.get("ANTHROPIC_SUMMARY_MODELS")
+    if configured:
+        models = [model.strip() for model in str(configured).split(",")]
+        return [model for model in models if model]
+    return list(DEFAULT_SUMMARY_MODELS)
+
+
+def summary_source_chunks(top: dict[str, Any]) -> list[dict[str, Any]]:
+    speeches = sorted(top.get("speeches") or [], key=lambda speech: int(speech.get("char_count") or 0), reverse=True)
+    chunks: list[dict[str, Any]] = []
+    for speech in speeches:
+        text = speech.get("text") or " ".join(speech.get("paragraphs") or [])
+        text = clamp_text(text, SUMMARY_CHUNK_CHARS)
+        if not text:
+            continue
+        speaker = speech.get("speaker") or {}
+        sequence = len(chunks) + 1
+        chunks.append(
+            {
+                "id": f"S{sequence}",
+                "rede_id": speech.get("rede_id"),
+                "source_page": speech.get("source_page"),
+                "speaker": {
+                    "display_name": speaker.get("display_name"),
+                    "fraktion": speaker.get("fraktion"),
+                    "role": speaker.get("role"),
+                    "role_short": speaker.get("role_short"),
+                },
+                "text": text,
+            }
+        )
+        if len(chunks) >= SUMMARY_CHUNK_MAX:
+            break
+    return chunks
+
+
+def anthropic_text_from_response(response: dict[str, Any]) -> str:
+    parts = []
+    for block in response.get("content") or []:
+        if block.get("type") == "text" and block.get("text"):
+            parts.append(str(block["text"]))
+    return "\n".join(parts).strip()
+
+
+def parse_summary_response(raw_text: str, allowed_chunk_ids: set[str]) -> dict[str, Any]:
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        match = re.search(r"\{.*\}", raw_text, re.S)
+        if not match:
+            raise SummaryError("Summary response was not JSON.") from exc
+        data = json.loads(match.group(0))
+
+    sentences = data.get("sentences")
+    if isinstance(sentences, str):
+        text = clean_text(sentences)
+    elif isinstance(sentences, list):
+        text = clean_text(" ".join(str(sentence) for sentence in sentences[:3]))
+    else:
+        text = clean_text(data.get("summary") or "")
+
+    source_ids = [str(chunk_id).strip() for chunk_id in data.get("source_chunk_ids") or []]
+    source_ids = [chunk_id for chunk_id in source_ids if chunk_id in allowed_chunk_ids]
+    if not text:
+        raise SummaryError("Summary response did not include summary text.")
+    if len(source_ids) < min(SUMMARY_CHUNK_MIN, len(allowed_chunk_ids)):
+        raise SummaryError("Summary response did not cite enough supplied chunks.")
+    return {
+        "text": text,
+        "source_chunk_ids": source_ids[:SUMMARY_CHUNK_MAX],
+    }
+
+
+def generate_top_summary(top: dict[str, Any], api_key: str, models: list[str]) -> dict[str, Any] | None:
+    chunks = summary_source_chunks(top)
+    if len(chunks) < SUMMARY_CHUNK_MIN:
+        return None
+
+    chunk_lines = "\n\n".join(
+        "[{id}] {speaker} ({party_or_role}), Seite {page}: {text}".format(
+            id=chunk["id"],
+            speaker=clean_text((chunk.get("speaker") or {}).get("display_name") or "Unbekannt"),
+            party_or_role=clean_text(
+                (chunk.get("speaker") or {}).get("fraktion")
+                or (chunk.get("speaker") or {}).get("role_short")
+                or (chunk.get("speaker") or {}).get("role")
+                or "unbekannt"
+            ),
+            page=(chunk.get("source_page") or {}).get("page") or "?",
+            text=chunk["text"],
+        )
+        for chunk in chunks
+    )
+    prompt = f"""
+Erstelle eine neutrale, schlichte Zusammenfassung auf Deutsch für einen Bundestags-Tagesordnungspunkt.
+
+Regeln:
+- Schreibe 2 bis 3 Sätze.
+- Beschreibe nur, was in den gelieferten Quellen erkennbar debattiert wurde.
+- Keine Bewertung, keine Mutmaßungen, keine zusätzlichen Fakten.
+- Zitiere 3 bis 5 der gelieferten Quellen über ihre IDs.
+- Gib ausschließlich JSON im Format {{"sentences":["...","..."],"source_chunk_ids":["S1","S2","S3"]}} zurück.
+
+TOP: {clean_text(top.get("top_id") or "")}
+Titel: {clean_text(top.get("heading") or "")}
+
+Quellen:
+{chunk_lines}
+""".strip()
+
+    headers = {
+        "Accept": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+    }
+    payload_base = {
+        "max_tokens": 400,
+        "system": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen.",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    last_error: SummaryError | None = None
+    allowed_ids = {chunk["id"] for chunk in chunks}
+    for model in models:
+        try:
+            response = post_json(ANTHROPIC_MESSAGES_URL, {**payload_base, "model": model}, headers)
+            summary = parse_summary_response(anthropic_text_from_response(response), allowed_ids)
+            chunks_by_id = {chunk["id"]: chunk for chunk in chunks}
+            return {
+                "label": "Automatische Zusammenfassung — zur Quelle",
+                "model": model,
+                "text": summary["text"],
+                "source_chunk_ids": summary["source_chunk_ids"],
+                "source_chunks": [chunks_by_id[chunk_id] for chunk_id in summary["source_chunk_ids"]],
+            }
+        except SummaryError as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    return None
+
+
+def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) -> None:
+    mode = getattr(args, "summary_mode", "auto")
+    if mode == "off":
+        report["summary_generation"] = {"enabled": False}
+        return
+
+    api_key = getattr(args, "anthropic_api_key", None) or os.environ.get("ANTHROPIC_API_KEY")
+    models = summary_model_chain(args)
+    if not api_key:
+        report["summary_generation"] = {
+            "enabled": False,
+            "reason": "ANTHROPIC_API_KEY not set",
+            "models": models,
+        }
+        if mode == "required":
+            raise DipError("Provide an Anthropic API key via --anthropic-api-key or ANTHROPIC_API_KEY for summaries.")
+        return
+
+    failures: list[str] = []
+    for item in report.get("agenda_items") or []:
+        try:
+            parsed_top = {
+                "top_id": item.get("top_id"),
+                "heading": item.get("heading"),
+                "speeches": item.get("xml_speakers") or [],
+            }
+            summary = generate_top_summary(parsed_top, api_key, models)
+            if summary:
+                item["llm_summary"] = summary
+        except SummaryError as exc:
+            failures.append(f"{item.get('top_id') or item.get('index')}: {exc}")
+            if mode == "required":
+                raise DipError(f"Summary generation failed for {item.get('top_id')}: {exc}") from exc
+
+    report["summary_generation"] = {
+        "enabled": True,
+        "provider": "anthropic",
+        "models": models,
+        "generated_top_count": sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary")),
+        "failures": failures,
+    }
+
+
 def enrich_with_api(
     client: ApiClient,
     protocol: dict[str, Any],
@@ -819,7 +1039,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     tops_with_api_positions = sum(1 for top in enrichment["agenda_items"] if top["api"]["positions"])
     tops_with_api_drucksachen = sum(1 for top in enrichment["agenda_items"] if top["api"]["linked_drucksachen"])
 
-    return {
+    report = {
         "protocol": {
             "id": protocol.get("id"),
             "dokumentnummer": protocol.get("dokumentnummer"),
@@ -844,6 +1064,8 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
     }
+    enrich_with_llm_summaries(report, args)
+    return report
 
 
 def parse_args() -> argparse.Namespace:
@@ -858,6 +1080,20 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=25,
         help="Number of distinct person records to fetch. Use 0 to fetch all person records seen in activities.",
+    )
+    parser.add_argument(
+        "--summary-mode",
+        choices=("auto", "required", "off"),
+        default="auto",
+        help="Generate per-TOP LLM summaries when ANTHROPIC_API_KEY is available, require them, or disable them.",
+    )
+    parser.add_argument("--anthropic-api-key", help="Anthropic API key. Prefer ANTHROPIC_API_KEY for local use.")
+    parser.add_argument(
+        "--summary-model",
+        help=(
+            "Comma-separated Anthropic model IDs to try for summaries. "
+            "Defaults to Claude Opus 4.8, then Sonnet 4.6."
+        ),
     )
     parser.add_argument(
         "--vote-scan-pages",
