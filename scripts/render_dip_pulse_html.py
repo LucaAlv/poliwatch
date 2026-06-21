@@ -551,6 +551,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
 def render_html(
     report: dict[str, Any],
     overview_href: str | None = None,
+    catalog_href: str | None = None,
     bills_href: str | None = None,
     sources_href: str | None = None,
 ) -> str:
@@ -654,7 +655,10 @@ def render_html(
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
     overview_link = ""
     if overview_href:
-        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Alle Sitzungen</a>'
+        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>'
+    catalog_link = ""
+    if catalog_href:
+        catalog_link = f'<a class="overview-link" href="{esc(catalog_href)}">Alle API-Sitzungen</a>'
     bills_link = ""
     if bills_href:
         bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
@@ -1244,7 +1248,7 @@ def render_html(
   <div class="shell">
     <header>
       <div>
-        <nav class="page-nav">{overview_link}{bills_link}{sources_link}</nav>
+        <nav class="page-nav">{overview_link}{catalog_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
