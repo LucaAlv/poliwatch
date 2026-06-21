@@ -379,6 +379,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       color:var(--ink);
       background:var(--paper);
       letter-spacing:0;
+      overflow-x:hidden;
     }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
@@ -623,7 +624,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
           <a href="index.html">Start</a>
-          <a href="puls.html">Neueste Sitzung</a>
+          <a href="puls.html">Aktueller Puls</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
@@ -703,7 +704,7 @@ def render_landing_page(
         summary = report.get("validation_summary") or {}
         snapshot = f"""
         <aside class="snapshot">
-          <span class="eyebrow">Aktueller Stand</span>
+          <span class="eyebrow">Aktueller Puls</span>
           <strong class="snapshot-doc">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</strong>
           <p class="snapshot-title">{pulse_html.esc(pulse_html.short(protocol.get('titel'), 96))}</p>
           <p class="snapshot-date">Sitzung vom {pulse_html.esc(protocol.get('datum'))}</p>
@@ -713,16 +714,16 @@ def render_landing_page(
             <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
             <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
           </div>
-          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
         </aside>
         """
     else:
         snapshot = """
         <aside class="snapshot">
-          <span class="eyebrow">Aktueller Stand</span>
+          <span class="eyebrow">Aktueller Puls</span>
           <p class="snapshot-title">Es wurde noch keine Sitzung erzeugt.</p>
-          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier die jüngste Sitzung.</p>
-          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier der aktuelle Lageblick.</p>
+          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
         </aside>
         """
 
@@ -757,10 +758,10 @@ def render_landing_page(
 
     areas = [
         (
-            "Civic Radar",
-            "Neueste Sitzung",
+            "Lageblick",
+            "Aktueller Puls",
             "puls.html",
-            "Das jüngste Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit konzentrierte — Reden, Redetext und Fraktionsanteile je Tagesordnungspunkt.",
+            "Was gerade im Bundestag auffällt: Themenbewegung, Abstimmungsverschiebungen und darunter das belegbare Aufmerksamkeitsranking der neuesten Auswertung.",
         ),
         (
             "Archiv",
@@ -971,7 +972,7 @@ def render_landing_page(
     <div class="topbar">
       <div class="brand"><strong>Bundestag-Puls</strong><span>Primärquellen-Monitor</span></div>
       <nav class="topnav" aria-label="Hauptnavigation">
-        <a href="puls.html">Neueste Sitzung</a>
+        <a href="puls.html">Aktueller Puls</a>
         <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
@@ -986,7 +987,7 @@ def render_landing_page(
         <h1>Was der Bundestag tut — mit Belegen.</h1>
         <p class="lead">Bundestag-Puls verdichtet die verstreute offizielle Tätigkeit des Parlaments — Reden, Gesetzentwürfe, Ausschussschritte und namentliche Abstimmungen — zu einem lesbaren Bild davon, worauf sich die parlamentarische Aufmerksamkeit gerade richtet und wer wofür steht. Aufgebaut ausschließlich aus Primärquellen, nicht aus Nachrichten.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="puls.html">Neueste Sitzung ansehen</a>
+          <a class="btn btn-primary" href="puls.html">Was gerade l&auml;uft</a>
           <a class="btn btn-ghost" href="sources.html">Wie wir arbeiten</a>
         </div>
       </div>
@@ -1080,6 +1081,39 @@ def render_front_page(
         if database_href
         else ""
     )
+    total_votes = sum(
+        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
+        for item in items
+    )
+    top_focus = ranked_items[0] if ranked_items else None
+    if top_focus:
+        top_stats = stats_by_index[top_focus["index"]]
+        focus_text = (
+            f"{top_focus.get('top_id')} bündelt aktuell {top_stats['speech_count']} Reden "
+            f"und {pulse_html.format_int(top_stats['total_chars'])} Zeichen Redetext."
+        )
+        focus_href = f"{protocol_href}#top-{pulse_html.esc(top_focus.get('index'))}"
+        focus_link = f'<a class="feature-link" href="{focus_href}">Belege zum Schwerpunkt</a>'
+    else:
+        focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
+        focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
+
+    vote_items = [
+        item
+        for item in items
+        if item.get("votes") or item.get("vote")
+    ]
+    if vote_items:
+        vote_focus = (
+            f"{total_votes} namentliche Abstimmung"
+            f"{'' if total_votes == 1 else 'en'} in {len(vote_items)} Tagesordnungspunkt"
+            f"{'' if len(vote_items) == 1 else 'en'} zugeordnet."
+        )
+        vote_href = f"{protocol_href}#top-{pulse_html.esc(vote_items[0].get('index'))}"
+        vote_link = f'<a class="feature-link" href="{vote_href}">Abstimmungen prüfen</a>'
+    else:
+        vote_focus = "Für die neueste Auswertung sind noch keine namentlichen Abstimmungen zugeordnet."
+        vote_link = f'<a class="feature-link" href="{protocol_href}">Sitzungsbelege prüfen</a>'
 
     attention_rows = []
     for item in ranked_items[:6]:
@@ -1139,7 +1173,7 @@ def render_front_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Neueste Sitzung</title>
+  <title>Bundestag-Puls · Aktueller Lageblick</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -1167,7 +1201,7 @@ def render_front_page(
     .shell {{ max-width:1280px; margin:0 auto; padding:26px 22px; }}
     header {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
+      grid-template-columns:1fr;
       gap:20px;
       align-items:start;
       padding-bottom:20px;
@@ -1177,7 +1211,7 @@ def render_front_page(
     h2 {{ margin:0; font-size:18px; line-height:1.25; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
     .subtitle {{ max-width:760px; font-size:15px; }}
-    .nav-links {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-end; }}
+    .nav-links {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
     .nav-links a, .primary-link, .session-links a {{
       display:inline-flex;
       align-items:center;
@@ -1191,32 +1225,55 @@ def render_front_page(
       font-size:13px;
     }}
     .primary-link {{ border-color:#bdd0ea; background:var(--blue-soft); }}
-    .latest-strip {{
+    .radar-hero {{
       display:grid;
-      grid-template-columns:1.15fr minmax(420px,.85fr);
+      grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);
       gap:18px;
       margin-top:18px;
       align-items:stretch;
     }}
-    .latest-panel, .future-panel {{
+    .latest-panel, .pulse-feature, .context-panel {{
       border:1px solid var(--line);
       border-radius:8px;
       background:var(--panel);
       padding:18px;
     }}
-    .eyebrow, .metric span, .top-link span, label, .card-meta, .future-panel span {{
+    .eyebrow, .metric span, .top-link span, label, .card-meta {{
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .latest-title {{ margin:5px 0 0; font-size:25px; line-height:1.18; }}
+    .pulse-lede h2 {{ margin:6px 0 0; font-size:27px; line-height:1.16; }}
+    .pulse-lede p {{ max-width:760px; font-size:15px; line-height:1.5; }}
+    .pulse-actions {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+      margin-top:16px;
+    }}
+    .pulse-actions a {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      padding:6px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:750;
+      color:var(--ink);
+    }}
+    .pulse-actions .primary-link {{ color:var(--blue); }}
+    .context-title {{ margin:5px 0 0; font-size:19px; line-height:1.22; }}
     .metric-grid {{
       display:grid;
       grid-template-columns:repeat(4, minmax(92px,1fr));
       gap:10px;
       margin-top:18px;
     }}
+    .context-panel .metric-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     .metric {{
       min-height:68px;
       border:1px solid #e2e7ef;
@@ -1224,6 +1281,7 @@ def render_front_page(
       background:#fbfcfd;
       padding:10px 11px;
     }}
+    .metric span {{ overflow-wrap:anywhere; }}
     .metric strong {{ display:block; margin-top:5px; font-size:24px; }}
     .session-links {{
       display:flex;
@@ -1237,11 +1295,90 @@ def render_front_page(
       border-left:4px solid var(--teal);
     }}
     .source-panel p {{ margin-top:4px; font-size:14px; line-height:1.45; }}
-    .layout {{
+    .feature-grid {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 330px;
+      grid-template-columns:repeat(2, minmax(0,1fr));
       gap:18px;
       margin-top:18px;
+    }}
+    .pulse-feature {{
+      display:grid;
+      gap:14px;
+      min-height:220px;
+    }}
+    .pulse-feature.movement {{ background:var(--green-soft); border-color:#cfe7df; }}
+    .pulse-feature.votes {{ background:var(--amber-soft); border-color:#ead8ab; }}
+    .feature-head {{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:start;
+    }}
+    .feature-head h2 {{
+      margin:5px 0 0;
+      font-size:25px;
+      line-height:1.15;
+    }}
+    .feature-state {{
+      display:inline-flex;
+      align-items:center;
+      min-height:26px;
+      padding:3px 9px;
+      border:1px solid rgba(23,26,31,.14);
+      border-radius:999px;
+      background:rgba(255,255,255,.72);
+      color:#3f4a59;
+      font-size:12px;
+      font-weight:750;
+      white-space:nowrap;
+    }}
+    .feature-body {{
+      display:grid;
+      gap:12px;
+      align-content:start;
+    }}
+    .feature-body p {{
+      margin:0;
+      color:#252b33;
+      font-size:16px;
+      line-height:1.45;
+    }}
+    .feature-link {{
+      display:inline-flex;
+      justify-self:start;
+      align-items:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid rgba(23,26,31,.14);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:750;
+    }}
+    .feature-microgrid {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:8px;
+    }}
+    .feature-microgrid div {{
+      border:1px solid rgba(23,26,31,.12);
+      border-radius:8px;
+      background:rgba(255,255,255,.65);
+      padding:9px 10px;
+    }}
+    .feature-microgrid span {{
+      display:block;
+      color:var(--muted);
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .feature-microgrid strong {{ display:block; margin-top:3px; font-size:19px; }}
+    .layout {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr);
+      gap:18px;
+      margin-top:28px;
       align-items:start;
     }}
     main {{ display:grid; gap:12px; }}
@@ -1305,21 +1442,14 @@ def render_front_page(
       margin-top:12px;
     }}
     .card-meta a {{ margin-left:auto; font-weight:750; }}
-    aside {{ display:grid; gap:12px; }}
-    .future-panel:nth-child(1) {{ background:var(--green-soft); }}
-    .future-panel:nth-child(2) {{ background:var(--amber-soft); }}
-    .future-panel:nth-child(3) {{ background:#f5f7fb; }}
-    .future-panel h2 {{ margin-top:6px; }}
-    .future-panel p {{ font-size:13px; line-height:1.45; }}
-    .placeholder-lines {{ display:grid; gap:7px; margin-top:14px; }}
-    .placeholder-lines i {{
-      display:block;
-      height:8px;
-      border-radius:999px;
-      background:rgba(23,26,31,.12);
+    .ranking-intro {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:14px;
+      align-items:end;
+      padding-top:24px;
+      border-top:1px solid var(--line);
     }}
-    .placeholder-lines i:nth-child(2) {{ width:76%; }}
-    .placeholder-lines i:nth-child(3) {{ width:54%; }}
     .notice {{
       padding:11px 13px;
       border:1px solid #e3c46a;
@@ -1330,15 +1460,18 @@ def render_front_page(
     }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      header, .latest-strip, .layout {{ grid-template-columns:1fr; }}
+      header, .radar-hero, .layout, .feature-grid {{ grid-template-columns:1fr; }}
       .nav-links {{ justify-content:flex-start; }}
     }}
     @media (max-width: 700px) {{
       .shell {{ padding:16px 14px; }}
       h1 {{ font-size:29px; }}
-      .latest-title {{ font-size:21px; }}
+      .context-title {{ font-size:18px; }}
       .metric-grid, .bar-grid {{ grid-template-columns:1fr 1fr; }}
-      .section-head {{ display:grid; }}
+      .section-head, .ranking-intro {{ display:grid; grid-template-columns:1fr; }}
+      .feature-head {{ display:grid; }}
+      .feature-state {{ justify-self:start; white-space:normal; }}
+      .feature-microgrid {{ grid-template-columns:1fr; }}
     }}
     @media (max-width: 460px) {{
       .metric-grid, .bar-grid {{ grid-template-columns:1fr; }}
@@ -1350,13 +1483,14 @@ def render_front_page(
   <div class="shell">
     <header>
       <div>
-        <span class="eyebrow">Neueste Sitzung</span>
-        <h1>Bundestag-Puls</h1>
-        <p class="subtitle">Das neueste erzeugte Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit in der Sitzung konzentrierte.</p>
+        <span class="eyebrow">Aktueller Lageblick</span>
+        <h1>Was gerade im Bundestag l&auml;uft</h1>
+        <p class="subtitle">Diese Seite ist der aktuelle Bundestag-Puls: Sie hebt Themenbewegung und Abstimmungsverschiebungen hervor. Das Plenarprotokoll-Dossier bleibt als Quelle verlinkt, ist aber nicht der Zweck dieser Seite.</p>
       </div>
       <nav class="nav-links" aria-label="Hauptnavigation">
-        <a class="primary-link" href="{protocol_href}">Details öffnen</a>
+        <a class="primary-link" href="#bewegung">Zum Lageblick</a>
         <a href="index.html">Start</a>
+        <a href="{protocol_href}">Protokolldossier</a>
         <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
@@ -1365,19 +1499,29 @@ def render_front_page(
       </nav>
     </header>
 
-    <section class="latest-strip">
-      <div class="latest-panel">
+    <section class="radar-hero">
+      <div class="latest-panel pulse-lede">
+        <span class="eyebrow">Momentaufnahme aus Primärquellen</span>
+        <h2>Themen, Abstimmungen und Aufmerksamkeit statt Sitzungsreview</h2>
+        <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
+        <div class="pulse-actions">
+          <a class="primary-link" href="#bewegung">Themenbewegung ansehen</a>
+          <a href="#abstimmungen">Abstimmungsverschiebungen ansehen</a>
+          <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
+        </div>
+      </div>
+      <div class="context-panel source-panel">
         <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
-        <h2 class="latest-title">{pulse_html.esc(protocol.get('titel'))}</h2>
+        <h2 class="context-title">{pulse_html.esc(protocol.get('titel'))}</h2>
         <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
         <div class="metric-grid">
           <div class="metric"><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
           <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-          <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+          <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(total_votes)}</strong></div>
           <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
         </div>
         <div class="session-links">
-          <a href="{protocol_href}">Sitzungsdetails</a>
+          <a href="{protocol_href}">Protokolldossier</a>
           <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
           <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
           <a href="{report_href}">Erzeugtes JSON</a>
@@ -1385,51 +1529,62 @@ def render_front_page(
           {sqlite_link}
         </div>
       </div>
-      <div class="latest-panel source-panel">
-        <div>
-          <span class="eyebrow">Quellenlage</span>
-          <h2>Primärquellen-Puls</h2>
-          <p>Redezahlen, Textumfang, Drucksachen und Rednerdaten werden aus dem offiziellen Protokoll und DIP-Daten dieser Sitzung erzeugt.</p>
+    </section>
+
+    <section class="feature-grid" id="bewegung">
+      <article class="pulse-feature movement">
+        <div class="feature-head">
+          <div>
+            <span class="eyebrow">Themenbewegung</span>
+            <h2>Was nach vorne rückt</h2>
+          </div>
+          <span class="feature-state">Aktueller Fokus</span>
         </div>
-        <div>
-          <span class="eyebrow">Nächster Vergleich</span>
-          <p>Dieser Bereich ist für Wochenvergleiche reserviert, sobald mehrere Sitzungswochen normalisiert sind.</p>
+        <div class="feature-body">
+          <p>{pulse_html.esc(focus_text)}</p>
+          <div class="feature-microgrid">
+            <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+          </div>
+          <p>Der Wochenvergleich wird hier sichtbar, sobald mehrere Sitzungswochen im selben Modell normalisiert sind.</p>
+          {focus_link}
         </div>
-      </div>
+      </article>
+      <article class="pulse-feature votes" id="abstimmungen">
+        <div class="feature-head">
+          <div>
+            <span class="eyebrow">Abstimmungsverschiebung</span>
+            <h2>Wo Stimmen das Bild verändern</h2>
+          </div>
+          <span class="feature-state">Namentliche Abstimmungen</span>
+        </div>
+        <div class="feature-body">
+          <p>{pulse_html.esc(vote_focus)}</p>
+          <div class="feature-microgrid">
+            <div><span>Zugeordnet</span><strong>{pulse_html.esc(total_votes)}</strong></div>
+            <div><span>TOPs mit Vote</span><strong>{pulse_html.esc(len(vote_items))}</strong></div>
+            <div><span>Quelle</span><strong>BT</strong></div>
+          </div>
+          <p>Fraktionsabweichungen und Veränderungen gegenüber vorherigen Abstimmungen werden hier zur Hauptspur, sobald genügend Vergleichsdaten vorliegen.</p>
+          {vote_link}
+        </div>
+      </article>
     </section>
 
     <div class="layout">
       <main>
-        <div class="section-head">
+        <div class="ranking-intro" id="aufmerksamkeit">
           <div>
-            <span class="eyebrow">Neueste Informationen</span>
+            <span class="eyebrow">Belegbares Detailmaterial</span>
             <h2>Aufmerksamkeitsranking</h2>
+            <p>Die Informationen zu einzelnen Tagesordnungspunkten bleiben erhalten, stehen aber unter dem aktuellen Lageblick.</p>
           </div>
-          <p>Die wichtigsten Tagesordnungspunkte der neuesten Sitzung, sortiert nach extrahierter Redezahl.</p>
+          <p>Sortiert nach extrahierter Redezahl.</p>
         </div>
         {warning_html}
         {''.join(attention_rows)}
       </main>
-      <aside>
-        <section class="future-panel">
-          <span>Reserviert</span>
-          <h2>Themenbewegung</h2>
-          <p>Vergleiche, welche Themen diese Woche mehr Aufmerksamkeit erhielten als letzte Woche.</p>
-          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
-        </section>
-        <section class="future-panel">
-          <span>Reserviert</span>
-          <h2>Abstimmungsverschiebungen</h2>
-          <p>Hebt namentliche Abstimmungen und Fraktionsabweichungen hervor, sobald der Parser dafür reift.</p>
-          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
-        </section>
-        <section class="future-panel">
-          <span>Archiv</span>
-          <h2>Plenarprotokoll-Katalog</h2>
-          <p>Nutze den Katalog, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
-          <div class="session-links"><a href="overview.html">Katalog öffnen</a></div>
-        </section>
-      </aside>
     </div>
 
     <footer>
@@ -1960,7 +2115,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
       <div>
         <nav aria-label="Hauptnavigation">
           <a href="../index.html">Start</a>
-          <a href="../puls.html">Neueste Sitzung</a>
+          <a href="../puls.html">Aktueller Puls</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
           <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="../sources.html">Quellen und Methode</a>
@@ -2050,7 +2205,7 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
         <nav aria-label="Hauptnavigation">
           <a href="index.html">Alle Gesetze</a>
           <a href="../index.html">Start</a>
-          <a href="../puls.html">Neueste Sitzung</a>
+          <a href="../puls.html">Aktueller Puls</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
           <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="../sources.html">Quellen und Methode</a>
@@ -2474,7 +2629,7 @@ def render_overview(
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
           <a href="index.html">Start</a>
-          <a href="puls.html">Neueste Sitzung</a>
+          <a href="puls.html">Aktueller Puls</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="{pulse_html.esc(catalog_href)}">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
@@ -2521,7 +2676,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -2998,7 +3153,7 @@ def render_catalog_page(
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
           <a href="index.html">Start</a>
-          <a href="puls.html">Neueste Sitzung</a>
+          <a href="puls.html">Aktueller Puls</a>
           <a href="{pulse_html.esc(overview_href)}">Plenarprotokoll-Katalog</a>
           <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
@@ -3299,7 +3454,7 @@ def render_sources_page(
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
           <a href="index.html">Start</a>
-          <a href="puls.html">Neueste Sitzung</a>
+          <a href="puls.html">Aktueller Puls</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
