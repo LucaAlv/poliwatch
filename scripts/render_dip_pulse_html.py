@@ -550,6 +550,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
 
 def render_html(
     report: dict[str, Any],
+    home_href: str | None = None,
     overview_href: str | None = None,
     bills_href: str | None = None,
     sources_href: str | None = None,
@@ -652,6 +653,9 @@ def render_html(
     warning_html = ""
     if warnings:
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
+    home_link = ""
+    if home_href:
+        home_link = f'<a class="overview-link" href="{esc(home_href)}">Start</a>'
     overview_link = ""
     if overview_href:
         overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>'
@@ -1253,7 +1257,7 @@ def render_html(
   <div class="shell">
     <header>
       <div>
-        <nav class="page-nav" aria-label="Hauptnavigation">{overview_link}{bills_link}{sources_link}</nav>
+        <nav class="page-nav" aria-label="Hauptnavigation">{home_link}{overview_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>

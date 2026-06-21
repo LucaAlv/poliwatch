@@ -104,6 +104,7 @@ def write_report_and_page(
     page_path.write_text(
         pulse_html.render_html(
             report,
+            home_href="../index.html",
             overview_href="../overview.html",
             bills_href="../bills/index.html",
             sources_href="../sources.html",
@@ -116,6 +117,335 @@ def write_report_and_page(
         "page_path": page_path,
         "slug": slug,
     }
+
+
+def render_landing_page(
+    entries: list[dict[str, Any]],
+    *,
+    database_href: str | None = None,
+    protocol_count: int = 0,
+    bill_count: int = 0,
+) -> str:
+    """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
+    if entries:
+        entry = entries[0]
+        report = entry["report"]
+        protocol = report.get("protocol") or {}
+        summary = report.get("validation_summary") or {}
+        snapshot = f"""
+        <aside class="snapshot">
+          <span class="eyebrow">Aktueller Stand</span>
+          <strong class="snapshot-doc">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</strong>
+          <p class="snapshot-title">{pulse_html.esc(pulse_html.short(protocol.get('titel'), 96))}</p>
+          <p class="snapshot-date">Sitzung vom {pulse_html.esc(protocol.get('datum'))}</p>
+          <div class="snapshot-metrics">
+            <div><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+            <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
+          </div>
+          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+        </aside>
+        """
+    else:
+        snapshot = """
+        <aside class="snapshot">
+          <span class="eyebrow">Aktueller Stand</span>
+          <p class="snapshot-title">Es wurde noch keine Sitzung erzeugt.</p>
+          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier die jüngste Sitzung.</p>
+          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+        </aside>
+        """
+
+    principles = [
+        (
+            "Nur Primärquellen",
+            "Aufgebaut aus offiziellen Plenarprotokollen, Drucksachen und namentlichen Abstimmungen — niemals aus Nachrichtenberichten oder Kommentaren.",
+        ),
+        (
+            "Jede Aussage belegbar",
+            "Jede Kennzahl und jeder Auszug ist einen Klick von der exakten Protokollstelle oder Drucksache entfernt, aus der sie stammt.",
+        ),
+        (
+            "Neutral und nicht-autoritativ",
+            "Mechanische Kennzahlen statt unbelegter Haltungs-Aussagen. KI-Zusammenfassungen sind gekennzeichnet und immer mit zitierten Quellen hinterlegt.",
+        ),
+        (
+            "Automatisch aktuell",
+            "Eine geplante Pipeline holt neue Plenarprotokolle aus der DIP-API, wertet sie aus und veröffentlicht sie — ein veralteter Monitor wäre wertlos.",
+        ),
+    ]
+    principle_cards = "".join(
+        f"""
+        <article class="principle">
+          <span class="num">{i}</span>
+          <h3>{pulse_html.esc(title)}</h3>
+          <p>{pulse_html.esc(desc)}</p>
+        </article>
+        """
+        for i, (title, desc) in enumerate(principles, start=1)
+    )
+
+    areas = [
+        (
+            "Civic Radar",
+            "Neueste Sitzung",
+            "puls.html",
+            "Das jüngste Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit konzentrierte — Reden, Redetext und Fraktionsanteile je Tagesordnungspunkt.",
+        ),
+        (
+            "Archiv",
+            "Plenarprotokoll-Katalog",
+            "overview.html",
+            "Der vollständige Katalog aller Plenarprotokolle aus der DIP-API mit erzeugten Dossiers je Sitzung: Tagesordnung, Rednerinnen und Redner, verknüpfte Drucksachen und Roh-API-Daten.",
+        ),
+        (
+            "Gesetzgebung",
+            "Gesetze verfolgen",
+            "bills/index.html",
+            "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
+        ),
+        (
+            "Transparenz",
+            "Quellen und Methode",
+            "sources.html",
+            "Welche offiziellen Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt — die Grundlage für das Neutralitätsversprechen.",
+        ),
+    ]
+    if database_href:
+        areas.append(
+            (
+                "Daten",
+                "SQLite-Entitätengraph",
+                database_href,
+                "MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze zum Download und zur eigenen Auswertung.",
+            )
+        )
+    area_cards = "".join(
+        f"""
+        <a class="area-card" href="{pulse_html.esc(href)}">
+          <span class="eyebrow">{tag}</span>
+          <h3>{title}</h3>
+          <p>{pulse_html.esc(desc)}</p>
+          <span class="area-go">&Ouml;ffnen &rarr;</span>
+        </a>
+        """
+        for tag, title, href, desc in areas
+    )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Primärquellen-Monitor des Bundestags</title>
+  <style>
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --teal:#0f766e;
+      --blue-soft:#eef5ff;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:1180px; margin:0 auto; padding:22px 22px 48px; }}
+    .topbar {{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      flex-wrap:wrap;
+      padding-bottom:18px;
+      border-bottom:1px solid var(--line);
+    }}
+    .brand {{ display:flex; align-items:baseline; gap:10px; }}
+    .brand strong {{ font-size:18px; font-weight:800; letter-spacing:-.01em; }}
+    .brand span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }}
+    .topnav {{ display:flex; flex-wrap:wrap; gap:8px; }}
+    .topnav a {{
+      display:inline-flex;
+      align-items:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-weight:700;
+      font-size:13px;
+      color:var(--ink);
+    }}
+    .topnav a:hover {{ border-color:#bdd0ea; background:var(--blue-soft); text-decoration:none; }}
+    .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }}
+    .hero {{
+      display:grid;
+      grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);
+      gap:30px;
+      align-items:center;
+      padding:46px 0 36px;
+      border-bottom:1px solid var(--line);
+    }}
+    .hero h1 {{ margin:12px 0 0; font-size:46px; line-height:1.05; font-weight:820; letter-spacing:-.02em; }}
+    .hero .lead {{ margin:18px 0 0; max-width:620px; font-size:17px; line-height:1.55; color:#3b4452; }}
+    .cta-row {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px; }}
+    .btn {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:46px;
+      padding:10px 20px;
+      border-radius:8px;
+      border:1px solid var(--line);
+      background:#fff;
+      font-weight:750;
+      font-size:15px;
+      color:var(--ink);
+    }}
+    .btn:hover {{ text-decoration:none; }}
+    .btn-primary {{ background:var(--blue); border-color:var(--blue); color:#fff; }}
+    .btn-primary:hover {{ background:#123e85; }}
+    .btn-ghost:hover {{ border-color:#bdd0ea; background:var(--blue-soft); }}
+    .snapshot {{
+      border:1px solid var(--line);
+      border-left:4px solid var(--teal);
+      border-radius:12px;
+      background:var(--panel);
+      padding:20px;
+    }}
+    .snapshot-doc {{ display:block; margin-top:6px; font-size:15px; }}
+    .snapshot-title {{ margin:8px 0 0; color:var(--ink); font-size:15px; line-height:1.35; font-weight:650; }}
+    .snapshot-date {{ margin:4px 0 0; color:var(--muted); font-size:13px; }}
+    .snapshot-metrics {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }}
+    .snapshot-metrics div {{ border:1px solid #e2e7ef; border-radius:8px; background:#fbfcfd; padding:8px 10px; }}
+    .snapshot-metrics span {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }}
+    .snapshot-metrics strong {{ display:block; margin-top:3px; font-size:20px; }}
+    .snapshot-link {{ font-weight:750; font-size:14px; }}
+    .stat-band {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:28px; }}
+    .stat-band div {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:14px 16px; }}
+    .stat-band span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+    .stat-band strong {{ display:block; margin-top:5px; font-size:26px; font-weight:780; }}
+    section.block {{ padding:42px 0 0; }}
+    section.block > .eyebrow {{ display:block; }}
+    section.block h2 {{ margin:8px 0 0; font-size:26px; font-weight:780; letter-spacing:-.01em; }}
+    section.block > p.intro {{ margin:10px 0 0; max-width:700px; color:var(--muted); font-size:15px; line-height:1.55; }}
+    .principles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:24px; }}
+    .principle {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px; }}
+    .principle .num {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:30px;
+      height:30px;
+      border-radius:8px;
+      background:var(--blue-soft);
+      color:var(--blue);
+      font-weight:800;
+      font-size:14px;
+      margin-bottom:12px;
+    }}
+    .principle h3 {{ margin:0; font-size:16px; font-weight:740; }}
+    .principle p {{ margin:8px 0 0; color:var(--muted); font-size:14px; line-height:1.5; }}
+    .areas {{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:24px; }}
+    .area-card {{
+      display:flex;
+      flex-direction:column;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:var(--panel);
+      padding:22px;
+      color:var(--ink);
+      transition:border-color .12s, box-shadow .12s, transform .12s;
+    }}
+    .area-card:hover {{
+      text-decoration:none;
+      border-color:#bdd0ea;
+      box-shadow:0 8px 24px rgba(23,26,31,.07);
+      transform:translateY(-2px);
+    }}
+    .area-card h3 {{ margin:8px 0 0; font-size:20px; font-weight:760; }}
+    .area-card p {{ margin:10px 0 0; color:var(--muted); font-size:14px; line-height:1.5; flex:1; }}
+    .area-go {{ margin-top:16px; color:var(--blue); font-weight:750; font-size:14px; }}
+    footer {{ margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; }}
+    @media (max-width: 900px) {{
+      .hero {{ grid-template-columns:1fr; padding:30px 0 28px; }}
+      .principles {{ grid-template-columns:1fr 1fr; }}
+      .areas {{ grid-template-columns:1fr; }}
+    }}
+    @media (max-width: 600px) {{
+      .shell {{ padding:16px 14px 40px; }}
+      .hero h1 {{ font-size:34px; }}
+      .principles, .stat-band {{ grid-template-columns:1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand"><strong>Bundestag-Puls</strong><span>Primärquellen-Monitor</span></div>
+      <nav class="topnav" aria-label="Hauptnavigation">
+        <a href="puls.html">Neueste Sitzung</a>
+        <a href="overview.html">Plenarprotokoll-Katalog</a>
+        <a href="bills/index.html">Gesetze verfolgen</a>
+        <a href="sources.html">Quellen und Methode</a>
+      </nav>
+    </div>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Deutscher Bundestag · aus offiziellen Quellen</span>
+        <h1>Was der Bundestag tut — mit Belegen.</h1>
+        <p class="lead">Bundestag-Puls verdichtet die verstreute offizielle Tätigkeit des Parlaments — Reden, Gesetzentwürfe, Ausschussschritte und namentliche Abstimmungen — zu einem lesbaren Bild davon, worauf sich die parlamentarische Aufmerksamkeit gerade richtet und wer wofür steht. Aufgebaut ausschließlich aus Primärquellen, nicht aus Nachrichten.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="puls.html">Neueste Sitzung ansehen</a>
+          <a class="btn btn-ghost" href="sources.html">Wie wir arbeiten</a>
+        </div>
+      </div>
+      {snapshot}
+    </section>
+
+    <section class="stat-band" aria-label="Kennzahlen">
+      <div><span>API-Sitzungen</span><strong>{pulse_html.esc(protocol_count)}</strong></div>
+      <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(entries))}</strong></div>
+      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Quellenart</span><strong>Primärquellen</strong></div>
+    </section>
+
+    <section class="block">
+      <span class="eyebrow">Was ist Bundestag-Puls?</span>
+      <h2>Ein zusammenhängendes Bild statt Fragmenten</h2>
+      <p class="intro">Eine Rede, ein Gesetzentwurf, ein Ausschussschritt, eine namentliche Abstimmung — einzeln sind sie öffentlich, aber schwer lesbar. Bundestag-Puls fügt sie zu einem Bild zusammen: „Was passiert dort gerade, und wer stand wo?“ Wie ein ziviler Radar für parlamentarische Aufmerksamkeit — jede Aussage einen Klick von ihrer Primärquelle entfernt.</p>
+    </section>
+
+    <section class="block">
+      <span class="eyebrow">Prinzipien</span>
+      <h2>Worauf dieses Projekt aufbaut</h2>
+      <div class="principles">{principle_cards}</div>
+    </section>
+
+    <section class="block">
+      <span class="eyebrow">Bereiche</span>
+      <h2>Was du hier findest</h2>
+      <p class="intro">Alle Ansichten greifen auf dieselben verknüpften Primärdaten zu — wähle die passende Perspektive.</p>
+      <div class="areas">{area_cards}</div>
+    </section>
+
+    <footer>
+      Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.
+    </footer>
+  </div>
+</body>
+</html>
+"""
 
 
 def render_front_page(entries: list[dict[str, Any]], database_href: str | None = "data/bundestag-pulse.sqlite") -> str:
@@ -439,6 +769,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
       </div>
       <nav class="nav-links" aria-label="Hauptnavigation">
         <a class="primary-link" href="{protocol_href}">Details öffnen</a>
+        <a href="index.html">Start</a>
         <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
         <a href="sources.html">Quellen und Methode</a>
@@ -1038,7 +1369,8 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
     <header>
       <div>
         <nav aria-label="Hauptnavigation">
-          <a href="../index.html">Neueste Sitzung</a>
+          <a href="../index.html">Start</a>
+          <a href="../puls.html">Neueste Sitzung</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
           <a href="../sources.html">Quellen und Methode</a>
         </nav>
@@ -1126,7 +1458,8 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
       <div>
         <nav aria-label="Hauptnavigation">
           <a href="index.html">Alle Gesetze</a>
-          <a href="../index.html">Neueste Sitzung</a>
+          <a href="../index.html">Start</a>
+          <a href="../puls.html">Neueste Sitzung</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
           <a href="../sources.html">Quellen und Methode</a>
         </nav>
@@ -1643,7 +1976,8 @@ def render_overview(
     <header>
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Neueste Sitzung</a>
+          <a href="index.html">Start</a>
+          <a href="puls.html">Neueste Sitzung</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
           <a href="sources.html">Quellen und Methode</a>
@@ -1684,7 +2018,7 @@ def render_overview(
       {''.join(catalog_rows)}
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="index.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a> · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a> · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -1902,7 +2236,8 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
     <header>
       <div>
         <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Neueste Sitzung</a>
+          <a href="index.html">Start</a>
+          <a href="puls.html">Neueste Sitzung</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
           <a href="sources.html">Quellen und Methode</a>
@@ -2116,9 +2451,19 @@ def main() -> int:
     bills = collect_bill_pages(entries)
     bill_output = write_bill_pages(output_dir, bills)
     index_path = output_dir / "index.html"
+    pulse_path = output_dir / "puls.html"
     overview_path = output_dir / "overview.html"
     sources_path = output_dir / "sources.html"
-    index_path.write_text(render_front_page(entries, database_href=database_href), encoding="utf-8")
+    index_path.write_text(
+        render_landing_page(
+            entries,
+            database_href=database_href,
+            protocol_count=len(protocols),
+            bill_count=int(bill_output["count"]),
+        ),
+        encoding="utf-8",
+    )
+    pulse_path.write_text(render_front_page(entries, database_href=database_href), encoding="utf-8")
     overview_path.write_text(
         render_overview(
             protocols,
