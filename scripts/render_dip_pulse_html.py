@@ -55,6 +55,108 @@ def format_percent(value: float) -> str:
     return f"{value:.1f}".replace(".", ",") + "%"
 
 
+def global_header_styles() -> str:
+    return """
+    .site-header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:18px;
+      flex-wrap:wrap;
+      padding:0 0 18px;
+      margin-bottom:22px;
+      border-bottom:1px solid var(--line);
+    }
+    .site-brand {
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      color:var(--ink);
+      min-width:180px;
+    }
+    .site-brand:hover { text-decoration:none; }
+    .site-brand strong {
+      font-size:18px;
+      line-height:1.1;
+      font-weight:820;
+    }
+    .site-brand span {
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      font-weight:700;
+    }
+    .site-nav {
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      gap:8px;
+    }
+    .site-nav a {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:var(--ink);
+      font-size:13px;
+      font-weight:700;
+    }
+    .site-nav a:hover,
+    .site-nav a[aria-current="page"] {
+      border-color:#bdd0ea;
+      background:var(--blue-soft, #eef5ff);
+      color:var(--blue, #174ea6);
+      text-decoration:none;
+    }
+    @media (max-width: 760px) {
+      .site-header { align-items:flex-start; }
+      .site-nav { justify-content:flex-start; }
+    }
+    """
+
+
+def render_global_header(
+    *,
+    home_href: str | None = "index.html",
+    pulse_href: str | None = "puls.html",
+    overview_href: str | None = "overview.html",
+    catalog_href: str | None = "api-sitzungen.html",
+    bills_href: str | None = "bills/index.html",
+    database_href: str | None = None,
+    sources_href: str | None = "sources.html",
+    active: str | None = None,
+) -> str:
+    brand_href = home_href or "#"
+    items = [
+        ("pulse", "Neueste Sitzung", pulse_href),
+        ("overview", "Plenarprotokoll-Katalog", overview_href),
+        ("catalog", "Alle API-Sitzungen", catalog_href),
+        ("bills", "Gesetze verfolgen", bills_href),
+        ("database", "Datenbank", database_href),
+        ("sources", "Quellen und Methode", sources_href),
+    ]
+    links = []
+    for key, label, href in items:
+        if not href:
+            continue
+        current = ' aria-current="page"' if active == key else ""
+        links.append(f'<a href="{esc(href)}"{current}>{esc(label)}</a>')
+    return (
+        '<div class="site-header">'
+        f'<a class="site-brand" href="{esc(brand_href)}">'
+        "<strong>Bundestag-Puls</strong>"
+        "<span>Primärquellen-Monitor</span>"
+        "</a>"
+        f'<nav class="site-nav" aria-label="Globale Navigation">{"".join(links)}</nav>'
+        "</div>"
+    )
+
+
 def page_range_text(item: dict[str, Any]) -> str:
     page_range = item.get("page_range") or {}
     start = page_range.get("start") or {}
@@ -649,6 +751,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
 def render_html(
     report: dict[str, Any],
     home_href: str | None = None,
+    pulse_href: str | None = None,
     overview_href: str | None = None,
     catalog_href: str | None = None,
     bills_href: str | None = None,
@@ -752,21 +855,6 @@ def render_html(
     warning_html = ""
     if warnings:
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
-    home_link = ""
-    if home_href:
-        home_link = f'<a class="overview-link" href="{esc(home_href)}">Start</a>'
-    overview_link = ""
-    if overview_href:
-        overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>'
-    catalog_link = ""
-    if catalog_href:
-        catalog_link = f'<a class="overview-link" href="{esc(catalog_href)}">Alle API-Sitzungen</a>'
-    bills_link = ""
-    if bills_href:
-        bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
-    sources_link = ""
-    if sources_href:
-        sources_link = f'<a class="overview-link" href="{esc(sources_href)}">Quellen und Methode</a>'
     footer_links = []
     if overview_href:
         footer_links.append(f'<a href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>')
@@ -808,31 +896,14 @@ def render_html(
     a {{ color:#174ea6; text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1440px; margin:0 auto; padding:24px; }}
-    header {{
+    {global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:24px;
       align-items:end;
       padding:10px 0 22px;
       border-bottom:1px solid var(--line);
-    }}
-    .overview-link {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      color:#174ea6;
-      font-size:13px;
-      font-weight:650;
-    }}
-    .page-nav {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
     }}
     h1 {{ margin:0; font-size:34px; line-height:1.1; font-weight:760; }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:15px; }}
@@ -1444,7 +1515,7 @@ def render_html(
     }}
     @media (max-width: 720px) {{
       .shell {{ padding:14px; }}
-      header, .top-head {{ grid-template-columns:1fr; }}
+      .page-header, .top-head {{ grid-template-columns:1fr; }}
       .session-llm-header, .session-summary-item-head {{ grid-template-columns:1fr; }}
       .meta-grid {{ grid-template-columns:1fr 1fr; }}
       h1 {{ font-size:27px; }}
@@ -1468,9 +1539,9 @@ def render_html(
 </head>
 <body>
   <div class="shell">
-    <header>
+    {render_global_header(home_href=home_href, pulse_href=pulse_href, overview_href=overview_href, catalog_href=catalog_href, bills_href=bills_href, sources_href=sources_href, active="pulse")}
+    <header class="page-header">
       <div>
-        <nav class="page-nav" aria-label="Hauptnavigation">{home_link}{overview_link}{catalog_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
