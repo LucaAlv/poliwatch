@@ -42,21 +42,29 @@ def slugify_document_number(document_number: str) -> str:
     return value.strip("-").lower()
 
 
+def normalized_document_number(document_number: Any) -> str:
+    return str(document_number or "").strip()
+
+
 def protocol_sort_key(protocol: dict[str, Any]) -> tuple[str, str]:
     return (str(protocol.get("datum") or ""), str(protocol.get("id") or ""))
 
 
+def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: str) -> dict[str, Any]:
+    documents = client.list_all(
+        "/plenarprotokoll",
+        {"f.zuordnung": "BT", "f.dokumentnummer": document_number},
+    )
+    if not documents:
+        raise dip.DipError(f"No BT Plenarprotokoll found for {document_number}")
+    return documents[0]
+
+
 def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[str]) -> list[dict[str, Any]]:
     if document_numbers:
-        protocols = []
+        protocols: list[dict[str, Any]] = []
         for document_number in document_numbers:
-            documents = client.list_all(
-                "/plenarprotokoll",
-                {"f.zuordnung": "BT", "f.dokumentnummer": document_number},
-            )
-            if not documents:
-                raise dip.DipError(f"No BT Plenarprotokoll found for {document_number}")
-            protocols.append(documents[0])
+            protocols.append(fetch_protocol_by_document_number(client, document_number))
         return sorted(protocols, key=protocol_sort_key, reverse=True)
 
     protocols: list[dict[str, Any]] = []
@@ -84,42 +92,51 @@ def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: in
     return protocols[:detail_limit]
 
 
-def write_report_and_page(
-    protocol: dict[str, Any],
-    output_dir: Path,
-    api_key: str,
-    sleep: float,
-    person_limit: int,
-    vote_scan_pages: int,
-    summary_mode: str,
-    summary_provider: str,
-    anthropic_api_key: str | None,
-    gemini_api_key: str | None,
-    summary_model: str | None,
-    store: Any | None,
-) -> dict[str, Any]:
-    document_number = str(protocol["dokumentnummer"])
-    slug = slugify_document_number(document_number)
-    report_path = output_dir / "data" / f"plenarprotokoll-{slug}.json"
-    page_path = output_dir / "protocols" / f"plenarprotokoll-{slug}.html"
+def add_explicit_dossier_protocols(
+    client: dip.ApiClient,
+    protocols: list[dict[str, Any]],
+    detail_protocols: list[dict[str, Any]],
+    document_numbers: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not document_numbers:
+        return protocols, detail_protocols
 
-    args = argparse.Namespace(
-        api_key=api_key,
-        protocol_id=str(protocol["id"]),
-        document_number=None,
-        limit_tops=None,
-        person_limit=person_limit,
-        vote_scan_pages=vote_scan_pages,
-        summary_mode=summary_mode,
-        summary_provider=summary_provider,
-        anthropic_api_key=anthropic_api_key,
-        gemini_api_key=gemini_api_key,
-        summary_model=summary_model,
-        sleep=sleep,
+    protocols_by_number = {
+        normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in protocols
+    }
+    detail_by_number = {
+        normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in detail_protocols
+    }
+
+    for document_number in document_numbers:
+        document_number = normalized_document_number(document_number)
+        if not document_number:
+            continue
+        protocol = protocols_by_number.get(document_number)
+        if protocol is None:
+            protocol = fetch_protocol_by_document_number(client, document_number)
+            protocols.append(protocol)
+            protocols_by_number[document_number] = protocol
+        if document_number not in detail_by_number:
+            detail_protocols.append(protocol)
+            detail_by_number[document_number] = protocol
+
+    return sorted(protocols, key=protocol_sort_key, reverse=True), detail_protocols
+
+
+def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
+    slug = slugify_document_number(document_number)
+    return (
+        output_dir / "data" / f"plenarprotokoll-{slug}.json",
+        output_dir / "protocols" / f"plenarprotokoll-{slug}.html",
+        slug,
     )
-    report = dip.build_report(args)
-    if store is not None:
-        pulse_store.persist_report(store, report)
+
+
+def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    protocol = report.get("protocol") or {}
+    document_number = normalized_document_number(protocol.get("dokumentnummer"))
+    report_path, page_path, slug = report_paths(output_dir, document_number)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     page_path.write_text(
         pulse_html.render_html(
@@ -138,6 +155,99 @@ def write_report_and_page(
         "page_path": page_path,
         "slug": slug,
     }
+
+
+def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
+    entries: list[dict[str, Any]] = []
+    data_dir = output_dir / "data"
+    if not data_dir.exists():
+        return entries
+
+    for report_path in sorted(data_dir.glob("plenarprotokoll-*.json")):
+        if report_path.name == "plenarprotokoll-catalog.json":
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"warning: Skipping unreadable dossier report {report_path}: {exc}", file=sys.stderr)
+            continue
+        protocol = report.get("protocol") or {}
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if not document_number or document_number not in protocol_numbers:
+            continue
+        expected_report_path, page_path, slug = report_paths(output_dir, document_number)
+        entries.append(
+            {
+                "report": report,
+                "report_path": expected_report_path if expected_report_path.exists() else report_path,
+                "page_path": page_path,
+                "slug": slug,
+            }
+        )
+    return entries
+
+
+def merge_detail_entries(
+    protocols: list[dict[str, Any]],
+    existing_entries: list[dict[str, Any]],
+    generated_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    entries_by_id: dict[str, dict[str, Any]] = {}
+    entries_by_number: dict[str, dict[str, Any]] = {}
+    for entry in [*existing_entries, *generated_entries]:
+        protocol = entry["report"].get("protocol") or {}
+        protocol_id = str(protocol.get("id") or "")
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if protocol_id:
+            entries_by_id[protocol_id] = entry
+        if document_number:
+            entries_by_number[document_number] = entry
+
+    merged: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for protocol in protocols:
+        entry = entries_by_id.get(str(protocol.get("id") or "")) or entries_by_number.get(
+            normalized_document_number(protocol.get("dokumentnummer"))
+        )
+        if entry and id(entry) not in seen:
+            merged.append(entry)
+            seen.add(id(entry))
+    return merged
+
+
+def write_report_and_page(
+    protocol: dict[str, Any],
+    output_dir: Path,
+    api_key: str,
+    sleep: float,
+    person_limit: int,
+    vote_scan_pages: int,
+    summary_mode: str,
+    summary_provider: str,
+    anthropic_api_key: str | None,
+    gemini_api_key: str | None,
+    summary_model: str | None,
+    store: Any | None,
+) -> dict[str, Any]:
+    args = argparse.Namespace(
+        api_key=api_key,
+        protocol_id=str(protocol["id"]),
+        document_number=None,
+        limit_tops=None,
+        person_limit=person_limit,
+        vote_scan_pages=vote_scan_pages,
+        summary_mode=summary_mode,
+        summary_provider=summary_provider,
+        anthropic_api_key=anthropic_api_key,
+        gemini_api_key=gemini_api_key,
+        summary_model=summary_model,
+        sleep=sleep,
+    )
+    report = dip.build_report(args)
+    if store is not None:
+        pulse_store.persist_report(store, report)
+    return write_report_files(report, output_dir)
 
 
 def sqlite_identifier(name: str) -> str:
@@ -2703,6 +2813,7 @@ def build_catalog_rows(
     by_period: dict[str, int] = {}
     for protocol in protocols:
         period = str(protocol.get("wahlperiode") or "unbekannt")
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
         by_period[period] = by_period.get(period, 0) + 1
         fundstelle = protocol.get("fundstelle") or {}
         entry = entries_by_id.get(str(protocol.get("id")))
@@ -2735,7 +2846,11 @@ def build_catalog_rows(
 
         rows.append(
             f"""
-            <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
+            <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-docnumber="{pulse_html.esc(document_number)}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
+              <label class="catalog-select" title="Für Dossier-Erzeugung auswählen">
+                <input type="checkbox" data-dossier-select value="{pulse_html.esc(document_number)}">
+                <span>Auswählen</span>
+              </label>
               <div>
                 <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
@@ -2772,6 +2887,7 @@ def render_catalog_script() -> str:
       const container = document.querySelector('[data-catalog]');
       if (!container) return;
       const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const checkboxes = Array.from(container.querySelectorAll('[data-dossier-select]'));
       const search = document.querySelector('[data-filter-search]');
       const wpSelect = document.querySelector('[data-filter-wp]');
       const dossierSelect = document.querySelector('[data-filter-dossier]');
@@ -2780,6 +2896,46 @@ def render_catalog_script() -> str:
       const noResults = document.querySelector('[data-no-results]');
       const resetBtn = document.querySelector('[data-filter-reset]');
       const badges = Array.from(document.querySelectorAll('[data-wp-filter]'));
+      const developerPanel = document.querySelector('[data-dossier-command]');
+      const selectedCountEl = document.querySelector('[data-selected-count]');
+      const commandEl = document.querySelector('[data-command-output]');
+      const selectVisibleBtn = document.querySelector('[data-select-visible]');
+      const selectMissingBtn = document.querySelector('[data-select-missing]');
+      const clearSelectionBtn = document.querySelector('[data-clear-selection]');
+      const copyCommandBtn = document.querySelector('[data-copy-command]');
+
+      const shellQuote = (value) => {
+        const text = String(value);
+        return /^[A-Za-z0-9_./:=+-]+$/.test(text) ? text : "'" + text.replace(/'/g, "'\\\\''") + "'";
+      };
+
+      const selectedDocumentNumbers = () => checkboxes
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => checkbox.value)
+        .filter(Boolean);
+
+      const updateCommand = () => {
+        if (!developerPanel || !commandEl) return;
+        const docs = selectedDocumentNumbers();
+        if (selectedCountEl) selectedCountEl.textContent = String(docs.length);
+        if (copyCommandBtn) copyCommandBtn.disabled = docs.length === 0;
+        const outputDir = developerPanel.dataset.outputDir || '.context/dip-pulse-site';
+        const args = [
+          'python3',
+          'scripts/build_dip_pulse_site.py',
+          '--limit',
+          '0',
+          '--detail-limit',
+          '-1',
+          '--preserve-existing-dossiers',
+          '--output-dir',
+          outputDir,
+        ];
+        docs.forEach((doc) => {
+          args.push('--dossier-document-number', doc);
+        });
+        commandEl.value = docs.length ? args.map(shellQuote).join(' ') : '';
+      };
 
       const apply = () => {
         const terms = (search.value || '').toLowerCase().trim().split(/\\s+/).filter(Boolean);
@@ -2836,7 +2992,50 @@ def render_catalog_script() -> str:
           apply();
         });
       }
+      checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateCommand));
+      if (selectVisibleBtn) {
+        selectVisibleBtn.addEventListener('click', () => {
+          rows.forEach((row) => {
+            const checkbox = row.querySelector('[data-dossier-select]');
+            if (checkbox && !row.hidden) checkbox.checked = true;
+          });
+          updateCommand();
+        });
+      }
+      if (selectMissingBtn) {
+        selectMissingBtn.addEventListener('click', () => {
+          rows.forEach((row) => {
+            const checkbox = row.querySelector('[data-dossier-select]');
+            if (checkbox && !row.hidden && row.dataset.dossier === '0') checkbox.checked = true;
+          });
+          updateCommand();
+        });
+      }
+      if (clearSelectionBtn) {
+        clearSelectionBtn.addEventListener('click', () => {
+          checkboxes.forEach((checkbox) => {
+            checkbox.checked = false;
+          });
+          updateCommand();
+        });
+      }
+      if (copyCommandBtn && commandEl) {
+        copyCommandBtn.addEventListener('click', async () => {
+          if (!commandEl.value) return;
+          commandEl.select();
+          try {
+            await navigator.clipboard.writeText(commandEl.value);
+            copyCommandBtn.textContent = 'Kopiert';
+            window.setTimeout(() => {
+              copyCommandBtn.textContent = 'Befehl kopieren';
+            }, 1400);
+          } catch {
+            document.execCommand('copy');
+          }
+        });
+      }
       apply();
+      updateCommand();
     })();
   </script>
 """
@@ -2846,6 +3045,7 @@ def render_catalog_page(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
+    output_dir: Path,
     overview_href: str = "overview.html",
     database_page_href: str | None = None,
 ) -> str:
@@ -3006,6 +3206,63 @@ def render_catalog_page(
       cursor:pointer;
     }}
     .link-button:hover {{ text-decoration:underline; }}
+    .developer-panel {{
+      display:grid;
+      gap:12px;
+      margin-top:16px;
+      padding:16px;
+      border:1px solid #bdd0ea;
+      border-radius:8px;
+      background:#f6f9ff;
+    }}
+    .developer-panel h2 {{
+      margin:0;
+      font-size:18px;
+      line-height:1.25;
+    }}
+    .developer-panel p {{
+      margin:0;
+      color:var(--muted);
+      line-height:1.45;
+    }}
+    .developer-actions {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+    }}
+    .dev-button {{
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:var(--ink);
+      font:inherit;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+    }}
+    .dev-button.primary {{
+      border-color:#bdd0ea;
+      background:#eef5ff;
+      color:#103a7a;
+    }}
+    .dev-button:disabled {{
+      cursor:not-allowed;
+      opacity:.55;
+    }}
+    .command-output {{
+      width:100%;
+      min-height:78px;
+      padding:10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:#182230;
+      font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      resize:vertical;
+    }}
     .periods {{
       display:flex;
       flex-wrap:wrap;
@@ -3035,13 +3292,29 @@ def render_catalog_page(
     .catalog {{ display:grid; gap:10px; margin-top:18px; }}
     .catalog-row {{
       display:grid;
-      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
+      grid-template-columns:minmax(96px,.3fr) minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
       gap:14px;
       align-items:start;
       background:var(--panel);
       border:1px solid var(--line);
       border-radius:8px;
       padding:14px;
+    }}
+    .catalog-select {{
+      display:inline-flex;
+      gap:7px;
+      align-items:center;
+      min-height:32px;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }}
+    .catalog-select input {{
+      width:17px;
+      height:17px;
+      margin:0;
+      accent-color:#174ea6;
     }}
     .catalog-row[hidden] {{ display:none; }}
     .catalog-row h3 {{
@@ -3208,6 +3481,17 @@ def render_catalog_page(
       <span><span data-result-count>{pulse_html.esc(total)}</span> von {pulse_html.esc(total)} Sitzungen</span>
       <button type="button" class="link-button" data-filter-reset hidden>Filter zurücksetzen</button>
     </div>
+    <section class="developer-panel" data-dossier-command data-output-dir="{pulse_html.esc(str(output_dir))}">
+      <h2>Dossiers erzeugen</h2>
+      <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu.</p>
+      <div class="developer-actions">
+        <button type="button" class="dev-button" data-select-visible>Sichtbare auswählen</button>
+        <button type="button" class="dev-button" data-select-missing>Sichtbare ohne Dossier</button>
+        <button type="button" class="dev-button" data-clear-selection>Auswahl leeren</button>
+        <button type="button" class="dev-button primary" data-copy-command disabled>Befehl kopieren</button>
+      </div>
+      <textarea class="command-output" data-command-output readonly placeholder="Sitzungen auswählen, um den Regenerationsbefehl zu erzeugen."></textarea>
+    </section>
     <div class="periods">{period_badges}</div>
     <section class="catalog" data-catalog>
       {rows_html}
@@ -3564,6 +3848,15 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Specific protocol document number to include, e.g. 21/84. Can be repeated.",
     )
+    parser.add_argument(
+        "--dossier-document-number",
+        action="append",
+        default=[],
+        help=(
+            "Specific protocol document number to generate or regenerate as a dossier "
+            "without restricting the catalog. Can be repeated."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
     parser.add_argument(
         "--database-path",
@@ -3574,6 +3867,11 @@ def parse_args() -> argparse.Namespace:
         "--no-persist",
         action="store_true",
         help="Skip writing the SQLite graph store.",
+    )
+    parser.add_argument(
+        "--preserve-existing-dossiers",
+        action="store_true",
+        help="Load existing dossier JSON files from OUTPUT_DIR/data and keep them visible in the generated catalog.",
     )
     parser.add_argument(
         "--person-limit",
@@ -3633,9 +3931,18 @@ def main() -> int:
         protocols = fetch_protocols(client, args.limit, args.document_number)
         detail_limit = None if args.document_number else args.detail_limit
         detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
+        protocols, detail_protocols = add_explicit_dossier_protocols(
+            client,
+            protocols,
+            detail_protocols,
+            args.dossier_document_number,
+        )
+        existing_entries = (
+            load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
+        )
         store = None if args.no_persist else pulse_store.connect(database_path)
         try:
-            entries = [
+            generated_entries = [
                 write_report_and_page(
                     protocol=protocol,
                     output_dir=output_dir,
@@ -3655,6 +3962,7 @@ def main() -> int:
         finally:
             if store is not None:
                 store.close()
+        entries = merge_detail_entries(protocols, existing_entries, generated_entries)
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -3702,7 +4010,13 @@ def main() -> int:
         encoding="utf-8",
     )
     catalog_page_path.write_text(
-        render_catalog_page(protocols, entries, catalog_path, database_page_href=database_page_href),
+        render_catalog_page(
+            protocols,
+            entries,
+            catalog_path,
+            output_dir,
+            database_page_href=database_page_href,
+        ),
         encoding="utf-8",
     )
     sources_path.write_text(
