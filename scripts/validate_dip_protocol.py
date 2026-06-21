@@ -26,7 +26,9 @@ from typing import Any
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-DEFAULT_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-4-6")
+GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
+DEFAULT_ANTHROPIC_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-4-6")
+DEFAULT_GEMINI_SUMMARY_MODELS = ("gemini-3.5-flash",)
 BT_BASE_URL = "https://www.bundestag.de"
 ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"
 QUADRANT_ORDER = {"A": 1, "B": 2, "C": 3, "D": 4}
@@ -102,7 +104,7 @@ def fetch_html(url: str) -> str:
         raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
 
 
-def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> Any:
+def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], api_name: str = "LLM API") -> Any:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -114,9 +116,9 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> Any
             return json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise SummaryError(f"Anthropic API HTTP {exc.code}: {body[:500]}") from exc
+        raise SummaryError(f"{api_name} HTTP {exc.code}: {body[:500]}") from exc
     except urllib.error.URLError as exc:
-        raise SummaryError(f"Anthropic API request failed: {exc}") from exc
+        raise SummaryError(f"{api_name} request failed: {exc}") from exc
 
 
 def clean_text(value: str | None) -> str:
@@ -646,12 +648,45 @@ def match_roll_call_votes(
     return matches
 
 
-def summary_model_chain(args: argparse.Namespace) -> list[str]:
-    configured = getattr(args, "summary_model", None) or os.environ.get("ANTHROPIC_SUMMARY_MODELS")
+def configured_summary_provider(args: argparse.Namespace) -> str:
+    provider = getattr(args, "summary_provider", "auto")
+    if provider in {"anthropic", "gemini"}:
+        return provider
+
+    if anthropic_summary_api_key(args):
+        return "anthropic"
+    if gemini_summary_api_key(args):
+        return "gemini"
+    return "anthropic"
+
+
+def anthropic_summary_api_key(args: argparse.Namespace) -> str | None:
+    return getattr(args, "anthropic_api_key", None) or os.environ.get("ANTHROPIC_API_KEY")
+
+
+def gemini_summary_api_key(args: argparse.Namespace) -> str | None:
+    return (
+        getattr(args, "gemini_api_key", None)
+        or os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+    )
+
+
+def summary_api_key(args: argparse.Namespace, provider: str) -> str | None:
+    if provider == "gemini":
+        return gemini_summary_api_key(args)
+    return anthropic_summary_api_key(args)
+
+
+def summary_model_chain(args: argparse.Namespace, provider: str) -> list[str]:
+    env_var = "GEMINI_SUMMARY_MODELS" if provider == "gemini" else "ANTHROPIC_SUMMARY_MODELS"
+    configured = getattr(args, "summary_model", None) or os.environ.get(env_var)
     if configured:
         models = [model.strip() for model in str(configured).split(",")]
         return [model for model in models if model]
-    return list(DEFAULT_SUMMARY_MODELS)
+    if provider == "gemini":
+        return list(DEFAULT_GEMINI_SUMMARY_MODELS)
+    return list(DEFAULT_ANTHROPIC_SUMMARY_MODELS)
 
 
 def summary_source_chunks(top: dict[str, Any]) -> list[dict[str, Any]]:
@@ -691,6 +726,21 @@ def anthropic_text_from_response(response: dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
+def gemini_text_from_response(response: dict[str, Any]) -> str:
+    parts = []
+    for candidate in response.get("candidates") or []:
+        content = candidate.get("content") or {}
+        for part in content.get("parts") or []:
+            if part.get("text"):
+                parts.append(str(part["text"]))
+    return "\n".join(parts).strip()
+
+
+def gemini_model_path(model: str) -> str:
+    model_path = model if model.startswith("models/") else f"models/{model}"
+    return urllib.parse.quote(model_path, safe="/")
+
+
 def parse_summary_response(raw_text: str, allowed_chunk_ids: set[str]) -> dict[str, Any]:
     try:
         data = json.loads(raw_text)
@@ -720,7 +770,52 @@ def parse_summary_response(raw_text: str, allowed_chunk_ids: set[str]) -> dict[s
     }
 
 
-def generate_top_summary(top: dict[str, Any], api_key: str, models: list[str]) -> dict[str, Any] | None:
+def request_anthropic_summary(prompt: str, api_key: str, model: str) -> str:
+    headers = {
+        "Accept": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+    }
+    payload = {
+        "model": model,
+        "max_tokens": 400,
+        "system": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen.",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    return anthropic_text_from_response(post_json(ANTHROPIC_MESSAGES_URL, payload, headers, "Anthropic API"))
+
+
+def request_gemini_summary(prompt: str, api_key: str, model: str) -> str:
+    headers = {
+        "Accept": "application/json",
+        "x-goog-api-key": api_key,
+    }
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen."}]
+        },
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": 400,
+            "responseMimeType": "application/json",
+        },
+    }
+    url = GEMINI_GENERATE_URL_TEMPLATE.format(model=gemini_model_path(model))
+    return gemini_text_from_response(post_json(url, payload, headers, "Gemini API"))
+
+
+def request_summary_text(provider: str, prompt: str, api_key: str, model: str) -> str:
+    if provider == "gemini":
+        return request_gemini_summary(prompt, api_key, model)
+    return request_anthropic_summary(prompt, api_key, model)
+
+
+def generate_top_summary(
+    top: dict[str, Any],
+    provider: str,
+    api_key: str,
+    models: list[str],
+) -> dict[str, Any] | None:
     chunks = summary_source_chunks(top)
     if len(chunks) < SUMMARY_CHUNK_MIN:
         return None
@@ -757,25 +852,15 @@ Quellen:
 {chunk_lines}
 """.strip()
 
-    headers = {
-        "Accept": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": ANTHROPIC_VERSION,
-    }
-    payload_base = {
-        "max_tokens": 400,
-        "system": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen.",
-        "messages": [{"role": "user", "content": prompt}],
-    }
     last_error: SummaryError | None = None
     allowed_ids = {chunk["id"] for chunk in chunks}
     for model in models:
         try:
-            response = post_json(ANTHROPIC_MESSAGES_URL, {**payload_base, "model": model}, headers)
-            summary = parse_summary_response(anthropic_text_from_response(response), allowed_ids)
+            summary = parse_summary_response(request_summary_text(provider, prompt, api_key, model), allowed_ids)
             chunks_by_id = {chunk["id"]: chunk for chunk in chunks}
             return {
                 "label": "Automatische Zusammenfassung — zur Quelle",
+                "provider": provider,
                 "model": model,
                 "text": summary["text"],
                 "source_chunk_ids": summary["source_chunk_ids"],
@@ -795,16 +880,20 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
         report["summary_generation"] = {"enabled": False}
         return
 
-    api_key = getattr(args, "anthropic_api_key", None) or os.environ.get("ANTHROPIC_API_KEY")
-    models = summary_model_chain(args)
+    provider = configured_summary_provider(args)
+    api_key = summary_api_key(args, provider)
+    models = summary_model_chain(args, provider)
     if not api_key:
+        env_hint = "GEMINI_API_KEY or GOOGLE_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY"
         report["summary_generation"] = {
             "enabled": False,
-            "reason": "ANTHROPIC_API_KEY not set",
+            "provider": provider,
+            "reason": f"{env_hint} not set",
             "models": models,
         }
         if mode == "required":
-            raise DipError("Provide an Anthropic API key via --anthropic-api-key or ANTHROPIC_API_KEY for summaries.")
+            flag_hint = "--gemini-api-key" if provider == "gemini" else "--anthropic-api-key"
+            raise DipError(f"Provide a {provider} API key via {flag_hint} or {env_hint} for summaries.")
         return
 
     failures: list[str] = []
@@ -815,7 +904,7 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
                 "heading": item.get("heading"),
                 "speeches": item.get("xml_speakers") or [],
             }
-            summary = generate_top_summary(parsed_top, api_key, models)
+            summary = generate_top_summary(parsed_top, provider, api_key, models)
             if summary:
                 item["llm_summary"] = summary
         except SummaryError as exc:
@@ -825,7 +914,7 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
 
     report["summary_generation"] = {
         "enabled": True,
-        "provider": "anthropic",
+        "provider": provider,
         "models": models,
         "generated_top_count": sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary")),
         "failures": failures,
@@ -1085,14 +1174,24 @@ def parse_args() -> argparse.Namespace:
         "--summary-mode",
         choices=("auto", "required", "off"),
         default="auto",
-        help="Generate per-TOP LLM summaries when ANTHROPIC_API_KEY is available, require them, or disable them.",
+        help="Generate per-TOP LLM summaries when a provider API key is available, require them, or disable them.",
+    )
+    parser.add_argument(
+        "--summary-provider",
+        choices=("auto", "anthropic", "gemini"),
+        default="auto",
+        help="LLM provider for summaries. Auto keeps Anthropic as the default when both provider keys are set.",
     )
     parser.add_argument("--anthropic-api-key", help="Anthropic API key. Prefer ANTHROPIC_API_KEY for local use.")
     parser.add_argument(
+        "--gemini-api-key",
+        help="Google Gemini API key. Prefer GEMINI_API_KEY or GOOGLE_API_KEY for local use.",
+    )
+    parser.add_argument(
         "--summary-model",
         help=(
-            "Comma-separated Anthropic model IDs to try for summaries. "
-            "Defaults to Claude Opus 4.8, then Sonnet 4.6."
+            "Comma-separated provider model IDs to try for summaries. "
+            "Defaults depend on --summary-provider."
         ),
     )
     parser.add_argument(
