@@ -36,6 +36,12 @@ VOTE_KEYS = ("yes", "no", "abstain", "absent")
 SUMMARY_CHUNK_MIN = 3
 SUMMARY_CHUNK_MAX = 5
 SUMMARY_CHUNK_CHARS = 900
+# Gemini's default models are reasoning models whose internal "thinking" tokens
+# count against maxOutputTokens. The short JSON answer needs ~150 tokens, but the
+# thinking phase alone can spend 400-600+, so a low cap truncates the response to
+# invalid JSON. Keep a generous budget so both thinking and the answer fit.
+GEMINI_SUMMARY_MAX_OUTPUT_TOKENS = 2048
+ANTHROPIC_SUMMARY_MAX_OUTPUT_TOKENS = 400
 
 
 class DipError(RuntimeError):
@@ -778,7 +784,7 @@ def request_anthropic_summary(prompt: str, api_key: str, model: str) -> str:
     }
     payload = {
         "model": model,
-        "max_tokens": 400,
+        "max_tokens": ANTHROPIC_SUMMARY_MAX_OUTPUT_TOKENS,
         "system": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen.",
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -796,7 +802,7 @@ def request_gemini_summary(prompt: str, api_key: str, model: str) -> str:
         },
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {
-            "maxOutputTokens": 400,
+            "maxOutputTokens": GEMINI_SUMMARY_MAX_OUTPUT_TOKENS,
             "responseMimeType": "application/json",
         },
     }

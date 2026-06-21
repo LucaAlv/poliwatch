@@ -42,21 +42,29 @@ def slugify_document_number(document_number: str) -> str:
     return value.strip("-").lower()
 
 
+def normalized_document_number(document_number: Any) -> str:
+    return str(document_number or "").strip()
+
+
 def protocol_sort_key(protocol: dict[str, Any]) -> tuple[str, str]:
     return (str(protocol.get("datum") or ""), str(protocol.get("id") or ""))
 
 
+def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: str) -> dict[str, Any]:
+    documents = client.list_all(
+        "/plenarprotokoll",
+        {"f.zuordnung": "BT", "f.dokumentnummer": document_number},
+    )
+    if not documents:
+        raise dip.DipError(f"No BT Plenarprotokoll found for {document_number}")
+    return documents[0]
+
+
 def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[str]) -> list[dict[str, Any]]:
     if document_numbers:
-        protocols = []
+        protocols: list[dict[str, Any]] = []
         for document_number in document_numbers:
-            documents = client.list_all(
-                "/plenarprotokoll",
-                {"f.zuordnung": "BT", "f.dokumentnummer": document_number},
-            )
-            if not documents:
-                raise dip.DipError(f"No BT Plenarprotokoll found for {document_number}")
-            protocols.append(documents[0])
+            protocols.append(fetch_protocol_by_document_number(client, document_number))
         return sorted(protocols, key=protocol_sort_key, reverse=True)
 
     protocols: list[dict[str, Any]] = []
@@ -84,42 +92,51 @@ def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: in
     return protocols[:detail_limit]
 
 
-def write_report_and_page(
-    protocol: dict[str, Any],
-    output_dir: Path,
-    api_key: str,
-    sleep: float,
-    person_limit: int,
-    vote_scan_pages: int,
-    summary_mode: str,
-    summary_provider: str,
-    anthropic_api_key: str | None,
-    gemini_api_key: str | None,
-    summary_model: str | None,
-    store: Any | None,
-) -> dict[str, Any]:
-    document_number = str(protocol["dokumentnummer"])
-    slug = slugify_document_number(document_number)
-    report_path = output_dir / "data" / f"plenarprotokoll-{slug}.json"
-    page_path = output_dir / "protocols" / f"plenarprotokoll-{slug}.html"
+def add_explicit_dossier_protocols(
+    client: dip.ApiClient,
+    protocols: list[dict[str, Any]],
+    detail_protocols: list[dict[str, Any]],
+    document_numbers: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not document_numbers:
+        return protocols, detail_protocols
 
-    args = argparse.Namespace(
-        api_key=api_key,
-        protocol_id=str(protocol["id"]),
-        document_number=None,
-        limit_tops=None,
-        person_limit=person_limit,
-        vote_scan_pages=vote_scan_pages,
-        summary_mode=summary_mode,
-        summary_provider=summary_provider,
-        anthropic_api_key=anthropic_api_key,
-        gemini_api_key=gemini_api_key,
-        summary_model=summary_model,
-        sleep=sleep,
+    protocols_by_number = {
+        normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in protocols
+    }
+    detail_by_number = {
+        normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in detail_protocols
+    }
+
+    for document_number in document_numbers:
+        document_number = normalized_document_number(document_number)
+        if not document_number:
+            continue
+        protocol = protocols_by_number.get(document_number)
+        if protocol is None:
+            protocol = fetch_protocol_by_document_number(client, document_number)
+            protocols.append(protocol)
+            protocols_by_number[document_number] = protocol
+        if document_number not in detail_by_number:
+            detail_protocols.append(protocol)
+            detail_by_number[document_number] = protocol
+
+    return sorted(protocols, key=protocol_sort_key, reverse=True), detail_protocols
+
+
+def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
+    slug = slugify_document_number(document_number)
+    return (
+        output_dir / "data" / f"plenarprotokoll-{slug}.json",
+        output_dir / "protocols" / f"plenarprotokoll-{slug}.html",
+        slug,
     )
-    report = dip.build_report(args)
-    if store is not None:
-        pulse_store.persist_report(store, report)
+
+
+def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    protocol = report.get("protocol") or {}
+    document_number = normalized_document_number(protocol.get("dokumentnummer"))
+    report_path, page_path, slug = report_paths(output_dir, document_number)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     page_path.write_text(
         pulse_html.render_html(
@@ -139,6 +156,99 @@ def write_report_and_page(
         "page_path": page_path,
         "slug": slug,
     }
+
+
+def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
+    entries: list[dict[str, Any]] = []
+    data_dir = output_dir / "data"
+    if not data_dir.exists():
+        return entries
+
+    for report_path in sorted(data_dir.glob("plenarprotokoll-*.json")):
+        if report_path.name == "plenarprotokoll-catalog.json":
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"warning: Skipping unreadable dossier report {report_path}: {exc}", file=sys.stderr)
+            continue
+        protocol = report.get("protocol") or {}
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if not document_number or document_number not in protocol_numbers:
+            continue
+        expected_report_path, page_path, slug = report_paths(output_dir, document_number)
+        entries.append(
+            {
+                "report": report,
+                "report_path": expected_report_path if expected_report_path.exists() else report_path,
+                "page_path": page_path,
+                "slug": slug,
+            }
+        )
+    return entries
+
+
+def merge_detail_entries(
+    protocols: list[dict[str, Any]],
+    existing_entries: list[dict[str, Any]],
+    generated_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    entries_by_id: dict[str, dict[str, Any]] = {}
+    entries_by_number: dict[str, dict[str, Any]] = {}
+    for entry in [*existing_entries, *generated_entries]:
+        protocol = entry["report"].get("protocol") or {}
+        protocol_id = str(protocol.get("id") or "")
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if protocol_id:
+            entries_by_id[protocol_id] = entry
+        if document_number:
+            entries_by_number[document_number] = entry
+
+    merged: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for protocol in protocols:
+        entry = entries_by_id.get(str(protocol.get("id") or "")) or entries_by_number.get(
+            normalized_document_number(protocol.get("dokumentnummer"))
+        )
+        if entry and id(entry) not in seen:
+            merged.append(entry)
+            seen.add(id(entry))
+    return merged
+
+
+def write_report_and_page(
+    protocol: dict[str, Any],
+    output_dir: Path,
+    api_key: str,
+    sleep: float,
+    person_limit: int,
+    vote_scan_pages: int,
+    summary_mode: str,
+    summary_provider: str,
+    anthropic_api_key: str | None,
+    gemini_api_key: str | None,
+    summary_model: str | None,
+    store: Any | None,
+) -> dict[str, Any]:
+    args = argparse.Namespace(
+        api_key=api_key,
+        protocol_id=str(protocol["id"]),
+        document_number=None,
+        limit_tops=None,
+        person_limit=person_limit,
+        vote_scan_pages=vote_scan_pages,
+        summary_mode=summary_mode,
+        summary_provider=summary_provider,
+        anthropic_api_key=anthropic_api_key,
+        gemini_api_key=gemini_api_key,
+        summary_model=summary_model,
+        sleep=sleep,
+    )
+    report = dip.build_report(args)
+    if store is not None:
+        pulse_store.persist_report(store, report)
+    return write_report_files(report, output_dir)
 
 
 def sqlite_identifier(name: str) -> str:
@@ -380,6 +490,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       color:var(--ink);
       background:var(--paper);
       letter-spacing:0;
+      overflow-x:hidden;
     }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
@@ -691,7 +802,7 @@ def render_landing_page(
         summary = report.get("validation_summary") or {}
         snapshot = f"""
         <aside class="snapshot">
-          <span class="eyebrow">Aktueller Stand</span>
+          <span class="eyebrow">Aktueller Puls</span>
           <strong class="snapshot-doc">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</strong>
           <p class="snapshot-title">{pulse_html.esc(pulse_html.short(protocol.get('titel'), 96))}</p>
           <p class="snapshot-date">Sitzung vom {pulse_html.esc(protocol.get('datum'))}</p>
@@ -701,16 +812,16 @@ def render_landing_page(
             <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
             <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
           </div>
-          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
         </aside>
         """
     else:
         snapshot = """
         <aside class="snapshot">
-          <span class="eyebrow">Aktueller Stand</span>
+          <span class="eyebrow">Aktueller Puls</span>
           <p class="snapshot-title">Es wurde noch keine Sitzung erzeugt.</p>
-          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier die jüngste Sitzung.</p>
-          <a class="snapshot-link" href="puls.html">Zur neuesten Sitzung &rarr;</a>
+          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier der aktuelle Lageblick.</p>
+          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
         </aside>
         """
 
@@ -745,10 +856,10 @@ def render_landing_page(
 
     areas = [
         (
-            "Civic Radar",
-            "Neueste Sitzung",
+            "Lageblick",
+            "Aktueller Puls",
             "puls.html",
-            "Das jüngste Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit konzentrierte — Reden, Redetext und Fraktionsanteile je Tagesordnungspunkt.",
+            "Was gerade im Bundestag auffällt: Themenbewegung, Abstimmungsverschiebungen und darunter das belegbare Aufmerksamkeitsranking der neuesten Auswertung.",
         ),
         (
             "Archiv",
@@ -939,7 +1050,7 @@ def render_landing_page(
         <h1>Was der Bundestag tut — mit Belegen.</h1>
         <p class="lead">Bundestag-Puls verdichtet die verstreute offizielle Tätigkeit des Parlaments — Reden, Gesetzentwürfe, Ausschussschritte und namentliche Abstimmungen — zu einem lesbaren Bild davon, worauf sich die parlamentarische Aufmerksamkeit gerade richtet und wer wofür steht. Aufgebaut ausschließlich aus Primärquellen, nicht aus Nachrichten.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="puls.html">Neueste Sitzung ansehen</a>
+          <a class="btn btn-primary" href="puls.html">Was gerade l&auml;uft</a>
           <a class="btn btn-ghost" href="sources.html">Wie wir arbeiten</a>
         </div>
       </div>
@@ -1058,6 +1169,39 @@ def render_front_page(
         if database_href
         else ""
     )
+    total_votes = sum(
+        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
+        for item in items
+    )
+    top_focus = ranked_items[0] if ranked_items else None
+    if top_focus:
+        top_stats = stats_by_index[top_focus["index"]]
+        focus_text = (
+            f"{top_focus.get('top_id')} bündelt aktuell {top_stats['speech_count']} Reden "
+            f"und {pulse_html.format_int(top_stats['total_chars'])} Zeichen Redetext."
+        )
+        focus_href = f"{protocol_href}#top-{pulse_html.esc(top_focus.get('index'))}"
+        focus_link = f'<a class="feature-link" href="{focus_href}">Belege zum Schwerpunkt</a>'
+    else:
+        focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
+        focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
+
+    vote_items = [
+        item
+        for item in items
+        if item.get("votes") or item.get("vote")
+    ]
+    if vote_items:
+        vote_focus = (
+            f"{total_votes} namentliche Abstimmung"
+            f"{'' if total_votes == 1 else 'en'} in {len(vote_items)} Tagesordnungspunkt"
+            f"{'' if len(vote_items) == 1 else 'en'} zugeordnet."
+        )
+        vote_href = f"{protocol_href}#top-{pulse_html.esc(vote_items[0].get('index'))}"
+        vote_link = f'<a class="feature-link" href="{vote_href}">Abstimmungen prüfen</a>'
+    else:
+        vote_focus = "Für die neueste Auswertung sind noch keine namentlichen Abstimmungen zugeordnet."
+        vote_link = f'<a class="feature-link" href="{protocol_href}">Sitzungsbelege prüfen</a>'
 
     attention_rows = []
     for item in ranked_items[:6]:
@@ -1117,7 +1261,7 @@ def render_front_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Neueste Sitzung</title>
+  <title>Bundestag-Puls · Aktueller Lageblick</title>
   <style>
     :root {{
       --ink:#171a1f;
@@ -1146,7 +1290,7 @@ def render_front_page(
     {pulse_html.global_header_styles()}
     .page-header {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
+      grid-template-columns:1fr;
       gap:20px;
       align-items:start;
       padding-bottom:20px;
@@ -1156,7 +1300,7 @@ def render_front_page(
     h2 {{ margin:0; font-size:18px; line-height:1.25; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
     .subtitle {{ max-width:760px; font-size:15px; }}
-    .page-actions {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-end; }}
+    .page-actions {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
     .page-actions a, .session-links a {{
       display:inline-flex;
       align-items:center;
@@ -1170,32 +1314,55 @@ def render_front_page(
       font-size:13px;
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
-    .latest-strip {{
+    .radar-hero {{
       display:grid;
-      grid-template-columns:1.15fr minmax(420px,.85fr);
+      grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);
       gap:18px;
       margin-top:18px;
       align-items:stretch;
     }}
-    .latest-panel, .future-panel {{
+    .latest-panel, .pulse-feature, .context-panel {{
       border:1px solid var(--line);
       border-radius:8px;
       background:var(--panel);
       padding:18px;
     }}
-    .eyebrow, .metric span, .top-link span, label, .card-meta, .future-panel span {{
+    .eyebrow, .metric span, .top-link span, label, .card-meta {{
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .latest-title {{ margin:5px 0 0; font-size:25px; line-height:1.18; }}
+    .pulse-lede h2 {{ margin:6px 0 0; font-size:27px; line-height:1.16; }}
+    .pulse-lede p {{ max-width:760px; font-size:15px; line-height:1.5; }}
+    .pulse-actions {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+      margin-top:16px;
+    }}
+    .pulse-actions a {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      padding:6px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:750;
+      color:var(--ink);
+    }}
+    .pulse-actions .primary-link {{ color:var(--blue); }}
+    .context-title {{ margin:5px 0 0; font-size:19px; line-height:1.22; }}
     .metric-grid {{
       display:grid;
       grid-template-columns:repeat(4, minmax(92px,1fr));
       gap:10px;
       margin-top:18px;
     }}
+    .context-panel .metric-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     .metric {{
       min-height:68px;
       border:1px solid #e2e7ef;
@@ -1203,6 +1370,7 @@ def render_front_page(
       background:#fbfcfd;
       padding:10px 11px;
     }}
+    .metric span {{ overflow-wrap:anywhere; }}
     .metric strong {{ display:block; margin-top:5px; font-size:24px; }}
     .session-links {{
       display:flex;
@@ -1216,11 +1384,90 @@ def render_front_page(
       border-left:4px solid var(--teal);
     }}
     .source-panel p {{ margin-top:4px; font-size:14px; line-height:1.45; }}
-    .layout {{
+    .feature-grid {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 330px;
+      grid-template-columns:repeat(2, minmax(0,1fr));
       gap:18px;
       margin-top:18px;
+    }}
+    .pulse-feature {{
+      display:grid;
+      gap:14px;
+      min-height:220px;
+    }}
+    .pulse-feature.movement {{ background:var(--green-soft); border-color:#cfe7df; }}
+    .pulse-feature.votes {{ background:var(--amber-soft); border-color:#ead8ab; }}
+    .feature-head {{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:start;
+    }}
+    .feature-head h2 {{
+      margin:5px 0 0;
+      font-size:25px;
+      line-height:1.15;
+    }}
+    .feature-state {{
+      display:inline-flex;
+      align-items:center;
+      min-height:26px;
+      padding:3px 9px;
+      border:1px solid rgba(23,26,31,.14);
+      border-radius:999px;
+      background:rgba(255,255,255,.72);
+      color:#3f4a59;
+      font-size:12px;
+      font-weight:750;
+      white-space:nowrap;
+    }}
+    .feature-body {{
+      display:grid;
+      gap:12px;
+      align-content:start;
+    }}
+    .feature-body p {{
+      margin:0;
+      color:#252b33;
+      font-size:16px;
+      line-height:1.45;
+    }}
+    .feature-link {{
+      display:inline-flex;
+      justify-self:start;
+      align-items:center;
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid rgba(23,26,31,.14);
+      border-radius:6px;
+      background:#fff;
+      font-size:13px;
+      font-weight:750;
+    }}
+    .feature-microgrid {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:8px;
+    }}
+    .feature-microgrid div {{
+      border:1px solid rgba(23,26,31,.12);
+      border-radius:8px;
+      background:rgba(255,255,255,.65);
+      padding:9px 10px;
+    }}
+    .feature-microgrid span {{
+      display:block;
+      color:var(--muted);
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .feature-microgrid strong {{ display:block; margin-top:3px; font-size:19px; }}
+    .layout {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr);
+      gap:18px;
+      margin-top:28px;
       align-items:start;
     }}
     main {{ display:grid; gap:12px; }}
@@ -1284,21 +1531,14 @@ def render_front_page(
       margin-top:12px;
     }}
     .card-meta a {{ margin-left:auto; font-weight:750; }}
-    aside {{ display:grid; gap:12px; }}
-    .future-panel:nth-child(1) {{ background:var(--green-soft); }}
-    .future-panel:nth-child(2) {{ background:var(--amber-soft); }}
-    .future-panel:nth-child(3) {{ background:#f5f7fb; }}
-    .future-panel h2 {{ margin-top:6px; }}
-    .future-panel p {{ font-size:13px; line-height:1.45; }}
-    .placeholder-lines {{ display:grid; gap:7px; margin-top:14px; }}
-    .placeholder-lines i {{
-      display:block;
-      height:8px;
-      border-radius:999px;
-      background:rgba(23,26,31,.12);
+    .ranking-intro {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:14px;
+      align-items:end;
+      padding-top:24px;
+      border-top:1px solid var(--line);
     }}
-    .placeholder-lines i:nth-child(2) {{ width:76%; }}
-    .placeholder-lines i:nth-child(3) {{ width:54%; }}
     .notice {{
       padding:11px 13px;
       border:1px solid #e3c46a;
@@ -1309,15 +1549,18 @@ def render_front_page(
     }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      .page-header, .latest-strip, .layout {{ grid-template-columns:1fr; }}
+      .page-header, .radar-hero, .layout, .feature-grid {{ grid-template-columns:1fr; }}
       .page-actions {{ justify-content:flex-start; }}
     }}
     @media (max-width: 700px) {{
       .shell {{ padding:16px 14px; }}
       h1 {{ font-size:29px; }}
-      .latest-title {{ font-size:21px; }}
+      .context-title {{ font-size:18px; }}
       .metric-grid, .bar-grid {{ grid-template-columns:1fr 1fr; }}
-      .section-head {{ display:grid; }}
+      .section-head, .ranking-intro {{ display:grid; grid-template-columns:1fr; }}
+      .feature-head {{ display:grid; }}
+      .feature-state {{ justify-self:start; white-space:normal; }}
+      .feature-microgrid {{ grid-template-columns:1fr; }}
     }}
     @media (max-width: 460px) {{
       .metric-grid, .bar-grid {{ grid-template-columns:1fr; }}
@@ -1330,28 +1573,40 @@ def render_front_page(
     {pulse_html.render_global_header(database_href=database_page_href, active="pulse")}
     <header class="page-header">
       <div>
-        <span class="eyebrow">Neueste Sitzung</span>
-        <h1>Bundestag-Puls</h1>
-        <p class="subtitle">Das neueste erzeugte Plenarprotokoll, sortiert danach, wo sich die parlamentarische Aufmerksamkeit in der Sitzung konzentrierte.</p>
+        <span class="eyebrow">Aktueller Lageblick</span>
+        <h1>Was gerade im Bundestag l&auml;uft</h1>
+        <p class="subtitle">Diese Seite ist der aktuelle Bundestag-Puls: Sie hebt Themenbewegung und Abstimmungsverschiebungen hervor. Das Plenarprotokoll-Dossier bleibt als Quelle verlinkt, ist aber nicht der Zweck dieser Seite.</p>
       </div>
       <nav class="page-actions" aria-label="Seitenaktionen">
-        <a href="{protocol_href}">Details öffnen</a>
+        <a href="#bewegung">Zum Lageblick</a>
+        <a href="{protocol_href}">Protokolldossier</a>
+        <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
       </nav>
     </header>
 
-    <section class="latest-strip">
-      <div class="latest-panel">
+    <section class="radar-hero">
+      <div class="latest-panel pulse-lede">
+        <span class="eyebrow">Momentaufnahme aus Primärquellen</span>
+        <h2>Themen, Abstimmungen und Aufmerksamkeit statt Sitzungsreview</h2>
+        <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
+        <div class="pulse-actions">
+          <a class="primary-link" href="#bewegung">Themenbewegung ansehen</a>
+          <a href="#abstimmungen">Abstimmungsverschiebungen ansehen</a>
+          <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
+        </div>
+      </div>
+      <div class="context-panel source-panel">
         <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
-        <h2 class="latest-title">{pulse_html.esc(protocol.get('titel'))}</h2>
+        <h2 class="context-title">{pulse_html.esc(protocol.get('titel'))}</h2>
         <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
         <div class="metric-grid">
           <div class="metric"><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
           <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-          <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+          <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(total_votes)}</strong></div>
           <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
         </div>
         <div class="session-links">
-          <a href="{protocol_href}">Sitzungsdetails</a>
+          <a href="{protocol_href}">Protokolldossier</a>
           <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
           <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
           <a href="{report_href}">Erzeugtes JSON</a>
@@ -1359,51 +1614,62 @@ def render_front_page(
           {sqlite_link}
         </div>
       </div>
-      <div class="latest-panel source-panel">
-        <div>
-          <span class="eyebrow">Quellenlage</span>
-          <h2>Primärquellen-Puls</h2>
-          <p>Redezahlen, Textumfang, Drucksachen und Rednerdaten werden aus dem offiziellen Protokoll und DIP-Daten dieser Sitzung erzeugt.</p>
+    </section>
+
+    <section class="feature-grid" id="bewegung">
+      <article class="pulse-feature movement">
+        <div class="feature-head">
+          <div>
+            <span class="eyebrow">Themenbewegung</span>
+            <h2>Was nach vorne rückt</h2>
+          </div>
+          <span class="feature-state">Aktueller Fokus</span>
         </div>
-        <div>
-          <span class="eyebrow">Nächster Vergleich</span>
-          <p>Dieser Bereich ist für Wochenvergleiche reserviert, sobald mehrere Sitzungswochen normalisiert sind.</p>
+        <div class="feature-body">
+          <p>{pulse_html.esc(focus_text)}</p>
+          <div class="feature-microgrid">
+            <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
+            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
+          </div>
+          <p>Der Wochenvergleich wird hier sichtbar, sobald mehrere Sitzungswochen im selben Modell normalisiert sind.</p>
+          {focus_link}
         </div>
-      </div>
+      </article>
+      <article class="pulse-feature votes" id="abstimmungen">
+        <div class="feature-head">
+          <div>
+            <span class="eyebrow">Abstimmungsverschiebung</span>
+            <h2>Wo Stimmen das Bild verändern</h2>
+          </div>
+          <span class="feature-state">Namentliche Abstimmungen</span>
+        </div>
+        <div class="feature-body">
+          <p>{pulse_html.esc(vote_focus)}</p>
+          <div class="feature-microgrid">
+            <div><span>Zugeordnet</span><strong>{pulse_html.esc(total_votes)}</strong></div>
+            <div><span>TOPs mit Vote</span><strong>{pulse_html.esc(len(vote_items))}</strong></div>
+            <div><span>Quelle</span><strong>BT</strong></div>
+          </div>
+          <p>Fraktionsabweichungen und Veränderungen gegenüber vorherigen Abstimmungen werden hier zur Hauptspur, sobald genügend Vergleichsdaten vorliegen.</p>
+          {vote_link}
+        </div>
+      </article>
     </section>
 
     <div class="layout">
       <main>
-        <div class="section-head">
+        <div class="ranking-intro" id="aufmerksamkeit">
           <div>
-            <span class="eyebrow">Neueste Informationen</span>
+            <span class="eyebrow">Belegbares Detailmaterial</span>
             <h2>Aufmerksamkeitsranking</h2>
+            <p>Die Informationen zu einzelnen Tagesordnungspunkten bleiben erhalten, stehen aber unter dem aktuellen Lageblick.</p>
           </div>
-          <p>Die wichtigsten Tagesordnungspunkte der neuesten Sitzung, sortiert nach extrahierter Redezahl.</p>
+          <p>Sortiert nach extrahierter Redezahl.</p>
         </div>
         {warning_html}
         {''.join(attention_rows)}
       </main>
-      <aside>
-        <section class="future-panel">
-          <span>Reserviert</span>
-          <h2>Themenbewegung</h2>
-          <p>Vergleiche, welche Themen diese Woche mehr Aufmerksamkeit erhielten als letzte Woche.</p>
-          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
-        </section>
-        <section class="future-panel">
-          <span>Reserviert</span>
-          <h2>Abstimmungsverschiebungen</h2>
-          <p>Hebt namentliche Abstimmungen und Fraktionsabweichungen hervor, sobald der Parser dafür reift.</p>
-          <div class="placeholder-lines" aria-hidden="true"><i></i><i></i><i></i></div>
-        </section>
-        <section class="future-panel">
-          <span>Archiv</span>
-          <h2>Plenarprotokoll-Katalog</h2>
-          <p>Nutze den Katalog, um frühere erzeugte Sitzungen und ihre Quelldateien zu entdecken.</p>
-          <div class="session-links"><a href="overview.html">Katalog öffnen</a></div>
-        </section>
-      </aside>
     </div>
 
     <footer>
@@ -2287,23 +2553,6 @@ def render_overview(
       background:#eef5ff;
       font-weight:700;
     }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
-      font-size:13px;
-    }}
-    .nav-links a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:650;
-    }}
     .metrics {{
       display:grid;
       grid-template-columns:repeat(4, minmax(90px,1fr));
@@ -2444,7 +2693,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -2471,6 +2720,7 @@ def build_catalog_rows(
     by_period: dict[str, int] = {}
     for protocol in protocols:
         period = str(protocol.get("wahlperiode") or "unbekannt")
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
         by_period[period] = by_period.get(period, 0) + 1
         fundstelle = protocol.get("fundstelle") or {}
         entry = entries_by_id.get(str(protocol.get("id")))
@@ -2503,7 +2753,11 @@ def build_catalog_rows(
 
         rows.append(
             f"""
-            <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
+            <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-docnumber="{pulse_html.esc(document_number)}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
+              <label class="catalog-select" title="Für Dossier-Erzeugung auswählen">
+                <input type="checkbox" data-dossier-select value="{pulse_html.esc(document_number)}">
+                <span>Auswählen</span>
+              </label>
               <div>
                 <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
@@ -2540,6 +2794,7 @@ def render_catalog_script() -> str:
       const container = document.querySelector('[data-catalog]');
       if (!container) return;
       const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const checkboxes = Array.from(container.querySelectorAll('[data-dossier-select]'));
       const search = document.querySelector('[data-filter-search]');
       const wpSelect = document.querySelector('[data-filter-wp]');
       const dossierSelect = document.querySelector('[data-filter-dossier]');
@@ -2548,6 +2803,46 @@ def render_catalog_script() -> str:
       const noResults = document.querySelector('[data-no-results]');
       const resetBtn = document.querySelector('[data-filter-reset]');
       const badges = Array.from(document.querySelectorAll('[data-wp-filter]'));
+      const developerPanel = document.querySelector('[data-dossier-command]');
+      const selectedCountEl = document.querySelector('[data-selected-count]');
+      const commandEl = document.querySelector('[data-command-output]');
+      const selectVisibleBtn = document.querySelector('[data-select-visible]');
+      const selectMissingBtn = document.querySelector('[data-select-missing]');
+      const clearSelectionBtn = document.querySelector('[data-clear-selection]');
+      const copyCommandBtn = document.querySelector('[data-copy-command]');
+
+      const shellQuote = (value) => {
+        const text = String(value);
+        return /^[A-Za-z0-9_./:=+-]+$/.test(text) ? text : "'" + text.replace(/'/g, "'\\\\''") + "'";
+      };
+
+      const selectedDocumentNumbers = () => checkboxes
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => checkbox.value)
+        .filter(Boolean);
+
+      const updateCommand = () => {
+        if (!developerPanel || !commandEl) return;
+        const docs = selectedDocumentNumbers();
+        if (selectedCountEl) selectedCountEl.textContent = String(docs.length);
+        if (copyCommandBtn) copyCommandBtn.disabled = docs.length === 0;
+        const outputDir = developerPanel.dataset.outputDir || '.context/dip-pulse-site';
+        const args = [
+          'python3',
+          'scripts/build_dip_pulse_site.py',
+          '--limit',
+          '0',
+          '--detail-limit',
+          '-1',
+          '--preserve-existing-dossiers',
+          '--output-dir',
+          outputDir,
+        ];
+        docs.forEach((doc) => {
+          args.push('--dossier-document-number', doc);
+        });
+        commandEl.value = docs.length ? args.map(shellQuote).join(' ') : '';
+      };
 
       const apply = () => {
         const terms = (search.value || '').toLowerCase().trim().split(/\\s+/).filter(Boolean);
@@ -2604,7 +2899,50 @@ def render_catalog_script() -> str:
           apply();
         });
       }
+      checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateCommand));
+      if (selectVisibleBtn) {
+        selectVisibleBtn.addEventListener('click', () => {
+          rows.forEach((row) => {
+            const checkbox = row.querySelector('[data-dossier-select]');
+            if (checkbox && !row.hidden) checkbox.checked = true;
+          });
+          updateCommand();
+        });
+      }
+      if (selectMissingBtn) {
+        selectMissingBtn.addEventListener('click', () => {
+          rows.forEach((row) => {
+            const checkbox = row.querySelector('[data-dossier-select]');
+            if (checkbox && !row.hidden && row.dataset.dossier === '0') checkbox.checked = true;
+          });
+          updateCommand();
+        });
+      }
+      if (clearSelectionBtn) {
+        clearSelectionBtn.addEventListener('click', () => {
+          checkboxes.forEach((checkbox) => {
+            checkbox.checked = false;
+          });
+          updateCommand();
+        });
+      }
+      if (copyCommandBtn && commandEl) {
+        copyCommandBtn.addEventListener('click', async () => {
+          if (!commandEl.value) return;
+          commandEl.select();
+          try {
+            await navigator.clipboard.writeText(commandEl.value);
+            copyCommandBtn.textContent = 'Kopiert';
+            window.setTimeout(() => {
+              copyCommandBtn.textContent = 'Befehl kopieren';
+            }, 1400);
+          } catch {
+            document.execCommand('copy');
+          }
+        });
+      }
       apply();
+      updateCommand();
     })();
   </script>
 """
@@ -2614,6 +2952,7 @@ def render_catalog_page(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
+    output_dir: Path,
     overview_href: str = "overview.html",
     database_page_href: str | None = None,
 ) -> str:
@@ -2758,6 +3097,63 @@ def render_catalog_page(
       cursor:pointer;
     }}
     .link-button:hover {{ text-decoration:underline; }}
+    .developer-panel {{
+      display:grid;
+      gap:12px;
+      margin-top:16px;
+      padding:16px;
+      border:1px solid #bdd0ea;
+      border-radius:8px;
+      background:#f6f9ff;
+    }}
+    .developer-panel h2 {{
+      margin:0;
+      font-size:18px;
+      line-height:1.25;
+    }}
+    .developer-panel p {{
+      margin:0;
+      color:var(--muted);
+      line-height:1.45;
+    }}
+    .developer-actions {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+    }}
+    .dev-button {{
+      min-height:34px;
+      padding:5px 11px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:var(--ink);
+      font:inherit;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+    }}
+    .dev-button.primary {{
+      border-color:#bdd0ea;
+      background:#eef5ff;
+      color:#103a7a;
+    }}
+    .dev-button:disabled {{
+      cursor:not-allowed;
+      opacity:.55;
+    }}
+    .command-output {{
+      width:100%;
+      min-height:78px;
+      padding:10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      color:#182230;
+      font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      resize:vertical;
+    }}
     .periods {{
       display:flex;
       flex-wrap:wrap;
@@ -2787,13 +3183,29 @@ def render_catalog_page(
     .catalog {{ display:grid; gap:10px; margin-top:18px; }}
     .catalog-row {{
       display:grid;
-      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
+      grid-template-columns:minmax(96px,.3fr) minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
       gap:14px;
       align-items:start;
       background:var(--panel);
       border:1px solid var(--line);
       border-radius:8px;
       padding:14px;
+    }}
+    .catalog-select {{
+      display:inline-flex;
+      gap:7px;
+      align-items:center;
+      min-height:32px;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }}
+    .catalog-select input {{
+      width:17px;
+      height:17px;
+      margin:0;
+      accent-color:#174ea6;
     }}
     .catalog-row[hidden] {{ display:none; }}
     .catalog-row h3 {{
@@ -2952,6 +3364,17 @@ def render_catalog_page(
       <span><span data-result-count>{pulse_html.esc(total)}</span> von {pulse_html.esc(total)} Sitzungen</span>
       <button type="button" class="link-button" data-filter-reset hidden>Filter zurücksetzen</button>
     </div>
+    <section class="developer-panel" data-dossier-command data-output-dir="{pulse_html.esc(str(output_dir))}">
+      <h2>Dossiers erzeugen</h2>
+      <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu.</p>
+      <div class="developer-actions">
+        <button type="button" class="dev-button" data-select-visible>Sichtbare auswählen</button>
+        <button type="button" class="dev-button" data-select-missing>Sichtbare ohne Dossier</button>
+        <button type="button" class="dev-button" data-clear-selection>Auswahl leeren</button>
+        <button type="button" class="dev-button primary" data-copy-command disabled>Befehl kopieren</button>
+      </div>
+      <textarea class="command-output" data-command-output readonly placeholder="Sitzungen auswählen, um den Regenerationsbefehl zu erzeugen."></textarea>
+    </section>
     <div class="periods">{period_badges}</div>
     <section class="catalog" data-catalog>
       {rows_html}
@@ -3284,6 +3707,15 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Specific protocol document number to include, e.g. 21/84. Can be repeated.",
     )
+    parser.add_argument(
+        "--dossier-document-number",
+        action="append",
+        default=[],
+        help=(
+            "Specific protocol document number to generate or regenerate as a dossier "
+            "without restricting the catalog. Can be repeated."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
     parser.add_argument(
         "--database-path",
@@ -3294,6 +3726,11 @@ def parse_args() -> argparse.Namespace:
         "--no-persist",
         action="store_true",
         help="Skip writing the SQLite graph store.",
+    )
+    parser.add_argument(
+        "--preserve-existing-dossiers",
+        action="store_true",
+        help="Load existing dossier JSON files from OUTPUT_DIR/data and keep them visible in the generated catalog.",
     )
     parser.add_argument(
         "--person-limit",
@@ -3353,9 +3790,18 @@ def main() -> int:
         protocols = fetch_protocols(client, args.limit, args.document_number)
         detail_limit = None if args.document_number else args.detail_limit
         detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
+        protocols, detail_protocols = add_explicit_dossier_protocols(
+            client,
+            protocols,
+            detail_protocols,
+            args.dossier_document_number,
+        )
+        existing_entries = (
+            load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
+        )
         store = None if args.no_persist else pulse_store.connect(database_path)
         try:
-            entries = [
+            generated_entries = [
                 write_report_and_page(
                     protocol=protocol,
                     output_dir=output_dir,
@@ -3375,6 +3821,7 @@ def main() -> int:
         finally:
             if store is not None:
                 store.close()
+        entries = merge_detail_entries(protocols, existing_entries, generated_entries)
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -3422,7 +3869,13 @@ def main() -> int:
         encoding="utf-8",
     )
     catalog_page_path.write_text(
-        render_catalog_page(protocols, entries, catalog_path, database_page_href=database_page_href),
+        render_catalog_page(
+            protocols,
+            entries,
+            catalog_path,
+            output_dir,
+            database_page_href=database_page_href,
+        ),
         encoding="utf-8",
     )
     sources_path.write_text(

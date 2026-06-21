@@ -133,7 +133,7 @@ def render_global_header(
 ) -> str:
     brand_href = home_href or "#"
     items = [
-        ("pulse", "Neueste Sitzung", pulse_href),
+        ("pulse", "Aktueller Puls", pulse_href),
         ("overview", "Plenarprotokoll-Katalog", overview_href),
         ("catalog", "Alle API-Sitzungen", catalog_href),
         ("bills", "Gesetze verfolgen", bills_href),
