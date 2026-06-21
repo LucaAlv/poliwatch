@@ -183,6 +183,51 @@ def speech_anchor(item: dict[str, Any], speech: dict[str, Any], sequence: int) -
     return f"speech-{item.get('index')}-{suffix or sequence + 1}"
 
 
+# Inline "person" glyph used for the compact abgeordnetenwatch profile link so
+# the build stays self-contained (no external icon assets).
+PROFILE_ICON_SVG = (
+    '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">'
+    '<circle cx="8" cy="5" r="3" fill="currentColor"></circle>'
+    '<path d="M2.5 14c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5z" fill="currentColor"></path>'
+    "</svg>"
+)
+
+
+def speaker_profile(speaker: dict[str, Any] | None) -> dict[str, Any] | None:
+    profile = (speaker or {}).get("abgeordnetenwatch")
+    if isinstance(profile, dict) and profile.get("url"):
+        return profile
+    return None
+
+
+def render_profile_icon(speaker: dict[str, Any] | None) -> str:
+    """Compact icon link to a speaker's abgeordnetenwatch profile (or empty)."""
+    profile = speaker_profile(speaker)
+    if not profile:
+        return ""
+    label = profile.get("label") or "abgeordnetenwatch.de"
+    tooltip = f"Profil von {label} auf abgeordnetenwatch.de"
+    return (
+        f'<a class="aw-profile-icon" href="{esc(profile["url"])}" target="_blank" '
+        f'rel="noopener" title="{esc(tooltip)}" aria-label="{esc(tooltip)}">'
+        f"{PROFILE_ICON_SVG}</a>"
+    )
+
+
+def render_profile_link(speaker: dict[str, Any] | None) -> str:
+    """Full labelled link to a speaker's abgeordnetenwatch profile (or empty)."""
+    profile = speaker_profile(speaker)
+    if not profile:
+        return ""
+    return (
+        '<p class="aw-profile-line">'
+        f'<a class="aw-profile" href="{esc(profile["url"])}" target="_blank" rel="noopener">'
+        f"{PROFILE_ICON_SVG}<span>Profil auf abgeordnetenwatch.de</span>"
+        '<span class="aw-ext" aria-hidden="true">↗</span></a>'
+        "</p>"
+    )
+
+
 def speaker_party(speaker: dict[str, Any] | None) -> str:
     if not speaker:
         return "Unbekannt"
@@ -526,6 +571,7 @@ def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
             f'<strong><a class="speaker-link" href="#{esc(anchor)}">{name}</a></strong>'
             f'<span>{esc(role)}</span>'
             f'<em>{esc(source)}</em>'
+            f'<span class="aw-cell">{render_profile_icon(speaker)}</span>'
             "</li>"
         )
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
@@ -729,6 +775,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
         if not paragraph_html:
             paragraph_html = '<p class="muted">Dieser Bericht enthält keinen Redetext. Erzeuge das JSON mit dem aktuellen Validator neu, um die Rede direkt anzuzeigen.</p>'
         meta = " · ".join(part for part in [esc(role), f"Seite {esc(source)}" if source else ""] if part)
+        profile_html = render_profile_link(speaker)
         cards.append(
             f"""
             <details class="speech-card" id="{esc(speech_anchor(item, speech, sequence))}">
@@ -738,6 +785,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
                 <em>{meta}</em>
               </summary>
               <div class="speech-text">
+                {profile_html}
                 {paragraph_html}
               </div>
             </details>
@@ -1348,7 +1396,7 @@ def render_html(
     }}
     .speaker-row {{
       display:grid;
-      grid-template-columns:10px minmax(96px, .85fr) minmax(110px, 1fr) 44px;
+      grid-template-columns:10px minmax(96px, .85fr) minmax(110px, 1fr) 44px 20px;
       gap:8px;
       align-items:center;
       min-height:24px;
@@ -1359,6 +1407,23 @@ def render_html(
     .speaker-row em, .position-list em, .doc-list em, .activity-list em, .people-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
     .speaker-link {{ color:var(--ink); text-decoration:none; }}
     .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
+    .speaker-row .aw-cell {{ display:flex; align-items:center; justify-content:center; }}
+    .aw-profile-icon {{
+      display:inline-flex; align-items:center; justify-content:center;
+      color:var(--muted); text-decoration:none; opacity:.65;
+      transition:color .12s ease, opacity .12s ease;
+    }}
+    .aw-profile-icon:hover {{ color:#174ea6; opacity:1; }}
+    .aw-profile-line {{ margin:0 0 10px; }}
+    .aw-profile {{
+      display:inline-flex; align-items:center; gap:6px;
+      font-size:12.5px; font-weight:620; line-height:1;
+      color:#174ea6; text-decoration:none;
+      background:#eef3fb; border:1px solid #d6e2f5; border-radius:999px;
+      padding:5px 11px;
+    }}
+    .aw-profile:hover {{ background:#e2ecfb; border-color:#b9cdf0; }}
+    .aw-profile .aw-ext {{ font-weight:400; }}
     .position-list li, .doc-list li, .activity-list li, .people-list li {{
       display:grid;
       grid-template-columns:minmax(78px,.45fr) minmax(0,1fr) minmax(54px,.35fr) minmax(0,.8fr);
@@ -1525,7 +1590,7 @@ def render_html(
       .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:1fr; }}
       .vote-fraction-row {{ grid-template-columns:10px minmax(0,.7fr) minmax(90px,1fr); }}
       .vote-fraction-row em {{ display:none; }}
-      .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px; }}
+      .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px 20px; }}
       .speaker-row span:nth-of-type(2) {{ display:none; }}
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
