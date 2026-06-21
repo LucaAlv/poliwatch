@@ -15,6 +15,7 @@ from typing import Any
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
+import abgeordnetenwatch as aw
 
 
 DATABASE_TABLE_DESCRIPTIONS = {
@@ -84,6 +85,30 @@ def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: in
     return protocols[:detail_limit]
 
 
+def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
+    """Attach abgeordnetenwatch profile links to every speaker in the report.
+
+    Each speaker dict gains an ``abgeordnetenwatch`` key holding the resolved
+    profile (or ``None`` when no confident match exists). xml_speakers and
+    xml_speakers_first share speaker objects for the first speeches, so the
+    presence check keeps each speaker resolved at most once.
+    """
+    if resolver is None:
+        return
+    for item in report.get("agenda_items") or []:
+        for key in ("xml_speakers", "xml_speakers_first"):
+            for speech in item.get(key) or []:
+                speaker = speech.get("speaker")
+                if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
+                    continue
+                speaker["abgeordnetenwatch"] = resolver.resolve(
+                    ext_id=speaker.get("xml_redner_id"),
+                    first_name=speaker.get("first_name"),
+                    last_name=speaker.get("last_name"),
+                    fraktion=speaker.get("fraktion"),
+                )
+
+
 def write_report_and_page(
     protocol: dict[str, Any],
     output_dir: Path,
@@ -97,6 +122,7 @@ def write_report_and_page(
     gemini_api_key: str | None,
     summary_model: str | None,
     store: Any | None,
+    profile_resolver: Any | None = None,
 ) -> dict[str, Any]:
     document_number = str(protocol["dokumentnummer"])
     slug = slugify_document_number(document_number)
@@ -118,6 +144,7 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args)
+    enrich_report_with_profiles(report, profile_resolver)
     if store is not None:
         pulse_store.persist_report(store, report)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -3343,6 +3370,12 @@ def render_sources_page(
             <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet.</p>
             <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag namentliche Abstimmungen</a>
           </article>
+          <article class="source-card">
+            <span class="eyebrow">Abgeordnetenprofile</span>
+            <h3>abgeordnetenwatch.de</h3>
+            <p>Rednerinnen und Redner werden mit ihrem Profil auf abgeordnetenwatch.de verknüpft — primär über die Bundestags-Redner-ID (ext_id_bundestagsverwaltung), ersatzweise über Name und Fraktion. Die offenen Daten stehen unter CC0.</p>
+            <a href="https://www.abgeordnetenwatch.de/api">abgeordnetenwatch.de API</a>
+          </article>
         </div>
       </section>
       <section class="panel">
@@ -3351,6 +3384,7 @@ def render_sources_page(
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
           <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
+          <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
           <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
@@ -3457,6 +3491,22 @@ def parse_args() -> argparse.Namespace:
         help="Number of Bundestag roll-call vote list pages to scan per sitting.",
     )
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
+    parser.add_argument(
+        "--no-abgeordnetenwatch",
+        action="store_true",
+        help="Skip linking speakers to their abgeordnetenwatch.de profiles.",
+    )
+    parser.add_argument(
+        "--abgeordnetenwatch-cache",
+        type=Path,
+        help="Cache file for resolved abgeordnetenwatch profiles. Defaults to OUTPUT_DIR/data/abgeordnetenwatch-cache.json.",
+    )
+    parser.add_argument(
+        "--abgeordnetenwatch-sleep",
+        type=float,
+        default=None,
+        help="Minimum delay in seconds between abgeordnetenwatch API requests (default 0.5 to stay under its rate limit).",
+    )
     return parser.parse_args()
 
 
@@ -3472,6 +3522,14 @@ def main() -> int:
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
     (output_dir / "bills").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
+
+    profile_resolver = None
+    if not args.no_abgeordnetenwatch:
+        cache_path = args.abgeordnetenwatch_cache or output_dir / "data" / "abgeordnetenwatch-cache.json"
+        profile_resolver = aw.AbgeordnetenwatchResolver(
+            cache_path=cache_path,
+            sleep_seconds=args.abgeordnetenwatch_sleep,
+        )
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
@@ -3494,12 +3552,24 @@ def main() -> int:
                     gemini_api_key=args.gemini_api_key,
                     summary_model=args.summary_model,
                     store=store,
+                    profile_resolver=profile_resolver,
                 )
                 for protocol in detail_protocols
             ]
         finally:
             if store is not None:
                 store.close()
+            if profile_resolver is not None:
+                profile_resolver.save()
+                stats = profile_resolver.stats
+                print(
+                    "abgeordnetenwatch: "
+                    f"{stats['ext_id']} via id, {stats['name']} via name, "
+                    f"{stats['unresolved']} unresolved "
+                    f"({stats['api_calls']} API calls, {stats['throttled']} retried, "
+                    f"{stats['errors']} errors)",
+                    file=sys.stderr,
+                )
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

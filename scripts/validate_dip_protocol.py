@@ -207,6 +207,8 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     return {
         "xml_redner_id": redner.attrib.get("id"),
         "display_name": display_name,
+        "first_name": first or None,
+        "last_name": last or None,
         "fraktion": fraction,
         "role": role_long,
         "role_short": role_short,
