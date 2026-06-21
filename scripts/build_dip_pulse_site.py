@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,25 @@ from typing import Any
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
+
+
+DATABASE_TABLE_DESCRIPTIONS = {
+    "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
+    "parties": "Normalisierte Parteien und Rollen wie Regierung oder fraktionslos.",
+    "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
+    "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
+    "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
+    "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten verbunden werden.",
+    "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
+    "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
+    "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
+    "speeches": "Extrahierte Redebeiträge mit Redner, Seite, Textumfang, Snippet und optionalem Volltext.",
+    "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
+    "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
+    "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "vote_fractions": "Fraktionssummen je namentlicher Abstimmung.",
+    "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
+}
 
 
 def slugify_document_number(document_number: str) -> str:
@@ -120,10 +140,558 @@ def write_report_and_page(
     }
 
 
+def sqlite_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def format_file_size(path: Path) -> str:
+    size = path.stat().st_size if path.exists() else 0
+    units = ["B", "KB", "MB", "GB"]
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} {unit}"
+        value /= 1024
+    return f"{size} B"
+
+
+def database_cell(value: Any, limit: int = 180) -> str:
+    if value is None:
+        return '<span class="null">NULL</span>'
+    text = str(value)
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "..."
+    return pulse_html.esc(text)
+
+
+def database_order_clause(columns: list[dict[str, Any]]) -> str:
+    for column in columns:
+        if column["pk"]:
+            return f" ORDER BY {sqlite_identifier(column['name'])}"
+    for name in ("updated_at", "created_at", "date", "id"):
+        if any(column["name"] == name for column in columns):
+            direction = "DESC" if name.endswith("_at") or name == "date" else "ASC"
+            return f" ORDER BY {sqlite_identifier(name)} {direction}"
+    return ""
+
+
+def read_database_snapshot(database_path: Path, sample_limit: int = 12) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "path": database_path,
+        "size": format_file_size(database_path),
+        "tables": [],
+        "relationships": [],
+        "total_rows": 0,
+    }
+    if not database_path.exists():
+        return snapshot
+
+    uri = f"file:{database_path.resolve()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        table_rows = conn.execute(
+            """
+            SELECT name, sql
+            FROM sqlite_schema
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+            """
+        ).fetchall()
+        for table_row in table_rows:
+            table = str(table_row["name"])
+            columns = [
+                {
+                    "cid": row["cid"],
+                    "name": row["name"],
+                    "type": row["type"] or "",
+                    "notnull": bool(row["notnull"]),
+                    "default": row["dflt_value"],
+                    "pk": bool(row["pk"]),
+                }
+                for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
+            ]
+            foreign_keys = [
+                {
+                    "from": row["from"],
+                    "to_table": row["table"],
+                    "to_column": row["to"],
+                    "on_delete": row["on_delete"],
+                }
+                for row in conn.execute(f"PRAGMA foreign_key_list({sqlite_identifier(table)})")
+            ]
+            for foreign_key in foreign_keys:
+                snapshot["relationships"].append({"table": table, **foreign_key})
+
+            row_count = int(conn.execute(f"SELECT COUNT(*) AS count FROM {sqlite_identifier(table)}").fetchone()["count"])
+            snapshot["total_rows"] += row_count
+            sample_sql = (
+                f"SELECT * FROM {sqlite_identifier(table)}"
+                f"{database_order_clause(columns)}"
+                f" LIMIT {int(sample_limit)}"
+            )
+            sample_rows = [dict(row) for row in conn.execute(sample_sql).fetchall()]
+            snapshot["tables"].append(
+                {
+                    "name": table,
+                    "description": DATABASE_TABLE_DESCRIPTIONS.get(table, "Persistierte Tabelle aus dem Bundestag-Puls-Graph."),
+                    "sql": table_row["sql"] or "",
+                    "columns": columns,
+                    "foreign_keys": foreign_keys,
+                    "row_count": row_count,
+                    "sample_rows": sample_rows,
+                }
+            )
+    finally:
+        conn.close()
+    return snapshot
+
+
+def render_database_columns(columns: list[dict[str, Any]]) -> str:
+    rows = []
+    for column in columns:
+        flags = []
+        if column["pk"]:
+            flags.append("Primärschlüssel")
+        if column["notnull"]:
+            flags.append("Pflichtfeld")
+        if column["default"] is not None:
+            flags.append(f"Default {column['default']}")
+        rows.append(
+            f"""
+            <tr>
+              <td><code>{pulse_html.esc(column['name'])}</code></td>
+              <td>{pulse_html.esc(column['type'] or 'untypisiert')}</td>
+              <td>{pulse_html.esc(', '.join(flags) or 'optional')}</td>
+            </tr>
+            """
+        )
+    return "".join(rows)
+
+
+def render_database_sample(table: dict[str, Any]) -> str:
+    columns = [column["name"] for column in table["columns"]]
+    if not columns:
+        return '<p class="muted">Diese Tabelle hat keine Spalten.</p>'
+    if not table["sample_rows"]:
+        return '<p class="muted">Diese Tabelle enthält in diesem Build keine Zeilen.</p>'
+    header = "".join(f"<th>{pulse_html.esc(column)}</th>" for column in columns)
+    rows = []
+    for row in table["sample_rows"]:
+        cells = "".join(f"<td>{database_cell(row.get(column))}</td>" for column in columns)
+        rows.append(f"<tr>{cells}</tr>")
+    return f"""
+      <div class="sample-table">
+        <table>
+          <thead><tr>{header}</tr></thead>
+          <tbody>{''.join(rows)}</tbody>
+        </table>
+      </div>
+    """
+
+
+def render_database_page(database_path: Path, database_href: str | None) -> str:
+    snapshot = read_database_snapshot(database_path)
+    tables = snapshot["tables"]
+    table_cards = []
+    for table in tables:
+        fk_rows = "".join(
+            f"""
+            <li><code>{pulse_html.esc(foreign_key['from'])}</code> &rarr; <code>{pulse_html.esc(foreign_key['to_table'])}.{pulse_html.esc(foreign_key['to_column'])}</code></li>
+            """
+            for foreign_key in table["foreign_keys"]
+        )
+        table_cards.append(
+            f"""
+            <article class="table-card" id="table-{pulse_html.esc(table['name'])}" data-table-card data-search="{pulse_html.esc(table['name'] + ' ' + table['description'])}">
+              <div class="table-head">
+                <div>
+                  <span class="eyebrow">Tabelle</span>
+                  <h2>{pulse_html.esc(table['name'])}</h2>
+                  <p>{pulse_html.esc(table['description'])}</p>
+                </div>
+                <strong>{pulse_html.esc(table['row_count'])} Zeilen</strong>
+              </div>
+              <div class="table-body">
+                <section>
+                  <h3>Spalten</h3>
+                  <table class="columns-table">
+                    <thead><tr><th>Name</th><th>Typ</th><th>Eigenschaft</th></tr></thead>
+                    <tbody>{render_database_columns(table['columns'])}</tbody>
+                  </table>
+                </section>
+                <section>
+                  <h3>Beispielzeilen</h3>
+                  {render_database_sample(table)}
+                </section>
+                <details>
+                  <summary>SQL-Schema und Beziehungen</summary>
+                  {f'<ul class="fk-list">{fk_rows}</ul>' if fk_rows else '<p class="muted">Keine Fremdschlüssel aus dieser Tabelle.</p>'}
+                  <pre>{pulse_html.esc(table['sql'])}</pre>
+                </details>
+              </div>
+            </article>
+            """
+        )
+
+    relationships = snapshot["relationships"]
+    relationship_rows = "".join(
+        f"""
+        <tr>
+          <td><a href="#table-{pulse_html.esc(item['table'])}">{pulse_html.esc(item['table'])}</a></td>
+          <td><code>{pulse_html.esc(item['from'])}</code></td>
+          <td><a href="#table-{pulse_html.esc(item['to_table'])}">{pulse_html.esc(item['to_table'])}</a>.<code>{pulse_html.esc(item['to_column'])}</code></td>
+          <td>{pulse_html.esc(item['on_delete'])}</td>
+        </tr>
+        """
+        for item in relationships
+    )
+    download_link = (
+        f'<a class="button primary" href="{pulse_html.esc(database_href)}">SQLite herunterladen</a>'
+        if database_href
+        else ""
+    )
+    table_nav = "".join(
+        f'<a href="#table-{pulse_html.esc(table["name"])}">{pulse_html.esc(table["name"])} <span>{pulse_html.esc(table["row_count"])}</span></a>'
+        for table in tables
+    )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Datenbank</title>
+  <style>
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --teal:#0f766e;
+      --blue-soft:#eef5ff;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+      letter-spacing:0;
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:.92em;
+    }}
+    .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
+    header {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:24px;
+      align-items:end;
+      padding-bottom:22px;
+      border-bottom:1px solid var(--line);
+    }}
+    .nav-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:10px;
+      font-size:13px;
+    }}
+    .nav-links a, .button {{
+      display:inline-flex;
+      align-items:center;
+      min-height:32px;
+      padding:5px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-weight:700;
+      color:var(--ink);
+    }}
+    .button.primary {{
+      min-height:40px;
+      padding:8px 14px;
+      border-color:#bdd0ea;
+      background:var(--blue);
+      color:#fff;
+    }}
+    h1 {{ margin:0; font-size:36px; line-height:1.1; }}
+    h2 {{ margin:5px 0 0; font-size:22px; line-height:1.2; }}
+    h3 {{ margin:0 0 10px; font-size:15px; }}
+    p {{ margin:7px 0 0; color:var(--muted); line-height:1.5; }}
+    .subtitle {{ max-width:780px; }}
+    .eyebrow {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      font-weight:700;
+    }}
+    .download-panel {{
+      display:grid;
+      gap:8px;
+      min-width:230px;
+      padding:14px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+    }}
+    .summary-band {{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0,1fr));
+      gap:12px;
+      margin-top:18px;
+    }}
+    .summary-band div {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+      padding:13px 14px;
+    }}
+    .summary-band span {{
+      display:block;
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .summary-band strong {{ display:block; margin-top:4px; font-size:24px; }}
+    .explainer {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(260px,.45fr);
+      gap:16px;
+      align-items:start;
+      margin-top:18px;
+    }}
+    .panel, .table-card {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+      padding:18px;
+    }}
+    .table-nav {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:12px;
+    }}
+    .table-nav a {{
+      display:inline-flex;
+      gap:7px;
+      align-items:center;
+      min-height:28px;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fff;
+      font-size:12px;
+      font-weight:700;
+    }}
+    .table-nav span {{ color:var(--muted); font-weight:650; }}
+    .filter {{
+      display:grid;
+      gap:5px;
+      margin-top:18px;
+      padding:14px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+    }}
+    .filter label {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      font-weight:700;
+    }}
+    .filter input {{
+      min-height:38px;
+      padding:7px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font:inherit;
+    }}
+    .tables {{ display:grid; gap:16px; margin-top:18px; }}
+    .table-card[hidden] {{ display:none; }}
+    .table-head {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:16px;
+      align-items:start;
+      padding-bottom:14px;
+      border-bottom:1px solid #edf1f5;
+    }}
+    .table-head strong {{
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      padding:4px 9px;
+      border-radius:999px;
+      background:var(--blue-soft);
+      color:#103a7a;
+      white-space:nowrap;
+    }}
+    .table-body {{ display:grid; gap:18px; margin-top:16px; }}
+    table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+    th, td {{
+      padding:9px 8px;
+      border-bottom:1px solid #edf1f5;
+      text-align:left;
+      vertical-align:top;
+    }}
+    th {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      white-space:nowrap;
+    }}
+    .sample-table {{
+      max-width:100%;
+      overflow:auto;
+      border:1px solid #edf1f5;
+      border-radius:8px;
+      background:#fff;
+    }}
+    .sample-table table {{ min-width:760px; }}
+    .sample-table td {{
+      max-width:300px;
+      overflow-wrap:anywhere;
+      line-height:1.4;
+    }}
+    details {{
+      border:1px solid #edf1f5;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }}
+    summary {{
+      padding:10px 12px;
+      cursor:pointer;
+      color:var(--blue);
+      font-weight:750;
+    }}
+    details pre {{
+      margin:0;
+      padding:12px;
+      border-top:1px solid #edf1f5;
+      overflow:auto;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+      font-size:12px;
+      line-height:1.45;
+    }}
+    .fk-list {{
+      display:grid;
+      gap:6px;
+      margin:0;
+      padding:0 12px 12px 28px;
+      color:var(--muted);
+      font-size:13px;
+    }}
+    .null, .muted {{ color:var(--muted); }}
+    .empty {{
+      margin-top:18px;
+      padding:20px;
+      border:1px dashed var(--line);
+      border-radius:8px;
+      background:#fff;
+      color:var(--muted);
+      text-align:center;
+    }}
+    footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
+    @media (max-width: 900px) {{
+      header, .explainer {{ grid-template-columns:1fr; }}
+      .summary-band {{ grid-template-columns:1fr 1fr; }}
+    }}
+    @media (max-width: 640px) {{
+      .shell {{ padding:18px 14px; }}
+      h1 {{ font-size:29px; }}
+      .summary-band, .table-head {{ grid-template-columns:1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <nav class="nav-links" aria-label="Hauptnavigation">
+          <a href="index.html">Start</a>
+          <a href="puls.html">Neueste Sitzung</a>
+          <a href="overview.html">Plenarprotokoll-Katalog</a>
+          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
+          <a href="bills/index.html">Gesetze verfolgen</a>
+          <a href="sources.html">Quellen und Methode</a>
+        </nav>
+        <span class="eyebrow">Transparenz</span>
+        <h1>Datenbank erkunden</h1>
+        <p class="subtitle">Diese statische Ansicht macht sichtbar, welche Tabellen Bundestag-Puls erzeugt, wie sie verknüpft sind und welche Beispielzeilen im aktuellen Build enthalten sind. Die Rohdaten bleiben zusätzlich als SQLite-Datei downloadbar.</p>
+      </div>
+      <div class="download-panel">
+        <span class="eyebrow">Rohdaten</span>
+        {download_link}
+        <p>{pulse_html.esc(snapshot['size'])} · SQLite-Datei</p>
+      </div>
+    </header>
+    <section class="summary-band">
+      <div><span>Tabellen</span><strong>{pulse_html.esc(len(tables))}</strong></div>
+      <div><span>Zeilen gesamt</span><strong>{pulse_html.esc(snapshot['total_rows'])}</strong></div>
+      <div><span>Beziehungen</span><strong>{pulse_html.esc(len(relationships))}</strong></div>
+      <div><span>Dateigröße</span><strong>{pulse_html.esc(snapshot['size'])}</strong></div>
+    </section>
+    <section class="explainer">
+      <div class="panel">
+        <span class="eyebrow">Was diese Ansicht leistet</span>
+        <h2>Vom Protokoll zum Entitätengraph</h2>
+        <p>Die Website nutzt dieselben verknüpften Datensätze, die hier sichtbar sind: Plenarprotokolle werden in Tagesordnungspunkte, Reden, Dokumente, Vorgänge, Parteien, Personen und Abstimmungen zerlegt. Dadurch lässt sich prüfen, welche Primärquellen hinter den sichtbaren Ansichten stehen.</p>
+        <div class="table-nav">{table_nav}</div>
+      </div>
+      <div class="panel">
+        <span class="eyebrow">Beziehungen</span>
+        <h2>Fremdschlüssel</h2>
+        {('<table><thead><tr><th>Tabelle</th><th>Spalte</th><th>Ziel</th><th>Löschen</th></tr></thead><tbody>' + relationship_rows + '</tbody></table>') if relationship_rows else '<p class="muted">Dieses Schema enthält noch keine Fremdschlüssel.</p>'}
+      </div>
+    </section>
+    <section class="filter" aria-label="Tabellen filtern">
+      <label for="database-search">Tabellen filtern</label>
+      <input id="database-search" type="search" placeholder="z.B. speeches, votes, documents ..." autocomplete="off" data-table-search>
+    </section>
+    <section class="tables" data-table-list>
+      {''.join(table_cards) if table_cards else '<div class="empty">In dieser SQLite-Datei wurden noch keine Tabellen angelegt.</div>'}
+    </section>
+    <footer>
+      Diese Seite ist statisch aus der SQLite-Datei erzeugt. Sie führt keine SQL-Abfragen im Browser aus und verändert keine Daten. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>
+    </footer>
+  </div>
+  <script>
+    const search = document.querySelector('[data-table-search]');
+    const cards = Array.from(document.querySelectorAll('[data-table-card]'));
+    if (search) {{
+      search.addEventListener('input', () => {{
+        const query = search.value.trim().toLowerCase();
+        for (const card of cards) {{
+          const text = (card.getAttribute('data-search') || '').toLowerCase();
+          card.hidden = query && !text.includes(query);
+        }}
+      }});
+    }}
+  </script>
+</body>
+</html>
+"""
+
+
 def render_landing_page(
     entries: list[dict[str, Any]],
     *,
     database_href: str | None = None,
+    database_page_href: str | None = None,
     protocol_count: int = 0,
     bill_count: int = 0,
 ) -> str:
@@ -217,9 +785,18 @@ def render_landing_page(
         areas.append(
             (
                 "Daten",
-                "SQLite-Entitätengraph",
+                "SQLite herunterladen",
                 database_href,
-                "MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze zum Download und zur eigenen Auswertung.",
+                "MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze zur eigenen Auswertung.",
+            )
+        )
+    if database_page_href:
+        areas.append(
+            (
+                "Transparenz",
+                "Datenbank erkunden",
+                database_page_href,
+                "Tabellen, Spalten, Beziehungen und Beispielzeilen des SQLite-Graphen direkt im Browser prüfen.",
             )
         )
     area_cards = "".join(
@@ -398,6 +975,7 @@ def render_landing_page(
         <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
+        {f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ''}
         <a href="sources.html">Quellen und Methode</a>
       </nav>
     </div>
@@ -450,7 +1028,11 @@ def render_landing_page(
 """
 
 
-def render_front_page(entries: list[dict[str, Any]], database_href: str | None = "data/bundestag-pulse.sqlite") -> str:
+def render_front_page(
+    entries: list[dict[str, Any]],
+    database_href: str | None = "data/bundestag-pulse.sqlite",
+    database_page_href: str | None = None,
+) -> str:
     if not entries:
         return """<!doctype html>
 <html lang="de">
@@ -490,6 +1072,9 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
     protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
     report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite-Graph</a>' if database_href else ""
+    database_page_link = (
+        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank erkunden</a>' if database_page_href else ""
+    )
     store_note = (
         " Die SQLite-Datei enthält MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze."
         if database_href
@@ -775,6 +1360,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
         <a href="overview.html">Plenarprotokoll-Katalog</a>
         <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
+        {database_page_link}
         <a href="sources.html">Quellen und Methode</a>
       </nav>
     </header>
@@ -795,6 +1381,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
           <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
           <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
           <a href="{report_href}">Erzeugtes JSON</a>
+          {database_page_link}
           {sqlite_link}
         </div>
       </div>
@@ -1541,10 +2128,15 @@ def render_overview(
     detail_entries: list[dict[str, Any]],
     bill_count: int = 0,
     database_href: str | None = "data/bundestag-pulse.sqlite",
+    database_page_href: str | None = None,
     catalog_href: str = "api-sitzungen.html",
 ) -> str:
     generated_cards = []
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
+    database_page_link = (
+        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+    )
+    database_footer_link = f" · {database_page_link}" if database_page_link else ""
     for entry in detail_entries:
         report = entry["report"]
         protocol = report.get("protocol") or {}
@@ -1886,6 +2478,7 @@ def render_overview(
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="{pulse_html.esc(catalog_href)}">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
+          {database_page_link}
           <a href="sources.html">Quellen und Methode</a>
         </nav>
         <h1>Bundestag-Puls</h1>
@@ -1928,7 +2521,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a> · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
 </body>
@@ -2099,6 +2692,7 @@ def render_catalog_page(
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
     overview_href: str = "overview.html",
+    database_page_href: str | None = None,
 ) -> str:
     rows, by_period = build_catalog_rows(protocols, detail_entries)
     rows_html = "".join(rows)
@@ -2114,6 +2708,9 @@ def render_catalog_page(
     latest = protocols[0] if protocols else {}
     total = len(protocols)
     dossier_count = len(detail_entries)
+    database_page_link = (
+        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -2405,6 +3002,7 @@ def render_catalog_page(
           <a href="{pulse_html.esc(overview_href)}">Plenarprotokoll-Katalog</a>
           <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
+          {database_page_link}
           <a href="sources.html">Quellen und Methode</a>
         </nav>
         <h1>Alle API-Sitzungen</h1>
@@ -2470,7 +3068,11 @@ def render_catalog_page(
 """
 
 
-def render_sources_page(entries: list[dict[str, Any]]) -> str:
+def render_sources_page(
+    entries: list[dict[str, Any]],
+    database_href: str | None = None,
+    database_page_href: str | None = None,
+) -> str:
     generated_rows = []
     for entry in entries:
         report = entry["report"]
@@ -2505,6 +3107,22 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
         generated_rows.append('<tr><td colspan="5" class="muted">In diesem Build wurden keine Sitzungen erzeugt.</td></tr>')
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
+    database_page_link = (
+        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+    )
+    database_method_item = ""
+    if database_page_href or database_href:
+        database_links = []
+        if database_page_href:
+            database_links.append(f'<a href="{pulse_html.esc(database_page_href)}">Datenbank erkunden</a>')
+        if database_href:
+            database_links.append(f'<a href="{pulse_html.esc(database_href)}">SQLite herunterladen</a>')
+        database_method_item = (
+            "<li><strong>SQLite-Graph</strong><span>"
+            "Die normalisierten Entitäten werden als SQLite-Datei veröffentlicht; "
+            f"{' · '.join(database_links)}."
+            "</span></li>"
+        )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -2685,6 +3303,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
           <a href="overview.html">Plenarprotokoll-Katalog</a>
           <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
+          {database_page_link}
           <a href="sources.html">Quellen und Methode</a>
         </nav>
         <h1>Quellen</h1>
@@ -2735,6 +3354,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
           <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
+          {database_method_item}
         </ul>
       </section>
       <section class="panel note">
@@ -2890,6 +3510,7 @@ def main() -> int:
             database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
         except ValueError:
             database_href = None
+    database_page_href = "database.html" if not args.no_persist and database_path.exists() else None
 
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -2900,30 +3521,41 @@ def main() -> int:
     overview_path = output_dir / "overview.html"
     catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
+    database_page_path = output_dir / "database.html"
     index_path.write_text(
         render_landing_page(
             entries,
             database_href=database_href,
+            database_page_href=database_page_href,
             protocol_count=len(protocols),
             bill_count=int(bill_output["count"]),
         ),
         encoding="utf-8",
     )
-    pulse_path.write_text(render_front_page(entries, database_href=database_href), encoding="utf-8")
+    pulse_path.write_text(
+        render_front_page(entries, database_href=database_href, database_page_href=database_page_href),
+        encoding="utf-8",
+    )
     overview_path.write_text(
         render_overview(
             protocols,
             entries,
             bill_count=int(bill_output["count"]),
             database_href=database_href,
+            database_page_href=database_page_href,
         ),
         encoding="utf-8",
     )
     catalog_page_path.write_text(
-        render_catalog_page(protocols, entries, catalog_path),
+        render_catalog_page(protocols, entries, catalog_path, database_page_href=database_page_href),
         encoding="utf-8",
     )
-    sources_path.write_text(render_sources_page(entries), encoding="utf-8")
+    sources_path.write_text(
+        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href),
+        encoding="utf-8",
+    )
+    if database_page_href:
+        database_page_path.write_text(render_database_page(database_path, database_href), encoding="utf-8")
     print(index_path)
     return 0
 
