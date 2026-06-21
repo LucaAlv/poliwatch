@@ -142,6 +142,7 @@ def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, An
         pulse_html.render_html(
             report,
             home_href="../index.html",
+            pulse_href="../puls.html",
             overview_href="../overview.html",
             catalog_href="../api-sitzungen.html",
             bills_href="../bills/index.html",
@@ -498,7 +499,8 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       font-size:.92em;
     }}
     .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
-    header {{
+    {pulse_html.global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:24px;
@@ -506,14 +508,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       padding-bottom:22px;
       border-bottom:1px solid var(--line);
     }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
-      font-size:13px;
-    }}
-    .nav-links a, .button {{
+    .button {{
       display:inline-flex;
       align-items:center;
       min-height:32px;
@@ -718,7 +713,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
     }}
     footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
     @media (max-width: 900px) {{
-      header, .explainer {{ grid-template-columns:1fr; }}
+      .page-header, .explainer {{ grid-template-columns:1fr; }}
       .summary-band {{ grid-template-columns:1fr 1fr; }}
     }}
     @media (max-width: 640px) {{
@@ -730,16 +725,9 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(database_href="database.html", active="database")}
+    <header class="page-header">
       <div>
-        <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Start</a>
-          <a href="puls.html">Aktueller Puls</a>
-          <a href="overview.html">Plenarprotokoll-Katalog</a>
-          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
-          <a href="bills/index.html">Gesetze verfolgen</a>
-          <a href="sources.html">Quellen und Methode</a>
-        </nav>
         <span class="eyebrow">Transparenz</span>
         <h1>Datenbank erkunden</h1>
         <p class="subtitle">Diese statische Ansicht macht sichtbar, welche Tabellen Bundestag-Puls erzeugt, wie sie verknüpft sind und welche Beispielzeilen im aktuellen Build enthalten sind. Die Rohdaten bleiben zusätzlich als SQLite-Datei downloadbar.</p>
@@ -949,32 +937,7 @@ def render_landing_page(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1180px; margin:0 auto; padding:22px 22px 48px; }}
-    .topbar {{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      padding-bottom:18px;
-      border-bottom:1px solid var(--line);
-    }}
-    .brand {{ display:flex; align-items:baseline; gap:10px; }}
-    .brand strong {{ font-size:18px; font-weight:800; letter-spacing:-.01em; }}
-    .brand span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }}
-    .topnav {{ display:flex; flex-wrap:wrap; gap:8px; }}
-    .topnav a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:34px;
-      padding:5px 11px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:700;
-      font-size:13px;
-      color:var(--ink);
-    }}
-    .topnav a:hover {{ border-color:#bdd0ea; background:var(--blue-soft); text-decoration:none; }}
+    {pulse_html.global_header_styles()}
     .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }}
     .hero {{
       display:grid;
@@ -1079,17 +1042,7 @@ def render_landing_page(
 </head>
 <body>
   <div class="shell">
-    <div class="topbar">
-      <div class="brand"><strong>Bundestag-Puls</strong><span>Primärquellen-Monitor</span></div>
-      <nav class="topnav" aria-label="Hauptnavigation">
-        <a href="puls.html">Aktueller Puls</a>
-        <a href="overview.html">Plenarprotokoll-Katalog</a>
-        <a href="api-sitzungen.html">Alle API-Sitzungen</a>
-        <a href="bills/index.html">Gesetze verfolgen</a>
-        {f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ''}
-        <a href="sources.html">Quellen und Methode</a>
-      </nav>
-    </div>
+    {pulse_html.render_global_header(database_href=database_page_href)}
 
     <section class="hero">
       <div class="hero-copy">
@@ -1145,28 +1098,53 @@ def render_front_page(
     database_page_href: str | None = None,
 ) -> str:
     if not entries:
-        return """<!doctype html>
+        return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls</title>
+  <style>
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --blue-soft:#eef5ff;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:960px; margin:0 auto; padding:24px; }}
+    {pulse_html.global_header_styles()}
+    .page-header {{
+      padding-bottom:18px;
+      border-bottom:1px solid var(--line);
+    }}
+    h1 {{ margin:0; font-size:34px; line-height:1.1; }}
+    p {{ color:var(--muted); line-height:1.5; }}
+    footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
+  </style>
 </head>
 <body>
-  <header>
-    <h1>Bundestag-Puls</h1>
-    <nav aria-label="Hauptnavigation">
-      <a href="overview.html">Plenarprotokoll-Katalog</a>
-      <a href="bills/index.html">Gesetze verfolgen</a>
-      <a href="sources.html">Quellen und Methode</a>
-    </nav>
-  </header>
-  <main>
-    <p>Es wurden noch keine Sitzungen erzeugt.</p>
-  </main>
-  <footer>
-    Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
-  </footer>
+  <div class="shell">
+    {pulse_html.render_global_header()}
+    <header class="page-header">
+      <h1>Bundestag-Puls</h1>
+      <p>Es wurden noch keine Sitzungen erzeugt.</p>
+    </header>
+    <footer>
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
+    </footer>
+  </div>
 </body>
 </html>
 """
@@ -1309,7 +1287,8 @@ def render_front_page(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1280px; margin:0 auto; padding:26px 22px; }}
-    header {{
+    {pulse_html.global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:1fr;
       gap:20px;
@@ -1321,8 +1300,8 @@ def render_front_page(
     h2 {{ margin:0; font-size:18px; line-height:1.25; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
     .subtitle {{ max-width:760px; font-size:15px; }}
-    .nav-links {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
-    .nav-links a, .primary-link, .session-links a {{
+    .page-actions {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
+    .page-actions a, .session-links a {{
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -1334,7 +1313,7 @@ def render_front_page(
       font-weight:700;
       font-size:13px;
     }}
-    .primary-link {{ border-color:#bdd0ea; background:var(--blue-soft); }}
+    .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
     .radar-hero {{
       display:grid;
       grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);
@@ -1570,8 +1549,8 @@ def render_front_page(
     }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      header, .radar-hero, .layout, .feature-grid {{ grid-template-columns:1fr; }}
-      .nav-links {{ justify-content:flex-start; }}
+      .page-header, .radar-hero, .layout, .feature-grid {{ grid-template-columns:1fr; }}
+      .page-actions {{ justify-content:flex-start; }}
     }}
     @media (max-width: 700px) {{
       .shell {{ padding:16px 14px; }}
@@ -1591,21 +1570,17 @@ def render_front_page(
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(database_href=database_page_href, active="pulse")}
+    <header class="page-header">
       <div>
         <span class="eyebrow">Aktueller Lageblick</span>
         <h1>Was gerade im Bundestag l&auml;uft</h1>
         <p class="subtitle">Diese Seite ist der aktuelle Bundestag-Puls: Sie hebt Themenbewegung und Abstimmungsverschiebungen hervor. Das Plenarprotokoll-Dossier bleibt als Quelle verlinkt, ist aber nicht der Zweck dieser Seite.</p>
       </div>
-      <nav class="nav-links" aria-label="Hauptnavigation">
-        <a class="primary-link" href="#bewegung">Zum Lageblick</a>
-        <a href="index.html">Start</a>
+      <nav class="page-actions" aria-label="Seitenaktionen">
+        <a href="#bewegung">Zum Lageblick</a>
         <a href="{protocol_href}">Protokolldossier</a>
-        <a href="overview.html">Plenarprotokoll-Katalog</a>
-        <a href="api-sitzungen.html">Alle API-Sitzungen</a>
-        <a href="bills/index.html">Gesetze verfolgen</a>
-        {database_page_link}
-        <a href="sources.html">Quellen und Methode</a>
+        <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
       </nav>
     </header>
 
@@ -2010,7 +1985,8 @@ def bill_styles() -> str:
     a { color:var(--blue); text-decoration:none; }
     a:hover { text-decoration:underline; }
     .shell { max-width:1280px; margin:0 auto; padding:26px 22px; }
-    header {
+    """ + pulse_html.global_header_styles() + """
+    .page-header {
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:22px;
@@ -2018,8 +1994,8 @@ def bill_styles() -> str:
       padding-bottom:20px;
       border-bottom:1px solid var(--line);
     }
-    nav { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
-    nav a, .source-link {
+    .local-nav { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    .local-nav a, .source-link {
       display:inline-flex;
       align-items:center;
       min-height:30px;
@@ -2172,7 +2148,7 @@ def bill_styles() -> str:
     }
     footer { padding-top:24px; color:var(--muted); font-size:12px; }
     @media (max-width: 900px) {
-      header, .bill-card, .content-grid { grid-template-columns:1fr; }
+      .page-header, .bill-card, .content-grid { grid-template-columns:1fr; }
       .actions { justify-content:flex-start; }
       .summary-grid, .field-grid { grid-template-columns:1fr 1fr; }
       .timeline-row, .speaker-row, .doc-row { grid-template-columns:1fr; gap:4px; }
@@ -2221,15 +2197,9 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="index.html", sources_href="../sources.html", active="bills")}
+    <header class="page-header">
       <div>
-        <nav aria-label="Hauptnavigation">
-          <a href="../index.html">Start</a>
-          <a href="../puls.html">Aktueller Puls</a>
-          <a href="../overview.html">Plenarprotokoll-Katalog</a>
-          <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
-          <a href="../sources.html">Quellen und Methode</a>
-        </nav>
         <h1>Gesetze verfolgen</h1>
         <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
       </div>
@@ -2310,15 +2280,11 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="index.html", sources_href="../sources.html", active="bills")}
+    <header class="page-header">
       <div>
-        <nav aria-label="Hauptnavigation">
+        <nav class="local-nav" aria-label="Gesetz-Navigation">
           <a href="index.html">Alle Gesetze</a>
-          <a href="../index.html">Start</a>
-          <a href="../puls.html">Aktueller Puls</a>
-          <a href="../overview.html">Plenarprotokoll-Katalog</a>
-          <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
-          <a href="../sources.html">Quellen und Methode</a>
         </nav>
         <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
         <h1>{pulse_html.esc(bill.get('title'))}</h1>
@@ -2489,24 +2455,8 @@ def render_overview(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
-    .page-nav {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:12px;
-    }}
-    .page-nav a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-size:13px;
-      font-weight:650;
-    }}
-    header {{
+    {pulse_html.global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:24px;
@@ -2534,24 +2484,6 @@ def render_overview(
       letter-spacing:.04em;
     }}
     .latest strong {{ font-size:18px; }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:9px;
-      justify-content:flex-end;
-    }}
-    .nav-links a {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:34px;
-      padding:5px 11px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-size:13px;
-      font-weight:700;
-    }}
     .summary-band {{
       display:grid;
       grid-template-columns:repeat(4, minmax(0,1fr));
@@ -2620,23 +2552,6 @@ def render_overview(
       border-radius:6px;
       background:#eef5ff;
       font-weight:700;
-    }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
-      font-size:13px;
-    }}
-    .nav-links a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:650;
     }}
     .metrics {{
       display:grid;
@@ -2724,8 +2639,8 @@ def render_overview(
     }}
     @media (max-width: 740px) {{
       .shell {{ padding:18px 14px; }}
-      header, .session-main {{ grid-template-columns:1fr; }}
-      .nav-links {{ justify-content:flex-start; }}
+      .page-header, .session-main {{ grid-template-columns:1fr; }}
+      .page-header {{ grid-template-columns:1fr; }}
       h1 {{ font-size:29px; }}
       h2 {{ font-size:19px; }}
       .metrics {{ grid-template-columns:1fr 1fr; }}
@@ -2735,17 +2650,9 @@ def render_overview(
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(database_href=database_page_href, active="overview")}
+    <header class="page-header">
       <div>
-        <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Start</a>
-          <a href="puls.html">Aktueller Puls</a>
-          <a href="overview.html">Plenarprotokoll-Katalog</a>
-          <a href="{pulse_html.esc(catalog_href)}">Alle API-Sitzungen</a>
-          <a href="bills/index.html">Gesetze verfolgen</a>
-          {database_page_link}
-          <a href="sources.html">Quellen und Methode</a>
-        </nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">Umfassender Plenarprotokoll-Katalog aus der DIP-API mit erzeugten Dossiers für ausgewählte Sitzungen.</p>
       </div>
@@ -3092,30 +2999,14 @@ def render_catalog_page(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
-    header {{
+    {pulse_html.global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:24px;
       align-items:end;
       padding-bottom:22px;
       border-bottom:1px solid var(--line);
-    }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
-      font-size:13px;
-    }}
-    .nav-links a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:650;
     }}
     h1 {{ margin:0; font-size:36px; line-height:1.1; }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); max-width:760px; }}
@@ -3415,24 +3306,16 @@ def render_catalog_page(
     }}
     @media (max-width: 740px) {{
       .shell {{ padding:18px 14px; }}
-      header {{ grid-template-columns:1fr; }}
+      .page-header {{ grid-template-columns:1fr; }}
       h1 {{ font-size:29px; }}
     }}
   </style>
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(database_href=database_page_href, active="catalog")}
+    <header class="page-header">
       <div>
-        <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Start</a>
-          <a href="puls.html">Aktueller Puls</a>
-          <a href="{pulse_html.esc(overview_href)}">Plenarprotokoll-Katalog</a>
-          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
-          <a href="bills/index.html">Gesetze verfolgen</a>
-          {database_page_link}
-          <a href="sources.html">Quellen und Methode</a>
-        </nav>
         <h1>Alle API-Sitzungen</h1>
         <p class="subtitle">Vollständiger Plenarprotokoll-Katalog aus der DIP-API. Suche nach Dokumentnummer, Titel oder Datum und filtere nach Wahlperiode oder Dossier-Status. Der Roh-Katalog steht zusätzlich als <a href="data/{pulse_html.esc(catalog_path.name)}">JSON</a> bereit.</p>
       </div>
@@ -3590,30 +3473,14 @@ def render_sources_page(
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1120px; margin:0 auto; padding:28px 22px; }}
-    header {{
+    {pulse_html.global_header_styles()}
+    .page-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
       gap:24px;
       align-items:end;
       padding-bottom:22px;
       border-bottom:1px solid var(--line);
-    }}
-    .nav-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-bottom:10px;
-      font-size:13px;
-    }}
-    .nav-links a {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:650;
     }}
     h1 {{ margin:0; font-size:36px; line-height:1.1; }}
     h2 {{ margin:0 0 10px; font-size:21px; line-height:1.25; }}
@@ -3721,7 +3588,7 @@ def render_sources_page(
     footer {{ padding-top:8px; color:var(--muted); font-size:12px; }}
     @media (max-width: 760px) {{
       .shell {{ padding:18px 14px; }}
-      header, .source-grid {{ grid-template-columns:1fr; }}
+      .page-header, .source-grid {{ grid-template-columns:1fr; }}
       h1 {{ font-size:29px; }}
       .method-list li {{ grid-template-columns:1fr; gap:3px; }}
       table, thead, tbody, tr, th, td {{ display:block; }}
@@ -3734,17 +3601,9 @@ def render_sources_page(
 </head>
 <body>
   <div class="shell">
-    <header>
+    {pulse_html.render_global_header(database_href=database_page_href, active="sources")}
+    <header class="page-header">
       <div>
-        <nav class="nav-links" aria-label="Hauptnavigation">
-          <a href="index.html">Start</a>
-          <a href="puls.html">Aktueller Puls</a>
-          <a href="overview.html">Plenarprotokoll-Katalog</a>
-          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
-          <a href="bills/index.html">Gesetze verfolgen</a>
-          {database_page_link}
-          <a href="sources.html">Quellen und Methode</a>
-        </nav>
         <h1>Quellen</h1>
         <p class="subtitle">Bundestag-Puls basiert auf offiziellen Parlamentsunterlagen. Diese Seite dokumentiert, welche Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt.</p>
       </div>
