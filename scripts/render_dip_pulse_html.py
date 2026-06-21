@@ -511,6 +511,104 @@ def render_llm_summary(
     )
 
 
+def session_summary_unavailable_message(summary_generation: dict[str, Any] | None) -> str:
+    gen = summary_generation or {}
+    if gen.get("enabled") is False:
+        if gen.get("reason"):
+            return (
+                "Automatische Zusammenfassungen wurden bei diesem Build nicht erzeugt. "
+                "Es fehlt ein LLM-API-Schlüssel für die Zusammenfassungen."
+            )
+        return "Automatische Zusammenfassungen wurden für diese Sitzung deaktiviert."
+    if gen.get("enabled") is True:
+        return "Für diese Sitzung wurden noch keine zitierfähigen automatischen Zusammenfassungen erzeugt."
+    return "Die automatische Sitzungszusammenfassung ist derzeit nicht verfügbar."
+
+
+def render_session_llm_summary(
+    items: list[dict[str, Any]],
+    stats_by_index: dict[int, dict[str, Any]],
+    summary_generation: dict[str, Any] | None,
+    protocol: dict[str, Any],
+) -> str:
+    summarized_items = [
+        item
+        for item in items
+        if (item.get("llm_summary") or {}).get("text")
+        and (item.get("llm_summary") or {}).get("source_chunks")
+    ]
+    if not summarized_items:
+        return (
+            '<section class="session-llm-summary unavailable">'
+            '<div class="session-llm-header">'
+            "<div>"
+            '<span class="eyebrow">KI-Zusammenfassung</span>'
+            "<h2>Automatische Sitzungszusammenfassung</h2>"
+            f"<p>{esc(session_summary_unavailable_message(summary_generation))}</p>"
+            "</div>"
+            "</div>"
+            "</section>"
+        )
+
+    summarized_items = sorted(
+        summarized_items,
+        key=lambda item: stats_by_index[item["index"]]["speech_count"],
+        reverse=True,
+    )
+    visible_items = summarized_items[:5]
+    total_summaries = len(summarized_items)
+    pdf_url = protocol.get("pdf_url")
+    rows = []
+    for item in visible_items:
+        stats = stats_by_index[item["index"]]
+        summary = item.get("llm_summary") or {}
+        chunk_links = []
+        for chunk in (summary.get("source_chunks") or [])[:4]:
+            anchor = source_chunk_anchor(item, stats, chunk)
+            source = source_page_text(chunk.get("source_page"))
+            label = f"{chunk.get('id')} · S. {source}" if source else str(chunk.get("id") or "Quelle")
+            if anchor:
+                chunk_links.append(f'<a href="#{esc(anchor)}">{esc(label)}</a>')
+            else:
+                chunk_links.append(f"<span>{esc(label)}</span>")
+        if pdf_url:
+            chunk_links.append(f'<a href="{esc(pdf_url)}">Originalprotokoll</a>')
+        rows.append(
+            '<article class="session-summary-item">'
+            '<div class="session-summary-item-head">'
+            f'<a class="top-jump" href="#top-{esc(item.get("index"))}">{esc(item.get("top_id"))}</a>'
+            f"<h3>{esc(short(item.get('heading'), 120))}</h3>"
+            "</div>"
+            f"<p>{esc(summary.get('text'))}</p>"
+            f'<div class="session-summary-sources">{"".join(chunk_links)}</div>'
+            "</article>"
+        )
+
+    more_note = ""
+    if total_summaries > len(visible_items):
+        more_note = (
+            f"<p class=\"session-summary-note\">Weitere {esc(total_summaries - len(visible_items))} "
+            "automatische Zusammenfassungen stehen direkt bei den Tagesordnungspunkten.</p>"
+        )
+
+    generated_label = f"{total_summaries} TOP-Zusammenfassung" + ("" if total_summaries == 1 else "en")
+    return (
+        '<section class="session-llm-summary">'
+        '<div class="session-llm-header">'
+        "<div>"
+        '<span class="eyebrow">KI-Zusammenfassung</span>'
+        "<h2>Automatische Sitzungszusammenfassung</h2>"
+        "<p>Die wichtigsten automatisch zusammengefassten Tagesordnungspunkte dieser Sitzung, "
+        "sortiert nach parlamentarischer Aufmerksamkeit und jeweils mit Protokollquellen belegt.</p>"
+        "</div>"
+        f'<span class="summary-count">{esc(generated_label)}</span>'
+        "</div>"
+        f'<div class="session-summary-list">{"".join(rows)}</div>'
+        f"{more_note}"
+        "</section>"
+    )
+
+
 def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
@@ -752,6 +850,114 @@ def render_html(
     }}
     .metric span {{ display:block; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
     .metric strong {{ display:block; margin-top:4px; font-size:22px; }}
+    .session-llm-summary {{
+      display:grid;
+      gap:14px;
+      margin-top:18px;
+      padding:18px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+    }}
+    .session-llm-header {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:16px;
+      align-items:start;
+    }}
+    .session-llm-header h2 {{
+      margin:5px 0 0;
+      font-size:22px;
+      line-height:1.25;
+    }}
+    .session-llm-header p {{
+      max-width:860px;
+      margin:8px 0 0;
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.45;
+    }}
+    .summary-count {{
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      padding:4px 10px;
+      border:1px solid #d5dde8;
+      border-radius:999px;
+      background:#f9fafb;
+      color:#3f4a59;
+      font-size:13px;
+      font-weight:700;
+      white-space:nowrap;
+    }}
+    .session-summary-list {{
+      display:grid;
+      gap:12px;
+    }}
+    .session-summary-item {{
+      display:grid;
+      gap:8px;
+      padding-top:12px;
+      border-top:1px solid #edf0f4;
+    }}
+    .session-summary-item-head {{
+      display:grid;
+      grid-template-columns:auto minmax(0,1fr);
+      gap:10px;
+      align-items:start;
+    }}
+    .top-jump {{
+      display:inline-flex;
+      align-items:center;
+      min-height:25px;
+      padding:2px 8px;
+      border:1px solid #d5dde8;
+      border-radius:999px;
+      color:#174ea6;
+      font-size:12px;
+      font-weight:750;
+      white-space:nowrap;
+    }}
+    .session-summary-item h3 {{
+      margin:3px 0 0;
+      color:var(--ink);
+      font-size:15px;
+      line-height:1.3;
+      text-transform:none;
+      letter-spacing:0;
+    }}
+    .session-summary-item p {{
+      margin:0;
+      color:#252b33;
+      font-size:15px;
+      line-height:1.5;
+    }}
+    .session-summary-sources {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:7px;
+      font-size:12px;
+    }}
+    .session-summary-sources a,
+    .session-summary-sources span {{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      padding:2px 7px;
+      border:1px solid #e1e6ee;
+      border-radius:999px;
+      background:#fbfcfd;
+      color:#4b5563;
+    }}
+    .session-summary-note {{
+      margin:0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+    }}
+    .session-llm-summary.unavailable {{
+      background:#f9fafb;
+    }}
     .layout {{
       display:grid;
       grid-template-columns:340px minmax(0,1fr);
@@ -1239,6 +1445,7 @@ def render_html(
     @media (max-width: 720px) {{
       .shell {{ padding:14px; }}
       header, .top-head {{ grid-template-columns:1fr; }}
+      .session-llm-header, .session-summary-item-head {{ grid-template-columns:1fr; }}
       .meta-grid {{ grid-template-columns:1fr 1fr; }}
       h1 {{ font-size:27px; }}
       h2 {{ font-size:18px; }}
@@ -1275,6 +1482,7 @@ def render_html(
       </div>
     </header>
     {render_protocol_api_overview(report)}
+    {render_session_llm_summary(items, stats_by_index, summary_generation, protocol)}
     <div class="layout">
       <aside>
         <h2>Aufmerksamkeitsrang</h2>
