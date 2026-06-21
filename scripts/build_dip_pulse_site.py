@@ -106,6 +106,7 @@ def write_report_and_page(
             report,
             home_href="../index.html",
             overview_href="../overview.html",
+            catalog_href="../api-sitzungen.html",
             bills_href="../bills/index.html",
             sources_href="../sources.html",
         ),
@@ -395,6 +396,7 @@ def render_landing_page(
       <nav class="topnav" aria-label="Hauptnavigation">
         <a href="puls.html">Neueste Sitzung</a>
         <a href="overview.html">Plenarprotokoll-Katalog</a>
+        <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
         <a href="sources.html">Quellen und Methode</a>
       </nav>
@@ -771,6 +773,7 @@ def render_front_page(entries: list[dict[str, Any]], database_href: str | None =
         <a class="primary-link" href="{protocol_href}">Details öffnen</a>
         <a href="index.html">Start</a>
         <a href="overview.html">Plenarprotokoll-Katalog</a>
+        <a href="api-sitzungen.html">Alle API-Sitzungen</a>
         <a href="bills/index.html">Gesetze verfolgen</a>
         <a href="sources.html">Quellen und Methode</a>
       </nav>
@@ -1372,6 +1375,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
           <a href="../index.html">Start</a>
           <a href="../puls.html">Neueste Sitzung</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
+          <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="../sources.html">Quellen und Methode</a>
         </nav>
         <h1>Gesetze verfolgen</h1>
@@ -1461,6 +1465,7 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
           <a href="../index.html">Start</a>
           <a href="../puls.html">Neueste Sitzung</a>
           <a href="../overview.html">Plenarprotokoll-Katalog</a>
+          <a href="../api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="../sources.html">Quellen und Methode</a>
         </nav>
         <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
@@ -1534,11 +1539,10 @@ def write_bill_pages(output_dir: Path, bills: list[dict[str, Any]]) -> dict[str,
 def render_overview(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
-    catalog_path: Path,
     bill_count: int = 0,
     database_href: str | None = "data/bundestag-pulse.sqlite",
+    catalog_href: str = "api-sitzungen.html",
 ) -> str:
-    entries_by_id = {str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries}
     generated_cards = []
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
     for entry in detail_entries:
@@ -1590,54 +1594,10 @@ def render_overview(
             """
         )
 
-    catalog_rows = []
     by_period: dict[str, int] = {}
     for protocol in protocols:
         period = str(protocol.get("wahlperiode") or "unknown")
         by_period[period] = by_period.get(period, 0) + 1
-        fundstelle = protocol.get("fundstelle") or {}
-        entry = entries_by_id.get(str(protocol.get("id")))
-        dossier = '<span class="muted">Nicht erzeugt</span>'
-        metrics = '<span class="muted">Nur Quell-Metadaten</span>'
-        if entry:
-            report = entry["report"]
-            summary = report.get("validation_summary") or {}
-            dossier = f'<a class="open-button" href="protocols/{pulse_html.esc(entry["page_path"].name)}">Dossier öffnen</a>'
-            metrics = (
-                f'{pulse_html.esc(summary.get("xml_top_count"))} TOPs · '
-                f'{pulse_html.esc(summary.get("xml_speech_count"))} Reden · '
-                f'{pulse_html.esc(summary.get("aktivitaet_count"))} Aktivitäten'
-            )
-
-        catalog_rows.append(
-            f"""
-            <article class="catalog-row">
-              <div>
-                <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
-                <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
-                <p>{pulse_html.esc(protocol.get('datum'))} · aktualisiert {pulse_html.esc(protocol.get('aktualisiert'))}</p>
-              </div>
-              <div class="catalog-meta">
-                <span>{pulse_html.esc(protocol.get('dokumentart') or protocol.get('typ'))}</span>
-                <strong>{pulse_html.esc(protocol.get('vorgangsbezug_anzahl', 0))}</strong>
-                <em>Vorgangsbezüge</em>
-              </div>
-              <div class="catalog-meta">
-                <span>Verteilt</span>
-                <strong>{pulse_html.esc(fundstelle.get('verteildatum') or '')}</strong>
-                <em>ID {pulse_html.esc(protocol.get('id'))}</em>
-              </div>
-              <div class="catalog-actions">
-                {dossier}
-                <div class="session-links">
-                  {protocol_source_links(protocol)}
-                </div>
-              </div>
-              <div class="catalog-status">{metrics}</div>
-              {render_catalog_json(protocol)}
-            </article>
-            """
-        )
 
     period_badges = "".join(
         f'<span class="badge">WP {pulse_html.esc(period)} <strong>{pulse_html.esc(count)}</strong></span>'
@@ -1747,7 +1707,7 @@ def render_overview(
       background:white;
       padding:13px 14px;
     }}
-    .summary-band span, .catalog-meta span {{
+    .summary-band span {{
       display:block;
       color:var(--muted);
       font-size:12px;
@@ -1872,11 +1832,20 @@ def render_overview(
       font-weight:650;
     }}
     .warn {{ color:#8a4a00; }}
-    .catalog {{
-      display:grid;
-      gap:10px;
+    .catalog-cta {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:16px;
+      align-items:center;
+      justify-content:space-between;
       margin-top:18px;
+      padding:18px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
     }}
+    .catalog-cta strong {{ display:block; font-size:20px; }}
+    .catalog-cta span {{ display:block; margin-top:4px; color:var(--muted); font-size:14px; max-width:560px; }}
     .section-head {{
       margin-top:26px;
       padding-top:20px;
@@ -1891,74 +1860,10 @@ def render_overview(
       max-width:780px;
       line-height:1.45;
     }}
-    .catalog-row {{
-      display:grid;
-      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
-      gap:14px;
-      align-items:start;
-      background:var(--panel);
-      border:1px solid var(--line);
-      border-radius:8px;
-      padding:14px;
-    }}
-    .catalog-row h3 {{
-      margin:5px 0 0;
-      font-size:17px;
-      line-height:1.25;
-      overflow-wrap:anywhere;
-    }}
-    .catalog-meta strong {{
-      display:block;
-      margin-top:4px;
-      font-size:18px;
-      overflow-wrap:anywhere;
-    }}
-    .catalog-meta em, .catalog-status {{
-      color:var(--muted);
-      font-size:12px;
-      font-style:normal;
-    }}
-    .catalog-actions {{
-      display:grid;
-      justify-items:start;
-      gap:8px;
-    }}
-    .catalog-status {{
-      grid-column:1 / -1;
-      padding-top:10px;
-      border-top:1px solid #eef1f5;
-    }}
-    .api-details {{
-      grid-column:1 / -1;
-      border:1px solid #e3e8ef;
-      border-radius:8px;
-      background:#fbfcfd;
-      overflow:hidden;
-    }}
-    .api-details summary {{
-      min-height:32px;
-      padding:7px 10px;
-      color:var(--blue);
-      cursor:pointer;
-      font-size:13px;
-      font-weight:700;
-    }}
-    .api-details pre {{
-      max-height:300px;
-      overflow:auto;
-      margin:0;
-      padding:10px;
-      border-top:1px solid #e6ebf2;
-      font-size:12px;
-      line-height:1.45;
-      white-space:pre-wrap;
-      overflow-wrap:anywhere;
-    }}
     .muted {{ color:var(--muted); }}
     footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
     @media (max-width: 940px) {{
-      .summary-band, .catalog-row {{ grid-template-columns:1fr; }}
-      .catalog-status, .api-details {{ grid-column:auto; }}
+      .summary-band {{ grid-template-columns:1fr; }}
     }}
     @media (max-width: 740px) {{
       .shell {{ padding:18px 14px; }}
@@ -1979,6 +1884,7 @@ def render_overview(
           <a href="index.html">Start</a>
           <a href="puls.html">Neueste Sitzung</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
+          <a href="{pulse_html.esc(catalog_href)}">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
           <a href="sources.html">Quellen und Methode</a>
         </nav>
@@ -2012,15 +1918,553 @@ def render_overview(
     </section>
     <div class="section-head">
       <h2>Alle API-Sitzungen</h2>
-      <p>Unten sind alle geholten Plenarprotokoll-Datensätze aufgeführt. Der vollständige Katalog wird zusätzlich als JSON nach <a href="data/{pulse_html.esc(catalog_path.name)}">data/{pulse_html.esc(catalog_path.name)}</a> geschrieben.</p>
+      <p>Der vollständige Plenarprotokoll-Katalog umfasst {pulse_html.esc(len(protocols))} aus der DIP-API geholte Sitzungen. Durchsuchen und filtern lässt er sich auf einer eigenen Seite.</p>
     </div>
-    <section class="catalog">
-      {''.join(catalog_rows)}
+    <section class="catalog-cta">
+      <div>
+        <strong>{pulse_html.esc(len(protocols))} Sitzungen</strong>
+        <span>Suche nach Dokumentnummer, Titel oder Datum, Filter nach Wahlperiode und Dossier-Status.</span>
+      </div>
+      <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
       Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Neueste Sitzung</a> · <a href="bills/index.html">Gesetze verfolgen</a> · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
+</body>
+</html>
+"""
+
+
+def catalog_sortnum(protocol: dict[str, Any]) -> str:
+    """Zero-padded numeric sort key derived from the document number (WP/Nr)."""
+    match = re.match(r"\s*(\d+)\s*/\s*(\d+)", str(protocol.get("dokumentnummer") or ""))
+    if match:
+        return f"{int(match.group(1)):04d}{int(match.group(2)):07d}"
+    return "00000000000"
+
+
+def build_catalog_rows(
+    protocols: list[dict[str, Any]],
+    detail_entries: list[dict[str, Any]],
+) -> tuple[list[str], dict[str, int]]:
+    entries_by_id = {
+        str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries
+    }
+    rows: list[str] = []
+    by_period: dict[str, int] = {}
+    for protocol in protocols:
+        period = str(protocol.get("wahlperiode") or "unbekannt")
+        by_period[period] = by_period.get(period, 0) + 1
+        fundstelle = protocol.get("fundstelle") or {}
+        entry = entries_by_id.get(str(protocol.get("id")))
+        has_dossier = "1" if entry else "0"
+        dossier = '<span class="muted">Nicht erzeugt</span>'
+        metrics = '<span class="muted">Nur Quell-Metadaten</span>'
+        if entry:
+            report = entry["report"]
+            summary = report.get("validation_summary") or {}
+            dossier = f'<a class="open-button" href="protocols/{pulse_html.esc(entry["page_path"].name)}">Dossier öffnen</a>'
+            metrics = (
+                f'{pulse_html.esc(summary.get("xml_top_count"))} TOPs · '
+                f'{pulse_html.esc(summary.get("xml_speech_count"))} Reden · '
+                f'{pulse_html.esc(summary.get("aktivitaet_count"))} Aktivitäten'
+            )
+
+        search_terms = " ".join(
+            str(value)
+            for value in (
+                protocol.get("dokumentnummer"),
+                protocol.get("titel"),
+                protocol.get("datum"),
+                protocol.get("id"),
+                protocol.get("dokumentart") or protocol.get("typ"),
+                f"wp{period}",
+                f"wahlperiode {period}",
+            )
+            if value
+        ).lower()
+
+        rows.append(
+            f"""
+            <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
+              <div>
+                <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
+                <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
+                <p>{pulse_html.esc(protocol.get('datum'))} · aktualisiert {pulse_html.esc(protocol.get('aktualisiert'))}</p>
+              </div>
+              <div class="catalog-meta">
+                <span>{pulse_html.esc(protocol.get('dokumentart') or protocol.get('typ'))}</span>
+                <strong>{pulse_html.esc(protocol.get('vorgangsbezug_anzahl', 0))}</strong>
+                <em>Vorgangsbezüge</em>
+              </div>
+              <div class="catalog-meta">
+                <span>Verteilt</span>
+                <strong>{pulse_html.esc(fundstelle.get('verteildatum') or '')}</strong>
+                <em>ID {pulse_html.esc(protocol.get('id'))}</em>
+              </div>
+              <div class="catalog-actions">
+                {dossier}
+                <div class="session-links">
+                  {protocol_source_links(protocol)}
+                </div>
+              </div>
+              <div class="catalog-status">{metrics}</div>
+              {render_catalog_json(protocol)}
+            </article>
+            """
+        )
+    return rows, by_period
+
+
+def render_catalog_script() -> str:
+    return """
+  <script>
+    (() => {
+      const container = document.querySelector('[data-catalog]');
+      if (!container) return;
+      const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const search = document.querySelector('[data-filter-search]');
+      const wpSelect = document.querySelector('[data-filter-wp]');
+      const dossierSelect = document.querySelector('[data-filter-dossier]');
+      const sortSelect = document.querySelector('[data-filter-sort]');
+      const countEl = document.querySelector('[data-result-count]');
+      const noResults = document.querySelector('[data-no-results]');
+      const resetBtn = document.querySelector('[data-filter-reset]');
+      const badges = Array.from(document.querySelectorAll('[data-wp-filter]'));
+
+      const apply = () => {
+        const terms = (search.value || '').toLowerCase().trim().split(/\\s+/).filter(Boolean);
+        const wp = wpSelect.value;
+        const dossier = dossierSelect.value;
+        let visible = 0;
+        rows.forEach((row) => {
+          const haystack = row.dataset.search || '';
+          const matchesText = terms.every((term) => haystack.includes(term));
+          const matchesWp = !wp || row.dataset.wp === wp;
+          const matchesDossier = !dossier || row.dataset.dossier === dossier;
+          const show = matchesText && matchesWp && matchesDossier;
+          row.hidden = !show;
+          if (show) visible += 1;
+        });
+        if (countEl) countEl.textContent = String(visible);
+        if (noResults) noResults.hidden = visible !== 0;
+        const filtersActive = Boolean(terms.length || wp || dossier);
+        if (resetBtn) resetBtn.hidden = !filtersActive;
+        badges.forEach((badge) => {
+          badge.classList.toggle('is-active', Boolean(wp) && badge.dataset.wpFilter === wp);
+        });
+      };
+
+      const sortRows = () => {
+        const mode = sortSelect.value;
+        const numeric = mode === 'num-asc' || mode === 'num-desc';
+        const ascending = mode === 'date-asc' || mode === 'num-asc';
+        const key = (row) => numeric ? (row.dataset.sortnum || '') : (row.dataset.date || '');
+        rows.slice().sort((a, b) => {
+          const av = key(a);
+          const bv = key(b);
+          const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+          return ascending ? cmp : -cmp;
+        }).forEach((row) => container.appendChild(row));
+      };
+
+      search.addEventListener('input', apply);
+      wpSelect.addEventListener('change', apply);
+      dossierSelect.addEventListener('change', apply);
+      sortSelect.addEventListener('change', sortRows);
+      badges.forEach((badge) => {
+        badge.addEventListener('click', () => {
+          const value = badge.dataset.wpFilter;
+          wpSelect.value = wpSelect.value === value ? '' : value;
+          apply();
+        });
+      });
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          search.value = '';
+          wpSelect.value = '';
+          dossierSelect.value = '';
+          apply();
+        });
+      }
+      apply();
+    })();
+  </script>
+"""
+
+
+def render_catalog_page(
+    protocols: list[dict[str, Any]],
+    detail_entries: list[dict[str, Any]],
+    catalog_path: Path,
+    overview_href: str = "overview.html",
+) -> str:
+    rows, by_period = build_catalog_rows(protocols, detail_entries)
+    rows_html = "".join(rows)
+    periods_sorted = sorted(by_period.items(), key=lambda item: item[0], reverse=True)
+    wp_options = "".join(
+        f'<option value="{pulse_html.esc(period)}">WP {pulse_html.esc(period)} ({pulse_html.esc(count)})</option>'
+        for period, count in periods_sorted
+    )
+    period_badges = "".join(
+        f'<button type="button" class="badge" data-wp-filter="{pulse_html.esc(period)}">WP {pulse_html.esc(period)} <strong>{pulse_html.esc(count)}</strong></button>'
+        for period, count in periods_sorted
+    )
+    latest = protocols[0] if protocols else {}
+    total = len(protocols)
+    dossier_count = len(detail_entries)
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Alle API-Sitzungen</title>
+  <style>
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --amber:#9a5a00;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
+    header {{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:24px;
+      align-items:end;
+      padding-bottom:22px;
+      border-bottom:1px solid var(--line);
+    }}
+    .nav-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:10px;
+      font-size:13px;
+    }}
+    .nav-links a {{
+      display:inline-flex;
+      align-items:center;
+      min-height:30px;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-weight:650;
+    }}
+    h1 {{ margin:0; font-size:36px; line-height:1.1; }}
+    .subtitle {{ margin:8px 0 0; color:var(--muted); max-width:760px; }}
+    .latest {{
+      display:grid;
+      gap:4px;
+      min-width:220px;
+      padding:12px 14px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:white;
+      font-size:13px;
+    }}
+    .latest span, .eyebrow, .catalog-meta span {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .latest strong {{ font-size:18px; }}
+    .summary-band {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:12px;
+      margin-top:18px;
+    }}
+    .summary-band div {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:white;
+      padding:13px 14px;
+    }}
+    .summary-band span {{
+      display:block;
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .summary-band strong {{ display:block; margin-top:4px; font-size:25px; }}
+    .filters {{
+      display:grid;
+      grid-template-columns:minmax(220px,2fr) repeat(3, minmax(150px,1fr));
+      gap:12px;
+      margin-top:22px;
+      padding:16px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+    }}
+    .filter-field {{ display:grid; gap:5px; }}
+    .filter-field label {{
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .filter-field input, .filter-field select {{
+      min-height:38px;
+      padding:7px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font:inherit;
+      color:inherit;
+    }}
+    .filter-field input:focus, .filter-field select:focus {{
+      outline:2px solid #bdd0ea;
+      border-color:#bdd0ea;
+    }}
+    .filter-status {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      margin-top:14px;
+      color:var(--muted);
+      font-size:14px;
+    }}
+    .filter-status strong, .filter-status [data-result-count] {{ color:var(--ink); font-weight:700; }}
+    .link-button {{
+      border:0;
+      background:none;
+      padding:0;
+      color:var(--blue);
+      font:inherit;
+      font-weight:650;
+      cursor:pointer;
+    }}
+    .link-button:hover {{ text-decoration:underline; }}
+    .periods {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:12px;
+    }}
+    .badge {{
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+      min-height:28px;
+      padding:3px 10px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fff;
+      color:#333a45;
+      font:inherit;
+      font-size:12px;
+      cursor:pointer;
+    }}
+    .badge:hover {{ border-color:#bdd0ea; }}
+    .badge.is-active {{
+      border-color:#174ea6;
+      background:#eef5ff;
+      color:#103a7a;
+    }}
+    .catalog {{ display:grid; gap:10px; margin-top:18px; }}
+    .catalog-row {{
+      display:grid;
+      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
+      gap:14px;
+      align-items:start;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:14px;
+    }}
+    .catalog-row[hidden] {{ display:none; }}
+    .catalog-row h3 {{
+      margin:5px 0 0;
+      font-size:17px;
+      line-height:1.25;
+      overflow-wrap:anywhere;
+    }}
+    .catalog-row p {{ margin:6px 0 0; color:var(--muted); }}
+    .catalog-meta strong {{
+      display:block;
+      margin-top:4px;
+      font-size:18px;
+      overflow-wrap:anywhere;
+    }}
+    .catalog-meta em, .catalog-status {{
+      color:var(--muted);
+      font-size:12px;
+      font-style:normal;
+    }}
+    .catalog-actions {{ display:grid; justify-items:start; gap:8px; }}
+    .catalog-status {{
+      grid-column:1 / -1;
+      padding-top:10px;
+      border-top:1px solid #eef1f5;
+    }}
+    .open-button {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:76px;
+      min-height:34px;
+      padding:5px 12px;
+      border:1px solid #bdd0ea;
+      border-radius:6px;
+      background:#eef5ff;
+      font-weight:700;
+    }}
+    .session-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      font-size:13px;
+    }}
+    .session-links a {{
+      display:inline-flex;
+      min-height:26px;
+      align-items:center;
+      padding:3px 8px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:#fff;
+      font-weight:650;
+    }}
+    .api-details {{
+      grid-column:1 / -1;
+      border:1px solid #e3e8ef;
+      border-radius:8px;
+      background:#fbfcfd;
+      overflow:hidden;
+    }}
+    .api-details summary {{
+      min-height:32px;
+      padding:7px 10px;
+      color:var(--blue);
+      cursor:pointer;
+      font-size:13px;
+      font-weight:700;
+    }}
+    .api-details pre {{
+      max-height:300px;
+      overflow:auto;
+      margin:0;
+      padding:10px;
+      border-top:1px solid #e6ebf2;
+      font-size:12px;
+      line-height:1.45;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }}
+    .no-results {{
+      margin:14px 0 0;
+      padding:18px;
+      border:1px dashed var(--line);
+      border-radius:8px;
+      background:#fff;
+      color:var(--muted);
+      text-align:center;
+    }}
+    .muted {{ color:var(--muted); }}
+    footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
+    @media (max-width: 940px) {{
+      .summary-band {{ grid-template-columns:1fr; }}
+      .filters {{ grid-template-columns:1fr; }}
+      .catalog-row {{ grid-template-columns:1fr; }}
+      .catalog-status, .api-details {{ grid-column:auto; }}
+    }}
+    @media (max-width: 740px) {{
+      .shell {{ padding:18px 14px; }}
+      header {{ grid-template-columns:1fr; }}
+      h1 {{ font-size:29px; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <nav class="nav-links" aria-label="Hauptnavigation">
+          <a href="index.html">Start</a>
+          <a href="puls.html">Neueste Sitzung</a>
+          <a href="{pulse_html.esc(overview_href)}">Plenarprotokoll-Katalog</a>
+          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
+          <a href="bills/index.html">Gesetze verfolgen</a>
+          <a href="sources.html">Quellen und Methode</a>
+        </nav>
+        <h1>Alle API-Sitzungen</h1>
+        <p class="subtitle">Vollständiger Plenarprotokoll-Katalog aus der DIP-API. Suche nach Dokumentnummer, Titel oder Datum und filtere nach Wahlperiode oder Dossier-Status. Der Roh-Katalog steht zusätzlich als <a href="data/{pulse_html.esc(catalog_path.name)}">JSON</a> bereit.</p>
+      </div>
+      <div class="latest">
+        <span>Neueste API-Sitzung</span>
+        <strong>{pulse_html.esc(latest.get('dokumentnummer', ''))}</strong>
+        <em>{pulse_html.esc(latest.get('datum', ''))}</em>
+      </div>
+    </header>
+    <section class="summary-band">
+      <div><span>API-Sitzungen</span><strong>{pulse_html.esc(total)}</strong></div>
+      <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(dossier_count)}</strong></div>
+      <div><span>Wahlperioden</span><strong>{pulse_html.esc(len(periods_sorted))}</strong></div>
+    </section>
+    <section class="filters" aria-label="Sitzungen filtern">
+      <div class="filter-field">
+        <label for="catalog-search">Suche</label>
+        <input id="catalog-search" type="search" placeholder="Dokumentnummer, Titel oder Datum …" autocomplete="off" data-filter-search>
+      </div>
+      <div class="filter-field">
+        <label for="catalog-wp">Wahlperiode</label>
+        <select id="catalog-wp" data-filter-wp>
+          <option value="">Alle Wahlperioden</option>
+          {wp_options}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="catalog-dossier">Dossier</label>
+        <select id="catalog-dossier" data-filter-dossier>
+          <option value="">Alle Sitzungen</option>
+          <option value="1">Nur mit Dossier</option>
+          <option value="0">Nur ohne Dossier</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="catalog-sort">Sortierung</label>
+        <select id="catalog-sort" data-filter-sort>
+          <option value="date-desc">Neueste zuerst</option>
+          <option value="date-asc">Älteste zuerst</option>
+          <option value="num-desc">Dokumentnummer absteigend</option>
+          <option value="num-asc">Dokumentnummer aufsteigend</option>
+        </select>
+      </div>
+    </section>
+    <div class="filter-status">
+      <span><span data-result-count>{pulse_html.esc(total)}</span> von {pulse_html.esc(total)} Sitzungen</span>
+      <button type="button" class="link-button" data-filter-reset hidden>Filter zurücksetzen</button>
+    </div>
+    <div class="periods">{period_badges}</div>
+    <section class="catalog" data-catalog>
+      {rows_html}
+    </section>
+    <p class="no-results" data-no-results hidden>Keine Sitzungen entsprechen den Filterkriterien.</p>
+    <footer>
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. <a href="{pulse_html.esc(overview_href)}">Zurück zum Plenarprotokoll-Katalog</a> · <a href="sources.html">Quellen und Methode</a>.
+    </footer>
+  </div>
+  {render_catalog_script()}
 </body>
 </html>
 """
@@ -2239,6 +2683,7 @@ def render_sources_page(entries: list[dict[str, Any]]) -> str:
           <a href="index.html">Start</a>
           <a href="puls.html">Neueste Sitzung</a>
           <a href="overview.html">Plenarprotokoll-Katalog</a>
+          <a href="api-sitzungen.html">Alle API-Sitzungen</a>
           <a href="bills/index.html">Gesetze verfolgen</a>
           <a href="sources.html">Quellen und Methode</a>
         </nav>
@@ -2453,6 +2898,7 @@ def main() -> int:
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
     overview_path = output_dir / "overview.html"
+    catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
     index_path.write_text(
         render_landing_page(
@@ -2468,10 +2914,13 @@ def main() -> int:
         render_overview(
             protocols,
             entries,
-            catalog_path,
             bill_count=int(bill_output["count"]),
             database_href=database_href,
         ),
+        encoding="utf-8",
+    )
+    catalog_page_path.write_text(
+        render_catalog_page(protocols, entries, catalog_path),
         encoding="utf-8",
     )
     sources_path.write_text(render_sources_page(entries), encoding="utf-8")

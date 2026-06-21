@@ -552,6 +552,7 @@ def render_html(
     report: dict[str, Any],
     home_href: str | None = None,
     overview_href: str | None = None,
+    catalog_href: str | None = None,
     bills_href: str | None = None,
     sources_href: str | None = None,
 ) -> str:
@@ -659,6 +660,9 @@ def render_html(
     overview_link = ""
     if overview_href:
         overview_link = f'<a class="overview-link" href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>'
+    catalog_link = ""
+    if catalog_href:
+        catalog_link = f'<a class="overview-link" href="{esc(catalog_href)}">Alle API-Sitzungen</a>'
     bills_link = ""
     if bills_href:
         bills_link = f'<a class="overview-link" href="{esc(bills_href)}">Gesetze verfolgen</a>'
@@ -668,6 +672,8 @@ def render_html(
     footer_links = []
     if overview_href:
         footer_links.append(f'<a href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>')
+    if catalog_href:
+        footer_links.append(f'<a href="{esc(catalog_href)}">Alle API-Sitzungen</a>')
     if bills_href:
         footer_links.append(f'<a href="{esc(bills_href)}">Gesetze verfolgen</a>')
     if sources_href:
@@ -1257,7 +1263,7 @@ def render_html(
   <div class="shell">
     <header>
       <div>
-        <nav class="page-nav" aria-label="Hauptnavigation">{home_link}{overview_link}{bills_link}{sources_link}</nav>
+        <nav class="page-nav" aria-label="Hauptnavigation">{home_link}{overview_link}{catalog_link}{bills_link}{sources_link}</nav>
         <h1>Bundestag-Puls</h1>
         <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
