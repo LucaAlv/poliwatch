@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import urllib.error
@@ -20,6 +21,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html import unescape
+from pathlib import Path
 from typing import Any
 
 
@@ -50,6 +52,31 @@ class DipError(RuntimeError):
 
 class SummaryError(RuntimeError):
     pass
+
+
+def load_local_env(path: Path | None = None) -> None:
+    """Load local .env.local variables without overriding exported values."""
+    env_path = path or Path(__file__).resolve().parent.parent / ".env.local"
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        try:
+            parts = shlex.split(line, comments=True, posix=True)
+        except ValueError:
+            continue
+        if not parts or "=" not in parts[0]:
+            continue
+        key, value = parts[0].split("=", 1)
+        if key and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) and key not in os.environ:
+            os.environ[key] = value
 
 
 @dataclass(frozen=True)
@@ -1105,6 +1132,7 @@ def enrich_with_api(
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
+    load_local_env()
     api_key = args.api_key or os.environ.get("DIP_API_KEY")
     if not api_key:
         raise DipError("Provide a DIP API key via --api-key or DIP_API_KEY.")
@@ -1213,6 +1241,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_local_env()
     args = parse_args()
     try:
         report = build_report(args)

@@ -3843,6 +3843,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    dip.load_local_env()
     args = parse_args()
     api_key = args.api_key or os.environ.get("DIP_API_KEY")
     if not api_key:
