@@ -51,6 +51,19 @@ def protocol_sort_key(protocol: dict[str, Any]) -> tuple[str, str]:
     return (str(protocol.get("datum") or ""), str(protocol.get("id") or ""))
 
 
+def protocol_xml_url(protocol: dict[str, Any]) -> str:
+    fundstelle = protocol.get("fundstelle") or {}
+    return str(fundstelle.get("xml_url") or "").strip()
+
+
+def protocol_label(protocol: dict[str, Any]) -> str:
+    document_number = normalized_document_number(protocol.get("dokumentnummer"))
+    protocol_id = str(protocol.get("id") or "").strip()
+    if document_number and protocol_id:
+        return f"{document_number} (ID {protocol_id})"
+    return document_number or protocol_id or "unbekanntes Protokoll"
+
+
 def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: str) -> dict[str, Any]:
     documents = client.list_all(
         "/plenarprotokoll",
@@ -84,13 +97,20 @@ def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[st
 
 
 def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: int | None) -> list[dict[str, Any]]:
-    if detail_limit is None:
-        return protocols
-    if detail_limit < 0:
+    if detail_limit is not None and detail_limit < 0:
         return []
-    if detail_limit <= 0:
-        return protocols
-    return protocols[:detail_limit]
+    selected: list[dict[str, Any]] = []
+    for protocol in protocols:
+        if protocol_xml_url(protocol):
+            selected.append(protocol)
+            if detail_limit is not None and detail_limit > 0 and len(selected) >= detail_limit:
+                break
+            continue
+        print(
+            f"warning: Skipping dossier for {protocol_label(protocol)} because fundstelle.xml_url is missing.",
+            file=sys.stderr,
+        )
+    return selected
 
 
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
@@ -3854,6 +3874,7 @@ def main() -> int:
             detail_protocols,
             args.dossier_document_number,
         )
+        detail_protocols = protocols_for_detail_pages(detail_protocols, None)
         existing_entries = (
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
