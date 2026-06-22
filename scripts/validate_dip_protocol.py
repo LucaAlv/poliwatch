@@ -1209,8 +1209,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--summary-mode",
         choices=("auto", "required", "off"),
-        default="auto",
-        help="Generate per-TOP LLM summaries when a provider API key is available, require them, or disable them.",
+        default="off",
+        help="Generate per-TOP LLM summaries when requested, require them, or disable them.",
     )
     parser.add_argument(
         "--summary-provider",
