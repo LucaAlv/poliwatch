@@ -591,6 +591,8 @@ def summary_unavailable_message(
 ) -> str:
     gen = summary_generation or {}
     if gen.get("enabled") is False:
+        if gen.get("mode") == "reuse" or gen.get("reason") == "refresh not requested":
+            return "Automatische Zusammenfassungen wurden in diesem Build nicht neu erzeugt."
         if gen.get("reason"):
             return "Automatische Zusammenfassungen sind für diese Sitzung nicht aktiviert."
         return "Automatische Zusammenfassungen wurden für diese Sitzung deaktiviert."
@@ -662,6 +664,11 @@ def render_llm_summary(
 def session_summary_unavailable_message(summary_generation: dict[str, Any] | None) -> str:
     gen = summary_generation or {}
     if gen.get("enabled") is False:
+        if gen.get("mode") == "reuse" or gen.get("reason") == "refresh not requested":
+            return (
+                "Automatische Zusammenfassungen wurden in diesem Build nicht neu erzeugt. "
+                "Vorhandene Zusammenfassungen werden wiederverwendet."
+            )
         if gen.get("reason"):
             return (
                 "Automatische Zusammenfassungen wurden bei diesem Build nicht erzeugt. "

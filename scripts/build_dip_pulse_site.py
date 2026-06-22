@@ -203,6 +203,20 @@ def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, An
     }
 
 
+def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str, Any] | None:
+    document_number = normalized_document_number(protocol.get("dokumentnummer"))
+    if not document_number:
+        return None
+    report_path, _, _ = report_paths(output_dir, document_number)
+    if not report_path.exists():
+        return None
+    try:
+        return json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"warning: Could not reuse existing dossier report {report_path}: {exc}", file=sys.stderr)
+        return None
+
+
 def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
@@ -262,6 +276,56 @@ def merge_detail_entries(
     return merged
 
 
+def usable_llm_summary(summary: Any) -> bool:
+    return (
+        isinstance(summary, dict)
+        and bool(summary.get("text"))
+        and bool(summary.get("source_chunks"))
+    )
+
+
+def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
+    keys = []
+    top_id = str(item.get("top_id") or "").strip()
+    if top_id:
+        keys.append(f"top:{top_id}")
+    if item.get("index") is not None:
+        keys.append(f"index:{item['index']}")
+    return keys
+
+
+def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    existing_by_key: dict[str, dict[str, Any]] = {}
+    for item in (existing_report or {}).get("agenda_items") or []:
+        summary = item.get("llm_summary")
+        if not usable_llm_summary(summary):
+            continue
+        for key in agenda_item_reuse_keys(item):
+            existing_by_key[key] = summary
+
+    reused = 0
+    for item in report.get("agenda_items") or []:
+        if usable_llm_summary(item.get("llm_summary")):
+            continue
+        for key in agenda_item_reuse_keys(item):
+            summary = existing_by_key.get(key)
+            if summary:
+                item["llm_summary"] = summary
+                reused += 1
+                break
+
+    report["summary_generation"] = {
+        "enabled": False,
+        "mode": "reuse",
+        "reason": "refresh not requested",
+        "reused_top_count": reused,
+        "generated_top_count": 0,
+        "available_top_count": sum(
+            1 for item in report.get("agenda_items") or [] if usable_llm_summary(item.get("llm_summary"))
+        ),
+    }
+
+
 def write_report_and_page(
     protocol: dict[str, Any],
     output_dir: Path,
@@ -274,9 +338,11 @@ def write_report_and_page(
     anthropic_api_key: str | None,
     gemini_api_key: str | None,
     summary_model: str | None,
+    existing_report: dict[str, Any] | None,
     store: Any | None,
     profile_resolver: Any | None = None,
 ) -> dict[str, Any]:
+    effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
     args = argparse.Namespace(
         api_key=api_key,
         protocol_id=str(protocol["id"]),
@@ -284,7 +350,7 @@ def write_report_and_page(
         limit_tops=None,
         person_limit=person_limit,
         vote_scan_pages=vote_scan_pages,
-        summary_mode=summary_mode,
+        summary_mode=effective_summary_mode,
         summary_provider=summary_provider,
         anthropic_api_key=anthropic_api_key,
         gemini_api_key=gemini_api_key,
@@ -292,6 +358,8 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args)
+    if summary_mode == "reuse":
+        reuse_existing_llm_summaries(report, existing_report)
     enrich_report_with_profiles(report, profile_resolver)
     if store is not None:
         pulse_store.persist_report(store, report)
@@ -2853,6 +2921,7 @@ def render_catalog_script() -> str:
       const developerPanel = document.querySelector('[data-dossier-command]');
       const selectedCountEl = document.querySelector('[data-selected-count]');
       const commandEl = document.querySelector('[data-command-output]');
+      const refreshSummariesInput = document.querySelector('[data-refresh-summaries]');
       const selectVisibleBtn = document.querySelector('[data-select-visible]');
       const selectMissingBtn = document.querySelector('[data-select-missing]');
       const clearSelectionBtn = document.querySelector('[data-clear-selection]');
@@ -2885,6 +2954,9 @@ def render_catalog_script() -> str:
           '--output-dir',
           outputDir,
         ];
+        if (refreshSummariesInput && refreshSummariesInput.checked) {
+          args.push('--refresh-summaries');
+        }
         docs.forEach((doc) => {
           args.push('--dossier-document-number', doc);
         });
@@ -2947,6 +3019,9 @@ def render_catalog_script() -> str:
         });
       }
       checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateCommand));
+      if (refreshSummariesInput) {
+        refreshSummariesInput.addEventListener('change', updateCommand);
+      }
       if (selectVisibleBtn) {
         selectVisibleBtn.addEventListener('click', () => {
           rows.forEach((row) => {
@@ -3168,6 +3243,20 @@ def render_catalog_page(
       flex-wrap:wrap;
       gap:8px;
       align-items:center;
+    }}
+    .developer-option {{
+      display:flex;
+      gap:8px;
+      align-items:flex-start;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+    }}
+    .developer-option input {{
+      width:17px;
+      height:17px;
+      margin:1px 0 0;
+      accent-color:#174ea6;
     }}
     .dev-button {{
       min-height:34px;
@@ -3413,7 +3502,11 @@ def render_catalog_page(
     </div>
     <section class="developer-panel" data-dossier-command data-output-dir="{pulse_html.esc(str(output_dir))}">
       <h2>Dossiers erzeugen</h2>
-      <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu.</p>
+      <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu. Vorhandene KI-Zusammenfassungen werden wiederverwendet, bis sie aktiv neu erzeugt werden.</p>
+      <label class="developer-option">
+        <input type="checkbox" data-refresh-summaries>
+        <span>KI-Zusammenfassungen neu erzeugen und dafür den konfigurierten LLM-Anbieter aufrufen.</span>
+      </label>
       <div class="developer-actions">
         <button type="button" class="dev-button" data-select-visible>Sichtbare auswählen</button>
         <button type="button" class="dev-button" data-select-missing>Sichtbare ohne Dossier</button>
@@ -3794,9 +3887,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--summary-mode",
-        choices=("auto", "required", "off"),
-        default="auto",
-        help="Generate per-TOP LLM summaries when a provider API key is available, require them, or disable them.",
+        choices=("reuse", "auto", "required", "off"),
+        default="reuse",
+        help=(
+            "How to handle per-TOP LLM summaries. The default reuses existing summaries "
+            "and does not call an LLM API. Use auto or required to regenerate them."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-summaries",
+        dest="summary_mode",
+        action="store_const",
+        const="auto",
+        help="Regenerate LLM summaries with the configured provider. Equivalent to --summary-mode auto.",
     )
     parser.add_argument(
         "--summary-provider",
@@ -3894,6 +3997,7 @@ def main() -> int:
                     anthropic_api_key=args.anthropic_api_key,
                     gemini_api_key=args.gemini_api_key,
                     summary_model=args.summary_model,
+                    existing_report=load_existing_report(output_dir, protocol),
                     store=store,
                     profile_resolver=profile_resolver,
                 )
