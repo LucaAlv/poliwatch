@@ -1,5 +1,11 @@
+#:schema https://conductor.build/schemas/settings.repo.schema.json
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 [scripts]
-run = "scripts/preview_dip_pulse_site.sh"
+setup = """
+mkdir -p .context
+python3 -m py_compile scripts/*.py
+"""
+run = "PORT=\"${CONDUCTOR_PORT:-8000}\" OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh"
+archive = "scripts/preview_dip_pulse_site.sh stop"
 run_mode = "concurrent"
