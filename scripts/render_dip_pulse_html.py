@@ -57,6 +57,26 @@ def format_percent(value: float) -> str:
 
 def global_header_styles() -> str:
     return """
+    :root[data-theme="dark"] {
+      color-scheme:dark;
+      --ink:#e6edf3;
+      --muted:#9da7b3;
+      --line:#2d3643;
+      --paper:#0d1117;
+      --panel:#151b23;
+      --blue:#8ab4f8;
+      --teal:#4fd1c5;
+      --amber:#f0b45b;
+      --red:#ff8a8a;
+      --blue-soft:#16263f;
+      --green-soft:#122923;
+      --amber-soft:#302312;
+      --surface-2:#1b232e;
+      --surface-3:#202a36;
+      --warning-bg:#332908;
+      --warning-line:#8a6a15;
+      --warning-ink:#f5d77f;
+    }
     .site-header {
       display:flex;
       align-items:center;
@@ -93,6 +113,12 @@ def global_header_styles() -> str:
       justify-content:flex-end;
       gap:8px;
     }
+    .site-actions {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin-left:auto;
+    }
     .site-nav a {
       display:inline-flex;
       align-items:center;
@@ -101,7 +127,7 @@ def global_header_styles() -> str:
       padding:5px 11px;
       border:1px solid var(--line);
       border-radius:6px;
-      background:#fff;
+      background:var(--panel);
       color:var(--ink);
       font-size:13px;
       font-weight:700;
@@ -113,11 +139,163 @@ def global_header_styles() -> str:
       color:var(--blue, #174ea6);
       text-decoration:none;
     }
+    .theme-toggle {
+      appearance:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
+      min-height:34px;
+      padding:5px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--ink);
+      font:inherit;
+      font-size:13px;
+      font-weight:750;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .theme-toggle:hover {
+      border-color:#bdd0ea;
+      color:var(--blue, #174ea6);
+    }
+    .theme-toggle-icon {
+      width:15px;
+      font-size:14px;
+      line-height:1;
+    }
+    :root[data-theme="dark"] a { color:var(--blue) !important; }
+    :root[data-theme="dark"] :is(
+      .site-nav a, .theme-toggle, .button, .btn, .dev-toggle,
+      .page-actions a, .session-links a, .pulse-actions a,
+      .feature-link, .doc-link, .top-jump
+    ) {
+      background:var(--panel) !important;
+      border-color:var(--line) !important;
+      color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] :is(.btn-primary, .button.primary) {
+      background:var(--blue) !important;
+      border-color:var(--blue) !important;
+      color:#08111f !important;
+    }
+    :root[data-theme="dark"] :is(
+      .metric, .download-panel, .summary-band div, .panel, .table-card,
+      .filter, .sample-table, details, .snapshot, .snapshot-metrics div,
+      .stat-band div, .principle, .area-card, .latest-panel, .pulse-feature,
+      .context-panel, .feature-microgrid div, .attention-card, .top-card,
+      aside, .session-llm-summary, .llm-summary, .source-strip,
+      .api-overview, .api-json, .speech-card, .table-nav a
+    ) {
+      background:var(--panel) !important;
+      border-color:var(--line) !important;
+      color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] :is(
+      .badge, .summary-count, .session-summary-sources a,
+      .session-summary-sources span, .empty, .filter input
+    ) {
+      background:var(--surface-2) !important;
+      border-color:var(--line) !important;
+      color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] :is(
+      p, .lead, .subtitle, .feature-body p, .session-summary-item p,
+      .llm-summary > p, .summary-sources p, .speech-text,
+      .speaker-row span, .position-list span, .doc-list span,
+      .activity-list span, .people-list span, .feature-state,
+      .aw-profile, .table-head strong
+    ) {
+      color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] :is(
+      .muted, .eyebrow, .row-top, .row-metric, label, .card-meta,
+      th, .snapshot-date, .snapshot-metrics span, .stat-band span,
+      .principle p, .area-card p, .metric span, .feature-microgrid span,
+      .speaker-row em, .position-list em, .doc-list em,
+      .activity-list em, .people-list em, .summary-sources span,
+      .session-summary-note
+    ) {
+      color:var(--muted) !important;
+    }
+    :root[data-theme="dark"] :is(.notice) {
+      background:var(--warning-bg) !important;
+      border-color:var(--warning-line) !important;
+      color:var(--warning-ink) !important;
+    }
+    :root[data-theme="dark"] :is(.bar, .stack, .vote-stack) {
+      background:var(--surface-3) !important;
+    }
+    :root[data-theme="dark"] :is(
+      .table-head, th, td, .ranking-note, .attention-row,
+      .session-summary-item, .summary-sources li, .member-votes,
+      .position-list li, .doc-list li, .activity-list li,
+      .people-list li, .people-section, .raw-top-api,
+      .dev-top-details, .speech-section, details pre
+    ) {
+      border-color:var(--line) !important;
+    }
+    :root[data-theme="dark"] pre,
+    :root[data-theme="dark"] code {
+      color:#dbe7f3;
+    }
     @media (max-width: 760px) {
       .site-header { align-items:flex-start; }
       .site-nav { justify-content:flex-start; }
+      .site-actions { width:100%; justify-content:flex-start; }
     }
     """
+
+
+def theme_bootstrap_script() -> str:
+    return """
+  <script>
+    (() => {
+      const key = "bundestag-pulse-theme";
+      const root = document.documentElement;
+      let theme = "light";
+      try {
+        theme = window.localStorage.getItem(key)
+          || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch (_) {}
+      root.dataset.theme = theme === "dark" ? "dark" : "light";
+    })();
+  </script>
+"""
+
+
+def theme_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const key = "bundestag-pulse-theme";
+      const root = document.documentElement;
+      const toggle = document.querySelector("[data-theme-toggle]");
+      const setTheme = (theme, persist = true) => {
+        const next = theme === "dark" ? "dark" : "light";
+        root.dataset.theme = next;
+        if (toggle) {
+          const dark = next === "dark";
+          toggle.setAttribute("aria-pressed", dark ? "true" : "false");
+          toggle.setAttribute("aria-label", dark ? "Helles Design aktivieren" : "Dunkles Design aktivieren");
+          toggle.querySelector("[data-theme-icon]").textContent = dark ? "☀" : "☾";
+          toggle.querySelector("[data-theme-label]").textContent = dark ? "Hell" : "Dunkel";
+        }
+        if (persist) {
+          try { window.localStorage.setItem(key, next); } catch (_) {}
+        }
+      };
+      setTheme(root.dataset.theme, false);
+      if (toggle) {
+        toggle.addEventListener("click", () => {
+          setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+        });
+      }
+    })();
+  </script>
+"""
 
 
 def render_global_header(
@@ -152,7 +330,14 @@ def render_global_header(
         "<strong>Bundestag-Puls</strong>"
         "<span>Primärquellen-Monitor</span>"
         "</a>"
+        '<div class="site-actions">'
         f'<nav class="site-nav" aria-label="Globale Navigation">{"".join(links)}</nav>'
+        '<button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" '
+        'aria-label="Dunkles Design aktivieren">'
+        '<span class="theme-toggle-icon" data-theme-icon aria-hidden="true">☾</span>'
+        '<span data-theme-label>Dunkel</span>'
+        '</button>'
+        '</div>'
         "</div>"
     )
 
@@ -928,6 +1113,7 @@ def render_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{esc(protocol_title(report))}</title>
+  {theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1689,6 +1875,7 @@ def render_html(
       openHashTarget();
     }})();
   </script>
+  {theme_runtime_script()}
 </body>
 </html>
 """

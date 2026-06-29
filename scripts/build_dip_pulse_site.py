@@ -587,6 +587,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Datenbank</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -896,6 +897,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       }});
     }}
   </script>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -1031,6 +1033,7 @@ def render_landing_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Primärquellen-Monitor des Bundestags</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1202,6 +1205,7 @@ def render_landing_page(
       Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.
     </footer>
   </div>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -1219,6 +1223,7 @@ def render_front_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1260,6 +1265,7 @@ def render_front_page(
       Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
     </footer>
   </div>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -1377,6 +1383,7 @@ def render_front_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Aktueller Lageblick</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1792,6 +1799,7 @@ def render_front_page(
       <span class="session-links"><a href="overview.html">Plenarprotokoll-Katalog</a><a href="bills/index.html">Gesetze verfolgen</a><a href="sources.html">Quellen und Methode</a></span>
     </footer>
   </div>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
     """
@@ -2308,6 +2316,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Gesetze verfolgen</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>{bill_styles()}</style>
 </head>
 <body>
@@ -2335,6 +2344,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
     <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_bill_script()}
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -2391,6 +2401,7 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{pulse_html.esc(bill.get('title'))} · Bundestag-Puls</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>{bill_styles()}</style>
 </head>
 <body>
@@ -2453,6 +2464,7 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
     <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetze verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
   </div>
   {render_bill_script()}
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -2549,6 +2561,7 @@ def render_overview(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Sitzungen</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -2811,9 +2824,10 @@ def render_overview(
       Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
     </footer>
   </div>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
-"""
+    """
 
 
 def catalog_sortnum(protocol: dict[str, Any]) -> str:
@@ -3101,6 +3115,7 @@ def render_catalog_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Alle API-Sitzungen</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -3525,6 +3540,7 @@ def render_catalog_page(
     </footer>
   </div>
   {render_catalog_script()}
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
 """
@@ -3591,6 +3607,7 @@ def render_sources_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Quellen</title>
+  {pulse_html.theme_bootstrap_script()}
   <style>
     :root {{
       --ink:#171a1f;
@@ -3828,9 +3845,10 @@ def render_sources_page(
       Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Plenarprotokoll-Katalog</a> · <a href="bills/index.html">Gesetze verfolgen</a>
     </footer>
   </div>
+  {pulse_html.theme_runtime_script()}
 </body>
 </html>
-"""
+    """
 
 
 def parse_args() -> argparse.Namespace:
