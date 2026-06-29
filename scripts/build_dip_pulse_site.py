@@ -276,6 +276,23 @@ def merge_detail_entries(
     return merged
 
 
+def rebuild_database_from_entries(database_path: Path, entries: list[dict[str, Any]]) -> None:
+    temp_path = database_path.with_name(f".{database_path.name}.tmp")
+    if temp_path.exists():
+        temp_path.unlink()
+    store = pulse_store.connect(temp_path)
+    try:
+        pulse_store.initialize(store)
+        for entry in entries:
+            pulse_store.persist_report(store, entry["report"])
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+    finally:
+        store.close()
+    temp_path.replace(database_path)
+
+
 def usable_llm_summary(summary: Any) -> bool:
     return (
         isinstance(summary, dict)
@@ -339,7 +356,6 @@ def write_report_and_page(
     gemini_api_key: str | None,
     summary_model: str | None,
     existing_report: dict[str, Any] | None,
-    store: Any | None,
     profile_resolver: Any | None = None,
 ) -> dict[str, Any]:
     effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
@@ -361,8 +377,6 @@ def write_report_and_page(
     if summary_mode == "reuse":
         reuse_existing_llm_summaries(report, existing_report)
     enrich_report_with_profiles(report, profile_resolver)
-    if store is not None:
-        pulse_store.persist_report(store, report)
     return write_report_files(report, output_dir)
 
 
@@ -4000,7 +4014,6 @@ def main() -> int:
         existing_entries = (
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
-        store = None if args.no_persist else pulse_store.connect(database_path)
         try:
             generated_entries = [
                 write_report_and_page(
@@ -4016,14 +4029,11 @@ def main() -> int:
                     gemini_api_key=args.gemini_api_key,
                     summary_model=args.summary_model,
                     existing_report=load_existing_report(output_dir, protocol),
-                    store=store,
                     profile_resolver=profile_resolver,
                 )
                 for protocol in detail_protocols
             ]
         finally:
-            if store is not None:
-                store.close()
             if profile_resolver is not None:
                 profile_resolver.save()
                 stats = profile_resolver.stats
@@ -4036,6 +4046,8 @@ def main() -> int:
                     file=sys.stderr,
                 )
         entries = merge_detail_entries(protocols, existing_entries, generated_entries)
+        if not args.no_persist:
+            rebuild_database_from_entries(database_path, entries)
     except dip.DipError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
