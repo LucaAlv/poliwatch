@@ -76,6 +76,14 @@ def initialize(conn: sqlite3.Connection) -> None:
           wahlperiode TEXT,
           profile_url TEXT,
           party_id INTEGER REFERENCES parties(id) ON DELETE SET NULL,
+          birth_year INTEGER,
+          gender TEXT,
+          profession TEXT,
+          wahlkreis TEXT,
+          bundesland TEXT,
+          aw_politician_id INTEGER,
+          person_roles_json TEXT,
+          is_mdb INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -233,6 +241,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
         """
     )
+    _migrate_mps_columns(conn)
     now = utc_now()
     conn.execute(
         """
@@ -241,6 +250,28 @@ def initialize(conn: sqlite3.Connection) -> None:
         """,
         (SCHEMA_VERSION, now),
     )
+
+
+# Bio/roster columns added after the initial release. SQLite has no
+# "ADD COLUMN IF NOT EXISTS", so check the live schema before each ALTER to keep
+# initialize() idempotent on pre-existing databases.
+_MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("birth_year", "INTEGER"),
+    ("gender", "TEXT"),
+    ("profession", "TEXT"),
+    ("wahlkreis", "TEXT"),
+    ("bundesland", "TEXT"),
+    ("aw_politician_id", "INTEGER"),
+    ("person_roles_json", "TEXT"),
+    ("is_mdb", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(mps)")}
+    for name, decl in _MPS_ADDED_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE mps ADD COLUMN {name} {decl}")
 
 
 def utc_now() -> str:
@@ -302,14 +333,25 @@ def upsert_mp(
     function: Any = None,
     wahlperiode: Any = None,
     profile_url: Any = None,
+    birth_year: Any = None,
+    gender: Any = None,
+    profession: Any = None,
+    wahlkreis: Any = None,
+    bundesland: Any = None,
+    aw_politician_id: Any = None,
+    person_roles_json: Any = None,
+    is_mdb: bool = False,
 ) -> int:
     conn.execute(
         """
         INSERT INTO mps(
           identity_key, dip_person_id, xml_redner_id, display_name, title,
-          function, wahlperiode, profile_url, party_id, created_at, updated_at
+          function, wahlperiode, profile_url, party_id,
+          birth_year, gender, profession, wahlkreis, bundesland,
+          aw_politician_id, person_roles_json, is_mdb,
+          created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(identity_key) DO UPDATE SET
           dip_person_id = COALESCE(excluded.dip_person_id, mps.dip_person_id),
           xml_redner_id = COALESCE(excluded.xml_redner_id, mps.xml_redner_id),
@@ -319,6 +361,14 @@ def upsert_mp(
           wahlperiode = COALESCE(excluded.wahlperiode, mps.wahlperiode),
           profile_url = COALESCE(excluded.profile_url, mps.profile_url),
           party_id = COALESCE(excluded.party_id, mps.party_id),
+          birth_year = COALESCE(excluded.birth_year, mps.birth_year),
+          gender = COALESCE(excluded.gender, mps.gender),
+          profession = COALESCE(excluded.profession, mps.profession),
+          wahlkreis = COALESCE(excluded.wahlkreis, mps.wahlkreis),
+          bundesland = COALESCE(excluded.bundesland, mps.bundesland),
+          aw_politician_id = COALESCE(excluded.aw_politician_id, mps.aw_politician_id),
+          person_roles_json = COALESCE(excluded.person_roles_json, mps.person_roles_json),
+          is_mdb = MAX(mps.is_mdb, excluded.is_mdb),
           updated_at = excluded.updated_at
         """,
         (
@@ -331,6 +381,14 @@ def upsert_mp(
             clean(wahlperiode),
             clean(profile_url),
             party_id,
+            birth_year if isinstance(birth_year, int) else None,
+            clean(gender),
+            clean(profession),
+            clean(wahlkreis),
+            clean(bundesland),
+            aw_politician_id if isinstance(aw_politician_id, int) else None,
+            clean(person_roles_json),
+            1 if is_mdb else 0,
             now,
             now,
         ),
@@ -641,9 +699,11 @@ def persist_speeches(
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
         speaker = speech.get("speaker") or {}
+        profile = speaker.get("abgeordnetenwatch") or {}
         party_name = speaker_party_name(speaker)
         party_id = upsert_party(conn, party_name, now)
         display_name = clean(speaker.get("display_name")) or "Unbekannt"
+        aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         mp_id = upsert_mp(
             conn,
             now=now,
@@ -655,6 +715,8 @@ def persist_speeches(
                 party_name=party_name,
             ),
             xml_redner_id=speaker.get("xml_redner_id"),
+            profile_url=profile.get("url"),
+            aw_politician_id=aw_politician_id,
         )
         page, quadrant = source_page_ref(speech.get("source_page"))
         conn.execute(
