@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import sys
 import time
 import urllib.error
@@ -84,6 +85,18 @@ class ApiClient:
     api_key: str
     base_url: str = BASE_URL
     sleep_seconds: float = 0.0
+    timeout: int = 60
+    retries: int = 2
+    retry_delay_seconds: float = 1.5
+
+    def _retry_delay(self, path: str, exc: BaseException, attempt: int) -> None:
+        delay = self.retry_delay_seconds * (attempt + 1)
+        print(
+            f"warning: DIP API request failed for {path}: {exc}; "
+            f"retrying {attempt + 2}/{self.retries + 1} in {delay:g}s.",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
 
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         params = dict(params or {})
@@ -91,14 +104,22 @@ class ApiClient:
         params.setdefault("format", "json")
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params, doseq=True)}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as res:
-                data = json.loads(res.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
-        except urllib.error.URLError as exc:
-            raise DipError(f"DIP API request failed for {path}: {exc}") from exc
+        for attempt in range(self.retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as res:
+                    data = json.loads(res.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                if exc.code in {429, 500, 502, 503, 504} and attempt < self.retries:
+                    self._retry_delay(path, exc, attempt)
+                    continue
+                raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
+            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+                if attempt < self.retries:
+                    self._retry_delay(path, exc, attempt)
+                    continue
+                raise DipError(f"DIP API request failed for {path}: {exc}") from exc
         if self.sleep_seconds:
             time.sleep(self.sleep_seconds)
         return data
@@ -1092,8 +1113,13 @@ def enrich_with_api(
 
     people_to_fetch = unique_person_ids if person_limit <= 0 else unique_person_ids[:person_limit]
     person_records: list[dict[str, Any]] = []
+    person_fetch_errors: list[dict[str, str]] = []
     for person_id in people_to_fetch:
-        person = client.get_json(f"/person/{person_id}")
+        try:
+            person = client.get_json(f"/person/{person_id}")
+        except DipError as exc:
+            person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+            continue
         person_records.append(person)
 
     warnings: list[str] = []
@@ -1105,6 +1131,14 @@ def enrich_with_api(
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
     if roll_call_candidates and not roll_call_cache:
         warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
+    if person_fetch_errors:
+        failed_ids = ", ".join(error["person_id"] for error in person_fetch_errors[:10])
+        suffix = "" if len(person_fetch_errors) <= 10 else f" und {len(person_fetch_errors) - 10} weitere"
+        warnings.append(
+            "DIP-Personendaten konnten für "
+            f"{len(person_fetch_errors)} von {len(people_to_fetch)} Stichproben nicht geladen werden: "
+            f"{failed_ids}{suffix}."
+        )
 
     return {
         "api_totals": {
@@ -1113,7 +1147,11 @@ def enrich_with_api(
             "unique_person_ids": len(unique_person_ids),
             "person_record_count": len(person_records),
             "sampled_person_count": len(person_records),
-            "person_records_complete": person_limit <= 0 or len(person_records) >= len(unique_person_ids),
+            "person_record_fetch_error_count": len(person_fetch_errors),
+            "person_records_complete": (
+                not person_fetch_errors
+                and (person_limit <= 0 or len(person_records) >= len(unique_person_ids))
+            ),
             "roll_call_vote_candidate_count": len(roll_call_candidates),
             "matched_roll_call_vote_count": len(roll_call_cache),
         },
@@ -1123,6 +1161,7 @@ def enrich_with_api(
             "vorgangspositionen": positions,
             "aktivitaeten": activities,
             "persons": person_records,
+            "person_fetch_errors": person_fetch_errors,
             "roll_call_vote_candidates": roll_call_candidates,
             "matched_roll_call_votes": list(roll_call_cache.values()),
         },
