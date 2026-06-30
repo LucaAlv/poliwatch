@@ -178,7 +178,11 @@ def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, st
     )
 
 
-def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+def write_report_files(
+    report: dict[str, Any],
+    output_dir: Path,
+    mp_lookup: dict[str, int] | None = None,
+) -> dict[str, Any]:
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
@@ -192,6 +196,7 @@ def write_report_files(report: dict[str, Any], output_dir: Path) -> dict[str, An
             catalog_href="../api-sitzungen.html",
             bills_href="../bills/index.html",
             sources_href="../sources.html",
+            mp_lookup=mp_lookup,
         ),
         encoding="utf-8",
     )
@@ -245,6 +250,65 @@ def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any
                 "slug": slug,
             }
         )
+    return entries
+
+
+def load_cached_protocols(output_dir: Path) -> list[dict[str, Any]]:
+    """Load the protocol catalog from disk, augmenting it with cached dossier
+    reports so offline renders work even when the catalog was never written."""
+    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
+    protocols: list[dict[str, Any]] = []
+    if catalog_path.exists():
+        try:
+            cached = json.loads(catalog_path.read_text(encoding="utf-8"))
+            if isinstance(cached, list):
+                protocols.extend(item for item in cached if isinstance(item, dict))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"warning: Could not read cached protocol catalog {catalog_path}: {exc}", file=sys.stderr)
+
+    protocols_by_number = {
+        normalized_document_number(protocol.get("dokumentnummer")): protocol
+        for protocol in protocols
+        if normalized_document_number(protocol.get("dokumentnummer"))
+    }
+    protocols_by_id = {str(protocol.get("id") or ""): protocol for protocol in protocols if protocol.get("id")}
+
+    data_dir = output_dir / "data"
+    for report_path in sorted(data_dir.glob("plenarprotokoll-*.json")) if data_dir.exists() else []:
+        if report_path.name == "plenarprotokoll-catalog.json":
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"warning: Skipping unreadable cached dossier {report_path}: {exc}", file=sys.stderr)
+            continue
+        protocol = report.get("protocol") if isinstance(report, dict) else None
+        if not isinstance(protocol, dict):
+            continue
+        protocol_id = str(protocol.get("id") or "")
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if protocol_id and protocol_id in protocols_by_id:
+            continue
+        if document_number and document_number in protocols_by_number:
+            continue
+        protocols.append(protocol)
+        if protocol_id:
+            protocols_by_id[protocol_id] = protocol
+        if document_number:
+            protocols_by_number[document_number] = protocol
+
+    return sorted(protocols, key=protocol_sort_key, reverse=True)
+
+
+def rebuild_cached_detail_pages(
+    output_dir: Path,
+    protocols: list[dict[str, Any]],
+    mp_lookup: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Regenerate dossier HTML from cached JSON reports without API calls."""
+    entries = []
+    for entry in load_existing_detail_entries(output_dir, protocols):
+        entries.append(write_report_files(entry["report"], output_dir, mp_lookup))
     return entries
 
 
@@ -341,6 +405,7 @@ def write_report_and_page(
     existing_report: dict[str, Any] | None,
     store: Any | None,
     profile_resolver: Any | None = None,
+    mp_lookup: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
     args = argparse.Namespace(
@@ -363,7 +428,7 @@ def write_report_and_page(
     enrich_report_with_profiles(report, profile_resolver)
     if store is not None:
         pulse_store.persist_report(store, report)
-    return write_report_files(report, output_dir)
+    return write_report_files(report, output_dir, mp_lookup)
 
 
 def sqlite_identifier(name: str) -> str:
@@ -2009,6 +2074,13 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     )
                     entry_count["speech_count"] += 1
                     entry_count["char_count"] += int(speech.get("char_count") or 0)
+                    # Keep the speaker's external ids so the bill page can link to
+                    # their Abgeordnete profile.
+                    profile = speaker.get("abgeordnetenwatch") or {}
+                    if profile.get("id") and not entry_count.get("aw_id"):
+                        entry_count["aw_id"] = profile.get("id")
+                    if speaker.get("xml_redner_id") and not entry_count.get("xml_redner_id"):
+                        entry_count["xml_redner_id"] = speaker.get("xml_redner_id")
 
     for key, bill in bills.items():
         bill["documents"] = unique_records(bill["documents"], ("vorgang_id", "dokumentnummer", "url"))
@@ -2350,7 +2422,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
 """
 
 
-def render_bill_detail(bill: dict[str, Any]) -> str:
+def render_bill_detail(bill: dict[str, Any], mp_lookup: dict[str, int] | None = None) -> str:
     introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
     events = []
     for event in bill.get("events") or []:
@@ -2379,9 +2451,19 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
 
     speakers = []
     for speaker in (bill.get("speakers") or [])[:12]:
+        mp_href = pulse_html.mp_page_href(
+            {
+                "abgeordnetenwatch": {"id": speaker.get("aw_id")},
+                "xml_redner_id": speaker.get("xml_redner_id"),
+            },
+            mp_lookup,
+            "../abgeordnete/",
+        )
+        name = pulse_html.esc(speaker.get("name"))
+        name_html = f'<a href="{pulse_html.esc(mp_href)}">{name}</a>' if mp_href else name
         speakers.append(
             '<li class="speaker-row">'
-            f'<strong>{pulse_html.esc(speaker.get("name"))}</strong>'
+            f'<strong>{name_html}</strong>'
             f'<span>{pulse_html.esc(speaker.get("party"))}</span>'
             f'<em>{pulse_html.esc(speaker.get("speech_count"))} Reden · {pulse_html.esc(pulse_html.format_int(int(speaker.get("char_count") or 0)))} Zeichen</em>'
             "</li>"
@@ -2470,15 +2552,591 @@ def render_bill_detail(bill: dict[str, Any]) -> str:
 """
 
 
-def write_bill_pages(output_dir: Path, bills: list[dict[str, Any]]) -> dict[str, Any]:
+def write_bill_pages(
+    output_dir: Path,
+    bills: list[dict[str, Any]],
+    mp_lookup: dict[str, int] | None = None,
+) -> dict[str, Any]:
     bills_dir = output_dir / "bills"
     bills_dir.mkdir(parents=True, exist_ok=True)
     for bill in bills:
-        (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill), encoding="utf-8")
+        (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill, mp_lookup), encoding="utf-8")
     (bills_dir / "index.html").write_text(render_bills_index(bills), encoding="utf-8")
     data_path = output_dir / "data" / "bills.json"
     data_path.write_text(json.dumps(bills, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {"count": len(bills), "index_path": bills_dir / "index.html", "data_path": data_path}
+
+
+def _has_mdb_funktion(funktion: Any) -> bool:
+    return any("mdb" in str(value).lower() for value in (funktion or []))
+
+
+def ingest_mdb_roster(
+    client: dip.ApiClient,
+    store: Any,
+    *,
+    wahlperiode: int,
+    profile_resolver: Any | None = None,
+) -> dict[str, int]:
+    """Fetch the full set of MdBs for a legislative period from DIP /person and
+    upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
+    biographical data. Makes the Abgeordnete list complete rather than limited to
+    speakers seen in ingested protocols."""
+    stats = {"fetched": 0, "mdb": 0, "enriched": 0}
+    if store is None:
+        return stats
+    persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
+    stats["fetched"] = len(persons)
+    now = pulse_store.utc_now()
+    pulse_store.initialize(store)
+    with store:
+        for person in persons:
+            compact = dip.compact_person(person)
+            funktion = compact.get("funktion") or []
+            if not _has_mdb_funktion(funktion):
+                continue
+            stats["mdb"] += 1
+            fraktion_list = compact.get("fraktion") or []
+            fraktion = fraktion_list[0] if fraktion_list else None
+            party_name = dip.normalize_faction(fraktion) if fraktion else None
+            party_id = pulse_store.upsert_party(store, party_name, now)
+            display_name = (
+                pulse_store.clean(compact.get("titel"))
+                or pulse_store.clean(f"{compact.get('vorname') or ''} {compact.get('nachname') or ''}")
+                or "Unbekannt"
+            )
+
+            profile_url = aw_id = birth_year = gender = profession = wahlkreis = bundesland = None
+            if profile_resolver is not None:
+                profile = profile_resolver.resolve(
+                    first_name=compact.get("vorname"),
+                    last_name=compact.get("nachname"),
+                    fraktion=fraktion,
+                )
+                if profile:
+                    profile_url = profile.get("url")
+                    aw_id = profile.get("id")
+                    birth_year = profile.get("year_of_birth")
+                    gender = profile.get("sex")
+                    profession = profile.get("profession")
+                    bio = profile_resolver.fetch_bio(profile.get("id"))
+                    if bio:
+                        wahlkreis = bio.get("wahlkreis")
+                        bundesland = bio.get("bundesland")
+                    stats["enriched"] += 1
+
+            pulse_store.upsert_mp(
+                store,
+                now=now,
+                display_name=display_name,
+                party_id=party_id,
+                identity_key=pulse_store.mp_identity(dip_person_id=compact.get("id")),
+                dip_person_id=compact.get("id"),
+                title=compact.get("titel"),
+                function=funktion,
+                wahlperiode=compact.get("wahlperiode"),
+                profile_url=profile_url,
+                birth_year=birth_year,
+                gender=gender,
+                profession=profession,
+                wahlkreis=wahlkreis,
+                bundesland=bundesland,
+                aw_politician_id=aw_id,
+                person_roles_json=pulse_store.dumps(funktion) if funktion else None,
+                is_mdb=True,
+            )
+    return stats
+
+
+def _parse_listish(value: Any) -> list[Any]:
+    """Parse the list-shaped TEXT columns (function/wahlperiode/person_roles),
+    which may be stored as JSON or as a Python list repr (e.g. "['MdB']")."""
+    if not value:
+        return []
+    text = str(value).strip()
+    for candidate in (text, text.replace("'", '"')):
+        try:
+            parsed = json.loads(candidate)
+            return parsed if isinstance(parsed, list) else [parsed]
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return [text]
+
+
+def _mp_keys(row: dict[str, Any]) -> list[str]:
+    """External identity keys for an MP row, used to link rows that describe the
+    same person across sources (DIP roster vs. protocol speaker)."""
+    keys: list[str] = []
+    if row.get("aw_politician_id") is not None:
+        keys.append(f"aw:{row['aw_politician_id']}")
+    if row.get("dip_person_id"):
+        keys.append(f"dip:{row['dip_person_id']}")
+    if row.get("xml_redner_id"):
+        keys.append(f"xml:{row['xml_redner_id']}")
+    return keys
+
+
+def _clean_mp_name(name: Any) -> str:
+    # Roster display names are the verbose DIP "titel" ("Dr. Carolin Wagner, MdB,
+    # SPD"); trim the ", MdB…" tail for a clean profile heading. Speaker names
+    # (plain) pass through unchanged.
+    text = str(name or "").strip()
+    return text.split(", MdB")[0].strip() or text
+
+
+def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
+    pages, consolidating rows that describe the same person (the DIP roster row
+    carries the bio; the protocol-speaker row carries the speeches). Returns the
+    consolidated MPs plus a lookup from every external id to the page id, so
+    speaker lists can link without dangling. One grouped query each avoids N+1."""
+    base = conn.execute(
+        """
+        SELECT m.id, m.display_name, m.title, m.function, m.wahlperiode,
+               m.profile_url, m.birth_year, m.gender, m.profession,
+               m.wahlkreis, m.bundesland, m.aw_politician_id, m.person_roles_json,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id,
+               p.name AS party
+        FROM mps m
+        LEFT JOIN parties p ON m.party_id = p.id
+        """
+    ).fetchall()
+    rows = [dict(r) for r in base]
+
+    speeches_by_mp: dict[int, list[dict[str, Any]]] = {}
+    for row in conn.execute(
+        """
+        SELECT s.mp_id, s.rede_id, s.page, s.char_count, s.snippet, s.sequence,
+               p.document_number, p.date AS protocol_date,
+               ai.heading, ai.item_index
+        FROM speeches s
+        JOIN protocols p ON s.protocol_id = p.id
+        LEFT JOIN agenda_items ai ON s.agenda_item_id = ai.id
+        WHERE s.mp_id IS NOT NULL
+        ORDER BY p.date DESC, s.sequence ASC
+        """
+    ).fetchall():
+        speeches_by_mp.setdefault(row["mp_id"], []).append(
+            {
+                "rede_id": row["rede_id"],
+                "page": row["page"],
+                "char_count": row["char_count"] or 0,
+                "snippet": row["snippet"],
+                "document_number": row["document_number"],
+                "date": row["protocol_date"],
+                "heading": row["heading"],
+                "item_index": row["item_index"],
+            }
+        )
+
+    votes_by_mp: dict[int, list[dict[str, Any]]] = {}
+    for row in conn.execute(
+        """
+        SELECT vm.mp_id, vm.vote, v.id AS vote_id, v.date, v.title, v.topic, v.detail_url
+        FROM vote_members vm
+        JOIN votes v ON vm.vote_id = v.id
+        WHERE vm.mp_id IS NOT NULL
+        ORDER BY v.date DESC
+        """
+    ).fetchall():
+        votes_by_mp.setdefault(row["mp_id"], []).append(
+            {
+                "vote_id": row["vote_id"],
+                "vote": row["vote"],
+                "date": row["date"],
+                "title": row["title"],
+                "topic": row["topic"],
+                "detail_url": row["detail_url"],
+            }
+        )
+
+    # Union-find: link rows that share any external id into one person.
+    parent = {row["id"]: row["id"] for row in rows}
+
+    def find(node: int) -> int:
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    first_for_key: dict[str, int] = {}
+    for row in rows:
+        for key in _mp_keys(row):
+            if key in first_for_key:
+                union(row["id"], first_for_key[key])
+            else:
+                first_for_key[key] = row["id"]
+
+    components: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        components.setdefault(find(row["id"]), []).append(row)
+
+    mps: list[dict[str, Any]] = []
+    lookup: dict[str, int] = {}
+    for members in components.values():
+        # Canonical row: prefer an MdB (roster) row, then lowest id, for a stable
+        # page id shared by the list and the profile.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
+        cid = members[0]["id"]
+
+        def first(field: str) -> Any:
+            for r in members:
+                if r.get(field) not in (None, ""):
+                    return r[field]
+            return None
+
+        merged_speeches: list[dict[str, Any]] = []
+        for r in members:
+            merged_speeches.extend(speeches_by_mp.get(r["id"], []))
+        merged_speeches.sort(key=lambda s: (s.get("date") or ""), reverse=True)
+
+        merged_votes: list[dict[str, Any]] = []
+        seen_votes: set[Any] = set()
+        for r in members:
+            for vote in votes_by_mp.get(r["id"], []):
+                if vote["vote_id"] in seen_votes:
+                    continue
+                seen_votes.add(vote["vote_id"])
+                merged_votes.append(vote)
+        tally = {"yes": 0, "no": 0, "abstain": 0, "absent": 0}
+        for vote in merged_votes:
+            key = (vote["vote"] or "").lower()
+            if key in tally:
+                tally[key] += 1
+
+        mp = {
+            "id": cid,
+            "name": _clean_mp_name(first("display_name")),
+            "party": first("party"),
+            "title": first("title"),
+            "function": _parse_listish(first("function")),
+            "wahlperioden": _parse_listish(first("wahlperiode")),
+            "person_roles": _parse_listish(first("person_roles_json")),
+            "profile_url": first("profile_url"),
+            "birth_year": first("birth_year"),
+            "gender": first("gender"),
+            "profession": first("profession"),
+            "wahlkreis": first("wahlkreis"),
+            "bundesland": first("bundesland"),
+            "aw_politician_id": first("aw_politician_id"),
+            "is_mdb": any(r["is_mdb"] for r in members),
+            "speech_count": len(merged_speeches),
+            "total_chars": sum(s["char_count"] for s in merged_speeches),
+            "speeches": merged_speeches,
+            "votes": merged_votes,
+            "vote_tally": tally,
+        }
+        mps.append(mp)
+        # Only persons that get a page contribute to the link lookup.
+        if mp["is_mdb"] or mp["speech_count"] > 0:
+            for r in members:
+                for key in _mp_keys(r):
+                    lookup[key] = cid
+
+    # Stable, useful order: most speeches first, then alphabetical.
+    mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
+    return mps, lookup
+
+
+def abgeordnete_styles() -> str:
+    return bill_styles() + """
+    .filter-bar {
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      margin-top:18px;
+    }
+    .filter-bar input[type="search"] {
+      flex:1 1 260px;
+      min-height:38px;
+      padding:8px 12px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+      color:var(--ink);
+      font:inherit;
+    }
+    .party-filters { display:flex; flex-wrap:wrap; gap:6px; }
+    .party-chip {
+      min-height:30px;
+      padding:4px 11px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fff;
+      color:#333a45;
+      font:inherit;
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }
+    .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+    .mp-table th, .mp-table td {
+      text-align:left;
+      padding:9px 10px;
+      border-bottom:1px solid #eef1f5;
+      vertical-align:top;
+    }
+    .mp-table th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    .mp-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .mp-table tr[hidden] { display:none; }
+    .mp-empty { margin-top:16px; }
+    .vote-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
+    .vote-row:last-child { border-bottom:0; padding-bottom:0; }
+    .vote-row time { color:var(--muted); }
+    .vote-badge { align-self:start; }
+    .vote-badge.yes { border-color:#89c5ba; background:#e7f6f3; color:#0f5f59; }
+    .vote-badge.no { border-color:#e0a3a3; background:#fbecec; color:#8a2b2b; }
+    .vote-badge.abstain { border-color:#d9c48a; background:#fbf6e7; color:#7a5a10; }
+    .vote-badge.absent { color:var(--muted); }
+    .speech-row { display:grid; grid-template-columns:130px minmax(0,1fr); gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
+    .speech-row:last-child { border-bottom:0; padding-bottom:0; }
+    .speech-row .meta { color:var(--muted); }
+    @media (max-width: 640px) {
+      .vote-row, .speech-row { grid-template-columns:1fr; gap:4px; }
+    }
+"""
+
+
+def render_abgeordnete_script() -> str:
+    return """
+  <script>
+    (() => {
+      const search = document.querySelector("[data-mp-search]");
+      const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
+      const counter = document.querySelector("[data-mp-count]");
+      let activeParty = "";
+      const apply = () => {
+        const q = (search ? search.value : "").trim().toLowerCase();
+        let visible = 0;
+        rows.forEach((row) => {
+          const matchesText = !q || row.dataset.search.includes(q);
+          const matchesParty = !activeParty || row.dataset.party === activeParty;
+          const show = matchesText && matchesParty;
+          row.hidden = !show;
+          if (show) visible += 1;
+        });
+        if (counter) counter.textContent = String(visible);
+      };
+      if (search) search.addEventListener("input", apply);
+      partyButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeParty = activeParty === btn.dataset.partyFilter ? "" : btn.dataset.partyFilter;
+          partyButtons.forEach((b) => b.classList.toggle("is-active", b.dataset.partyFilter === activeParty));
+          apply();
+        });
+      });
+      apply();
+    })();
+  </script>
+"""
+
+
+def _location_label(mp: dict[str, Any]) -> str:
+    parts = [mp.get("wahlkreis"), mp.get("bundesland")]
+    return " · ".join(p for p in parts if p) or "—"
+
+
+def render_abgeordnete_index(mps: list[dict[str, Any]]) -> str:
+    listed = [mp for mp in mps if mp.get("is_mdb")]
+    parties = sorted({mp["party"] for mp in listed if mp.get("party")})
+    party_chips = "".join(
+        f'<button class="party-chip" type="button" data-party-filter="{pulse_html.esc(party)}">{pulse_html.esc(party)}</button>'
+        for party in parties
+    )
+    rows = []
+    for mp in listed:
+        search_key = " ".join(
+            str(value).lower()
+            for value in (mp.get("name"), mp.get("party"), mp.get("wahlkreis"), mp.get("bundesland"))
+            if value
+        )
+        rows.append(
+            f"""
+            <tr data-mp-row data-party="{pulse_html.esc(mp.get('party') or '')}" data-search="{pulse_html.esc(search_key)}">
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(mp.get('party') or '—')}</td>
+              <td>{pulse_html.esc(_location_label(mp))}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        )
+
+    with_speeches = sum(1 for mp in listed if (mp.get("speech_count") or 0) > 0)
+    total_speeches = sum(mp.get("speech_count") or 0 for mp in listed)
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Abgeordnete</title>
+  {pulse_html.theme_bootstrap_script()}
+  <style>{abgeordnete_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="../bills/index.html", abgeordnete_href="index.html", sources_href="../sources.html", active="abgeordnete")}
+    <header class="page-header">
+      <div>
+        <h1>Abgeordnete</h1>
+        <p>Vollständige Liste der Mitglieder des Bundestages der laufenden Wahlperiode aus den DIP-Personendaten, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion.</p>
+      </div>
+      <div class="follow-summary">
+        <span class="eyebrow">Angezeigt</span>
+        <strong data-mp-count>{pulse_html.esc(len(listed))}</strong>
+      </div>
+    </header>
+    <section class="summary-grid">
+      <div class="metric"><span>Abgeordnete</span><strong>{pulse_html.esc(len(listed))}</strong></div>
+      <div class="metric"><span>Fraktionen</span><strong>{pulse_html.esc(len(parties))}</strong></div>
+      <div class="metric"><span>Mit Reden</span><strong>{pulse_html.esc(with_speeches)}</strong></div>
+      <div class="metric"><span>Reden gesamt</span><strong>{pulse_html.esc(total_speeches)}</strong></div>
+    </section>
+    <div class="filter-bar">
+      <input type="search" data-mp-search placeholder="Nach Name, Wahlkreis oder Bundesland suchen…" aria-label="Abgeordnete suchen">
+      <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
+    </div>
+    {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordneten geladen. Den Build mit aktivem DIP-Personen-Roster ausführen (ohne --no-roster).</p>'}
+    <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
+  </div>
+  {render_abgeordnete_script()}
+  {pulse_html.theme_runtime_script()}
+</body>
+</html>
+"""
+
+
+def render_abgeordnete_detail(mp: dict[str, Any]) -> str:
+    profile_link = ""
+    if mp.get("profile_url"):
+        profile_link = (
+            f'<a class="source-link" href="{pulse_html.esc(mp["profile_url"])}" target="_blank" rel="noopener">'
+            "abgeordnetenwatch.de-Profil ↗</a>"
+        )
+
+    overview_fields = []
+    if mp.get("birth_year"):
+        overview_fields.append(f'<div class="field"><span>Geburtsjahr</span><strong>{pulse_html.esc(mp["birth_year"])}</strong></div>')
+    if mp.get("profession"):
+        overview_fields.append(f'<div class="field"><span>Beruf</span><strong>{pulse_html.esc(mp["profession"])}</strong></div>')
+    if mp.get("bundesland"):
+        overview_fields.append(f'<div class="field"><span>Bundesland</span><strong>{pulse_html.esc(mp["bundesland"])}</strong></div>')
+    wahlperioden = ", ".join(str(w) for w in (mp.get("wahlperioden") or []))
+    if wahlperioden:
+        overview_fields.append(f'<div class="field"><span>Wahlperioden</span><strong>{pulse_html.esc(wahlperioden)}</strong></div>')
+    # Committees only when DIP carries roles beyond plain "MdB".
+    committees = [r for r in (mp.get("person_roles") or []) if str(r).strip().lower() != "mdb"]
+    if committees:
+        overview_fields.append(f'<div class="field"><span>Funktionen</span><strong>{pulse_html.esc(", ".join(str(c) for c in committees))}</strong></div>')
+    if not overview_fields:
+        overview_fields.append('<div class="field"><span>Hinweis</span><strong>Keine weiteren Stammdaten verfügbar.</strong></div>')
+
+    speeches = []
+    for speech in mp.get("speeches") or []:
+        slug = slugify_document_number(speech.get("document_number") or "")
+        href = f"../protocols/plenarprotokoll-{slug}.html"
+        page = f'S. {speech["page"]}' if speech.get("page") else ""
+        heading = pulse_html.esc(speech.get("heading") or "Tagesordnungspunkt")
+        snippet = pulse_html.esc((speech.get("snippet") or "").strip())
+        speeches.append(
+            '<li class="speech-row">'
+            f'<span class="meta"><a href="{pulse_html.esc(href)}">BT-PlPr {pulse_html.esc(speech.get("document_number"))}</a><br>{pulse_html.esc(speech.get("date") or "")} · {pulse_html.esc(page)}</span>'
+            f'<span><strong>{heading}</strong>{("<br>" + snippet) if snippet else ""}</span>'
+            "</li>"
+        )
+
+    votes = []
+    for vote in mp.get("votes") or []:
+        direction = (vote.get("vote") or "").lower()
+        label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "Abwesend"}.get(direction, vote.get("vote") or "—")
+        title = pulse_html.esc(vote.get("title") or vote.get("topic") or "Namentliche Abstimmung")
+        if vote.get("detail_url"):
+            title = f'<a href="{pulse_html.esc(vote.get("detail_url"))}">{title}</a>'
+        votes.append(
+            '<li class="vote-row">'
+            f'<time>{pulse_html.esc(vote.get("date") or "")}</time>'
+            f'<span>{title}</span>'
+            f'<span class="badge vote-badge {pulse_html.esc(direction)}">{pulse_html.esc(label)}</span>'
+            "</li>"
+        )
+
+    tally = mp.get("vote_tally") or {}
+    participation = tally.get("yes", 0) + tally.get("no", 0) + tally.get("abstain", 0)
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{pulse_html.esc(mp.get('name'))} · Bundestag-Puls</title>
+  {pulse_html.theme_bootstrap_script()}
+  <style>{abgeordnete_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="../bills/index.html", abgeordnete_href="index.html", sources_href="../sources.html", active="abgeordnete")}
+    <header class="page-header">
+      <div>
+        <nav class="local-nav" aria-label="Abgeordneten-Navigation">
+          <a href="index.html">Alle Abgeordnete</a>
+        </nav>
+        <span class="eyebrow">{pulse_html.esc(mp.get('party') or 'Fraktion unbekannt')}</span>
+        <h1>{pulse_html.esc(mp.get('name'))}</h1>
+        <p>Stammdaten aus der DIP-API und abgeordnetenwatch.de sowie alle in den erfassten Plenarprotokollen erkannten Reden.</p>
+      </div>
+      <div class="actions">{profile_link}</div>
+    </header>
+    <section class="summary-grid">
+      <div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get('party') or '—')}</strong></div>
+      <div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get('wahlkreis') or '—')}</strong></div>
+      <div class="metric"><span>Reden</span><strong>{pulse_html.esc(mp.get('speech_count') or 0)}</strong></div>
+      <div class="metric"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(participation)}</strong></div>
+    </section>
+    <div class="content-grid">
+      <main>
+        <section class="panel">
+          <h2>Überblick</h2>
+          <div class="field-grid">{''.join(overview_fields)}</div>
+        </section>
+        <section class="panel">
+          <h2>Reden im Bundestag</h2>
+          <ul class="doc-list">{''.join(speeches) if speeches else '<li>In den bisher erfassten Plenarprotokollen wurden keine Reden erkannt.</li>'}</ul>
+        </section>
+      </main>
+      <aside>
+        <section class="panel">
+          <h2>Namentliche Abstimmungen</h2>
+          <ul class="doc-list">{''.join(votes) if votes else '<li>Keine namentlichen Abstimmungen erfasst.</li>'}</ul>
+        </section>
+      </aside>
+    </div>
+    <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.theme_runtime_script()}
+</body>
+</html>
+"""
+
+
+def write_abgeordnete_pages(output_dir: Path, mps: list[dict[str, Any]]) -> dict[str, Any]:
+    abg_dir = output_dir / "abgeordnete"
+    abg_dir.mkdir(parents=True, exist_ok=True)
+    # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
+    # protocol/bill speaker lists never dangle, even for ministers/guests).
+    detail_mps = [mp for mp in mps if mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
+    for mp in detail_mps:
+        (abg_dir / f"{mp['id']}.html").write_text(render_abgeordnete_detail(mp), encoding="utf-8")
+    (abg_dir / "index.html").write_text(render_abgeordnete_index(mps), encoding="utf-8")
+    data_path = output_dir / "data" / "abgeordnete.json"
+    data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    listed = sum(1 for mp in mps if mp.get("is_mdb"))
+    return {"count": listed, "detail_count": len(detail_mps), "index_path": abg_dir / "index.html"}
 
 
 def render_overview(
@@ -3851,6 +4509,83 @@ def render_sources_page(
     """
 
 
+def render_site(
+    *,
+    output_dir: Path,
+    database_path: Path,
+    no_persist: bool,
+    protocols: list[dict[str, Any]],
+    entries: list[dict[str, Any]],
+    abg_mps: list[dict[str, Any]],
+    mp_lookup: dict[str, int],
+) -> Path:
+    database_href = None
+    if not no_persist:
+        try:
+            database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
+        except ValueError:
+            database_href = None
+    database_page_href = "database.html" if not no_persist and database_path.exists() else None
+
+    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
+    catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    bills = collect_bill_pages(entries)
+    bill_output = write_bill_pages(output_dir, bills, mp_lookup)
+    abg_output = write_abgeordnete_pages(output_dir, abg_mps)
+    print(
+        f"abgeordnete: {abg_output['count']} gelistet, "
+        f"{abg_output['detail_count']} Profilseiten",
+        file=sys.stderr,
+    )
+    index_path = output_dir / "index.html"
+    pulse_path = output_dir / "puls.html"
+    overview_path = output_dir / "overview.html"
+    catalog_page_path = output_dir / "api-sitzungen.html"
+    sources_path = output_dir / "sources.html"
+    database_page_path = output_dir / "database.html"
+    index_path.write_text(
+        render_landing_page(
+            entries,
+            database_href=database_href,
+            database_page_href=database_page_href,
+            protocol_count=len(protocols),
+            bill_count=int(bill_output["count"]),
+        ),
+        encoding="utf-8",
+    )
+    pulse_path.write_text(
+        render_front_page(entries, database_href=database_href, database_page_href=database_page_href),
+        encoding="utf-8",
+    )
+    overview_path.write_text(
+        render_overview(
+            protocols,
+            entries,
+            bill_count=int(bill_output["count"]),
+            database_href=database_href,
+            database_page_href=database_page_href,
+        ),
+        encoding="utf-8",
+    )
+    catalog_page_path.write_text(
+        render_catalog_page(
+            protocols,
+            entries,
+            catalog_path,
+            output_dir,
+            database_page_href=database_page_href,
+        ),
+        encoding="utf-8",
+    )
+    sources_path.write_text(
+        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href),
+        encoding="utf-8",
+    )
+    if database_page_href:
+        database_page_path.write_text(render_database_page(database_path, database_href), encoding="utf-8")
+    return index_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
@@ -3882,6 +4617,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help=(
+            "Render the site only from cached files in OUTPUT_DIR/data. "
+            "No DIP, XML, roll-call, abgeordnetenwatch, or LLM API requests are made."
+        ),
+    )
     parser.add_argument(
         "--database-path",
         type=Path,
@@ -3960,22 +4703,68 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Minimum delay in seconds between abgeordnetenwatch API requests (default 0.5 to stay under its rate limit).",
     )
+    parser.add_argument(
+        "--roster-wahlperiode",
+        type=int,
+        default=21,
+        help="Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages (default 21).",
+    )
+    parser.add_argument(
+        "--no-roster",
+        action="store_true",
+        help="Skip fetching the full MdB roster; Abgeordnete pages then cover only people seen in ingested protocols.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     dip.load_local_env()
     args = parse_args()
-    api_key = args.api_key or os.environ.get("DIP_API_KEY")
-    if not api_key:
-        print("error: Provide a DIP API key via --api-key or DIP_API_KEY.", file=sys.stderr)
-        return 1
 
     output_dir = args.output_dir
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
     (output_dir / "bills").mkdir(parents=True, exist_ok=True)
+    (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
+
+    if args.offline:
+        protocols = load_cached_protocols(output_dir)
+        if not protocols:
+            print(
+                f"error: No cached protocols found in {output_dir / 'data'}. "
+                "Run an online update first.",
+                file=sys.stderr,
+            )
+            return 1
+
+        abg_mps: list[dict[str, Any]] = []
+        mp_lookup: dict[str, int] = {}
+        if not args.no_persist and database_path.exists():
+            store = pulse_store.connect(database_path)
+            try:
+                abg_mps, mp_lookup = collect_abgeordnete(store)
+            finally:
+                store.close()
+
+        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup)
+        index_path = render_site(
+            output_dir=output_dir,
+            database_path=database_path,
+            no_persist=args.no_persist,
+            protocols=protocols,
+            entries=entries,
+            abg_mps=abg_mps,
+            mp_lookup=mp_lookup,
+        )
+        print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
+        print(index_path)
+        return 0
+
+    api_key = args.api_key or os.environ.get("DIP_API_KEY")
+    if not api_key:
+        print("error: Provide a DIP API key via --api-key or DIP_API_KEY.", file=sys.stderr)
+        return 1
 
     profile_resolver = None
     if not args.no_abgeordnetenwatch:
@@ -4001,7 +4790,25 @@ def main() -> int:
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
         store = None if args.no_persist else pulse_store.connect(database_path)
+        abg_mps: list[dict[str, Any]] = []
+        mp_lookup: dict[str, int] = {}
         try:
+            if store is not None:
+                pulse_store.initialize(store)
+                if not args.no_roster:
+                    roster_stats = ingest_mdb_roster(
+                        client,
+                        store,
+                        wahlperiode=args.roster_wahlperiode,
+                        profile_resolver=profile_resolver,
+                    )
+                    print(
+                        f"roster: {roster_stats['mdb']} MdBs of {roster_stats['fetched']} persons "
+                        f"(WP{args.roster_wahlperiode}), {roster_stats['enriched']} enriched",
+                        file=sys.stderr,
+                    )
+                # Pre-loop lookup lets protocol speaker lists link to MdB profiles.
+                _, mp_lookup = collect_abgeordnete(store)
             generated_entries = [
                 write_report_and_page(
                     protocol=protocol,
@@ -4018,9 +4825,14 @@ def main() -> int:
                     existing_report=load_existing_report(output_dir, protocol),
                     store=store,
                     profile_resolver=profile_resolver,
+                    mp_lookup=mp_lookup,
                 )
                 for protocol in detail_protocols
             ]
+            if store is not None:
+                # Rebuild after persisting this run's speakers so bill pages can
+                # also link speakers resolved only via their XML redner id.
+                abg_mps, mp_lookup = collect_abgeordnete(store)
         finally:
             if store is not None:
                 store.close()
@@ -4040,64 +4852,15 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    database_href = None
-    if not args.no_persist:
-        try:
-            database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
-        except ValueError:
-            database_href = None
-    database_page_href = "database.html" if not args.no_persist and database_path.exists() else None
-
-    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
-    catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    bills = collect_bill_pages(entries)
-    bill_output = write_bill_pages(output_dir, bills)
-    index_path = output_dir / "index.html"
-    pulse_path = output_dir / "puls.html"
-    overview_path = output_dir / "overview.html"
-    catalog_page_path = output_dir / "api-sitzungen.html"
-    sources_path = output_dir / "sources.html"
-    database_page_path = output_dir / "database.html"
-    index_path.write_text(
-        render_landing_page(
-            entries,
-            database_href=database_href,
-            database_page_href=database_page_href,
-            protocol_count=len(protocols),
-            bill_count=int(bill_output["count"]),
-        ),
-        encoding="utf-8",
+    index_path = render_site(
+        output_dir=output_dir,
+        database_path=database_path,
+        no_persist=args.no_persist,
+        protocols=protocols,
+        entries=entries,
+        abg_mps=abg_mps,
+        mp_lookup=mp_lookup,
     )
-    pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, database_page_href=database_page_href),
-        encoding="utf-8",
-    )
-    overview_path.write_text(
-        render_overview(
-            protocols,
-            entries,
-            bill_count=int(bill_output["count"]),
-            database_href=database_href,
-            database_page_href=database_page_href,
-        ),
-        encoding="utf-8",
-    )
-    catalog_page_path.write_text(
-        render_catalog_page(
-            protocols,
-            entries,
-            catalog_path,
-            output_dir,
-            database_page_href=database_page_href,
-        ),
-        encoding="utf-8",
-    )
-    sources_path.write_text(
-        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href),
-        encoding="utf-8",
-    )
-    if database_page_href:
-        database_page_path.write_text(render_database_page(database_path, database_href), encoding="utf-8")
     print(index_path)
     return 0
 

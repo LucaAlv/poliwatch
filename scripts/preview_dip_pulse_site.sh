@@ -16,6 +16,24 @@ PID_FILE="${DIP_PULSE_PID_FILE:-.context/dip-pulse-server.pid}"
 LOG_FILE="${DIP_PULSE_LOG_FILE:-.context/dip-pulse-server.log}"
 URL="http://localhost:${PORT}/"
 
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/preview_dip_pulse_site.sh [render options]
+  scripts/preview_dip_pulse_site.sh update [fetch/build options]
+  scripts/preview_dip_pulse_site.sh stop
+
+Default mode renders the site from cached files in .context/dip-pulse-site/data
+and never calls the DIP API. Use "update" when you explicitly want to fetch or
+refresh DIP data before serving the preview.
+
+Examples:
+  scripts/preview_dip_pulse_site.sh
+  scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2 --no-roster
+  scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster
+EOF
+}
+
 server_running() {
   [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
 }
@@ -36,14 +54,31 @@ if [ "${1:-}" = "stop" ]; then
   exit 0
 fi
 
-if [ -z "${DIP_API_KEY:-}" ]; then
-  echo "error: DIP_API_KEY is not set. Add it to .env.local or export it before running." >&2
-  exit 1
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
+
+BUILD_ARGS=(--output-dir "$OUTPUT_DIR")
+if [ "${1:-}" = "update" ] || [ "${1:-}" = "refresh" ] || [ "${1:-}" = "fetch" ]; then
+  shift
+  if [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ -z "${DIP_API_KEY:-}" ]; then
+    echo "error: DIP_API_KEY is not set. Add it to .env.local or export it before running update." >&2
+    exit 1
+  fi
+  BUILD_ARGS+=("$@")
+else
+  BUILD_ARGS+=(--offline "$@")
+fi
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  python3 scripts/build_dip_pulse_site.py "${BUILD_ARGS[@]}"
+  exit 0
 fi
 
 # 1. Rebuild the static site in place. The build overwrites files individually
 #    and never wipes the directory, so a running server keeps serving safely.
-python3 scripts/build_dip_pulse_site.py --output-dir "$OUTPUT_DIR" "$@"
+python3 scripts/build_dip_pulse_site.py "${BUILD_ARGS[@]}"
 
 # 2. Ensure the static file server is up. http.server reads from disk on every
 #    request, so it only ever needs to start once — never restart it to refresh.

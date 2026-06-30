@@ -28,7 +28,9 @@ from typing import Any
 
 API_BASE = "https://www.abgeordnetenwatch.de/api/v2"
 USER_AGENT = "bundestag-pulse/1.0 (+https://www.abgeordnetenwatch.de/api)"
-CACHE_VERSION = 1
+# v2 adds biographical fields to cached profiles and a separate mandate (bio)
+# cache, so the v1 cache is rebuilt on first run after the upgrade.
+CACHE_VERSION = 2
 
 # abgeordnetenwatch sits behind an nginx burst limiter (~12 quick requests before
 # it answers HTTP 429). A steady minimum interval between requests keeps us under
@@ -94,15 +96,78 @@ def _party_matches(fraktion: Any, party_label: Any) -> bool:
     return bool(a & b)
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _strip_period_suffix(text: Any) -> str:
+    # abgeordnetenwatch appends the legislative period in parentheses to mandate
+    # labels, e.g. "232 - Regensburg (Bundestag 2025 - 2029)"; drop it.
+    cleaned = _clean_label(text)
+    return re.sub(r"\s*\([^)]*\)\s*$", "", cleaned).strip()
+
+
+# Records whose "occupation" is just the mandate itself carry no useful Beruf.
+_MANDATE_OCCUPATIONS = {
+    "mdb",
+    "mitglied des bundestages",
+    "mitglied des deutschen bundestages",
+}
+
+
+def _profession(politician: dict[str, Any]) -> str | None:
+    for value in (politician.get("occupation"), politician.get("education")):
+        cleaned = _clean_label(value)
+        if cleaned and cleaned.lower() not in _MANDATE_OCCUPATIONS:
+            return cleaned
+    return None
+
+
 def _profile_from_politician(politician: dict[str, Any], match: str) -> dict[str, Any]:
     party = politician.get("party") or {}
+    profession = _profession(politician)
     return {
         "id": politician.get("id"),
         "label": _clean_label(politician.get("label")),
         "url": politician.get("abgeordnetenwatch_url"),
         "party": _clean_label(party.get("label")) or None,
+        "year_of_birth": _int_or_none(politician.get("year_of_birth")),
+        "sex": _clean_label(politician.get("sex")) or None,
+        "profession": profession,
+        "residence": _clean_label(politician.get("residence")) or None,
         "match": match,
     }
+
+
+def _bundesland_from_list_label(label: Any) -> str | None:
+    # Electoral-list labels read like "Landesliste Bayern (Bundestag 2025 - 2029)"
+    # or "Landesliste Nordrhein-Westfalen 2025"; recover just the state name.
+    text = re.sub(r"\s+\d{4}$", "", _strip_period_suffix(label)).strip()
+    if not text:
+        return None
+    match = re.search(r"Landesliste\s+(.+)$", text)
+    return (match.group(1).strip() if match else None) or None
+
+
+def _bio_from_mandates(mandates: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Pick the most recent mandate and extract Wahlkreis + Bundesland."""
+    bio: dict[str, Any] = {"wahlkreis": None, "bundesland": None}
+    if not mandates:
+        return bio
+    # The latest legislative period carries the highest parliament_period id.
+    def period_id(mandate: dict[str, Any]) -> int:
+        period = mandate.get("parliament_period") or {}
+        return _int_or_none(period.get("id")) or _int_or_none(mandate.get("id")) or 0
+
+    latest = max(mandates, key=period_id)
+    electoral = latest.get("electoral_data") or {}
+    constituency = electoral.get("constituency") or {}
+    bio["wahlkreis"] = _strip_period_suffix(constituency.get("label")) or None
+    bio["bundesland"] = _bundesland_from_list_label((electoral.get("electoral_list") or {}).get("label"))
+    return bio
 
 
 class AbgeordnetenwatchResolver:
@@ -122,6 +187,7 @@ class AbgeordnetenwatchResolver:
         self.timeout = timeout
         self._by_ext_id: dict[str, Any] = {}
         self._by_name: dict[str, Any] = {}
+        self._by_bio: dict[str, Any] = {}
         self._dirty = False
         self._consecutive_failures = 0
         self._network_disabled = False
@@ -150,6 +216,7 @@ class AbgeordnetenwatchResolver:
             return
         self._by_ext_id = dict(data.get("by_ext_id") or {})
         self._by_name = dict(data.get("by_name") or {})
+        self._by_bio = dict(data.get("by_bio") or {})
 
     def save(self) -> None:
         if not self.cache_path or not self._dirty:
@@ -159,6 +226,7 @@ class AbgeordnetenwatchResolver:
             "version": CACHE_VERSION,
             "by_ext_id": self._by_ext_id,
             "by_name": self._by_name,
+            "by_bio": self._by_bio,
         }
         self.cache_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -185,6 +253,11 @@ class AbgeordnetenwatchResolver:
         return None
 
     def _get(self, params: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Search politicians; return the data list or None."""
+        query = urllib.parse.urlencode({**params, "range_end": 50})
+        return self._request(f"{API_BASE}/politicians?{query}")
+
+    def _request(self, url: str) -> list[dict[str, Any]] | None:
         """Return the data list for a query, or None. Sets ``_call_failed`` when
         the request failed (vs. succeeding with an empty result), so callers can
         avoid caching transient failures as negative matches."""
@@ -192,8 +265,6 @@ class AbgeordnetenwatchResolver:
         if self._network_disabled:
             self._call_failed = True
             return None
-        query = urllib.parse.urlencode({**params, "range_end": 50})
-        url = f"{API_BASE}/politicians?{query}"
         for attempt in range(MAX_RETRIES + 1):
             self._throttle()
             req = urllib.request.Request(
@@ -309,6 +380,27 @@ class AbgeordnetenwatchResolver:
         else:
             self.stats[profile.get("match", "name")] = self.stats.get(profile.get("match", "name"), 0) + 1
         return profile
+
+    def fetch_bio(self, politician_id: Any) -> dict[str, Any] | None:
+        """Resolve a politician's current Wahlkreis and Bundesland from their
+        mandate record. Cached on disk; returns None when unavailable. These live
+        on ``/candidacies-mandates`` rather than the base politician object."""
+        if not self.enabled or not politician_id:
+            return None
+        key = str(politician_id)
+        if key in self._by_bio:
+            return self._by_bio[key]
+        if self._network_disabled:
+            return None
+        url = f"{API_BASE}/candidacies-mandates?politician={urllib.parse.quote(key)}&type=mandate&range_end=20"
+        data = self._request(url)
+        if data is None:
+            # Network failure — do not cache, retry on a later build.
+            return None
+        bio = _bio_from_mandates(data)
+        self._by_bio[key] = bio
+        self._dirty = True
+        return bio
 
 
 def _main() -> int:

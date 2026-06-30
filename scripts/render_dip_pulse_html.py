@@ -305,6 +305,7 @@ def render_global_header(
     overview_href: str | None = "overview.html",
     catalog_href: str | None = "api-sitzungen.html",
     bills_href: str | None = "bills/index.html",
+    abgeordnete_href: str | None = "abgeordnete/index.html",
     database_href: str | None = None,
     sources_href: str | None = "sources.html",
     active: str | None = None,
@@ -315,6 +316,7 @@ def render_global_header(
         ("overview", "Plenarprotokoll-Katalog", overview_href),
         ("catalog", "Alle API-Sitzungen", catalog_href),
         ("bills", "Gesetze verfolgen", bills_href),
+        ("abgeordnete", "Abgeordnete", abgeordnete_href),
         ("database", "Datenbank", database_href),
         ("sources", "Quellen und Methode", sources_href),
     ]
@@ -740,7 +742,34 @@ def render_top_dev_details(item: dict[str, Any]) -> str:
     """
 
 
-def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
+def mp_page_href(
+    speaker: dict[str, Any],
+    mp_lookup: dict[str, int] | None,
+    prefix: str = "abgeordnete/",
+) -> str | None:
+    """Internal Abgeordnete profile URL for a speaker, or None when the speaker
+    does not resolve to a known MP. Tries abgeordnetenwatch id, then the
+    Bundestagsverwaltung speaker id, then the DIP person id."""
+    if not mp_lookup:
+        return None
+    profile = speaker.get("abgeordnetenwatch") or {}
+    candidates = (
+        f"aw:{profile.get('id')}" if profile.get("id") else None,
+        f"xml:{speaker.get('xml_redner_id')}" if speaker.get("xml_redner_id") else None,
+        f"dip:{speaker.get('dip_person_id')}" if speaker.get("dip_person_id") else None,
+    )
+    for key in candidates:
+        if key and key in mp_lookup:
+            return f"{prefix}{mp_lookup[key]}.html"
+    return None
+
+
+def render_speakers(
+    item: dict[str, Any],
+    stats: dict[str, Any],
+    mp_lookup: dict[str, int] | None = None,
+    mp_href_prefix: str = "abgeordnete/",
+) -> str:
     rows = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
@@ -750,13 +779,19 @@ def render_speakers(item: dict[str, Any], stats: dict[str, Any]) -> str:
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
         anchor = speech_anchor(item, speech, sequence)
+        mp_href = mp_page_href(speaker, mp_lookup, mp_href_prefix)
+        profile_cell = (
+            f'<a class="mp-profile-link" href="{esc(mp_href)}" title="Profil von {name} auf Bundestag-Puls">Profil</a> '
+            if mp_href
+            else ""
+        )
         rows.append(
             '<li class="speaker-row">'
             f'<span class="party-dot" style="background:{color}"></span>'
             f'<strong><a class="speaker-link" href="#{esc(anchor)}">{name}</a></strong>'
             f'<span>{esc(role)}</span>'
             f'<em>{esc(source)}</em>'
-            f'<span class="aw-cell">{render_profile_icon(speaker)}</span>'
+            f'<span class="aw-cell">{profile_cell}{render_profile_icon(speaker)}</span>'
             "</li>"
         )
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
@@ -996,6 +1031,8 @@ def render_html(
     catalog_href: str | None = None,
     bills_href: str | None = None,
     sources_href: str | None = None,
+    mp_lookup: dict[str, int] | None = None,
+    mp_href_prefix: str = "../abgeordnete/",
 ) -> str:
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
@@ -1075,7 +1112,7 @@ def render_html(
               <div class="detail-grid">
                 <section>
                   <h3>Rednerinnen und Redner</h3>
-                  {render_speakers(item, stats)}
+                  {render_speakers(item, stats, mp_lookup, mp_href_prefix)}
                 </section>
                 <section>
                   <h3>Drucksachen</h3>
@@ -1600,7 +1637,9 @@ def render_html(
     .speaker-row em, .position-list em, .doc-list em, .activity-list em, .people-list em {{ color:var(--muted); font-style:normal; overflow-wrap:anywhere; }}
     .speaker-link {{ color:var(--ink); text-decoration:none; }}
     .speaker-link:hover {{ color:#174ea6; text-decoration:underline; }}
-    .speaker-row .aw-cell {{ display:flex; align-items:center; justify-content:center; }}
+    .speaker-row .aw-cell {{ display:flex; align-items:center; justify-content:center; gap:8px; }}
+    .mp-profile-link {{ font-size:12px; font-weight:650; color:#174ea6; text-decoration:none; white-space:nowrap; }}
+    .mp-profile-link:hover {{ text-decoration:underline; }}
     .aw-profile-icon {{
       display:inline-flex; align-items:center; justify-content:center;
       color:var(--muted); text-decoration:none; opacity:.65;
@@ -1797,7 +1836,7 @@ def render_html(
 </head>
 <body>
   <div class="shell">
-    {render_global_header(home_href=home_href, pulse_href=pulse_href, overview_href=overview_href, catalog_href=catalog_href, bills_href=bills_href, sources_href=sources_href, active="pulse")}
+    {render_global_header(home_href=home_href, pulse_href=pulse_href, overview_href=overview_href, catalog_href=catalog_href, bills_href=bills_href, abgeordnete_href="../abgeordnete/index.html", sources_href=sources_href, active="pulse")}
     <header class="page-header">
       <div>
         <h1>Bundestag-Puls</h1>
