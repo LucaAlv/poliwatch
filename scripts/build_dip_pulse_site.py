@@ -74,7 +74,12 @@ def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: st
     return documents[0]
 
 
-def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[str]) -> list[dict[str, Any]]:
+def fetch_protocols(
+    client: dip.ApiClient,
+    limit: int,
+    document_numbers: list[str],
+    wahlperiode: int | None = None,
+) -> list[dict[str, Any]]:
     if document_numbers:
         protocols: list[dict[str, Any]] = []
         for document_number in document_numbers:
@@ -83,6 +88,8 @@ def fetch_protocols(client: dip.ApiClient, limit: int, document_numbers: list[st
 
     protocols: list[dict[str, Any]] = []
     params: dict[str, Any] = {"f.zuordnung": "BT"}
+    if limit > 0 and wahlperiode:
+        params["f.wahlperiode"] = wahlperiode
     previous_cursor = None
     fetch_all = limit <= 0
     while fetch_all or len(protocols) < limit:
@@ -4724,6 +4731,15 @@ def parse_args() -> argparse.Namespace:
         help="Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages (default 21).",
     )
     parser.add_argument(
+        "--protocol-wahlperiode",
+        type=int,
+        default=21,
+        help=(
+            "Legislative period used to narrow limited protocol catalog fetches "
+            "(default 21; use 0 to query all periods before applying --limit)."
+        ),
+    )
+    parser.add_argument(
         "--no-roster",
         action="store_true",
         help="Skip fetching the full MdB roster; Abgeordnete pages then cover only people seen in ingested protocols.",
@@ -4790,7 +4806,8 @@ def main() -> int:
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
-        protocols = fetch_protocols(client, args.limit, args.document_number)
+        protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
+        protocols = fetch_protocols(client, args.limit, args.document_number, protocol_wahlperiode)
         detail_limit = None if args.document_number else args.detail_limit
         detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
         protocols, detail_protocols = add_explicit_dossier_protocols(
