@@ -82,11 +82,14 @@ The script also manages the preview server:
 scripts/preview_dip_pulse_site.sh stop
 ```
 
+The preview server binds to localhost only by default. Set `PREVIEW_BIND=0.0.0.0` when you intentionally want to expose the generated site on the LAN.
+
 Key defaults:
 
 | Setting | Default | Purpose |
 |---|---:|---|
 | `PORT` | `${CONDUCTOR_PORT}` or `8000` | Local HTTP server port |
+| `PREVIEW_BIND` | `127.0.0.1` | HTTP server bind host |
 | `DIP_PULSE_OUTPUT_DIR` | `.context/dip-pulse-site` | Static site output directory |
 | `DIP_PULSE_PID_FILE` | `.context/dip-pulse-server.pid` | Background server PID |
 | `DIP_PULSE_LOG_FILE` | `.context/dip-pulse-server.log` | Server stdout/stderr |
@@ -259,6 +262,12 @@ Start without opening the browser:
 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
+Expose the preview on the LAN intentionally:
+
+```bash
+PREVIEW_BIND=0.0.0.0 scripts/preview_dip_pulse_site.sh
+```
+
 Stop the background preview server:
 
 ```bash
@@ -400,6 +409,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `GEMINI_API_KEY` | build/validation | Only Gemini summaries | Gemini summary generation |
 | `GOOGLE_API_KEY` | validation | Optional Gemini fallback | Alternative Gemini key name |
 | `PORT` | preview script | No | HTTP server port |
+| `PREVIEW_BIND` | preview script | No | HTTP server bind host; defaults to localhost-only |
 | `CONDUCTOR_PORT` | preview script | No | Port fallback inside Conductor |
 | `DIP_PULSE_OUTPUT_DIR` | preview script | No | Static output directory |
 | `DIP_PULSE_PID_FILE` | preview script | No | Preview server PID file |
@@ -566,4 +576,3 @@ Use `--summary-mode off` or the default build behavior (`reuse`) while debugging
    ```bash
    scripts/preview_dip_pulse_site.sh stop
    ```
-
