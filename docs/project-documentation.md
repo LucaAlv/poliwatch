@@ -127,6 +127,7 @@ Important generated files:
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
+| `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
@@ -171,6 +172,8 @@ The renderer owns the detailed dossier page HTML, shared site header styles, par
 
 SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches, votes, vote fractions, and individual vote members.
 
+MP identity rows are consolidated from DIP roster IDs, XML speaker IDs, resolved abgeordnetenwatch IDs, and guarded name+party matches. This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
+
 Direct usage:
 
 ```bash
@@ -182,7 +185,7 @@ python3 scripts/persist_dip_pulse_store.py .context/report.json \
 
 ### `scripts/abgeordnetenwatch.py`
 
-Profile resolver for linking Bundestag speakers to abgeordnetenwatch.de politician profiles. It first tries the exact Bundestagsverwaltung speaker id (`ext_id_bundestagsverwaltung`), then falls back to name plus party disambiguation.
+Profile resolver for linking Bundestag speakers and roll-call vote members to abgeordnetenwatch.de politician profiles. It first tries the exact Bundestagsverwaltung speaker id (`ext_id_bundestagsverwaltung`) when available, then falls back to name plus party disambiguation.
 
 It uses a disk cache so repeat builds do not keep querying the API. Network failures degrade gracefully: the build continues without profile links instead of failing the whole site.
 
@@ -290,7 +293,7 @@ Common options:
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
 | `--vote-scan-pages N` | `30` | Bundestag roll-call vote list pages scanned per sitting |
 | `--sleep SECONDS` | `0.0` | Delay between DIP API requests |
-| `--no-abgeordnetenwatch` | off | Skip speaker profile resolution |
+| `--no-abgeordnetenwatch` | off | Skip speaker and vote-member profile resolution |
 | `--abgeordnetenwatch-cache PATH` | `OUTPUT_DIR/data/abgeordnetenwatch-cache.json` | Profile cache location |
 | `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
 | `--roster-wahlperiode N` | `21` | Legislative period used for full MdB roster pages |
@@ -519,7 +522,7 @@ Useful speed levers:
 - `--document-number` instead of a broad catalog fetch.
 - `--detail-limit 1` or `--detail-limit 2`.
 - `--no-roster` to skip the full MdB roster.
-- `--no-abgeordnetenwatch` to skip speaker profile enrichment.
+- `--no-abgeordnetenwatch` to skip speaker and vote-member profile enrichment.
 - `--summary-mode off` or default `reuse` to avoid LLM calls.
 - Offline mode after a first successful update.
 
@@ -566,4 +569,3 @@ Use `--summary-mode off` or the default build behavior (`reuse`) while debugging
    ```bash
    scripts/preview_dip_pulse_site.sh stop
    ```
-
