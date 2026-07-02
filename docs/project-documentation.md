@@ -4,10 +4,17 @@ This repository builds a static, local preview of "Bundestag Pulse": a primary-s
 
 The codebase is intentionally small. There is no package manager or web framework; the scripts use Python standard-library modules plus public HTTP APIs.
 
+## Prerequisites
+
+- Python 3.11 or newer.
+- No third-party Python packages are required at runtime.
+- `DIP_API_KEY` is required for online fetch/update commands.
+
 ## Project Map
 
 ```text
 .
+|-- README.md
 |-- .env.example
 |-- docs/
 |   |-- design/bundestag-pulse-design.md
