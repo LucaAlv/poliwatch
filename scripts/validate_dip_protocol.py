@@ -33,7 +33,14 @@ GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta
 DEFAULT_ANTHROPIC_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-4-6")
 DEFAULT_GEMINI_SUMMARY_MODELS = ("gemini-3.5-flash",)
 BT_BASE_URL = "https://www.bundestag.de"
-ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"
+DEFAULT_ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"
+ROLL_CALL_LIST_PATH_PREFIX = "/ajax/filterlist/de/parlament/plenum/abstimmung"
+DEFAULT_ROLL_CALL_LIST_ID = DEFAULT_ROLL_CALL_LIST_PATH.rsplit("/", 1)[-1]
+ROLL_CALL_LIST_ID_ENV = "BT_ROLL_CALL_LIST_ID"
+ROLL_CALL_LIST_PARSE_WARNING = (
+    "Die Abstimmungs-Listenseite lieferte HTML, aber keine parsebaren Einträge; "
+    "vermutlich hat sich das Seitenformat oder die Filterlisten-ID geändert."
+)
 QUADRANT_ORDER = {"A": 1, "B": 2, "C": 3, "D": 4}
 VOTE_KEYS = ("yes", "no", "abstain", "absent")
 SUMMARY_CHUNK_MIN = 3
@@ -53,6 +60,14 @@ class DipError(RuntimeError):
 
 class SummaryError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RollCallCandidateFetch:
+    candidates: list[dict[str, Any]]
+    list_html_seen: bool
+    parsed_entry_count: int
+    selector_warning: bool
 
 
 def load_local_env(path: Path | None = None) -> None:
@@ -552,6 +567,19 @@ def leading_vote(counts: dict[str, int]) -> str:
     return max(cast, key=cast.get)
 
 
+def configured_roll_call_list_id(value: str | None = None) -> str:
+    return value or os.environ.get(ROLL_CALL_LIST_ID_ENV) or DEFAULT_ROLL_CALL_LIST_ID
+
+
+def roll_call_list_path(list_id: str | None = None) -> str:
+    return f"{ROLL_CALL_LIST_PATH_PREFIX}/{urllib.parse.quote(configured_roll_call_list_id(list_id))}"
+
+
+def roll_call_list_url(list_id: str | None, offset: int, limit: int) -> str:
+    params = urllib.parse.urlencode({"offset": offset, "limit": limit})
+    return f"{BT_BASE_URL}{roll_call_list_path(list_id)}?{params}"
+
+
 def roll_call_vote_url(vote_id: str) -> str:
     return f"{BT_BASE_URL}/parlament/plenum/abstimmung/abstimmung?id={urllib.parse.quote(vote_id)}"
 
@@ -591,24 +619,41 @@ def parse_roll_call_list_page(html_text: str) -> list[dict[str, Any]]:
     return entries
 
 
-def fetch_roll_call_vote_candidates(protocol_date: str | None, scan_pages: int) -> list[dict[str, Any]]:
+def fetch_roll_call_vote_candidates(
+    protocol_date: str | None,
+    scan_pages: int,
+    roll_call_list_id: str | None = None,
+    *,
+    include_diagnostics: bool = False,
+) -> list[dict[str, Any]] | RollCallCandidateFetch:
     target_date = iso_date(protocol_date)
     if not target_date or scan_pages <= 0:
-        return []
+        result = RollCallCandidateFetch([], False, 0, False)
+        return result if include_diagnostics else result.candidates
 
     candidates: list[dict[str, Any]] = []
+    list_html_seen = False
+    parsed_entry_count = 0
     page_size = 10
     for page_index in range(scan_pages):
-        params = urllib.parse.urlencode({"offset": page_index * page_size, "limit": page_size})
-        html_text = fetch_html(f"{BT_BASE_URL}{ROLL_CALL_LIST_PATH}?{params}")
+        html_text = fetch_html(roll_call_list_url(roll_call_list_id, page_index * page_size, page_size))
+        if html_text.strip():
+            list_html_seen = True
         page_entries = parse_roll_call_list_page(html_text)
+        parsed_entry_count += len(page_entries)
         if not page_entries:
             break
         candidates.extend(entry for entry in page_entries if entry.get("date") == target_date)
         dated = [entry.get("date") for entry in page_entries if entry.get("date")]
         if dated and min(dated) < target_date:
             break
-    return candidates
+    result = RollCallCandidateFetch(
+        candidates=candidates,
+        list_html_seen=list_html_seen,
+        parsed_entry_count=parsed_entry_count,
+        selector_warning=list_html_seen and parsed_entry_count == 0,
+    )
+    return result if include_diagnostics else result.candidates
 
 
 def parse_fraction_votes(detail_html: str) -> list[dict[str, Any]]:
@@ -983,11 +1028,19 @@ def enrich_with_api(
     parsed_xml: dict[str, Any],
     person_limit: int,
     vote_scan_pages: int = 30,
+    roll_call_list_id: str | None = None,
 ) -> dict[str, Any]:
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
     activities = client.list_all("/aktivitaet", {"f.plenarprotokoll": protocol_id})
-    roll_call_candidates = fetch_roll_call_vote_candidates(protocol.get("datum"), vote_scan_pages)
+    roll_call_fetch = fetch_roll_call_vote_candidates(
+        protocol.get("datum"),
+        vote_scan_pages,
+        roll_call_list_id,
+        include_diagnostics=True,
+    )
+    assert isinstance(roll_call_fetch, RollCallCandidateFetch)
+    roll_call_candidates = roll_call_fetch.candidates
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
     positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
@@ -1131,6 +1184,9 @@ def enrich_with_api(
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
     if roll_call_candidates and not roll_call_cache:
         warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
+    if roll_call_fetch.selector_warning:
+        warnings.append(ROLL_CALL_LIST_PARSE_WARNING)
+        print(f"warning: {ROLL_CALL_LIST_PARSE_WARNING}", file=sys.stderr)
     if person_fetch_errors:
         failed_ids = ", ".join(error["person_id"] for error in person_fetch_errors[:10])
         suffix = "" if len(person_fetch_errors) <= 10 else f" und {len(person_fetch_errors) - 10} weitere"
@@ -1191,6 +1247,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         parsed_xml,
         args.person_limit,
         getattr(args, "vote_scan_pages", 30),
+        getattr(args, "roll_call_list_id", None),
     )
 
     agenda_items = enrichment["agenda_items"]
@@ -1274,6 +1331,13 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Number of Bundestag roll-call vote list pages to scan for same-day matches.",
+    )
+    parser.add_argument(
+        "--roll-call-list-id",
+        help=(
+            "Bundestag roll-call vote filterlist id. "
+            f"Defaults to {ROLL_CALL_LIST_ID_ENV} or {DEFAULT_ROLL_CALL_LIST_ID}."
+        ),
     )
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
     return parser.parse_args()
