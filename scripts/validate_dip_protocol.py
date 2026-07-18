@@ -30,7 +30,8 @@ BASE_URL = "https://search.dip.bundestag.de/api/v1"
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
-DEFAULT_ANTHROPIC_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-4-6")
+# Re-verify fallback IDs against the official Anthropic and Gemini model lists before changing.
+DEFAULT_ANTHROPIC_SUMMARY_MODELS = ("claude-opus-4-8", "claude-sonnet-5")
 DEFAULT_GEMINI_SUMMARY_MODELS = ("gemini-3.5-flash",)
 BT_BASE_URL = "https://www.bundestag.de"
 ROLL_CALL_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/484422-484422"

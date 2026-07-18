@@ -18,6 +18,7 @@ else
 fi
 
 PORT="${PORT:-${CONDUCTOR_PORT:-8000}}"
+BIND="${PREVIEW_BIND:-127.0.0.1}"
 OUTPUT_DIR="${DIP_PULSE_OUTPUT_DIR:-.context/dip-pulse-site}"
 PID_FILE="${DIP_PULSE_PID_FILE:-.context/dip-pulse-server.pid}"
 LOG_FILE="${DIP_PULSE_LOG_FILE:-.context/dip-pulse-server.log}"
@@ -97,10 +98,10 @@ if server_running; then
   info "Background preview server is already running with PID $(cat "$PID_FILE")."
   echo "Vorschau aktualisiert: ${URL} — Seite im Browser neu laden (Cmd-R)."
 else
-  info "Starting background preview server on port ${PORT}."
+  info "Starting background preview server on ${BIND}:${PORT}."
   mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")"
   info "Server output will be written to ${LOG_FILE}."
-  nohup python3 -m http.server "$PORT" --directory "$OUTPUT_DIR" >"$LOG_FILE" 2>&1 &
+  nohup python3 -m http.server "$PORT" --bind "$BIND" --directory "$OUTPUT_DIR" >"$LOG_FILE" 2>&1 &
   echo $! >"$PID_FILE"
   info "Background preview server started with PID $(cat "$PID_FILE")."
   disown 2>/dev/null || true
