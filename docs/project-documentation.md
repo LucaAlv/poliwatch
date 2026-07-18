@@ -308,6 +308,7 @@ Common options:
 | `--preserve-existing-dossiers` | off | Keep cached dossier JSON files visible in the generated catalog |
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
 | `--vote-scan-pages N` | `30` | Bundestag roll-call vote list pages scanned per sitting |
+| `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
 | `--sleep SECONDS` | `0.0` | Delay between DIP API requests |
 | `--no-abgeordnetenwatch` | off | Skip speaker and vote-member profile resolution |
 | `--abgeordnetenwatch-cache PATH` | `OUTPUT_DIR/data/abgeordnetenwatch-cache.json` | Profile cache location |
@@ -354,6 +355,13 @@ python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-persist --n
 ```
 
 ### Validation/Debug Commands
+
+The validation script accepts the same roll-call scraping controls as the site builder:
+
+| Option | Default | Effect |
+|---|---:|---|
+| `--vote-scan-pages N` | `30` | Bundestag roll-call vote list pages scanned for same-day matches |
+| `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
 
 Fetch and inspect one protocol as JSON:
 
@@ -418,6 +426,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `ANTHROPIC_API_KEY` | build/validation | Only Anthropic summaries | Anthropic summary generation |
 | `GEMINI_API_KEY` | build/validation | Only Gemini summaries | Gemini summary generation |
 | `GOOGLE_API_KEY` | validation | Optional Gemini fallback | Alternative Gemini key name |
+| `BT_ROLL_CALL_LIST_ID` | build/validation | No | Bundestag roll-call vote filterlist id override; `--roll-call-list-id` wins when both are set |
 | `PORT` | preview script | No | HTTP server port |
 | `PREVIEW_BIND` | preview script | No | HTTP server bind host; defaults to localhost-only |
 | `CONDUCTOR_PORT` | preview script | No | Port fallback inside Conductor |
@@ -554,6 +563,20 @@ scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-abgeordnet
 ### Summary generation fails
 
 Use `--summary-mode off` or the default build behavior (`reuse`) while debugging. Use `required` only when a failed summary should fail the whole command.
+
+### Roll-call vote scraping warnings
+
+Roll-call votes are scraped from Bundestag HTML list/detail pages. If the list page returns HTML but no parseable vote entries, the build prints a `warning:` line and adds a German warning to the validation report. This usually means the Bundestag page markup changed or the filterlist id rotated.
+
+Try the current Bundestag filterlist id with either the CLI flag or environment variable:
+
+```bash
+python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
+  --roll-call-list-id NEW-ID \
+  --no-roster
+
+BT_ROLL_CALL_LIST_ID=NEW-ID python3 scripts/validate_dip_protocol.py --document-number 21/87
+```
 
 ## Recommended Development Workflow
 

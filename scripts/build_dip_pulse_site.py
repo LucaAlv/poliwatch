@@ -492,6 +492,7 @@ def write_report_and_page(
     sleep: float,
     person_limit: int,
     vote_scan_pages: int,
+    roll_call_list_id: str | None,
     summary_mode: str,
     summary_provider: str,
     anthropic_api_key: str | None,
@@ -509,6 +510,7 @@ def write_report_and_page(
         limit_tops=None,
         person_limit=person_limit,
         vote_scan_pages=vote_scan_pages,
+        roll_call_list_id=roll_call_list_id,
         summary_mode=effective_summary_mode,
         summary_provider=summary_provider,
         anthropic_api_key=anthropic_api_key,
@@ -4840,6 +4842,13 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="Number of Bundestag roll-call vote list pages to scan per sitting.",
     )
+    parser.add_argument(
+        "--roll-call-list-id",
+        help=(
+            "Bundestag roll-call vote filterlist id. "
+            f"Defaults to {dip.ROLL_CALL_LIST_ID_ENV} or {dip.DEFAULT_ROLL_CALL_LIST_ID}."
+        ),
+    )
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional delay between DIP API requests.")
     parser.add_argument(
         "--no-abgeordnetenwatch",
@@ -4964,6 +4973,7 @@ def main() -> int:
                     sleep=args.sleep,
                     person_limit=args.person_limit,
                     vote_scan_pages=args.vote_scan_pages,
+                    roll_call_list_id=args.roll_call_list_id,
                     summary_mode=args.summary_mode,
                     summary_provider=args.summary_provider,
                     anthropic_api_key=args.anthropic_api_key,
