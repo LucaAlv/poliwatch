@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site
@@ -10,6 +11,43 @@ import persist_dip_pulse_store as pulse_store
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
+    def test_write_report_reuses_catalog_protocol_metadata(self) -> None:
+        protocol = {
+            "id": "5805",
+            "dokumentnummer": "21/87",
+            "fundstelle": {"xml_url": "https://example.test/protocol.xml"},
+        }
+        report = {"protocol": {"id": "5805"}, "agenda_items": []}
+        expected_entry = {"report": report}
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(build_dip_pulse_site.dip, "build_report", return_value=report) as build_report,
+            mock.patch.object(
+                build_dip_pulse_site,
+                "write_report_files",
+                return_value=expected_entry,
+            ),
+        ):
+            entry = build_dip_pulse_site.write_report_and_page(
+                protocol=protocol,
+                output_dir=Path(tmp),
+                api_key="test-key",
+                sleep=0,
+                person_limit=0,
+                vote_scan_pages=0,
+                roll_call_list_id=None,
+                summary_mode="off",
+                summary_provider="auto",
+                anthropic_api_key=None,
+                gemini_api_key=None,
+                summary_model=None,
+                existing_report=None,
+            )
+
+        self.assertIs(entry, expected_entry)
+        self.assertIs(build_report.call_args.kwargs["protocol"], protocol)
+
     def test_collect_abgeordnete_groups_rows_sharing_external_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
@@ -83,4 +121,3 @@ class CollectAbgeordneteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
