@@ -1,0 +1,63 @@
+<dbtplenarprotokoll wahlperiode="20" sitzung-nr="999" sitzung-datum="15.05.2024" sitzung-start-uhrzeit="09:00" sitzung-ende-uhrzeit="12:00" start-seitennr="101">
+  <vorspann>
+    <inhaltsverzeichnis>
+      <ivz-block>
+        <ivz-block-titel>TOP 1 Beratung Testgesetz <a href="https://example.test/20-123.pdf">20/123</a></ivz-block-titel>
+        <xref rid="R1" pnr="101" div="A">101</xref>
+        <xref rid="R2" pnr="102" div="C">102</xref>
+      </ivz-block>
+      <ivz-block>
+        <ivz-block-titel>TOP 2 Fragestunde</ivz-block-titel>
+        <xref rid="R3" pnr="103" div="B">103</xref>
+      </ivz-block>
+    </inhaltsverzeichnis>
+  </vorspann>
+  <sitzungsverlauf>
+    <tagesordnungspunkt top-id="T1">
+      <p klasse="T_NaS">TOP 1 Beratung Testgesetz</p>
+      <p klasse="T_Ueberweisung">Ueberweisung an den Testausschuss</p>
+      <rede id="R1">
+        <p klasse="redner">
+          <redner id="11001">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Ada</vorname>
+              <nachname>Lovelace</nachname>
+              <fraktion>SPD</fraktion>
+            </name>
+          </redner>
+        </p>
+        <p>Erster Absatz der Rede.</p>
+        <p>Zweiter Absatz der Rede.</p>
+      </rede>
+      <rede id="R2">
+        <p klasse="redner">
+          <redner id="11002">
+            <name>
+              <vorname>Bruno</vorname>
+              <nachname>Beispiel</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>
+        </p>
+        <p>Eine Gegenrede.</p>
+      </rede>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="T2">
+      <p klasse="T_NaS">TOP 2 Fragestunde</p>
+      <rede id="R3">
+        <p klasse="redner">
+          <redner id="11003">
+            <name>
+              <vorname>Clara</vorname>
+              <nachname>Kontrolle</nachname>
+              <fraktion>FDP</fraktion>
+            </name>
+          </redner>
+        </p>
+        <p>Eine Nachfrage.</p>
+      </rede>
+    </tagesordnungspunkt>
+  </sitzungsverlauf>
+</dbtplenarprotokoll>
+

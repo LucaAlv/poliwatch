@@ -1,0 +1,229 @@
+{
+  "protocol": {
+    "id": "pp-test-1",
+    "dokumentnummer": "20/999",
+    "datum": "2024-05-15",
+    "titel": "Plenarprotokoll 20/999",
+    "verteildatum": "2024-05-16",
+    "pdf_url": "https://example.test/pp.pdf",
+    "xml_url": "https://example.test/pp.xml",
+    "xml_header": {
+      "wahlperiode": "20",
+      "sitzung_nr": "999"
+    }
+  },
+  "sampled_people": [
+    {
+      "id": "dip-ada",
+      "titel": "Ada Lovelace, MdB, SPD",
+      "fraktion": "SPD",
+      "funktion": "Mitglied",
+      "wahlperiode": "20"
+    }
+  ],
+  "agenda_items": [
+    {
+      "index": 1,
+      "top_id": "T1",
+      "heading": "TOP 1 Beratung Testgesetz",
+      "page_range": {
+        "start": {
+          "page": 101,
+          "quadrant": "A"
+        },
+        "end": {
+          "page": 102,
+          "quadrant": "C"
+        }
+      },
+      "xml_drucksachen": [
+        {
+          "dokumentnummer": "20/123",
+          "url": "https://example.test/20-123.pdf"
+        }
+      ],
+      "api": {
+        "positions": [
+          {
+            "id": "pos-1",
+            "vorgang_id": "vorgang-1",
+            "vorgangsposition": "Beratung",
+            "vorgangstyp": "Gesetzgebung",
+            "titel": "Testgesetz",
+            "dokumentart": "Drucksache",
+            "aktivitaet_anzahl": 2,
+            "source": {
+              "dokumentnummer": "20/123",
+              "seite": "101",
+              "anfangsseite": "101",
+              "endseite": "102",
+              "pdf_url": "https://example.test/20-123.pdf",
+              "xml_url": "https://example.test/20-123.xml"
+            },
+            "mitberaten": []
+          }
+        ],
+        "linked_drucksachen": [
+          {
+            "dokumentnummer": "20/456",
+            "url": "https://example.test/20-456.pdf",
+            "drucksachetyp": "Beschlussempfehlung",
+            "datum": "2024-05-14",
+            "titel": "Beschlussempfehlung zum Testgesetz",
+            "urheber": [
+              "Testausschuss"
+            ],
+            "vorgang_id": "vorgang-1",
+            "vorgangsposition_id": "pos-1"
+          }
+        ]
+      },
+      "xml_speakers": [
+        {
+          "rede_id": "R1",
+          "source_page": {
+            "page": 101,
+            "quadrant": "A"
+          },
+          "speaker": {
+            "xml_redner_id": "11001",
+            "display_name": "Ada Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "fraktion": "SPD",
+            "abgeordnetenwatch": {
+              "id": 77,
+              "url": "https://www.abgeordnetenwatch.de/profile/ada-lovelace"
+            }
+          },
+          "paragraph_count": 2,
+          "char_count": 43,
+          "text": "Erster Absatz. Zweiter Absatz.",
+          "paragraphs": [
+            "Erster Absatz.",
+            "Zweiter Absatz."
+          ],
+          "snippet": "Erster Absatz."
+        },
+        {
+          "rede_id": "R2",
+          "source_page": {
+            "page": 102,
+            "quadrant": "C"
+          },
+          "speaker": {
+            "xml_redner_id": "11002",
+            "display_name": "Bruno Beispiel",
+            "first_name": "Bruno",
+            "last_name": "Beispiel",
+            "fraktion": "CDU/CSU"
+          },
+          "paragraph_count": 1,
+          "char_count": 15,
+          "text": "Eine Gegenrede.",
+          "paragraphs": [
+            "Eine Gegenrede."
+          ],
+          "snippet": "Eine Gegenrede."
+        }
+      ],
+      "votes": [
+        {
+          "id": "12345",
+          "date": "2024-05-15",
+          "topic": "Energie",
+          "title": "Abstimmung zur Drucksache 20/123",
+          "description": "Beschluss zum Testgesetz",
+          "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=12345",
+          "document_numbers": [
+            "20/123"
+          ],
+          "total": {
+            "yes": 10,
+            "no": 5,
+            "abstain": 2,
+            "absent": 1
+          },
+          "fractions": [
+            {
+              "name": "SPD",
+              "counts": {
+                "yes": 8,
+                "no": 0,
+                "abstain": 1,
+                "absent": 0
+              },
+              "total": 9,
+              "leading_vote": "yes"
+            },
+            {
+              "name": "CDU/CSU",
+              "counts": {
+                "yes": 1,
+                "no": 5,
+                "abstain": 0,
+                "absent": 0
+              },
+              "total": 6,
+              "leading_vote": "no"
+            }
+          ],
+          "members": [
+            {
+              "name": "Ada Lovelace",
+              "faction": "SPD",
+              "vote": "yes",
+              "profile_url": "https://www.bundestag.de/abgeordnete/ada-lovelace"
+            },
+            {
+              "name": "Bruno Beispiel",
+              "faction": "CDU/CSU",
+              "vote": "no",
+              "profile_url": "https://www.bundestag.de/abgeordnete/bruno-beispiel"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "top_id": "T2",
+      "heading": "TOP 2 Fragestunde",
+      "page_range": {
+        "start": {
+          "page": 103,
+          "quadrant": "B"
+        },
+        "end": {
+          "page": 103,
+          "quadrant": "B"
+        }
+      },
+      "xml_speakers": [
+        {
+          "rede_id": "R3",
+          "source_page": {
+            "page": 103,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11003",
+            "display_name": "Clara Kontrolle",
+            "first_name": "Clara",
+            "last_name": "Kontrolle",
+            "fraktion": "FDP"
+          },
+          "paragraph_count": 1,
+          "char_count": 14,
+          "text": "Eine Nachfrage.",
+          "paragraphs": [
+            "Eine Nachfrage."
+          ],
+          "snippet": "Eine Nachfrage."
+        }
+      ],
+      "votes": []
+    }
+  ]
+}
+

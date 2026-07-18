@@ -19,6 +19,9 @@ The codebase is intentionally small. There is no package manager or web framewor
 |-- docs/
 |   |-- design/bundestag-pulse-design.md
 |   `-- project-documentation.md
+|-- tests/
+|   |-- fixtures/
+|   `-- test_*.py
 `-- scripts/
     |-- preview_dip_pulse_site.sh
     |-- build_dip_pulse_site.py
@@ -227,6 +230,17 @@ GEMINI_API_KEY=
 Copy the keys you need into `.env.local`. That file is gitignored. `DIP_API_KEY` is required for online DIP fetches. LLM keys are only needed when summaries are generated or refreshed.
 
 ## Important Commands
+
+### Running Tests
+
+The automated test suite uses only Python's standard-library `unittest` module. It runs from committed fixtures under `tests/fixtures/` and does not require network access, `.context/`, or `.env.local`.
+
+```bash
+python3 -m py_compile scripts/*.py
+python3 -m unittest discover -s tests -v
+```
+
+GitHub Actions runs the same checks on Python 3.11, 3.12, and 3.13.
 
 ### Preview Site Commands
 
