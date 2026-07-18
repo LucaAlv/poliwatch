@@ -518,7 +518,7 @@ def write_report_and_page(
         summary_model=summary_model,
         sleep=sleep,
     )
-    report = dip.build_report(args)
+    report = dip.build_report(args, protocol=protocol)
     if summary_mode == "reuse":
         reuse_existing_llm_summaries(report, existing_report)
     enrich_report_with_profiles(report, profile_resolver)

@@ -1227,14 +1227,18 @@ def enrich_with_api(
     }
 
 
-def build_report(args: argparse.Namespace) -> dict[str, Any]:
+def build_report(
+    args: argparse.Namespace,
+    protocol: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     load_local_env()
     api_key = args.api_key or os.environ.get("DIP_API_KEY")
     if not api_key:
         raise DipError("Provide a DIP API key via --api-key or DIP_API_KEY.")
 
     client = ApiClient(api_key=api_key, sleep_seconds=args.sleep)
-    protocol = find_protocol(client, args.protocol_id, args.document_number)
+    if protocol is None:
+        protocol = find_protocol(client, args.protocol_id, args.document_number)
     fundstelle = protocol.get("fundstelle") or {}
     xml_url = fundstelle.get("xml_url")
     if not xml_url:

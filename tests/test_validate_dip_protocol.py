@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from argparse import Namespace
+from unittest import mock
 
 import _support  # noqa: F401
 import validate_dip_protocol as dip
@@ -8,6 +10,83 @@ from _support import FIXTURES
 
 
 class ValidateDipProtocolHelperTests(unittest.TestCase):
+    def test_build_report_fetches_protocol_when_none_is_preloaded(self) -> None:
+        protocol = {
+            "id": "5805",
+            "dokumentnummer": "21/87",
+            "fundstelle": {"xml_url": "https://example.test/protocol.xml"},
+        }
+        args = Namespace(
+            api_key="test-key",
+            sleep=0,
+            protocol_id="5805",
+            document_number=None,
+            person_limit=0,
+            vote_scan_pages=0,
+            roll_call_list_id=None,
+            limit_tops=None,
+        )
+        parsed_xml = {"xml_protocol": {}, "agenda_items": []}
+        enrichment = {
+            "agenda_items": [],
+            "api_totals": {},
+            "warnings": [],
+            "sampled_people": [],
+            "api_records": {},
+        }
+
+        with (
+            mock.patch.object(dip, "find_protocol", return_value=protocol) as find_protocol,
+            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
+            mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
+            mock.patch.object(dip, "enrich_with_llm_summaries"),
+        ):
+            report = dip.build_report(args)
+
+        find_protocol.assert_called_once()
+        _, protocol_id, document_number = find_protocol.call_args.args
+        self.assertEqual(protocol_id, "5805")
+        self.assertIsNone(document_number)
+        self.assertEqual(report["protocol"]["id"], "5805")
+
+    def test_build_report_uses_preloaded_protocol_without_refetching_it(self) -> None:
+        protocol = {
+            "id": "5805",
+            "dokumentnummer": "21/87",
+            "fundstelle": {"xml_url": "https://example.test/protocol.xml"},
+        }
+        args = Namespace(
+            api_key="test-key",
+            sleep=0,
+            protocol_id="5805",
+            document_number=None,
+            person_limit=0,
+            vote_scan_pages=0,
+            roll_call_list_id=None,
+            limit_tops=None,
+        )
+        parsed_xml = {"xml_protocol": {}, "agenda_items": []}
+        enrichment = {
+            "agenda_items": [],
+            "api_totals": {},
+            "warnings": [],
+            "sampled_people": [],
+            "api_records": {},
+        }
+
+        with (
+            mock.patch.object(dip, "find_protocol") as find_protocol,
+            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "parse_protocol_xml", return_value=parsed_xml),
+            mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
+            mock.patch.object(dip, "enrich_with_llm_summaries"),
+        ):
+            report = dip.build_report(args, protocol=protocol)
+
+        find_protocol.assert_not_called()
+        self.assertEqual(report["protocol"]["id"], "5805")
+
     def test_vote_helpers(self) -> None:
         counts = dip.vote_counts_from_csv("10, 5, 2, 1")
         self.assertEqual(counts, {"yes": 10, "no": 5, "abstain": 2, "absent": 1})
@@ -91,4 +170,3 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
