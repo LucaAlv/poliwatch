@@ -120,13 +120,70 @@ def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: in
     return selected
 
 
+_VOTE_MEMBER_NAME_PARTICLES = {
+    "auf",
+    "da",
+    "das",
+    "de",
+    "del",
+    "den",
+    "der",
+    "di",
+    "dos",
+    "du",
+    "la",
+    "le",
+    "ten",
+    "ter",
+    "und",
+    "van",
+    "vom",
+    "von",
+    "zu",
+    "zum",
+    "zur",
+}
+
+_VOTE_MEMBER_TITLES = {"dr", "prof", "professor"}
+
+
+def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
+    """Conservative first/last split for Bundestag roll-call member names."""
+    text = " ".join(str(name or "").replace("\xa0", " ").split()).strip()
+    text = re.sub(r",\s*MdB\b.*$", "", text, flags=re.I).strip()
+    if not text:
+        return None, None
+    if "," in text:
+        last, first = (part.strip() for part in text.split(",", 1))
+        return first or None, last or None
+
+    tokens = text.split()
+    while tokens and tokens[0].strip(".").casefold() in _VOTE_MEMBER_TITLES:
+        tokens.pop(0)
+    while tokens and tokens[-1].strip(",.").casefold() == "mdb":
+        tokens.pop()
+    if not tokens:
+        return None, None
+
+    start = len(tokens) - 1
+    while start > 0 and tokens[start - 1].strip(".").casefold() in _VOTE_MEMBER_NAME_PARTICLES:
+        start -= 1
+    return None, " ".join(tokens[start:])
+
+
+def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
+    return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
+
+
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
-    """Attach abgeordnetenwatch profile links to every speaker in the report.
+    """Attach abgeordnetenwatch profile links to speakers and vote members.
 
     Each speaker dict gains an ``abgeordnetenwatch`` key holding the resolved
     profile (or ``None`` when no confident match exists). xml_speakers and
     xml_speakers_first share speaker objects for the first speeches, so the
-    presence check keeps each speaker resolved at most once.
+    presence check keeps each speaker resolved at most once. Roll-call vote
+    members use the same name+party resolver path with a conservative surname
+    heuristic because Bundestag vote data only exposes a display name.
     """
     if resolver is None:
         return
@@ -141,6 +198,20 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
                     first_name=speaker.get("first_name"),
                     last_name=speaker.get("last_name"),
                     fraktion=speaker.get("fraktion"),
+                )
+        for vote in _iter_report_votes(item):
+            for member in vote.get("members") or []:
+                if not isinstance(member, dict) or "abgeordnetenwatch" in member:
+                    continue
+                first_name, last_name = _vote_member_name_parts(member.get("name"))
+                member["abgeordnetenwatch"] = (
+                    resolver.resolve(
+                        first_name=first_name,
+                        last_name=last_name,
+                        fraktion=member.get("faction"),
+                    )
+                    if last_name
+                    else None
                 )
 
 
@@ -2651,7 +2722,7 @@ def ingest_mdb_roster(
                 now=now,
                 display_name=display_name,
                 party_id=party_id,
-                identity_key=pulse_store.mp_identity(dip_person_id=compact.get("id")),
+                identity_key=pulse_store.mp_identity(aw_politician_id=aw_id, dip_person_id=compact.get("id")),
                 dip_person_id=compact.get("id"),
                 title=compact.get("titel"),
                 function=funktion,
@@ -2697,12 +2768,53 @@ def _mp_keys(row: dict[str, Any]) -> list[str]:
     return keys
 
 
+def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
+    ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
+    if row.get("aw_politician_id") is not None:
+        ids["aw"].add(str(row["aw_politician_id"]))
+    if row.get("dip_person_id"):
+        ids["dip"].add(str(row["dip_person_id"]))
+    if row.get("xml_redner_id"):
+        ids["xml"].add(str(row["xml_redner_id"]))
+    if row.get("profile_url"):
+        ids["profile"].add(str(row["profile_url"]))
+    return ids
+
+
+def _merge_external_ids(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
+    merged: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
+    for row in rows:
+        for kind, values in _mp_external_ids(row).items():
+            merged[kind].update(values)
+    return merged
+
+
+def _external_ids_conflict(left: dict[str, set[str]], right: dict[str, set[str]]) -> bool:
+    for kind in left:
+        if left[kind] and right[kind] and not (left[kind] & right[kind]):
+            return True
+    return False
+
+
 def _clean_mp_name(name: Any) -> str:
     # Roster display names are the verbose DIP "titel" ("Dr. Carolin Wagner, MdB,
     # SPD"); trim the ", MdB…" tail for a clean profile heading. Speaker names
     # (plain) pass through unchanged.
     text = str(name or "").strip()
     return text.split(", MdB")[0].strip() or text
+
+
+def _normalized_mp_name(name: Any) -> str:
+    return re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip()
+
+
+def _normalized_mp_party(party: Any) -> str:
+    text = str(party or "").strip()
+    if not text:
+        return ""
+    normalized = dip.normalize_faction(text)
+    tokens = sorted(aw._party_tokens(normalized))
+    return "|".join(tokens) if tokens else normalized.casefold()
 
 
 def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -2792,6 +2904,27 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 union(row["id"], first_for_key[key])
             else:
                 first_for_key[key] = row["id"]
+
+    def component_external_ids(node: int) -> dict[str, set[str]]:
+        root = find(node)
+        return _merge_external_ids([row for row in rows if find(row["id"]) == root])
+
+    def can_union_by_name_party(a: int, b: int) -> bool:
+        return not _external_ids_conflict(component_external_ids(a), component_external_ids(b))
+
+    name_party_buckets: dict[tuple[str, str], list[int]] = {}
+    for row in rows:
+        name_key = _normalized_mp_name(row.get("display_name"))
+        party_key = _normalized_mp_party(row.get("party"))
+        if name_key and party_key:
+            name_party_buckets.setdefault((name_key, party_key), []).append(row["id"])
+
+    for ids in name_party_buckets.values():
+        ids.sort()
+        for index, left in enumerate(ids):
+            for right in ids[index + 1 :]:
+                if find(left) != find(right) and can_union_by_name_party(left, right):
+                    union(left, right)
 
     components: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
@@ -4711,7 +4844,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-abgeordnetenwatch",
         action="store_true",
-        help="Skip linking speakers to their abgeordnetenwatch.de profiles.",
+        help="Skip linking speakers and vote members to their abgeordnetenwatch.de profiles.",
     )
     parser.add_argument(
         "--abgeordnetenwatch-cache",

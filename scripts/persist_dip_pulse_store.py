@@ -305,12 +305,15 @@ def speaker_party_name(speaker: dict[str, Any] | None) -> str | None:
 
 def mp_identity(
     *,
+    aw_politician_id: Any = None,
     dip_person_id: Any = None,
     xml_redner_id: Any = None,
     profile_url: Any = None,
     display_name: Any = None,
     party_name: Any = None,
 ) -> str:
+    if aw_politician_id:
+        return f"aw:{aw_politician_id}"
     if dip_person_id:
         return f"dip:{dip_person_id}"
     if xml_redner_id:
@@ -710,6 +713,7 @@ def persist_speeches(
             display_name=display_name,
             party_id=party_id,
             identity_key=mp_identity(
+                aw_politician_id=aw_politician_id,
                 xml_redner_id=speaker.get("xml_redner_id"),
                 display_name=display_name,
                 party_name=party_name,
@@ -841,17 +845,22 @@ def persist_votes(
         for member in vote.get("members") or []:
             party_name = normalize_faction(member.get("faction"))
             party_id = upsert_party(conn, party_name, now)
+            profile = member.get("abgeordnetenwatch") or {}
+            aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
+            profile_url = profile.get("url") or member.get("profile_url")
             mp_id = upsert_mp(
                 conn,
                 now=now,
                 display_name=clean(member.get("name")) or "Unbekannt",
                 party_id=party_id,
                 identity_key=mp_identity(
-                    profile_url=member.get("profile_url"),
+                    aw_politician_id=aw_politician_id,
+                    profile_url=profile_url,
                     display_name=member.get("name"),
                     party_name=party_name,
                 ),
-                profile_url=member.get("profile_url"),
+                profile_url=profile_url,
+                aw_politician_id=aw_politician_id,
             )
             conn.execute(
                 """
