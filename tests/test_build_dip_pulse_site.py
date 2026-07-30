@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import _support  # noqa: F401
@@ -11,6 +12,65 @@ import persist_dip_pulse_store as pulse_store
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
+    def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            database_path = output_dir / "data" / "bundestag-pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE parties (
+                      id INTEGER PRIMARY KEY,
+                      name TEXT NOT NULL UNIQUE,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE mps (
+                      id INTEGER PRIMARY KEY,
+                      identity_key TEXT NOT NULL UNIQUE,
+                      dip_person_id TEXT UNIQUE,
+                      xml_redner_id TEXT,
+                      display_name TEXT NOT NULL,
+                      title TEXT,
+                      function TEXT,
+                      wahlperiode TEXT,
+                      profile_url TEXT,
+                      party_id INTEGER,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL
+                    );
+                    """
+                )
+            finally:
+                conn.close()
+
+            args = SimpleNamespace(
+                output_dir=output_dir,
+                database_path=None,
+                offline=True,
+                no_persist=False,
+            )
+            with (
+                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached"}]),
+                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[]),
+                mock.patch.object(
+                    build_dip_pulse_site,
+                    "render_site",
+                    return_value=output_dir / "index.html",
+                ),
+            ):
+                self.assertEqual(build_dip_pulse_site.main(), 0)
+
+            conn = pulse_store.connect(database_path)
+            try:
+                columns = {row["name"] for row in conn.execute("PRAGMA table_info(mps)")}
+            finally:
+                conn.close()
+            self.assertIn("birth_year", columns)
+
     def test_write_report_reuses_catalog_protocol_metadata(self) -> None:
         protocol = {
             "id": "5805",
