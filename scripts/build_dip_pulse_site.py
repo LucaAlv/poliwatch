@@ -4915,6 +4915,7 @@ def main() -> int:
         if not args.no_persist and database_path.exists():
             store = pulse_store.connect(database_path)
             try:
+                pulse_store.initialize(store)
                 abg_mps, mp_lookup = collect_abgeordnete(store)
             finally:
                 store.close()

@@ -28,4 +28,4 @@ Stop the background preview server:
 scripts/preview_dip_pulse_site.sh stop
 ```
 
-See [docs/project-documentation.md](docs/project-documentation.md) for the full command and flag reference.
+See [docs/project-documentation.md](docs/project-documentation.md) for the full command and flag reference. Release history is in [CHANGELOG.md](CHANGELOG.md), and tracked follow-up work is in [TODOS.md](TODOS.md).
