@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [0.0.1.0] - 2026-07-30
 
-### Added
+### For contributors
 
-- Added automatic skill routing for common planning, review, QA, and shipping tasks.
-- Added regression coverage for offline previews built from legacy SQLite caches.
+- Project agents now automatically select the right workflow for common planning, review, QA, and shipping tasks.
+- Regression coverage now protects offline preview builds that reuse legacy SQLite caches.
 
 ### Fixed
 
-- Offline previews now migrate cached SQLite databases before reading MP biography fields.
+- Offline previews now open legacy SQLite caches without crashing when newer MP biography fields are missing.
