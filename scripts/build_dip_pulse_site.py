@@ -51,6 +51,10 @@ def protocol_sort_key(protocol: dict[str, Any]) -> tuple[str, str]:
     return (str(protocol.get("datum") or ""), str(protocol.get("id") or ""))
 
 
+def entry_sort_key(entry: dict[str, Any]) -> tuple[str, str]:
+    return protocol_sort_key((entry.get("report") or {}).get("protocol") or {})
+
+
 def protocol_xml_url(protocol: dict[str, Any]) -> str:
     fundstelle = protocol.get("fundstelle") or {}
     return str(fundstelle.get("xml_url") or "").strip()
@@ -4675,6 +4679,15 @@ def render_site(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
 ) -> Path:
+    # Every page below treats entries[0] and protocols[0] as the current pulse, so
+    # both lists must run newest sitting first. The offline render does not do that
+    # on its own: it walks cached dossiers in glob order, where the slug 20-100
+    # sorts ahead of 21-84 and a 2023 sitting wins the pulse. Sorting protocols is
+    # a guard rather than a fix, because every caller happens to sort already and
+    # the DIP catalog arrives newest-first, but that ordering is undocumented.
+    entries = sorted(entries, key=entry_sort_key, reverse=True)
+    protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
+
     database_href = None
     if not no_persist:
         try:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 import _support  # noqa: F401
@@ -177,6 +179,111 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 self.assertEqual(lookup["xml:11001"], roster_mp_id)
             finally:
                 conn.close()
+
+
+class CurrentPulseOrderTests(unittest.TestCase):
+    """The site treats entries[0]/protocols[0] as the current pulse."""
+
+    @staticmethod
+    def _protocol(document_number: str, protocol_id: str, datum: str) -> dict[str, Any]:
+        return {
+            "id": protocol_id,
+            "dokumentnummer": document_number,
+            "datum": datum,
+            "titel": f"Protokoll der Sitzung {document_number}",
+        }
+
+    @staticmethod
+    def _entry(output_dir: Path, protocol: dict[str, Any]) -> dict[str, Any]:
+        report_path, page_path, slug = build_dip_pulse_site.report_paths(
+            output_dir, protocol["dokumentnummer"]
+        )
+        return {
+            "report": {"protocol": protocol, "agenda_items": [], "validation_summary": {}},
+            "report_path": report_path,
+            "page_path": page_path,
+            "slug": slug,
+        }
+
+    @staticmethod
+    def _output_dir(tmp: str) -> Path:
+        output_dir = Path(tmp) / "site"
+        for name in ("data", "protocols", "bills", "abgeordnete"):
+            (output_dir / name).mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    def test_render_site_puts_newest_sitting_first(self) -> None:
+        # Cached dossiers reach render_site in glob order, where the slug "20-100"
+        # sorts before "21-84" even though its sitting is three years older.
+        old = self._protocol("20/100", "4200", "2023-04-27")
+        new = self._protocol("21/84", "5799", "2026-06-12")
+        protocols = [old, new]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            entries = [self._entry(output_dir, old), self._entry(output_dir, new)]
+
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=protocols,
+                entries=entries,
+                abg_mps=[],
+                mp_lookup={},
+            )
+
+            for page in ("puls.html", "index.html", "overview.html", "sources.html"):
+                markup = (output_dir / page).read_text(encoding="utf-8")
+                self.assertIn("21/84", markup, msg=page)
+
+            pulse_markup = (output_dir / "puls.html").read_text(encoding="utf-8")
+            self.assertIn("2026-06-12", pulse_markup)
+            self.assertNotIn("2023-04-27", pulse_markup)
+
+    def test_render_site_writes_catalog_newest_first(self) -> None:
+        # The DIP API orders by aktualisiert, so a corrected old protocol can arrive
+        # ahead of the newest sitting; the cached catalog must still be date-ordered.
+        protocols = [
+            self._protocol("20/100", "4200", "2023-04-27"),
+            self._protocol("21/84", "5799", "2026-06-12"),
+            self._protocol("21/9", "5010", "2025-07-10"),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=protocols,
+                entries=[],
+                abg_mps=[],
+                mp_lookup={},
+            )
+
+            catalog = json.loads(
+                (output_dir / "data" / "plenarprotokoll-catalog.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual([item["dokumentnummer"] for item in catalog], ["21/84", "21/9", "20/100"])
+
+    def test_entry_sort_key_tolerates_incomplete_reports(self) -> None:
+        # A truncated or hand-edited dossier JSON must sort last, not crash the build.
+        complete = {"report": {"protocol": self._protocol("21/84", "5799", "2026-06-12")}}
+        self.assertEqual(build_dip_pulse_site.entry_sort_key(complete), ("2026-06-12", "5799"))
+
+        for label, entry in (
+            ("no report", {"slug": "21-84"}),
+            ("null report", {"report": None}),
+            ("no protocol", {"report": {"agenda_items": []}}),
+            ("null protocol", {"report": {"protocol": None}}),
+            ("no datum", {"report": {"protocol": {"id": "5799"}}}),
+        ):
+            with self.subTest(entry=label):
+                key = build_dip_pulse_site.entry_sort_key(entry)
+                self.assertEqual(key[0], "")
+                self.assertLess(key, build_dip_pulse_site.entry_sort_key(complete))
 
 
 if __name__ == "__main__":
