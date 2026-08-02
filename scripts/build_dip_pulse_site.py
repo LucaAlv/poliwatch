@@ -16,6 +16,17 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
+from features import (
+    CATEGORIES,
+    FEATURES,
+    REGISTRY,
+    FeatureError,
+    Selection,
+    default_selection,
+    resolve,
+    tooling_manifest,
+)
+from features import loader as feature_loader
 
 
 DATABASE_TABLE_DESCRIPTIONS = {
@@ -264,7 +275,9 @@ def write_report_files(
     report: dict[str, Any],
     output_dir: Path,
     mp_lookup: dict[str, int] | None = None,
+    features: Selection | None = None,
 ) -> dict[str, Any]:
+    features = features or default_selection()
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
@@ -272,12 +285,7 @@ def write_report_files(
     page_path.write_text(
         pulse_html.render_html(
             report,
-            home_href="../index.html",
-            pulse_href="../puls.html",
-            overview_href="../overview.html",
-            catalog_href="../api-sitzungen.html",
-            bills_href="../bills/index.html",
-            sources_href="../sources.html",
+            features=features,
             mp_lookup=mp_lookup,
         ),
         encoding="utf-8",
@@ -386,11 +394,12 @@ def rebuild_cached_detail_pages(
     output_dir: Path,
     protocols: list[dict[str, Any]],
     mp_lookup: dict[str, int] | None = None,
+    features: Selection | None = None,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls."""
     entries = []
     for entry in load_existing_detail_entries(output_dir, protocols):
-        entries.append(write_report_files(entry["report"], output_dir, mp_lookup))
+        entries.append(write_report_files(entry["report"], output_dir, mp_lookup, features))
     return entries
 
 
@@ -505,7 +514,9 @@ def write_report_and_page(
     existing_report: dict[str, Any] | None,
     profile_resolver: Any | None = None,
     mp_lookup: dict[str, int] | None = None,
+    features: Selection | None = None,
 ) -> dict[str, Any]:
+    features = features or default_selection()
     effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
     args = argparse.Namespace(
         api_key=api_key,
@@ -523,10 +534,19 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args, protocol=protocol)
-    if summary_mode == "reuse":
-        reuse_existing_llm_summaries(report, existing_report)
-    enrich_report_with_profiles(report, profile_resolver)
-    return write_report_files(report, output_dir, mp_lookup)
+    components = {component.feature.id: component for component in feature_loader.load(features)}
+    enrich_context = {
+        "summary_mode": summary_mode,
+        "existing_report": existing_report,
+        "profile_resolver": profile_resolver,
+        "reuse_existing_llm_summaries": reuse_existing_llm_summaries,
+        "enrich_report_with_profiles": enrich_report_with_profiles,
+    }
+    for feature_id in ("summaries", "aw-profiles"):
+        component = components.get(feature_id)
+        if component:
+            component.enrich_report(report, enrich_context)
+    return write_report_files(report, output_dir, mp_lookup, features)
 
 
 def sqlite_identifier(name: str) -> str:
@@ -679,7 +699,8 @@ def render_database_sample(table: dict[str, Any]) -> str:
     """
 
 
-def render_database_page(database_path: Path, database_href: str | None) -> str:
+def render_database_page(database_path: Path, database_href: str | None, features: Selection | None = None) -> str:
+    features = features or default_selection()
     snapshot = read_database_snapshot(database_path)
     tables = snapshot["tables"]
     table_cards = []
@@ -750,7 +771,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Datenbank</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1004,7 +1025,7 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href="database.html", active="database")}
+    {pulse_html.render_global_header(active="database", features=features)}
     <header class="page-header">
       <div>
         <span class="eyebrow">Transparenz</span>
@@ -1060,7 +1081,43 @@ def render_database_page(database_path: Path, database_href: str | None) -> str:
       }});
     }}
   </script>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def render_database_unavailable_page(features: Selection) -> str:
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Datenbank</title>
+  {pulse_html.page_head(features)}
+  <style>
+    :root {{ --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa; --panel:#fff; --blue:#174ea6; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:var(--ink); background:var(--paper); }}
+    a {{ color:var(--blue); }}
+    .shell {{ max-width:980px; margin:0 auto; padding:24px; }}
+    {pulse_html.global_header_styles()}
+    .panel {{ margin-top:32px; padding:24px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }}
+    .panel h1 {{ margin-top:0; }}
+    .panel p {{ color:var(--muted); line-height:1.55; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(active="database", features=features)}
+    <main class="panel">
+      <span class="eyebrow">Kern-Baustein</span>
+      <h1>Datenbank nicht erzeugt</h1>
+      <p>Dieser Build wurde mit <code>--no-persist</code> gerendert. Ohne SQLite-Datei stehen Tabellen, Beziehungen und Beispielzeilen in dieser Vorschau nicht zur Verfügung.</p>
+      <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um den Datenbank-Explorer zu füllen.</p>
+    </main>
+  </div>
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
@@ -1073,8 +1130,10 @@ def render_landing_page(
     database_page_href: str | None = None,
     protocol_count: int = 0,
     bill_count: int = 0,
+    features: Selection | None = None,
 ) -> str:
     """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
+    features = features or default_selection()
     if entries:
         entry = entries[0]
         report = entry["report"]
@@ -1148,18 +1207,22 @@ def render_landing_page(
             "Der vollständige Katalog aller Plenarprotokolle aus der DIP-API mit erzeugten Dossiers je Sitzung: Tagesordnung, Rednerinnen und Redner, verknüpfte Drucksachen und Roh-API-Daten.",
         ),
         (
-            "Gesetzgebung",
-            "Gesetze verfolgen",
-            "bills/index.html",
-            "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
-        ),
-        (
             "Transparenz",
             "Quellen und Methode",
             "sources.html",
             "Welche offiziellen Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt — die Grundlage für das Neutralitätsversprechen.",
         ),
     ]
+    if "bills" in features:
+        areas.insert(
+            2,
+            (
+                "Gesetzgebung",
+                "Gesetze verfolgen",
+                "bills/index.html",
+                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
+            ),
+        )
     if database_href:
         areas.append(
             (
@@ -1196,7 +1259,7 @@ def render_landing_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Primärquellen-Monitor des Bundestags</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1323,7 +1386,7 @@ def render_landing_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href=database_page_href)}
+    {pulse_html.render_global_header(features=features)}
 
     <section class="hero">
       <div class="hero-copy">
@@ -1368,7 +1431,7 @@ def render_landing_page(
       Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.
     </footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
@@ -1378,7 +1441,9 @@ def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
     database_page_href: str | None = None,
+    features: Selection | None = None,
 ) -> str:
+    features = features or default_selection()
     if not entries:
         return f"""<!doctype html>
 <html lang="de">
@@ -1386,7 +1451,7 @@ def render_front_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1419,7 +1484,7 @@ def render_front_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header()}
+    {pulse_html.render_global_header(features=features)}
     <header class="page-header">
       <h1>Bundestag-Puls</h1>
       <p>Es wurden noch keine Sitzungen erzeugt.</p>
@@ -1428,7 +1493,7 @@ def render_front_page(
       Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
     </footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
@@ -1486,6 +1551,29 @@ def render_front_page(
     else:
         vote_focus = "Für die neueste Auswertung sind noch keine namentlichen Abstimmungen zugeordnet."
         vote_link = f'<a class="feature-link" href="{protocol_href}">Sitzungsbelege prüfen</a>'
+    vote_feature_html = ""
+    if "votes" in features:
+        vote_feature_html = f"""
+      <article class="pulse-feature votes" id="abstimmungen" data-feature="votes">
+        <div class="feature-head">
+          <div>
+            <span class="eyebrow">Abstimmungsverschiebung</span>
+            <h2>Wo Stimmen das Bild verändern</h2>
+          </div>
+          <span class="feature-state">Namentliche Abstimmungen</span>
+        </div>
+        <div class="feature-body">
+          <p>{pulse_html.esc(vote_focus)}</p>
+          <div class="feature-microgrid">
+            <div><span>Zugeordnet</span><strong>{pulse_html.esc(total_votes)}</strong></div>
+            <div><span>TOPs mit Vote</span><strong>{pulse_html.esc(len(vote_items))}</strong></div>
+            <div><span>Quelle</span><strong>BT</strong></div>
+          </div>
+          <p>Fraktionsabweichungen und Veränderungen gegenüber vorherigen Abstimmungen werden hier zur Hauptspur, sobald genügend Vergleichsdaten vorliegen.</p>
+          {vote_link}
+        </div>
+      </article>
+        """
 
     attention_rows = []
     for item in ranked_items[:6]:
@@ -1546,7 +1634,7 @@ def render_front_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Aktueller Lageblick</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1855,7 +1943,7 @@ def render_front_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href=database_page_href, active="pulse")}
+    {pulse_html.render_global_header(active="pulse", features=features)}
     <header class="page-header">
       <div>
         <span class="eyebrow">Aktueller Lageblick</span>
@@ -1921,25 +2009,7 @@ def render_front_page(
           {focus_link}
         </div>
       </article>
-      <article class="pulse-feature votes" id="abstimmungen">
-        <div class="feature-head">
-          <div>
-            <span class="eyebrow">Abstimmungsverschiebung</span>
-            <h2>Wo Stimmen das Bild verändern</h2>
-          </div>
-          <span class="feature-state">Namentliche Abstimmungen</span>
-        </div>
-        <div class="feature-body">
-          <p>{pulse_html.esc(vote_focus)}</p>
-          <div class="feature-microgrid">
-            <div><span>Zugeordnet</span><strong>{pulse_html.esc(total_votes)}</strong></div>
-            <div><span>TOPs mit Vote</span><strong>{pulse_html.esc(len(vote_items))}</strong></div>
-            <div><span>Quelle</span><strong>BT</strong></div>
-          </div>
-          <p>Fraktionsabweichungen und Veränderungen gegenüber vorherigen Abstimmungen werden hier zur Hauptspur, sobald genügend Vergleichsdaten vorliegen.</p>
-          {vote_link}
-        </div>
-      </article>
+      {vote_feature_html}
     </section>
 
     <div class="layout">
@@ -1959,10 +2029,10 @@ def render_front_page(
 
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Plenarprotokoll-Katalog</a><a href="bills/index.html">Gesetze verfolgen</a><a href="sources.html">Quellen und Methode</a></span>
+      <span class="session-links"><a href="overview.html">Plenarprotokoll-Katalog</a>{'<a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''}<a href="sources.html">Quellen und Methode</a><a href="settings.html">Einstellungen</a></span>
     </footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
     """
@@ -2454,7 +2524,8 @@ def bill_styles() -> str:
 """
 
 
-def render_bills_index(bills: list[dict[str, Any]]) -> str:
+def render_bills_index(bills: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or default_selection()
     rows = []
     for bill in bills:
         introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
@@ -2473,7 +2544,7 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
                 </div>
               </div>
               <div class="actions">
-                <button class="follow-button" type="button" data-follow-id="{pulse_html.esc(bill['id'])}" aria-pressed="false">Folgen</button>
+                {'<button class="follow-button" type="button" data-feature="bill-follow" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>' if 'bill-follow' in features else ''}
                 <a class="open-button" href="{pulse_html.esc(bill['slug'])}.html">Details</a>
               </div>
             </article>
@@ -2486,12 +2557,12 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Gesetze verfolgen</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>{bill_styles()}</style>
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="index.html", sources_href="../sources.html", active="bills")}
+    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
         <h1>Gesetze verfolgen</h1>
@@ -2514,13 +2585,18 @@ def render_bills_index(bills: list[dict[str, Any]]) -> str:
     <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_bill_script()}
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
 
 
-def render_bill_detail(bill: dict[str, Any], mp_lookup: dict[str, int] | None = None) -> str:
+def render_bill_detail(
+    bill: dict[str, Any],
+    mp_lookup: dict[str, int] | None = None,
+    features: Selection | None = None,
+) -> str:
+    features = features or default_selection()
     introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
     events = []
     for event in bill.get("events") or []:
@@ -2581,12 +2657,12 @@ def render_bill_detail(bill: dict[str, Any], mp_lookup: dict[str, int] | None = 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{pulse_html.esc(bill.get('title'))} · Bundestag-Puls</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>{bill_styles()}</style>
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="index.html", sources_href="../sources.html", active="bills")}
+    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Gesetz-Navigation">
@@ -2597,7 +2673,7 @@ def render_bill_detail(bill: dict[str, Any], mp_lookup: dict[str, int] | None = 
         <p>Rohdatenübersicht zu Vorgang, Drucksachen, Plenarstellen, Rednern und Abstimmungen.</p>
       </div>
       <div class="actions">
-        <button class="follow-button" type="button" data-follow-id="{pulse_html.esc(bill['id'])}" aria-pressed="false">Folgen</button>
+        {'<button class="follow-button" type="button" data-feature="bill-follow" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>' if 'bill-follow' in features else ''}
       </div>
     </header>
     <section class="summary-grid">
@@ -2644,7 +2720,7 @@ def render_bill_detail(bill: dict[str, Any], mp_lookup: dict[str, int] | None = 
     <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetze verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
   </div>
   {render_bill_script()}
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
@@ -2654,12 +2730,14 @@ def write_bill_pages(
     output_dir: Path,
     bills: list[dict[str, Any]],
     mp_lookup: dict[str, int] | None = None,
+    features: Selection | None = None,
 ) -> dict[str, Any]:
+    features = features or default_selection()
     bills_dir = output_dir / "bills"
     bills_dir.mkdir(parents=True, exist_ok=True)
     for bill in bills:
-        (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill, mp_lookup), encoding="utf-8")
-    (bills_dir / "index.html").write_text(render_bills_index(bills), encoding="utf-8")
+        (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill, mp_lookup, features), encoding="utf-8")
+    (bills_dir / "index.html").write_text(render_bills_index(bills, features), encoding="utf-8")
     data_path = output_dir / "data" / "bills.json"
     data_path.write_text(json.dumps(bills, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {"count": len(bills), "index_path": bills_dir / "index.html", "data_path": data_path}
@@ -3104,7 +3182,8 @@ def _location_label(mp: dict[str, Any]) -> str:
     return " · ".join(p for p in parts if p) or "—"
 
 
-def render_abgeordnete_index(mps: list[dict[str, Any]]) -> str:
+def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or default_selection()
     listed = [mp for mp in mps if mp.get("is_mdb")]
     parties = sorted({mp["party"] for mp in listed if mp.get("party")})
     party_chips = "".join(
@@ -3137,12 +3216,12 @@ def render_abgeordnete_index(mps: list[dict[str, Any]]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Abgeordnete</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>{abgeordnete_styles()}</style>
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="../bills/index.html", abgeordnete_href="index.html", sources_href="../sources.html", active="abgeordnete")}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
@@ -3167,13 +3246,14 @@ def render_abgeordnete_index(mps: list[dict[str, Any]]) -> str:
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
 
 
-def render_abgeordnete_detail(mp: dict[str, Any]) -> str:
+def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = None) -> str:
+    features = features or default_selection()
     profile_link = ""
     if mp.get("profile_url"):
         profile_link = (
@@ -3235,12 +3315,12 @@ def render_abgeordnete_detail(mp: dict[str, Any]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{pulse_html.esc(mp.get('name'))} · Bundestag-Puls</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>{abgeordnete_styles()}</style>
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(home_href="../index.html", pulse_href="../puls.html", overview_href="../overview.html", catalog_href="../api-sitzungen.html", bills_href="../bills/index.html", abgeordnete_href="index.html", sources_href="../sources.html", active="abgeordnete")}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
@@ -3271,28 +3351,33 @@ def render_abgeordnete_detail(mp: dict[str, Any]) -> str:
       </main>
       <aside>
         <section class="panel">
-          <h2>Namentliche Abstimmungen</h2>
-          <ul class="doc-list">{''.join(votes) if votes else '<li>Keine namentlichen Abstimmungen erfasst.</li>'}</ul>
+          <h2 data-feature="votes">Namentliche Abstimmungen</h2>
+          <ul class="doc-list" data-feature="votes">{''.join(votes) if votes else '<li>Keine namentlichen Abstimmungen erfasst.</li>'}</ul>
         </section>
       </aside>
     </div>
     <footer>Diese Seite zeigt nur Felder, die in den Rohdaten vorhanden sind. <a href="index.html">Alle Abgeordnete</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
 
 
-def write_abgeordnete_pages(output_dir: Path, mps: list[dict[str, Any]]) -> dict[str, Any]:
+def write_abgeordnete_pages(
+    output_dir: Path,
+    mps: list[dict[str, Any]],
+    features: Selection | None = None,
+) -> dict[str, Any]:
+    features = features or default_selection()
     abg_dir = output_dir / "abgeordnete"
     abg_dir.mkdir(parents=True, exist_ok=True)
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
     detail_mps = [mp for mp in mps if mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
     for mp in detail_mps:
-        (abg_dir / f"{mp['id']}.html").write_text(render_abgeordnete_detail(mp), encoding="utf-8")
-    (abg_dir / "index.html").write_text(render_abgeordnete_index(mps), encoding="utf-8")
+        (abg_dir / f"{mp['id']}.html").write_text(render_abgeordnete_detail(mp, features), encoding="utf-8")
+    (abg_dir / "index.html").write_text(render_abgeordnete_index(mps, features), encoding="utf-8")
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     listed = sum(1 for mp in mps if mp.get("is_mdb"))
@@ -3306,7 +3391,9 @@ def render_overview(
     database_href: str | None = "data/bundestag-pulse.sqlite",
     database_page_href: str | None = None,
     catalog_href: str = "api-sitzungen.html",
+    features: Selection | None = None,
 ) -> str:
+    features = features or default_selection()
     generated_cards = []
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
     database_page_link = (
@@ -3379,7 +3466,7 @@ def render_overview(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Sitzungen</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -3596,7 +3683,7 @@ def render_overview(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href=database_page_href, active="overview")}
+    {pulse_html.render_global_header(active="overview", features=features)}
     <header class="page-header">
       <div>
         <h1>Bundestag-Puls</h1>
@@ -3639,10 +3726,10 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze verfolgen</a>{database_footer_link} · <a href="sources.html">Quellen und Methode</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a>{' · <a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''}{database_footer_link} · <a href="sources.html">Quellen und Methode</a> · <a href="settings.html">Einstellungen</a>.
     </footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
     """
@@ -3909,7 +3996,9 @@ def render_catalog_page(
     output_dir: Path,
     overview_href: str = "overview.html",
     database_page_href: str | None = None,
+    features: Selection | None = None,
 ) -> str:
+    features = features or default_selection()
     rows, by_period = build_catalog_rows(protocols, detail_entries)
     rows_html = "".join(rows)
     periods_sorted = sorted(by_period.items(), key=lambda item: item[0], reverse=True)
@@ -3933,7 +4022,7 @@ def render_catalog_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Alle API-Sitzungen</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -4282,7 +4371,7 @@ def render_catalog_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href=database_page_href, active="catalog")}
+    {pulse_html.render_global_header(active="catalog", features=features)}
     <header class="page-header">
       <div>
         <h1>Alle API-Sitzungen</h1>
@@ -4333,7 +4422,7 @@ def render_catalog_page(
       <span><span data-result-count>{pulse_html.esc(total)}</span> von {pulse_html.esc(total)} Sitzungen</span>
       <button type="button" class="link-button" data-filter-reset hidden>Filter zurücksetzen</button>
     </div>
-    <section class="developer-panel" data-dossier-command data-output-dir="{pulse_html.esc(str(output_dir))}">
+    {'<section class="developer-panel dev-only" data-feature="dev-view" data-dossier-command data-output-dir="' + pulse_html.esc(str(output_dir)) + '">' if 'dev-view' in features else '<section hidden>'}
       <h2>Dossiers erzeugen</h2>
       <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu. Vorhandene KI-Zusammenfassungen werden wiederverwendet, bis sie aktiv neu erzeugt werden.</p>
       <label class="developer-option">
@@ -4358,7 +4447,7 @@ def render_catalog_page(
     </footer>
   </div>
   {render_catalog_script()}
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
@@ -4368,7 +4457,9 @@ def render_sources_page(
     entries: list[dict[str, Any]],
     database_href: str | None = None,
     database_page_href: str | None = None,
+    features: Selection | None = None,
 ) -> str:
+    features = features or default_selection()
     generated_rows = []
     for entry in entries:
         report = entry["report"]
@@ -4425,7 +4516,7 @@ def render_sources_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bundestag-Puls · Quellen</title>
-  {pulse_html.theme_bootstrap_script()}
+  {pulse_html.page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -4576,7 +4667,7 @@ def render_sources_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(database_href=database_page_href, active="sources")}
+    {pulse_html.render_global_header(active="sources", features=features)}
     <header class="page-header">
       <div>
         <h1>Quellen</h1>
@@ -4610,13 +4701,13 @@ def render_sources_page(
             <p>Dokumentnummern werden aus Protokoll-Links extrahiert und mit DIP-Positionen abgeglichen. PDF-Links erscheinen, wenn der offizielle Datensatz sie enthält.</p>
             <a href="https://dip.bundestag.de">DIP-Dokumentensuche</a>
           </article>
-          <article class="source-card">
+          <article class="source-card" data-feature="votes">
             <span class="eyebrow">Namentliche Abstimmungen</span>
             <h3>Namentliche Abstimmungen</h3>
             <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet.</p>
             <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag namentliche Abstimmungen</a>
           </article>
-          <article class="source-card">
+          <article class="source-card" data-feature="aw-profiles">
             <span class="eyebrow">Abgeordnetenprofile</span>
             <h3>abgeordnetenwatch.de</h3>
             <p>Rednerinnen und Redner werden mit ihrem Profil auf abgeordnetenwatch.de verknüpft — primär über die Bundestags-Redner-ID (ext_id_bundestagsverwaltung), ersatzweise über Name und Fraktion. Die offenen Daten stehen unter CC0.</p>
@@ -4660,13 +4751,70 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Plenarprotokoll-Katalog</a> · <a href="bills/index.html">Gesetze verfolgen</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Plenarprotokoll-Katalog</a>{' · <a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''} · <a href="settings.html">Einstellungen</a>
     </footer>
   </div>
-  {pulse_html.theme_runtime_script()}
+  {pulse_html.page_scripts(features)}
 </body>
 </html>
     """
+
+
+def render_settings_page(features: Selection) -> str:
+    groups = "".join(
+        f'<section class="settings-card settings-group"><h2>{pulse_html.esc(category)}</h2>'
+        f'{pulse_html.render_settings_items(features, category)}</section>'
+        for category in CATEGORIES
+    )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Bausteine</title>
+  {pulse_html.page_head(features)}
+  <style>
+    :root {{ --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa; --panel:#fff; --blue:#174ea6; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:1080px; margin:0 auto; padding:24px; }}
+    {pulse_html.global_header_styles()}
+    .page-header {{ margin-bottom:22px; }}
+    .page-header h1 {{ margin:0; font-size:34px; }}
+    .page-header p {{ max-width:760px; color:var(--muted); line-height:1.55; }}
+    .settings-page-actions {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; }}
+    footer {{ margin-top:24px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(features=features)}
+    <header class="page-header">
+      <span class="eyebrow">Einstellungen</span>
+      <h1>Bausteine</h1>
+      <p>Der Build legt fest, welche Bausteine verfügbar sind. Verfügbare Bausteine lassen sich hier sofort für diesen Browser ein- und ausblenden; diese Auswahl wird lokal gespeichert.</p>
+    </header>
+    <div class="settings-page-actions"><span class="settings-count" data-settings-count></span><button class="settings-reset" type="button" data-settings-reset>Browser-Auswahl zurücksetzen</button></div>
+    <main class="settings-page-grid">{groups}</main>
+    <footer>Kern-Bausteine sind immer aktiv. Nicht verfügbare Bausteine müssen mit dem angezeigten Build-Argument aktiviert werden. <a href="sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def remove_generated_addon_pages(output_dir: Path, directory: str, data_file: str) -> None:
+    """Remove stale generated addon pages when a later build omits that addon."""
+    addon_dir = output_dir / directory
+    if addon_dir.exists():
+        for page in addon_dir.glob("*.html"):
+            page.unlink()
+    data_path = output_dir / "data" / data_file
+    if data_path.exists():
+        data_path.unlink()
 
 
 def render_site(
@@ -4678,7 +4826,9 @@ def render_site(
     entries: list[dict[str, Any]],
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
+    features: Selection | None = None,
 ) -> Path:
+    features = features or default_selection()
     # Every page below treats entries[0] and protocols[0] as the current pulse, so
     # both lists must run newest sitting first. The offline render does not do that
     # on its own: it walks cached dossiers in glob order, where the slug 20-100
@@ -4698,20 +4848,42 @@ def render_site(
 
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    bills = collect_bill_pages(entries)
-    bill_output = write_bill_pages(output_dir, bills, mp_lookup)
-    abg_output = write_abgeordnete_pages(output_dir, abg_mps)
-    print(
-        f"abgeordnete: {abg_output['count']} gelistet, "
-        f"{abg_output['detail_count']} Profilseiten",
-        file=sys.stderr,
-    )
+    components = {component.feature.id: component for component in feature_loader.load(features)}
+    component_context = {
+        "selection": features,
+        "entries": entries,
+        "abg_mps": abg_mps,
+        "mp_lookup": mp_lookup,
+        "collect_bill_pages": collect_bill_pages,
+        "write_bill_pages": write_bill_pages,
+        "write_abgeordnete_pages": write_abgeordnete_pages,
+    }
+    bill_output: dict[str, Any] = {"count": 0}
+    if "bills" in features:
+        bill_output = components["bills"].write_pages(output_dir, component_context)
+    else:
+        remove_generated_addon_pages(output_dir, "bills", "bills.json")
+    if "mp-pages" in features:
+        abg_output = components["mp-pages"].write_pages(output_dir, component_context)
+        print(
+            f"abgeordnete: {abg_output['count']} gelistet, "
+            f"{abg_output['detail_count']} Profilseiten",
+            file=sys.stderr,
+        )
+    else:
+        remove_generated_addon_pages(output_dir, "abgeordnete", "abgeordnete.json")
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
     overview_path = output_dir / "overview.html"
     catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
     database_page_path = output_dir / "database.html"
+    settings_path = output_dir / "settings.html"
+    feature_manifest_path = output_dir / "data" / "features.json"
+    feature_manifest_path.write_text(
+        json.dumps(tooling_manifest(features), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     index_path.write_text(
         render_landing_page(
             entries,
@@ -4719,11 +4891,12 @@ def render_site(
             database_page_href=database_page_href,
             protocol_count=len(protocols),
             bill_count=int(bill_output["count"]),
+            features=features,
         ),
         encoding="utf-8",
     )
     pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, database_page_href=database_page_href),
+        render_front_page(entries, database_href=database_href, database_page_href=database_page_href, features=features),
         encoding="utf-8",
     )
     overview_path.write_text(
@@ -4733,6 +4906,7 @@ def render_site(
             bill_count=int(bill_output["count"]),
             database_href=database_href,
             database_page_href=database_page_href,
+            features=features,
         ),
         encoding="utf-8",
     )
@@ -4743,21 +4917,140 @@ def render_site(
             catalog_path,
             output_dir,
             database_page_href=database_page_href,
+            features=features,
         ),
         encoding="utf-8",
     )
     sources_path.write_text(
-        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href),
+        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href, features=features),
         encoding="utf-8",
     )
     if database_page_href:
-        database_page_path.write_text(render_database_page(database_path, database_href), encoding="utf-8")
+        database_page_path.write_text(render_database_page(database_path, database_href, features), encoding="utf-8")
+    else:
+        database_page_path.write_text(render_database_unavailable_page(features), encoding="utf-8")
+    settings_path.write_text(render_settings_page(features), encoding="utf-8")
     return index_path
+
+
+def _split_feature_tokens(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [token.strip() for token in value.split(",") if token.strip()]
+    if isinstance(value, (list, tuple)):
+        tokens: list[str] = []
+        for item in value:
+            tokens.extend(_split_feature_tokens(item))
+        return tokens
+    raise FeatureError(f"Ungültige Baustein-Konfiguration: {value!r}")
+
+
+def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]) -> None:
+    for token in tokens:
+        operation = token[:1] if token[:1] in {"+", "-"} else "+"
+        feature_id = token[1:] if token[:1] in {"+", "-"} else token
+        if feature_id not in REGISTRY:
+            resolve(base=current, enable=(feature_id,))
+        if operation == "+":
+            current.add(feature_id)
+            vetoes.discard(feature_id)
+        else:
+            current.discard(feature_id)
+            vetoes.add(feature_id)
+
+
+def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FeatureError(f"Baustein-Datei {path} konnte nicht gelesen werden: {exc}") from exc
+    if isinstance(payload, list):
+        replacement = _split_feature_tokens(payload)
+        current.clear()
+        vetoes.clear()
+        _apply_feature_tokens(current, replacement, vetoes)
+        return
+    if not isinstance(payload, dict):
+        raise FeatureError(f"Baustein-Datei {path} muss ein Objekt oder eine Liste enthalten.")
+    if "features" in payload:
+        replacement = _split_feature_tokens(payload["features"])
+        current.clear()
+        vetoes.clear()
+        if replacement == ["all"]:
+            current.update(REGISTRY)
+        else:
+            _apply_feature_tokens(current, replacement, vetoes)
+    _apply_feature_tokens(current, [f"+{item.lstrip('+')}" for item in _split_feature_tokens(payload.get("enable"))], vetoes)
+    _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
+
+
+def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
+    current = set(default_selection().ids)
+    vetoes: set[str] = set()
+    for path in (root / "features.json", root / "features.local.json"):
+        if path.exists():
+            _apply_features_file(path, current, vetoes)
+    features_file = getattr(args, "features_file", None)
+    if features_file:
+        _apply_features_file(Path(features_file), current, vetoes)
+    _apply_feature_tokens(current, _split_feature_tokens(os.environ.get("BUNDESTAG_PULSE_FEATURES")), vetoes)
+
+    explicit_base = getattr(args, "features", None)
+    if explicit_base:
+        tokens = _split_feature_tokens(explicit_base)
+        current.clear()
+        vetoes.clear()
+        if tokens == ["all"]:
+            current.update(REGISTRY)
+        else:
+            _apply_feature_tokens(current, tokens, vetoes)
+
+    # Legacy aliases are deliberately centralized here.
+    if getattr(args, "no_roster", False):
+        _apply_feature_tokens(current, ["-mp-roster"], vetoes)
+    if getattr(args, "no_abgeordnetenwatch", False):
+        _apply_feature_tokens(current, ["-aw-profiles"], vetoes)
+    if getattr(args, "summary_mode", None) == "off":
+        _apply_feature_tokens(current, ["-summaries"], vetoes)
+
+    for feature_id in getattr(args, "enable", None) or []:
+        _apply_feature_tokens(current, [f"+{feature_id}"], vetoes)
+    for feature_id in getattr(args, "disable", None) or []:
+        _apply_feature_tokens(current, [f"-{feature_id}"], vetoes)
+    return resolve(base=current, disable=vetoes)
+
+
+def apply_to_args(args: argparse.Namespace, selection: Selection) -> None:
+    args.no_roster = "mp-roster" not in selection
+    args.no_abgeordnetenwatch = "aw-profiles" not in selection
+    if "summaries" not in selection:
+        args.summary_mode = "off"
+    if "votes" not in selection:
+        args.vote_scan_pages = 0
+
+
+def print_feature_table(selection: Selection) -> None:
+    print("ID                 Status       Kategorie      Beschreibung")
+    print("-" * 92)
+    for feature in FEATURES:
+        if feature.core:
+            status = "Kern"
+        elif feature.id in selection:
+            status = "aktiv"
+        else:
+            status = "aus"
+        print(f"{feature.id:<18} {status:<12} {feature.category:<14} {feature.description}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
+    parser.add_argument("--enable", metavar="ID", action="append", default=[], help="Baustein aktivieren; wiederholbar.")
+    parser.add_argument("--disable", metavar="ID", action="append", default=[], help="Baustein deaktivieren; wiederholbar.")
+    parser.add_argument("--features", help="Kommagetrennte Basis-Auswahl; 'all' aktiviert alle Bausteine.")
+    parser.add_argument("--features-file", type=Path, help="Zusätzliche JSON-Konfiguration für Bausteine.")
+    parser.add_argument("--list-features", action="store_true", help="Alle Bausteine auflisten und ohne Netzwerkzugriff beenden.")
     parser.add_argument(
         "--limit",
         type=int,
@@ -4906,11 +5199,25 @@ def main() -> int:
     dip.load_local_env()
     args = parse_args()
 
+    try:
+        features = resolve_from_args(args, root=Path(__file__).resolve().parents[1])
+    except FeatureError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if getattr(args, "list_features", False):
+        print_feature_table(features)
+        return 0
+    apply_to_args(args, features)
+    # Import addon modules only after this module and the renderer are fully loaded.
+    components = {component.feature.id: component for component in feature_loader.load(features)}
+
     output_dir = args.output_dir
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
-    (output_dir / "bills").mkdir(parents=True, exist_ok=True)
-    (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
+    if "bills" in features:
+        (output_dir / "bills").mkdir(parents=True, exist_ok=True)
+    if "mp-pages" in features:
+        (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
     if args.offline:
@@ -4929,11 +5236,18 @@ def main() -> int:
             store = pulse_store.connect(database_path)
             try:
                 pulse_store.initialize(store)
-                abg_mps, mp_lookup = collect_abgeordnete(store)
+                if "mp-pages" in features:
+                    component_context = {
+                        "selection": features,
+                        "collect_abgeordnete": collect_abgeordnete,
+                    }
+                    components["mp-pages"].after_persist(store, component_context)
+                    abg_mps = component_context["abg_mps"]
+                    mp_lookup = component_context["mp_lookup"]
             finally:
                 store.close()
 
-        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup)
+        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features)
         index_path = render_site(
             output_dir=output_dir,
             database_path=database_path,
@@ -4942,6 +5256,7 @@ def main() -> int:
             entries=entries,
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
+            features=features,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -4995,6 +5310,7 @@ def main() -> int:
                     summary_model=args.summary_model,
                     existing_report=load_existing_report(output_dir, protocol),
                     profile_resolver=profile_resolver,
+                    features=features,
                 )
                 for protocol in detail_protocols
             ]
@@ -5004,22 +5320,28 @@ def main() -> int:
                 store = pulse_store.connect(database_path)
                 try:
                     pulse_store.initialize(store)
-                    if not args.no_roster:
-                        roster_stats = ingest_mdb_roster(
-                            client,
-                            store,
-                            wahlperiode=args.roster_wahlperiode,
-                            profile_resolver=profile_resolver,
-                        )
-                        print(
-                            f"roster: {roster_stats['mdb']} MdBs of {roster_stats['fetched']} persons "
-                            f"(WP{args.roster_wahlperiode}), {roster_stats['enriched']} enriched",
-                            file=sys.stderr,
-                        )
-                    abg_mps, mp_lookup = collect_abgeordnete(store)
+                    if "mp-pages" in features:
+                        component_context = {
+                            "selection": features,
+                            "client": client,
+                            "roster_wahlperiode": args.roster_wahlperiode,
+                            "profile_resolver": profile_resolver,
+                            "ingest_mdb_roster": ingest_mdb_roster,
+                            "collect_abgeordnete": collect_abgeordnete,
+                        }
+                        components["mp-pages"].after_persist(store, component_context)
+                        roster_stats = component_context.get("roster_stats")
+                        if roster_stats:
+                            print(
+                                f"roster: {roster_stats['mdb']} MdBs of {roster_stats['fetched']} persons "
+                                f"(WP{args.roster_wahlperiode}), {roster_stats['enriched']} enriched",
+                                file=sys.stderr,
+                            )
+                        abg_mps = component_context["abg_mps"]
+                        mp_lookup = component_context["mp_lookup"]
                 finally:
                     store.close()
-                entries = [write_report_files(entry["report"], output_dir, mp_lookup) for entry in entries]
+                entries = [write_report_files(entry["report"], output_dir, mp_lookup, features) for entry in entries]
         finally:
             if profile_resolver is not None:
                 profile_resolver.save()
@@ -5044,6 +5366,7 @@ def main() -> int:
         entries=entries,
         abg_mps=abg_mps,
         mp_lookup=mp_lookup,
+        features=features,
     )
     print(index_path)
     return 0

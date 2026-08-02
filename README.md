@@ -1,6 +1,6 @@
 # Bundestag-Puls
 
-Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. It turns DIP Plenarprotokoll XML, DIP API metadata, scraped roll-call vote pages, and abgeordnetenwatch.de profiles into a local HTML preview and an optional SQLite entity graph.
+Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. Its strict default build contains the DIP-backed sitting catalog, protocol dossiers, and SQLite explorer; optional Bausteine add votes, summaries, profiles, MP pages, bill tracking, and developer views.
 
 ## Prerequisites
 
@@ -14,6 +14,12 @@ Offline preview from cached data:
 
 ```bash
 scripts/preview_dip_pulse_site.sh
+```
+
+Enable every optional Baustein for a full local preview:
+
+```bash
+scripts/preview_dip_pulse_site.sh --features all
 ```
 
 Update one protocol online, then serve the preview:

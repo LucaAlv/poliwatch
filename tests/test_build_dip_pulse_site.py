@@ -11,6 +11,7 @@ from unittest import mock
 import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
+from features import all_selection, default_selection
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
@@ -284,6 +285,99 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 key = build_dip_pulse_site.entry_sort_key(entry)
                 self.assertEqual(key[0], "")
                 self.assertLess(key, build_dip_pulse_site.entry_sort_key(complete))
+
+    def test_reduced_render_skips_addon_pages_and_dangling_links(self) -> None:
+        protocol = self._protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol],
+                entries=[self._entry(output_dir, protocol)],
+                abg_mps=[],
+                mp_lookup={},
+                features=default_selection(),
+            )
+            self.assertFalse((output_dir / "bills" / "index.html").exists())
+            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
+            rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
+            self.assertNotIn('href="bills/index.html"', rendered)
+            self.assertNotIn('href="../bills/index.html"', rendered)
+
+    def test_reduced_render_removes_stale_addon_pages(self) -> None:
+        protocol = self._protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            kwargs = dict(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol],
+                entries=[self._entry(output_dir, protocol)],
+                abg_mps=[],
+                mp_lookup={},
+            )
+            build_dip_pulse_site.render_site(**kwargs, features=all_selection())
+            self.assertTrue((output_dir / "bills" / "index.html").exists())
+            self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            build_dip_pulse_site.render_site(**kwargs, features=default_selection())
+            self.assertFalse((output_dir / "bills" / "index.html").exists())
+            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertFalse((output_dir / "data" / "bills.json").exists())
+            self.assertFalse((output_dir / "data" / "abgeordnete.json").exists())
+
+    def test_feature_manifest_and_bootstrap_are_written_everywhere(self) -> None:
+        protocol = self._protocol("21/84", "5799", "2026-06-12")
+        selection = all_selection()
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol],
+                entries=[],
+                abg_mps=[],
+                mp_lookup={},
+                features=selection,
+            )
+            manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
+            available = {item["id"] for item in manifest["features"] if item["available"]}
+            self.assertEqual(available, selection.ids)
+            for page in output_dir.rglob("*.html"):
+                markup = page.read_text(encoding="utf-8")
+                self.assertIn("bundestag-pulse-features", markup, msg=str(page))
+                self.assertIn("data-feature-", markup, msg=str(page))
+                self.assertIn("settings-toggle", markup, msg=str(page))
+
+    def test_settings_page_distinguishes_core_and_unbuilt_features(self) -> None:
+        markup = build_dip_pulse_site.render_settings_page(default_selection())
+        self.assertIn("is-unavailable", markup)
+        self.assertIn("--enable votes", markup)
+        self.assertRegex(markup, r'data-feature-toggle="dip-fetch"[^>]*checked disabled')
+        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*disabled')
+
+
+class FeatureArgumentCompatibilityTests(unittest.TestCase):
+    def test_legacy_flags_map_with_sparse_namespaces(self) -> None:
+        args = SimpleNamespace(no_roster=True, no_abgeordnetenwatch=True, summary_mode="off")
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        self.assertNotIn("mp-roster", selection)
+        self.assertNotIn("aw-profiles", selection)
+        self.assertNotIn("summaries", selection)
+
+    def test_cli_enable_overrides_file_disable_and_cli_disable_wins(self) -> None:
+        args = SimpleNamespace(enable=["votes"], disable=["bills"], features=None, features_file=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "features.json").write_text('{"disable":["votes"]}', encoding="utf-8")
+            with mock.patch.dict("os.environ", {"BUNDESTAG_PULSE_FEATURES": "+bills"}):
+                selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        self.assertIn("votes", selection)
+        self.assertNotIn("bills", selection)
 
 
 if __name__ == "__main__":
