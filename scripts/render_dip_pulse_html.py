@@ -11,6 +11,16 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from features import (
+    CATEGORIES,
+    FEATURES,
+    NAV_ITEMS,
+    Selection,
+    default_selection,
+    feature_css,
+    manifest_json,
+)
+
 
 PARTY_COLORS = {
     "CDU/CSU": "#222222",
@@ -161,6 +171,77 @@ def global_header_styles() -> str:
       border-color:#bdd0ea;
       color:var(--blue, #174ea6);
     }
+    .settings-wrap { position:relative; }
+    .settings-toggle, .settings-close, .settings-reset, .settings-more {
+      appearance:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:34px;
+      padding:5px 10px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--ink);
+      font:inherit;
+      font-size:13px;
+      font-weight:750;
+      cursor:pointer;
+    }
+    .settings-toggle { width:36px; padding:5px; }
+    .settings-toggle svg { width:17px; height:17px; }
+    .settings-panel[hidden] { display:none !important; }
+    .settings-panel {
+      position:absolute;
+      z-index:100;
+      top:calc(100% + 9px);
+      right:0;
+      width:min(390px, calc(100vw - 28px));
+      max-height:min(650px, calc(100vh - 90px));
+      overflow:auto;
+      padding:0;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:var(--panel);
+      color:var(--ink);
+      box-shadow:0 16px 42px rgba(23, 26, 31, .18);
+    }
+    .settings-panel-head, .settings-panel-foot {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:13px 15px;
+      border-bottom:1px solid var(--line);
+    }
+    .settings-panel-head strong { font-size:15px; }
+    .settings-panel-foot { border-top:1px solid var(--line); border-bottom:0; }
+    .settings-close { min-height:28px; width:30px; padding:3px; }
+    .settings-groups { padding:8px 15px; }
+    .settings-group { padding:7px 0; background:var(--panel); }
+    .settings-group h3 { margin:0 0 4px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .settings-item {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:10px 0;
+      border-bottom:1px solid var(--line);
+    }
+    .settings-item:last-child { border-bottom:0; }
+    .settings-switch-text { min-width:0; }
+    .settings-switch-text strong { display:block; color:var(--ink); font-size:13px; }
+    .settings-switch-text span, .settings-hint, .settings-count { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.35; }
+    .settings-switch { flex:0 0 auto; margin-top:2px; accent-color:var(--blue); cursor:pointer; }
+    .settings-switch:disabled { cursor:not-allowed; }
+    .settings-badge { display:inline-flex !important; width:max-content; padding:2px 5px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2, #f4f6f9); }
+    .settings-item.is-unavailable { opacity:.72; }
+    .settings-hint code { font-size:10px; }
+    .settings-more { text-decoration:none; }
+    .settings-card { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px; }
+    .settings-page-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+    .settings-page-grid .settings-group { padding:18px; }
+    .settings-page-grid .settings-group h2 { margin:0 0 10px; font-size:18px; }
     .theme-toggle-icon {
       width:15px;
       font-size:14px;
@@ -168,7 +249,8 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] a { color:var(--blue) !important; }
     :root[data-theme="dark"] :is(
-      .site-nav a, .theme-toggle, .button, .btn, .dev-toggle,
+      .site-nav a, .theme-toggle, .settings-toggle, .settings-close, .settings-reset, .settings-more,
+      .button, .btn, .dev-toggle,
       .page-actions a, .session-links a, .pulse-actions a,
       .feature-link, .doc-link, .top-jump
     ) {
@@ -187,7 +269,8 @@ def global_header_styles() -> str:
       .stat-band div, .principle, .area-card, .latest-panel, .pulse-feature,
       .context-panel, .feature-microgrid div, .attention-card, .top-card,
       aside, .session-llm-summary, .llm-summary, .source-strip,
-      .api-overview, .api-json, .speech-card, .table-nav a
+      .api-overview, .api-json, .speech-card, .table-nav a,
+      .settings-panel, .settings-card, .settings-group
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
@@ -206,7 +289,7 @@ def global_header_styles() -> str:
       .llm-summary > p, .summary-sources p, .speech-text,
       .speaker-row span, .position-list span, .doc-list span,
       .activity-list span, .people-list span, .feature-state,
-      .aw-profile, .table-head strong
+      .aw-profile, .table-head strong, .settings-switch-text strong, .settings-panel-head strong
     ) {
       color:var(--ink) !important;
     }
@@ -216,7 +299,7 @@ def global_header_styles() -> str:
       .principle p, .area-card p, .metric span, .feature-microgrid span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
-      .session-summary-note
+      .session-summary-note, .settings-switch-text span, .settings-hint, .settings-count
     ) {
       color:var(--muted) !important;
     }
@@ -233,7 +316,8 @@ def global_header_styles() -> str:
       .session-summary-item, .summary-sources li, .member-votes,
       .position-list li, .doc-list li, .activity-list li,
       .people-list li, .people-section, .raw-top-api,
-      .dev-top-details, .speech-section, details pre
+      .dev-top-details, .speech-section, details pre,
+      .settings-item, .settings-panel-head, .settings-panel-foot
     ) {
       border-color:var(--line) !important;
     }
@@ -245,8 +329,17 @@ def global_header_styles() -> str:
       .site-header { align-items:flex-start; }
       .site-nav { justify-content:flex-start; }
       .site-actions { width:100%; justify-content:flex-start; }
+      .settings-panel {
+        position:fixed;
+        top:70px;
+        left:14px;
+        right:14px;
+        width:auto;
+        max-height:calc(100vh - 84px);
+      }
+      .settings-page-grid { grid-template-columns:1fr; }
     }
-    """
+    """ + "\n    " + feature_css()
 
 
 def theme_bootstrap_script() -> str:
@@ -272,60 +365,222 @@ def theme_runtime_script() -> str:
     (() => {
       const key = "bundestag-pulse-theme";
       const root = document.documentElement;
-      const toggle = document.querySelector("[data-theme-toggle]");
+      const toggles = document.querySelectorAll("[data-theme-toggle]");
       const setTheme = (theme, persist = true) => {
         const next = theme === "dark" ? "dark" : "light";
         root.dataset.theme = next;
-        if (toggle) {
+        toggles.forEach((toggle) => {
           const dark = next === "dark";
           toggle.setAttribute("aria-pressed", dark ? "true" : "false");
           toggle.setAttribute("aria-label", dark ? "Helles Design aktivieren" : "Dunkles Design aktivieren");
           toggle.querySelector("[data-theme-icon]").textContent = dark ? "☀" : "☾";
           toggle.querySelector("[data-theme-label]").textContent = dark ? "Hell" : "Dunkel";
-        }
+        });
         if (persist) {
           try { window.localStorage.setItem(key, next); } catch (_) {}
         }
       };
       setTheme(root.dataset.theme, false);
-      if (toggle) {
+      toggles.forEach((toggle) => {
         toggle.addEventListener("click", () => {
           setTheme(root.dataset.theme === "dark" ? "light" : "dark");
         });
-      }
+      });
     })();
   </script>
 """
 
 
-def render_global_header(
-    *,
-    home_href: str | None = "index.html",
-    pulse_href: str | None = "puls.html",
-    overview_href: str | None = "overview.html",
-    catalog_href: str | None = "api-sitzungen.html",
-    bills_href: str | None = "bills/index.html",
-    abgeordnete_href: str | None = "abgeordnete/index.html",
-    database_href: str | None = None,
-    sources_href: str | None = "sources.html",
-    active: str | None = None,
-) -> str:
-    brand_href = home_href or "#"
-    items = [
-        ("pulse", "Aktueller Puls", pulse_href),
-        ("overview", "Plenarprotokoll-Katalog", overview_href),
-        ("catalog", "Alle API-Sitzungen", catalog_href),
-        ("bills", "Gesetze verfolgen", bills_href),
-        ("abgeordnete", "Abgeordnete", abgeordnete_href),
-        ("database", "Datenbank", database_href),
-        ("sources", "Quellen und Methode", sources_href),
-    ]
-    links = []
-    for key, label, href in items:
-        if not href:
+def feature_bootstrap_script(selection: Selection | None = None) -> str:
+    selection = selection or default_selection()
+    return f"""
+  <script>
+    (() => {{
+      const key = "bundestag-pulse-features";
+      const manifest = {manifest_json(selection)};
+      window.__BUNDESTAG_PULSE_FEATURES__ = manifest;
+      let overrides = {{}};
+      try {{ overrides = JSON.parse(window.localStorage.getItem(key) || "{{}}") || {{}}; }} catch (_) {{}}
+      for (const [id, feature] of Object.entries(manifest)) {{
+        let on = Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v);
+        if (!feature.a) on = false;
+        if (feature.c) on = true;
+        document.documentElement.toggleAttribute(`data-feature-${{id}}`, on);
+      }}
+    }})();
+  </script>
+"""
+
+
+def feature_runtime_script(selection: Selection | None = None) -> str:
+    selection = selection or default_selection()
+    return """
+  <script>
+    (() => {
+      const key = "bundestag-pulse-features";
+      const root = document.documentElement;
+      const manifest = window.__BUNDESTAG_PULSE_FEATURES__ || {};
+      const readOverrides = () => {
+        try { return JSON.parse(window.localStorage.getItem(key) || "{}") || {}; } catch (_) { return {}; }
+      };
+      const updateControls = () => {
+        const overrides = readOverrides();
+        document.querySelectorAll("[data-feature-toggle]").forEach((control) => {
+          const id = control.dataset.featureToggle;
+          const feature = manifest[id];
+          if (!feature) return;
+          const inherited = !Object.prototype.hasOwnProperty.call(overrides, id);
+          control.checked = root.hasAttribute(`data-feature-${id}`);
+          control.dataset.inherited = inherited ? "true" : "false";
+        });
+        document.querySelectorAll("[data-settings-count]").forEach((node) => {
+          const count = Object.keys(manifest).filter((id) => manifest[id].a && root.hasAttribute(`data-feature-${id}`)).length;
+          node.textContent = `${count} aktiv`;
+        });
+      };
+      const setFeature = (id, on, persist = true) => {
+        const feature = manifest[id];
+        if (!feature || !feature.a || feature.c || feature.m === "n") return;
+        root.toggleAttribute(`data-feature-${id}`, Boolean(on));
+        if (persist) {
+          const overrides = readOverrides();
+          overrides[id] = Boolean(on);
+          try { window.localStorage.setItem(key, JSON.stringify(overrides)); } catch (_) {}
+        }
+        updateControls();
+      };
+      document.querySelectorAll("[data-feature-toggle]").forEach((control) => {
+        control.addEventListener("change", () => setFeature(control.dataset.featureToggle, control.checked));
+      });
+      document.querySelectorAll("[data-settings-reset]").forEach((button) => {
+        button.addEventListener("click", () => {
+          try { window.localStorage.removeItem(key); } catch (_) {}
+          for (const [id, feature] of Object.entries(manifest)) {
+            root.toggleAttribute(`data-feature-${id}`, Boolean(feature.a && (feature.c || feature.v)));
+          }
+          updateControls();
+        });
+      });
+      document.querySelectorAll("[data-settings-wrap]").forEach((wrap) => {
+        const button = wrap.querySelector("[data-settings-toggle]");
+        const panel = wrap.querySelector("[data-settings-panel]");
+        if (!button || !panel) return;
+        const close = (restore = false) => {
+          panel.hidden = true;
+          button.setAttribute("aria-expanded", "false");
+          if (restore) button.focus();
+        };
+        const open = () => {
+          panel.hidden = false;
+          button.setAttribute("aria-expanded", "true");
+          panel.querySelector("button, input, a")?.focus();
+        };
+        button.addEventListener("click", () => panel.hidden ? open() : close());
+        panel.querySelector("[data-settings-close]")?.addEventListener("click", () => close(true));
+        document.addEventListener("pointerdown", (event) => { if (!panel.hidden && !wrap.contains(event.target)) close(); });
+        wrap.addEventListener("focusout", (event) => { if (!panel.hidden && event.relatedTarget && !wrap.contains(event.relatedTarget)) close(); });
+        document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !panel.hidden) close(true); });
+      });
+      document.querySelectorAll(".dev-toggle").forEach((button) => {
+        const sync = () => {
+          const enabled = root.hasAttribute("data-feature-dev-view");
+          button.setAttribute("aria-pressed", enabled ? "true" : "false");
+          button.textContent = enabled ? "Dev-Ansicht aus" : "Dev-Ansicht";
+        };
+        button.addEventListener("click", () => { setFeature("dev-view", !root.hasAttribute("data-feature-dev-view")); sync(); });
+        sync();
+      });
+      updateControls();
+    })();
+  </script>
+"""
+
+
+def page_head(selection: Selection | None = None) -> str:
+    return theme_bootstrap_script() + feature_bootstrap_script(selection)
+
+
+def page_scripts(selection: Selection | None = None) -> str:
+    return feature_runtime_script(selection) + theme_runtime_script()
+
+
+SETTINGS_ICON_SVG = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+    '<path fill="currentColor" d="M19.4 13a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L15 3.3h-4L10.6 6a8 8 0 0 0-1.7 1L6.5 6l-2 3.4L6.6 11a7.8 7.8 0 0 0-.1 1 7.8 7.8 0 0 0 .1 1l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.7h4l.4-2.7a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/>'
+    '</svg>'
+)
+
+
+def render_settings_items(selection: Selection, category: str | None = None) -> str:
+    labels = {feature.id: feature.label for feature in FEATURES}
+    rows = []
+    for feature in FEATURES:
+        if category and feature.category != category:
             continue
-        current = ' aria-current="page"' if active == key else ""
-        links.append(f'<a href="{esc(href)}"{current}>{esc(label)}</a>')
+        available = feature.id in selection
+        toggleable = available and not feature.core and feature.client_mode != "none"
+        checked = " checked" if available and feature.default_visible else ""
+        disabled = "" if toggleable else " disabled"
+        classes = "settings-item" + (" is-unavailable" if not available else "")
+        if not available:
+            status = (
+                '<span class="settings-badge">Nicht in diesem Build</span>'
+                f'<span class="settings-hint"><code>--enable {esc(feature.id)}</code></span>'
+                + (f'<span class="settings-hint">{esc(feature.rebuild_hint)}</span>' if feature.rebuild_hint else "")
+            )
+        elif feature.core:
+            status = '<span class="settings-badge">Immer aktiv</span>'
+        elif feature.client_mode == "none":
+            status = '<span class="settings-badge">Nur beim Build</span>'
+        else:
+            status = ""
+        enhancement = ""
+        if feature.enhances:
+            enhancement = (
+                '<span class="settings-hint">Ergänzt: '
+                + esc(", ".join(labels[feature_id] for feature_id in feature.enhances))
+                + ".</span>"
+            )
+        rows.append(
+            f'<label class="{classes}" data-settings-item="{esc(feature.id)}">'
+            f'<span class="settings-switch-text"><strong>{esc(feature.label)}</strong>'
+            f'<span>{esc(feature.description)}</span>{enhancement}{status}</span>'
+            f'<input class="settings-switch" type="checkbox" role="switch" data-feature-toggle="{esc(feature.id)}"'
+            f'{checked}{disabled}></label>'
+        )
+    return "".join(rows)
+
+
+def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
+    groups = "".join(
+        f'<section class="settings-group"><h3>{esc(category)}</h3>{render_settings_items(selection, category)}</section>'
+        for category in CATEGORIES
+    )
+    panel_id = "site-settings-panel"
+    prefix = "../" * depth
+    return (
+        '<div class="settings-wrap" data-settings-wrap>'
+        f'<button class="settings-toggle" type="button" data-settings-toggle aria-expanded="false" aria-controls="{panel_id}" aria-label="Bausteine einstellen">{SETTINGS_ICON_SVG}</button>'
+        f'<div class="settings-panel" id="{panel_id}" data-settings-panel role="region" aria-label="Bausteine" aria-modal="false" hidden>'
+        '<div class="settings-panel-head"><strong>Bausteine</strong><button class="settings-close" type="button" data-settings-close aria-label="Schließen">×</button></div>'
+        f'<div class="settings-groups">{groups}</div>'
+        '<div class="settings-panel-foot"><span class="settings-count" data-settings-count></span>'
+        f'<a class="settings-more" href="{prefix}settings.html">Alle Einstellungen</a></div>'
+        '</div></div>'
+    )
+
+
+def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
+    features = features or default_selection()
+    prefix = "../" * depth
+    brand_href = f"{prefix}index.html"
+    links = []
+    for item in NAV_ITEMS:
+        if item.feature_id and item.feature_id not in features:
+            continue
+        current = ' aria-current="page"' if active == item.key else ""
+        feature_attr = f' data-feature="{item.feature_id}"' if item.feature_id else ""
+        links.append(f'<a href="{esc(prefix + item.path)}"{current}{feature_attr}>{esc(item.label)}</a>')
     return (
         '<div class="site-header">'
         f'<a class="site-brand" href="{esc(brand_href)}">'
@@ -339,6 +594,7 @@ def render_global_header(
         '<span class="theme-toggle-icon" data-theme-icon aria-hidden="true">☾</span>'
         '<span data-theme-label>Dunkel</span>'
         '</button>'
+        f'{render_settings_panel(features, depth=depth)}'
         '</div>'
         "</div>"
     )
@@ -395,7 +651,7 @@ def render_profile_icon(speaker: dict[str, Any] | None) -> str:
     label = profile.get("label") or "abgeordnetenwatch.de"
     tooltip = f"Profil von {label} auf abgeordnetenwatch.de"
     return (
-        f'<a class="aw-profile-icon" href="{esc(profile["url"])}" target="_blank" '
+        f'<a class="aw-profile-icon" data-feature="aw-profiles" href="{esc(profile["url"])}" target="_blank" '
         f'rel="noopener" title="{esc(tooltip)}" aria-label="{esc(tooltip)}">'
         f"{PROFILE_ICON_SVG}</a>"
     )
@@ -408,7 +664,7 @@ def render_profile_link(speaker: dict[str, Any] | None) -> str:
         return ""
     return (
         '<p class="aw-profile-line">'
-        f'<a class="aw-profile" href="{esc(profile["url"])}" target="_blank" rel="noopener">'
+        f'<a class="aw-profile" data-feature="aw-profiles" href="{esc(profile["url"])}" target="_blank" rel="noopener">'
         f"{PROFILE_ICON_SVG}<span>Profil auf abgeordnetenwatch.de</span>"
         '<span class="aw-ext" aria-hidden="true">↗</span></a>'
         "</p>"
@@ -485,77 +741,6 @@ def render_vote_pills(counts: dict[str, Any]) -> str:
         f'<span class="vote-pill vote-{key}">{esc(label)} <strong>{esc(counts.get(key) or 0)}</strong></span>'
         for key, label in VOTE_LABELS.items()
     )
-
-
-def render_vote_summary(item: dict[str, Any]) -> str:
-    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
-    if not votes:
-        return ""
-
-    panels = []
-    for vote in votes:
-        fractions = vote.get("fractions") or []
-        fraction_rows = []
-        for fraction in fractions:
-            name = fraction.get("name") or "Unbekannt"
-            counts = fraction.get("counts") or {}
-            leading = fraction.get("leading_vote") or "absent"
-            color = PARTY_COLORS.get(name, "#6b7280")
-            fraction_rows.append(
-                '<div class="vote-fraction-row">'
-                f'<span class="party-dot" style="background:{color}"></span>'
-                f'<strong>{esc(name)}</strong>'
-                f'{render_vote_stack(counts, int(fraction.get("total") or 0))}'
-                f'<em class="vote-pill vote-{esc(leading)}">{esc(VOTE_LABELS.get(leading, leading))}</em>'
-                "</div>"
-            )
-
-        member_groups: dict[str, list[dict[str, Any]]] = {}
-        for member in vote.get("members") or []:
-            member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
-
-        member_sections = []
-        for faction in sorted(member_groups, key=lambda f: (f == "fraktionslos", f)):
-            members = sorted(member_groups[faction], key=lambda m: str(m.get("name") or ""))
-            rows = []
-            for member in members:
-                vote_key = str(member.get("vote") or "")
-                name = esc(member.get("name"))
-                url = member.get("profile_url")
-                name_html = f'<a href="{esc(url)}">{name}</a>' if url else name
-                rows.append(
-                    '<li class="member-vote-row">'
-                    f"<strong>{name_html}</strong>"
-                    f'<span class="vote-pill vote-{esc(vote_key)}">{esc(VOTE_LABELS.get(vote_key, vote_key))}</span>'
-                    "</li>"
-                )
-            member_sections.append(
-                '<section class="member-vote-group">'
-                f"<h4>{esc(faction)}</h4>"
-                f'<ul class="member-vote-list">{"".join(rows)}</ul>'
-                "</section>"
-            )
-
-        total = vote.get("total") or {}
-        docs = ", ".join(vote.get("document_numbers") or [])
-        docs_text = f" · Drucksachen {esc(docs)}" if docs else ""
-        panels.append(
-            '<section class="vote-panel">'
-            '<div class="vote-head">'
-            '<div>'
-            '<h3>Namentliche Abstimmung</h3>'
-            f'<p><a href="{esc(vote.get("detail_url"))}">{esc(short(vote.get("title"), 140))}</a>{docs_text}</p>'
-            "</div>"
-            f'<div class="vote-total">{render_vote_stack(total)}{render_vote_pills(total)}</div>'
-            "</div>"
-            f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
-            '<details class="member-votes">'
-            f'<summary>Einzelstimmen ({esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
-            f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
-            "</details>"
-            "</section>"
-        )
-    return "".join(panels)
 
 
 def render_source_links(item: dict[str, Any]) -> str:
@@ -769,6 +954,7 @@ def render_speakers(
     stats: dict[str, Any],
     mp_lookup: dict[str, int] | None = None,
     mp_href_prefix: str = "abgeordnete/",
+    profiles_enabled: bool = True,
 ) -> str:
     rows = []
     for sequence, speech in enumerate(stats["speakers"]):
@@ -791,7 +977,7 @@ def render_speakers(
             f'<strong><a class="speaker-link" href="#{esc(anchor)}">{name}</a></strong>'
             f'<span>{esc(role)}</span>'
             f'<em>{esc(source)}</em>'
-            f'<span class="aw-cell">{profile_cell}{render_profile_icon(speaker)}</span>'
+            f'<span class="aw-cell">{profile_cell}{render_profile_icon(speaker) if profiles_enabled else ""}</span>'
             "</li>"
         )
     return f'<ul class="speaker-list">{"".join(rows)}</ul>'
@@ -840,7 +1026,7 @@ def render_llm_summary(
     chunks = summary.get("source_chunks") or []
     if not text or not chunks:
         return (
-            '<section class="llm-summary unavailable">'
+            '<section class="llm-summary unavailable" data-feature="summaries">'
             "<h3><span>Automatische Zusammenfassung</span></h3>"
             f"<p>{esc(summary_unavailable_message(stats, summary_generation))}</p>"
             "</section>"
@@ -873,7 +1059,7 @@ def render_llm_summary(
         )
 
     return (
-        '<section class="llm-summary">'
+        '<section class="llm-summary" data-feature="summaries">'
         f'<h3>{label_html}</h3>'
         f"<p>{esc(text)}</p>"
         f'<ul class="summary-sources">{"".join(chunk_rows)}</ul>'
@@ -914,7 +1100,7 @@ def render_session_llm_summary(
     ]
     if not summarized_items:
         return (
-            '<section class="session-llm-summary unavailable">'
+            '<section class="session-llm-summary unavailable" data-feature="summaries">'
             '<div class="session-llm-header">'
             "<div>"
             '<span class="eyebrow">KI-Zusammenfassung</span>'
@@ -968,7 +1154,7 @@ def render_session_llm_summary(
 
     generated_label = f"{total_summaries} TOP-Zusammenfassung" + ("" if total_summaries == 1 else "en")
     return (
-        '<section class="session-llm-summary">'
+        '<section class="session-llm-summary" data-feature="summaries">'
         '<div class="session-llm-header">'
         "<div>"
         '<span class="eyebrow">KI-Zusammenfassung</span>'
@@ -984,7 +1170,7 @@ def render_session_llm_summary(
     )
 
 
-def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
+def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_enabled: bool = True) -> str:
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
@@ -1002,7 +1188,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
         if not paragraph_html:
             paragraph_html = '<p class="muted">Dieser Bericht enthält keinen Redetext. Erzeuge das JSON mit dem aktuellen Validator neu, um die Rede direkt anzuzeigen.</p>'
         meta = " · ".join(part for part in [esc(role), f"Seite {esc(source)}" if source else ""] if part)
-        profile_html = render_profile_link(speaker)
+        profile_html = render_profile_link(speaker) if profiles_enabled else ""
         cards.append(
             f"""
             <details class="speech-card" id="{esc(speech_anchor(item, speech, sequence))}">
@@ -1025,15 +1211,13 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any]) -> str:
 
 def render_html(
     report: dict[str, Any],
-    home_href: str | None = None,
-    pulse_href: str | None = None,
-    overview_href: str | None = None,
-    catalog_href: str | None = None,
-    bills_href: str | None = None,
-    sources_href: str | None = None,
+    features: Selection | None = None,
     mp_lookup: dict[str, int] | None = None,
-    mp_href_prefix: str = "../abgeordnete/",
 ) -> str:
+    features = features or default_selection()
+    from features.loader import load as load_components
+
+    components = {component.feature.id: component for component in load_components(features)}
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
@@ -1078,6 +1262,37 @@ def render_html(
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
         ]
+        vote_sections = (
+            "".join(components["votes"].dossier_sections(report, {"item": item}))
+            if "votes" in components
+            else ""
+        )
+        summary_sections = (
+            "".join(
+                components["summaries"].dossier_sections(
+                    report,
+                    {
+                        "scope": "item",
+                        "item": item,
+                        "stats": stats,
+                        "summary_generation": summary_generation,
+                        "protocol": protocol,
+                    },
+                )
+            )
+            if "summaries" in components
+            else ""
+        )
+        dev_sections = (
+            "".join(
+                components["dev-view"].dossier_sections(
+                    report,
+                    {"scope": "item", "item": item},
+                )
+            )
+            if "dev-view" in components
+            else ""
+        )
         top_sections.append(
             f"""
             <article class="top-card" id="top-{item['index']}">
@@ -1107,22 +1322,22 @@ def render_html(
                 {render_party_stack(stats['party_counts'], party_total)}
                 <div class="party-labels">{render_badges(party_labels)}</div>
               </div>
-              {render_llm_summary(item, stats, summary_generation, protocol)}
-              {render_vote_summary(item)}
+              {summary_sections}
+              {vote_sections}
               <div class="detail-grid">
                 <section>
                   <h3>Rednerinnen und Redner</h3>
-                  {render_speakers(item, stats, mp_lookup, mp_href_prefix)}
+                  {render_speakers(item, stats, mp_lookup if 'mp-pages' in features else None, '../abgeordnete/', 'aw-profiles' in features)}
                 </section>
                 <section>
                   <h3>Drucksachen</h3>
                   {render_source_links(item)}
                 </section>
               </div>
-              {render_top_dev_details(item)}
+              {dev_sections}
               <section class="speech-section">
                 <h3>Reden</h3>
-                {render_speech_details(item, stats)}
+                {render_speech_details(item, stats, 'aw-profiles' in features)}
               </section>
             </article>
             """
@@ -1132,17 +1347,36 @@ def render_html(
     warning_html = ""
     if warnings:
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
-    footer_links = []
-    if overview_href:
-        footer_links.append(f'<a href="{esc(overview_href)}">Plenarprotokoll-Katalog</a>')
-    if catalog_href:
-        footer_links.append(f'<a href="{esc(catalog_href)}">Alle API-Sitzungen</a>')
-    if bills_href:
-        footer_links.append(f'<a href="{esc(bills_href)}">Gesetze verfolgen</a>')
-    if sources_href:
-        footer_links.append(f'<a href="{esc(sources_href)}">Quellen und Methode</a>')
+    footer_links = [
+        '<a href="../overview.html">Plenarprotokoll-Katalog</a>',
+        '<a href="../api-sitzungen.html">Alle API-Sitzungen</a>',
+    ]
+    if "bills" in features:
+        footer_links.append('<a href="../bills/index.html" data-feature="bills">Gesetze verfolgen</a>')
+    footer_links.extend(('<a href="../sources.html">Quellen und Methode</a>', '<a href="../settings.html">Einstellungen</a>'))
     footer_nav = " · ".join(footer_links)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
+    protocol_dev_sections = (
+        "".join(components["dev-view"].dossier_sections(report, {"scope": "protocol"}))
+        if "dev-view" in components
+        else ""
+    )
+    session_summary_sections = (
+        "".join(
+            components["summaries"].dossier_sections(
+                report,
+                {
+                    "scope": "session",
+                    "items": items,
+                    "stats_by_index": stats_by_index,
+                    "summary_generation": summary_generation,
+                    "protocol": protocol,
+                },
+            )
+        )
+        if "summaries" in components
+        else ""
+    )
 
     return f"""<!doctype html>
 <html lang="de">
@@ -1150,7 +1384,7 @@ def render_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{esc(protocol_title(report))}</title>
-  {theme_bootstrap_script()}
+  {page_head(features)}
   <style>
     :root {{
       --ink:#171a1f;
@@ -1367,7 +1601,6 @@ def render_html(
     .mini-bars b {{ background:var(--amber); }}
     main {{ display:grid; gap:16px; }}
     .dev-only {{ display:none !important; }}
-    body.dev-view .dev-only {{ display:block !important; }}
     .notice {{
       padding:12px 14px;
       border:1px solid #e3c46a;
@@ -1836,7 +2069,7 @@ def render_html(
 </head>
 <body>
   <div class="shell">
-    {render_global_header(home_href=home_href, pulse_href=pulse_href, overview_href=overview_href, catalog_href=catalog_href, bills_href=bills_href, abgeordnete_href="../abgeordnete/index.html", sources_href=sources_href, active="pulse")}
+    {render_global_header(depth=1, active="pulse", features=features)}
     <header class="page-header">
       <div>
         <h1>Bundestag-Puls</h1>
@@ -1849,8 +2082,8 @@ def render_html(
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>
-    {render_protocol_api_overview(report)}
-    {render_session_llm_summary(items, stats_by_index, summary_generation, protocol)}
+    {protocol_dev_sections}
+    {session_summary_sections}
     <div class="layout">
       <aside>
         <h2>Aufmerksamkeitsrang</h2>
@@ -1867,54 +2100,10 @@ def render_html(
     </div>
     <footer>
       <span>Das XML-Protokoll gilt als maßgeblich; verknüpfte DIP-Daten können über die Dev-Ansicht geprüft werden.{footer_nav_html}</span>
-      <button class="dev-toggle" type="button" aria-pressed="false">Dev-Ansicht</button>
+      {'<button class="dev-toggle" type="button" aria-pressed="false" data-feature="dev-view">Dev-Ansicht</button>' if 'dev-view' in features else ''}
     </footer>
   </div>
-  <script>
-    (() => {{
-      const storageKey = "bundestag-pulse-dev-view";
-      const toggle = document.querySelector(".dev-toggle");
-      const setDevView = (enabled, persist = true) => {{
-        document.body.classList.toggle("dev-view", enabled);
-        if (toggle) {{
-          toggle.setAttribute("aria-pressed", enabled ? "true" : "false");
-          toggle.textContent = enabled ? "Dev-Ansicht aus" : "Dev-Ansicht";
-        }}
-        if (persist) {{
-          try {{
-            window.localStorage.setItem(storageKey, enabled ? "1" : "0");
-          }} catch (_) {{}}
-        }}
-      }};
-      try {{
-        setDevView(window.localStorage.getItem(storageKey) === "1", false);
-      }} catch (_) {{
-        setDevView(false, false);
-      }}
-      if (toggle) {{
-        toggle.addEventListener("click", () => {{
-          setDevView(!document.body.classList.contains("dev-view"));
-        }});
-      }}
-      const openHashTarget = () => {{
-        const id = decodeURIComponent(window.location.hash.slice(1));
-        if (!id) return;
-        const target = document.getElementById(id);
-        if (!target) return;
-        if (target.closest(".dev-only")) {{
-          setDevView(true);
-        }}
-        const details = target.tagName.toLowerCase() === "details" ? target : target.closest("details");
-        if (details) {{
-          details.open = true;
-          details.scrollIntoView({{ block: "start" }});
-        }}
-      }};
-      window.addEventListener("hashchange", openHashTarget);
-      openHashTarget();
-    }})();
-  </script>
-  {theme_runtime_script()}
+  {page_scripts(features)}
 </body>
 </html>
 """

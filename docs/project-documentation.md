@@ -1,6 +1,6 @@
 # Bundestag Pulse Project Documentation
 
-This repository builds a static, local preview of "Bundestag Pulse": a primary-source view of German Bundestag activity. The pipeline fetches official DIP Plenarprotokoll data, extracts agenda items, speeches, linked Drucksachen, roll-call votes, and MP/profile data, then renders a static HTML site and an optional SQLite graph store.
+This repository builds a static, local preview of "Bundestag Pulse": a primary-source view of German Bundestag activity. The core pipeline fetches official DIP Plenarprotokoll data and renders a sitting catalog, protocol dossiers, and SQLite graph explorer. Optional Bausteine add roll-call votes, summaries, MP/profile data, bill tracking, and developer views.
 
 The codebase is intentionally small. There is no package manager or web framework; the scripts use Python standard-library modules plus public HTTP APIs.
 
@@ -28,7 +28,11 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- validate_dip_protocol.py
     |-- render_dip_pulse_html.py
     |-- persist_dip_pulse_store.py
-    `-- abgeordnetenwatch.py
+    |-- abgeordnetenwatch.py
+    `-- features/
+        |-- __init__.py
+        |-- loader.py
+        `-- <addon>.py
 ```
 
 Generated preview data lives under `.context/dip-pulse-site/` by default. `.context/` is gitignored and should be treated as local build output/cache, not source.
@@ -120,11 +124,12 @@ It creates these directories under the output directory:
 |-- overview.html
 |-- api-sitzungen.html
 |-- sources.html
+|-- settings.html
 |-- database.html
 |-- data/
 |-- protocols/
-|-- bills/
-`-- abgeordnete/
+|-- bills/                  # when the bills Baustein is built
+`-- abgeordnete/            # when the mp-pages Baustein is built
 ```
 
 Important generated files:
@@ -136,7 +141,9 @@ Important generated files:
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
-| `database.html` | Human-readable SQLite table snapshot when persistence is enabled |
+| `settings.html` | Browser visibility controls and exact rebuild hints for unavailable Bausteine |
+| `database.html` | Human-readable SQLite table snapshot, or a clear `--no-persist` explanation when persistence is disabled |
+| `data/features.json` | Verbose build manifest for tooling |
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
@@ -150,6 +157,41 @@ Important generated files:
 python3 scripts/build_dip_pulse_site.py --offline
 python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-roster
 ```
+
+## Bausteine und Einstellungen
+
+The default build is deliberately strict: only `dip-fetch`, `sitting-catalog`, `dossiers`, and `store` are built. Optional Bausteine are:
+
+| ID | Purpose | Requirements |
+|---|---|---|
+| `votes` | Roll-call totals, fractions, and individual votes | `dip-fetch` |
+| `summaries` | LLM session and agenda-item summaries | `dip-fetch` |
+| `aw-profiles` | abgeordnetenwatch profile links | `dip-fetch` |
+| `mp-pages` | MP index and detail pages | `store` |
+| `mp-roster` | Full DIP MdB roster | `mp-pages` |
+| `bills` | Bill index and detail pages | `dip-fetch` |
+| `bill-follow` | Browser-local bill following | `bills` |
+| `dev-view` | Raw API panels and dossier command tools | `dossiers` |
+
+The build decides availability. The gear in every page header and `settings.html` decide visibility for the current browser, instantly and without rebuilding. Browser choices are stored as explicit overrides in `localStorage`; clearing them restores the build defaults.
+
+Feature configuration precedence is: registry defaults, `features.json`, gitignored `features.local.json`, `BUNDESTAG_PULSE_FEATURES`, `--features`, legacy flags, `--enable`, then `--disable`. Requirements are enabled automatically. An explicit disable cascades to dependents, and core features cannot be disabled.
+
+```bash
+# Strict core-only build.
+scripts/preview_dip_pulse_site.sh
+
+# Build everything.
+scripts/preview_dip_pulse_site.sh --features all
+
+# Build selected areas; requirements are resolved automatically.
+scripts/preview_dip_pulse_site.sh --enable bills --enable mp-pages
+
+# Environment syntax accepts comma-separated additions and vetoes.
+BUNDESTAG_PULSE_FEATURES=+dev-view,-votes scripts/preview_dip_pulse_site.sh
+```
+
+`features.json` is the committed project default. Put personal defaults in `features.local.json`, not `.context/`, because `.context/` contains generated output rather than build configuration.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -310,6 +352,11 @@ Common options:
 
 | Option | Default | Effect |
 |---|---:|---|
+| `--enable ID` | none | Enable a Baustein; repeatable and requirements are added automatically |
+| `--disable ID` | none | Explicitly disable a Baustein and its dependents; repeatable |
+| `--features IDS` | core only | Replace the base selection with comma-separated IDs; `all` enables everything |
+| `--features-file PATH` | none | Apply an additional JSON feature configuration |
+| `--list-features` | off | Print the registry and exit before filesystem/network build work |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
 | `--limit N` | `0` | Number of recent Bundestag protocols in the catalog; `0` means all available |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
@@ -448,6 +495,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `DIP_PULSE_PID_FILE` | preview script | No | Preview server PID file |
 | `DIP_PULSE_LOG_FILE` | preview script | No | Preview server log file |
 | `OPEN_BROWSER` | preview script | No | Set `0` to avoid opening browser |
+| `BUNDESTAG_PULSE_FEATURES` | build | No | Comma-separated feature changes such as `+dev-view,-votes` |
 
 ## Offline vs Online Behavior
 
@@ -563,9 +611,9 @@ Useful speed levers:
 
 - `--document-number` instead of a broad catalog fetch.
 - `--detail-limit 1` or `--detail-limit 2`.
-- `--no-roster` to skip the full MdB roster.
-- `--no-abgeordnetenwatch` to skip speaker and vote-member profile enrichment.
-- `--summary-mode off` or default `reuse` to avoid LLM calls.
+- Leave `mp-roster`, `aw-profiles`, `votes`, and `summaries` disabled in the strict default build.
+- For a full build, use `--disable mp-roster`, `--disable aw-profiles`, `--disable votes`, or `--disable summaries` as targeted speed levers.
+- Legacy `--no-roster`, `--no-abgeordnetenwatch`, and `--summary-mode off` remain supported aliases.
 - Offline mode after a first successful update.
 
 ### abgeordnetenwatch rate limits or outages
