@@ -566,11 +566,13 @@ cp .env.example .env.local
 # then edit .env.local and set DIP_API_KEY
 ```
 
-Or export it for one command:
+Passing the key for one command only works when `.env.local` does not define `DIP_API_KEY` at all:
 
 ```bash
 DIP_API_KEY=... scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster
 ```
+
+The preview script sources `.env.local` after it inherits the environment, so the empty `DIP_API_KEY=` line copied from `.env.example` overwrites the value passed on the command line and the script aborts with the same error. Either fill the key in `.env.local` or delete that line.
 
 ### Offline mode has no cached protocols
 
