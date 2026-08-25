@@ -1,1 +1,0 @@
-/Users/Luca/Projects/polirate/.claude/skills/gstack/gstack-upgrade/SKILL.md

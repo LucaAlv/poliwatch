@@ -1,1 +1,0 @@
-/Users/Luca/Projects/polirate/.claude/skills/gstack/ios-design-review/SKILL.md

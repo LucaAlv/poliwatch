@@ -1,1 +1,0 @@
-/Users/Luca/Projects/polirate/.claude/skills/gstack/open-gstack-browser/SKILL.md

@@ -1,1 +1,0 @@
-/Users/Luca/Projects/polirate/.claude/skills/gstack/setup-gbrain/SKILL.md
