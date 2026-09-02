@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
@@ -12,6 +13,41 @@ import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
 from features import all_selection, default_selection
+
+
+class DossierProgressTests(unittest.TestCase):
+    def test_reports_new_cached_and_completed_dossiers(self) -> None:
+        protocols = [
+            {"id": "5805", "dokumentnummer": "21/87", "datum": "2026-06-25"},
+            {"id": "5806", "dokumentnummer": "21/88", "datum": "2026-06-26"},
+        ]
+        cached_report = {"protocol": protocols[1]}
+        built: list[tuple[str, dict[str, Any] | None]] = []
+
+        def load_existing(protocol: dict[str, Any]) -> dict[str, Any] | None:
+            return cached_report if protocol["id"] == "5806" else None
+
+        def build_dossier(
+            protocol: dict[str, Any], existing: dict[str, Any] | None
+        ) -> dict[str, Any]:
+            built.append((protocol["id"], existing))
+            return {"report": {"protocol": protocol}}
+
+        stderr = io.StringIO()
+        with mock.patch("sys.stderr", stderr):
+            entries = build_dip_pulse_site.build_dossiers_with_progress(
+                protocols,
+                load_existing=load_existing,
+                build_dossier=build_dossier,
+            )
+
+        output = stderr.getvalue()
+        self.assertIn("[dossiers] Processing 2 dossier(s).", output)
+        self.assertIn("[1/2] Downloading new dossier: BT-PlPr 21/87 (ID 5805) from 2026-06-25.", output)
+        self.assertIn("[2/2] Refreshing cached dossier: BT-PlPr 21/88 (ID 5806) from 2026-06-26.", output)
+        self.assertIn("[dossiers] Completed 2/2 dossier(s)", output)
+        self.assertEqual(built, [("5805", None), ("5806", cached_report)])
+        self.assertEqual(len(entries), 2)
 
 
 class CollectAbgeordneteTests(unittest.TestCase):

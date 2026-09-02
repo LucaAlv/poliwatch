@@ -9,8 +9,9 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
@@ -77,6 +78,53 @@ def protocol_label(protocol: dict[str, Any]) -> str:
     if document_number and protocol_id:
         return f"{document_number} (ID {protocol_id})"
     return document_number or protocol_id or "unbekanntes Protokoll"
+
+
+def build_dossiers_with_progress(
+    protocols: list[dict[str, Any]],
+    load_existing: Callable[[dict[str, Any]], dict[str, Any] | None],
+    build_dossier: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build dossiers sequentially while emitting human-readable progress to stderr."""
+    total = len(protocols)
+    if total == 0:
+        print("[dossiers] No dossiers selected for processing.", file=sys.stderr, flush=True)
+        return []
+
+    overall_started = time.monotonic()
+    print(f"[dossiers] Processing {total} dossier(s).", file=sys.stderr, flush=True)
+    entries: list[dict[str, Any]] = []
+    for index, protocol in enumerate(protocols, start=1):
+        existing_report = load_existing(protocol)
+        action = "Refreshing cached dossier" if existing_report is not None else "Downloading new dossier"
+        label = f"BT-PlPr {protocol_label(protocol)}"
+        protocol_date = str(protocol.get("datum") or "").strip()
+        if protocol_date:
+            label = f"{label} from {protocol_date}"
+
+        started = time.monotonic()
+        print(f"[dossiers] [{index}/{total}] {action}: {label}.", file=sys.stderr, flush=True)
+        try:
+            entry = build_dossier(protocol, existing_report)
+        except Exception:
+            elapsed = time.monotonic() - started
+            print(
+                f"[dossiers] [{index}/{total}] Failed {label} after {elapsed:.1f}s.",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
+        entries.append(entry)
+        elapsed = time.monotonic() - started
+        print(
+            f"[dossiers] [{index}/{total}] Finished {label} in {elapsed:.1f}s.",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    elapsed = time.monotonic() - overall_started
+    print(f"[dossiers] Completed {total}/{total} dossier(s) in {elapsed:.1f}s.", file=sys.stderr, flush=True)
+    return entries
 
 
 def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: str) -> dict[str, Any]:
@@ -5294,8 +5342,10 @@ def main() -> int:
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         try:
-            generated_entries = [
-                write_report_and_page(
+            generated_entries = build_dossiers_with_progress(
+                detail_protocols,
+                load_existing=lambda protocol: load_existing_report(output_dir, protocol),
+                build_dossier=lambda protocol, existing_report: write_report_and_page(
                     protocol=protocol,
                     output_dir=output_dir,
                     api_key=api_key,
@@ -5308,12 +5358,11 @@ def main() -> int:
                     anthropic_api_key=args.anthropic_api_key,
                     gemini_api_key=args.gemini_api_key,
                     summary_model=args.summary_model,
-                    existing_report=load_existing_report(output_dir, protocol),
+                    existing_report=existing_report,
                     profile_resolver=profile_resolver,
                     features=features,
-                )
-                for protocol in detail_protocols
-            ]
+                ),
+            )
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
             if not args.no_persist:
                 rebuild_database_from_entries(database_path, entries)

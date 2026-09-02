@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
@@ -1030,10 +1030,15 @@ def enrich_with_api(
     person_limit: int,
     vote_scan_pages: int = 30,
     roll_call_list_id: str | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
+    if progress:
+        progress(f"Fetched {len(positions)} proceeding position(s).")
     activities = client.list_all("/aktivitaet", {"f.plenarprotokoll": protocol_id})
+    if progress:
+        progress(f"Fetched {len(activities)} parliamentary activity record(s).")
     roll_call_fetch = fetch_roll_call_vote_candidates(
         protocol.get("datum"),
         vote_scan_pages,
@@ -1042,6 +1047,8 @@ def enrich_with_api(
     )
     assert isinstance(roll_call_fetch, RollCallCandidateFetch)
     roll_call_candidates = roll_call_fetch.candidates
+    if progress:
+        progress(f"Found {len(roll_call_candidates)} roll-call vote candidate(s).")
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
     positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
@@ -1094,7 +1101,8 @@ def enrich_with_api(
         return title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
-    for top in parsed_xml["agenda_items"]:
+    agenda_items = parsed_xml["agenda_items"]
+    for top_index, top in enumerate(agenda_items, start=1):
         matching_positions = [position for position in positions if position_matches_top(position, top)]
         matching_activities = [activity for activity in activities if activity_in_top(activity, top)]
 
@@ -1156,6 +1164,8 @@ def enrich_with_api(
                 "votes": votes,
             }
         )
+        if progress and (top_index % 10 == 0 or top_index == len(agenda_items)):
+            progress(f"Enriched agenda items: {top_index}/{len(agenda_items)}.")
 
     unique_person_ids = []
     seen_person_ids: set[str] = set()
@@ -1166,15 +1176,22 @@ def enrich_with_api(
             unique_person_ids.append(str(person_id))
 
     people_to_fetch = unique_person_ids if person_limit <= 0 else unique_person_ids[:person_limit]
+    if progress:
+        progress(f"Fetching {len(people_to_fetch)} person record(s).")
     person_records: list[dict[str, Any]] = []
     person_fetch_errors: list[dict[str, str]] = []
-    for person_id in people_to_fetch:
+    for person_index, person_id in enumerate(people_to_fetch, start=1):
         try:
             person = client.get_json(f"/person/{person_id}")
         except DipError as exc:
             person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
-            continue
-        person_records.append(person)
+        else:
+            person_records.append(person)
+        if progress and (person_index % 25 == 0 or person_index == len(people_to_fetch)):
+            progress(
+                f"Processed person records: {person_index}/{len(people_to_fetch)} "
+                f"({len(person_records)} fetched, {len(person_fetch_errors)} failed)."
+            )
 
     warnings: list[str] = []
     if any(not top["api"]["positions"] for top in enriched_tops):
@@ -1239,13 +1256,25 @@ def build_report(
     client = ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     if protocol is None:
         protocol = find_protocol(client, args.protocol_id, args.document_number)
+    document_number = str(protocol.get("dokumentnummer") or protocol.get("id") or "unknown")
+
+    def progress(message: str) -> None:
+        print(f"[dossier {document_number}] {message}", file=sys.stderr, flush=True)
+
     fundstelle = protocol.get("fundstelle") or {}
     xml_url = fundstelle.get("xml_url")
     if not xml_url:
         raise DipError(f"Protocol {protocol.get('id')} has no fundstelle.xml_url.")
 
+    progress("Downloading XML transcript.")
     xml_text = fetch_text(xml_url)
     parsed_xml = parse_protocol_xml(xml_text)
+    parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
+    progress(
+        f"Parsed XML: {len(parsed_xml['agenda_items'])} agenda item(s), "
+        f"{parsed_speech_count} speech(es)."
+    )
+    progress("Fetching DIP enrichment and roll-call data.")
     enrichment = enrich_with_api(
         client,
         protocol,
@@ -1253,13 +1282,14 @@ def build_report(
         args.person_limit,
         getattr(args, "vote_scan_pages", 30),
         getattr(args, "roll_call_list_id", None),
+        progress=progress,
     )
 
     agenda_items = enrichment["agenda_items"]
     if args.limit_tops is not None:
         agenda_items = agenda_items[: args.limit_tops]
 
-    xml_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
+    xml_speech_count = parsed_speech_count
     xml_drucksache_count = sum(len(top["drucksachen"]) for top in parsed_xml["agenda_items"])
     tops_with_xml_drucksachen = sum(1 for top in parsed_xml["agenda_items"] if top["drucksachen"])
     tops_with_api_positions = sum(1 for top in enrichment["agenda_items"] if top["api"]["positions"])
@@ -1290,7 +1320,10 @@ def build_report(
         "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
     }
+    if getattr(args, "summary_mode", "off") != "off":
+        progress("Processing LLM summaries.")
     enrich_with_llm_summaries(report, args)
+    progress("Dossier data assembled; writing generated files.")
     return report
 
 
