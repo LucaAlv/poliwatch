@@ -1768,6 +1768,181 @@ def render_landing_page(
 # ---------------------------------------------------------------------------
 
 
+# How many returning procedures the Wochenvergleich band lists before it stops.
+RETURNING_LIMIT = 5
+
+
+# Format one week figure: whole numbers normally, one decimal once the figures
+# have been divided by a differing sitting count.
+def week_figure(value: float, normalised: bool) -> str:
+    if normalised:
+        return f"{value:,.1f}".replace(",", "#").replace(".", ",").replace("#", ".")
+    return pulse_html.format_int(int(round(value)))
+
+
+# One line for the Themenbewegung panel, stating the week's headline movement.
+# Falls back to an honest sentence rather than the old promise of a comparison
+# that no code was ever going to deliver.
+def week_headline(comparison: dict[str, Any] | None) -> str:
+    if not comparison:
+        return "Noch keine vergleichbare Vorwoche in den erzeugten Auswertungen."
+    current = comparison["current"]
+    previous = comparison["previous"]
+    speeches = next((m for m in comparison["metrics"] if m["key"] == "speech_count"), None)
+    suffix = " je Sitzung" if comparison["normalised"] else ""
+    if not speeches or speeches["delta_percent"] is None:
+        return (
+            f"Sitzungswoche {current['label']}: {pulse_html.format_int(current['speech_count'])} Reden "
+            f"in {pulse_html.format_int(current['top_count'])} Tagesordnungspunkten."
+        )
+    direction = "mehr" if speeches["delta"] > 0 else "weniger" if speeches["delta"] < 0 else "genauso viele"
+    change = f"{abs(speeches['delta_percent']):.1f}".replace(".", ",")
+    if speeches["delta"] == 0:
+        movement = f"genauso viele wie in {previous['label']}"
+    else:
+        movement = f"{change} % {direction} als in {previous['label']}"
+    return (
+        f"Sitzungswoche {current['label']}: {week_figure(speeches['current'], comparison['normalised'])} Reden{suffix} "
+        f"in {pulse_html.format_int(current['top_count'])} Tagesordnungspunkten - {movement}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The "Wochenvergleich" band under the feature grid.
+#
+# Four blocks, all of them plain aggregates over the dossiers of two sitting
+# weeks: the volume pulse with a 12-week sparkline, the shift in each fraction's
+# share of speaking, the mix of business types, and the procedures that came
+# back from an earlier week. Every row that names a sitting links to the agenda
+# item it came from, so each number stays one click from its source.
+# ---------------------------------------------------------------------------
+def render_week_comparison_section(
+    comparison: dict[str, Any] | None,
+    weeks: dict[tuple[int, int], list[dict[str, Any]]],
+    current_week: tuple[int, int] | None,
+) -> str:
+    if not comparison:
+        note = (
+            "Für einen Wochenvergleich braucht es zwei Sitzungswochen, die höchstens "
+            f"{pulse_html.MAX_WEEK_GAP} Wochen auseinanderliegen. In den erzeugten Auswertungen "
+            "ist bisher nur eine solche Woche vorhanden."
+        )
+        return f"""
+    <section class="week-compare" id="wochenvergleich">
+      <div class="week-head">
+        <div>
+          <span class="eyebrow">Wochenvergleich</span>
+          <h2>Noch keine Vergleichswoche</h2>
+        </div>
+      </div>
+      <p class="week-note">{pulse_html.esc(note)}</p>
+    </section>
+"""
+
+    current = comparison["current"]
+    previous = comparison["previous"]
+    normalised = comparison["normalised"]
+
+    # Volume metrics with their deltas.
+    metric_cells = []
+    for metric in comparison["metrics"]:
+        label = metric["label"] + (" je Sitzung" if normalised else "")
+        metric_cells.append(
+            f"""
+              <div class="week-metric">
+                <span>{pulse_html.esc(label)}</span>
+                <strong>{week_figure(metric["current"], normalised)}</strong>
+                <div class="week-metric-foot">
+                  {pulse_html.render_delta(metric["delta_percent"], "%")}
+                  <em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"], normalised)}</em>
+                </div>
+              </div>"""
+        )
+
+    points = pulse_html.week_sparkline_points(weeks, current_week) if current_week else []
+
+    # Procedures carried over from an earlier sitting week. The list is capped for
+    # display, but the note below counts every one of them.
+    returning = pulse_html.returning_vorgaenge(weeks, current_week) if current_week else []
+    shown = returning[:RETURNING_LIMIT]
+    if shown:
+        rows = []
+        for row in shown:
+            first = row["first"]
+            latest = row["latest"]
+            first_href = f"protocols/{pulse_html.esc(Path(first['page_path']).name)}#top-{pulse_html.esc(first['index'])}"
+            latest_href = f"protocols/{pulse_html.esc(Path(latest['page_path']).name)}#top-{pulse_html.esc(latest['index'])}"
+            rows.append(
+                f"""
+              <li class="week-row return-row">
+                <span class="week-label">{pulse_html.esc(row["vorgangstyp"])}</span>
+                <strong>{pulse_html.esc(pulse_html.short(row["titel"], 110))}</strong>
+                <span class="week-trace">
+                  <a href="{first_href}">{pulse_html.esc(first["label"])} · {pulse_html.esc(first["vorgangsposition"])}</a>
+                  <em>&rarr;</em>
+                  <a href="{latest_href}">{pulse_html.esc(latest["label"])} · {pulse_html.esc(latest["vorgangsposition"])}</a>
+                </span>
+              </li>"""
+            )
+        returning_html = f'<ul class="week-list">{"".join(rows)}</ul>'
+        returning_note = (
+            f"{len(returning)} von {len(current['vorgang_ids'])} Verfahren dieser Woche "
+            "standen schon in einer früheren Sitzungswoche auf der Tagesordnung."
+        )
+        if len(shown) < len(returning):
+            returning_note += f" Angezeigt sind die {len(shown)} zuletzt fortgesetzten."
+    else:
+        returning_html = ""
+        returning_note = (
+            "Kein Verfahren dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
+            "der erzeugten Auswertungen."
+        )
+
+    sittings_note = (
+        f"{current['sitting_count']} Sitzung{'' if current['sitting_count'] == 1 else 'en'} "
+        f"({pulse_html.esc(', '.join(d for d in current['documents'] if d))}) gegenüber "
+        f"{previous['sitting_count']} Sitzung{'' if previous['sitting_count'] == 1 else 'en'} in {previous['label']}."
+    )
+    if normalised:
+        sittings_note += " Die Wochen sind unterschiedlich lang, deshalb stehen hier Werte je Sitzung."
+
+    return f"""
+    <section class="week-compare" id="wochenvergleich">
+      <div class="week-head">
+        <div>
+          <span class="eyebrow">Wochenvergleich</span>
+          <h2>{pulse_html.esc(current["label"])} gegen&uuml;ber {pulse_html.esc(previous["label"])}</h2>
+          <p class="week-sub">{sittings_note}</p>
+        </div>
+        <span class="feature-state">Aus Plenarprotokollen</span>
+      </div>
+      <div class="week-grid">
+        <article class="week-card">
+          <h3>Wochenpuls</h3>
+          <div class="week-metrics">{"".join(metric_cells)}</div>
+          {pulse_html.render_sparkline(points)}
+          <p class="week-note">Reden je Sitzungswoche, letzte {len(points)} Sitzungswochen bis {pulse_html.esc(current["label"])}.</p>
+        </article>
+        <article class="week-card">
+          <h3>Redeanteil der Fraktionen</h3>
+          {pulse_html.render_share_shift(current["party_counts"], previous["party_counts"])}
+          <p class="week-note">Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten gegen&uuml;ber {pulse_html.esc(previous["label"])}.</p>
+        </article>
+        <article class="week-card">
+          <h3>Debattenprofil</h3>
+          {pulse_html.render_type_mix(current["vorgangstyp_counts"], previous["vorgangstyp_counts"])}
+          <p class="week-note">Vorgangspositionen nach Art, Ver&auml;nderung gegen&uuml;ber {pulse_html.esc(previous["label"])}.</p>
+        </article>
+        <article class="week-card">
+          <h3>Verfahren, die zur&uuml;ckkehren</h3>
+          {returning_html}
+          <p class="week-note">{pulse_html.esc(returning_note)}</p>
+        </article>
+      </div>
+    </section>
+"""
+
+
 def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
@@ -1842,6 +2017,22 @@ def render_front_page(
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     ranked_items = sorted(items, key=lambda item: stats_by_index[item["index"]]["speech_count"], reverse=True)
+    # Week comparison. render_front_page receives every dossier of the build, not
+    # just the newest one, so the sitting weeks are already here - they only need
+    # bucketing. The previous week is the closest earlier week within
+    # MAX_WEEK_GAP; anything further apart is a different era, not a Wochenvergleich.
+    weeks = pulse_html.group_entries_by_week(entries)
+    current_week = pulse_html.iso_week_key(protocol.get("datum"))
+    week_comparison_data = None
+    if current_week is not None and current_week in weeks:
+        earlier = [week for week in sorted(weeks) if week < current_week]
+        if earlier and pulse_html.week_span(earlier[-1], current_week) <= pulse_html.MAX_WEEK_GAP:
+            week_comparison_data = pulse_html.week_comparison(
+                pulse_html.week_stats(current_week, weeks[current_week]),
+                pulse_html.week_stats(earlier[-1], weeks[earlier[-1]]),
+            )
+    week_compare_html = render_week_comparison_section(week_comparison_data, weeks, current_week)
+    movement_text = week_headline(week_comparison_data)
     protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
     report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite-Graph</a>' if database_href else ""
@@ -2186,6 +2377,137 @@ def render_front_page(
       letter-spacing:.04em;
     }}
     .feature-microgrid strong {{ display:block; margin-top:3px; font-size:19px; }}
+    .week-compare {{
+      margin-top:18px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:var(--panel);
+      padding:18px;
+    }}
+    .week-head {{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:start;
+      padding-bottom:14px;
+      border-bottom:1px solid var(--line);
+    }}
+    .week-head h2 {{ margin:5px 0 0; font-size:25px; line-height:1.15; }}
+    .week-sub {{ margin:6px 0 0; max-width:760px; font-size:13px; line-height:1.45; }}
+    .week-grid {{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:16px;
+      margin-top:16px;
+    }}
+    .week-card {{
+      display:grid;
+      gap:10px;
+      align-content:start;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fbfcfd;
+      padding:14px;
+    }}
+    .week-card h3 {{
+      margin:0;
+      font-size:13px;
+      font-weight:750;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--muted);
+    }}
+    .week-metrics {{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0,1fr));
+      gap:8px;
+    }}
+    .week-metric {{
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+      padding:9px 10px;
+    }}
+    .week-metric span {{
+      display:block;
+      color:var(--muted);
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }}
+    .week-metric strong {{ display:block; margin-top:3px; font-size:21px; }}
+    .week-metric-foot {{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:baseline;
+      gap:6px;
+      margin-top:5px;
+    }}
+    .week-metric-foot em {{ color:var(--muted); font-size:11px; font-style:normal; }}
+    .week-delta {{ font-size:12px; font-weight:750; white-space:nowrap; }}
+    .week-delta.up {{ color:var(--teal); }}
+    .week-delta.down {{ color:var(--amber); }}
+    .week-delta.flat {{ color:var(--muted); }}
+    .week-spark {{
+      display:flex;
+      align-items:flex-end;
+      gap:3px;
+      height:56px;
+      padding:6px;
+      border-radius:8px;
+      background:#edf0f4;
+    }}
+    .week-spark span {{
+      flex:1;
+      min-width:4px;
+      border-radius:3px 3px 0 0;
+      background:var(--teal);
+    }}
+    .week-spark span:last-child {{ background:var(--blue); }}
+    .week-spark.empty {{ background:#edf0f4; }}
+    .week-list {{ display:grid; gap:8px; margin:0; padding:0; list-style:none; }}
+    .week-row {{
+      display:grid;
+      grid-template-columns:minmax(96px,1.1fr) minmax(0,2fr) auto auto;
+      align-items:center;
+      gap:9px;
+    }}
+    .week-label {{
+      color:var(--muted);
+      font-size:12px;
+      overflow-wrap:anywhere;
+    }}
+    .week-bar {{
+      display:block;
+      height:9px;
+      border-radius:999px;
+      background:#edf0f4;
+      overflow:hidden;
+    }}
+    .week-bar span {{ display:block; height:100%; border-radius:999px; }}
+    .week-row strong {{ font-size:13px; }}
+    .week-row.return-row {{
+      grid-template-columns:minmax(0,1fr);
+      gap:3px;
+      padding-bottom:8px;
+      border-bottom:1px solid var(--line);
+    }}
+    .week-row.return-row:last-child {{ border-bottom:0; padding-bottom:0; }}
+    .week-row.return-row strong {{ font-size:14px; line-height:1.35; }}
+    .week-trace {{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap:7px;
+      font-size:12px;
+    }}
+    .week-trace em {{ color:var(--muted); font-style:normal; }}
+    .week-note {{
+      margin:0;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.45;
+    }}
     .layout {{
       display:grid;
       grid-template-columns:minmax(0,1fr);
@@ -2272,7 +2594,7 @@ def render_front_page(
     }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      .page-header, .radar-hero, .layout, .feature-grid {{ grid-template-columns:1fr; }}
+      .page-header, .radar-hero, .layout, .feature-grid, .week-grid {{ grid-template-columns:1fr; }}
       .page-actions {{ justify-content:flex-start; }}
     }}
     @media (max-width: 700px) {{
@@ -2284,10 +2606,16 @@ def render_front_page(
       .feature-head {{ display:grid; }}
       .feature-state {{ justify-self:start; white-space:normal; }}
       .feature-microgrid {{ grid-template-columns:1fr; }}
+      .week-head {{ display:grid; }}
+      .week-metrics {{ grid-template-columns:1fr 1fr; }}
+      .week-row {{ grid-template-columns:minmax(80px,1fr) minmax(0,1.6fr) auto auto; }}
     }}
     @media (max-width: 460px) {{
       .metric-grid, .bar-grid {{ grid-template-columns:1fr; }}
       .card-meta a {{ margin-left:0; width:100%; }}
+      .week-metrics {{ grid-template-columns:1fr; }}
+      .week-row {{ grid-template-columns:minmax(0,1fr) auto auto; }}
+      .week-row .week-bar {{ grid-column:1 / -1; order:3; }}
     }}
   </style>
 </head>
@@ -2302,6 +2630,7 @@ def render_front_page(
       </div>
       <nav class="page-actions" aria-label="Seitenaktionen">
         <a href="#bewegung">Zum Lageblick</a>
+        <a href="#wochenvergleich">Wochenvergleich</a>
         <a href="{protocol_href}">Protokolldossier</a>
         <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
       </nav>
@@ -2314,6 +2643,7 @@ def render_front_page(
         <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
         <div class="pulse-actions">
           <a class="primary-link" href="#bewegung">Themenbewegung ansehen</a>
+          <a href="#wochenvergleich">Wochenvergleich</a>
           <a href="#abstimmungen">Abstimmungsverschiebungen ansehen</a>
           <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
         </div>
@@ -2355,13 +2685,14 @@ def render_front_page(
             <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
             <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
           </div>
-          <p>Der Wochenvergleich wird hier sichtbar, sobald mehrere Sitzungswochen im selben Modell normalisiert sind.</p>
+          <p>{pulse_html.esc(movement_text)}</p>
+          <a class="feature-link" href="#wochenvergleich">Wochenvergleich ansehen</a>
           {focus_link}
         </div>
       </article>
       {vote_feature_html}
     </section>
-
+{week_compare_html}
     <div class="layout">
       <main>
         <div class="ranking-intro" id="aufmerksamkeit">
