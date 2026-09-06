@@ -13,6 +13,7 @@ from unittest import mock
 import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
+import render_dip_pulse_html as pulse_html
 from features import all_selection, default_selection
 
 
@@ -631,6 +632,254 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
             "Verfügbar",
         ):
             build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+
+
+
+class SittingWeekComparisonTests(unittest.TestCase):
+    """The Wochenvergleich band on puls.html, and the aggregation behind it."""
+
+    @staticmethod
+    def _speaker(fraktion: str | None, chars: int, role: str | None = None) -> dict[str, Any]:
+        return {
+            "char_count": chars,
+            "speaker": {"fraktion": fraktion, "role": role, "display_name": "Test Person"},
+        }
+
+    @classmethod
+    def _item(
+        cls,
+        index: int,
+        parties: list[tuple[str, int]],
+        positions: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        speakers = [cls._speaker(party, chars) for party, chars in parties]
+        return {
+            "index": index,
+            "top_id": f"Tagesordnungspunkt {index}",
+            "heading": f"Beratung {index}",
+            "xml_speakers": speakers,
+            "xml_speech_count": len(speakers),
+            "api": {"positions": positions or []},
+        }
+
+    @classmethod
+    def _entry(cls, datum: str, document_number: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        slug = document_number.replace("/", "-")
+        return {
+            "report": {
+                "protocol": {"datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                "agenda_items": items,
+                "validation_summary": {},
+            },
+            "page_path": Path(f"plenarprotokoll-{slug}.html"),
+            "report_path": Path(f"plenarprotokoll-{slug}.json"),
+            "slug": slug,
+        }
+
+    # -- bucketing ---------------------------------------------------------
+
+    def test_iso_week_key_and_grouping(self) -> None:
+        self.assertEqual(pulse_html.iso_week_key("2026-06-12"), (2026, 24))
+        self.assertIsNone(pulse_html.iso_week_key(None))
+        self.assertIsNone(pulse_html.iso_week_key("nicht-ein-datum"))
+
+        entries = [
+            self._entry("2026-06-10", "21/82", []),
+            self._entry("2026-06-11", "21/83", []),
+            self._entry("2026-06-12", "21/84", []),
+        ]
+        weeks = pulse_html.group_entries_by_week(entries)
+        self.assertEqual(list(weeks), [(2026, 24)])
+        self.assertEqual(len(weeks[(2026, 24)]), 3)
+
+    def test_group_entries_by_week_drops_undated_sittings(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [self._entry("2026-06-12", "21/84", []), self._entry("", "21/85", [])]
+        )
+        self.assertEqual(list(weeks), [(2026, 24)])
+
+    # -- comparison --------------------------------------------------------
+
+    def test_equal_sitting_counts_compare_raw_totals(self) -> None:
+        current = pulse_html.week_stats(
+            (2026, 24),
+            [
+                self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+                self._entry("2026-06-11", "21/83", [self._item(1, [("SPD", 100)])]),
+            ],
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21),
+            [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100)])]),
+                self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])]),
+            ],
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+
+        self.assertFalse(comparison["normalised"])
+        speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
+        self.assertEqual(speeches["current"], 3.0)
+        self.assertEqual(speeches["previous"], 2.0)
+        self.assertEqual(speeches["delta"], 1.0)
+        self.assertAlmostEqual(speeches["delta_percent"], 50.0)
+
+    def test_unequal_sitting_counts_switch_to_per_sitting_figures(self) -> None:
+        # A week caught mid-flight - one sitting of the usual two - must not read
+        # as a collapse just for being unfinished.
+        current = pulse_html.week_stats(
+            (2026, 24),
+            [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])])],
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21),
+            [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+                self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            ],
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+
+        self.assertTrue(comparison["normalised"])
+        speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
+        self.assertEqual(speeches["current"], 2.0)
+        self.assertEqual(speeches["previous"], 2.0)
+        self.assertEqual(speeches["delta"], 0.0)
+
+    def test_truncated_dossier_drops_the_text_metric(self) -> None:
+        # item_stats() falls back to xml_speakers_first, which carries no text, so
+        # a character total from such a sitting would be short. Better no metric
+        # than a wrong one.
+        truncated = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])
+        item = truncated["report"]["agenda_items"][0]
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+
+        stats = pulse_html.week_stats((2026, 24), [truncated])
+        self.assertFalse(stats["chars_complete"])
+        self.assertEqual(stats["speech_count"], 1)
+
+        whole = pulse_html.week_stats(
+            (2026, 21), [self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100)])])]
+        )
+        comparison = pulse_html.week_comparison(stats, whole)
+        self.assertNotIn("total_chars", [m["key"] for m in comparison["metrics"]])
+
+    def test_week_span_measures_whole_weeks(self) -> None:
+        self.assertEqual(pulse_html.week_span((2026, 21), (2026, 24)), 3)
+        self.assertEqual(pulse_html.week_span((2023, 17), (2026, 24)), 163)
+
+    # -- returning procedures ---------------------------------------------
+
+    def test_returning_vorgaenge_match_on_vorgang_id(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry(
+                    "2026-03-04",
+                    "21/58",
+                    [self._item(6, [("SPD", 10)], [{"vorgang_id": "331625", "vorgangsposition": "1. Beratung",
+                                                    "vorgangstyp": "Gesetzgebung", "titel": "Ein Gesetz"}])],
+                ),
+                self._entry(
+                    "2026-06-12",
+                    "21/84",
+                    [self._item(5, [("SPD", 10)], [{"vorgang_id": "331625", "vorgangsposition": "2. Beratung",
+                                                    "vorgangstyp": "Gesetzgebung", "titel": "Ein Gesetz"}])],
+                ),
+            ]
+        )
+        rows = pulse_html.returning_vorgaenge(weeks, (2026, 24))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["vorgang_id"], "331625")
+        self.assertEqual(rows[0]["first"]["vorgangsposition"], "1. Beratung")
+        self.assertEqual(rows[0]["latest"]["vorgangsposition"], "2. Beratung")
+        self.assertEqual(rows[0]["latest"]["index"], 5)
+
+    def test_returning_vorgaenge_ignores_one_off_procedures(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry("2026-03-04", "21/58",
+                            [self._item(1, [("SPD", 10)], [{"vorgang_id": "111", "titel": "A"}])]),
+                self._entry("2026-06-12", "21/84",
+                            [self._item(1, [("SPD", 10)], [{"vorgang_id": "222", "titel": "B"}])]),
+            ]
+        )
+        self.assertEqual(pulse_html.returning_vorgaenge(weeks, (2026, 24)), [])
+
+    def test_returning_vorgaenge_dedupes_mitberaten_twins(self) -> None:
+        # DIP issues one vorgang_id per document, so a single bill can surface
+        # twice under sibling ids that name each other in `mitberaten`.
+        def positions(position: str) -> list[dict[str, Any]]:
+            return [
+                {"vorgang_id": "331625", "vorgangsposition": position, "vorgangstyp": "Gesetzgebung",
+                 "titel": "Vaterschaft A", "mitberaten": [{"id": "329481"}]},
+                {"vorgang_id": "329481", "vorgangsposition": position, "vorgangstyp": "Gesetzgebung",
+                 "titel": "Vaterschaft B", "mitberaten": [{"id": "331625"}]},
+            ]
+
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry("2026-03-04", "21/58", [self._item(6, [("SPD", 10)], positions("1. Beratung"))]),
+                self._entry("2026-06-12", "21/84", [self._item(5, [("SPD", 10)], positions("2. Beratung"))]),
+            ]
+        )
+        rows = pulse_html.returning_vorgaenge(weeks, (2026, 24))
+        self.assertEqual(len(rows), 1)
+
+    # -- rendered markup ---------------------------------------------------
+
+    def _render(self, entries: list[dict[str, Any]]) -> str:
+        return build_dip_pulse_site.render_front_page(entries, features=default_selection())
+
+    def test_front_page_renders_the_week_comparison(self) -> None:
+        entries = [
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn('id="wochenvergleich"', markup)
+        self.assertIn("KW 24/2026", markup)
+        self.assertIn("KW 21/2026", markup)
+        self.assertIn("Redeanteil der Fraktionen", markup)
+        self.assertIn("Debattenprofil", markup)
+
+    def test_placeholder_is_gone(self) -> None:
+        markup = self._render(
+            [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        )
+        self.assertNotIn("sobald mehrere Sitzungswochen", markup)
+        self.assertNotIn("im selben Modell normalisiert", markup)
+
+    def test_gap_guard_suppresses_an_unrelated_week(self) -> None:
+        # Two sittings three years apart are not a Wochenvergleich. The band must
+        # say so rather than name a week from a different era.
+        entries = [
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])]),
+            self._entry("2023-04-27", "20/100", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn("Noch keine Vergleichswoche", markup)
+        self.assertNotIn("KW 17/2023", markup)
+        self.assertNotIn("2023-04-27", markup)
+
+    def test_single_week_has_no_comparison(self) -> None:
+        markup = self._render(
+            [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        )
+        self.assertIn("Noch keine Vergleichswoche", markup)
+
+    def test_running_week_is_labelled_per_sitting(self) -> None:
+        entries = [
+            self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn("Werte je Sitzung", markup)
+        self.assertIn("je Sitzung", markup)
 
 
 if __name__ == "__main__":
