@@ -12,9 +12,8 @@
 #
 # Build pipeline -- see ``main()`` at the bottom of the file for the real sequence:
 #
-#   1. Resolve the "Bausteine" (feature flags) that decide which optional parts of
-#      the site are built at all -> ``resolve_from_args`` plus the ``features``
-#      package.
+#   1. Resolve optional update-time enrichments. The published HTML always
+#      contains every visitor-facing Baustein; the browser controls visibility.
 #   2. Fetch the plenary-protocol catalog from the DIP API -> ``fetch_protocols``.
 #   3. For a subset of those sittings, build a full "dossier" (agenda items,
 #      speeches, documents, roll-call votes, optional LLM summaries) by delegating
@@ -57,6 +56,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -87,6 +87,7 @@ from features import (
     FeatureError,
     Selection,
     default_selection,
+    publication_selection,
     resolve,
     tooling_manifest,
 )
@@ -113,6 +114,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_fractions": "Fraktionssummen je namentlicher Abstimmung.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
 }
+
+ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +494,7 @@ def write_report_files(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
 ) -> dict[str, Any]:
-    features = features or default_selection()
+    features = publication_selection()
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
@@ -661,7 +664,31 @@ def merge_detail_entries(
 # Written to a temporary file next to the target and moved into place only on
 # success, so a failed build never leaves a half-written database behind - the
 # database explorer page and the download link both read this file.
-def rebuild_database_from_entries(database_path: Path, entries: list[dict[str, Any]]) -> None:
+def rebuild_database_from_entries(
+    database_path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    preserve_roster: bool = True,
+) -> None:
+    roster_rows: list[dict[str, Any]] = []
+    if preserve_roster and database_path.exists():
+        previous = pulse_store.connect(database_path)
+        try:
+            pulse_store.initialize(previous)
+            roster_rows = [
+                dict(row)
+                for row in previous.execute(
+                    """
+                    SELECT m.*, p.name AS party_name
+                    FROM mps m
+                    LEFT JOIN parties p ON p.id = m.party_id
+                    WHERE m.is_mdb = 1
+                    """
+                )
+            ]
+        finally:
+            previous.close()
+
     temp_path = database_path.with_name(f".{database_path.name}.tmp")
     if temp_path.exists():
         temp_path.unlink()
@@ -670,6 +697,32 @@ def rebuild_database_from_entries(database_path: Path, entries: list[dict[str, A
         pulse_store.initialize(store)
         for entry in entries:
             pulse_store.persist_report(store, entry["report"])
+        if roster_rows:
+            now = pulse_store.utc_now()
+            with store:
+                for row in roster_rows:
+                    party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
+                    pulse_store.upsert_mp(
+                        store,
+                        now=now,
+                        display_name=row.get("display_name"),
+                        party_id=party_id,
+                        identity_key=row["identity_key"],
+                        dip_person_id=row.get("dip_person_id"),
+                        xml_redner_id=row.get("xml_redner_id"),
+                        title=row.get("title"),
+                        function=row.get("function"),
+                        wahlperiode=row.get("wahlperiode"),
+                        profile_url=row.get("profile_url"),
+                        birth_year=row.get("birth_year"),
+                        gender=row.get("gender"),
+                        profession=row.get("profession"),
+                        wahlkreis=row.get("wahlkreis"),
+                        bundesland=row.get("bundesland"),
+                        aw_politician_id=row.get("aw_politician_id"),
+                        person_roles_json=row.get("person_roles_json"),
+                        is_mdb=True,
+                    )
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -743,6 +796,70 @@ def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[s
     }
 
 
+def reuse_existing_dossier_enrichments(
+    report: dict[str, Any],
+    existing_report: dict[str, Any] | None,
+    *,
+    votes: bool,
+    profiles: bool,
+) -> None:
+    """Carry cached optional data forward when this update does not refresh it."""
+    existing_by_key: dict[str, dict[str, Any]] = {}
+    for item in (existing_report or {}).get("agenda_items") or []:
+        for key in agenda_item_reuse_keys(item):
+            existing_by_key[key] = item
+
+    for item in report.get("agenda_items") or []:
+        previous = next(
+            (existing_by_key[key] for key in agenda_item_reuse_keys(item) if key in existing_by_key),
+            None,
+        )
+        if not previous:
+            continue
+        if votes and not _iter_report_votes(item) and _iter_report_votes(previous):
+            if previous.get("votes"):
+                item["votes"] = copy.deepcopy(previous["votes"])
+            elif previous.get("vote"):
+                item["vote"] = copy.deepcopy(previous["vote"])
+        if not profiles:
+            continue
+
+        previous_speakers: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for key in ("xml_speakers", "xml_speakers_first"):
+            for speech in previous.get(key) or []:
+                speaker = speech.get("speaker") or {}
+                identity = (
+                    str(speaker.get("xml_redner_id") or ""),
+                    str(speaker.get("first_name") or ""),
+                    str(speaker.get("last_name") or ""),
+                )
+                previous_speakers[identity] = speaker
+        for key in ("xml_speakers", "xml_speakers_first"):
+            for speech in item.get(key) or []:
+                speaker = speech.get("speaker") or {}
+                identity = (
+                    str(speaker.get("xml_redner_id") or ""),
+                    str(speaker.get("first_name") or ""),
+                    str(speaker.get("last_name") or ""),
+                )
+                cached = previous_speakers.get(identity)
+                if "abgeordnetenwatch" not in speaker and cached and "abgeordnetenwatch" in cached:
+                    speaker["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
+
+        previous_members = {
+            (str(member.get("name") or ""), str(member.get("faction") or "")): member
+            for vote in _iter_report_votes(previous)
+            for member in (vote.get("members") or [])
+        }
+        for vote in _iter_report_votes(item):
+            for member in vote.get("members") or []:
+                cached = previous_members.get(
+                    (str(member.get("name") or ""), str(member.get("faction") or ""))
+                )
+                if "abgeordnetenwatch" not in member and cached and "abgeordnetenwatch" in cached:
+                    member["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
+
+
 # Build one complete dossier for a single sitting and write both of its files.
 #
 # The heavy lifting (XML download, agenda/speech extraction, DIP lookups,
@@ -767,7 +884,7 @@ def write_report_and_page(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
 ) -> dict[str, Any]:
-    features = features or default_selection()
+    features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
     # builder not to call an LLM, then fill summaries in below from the cached
     # report via the summaries component.
@@ -788,6 +905,12 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args, protocol=protocol)
+    reuse_existing_dossier_enrichments(
+        report,
+        existing_report,
+        votes=vote_scan_pages == 0,
+        profiles=profile_resolver is None,
+    )
     # Post-processing steps that are feature-gated: "summaries" carries over the
     # cached LLM summaries, "aw-profiles" attaches abgeordnetenwatch profiles to
     # speakers and vote members. Both mutate `report` in place.
@@ -984,7 +1107,7 @@ def render_database_sample(table: dict[str, Any]) -> str:
 
 # Render the whole database.html page.
 def render_database_page(database_path: Path, database_href: str | None, features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     snapshot = read_database_snapshot(database_path)
     tables = snapshot["tables"]
     # One <article class="table-card"> per table: heading with row count, the
@@ -1440,7 +1563,7 @@ def render_landing_page(
     features: Selection | None = None,
 ) -> str:
     """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
-    features = features or default_selection()
+    features = features or publication_selection()
     # Right-hand "Aktueller Puls" card: a snapshot of the newest generated
     # dossier (entries are ordered newest-first by render_site), or a placeholder
     # when nothing has been generated yet.
@@ -1774,7 +1897,7 @@ def render_front_page(
     database_page_href: str | None = None,
     features: Selection | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # Nothing generated yet -> a minimal page with the shared chrome only.
     if not entries:
         return f"""<!doctype html>
@@ -2934,7 +3057,7 @@ def bill_styles() -> str:
 
 # PAGE: bills/index.html - the list of detected legislative procedures.
 def render_bills_index(bills: list[dict[str, Any]], features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # One card per bill: type and latest date, title linking to the detail page,
     # who introduced it, and badges counting documents, plenary appearances and
     # roll-call votes. The follow button is gated on the "bill-follow" Baustein.
@@ -3009,7 +3132,7 @@ def render_bill_detail(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # The four list sections of the page are built first, then interpolated into
     # the template: Verlauf (timeline), Drucksachen, Rednerinnen und Redner
     # (top 12, linked to their MP profile when resolvable) and Plenarstellen.
@@ -3143,17 +3266,21 @@ def render_bill_detail(
 
 
 # Write the bills area: one detail page per bill, the index, and data/bills.json.
-# Called through features/bills.py so the whole area disappears when the Baustein
-# is off (see remove_generated_addon_pages).
+# Called through features/bills.py on every publication build. An empty data set
+# produces a usable empty page rather than removing the area.
 def write_bill_pages(
     output_dir: Path,
     bills: list[dict[str, Any]],
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
 ) -> dict[str, Any]:
-    features = features or default_selection()
+    features = features or publication_selection()
     bills_dir = output_dir / "bills"
     bills_dir.mkdir(parents=True, exist_ok=True)
+    expected_pages = {f"{bill['slug']}.html" for bill in bills}
+    for stale_page in bills_dir.glob("bill-*.html"):
+        if stale_page.name not in expected_pages:
+            stale_page.unlink()
     for bill in bills:
         (bills_dir / f"{bill['slug']}.html").write_text(render_bill_detail(bill, mp_lookup, features), encoding="utf-8")
     (bills_dir / "index.html").write_text(render_bills_index(bills, features), encoding="utf-8")
@@ -3661,7 +3788,7 @@ def _location_label(mp: dict[str, Any]) -> str:
 
 # PAGE: abgeordnete/index.html - the filterable MP roster.
 def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # Only actual MdBs are listed. People who merely appear as speakers
     # (ministers, Bundesrat guests) still get a profile page - see
     # write_abgeordnete_pages - they just do not clutter the roster.
@@ -3723,7 +3850,7 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
       <input type="search" data-mp-search placeholder="Nach Name, Wahlkreis oder Bundesland suchen…" aria-label="Abgeordnete suchen">
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
     </div>
-    {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordneten geladen. Den Build mit aktivem DIP-Personen-Roster ausführen (ohne --no-roster).</p>'}
+    {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
@@ -3739,12 +3866,12 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
 # collect_abgeordnete, which is also what mp_lookup maps every external id to,
 # so speaker links from dossier and bill pages resolve here.
 def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # Header link out to the abgeordnetenwatch.de profile, when one was resolved.
     profile_link = ""
     if mp.get("profile_url"):
         profile_link = (
-            f'<a class="source-link" href="{pulse_html.esc(mp["profile_url"])}" target="_blank" rel="noopener">'
+            f'<a class="source-link" data-feature="aw-profiles" href="{pulse_html.esc(mp["profile_url"])}" target="_blank" rel="noopener">'
             "abgeordnetenwatch.de-Profil ↗</a>"
         )
 
@@ -3860,12 +3987,16 @@ def write_abgeordnete_pages(
     mps: list[dict[str, Any]],
     features: Selection | None = None,
 ) -> dict[str, Any]:
-    features = features or default_selection()
+    features = features or publication_selection()
     abg_dir = output_dir / "abgeordnete"
     abg_dir.mkdir(parents=True, exist_ok=True)
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
     detail_mps = [mp for mp in mps if mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
+    expected_pages = {f"{mp['id']}.html" for mp in detail_mps}
+    for stale_page in abg_dir.glob("*.html"):
+        if stale_page.name != "index.html" and stale_page.name not in expected_pages:
+            stale_page.unlink()
     for mp in detail_mps:
         (abg_dir / f"{mp['id']}.html").write_text(render_abgeordnete_detail(mp, features), encoding="utf-8")
     (abg_dir / "index.html").write_text(render_abgeordnete_index(mps, features), encoding="utf-8")
@@ -3893,7 +4024,7 @@ def render_overview(
     catalog_href: str = "api-sitzungen.html",
     features: Selection | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # One card per generated dossier: title linking to the dossier page, the four
     # headline metrics from the validation summary, a preview of the four
     # busiest agenda items, and the source links (XML/PDF/JSON/SQLite) plus a
@@ -4427,7 +4558,7 @@ def render_catalog_page(
     database_page_href: str | None = None,
     features: Selection | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # Rows first, then the filter controls derived from them: the Wahlperiode
     # dropdown and the clickable period badges share the same counts.
     rows, by_period = build_catalog_rows(protocols, detail_entries)
@@ -4798,7 +4929,7 @@ def render_sources_page(
     database_page_href: str | None = None,
     features: Selection | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = features or publication_selection()
     # "Erzeugte Sitzungsdatensätze" table: one row per dossier with its metrics
     # and direct links to the XML, the PDF and the generated JSON.
     generated_rows = []
@@ -5112,11 +5243,60 @@ def render_sources_page(
 # ---------------------------------------------------------------------------
 
 
-def render_settings_page(features: Selection) -> str:
+def derive_feature_readiness(
+    entries: list[dict[str, Any]],
+    abg_mps: list[dict[str, Any]],
+    *,
+    bill_count: int,
+) -> dict[str, str]:
+    """Describe cached publication data without changing browser preferences."""
+    reports = [entry.get("report") or {} for entry in entries]
+    agenda_items = [item for report in reports for item in (report.get("agenda_items") or [])]
+    vote_items = sum(1 for item in agenda_items if _iter_report_votes(item))
+    summary_items = sum(1 for item in agenda_items if usable_llm_summary(item.get("llm_summary")))
+    profile_targets = len(abg_mps)
+    profile_count = sum(1 for mp in abg_mps if mp.get("profile_url"))
+    for item in agenda_items:
+        for speech in item.get("xml_speakers") or []:
+            profile_targets += 1
+            if ((speech.get("speaker") or {}).get("abgeordnetenwatch") or {}).get("url"):
+                profile_count += 1
+
+    def coverage(present: int, total: int) -> str:
+        if present <= 0:
+            return "unavailable"
+        return "ready" if total > 0 and present >= total else "partial"
+
+    bills_state = "ready" if bill_count else "unavailable"
+    mp_state = "ready" if abg_mps else "unavailable"
+    return {
+        "votes": coverage(vote_items, len(agenda_items)),
+        "summaries": coverage(summary_items, len(agenda_items)),
+        "aw-profiles": coverage(profile_count, profile_targets),
+        "mp-pages": mp_state,
+        "mp-roster": "ready" if any(mp.get("is_mdb") for mp in abg_mps) else "unavailable",
+        "bills": bills_state,
+        "bill-follow": bills_state,
+        "dev-view": "ready",
+    }
+
+
+def render_settings_page(features: Selection, readiness: dict[str, str] | None = None) -> str:
+    readiness = readiness or {}
     groups = "".join(
         f'<section class="settings-card settings-group"><h2>{pulse_html.esc(category)}</h2>'
-        f'{pulse_html.render_settings_items(features, category)}</section>'
+        f'{items}</section>'
         for category in CATEGORIES
+        if (items := pulse_html.render_settings_items(features, category, readiness))
+    )
+    readiness_labels = {"ready": "verfügbar", "partial": "teilweise", "unavailable": "noch nicht verfügbar"}
+    enrichment_rows = "".join(
+        '<li><span>' + pulse_html.esc(REGISTRY[feature_id].label) + '</span>'
+        + '<strong class="settings-badge readiness-{}">{}</strong></li>'.format(
+            pulse_html.esc(readiness.get(feature_id, "unavailable")),
+            pulse_html.esc(readiness_labels.get(readiness.get(feature_id, "unavailable"), "unbekannt")),
+        )
+        for feature_id in ("votes", "summaries", "aw-profiles", "mp-roster")
     )
     return f"""<!doctype html>
 <html lang="de">
@@ -5137,6 +5317,11 @@ def render_settings_page(features: Selection) -> str:
     .page-header h1 {{ margin:0; font-size:34px; }}
     .page-header p {{ max-width:760px; color:var(--muted); line-height:1.55; }}
     .settings-page-actions {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; }}
+    .readiness-card {{ margin-top:16px; }}
+    .readiness-card h2 {{ margin-top:0; }}
+    .readiness-list {{ list-style:none; margin:0; padding:0; }}
+    .readiness-list li {{ display:flex; justify-content:space-between; gap:14px; padding:9px 0; border-bottom:1px solid var(--line); }}
+    .readiness-list li:last-child {{ border-bottom:0; }}
     footer {{ margin-top:24px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }}
   </style>
 </head>
@@ -5146,11 +5331,12 @@ def render_settings_page(features: Selection) -> str:
     <header class="page-header">
       <span class="eyebrow">Einstellungen</span>
       <h1>Bausteine</h1>
-      <p>Der Build legt fest, welche Bausteine verfügbar sind. Verfügbare Bausteine lassen sich hier sofort für diesen Browser ein- und ausblenden; diese Auswahl wird lokal gespeichert.</p>
+      <p>Diese Auswahl gilt nur für diesen Browser, wird lokal gespeichert und sofort angewendet. Sie löst keine Downloads oder kostenpflichtigen API-Aufrufe aus.</p>
     </header>
     <div class="settings-page-actions"><span class="settings-count" data-settings-count></span><button class="settings-reset" type="button" data-settings-reset>Browser-Auswahl zurücksetzen</button></div>
     <main class="settings-page-grid">{groups}</main>
-    <footer>Kern-Bausteine sind immer aktiv. Nicht verfügbare Bausteine müssen mit dem angezeigten Build-Argument aktiviert werden. <a href="sources.html">Quellen und Methode</a></footer>
+    <section class="settings-card readiness-card"><h2>Datenstand dieser Veröffentlichung</h2><p>Diese Angaben beschreiben die bereits veröffentlichten Daten; sie sind keine weiteren Schalter.</p><ul class="readiness-list">{enrichment_rows}</ul></section>
+    <footer>Kernbereiche sind immer aktiv. Fehlende Daten können nur bei einem kontrollierten Update ergänzt werden. <a href="sources.html">Quellen und Methode</a></footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -5161,17 +5347,6 @@ def render_settings_page(features: Selection) -> str:
 # ---------------------------------------------------------------------------
 # Site assembly
 # ---------------------------------------------------------------------------
-
-
-def remove_generated_addon_pages(output_dir: Path, directory: str, data_file: str) -> None:
-    """Remove stale generated addon pages when a later build omits that addon."""
-    addon_dir = output_dir / directory
-    if addon_dir.exists():
-        for page in addon_dir.glob("*.html"):
-            page.unlink()
-    data_path = output_dir / "data" / data_file
-    if data_path.exists():
-        data_path.unlink()
 
 
 # Write every page of the site that is not a per-sitting dossier.
@@ -5190,7 +5365,10 @@ def render_site(
     mp_lookup: dict[str, int],
     features: Selection | None = None,
 ) -> Path:
-    features = features or default_selection()
+    # Publication is intentionally independent from update-time enrichments.
+    # Keep the argument for one release so external callers do not break, but
+    # never let a reduced enrichment selection remove visitor-facing pages.
+    features = publication_selection()
     # Every page below treats entries[0] and protocols[0] as the current pulse, so
     # both lists must run newest sitting first. The offline render does not do that
     # on its own: it walks cached dossiers in glob order, where the slug 20-100
@@ -5224,23 +5402,20 @@ def render_site(
         "write_bill_pages": write_bill_pages,
         "write_abgeordnete_pages": write_abgeordnete_pages,
     }
-    # Optional areas are written by their feature component, and *removed* when
-    # the Baustein is off, so a later build with fewer blocks does not leave
-    # orphaned pages behind in the output directory.
-    bill_output: dict[str, Any] = {"count": 0}
-    if "bills" in features:
-        bill_output = components["bills"].write_pages(output_dir, component_context)
-    else:
-        remove_generated_addon_pages(output_dir, "bills", "bills.json")
-    if "mp-pages" in features:
-        abg_output = components["mp-pages"].write_pages(output_dir, component_context)
-        print(
-            f"abgeordnete: {abg_output['count']} gelistet, "
-            f"{abg_output['detail_count']} Profilseiten",
-            file=sys.stderr,
-        )
-    else:
-        remove_generated_addon_pages(output_dir, "abgeordnete", "abgeordnete.json")
+    # Visitor-facing areas are always present. They render honest empty states
+    # when the corresponding enrichment data has not been acquired yet.
+    bill_output = components["bills"].write_pages(output_dir, component_context)
+    abg_output = components["mp-pages"].write_pages(output_dir, component_context)
+    print(
+        f"abgeordnete: {abg_output['count']} gelistet, "
+        f"{abg_output['detail_count']} Profilseiten",
+        file=sys.stderr,
+    )
+    readiness = derive_feature_readiness(
+        entries,
+        abg_mps,
+        bill_count=int(bill_output["count"]),
+    )
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
@@ -5251,7 +5426,7 @@ def render_site(
     settings_path = output_dir / "settings.html"
     feature_manifest_path = output_dir / "data" / "features.json"
     feature_manifest_path.write_text(
-        json.dumps(tooling_manifest(features), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(tooling_manifest(features, readiness=readiness), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     index_path.write_text(
@@ -5298,19 +5473,16 @@ def render_site(
         database_page_path.write_text(render_database_page(database_path, database_href, features), encoding="utf-8")
     else:
         database_page_path.write_text(render_database_unavailable_page(features), encoding="utf-8")
-    settings_path.write_text(render_settings_page(features), encoding="utf-8")
+    settings_path.write_text(render_settings_page(features, readiness), encoding="utf-8")
     return index_path
 
 
 # ---------------------------------------------------------------------------
-# Baustein (feature flag) resolution
+# Update-time enrichment resolution and legacy feature compatibility
 #
-# A selection can come from several places, applied in this order of increasing
-# precedence: the defaults, features.json / features.local.json in the repo root,
-# --features-file, the BUNDESTAG_PULSE_FEATURES environment variable, --features
-# (which replaces the base entirely), the legacy --no-* flags, and finally
-# --enable / --disable. `vetoes` remembers explicit disables so a dependency
-# cannot silently switch a block back on.
+# The old feature vocabulary remains readable for one release. New configuration
+# uses `enrich` / --enrich and affects network-backed acquisition only; the
+# publication selection is fixed separately by publication_selection().
 # ---------------------------------------------------------------------------
 
 
@@ -5344,8 +5516,7 @@ def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]
             vetoes.add(feature_id)
 
 
-# Load a JSON feature config. A bare list replaces the selection; an object may
-# carry "features" (replace), "enable" and "disable".
+# Load enrichment config plus deprecated feature-selection shapes.
 def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -5369,6 +5540,14 @@ def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> Non
             _apply_feature_tokens(current, replacement, vetoes)
     _apply_feature_tokens(current, [f"+{item.lstrip('+')}" for item in _split_feature_tokens(payload.get("enable"))], vetoes)
     _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
+    for feature_id in _split_feature_tokens(payload.get("enrich")):
+        if feature_id == "all":
+            current.update(ENRICHMENT_IDS)
+        elif feature_id in ENRICHMENT_IDS:
+            current.add(feature_id)
+        else:
+            choices = ", ".join(sorted(ENRICHMENT_IDS))
+            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
 
 
 # Build the final Selection for this run, then let features.resolve() close it
@@ -5406,6 +5585,30 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
         _apply_feature_tokens(current, [f"+{feature_id}"], vetoes)
     for feature_id in getattr(args, "disable", None) or []:
         _apply_feature_tokens(current, [f"-{feature_id}"], vetoes)
+
+    enrichment_tokens = _split_feature_tokens(os.environ.get("BUNDESTAG_PULSE_ENRICHMENTS"))
+    enrichment_tokens.extend(_split_feature_tokens(getattr(args, "enrich", None)))
+    for feature_id in enrichment_tokens:
+        if feature_id == "all":
+            current.update(ENRICHMENT_IDS)
+            continue
+        if feature_id not in ENRICHMENT_IDS:
+            choices = ", ".join(sorted(ENRICHMENT_IDS))
+            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
+        current.add(feature_id)
+
+    # Explicit negative compatibility flags retain their old highest-priority
+    # behavior during the deprecation window.
+    if getattr(args, "no_roster", False):
+        _apply_feature_tokens(current, ["-mp-roster"], vetoes)
+    if getattr(args, "no_abgeordnetenwatch", False):
+        _apply_feature_tokens(current, ["-aw-profiles"], vetoes)
+    for feature_id in getattr(args, "disable", None) or []:
+        _apply_feature_tokens(current, [f"-{feature_id}"], vetoes)
+
+    # Supplying the expert tuning flag directly remains a convenient shorthand.
+    if (getattr(args, "vote_scan_pages", None) or 0) > 0:
+        current.add("votes")
     return resolve(base=current, disable=vetoes)
 
 
@@ -5415,24 +5618,64 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
 def apply_to_args(args: argparse.Namespace, selection: Selection) -> None:
     args.no_roster = "mp-roster" not in selection
     args.no_abgeordnetenwatch = "aw-profiles" not in selection
-    if "summaries" not in selection:
-        args.summary_mode = "off"
-    if "votes" not in selection:
+    if "votes" in selection:
+        args.vote_scan_pages = 30 if getattr(args, "vote_scan_pages", None) is None else args.vote_scan_pages
+    else:
         args.vote_scan_pages = 0
+
+
+def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Path) -> None:
+    """Keep old commands working for one release while teaching the new model."""
+    used = []
+    if getattr(args, "features", None):
+        used.append("--features")
+    if getattr(args, "enable", None):
+        used.append("--enable")
+    if getattr(args, "disable", None):
+        used.append("--disable")
+    if os.environ.get("BUNDESTAG_PULSE_FEATURES"):
+        used.append("BUNDESTAG_PULSE_FEATURES")
+    if getattr(args, "no_roster", False):
+        used.append("--no-roster")
+    if getattr(args, "no_abgeordnetenwatch", False):
+        used.append("--no-abgeordnetenwatch")
+    config_paths = [root / "features.json", root / "features.local.json"]
+    if getattr(args, "features_file", None):
+        config_paths.append(Path(args.features_file))
+    for path in config_paths:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, list) or (isinstance(payload, dict) and {"features", "enable", "disable"}.intersection(payload)):
+            used.append(path.name)
+    if used:
+        print(
+            "warning: "
+            + ", ".join(used)
+            + " is deprecated. Website visibility is now controlled in the browser; "
+            "use --enrich for update-time data acquisition.",
+            file=sys.stderr,
+        )
 
 
 # --list-features: print the Baustein table and exit without touching the network.
 def print_feature_table(selection: Selection) -> None:
-    print("ID                 Status       Kategorie      Beschreibung")
-    print("-" * 92)
+    print("ID                 Website       Datenupdate   Beschreibung")
+    print("-" * 96)
     for feature in FEATURES:
         if feature.core:
-            status = "Kern"
-        elif feature.id in selection:
-            status = "aktiv"
+            website = "immer"
+        elif feature.client_mode != "none":
+            website = "Browser"
         else:
-            status = "aus"
-        print(f"{feature.id:<18} {status:<12} {feature.category:<14} {feature.description}")
+            website = "Datenquelle"
+        update = "aktiv" if feature.id in ENRICHMENT_IDS and feature.id in selection else (
+            "aus" if feature.id in ENRICHMENT_IDS else "—"
+        )
+        print(f"{feature.id:<18} {website:<13} {update:<13} {feature.description}")
 
 
 # ---------------------------------------------------------------------------
@@ -5443,11 +5686,18 @@ def print_feature_table(selection: Selection) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
-    parser.add_argument("--enable", metavar="ID", action="append", default=[], help="Baustein aktivieren; wiederholbar.")
-    parser.add_argument("--disable", metavar="ID", action="append", default=[], help="Baustein deaktivieren; wiederholbar.")
-    parser.add_argument("--features", help="Kommagetrennte Basis-Auswahl; 'all' aktiviert alle Bausteine.")
-    parser.add_argument("--features-file", type=Path, help="Zusätzliche JSON-Konfiguration für Bausteine.")
+    parser.add_argument("--enable", metavar="ID", action="append", default=[], help="Deprecated compatibility alias; use browser settings or --enrich.")
+    parser.add_argument("--disable", metavar="ID", action="append", default=[], help="Deprecated compatibility veto for update enrichments.")
+    parser.add_argument("--features", help="Deprecated compatibility selection; published website areas are always included.")
+    parser.add_argument("--features-file", type=Path, help="Enrichment JSON file; legacy feature keys are deprecated.")
     parser.add_argument("--list-features", action="store_true", help="Alle Bausteine auflisten und ohne Netzwerkzugriff beenden.")
+    parser.add_argument(
+        "--enrich",
+        metavar="ID",
+        action="append",
+        default=[],
+        help="Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable.",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -5542,8 +5792,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vote-scan-pages",
         type=int,
-        default=30,
-        help="Number of Bundestag roll-call vote list pages to scan per sitting.",
+        default=None,
+        help="Roll-call list pages per sitting (default 30 with --enrich votes, otherwise 0).",
     )
     parser.add_argument(
         "--roll-call-list-id",
@@ -5556,7 +5806,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-abgeordnetenwatch",
         action="store_true",
-        help="Skip linking speakers and vote members to their abgeordnetenwatch.de profiles.",
+        help="Deprecated compatibility veto for --enrich aw-profiles.",
     )
     parser.add_argument(
         "--abgeordnetenwatch-cache",
@@ -5587,7 +5837,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-roster",
         action="store_true",
-        help="Skip fetching the full MdB roster; Abgeordnete pages then cover only people seen in ingested protocols.",
+        help="Deprecated compatibility veto for --enrich mp-roster.",
     )
     return parser.parse_args()
 
@@ -5603,22 +5853,23 @@ def main() -> int:
     dip.load_local_env()
     args = parse_args()
 
-    # Which Bausteine are on decides what the rest of this function even does,
-    # so resolve them before anything else. --list-features exits right here.
+    # Resolve update-time enrichments before doing any network work.
+    root = Path(__file__).resolve().parents[1]
     try:
-        features = resolve_from_args(args, root=Path(__file__).resolve().parents[1])
+        enrichments = resolve_from_args(args, root=root)
     except FeatureError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if getattr(args, "list_features", False):
-        print_feature_table(features)
+        print_feature_table(enrichments)
         return 0
-    apply_to_args(args, features)
+    warn_deprecated_feature_configuration(args, root=root)
+    apply_to_args(args, enrichments)
+    features = publication_selection()
     # Import addon modules only after this module and the renderer are fully loaded.
     components = {component.feature.id: component for component in feature_loader.load(features)}
 
-    # Output layout: protocols/ and data/ always, bills/ and abgeordnete/ only
-    # when their Baustein is enabled.
+    # Every visitor-facing output directory exists in every publication.
     output_dir = args.output_dir
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
@@ -5747,13 +5998,17 @@ def main() -> int:
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
             if not args.no_persist:
-                rebuild_database_from_entries(database_path, entries)
+                rebuild_database_from_entries(
+                    database_path,
+                    entries,
+                    preserve_roster="mp-roster" not in enrichments,
+                )
                 store = pulse_store.connect(database_path)
                 try:
                     pulse_store.initialize(store)
                     if "mp-pages" in features:
                         component_context = {
-                            "selection": features,
+                            "selection": enrichments,
                             "client": client,
                             "roster_wahlperiode": args.roster_wahlperiode,
                             "profile_resolver": profile_resolver,

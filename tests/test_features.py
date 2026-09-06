@@ -52,7 +52,9 @@ class FeatureRegistryTests(unittest.TestCase):
         self.assertNotIn("</", payload)
         self.assertNotIn("Namentliche Abstimmungen", payload)
         self.assertTrue(decoded)
-        self.assertTrue(all(set(value) == {"a", "v", "c", "m"} for value in decoded.values()))
+        self.assertTrue(all(set(value) == {"a", "v", "c", "m", "r"} for value in decoded.values()))
+        self.assertEqual(decoded["bill-follow"]["r"], ["bills"])
+        self.assertFalse(decoded["bills"]["v"])
 
     def test_feature_css_has_expected_polarity(self) -> None:
         css = feature_css()
@@ -69,6 +71,15 @@ class FeatureRegistryTests(unittest.TestCase):
         styles = pulse_html.global_header_styles()
         self.assertNotIn("{feature_css()}", styles)
         self.assertIn('html:not([data-feature-votes]) [data-feature="votes"]', styles)
+
+    def test_browser_runtime_persists_preferences_and_resolves_dependencies(self) -> None:
+        bootstrap = pulse_html.feature_bootstrap_script(resolve(base=()))
+        runtime = pulse_html.feature_runtime_script()
+        self.assertIn('const key = "bundestag-pulse-features"', bootstrap)
+        self.assertIn('"bill-follow":{"a":1,"v":0,"c":0,"m":"h","r":["bills"]}', bootstrap)
+        self.assertIn("for (const required of feature.r || []) apply(required, true)", runtime)
+        self.assertIn("if ((dependent.r || []).includes(id)) apply(dependentId, false)", runtime)
+        self.assertIn("window.localStorage.setItem(key, JSON.stringify(overrides))", runtime)
 
 
 if __name__ == "__main__":

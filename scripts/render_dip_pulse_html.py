@@ -16,9 +16,9 @@ from features import (
     FEATURES,
     NAV_ITEMS,
     Selection,
-    default_selection,
     feature_css,
     manifest_json,
+    publication_selection,
 )
 
 
@@ -235,6 +235,9 @@ def global_header_styles() -> str:
     .settings-switch { flex:0 0 auto; margin-top:2px; accent-color:var(--blue); cursor:pointer; }
     .settings-switch:disabled { cursor:not-allowed; }
     .settings-badge { display:inline-flex !important; width:max-content; padding:2px 5px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2, #f4f6f9); }
+    .settings-badge.readiness-ready { border-color:#89c5ba; background:var(--green-soft, #e7f6f3); color:#0f5f59; }
+    .settings-badge.readiness-partial { border-color:#d9c48a; background:var(--amber-soft, #fbf6e7); color:#7a5a10; }
+    .settings-badge.readiness-unavailable { color:var(--muted); }
     .settings-item.is-unavailable { opacity:.72; }
     .settings-hint code { font-size:10px; }
     .settings-more { text-decoration:none; }
@@ -392,7 +395,7 @@ def theme_runtime_script() -> str:
 
 
 def feature_bootstrap_script(selection: Selection | None = None) -> str:
-    selection = selection or default_selection()
+    selection = publication_selection()
     return f"""
   <script>
     (() => {{
@@ -401,10 +404,26 @@ def feature_bootstrap_script(selection: Selection | None = None) -> str:
       window.__BUNDESTAG_PULSE_FEATURES__ = manifest;
       let overrides = {{}};
       try {{ overrides = JSON.parse(window.localStorage.getItem(key) || "{{}}") || {{}}; }} catch (_) {{}}
+      const states = {{}};
       for (const [id, feature] of Object.entries(manifest)) {{
-        let on = Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v);
-        if (!feature.a) on = false;
-        if (feature.c) on = true;
+        states[id] = feature.c || (feature.a && (
+          Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v)
+        ));
+      }}
+      // An explicit/off dependency wins when restoring old or hand-edited state.
+      // Interactive enabling performs the inverse operation and enables its
+      // dependencies first (see feature_runtime_script).
+      let changed = true;
+      while (changed) {{
+        changed = false;
+        for (const [id, feature] of Object.entries(manifest)) {{
+          if (states[id] && (feature.r || []).some((required) => !states[required])) {{
+            states[id] = false;
+            changed = true;
+          }}
+        }}
+      }}
+      for (const [id, on] of Object.entries(states)) {{
         document.documentElement.toggleAttribute(`data-feature-${{id}}`, on);
       }}
     }})();
@@ -413,7 +432,6 @@ def feature_bootstrap_script(selection: Selection | None = None) -> str:
 
 
 def feature_runtime_script(selection: Selection | None = None) -> str:
-    selection = selection or default_selection()
     return """
   <script>
     (() => {
@@ -434,17 +452,33 @@ def feature_runtime_script(selection: Selection | None = None) -> str:
           control.dataset.inherited = inherited ? "true" : "false";
         });
         document.querySelectorAll("[data-settings-count]").forEach((node) => {
-          const count = Object.keys(manifest).filter((id) => manifest[id].a && root.hasAttribute(`data-feature-${id}`)).length;
+          const count = Object.keys(manifest).filter((id) => {
+            const feature = manifest[id];
+            return feature.a && !feature.c && feature.m !== "n" && root.hasAttribute(`data-feature-${id}`);
+          }).length;
           node.textContent = `${count} aktiv`;
         });
       };
       const setFeature = (id, on, persist = true) => {
         const feature = manifest[id];
         if (!feature || !feature.a || feature.c || feature.m === "n") return;
-        root.toggleAttribute(`data-feature-${id}`, Boolean(on));
+        const overrides = readOverrides();
+        const apply = (featureId, enabled) => {
+          const target = manifest[featureId];
+          if (!target || target.c || target.m === "n") return;
+          root.toggleAttribute(`data-feature-${featureId}`, Boolean(enabled));
+          if (persist) overrides[featureId] = Boolean(enabled);
+        };
+        if (on) {
+          for (const required of feature.r || []) apply(required, true);
+          apply(id, true);
+        } else {
+          apply(id, false);
+          for (const [dependentId, dependent] of Object.entries(manifest)) {
+            if ((dependent.r || []).includes(id)) apply(dependentId, false);
+          }
+        }
         if (persist) {
-          const overrides = readOverrides();
-          overrides[id] = Boolean(on);
           try { window.localStorage.setItem(key, JSON.stringify(overrides)); } catch (_) {}
         }
         updateControls();
@@ -511,29 +545,25 @@ SETTINGS_ICON_SVG = (
 )
 
 
-def render_settings_items(selection: Selection, category: str | None = None) -> str:
+def render_settings_items(
+    selection: Selection,
+    category: str | None = None,
+    readiness: dict[str, str] | None = None,
+) -> str:
     labels = {feature.id: feature.label for feature in FEATURES}
+    readiness = readiness or {}
+    readiness_labels = {
+        "ready": "Daten verfügbar",
+        "partial": "Daten teilweise verfügbar",
+        "unavailable": "Noch keine Daten verfügbar",
+    }
     rows = []
     for feature in FEATURES:
+        if feature.core or feature.client_mode == "none":
+            continue
         if category and feature.category != category:
             continue
-        available = feature.id in selection
-        toggleable = available and not feature.core and feature.client_mode != "none"
-        checked = " checked" if available and feature.default_visible else ""
-        disabled = "" if toggleable else " disabled"
-        classes = "settings-item" + (" is-unavailable" if not available else "")
-        if not available:
-            status = (
-                '<span class="settings-badge">Nicht in diesem Build</span>'
-                f'<span class="settings-hint"><code>--enable {esc(feature.id)}</code></span>'
-                + (f'<span class="settings-hint">{esc(feature.rebuild_hint)}</span>' if feature.rebuild_hint else "")
-            )
-        elif feature.core:
-            status = '<span class="settings-badge">Immer aktiv</span>'
-        elif feature.client_mode == "none":
-            status = '<span class="settings-badge">Nur beim Build</span>'
-        else:
-            status = ""
+        checked = " checked" if feature.default_visible else ""
         enhancement = ""
         if feature.enhances:
             enhancement = (
@@ -541,20 +571,27 @@ def render_settings_items(selection: Selection, category: str | None = None) -> 
                 + esc(", ".join(labels[feature_id] for feature_id in feature.enhances))
                 + ".</span>"
             )
+        state = readiness.get(feature.id)
+        status = (
+            f'<span class="settings-badge readiness-{esc(state)}">{esc(readiness_labels[state])}</span>'
+            if state in readiness_labels
+            else ""
+        )
         rows.append(
-            f'<label class="{classes}" data-settings-item="{esc(feature.id)}">'
+            f'<label class="settings-item" data-settings-item="{esc(feature.id)}">'
             f'<span class="settings-switch-text"><strong>{esc(feature.label)}</strong>'
             f'<span>{esc(feature.description)}</span>{enhancement}{status}</span>'
             f'<input class="settings-switch" type="checkbox" role="switch" data-feature-toggle="{esc(feature.id)}"'
-            f'{checked}{disabled}></label>'
+            f'{checked}></label>'
         )
     return "".join(rows)
 
 
 def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
     groups = "".join(
-        f'<section class="settings-group"><h3>{esc(category)}</h3>{render_settings_items(selection, category)}</section>'
+        f'<section class="settings-group"><h3>{esc(category)}</h3>{items}</section>'
         for category in CATEGORIES
+        if (items := render_settings_items(selection, category))
     )
     panel_id = "site-settings-panel"
     prefix = "../" * depth
@@ -571,7 +608,7 @@ def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
 
 
 def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = publication_selection()
     prefix = "../" * depth
     brand_href = f"{prefix}index.html"
     links = []
@@ -1214,7 +1251,7 @@ def render_html(
     features: Selection | None = None,
     mp_lookup: dict[str, int] | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = publication_selection()
     from features.loader import load as load_components
 
     components = {component.feature.id: component for component in load_components(features)}

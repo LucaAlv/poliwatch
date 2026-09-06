@@ -1,6 +1,6 @@
 # Bundestag-Puls
 
-Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. Its strict default build contains the DIP-backed sitting catalog, protocol dossiers, and SQLite explorer; optional Bausteine add votes, summaries, profiles, MP pages, bill tracking, and developer views.
+Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. Every publication contains the DIP-backed sitting catalog, protocol dossiers, SQLite explorer, and optional browser-controlled experiences for votes, summaries, profiles, MP pages, bill tracking, and developer views.
 
 There is no package manager, no framework, and no build toolchain. Two things happen:
 
@@ -120,13 +120,13 @@ Related knobs, in the order you will reach for them:
 | `--detail-limit N` | Protocols enriched into dossiers. Default `5`; `0` = all fetched, `-1` = none. |
 | `--document-number 21/90` | Restrict catalog *and* dossiers to this protocol. Repeatable. Narrowing tool. |
 | `--dossier-document-number 21/90` | Add one dossier without restricting the catalog. Repeatable. Additive tool. |
-| `--summary-mode off` | Never call an LLM. Default `reuse` keeps existing summaries without new calls. |
-| `--no-roster`, `--no-abgeordnetenwatch` | Legacy aliases for `--disable mp-roster` / `--disable aw-profiles`. Big speed levers. |
+| `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
+| `--enrich ID` | Add optional vote, profile, or full-roster acquisition to this update. Omit it for the fastest update. |
 
 While developing a single dossier, the fastest online build is:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/90 --no-roster --summary-mode off
+scripts/preview_dip_pulse_site.sh update --document-number 21/90
 ```
 
 `--document-number` restricts the catalog *and* the store to that one protocol, so use it when you want a one-sitting site to iterate on, not as a refresh of a full local site. Rebuild the wider site with the recovery command above, raising `--limit` (or dropping it, for the full catalog) to the breadth you want back.
@@ -168,52 +168,50 @@ rm -rf .context/dip-pulse-site
 scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 ```
 
-## 5. Bausteine (optional features)
+## 5. Bausteine (browser features and data enrichments)
 
-The shipped default is strict: only `dip-fetch`, `sitting-catalog`, `dossiers`, and `store` are built. List the registry and exit, without any network access or build work:
+Every build now publishes all user-facing areas and optional section shells. The gear in every page header and `settings.html` let each visitor show or hide votes, summaries, profile links, MP pages, bill tracking, and the developer view. The choice is stored only in that browser and is applied immediately; a reload keeps it. First-time visitors see the core-only view.
+
+This is separate from **data enrichment**. Browser switches never access the network, expose API keys, or create LLM costs. If data has not been acquired, enabling its feature shows an honest unavailable or partial state. List the registry without network or build work with:
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --list-features
 ```
 
-| ID | Adds | Requires |
-|---|---|---|
-| `votes` | Roll-call totals, fractions, individual votes | `dip-fetch` |
-| `summaries` | LLM summaries per sitting and agenda item | `dip-fetch` |
-| `aw-profiles` | abgeordnetenwatch.de profile links | `dip-fetch` |
-| `mp-pages` | MP index and detail pages | `store` |
-| `mp-roster` | Full DIP MdB roster on those pages | `mp-pages` |
-| `bills` | Bill index and detail pages | `dip-fetch` |
-| `bill-follow` | Browser-local bill following | `bills` |
-| `dev-view` | Raw API panels and dossier command tools | `dossiers` |
+| Browser feature | Adds |
+|---|---|
+| `votes` | Roll-call totals, fractions, and individual votes |
+| `summaries` | LLM summaries per sitting and agenda item |
+| `aw-profiles` | abgeordnetenwatch.de profile links |
+| `mp-pages` | MP index and detail pages |
+| `bills` | Bill index and detail pages |
+| `bill-follow` | Browser-local bill following; enabling it also enables bills |
+| `dev-view` | Raw API panels and dossier command tools |
 
-Per build:
-
-```bash
-scripts/preview_dip_pulse_site.sh --features all              # everything, from cache
-scripts/preview_dip_pulse_site.sh --enable bills --enable mp-pages
-BUNDESTAG_PULSE_FEATURES=+dev-view,-votes scripts/preview_dip_pulse_site.sh
-```
-
-Those are offline builds: they render every enabled Baustein from what is already cached. Votes, profiles, and the MdB roster only arrive through an online build, and summaries are only generated when you ask for them:
+The ordinary offline preview needs no feature arguments:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --features all --summary-mode auto
+scripts/preview_dip_pulse_site.sh
 ```
 
-Without `--summary-mode auto` the default `reuse` keeps existing summaries and generates none, so the `summaries` Baustein stays empty on a fresh cache. Generating summaries needs `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`.
+Use `--enrich` only when an online update should acquire optional data. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, or `all`:
 
-Requirements are pulled in automatically; an explicit disable cascades to dependents; core Bausteine cannot be disabled.
+```bash
+scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
+scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
+```
 
-Selection is per build, not sticky: a later build without the flags deletes the optional pages it no longer owns. For a durable personal default, create a gitignored `features.local.json` next to `features.json`:
+Without `--summary-mode auto` the default `reuse` carries existing summaries forward and makes no LLM request. Generating summaries needs `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` and may incur provider cost. `--enrich all` deliberately does not imply summary generation.
+
+An update that omits an enrichment reuses already cached votes, profile links, summaries, and roster rows. Only an explicitly requested enrichment refreshes that source.
+
+For durable operator defaults, use the gitignored `features.local.json` next to `features.json`:
 
 ```json
-{ "enable": ["bills", "mp-pages"] }
+{ "enrich": ["votes", "aw-profiles"] }
 ```
 
-Use `{"features": ["all"]}` to replace the base selection instead of adding to it. Precedence: registry defaults → `features.json` → `features.local.json` → `BUNDESTAG_PULSE_FEATURES` → `--features` → legacy flags → `--enable` → `--disable`.
-
-The gear in every page header and `settings.html` change only what the current browser *shows*; they never rebuild. A Baustein that was not built is listed there with the exact command needed to build it.
+`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted for one release and print a deprecation warning; they no longer remove published UI.
 
 ## 6. Server settings
 
@@ -237,7 +235,7 @@ Stop the server before changing `PORT`, `PREVIEW_BIND`, or `DIP_PULSE_OUTPUT_DIR
 `.context/dip-pulse-site/` is self-contained static output. Every internal link is relative (only citations to bundestag.de and abgeordnetenwatch.de are absolute), so it can be copied to any static host, including a subdirectory:
 
 ```bash
-python3 scripts/build_dip_pulse_site.py --features all --preserve-existing-dossiers
+python3 scripts/build_dip_pulse_site.py --preserve-existing-dossiers
 rsync -a .context/dip-pulse-site/ user@host:/var/www/bundestag-puls/
 ```
 
@@ -253,10 +251,10 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `error: No cached protocols found in .context/dip-pulse-site/data.` | Offline build on an empty cache. Run one online update first (§2). |
 | Site suddenly shows only one sitting | A narrow online update rewrote the catalog. Re-run with `--preserve-existing-dossiers`. |
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
-| Optional pages disappeared | A later build ran without the Baustein flags. Re-pass them or persist them in `features.local.json` (§5). |
+| Optional feature shows no data | The UI is published, but its enrichment is absent. Check the readiness panel in settings and run an online update with the relevant `--enrich` option (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
-| abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the build continues without profile links. Add `--no-abgeordnetenwatch` for debug runs. |
-| Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and leave `mp-roster`, `aw-profiles`, `votes`, and `summaries` off. |
+| abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
+| Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 
 ## 9. More documentation
 
