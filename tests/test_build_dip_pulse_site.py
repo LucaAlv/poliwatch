@@ -52,6 +52,84 @@ class DossierProgressTests(unittest.TestCase):
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
+    def test_database_rebuild_preserves_cached_roster_unless_refreshing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    party_id = pulse_store.upsert_party(conn, "SPD", now)
+                    pulse_store.upsert_mp(
+                        conn,
+                        now=now,
+                        display_name="Ada Lovelace",
+                        party_id=party_id,
+                        identity_key="dip:ada",
+                        dip_person_id="ada",
+                        is_mdb=True,
+                    )
+            finally:
+                conn.close()
+
+            build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+            build_dip_pulse_site.rebuild_database_from_entries(
+                database_path,
+                [],
+                preserve_roster=False,
+            )
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_cached_votes_and_profiles_survive_non_enriching_update(self) -> None:
+        cached_profile = {"id": 42, "url": "https://example.test/ada"}
+        previous = {
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "T1",
+                "votes": [{"id": "vote-1", "members": []}],
+                "xml_speakers": [{"speaker": {
+                    "xml_redner_id": "11001",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                    "abgeordnetenwatch": cached_profile,
+                }}],
+            }],
+        }
+        report = {
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "T1",
+                "xml_speakers": [{"speaker": {
+                    "xml_redner_id": "11001",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                }}],
+            }],
+        }
+
+        build_dip_pulse_site.reuse_existing_dossier_enrichments(
+            report,
+            previous,
+            votes=True,
+            profiles=True,
+        )
+
+        item = report["agenda_items"][0]
+        self.assertEqual(item["votes"][0]["id"], "vote-1")
+        self.assertEqual(item["xml_speakers"][0]["speaker"]["abgeordnetenwatch"], cached_profile)
+        self.assertIsNot(item["votes"], previous["agenda_items"][0]["votes"])
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
@@ -323,7 +401,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 self.assertEqual(key[0], "")
                 self.assertLess(key, build_dip_pulse_site.entry_sort_key(complete))
 
-    def test_reduced_render_skips_addon_pages_and_dangling_links(self) -> None:
+    def test_reduced_enrichment_selection_still_publishes_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
@@ -337,14 +415,14 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 mp_lookup={},
                 features=default_selection(),
             )
-            self.assertFalse((output_dir / "bills" / "index.html").exists())
-            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertTrue((output_dir / "bills" / "index.html").exists())
+            self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
-            self.assertNotIn('href="bills/index.html"', rendered)
-            self.assertNotIn('href="../bills/index.html"', rendered)
+            self.assertIn('href="bills/index.html"', rendered)
+            self.assertIn('data-feature="bills"', rendered)
 
-    def test_reduced_render_removes_stale_addon_pages(self) -> None:
+    def test_later_reduced_enrichment_render_keeps_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
@@ -360,11 +438,17 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(**kwargs, features=all_selection())
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            stale_bill = output_dir / "bills" / "bill-removed.html"
+            stale_mp = output_dir / "abgeordnete" / "999.html"
+            stale_bill.write_text("stale", encoding="utf-8")
+            stale_mp.write_text("stale", encoding="utf-8")
             build_dip_pulse_site.render_site(**kwargs, features=default_selection())
-            self.assertFalse((output_dir / "bills" / "index.html").exists())
-            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
-            self.assertFalse((output_dir / "data" / "bills.json").exists())
-            self.assertFalse((output_dir / "data" / "abgeordnete.json").exists())
+            self.assertTrue((output_dir / "bills" / "index.html").exists())
+            self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertTrue((output_dir / "data" / "bills.json").exists())
+            self.assertTrue((output_dir / "data" / "abgeordnete.json").exists())
+            self.assertFalse(stale_bill.exists())
+            self.assertFalse(stale_mp.exists())
 
     def test_feature_manifest_and_bootstrap_are_written_everywhere(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
@@ -383,19 +467,25 @@ class CurrentPulseOrderTests(unittest.TestCase):
             )
             manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
             available = {item["id"] for item in manifest["features"] if item["available"]}
-            self.assertEqual(available, selection.ids)
+            self.assertEqual(available, all_selection().ids)
+            self.assertTrue(all(item["readiness"] in {"ready", "partial", "unavailable"} for item in manifest["features"]))
             for page in output_dir.rglob("*.html"):
                 markup = page.read_text(encoding="utf-8")
                 self.assertIn("bundestag-pulse-features", markup, msg=str(page))
                 self.assertIn("data-feature-", markup, msg=str(page))
                 self.assertIn("settings-toggle", markup, msg=str(page))
 
-    def test_settings_page_distinguishes_core_and_unbuilt_features(self) -> None:
-        markup = build_dip_pulse_site.render_settings_page(default_selection())
-        self.assertIn("is-unavailable", markup)
-        self.assertIn("--enable votes", markup)
-        self.assertRegex(markup, r'data-feature-toggle="dip-fetch"[^>]*checked disabled')
-        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*disabled')
+    def test_settings_page_only_switches_user_facing_experiences(self) -> None:
+        markup = build_dip_pulse_site.render_settings_page(
+            default_selection(),
+            {"votes": "unavailable", "summaries": "partial"},
+        )
+        self.assertNotIn("--enable votes", markup)
+        self.assertNotIn('data-feature-toggle="dip-fetch"', markup)
+        self.assertNotIn('data-feature-toggle="mp-roster"', markup)
+        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*>')
+        self.assertIn("Noch keine Daten verfügbar", markup)
+        self.assertIn("Datenstand dieser Veröffentlichung", markup)
 
 
 class PeriodOrderTests(unittest.TestCase):
@@ -476,6 +566,71 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
                 selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
         self.assertIn("votes", selection)
         self.assertNotIn("bills", selection)
+
+    def test_enrich_selects_network_work_without_ui_features(self) -> None:
+        args = SimpleNamespace(
+            enrich=["votes", "mp-roster"],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertIn("votes", selection)
+        self.assertIn("mp-roster", selection)
+        self.assertNotIn("bills", selection)
+        self.assertEqual(args.vote_scan_pages, 30)
+        self.assertFalse(args.no_roster)
+        self.assertTrue(args.no_abgeordnetenwatch)
+
+    def test_default_update_enrichments_do_not_make_network_side_jobs(self) -> None:
+        args = SimpleNamespace(
+            enrich=[],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertTrue(args.no_roster)
+        self.assertTrue(args.no_abgeordnetenwatch)
+
+    def test_positive_vote_scan_pages_implies_vote_enrichment(self) -> None:
+        args = SimpleNamespace(
+            enrich=[],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=4,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertIn("votes", selection)
+        self.assertEqual(args.vote_scan_pages, 4)
+
+    def test_unknown_enrichment_fails_with_available_choices(self) -> None:
+        args = SimpleNamespace(
+            enrich=["bills"],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
+            build_dip_pulse_site.FeatureError,
+            "Verfügbar",
+        ):
+            build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
 
 
 if __name__ == "__main__":

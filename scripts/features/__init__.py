@@ -23,7 +23,7 @@ class Feature:
     category: str
     core: bool = False
     default_built: bool = False
-    default_visible: bool = True
+    default_visible: bool = False
     requires: tuple[str, ...] = ()
     enhances: tuple[str, ...] = ()
     nav_key: str | None = None
@@ -52,10 +52,10 @@ NAV_ITEMS = (
 
 
 FEATURES = (
-    Feature("dip-fetch", "DIP-Daten", "Ruft die offiziellen DIP-Daten des Bundestags ab.", "Kern", True, True, client_mode="none"),
-    Feature("sitting-catalog", "Sitzungskatalog", "Zeigt den Katalog der Plenarprotokolle und API-Sitzungen.", "Kern", True, True, requires=("dip-fetch",), nav_key="overview", client_mode="none"),
-    Feature("dossiers", "Protokoll-Dossiers", "Erzeugt die Detailansichten der Plenarprotokolle.", "Kern", True, True, requires=("dip-fetch",), client_mode="none"),
-    Feature("store", "Datenbank", "Speichert die verknüpften Parlamentsdaten in SQLite.", "Kern", True, True, requires=("dip-fetch",), nav_key="database", client_mode="none"),
+    Feature("dip-fetch", "DIP-Daten", "Ruft die offiziellen DIP-Daten des Bundestags ab.", "Kern", core=True, default_built=True, default_visible=True, client_mode="none"),
+    Feature("sitting-catalog", "Sitzungskatalog", "Zeigt den Katalog der Plenarprotokolle und API-Sitzungen.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), nav_key="overview", client_mode="none"),
+    Feature("dossiers", "Protokoll-Dossiers", "Erzeugt die Detailansichten der Plenarprotokolle.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), client_mode="none"),
+    Feature("store", "Datenbank", "Speichert die verknüpften Parlamentsdaten in SQLite.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), nav_key="database", client_mode="none"),
     Feature("votes", "Namentliche Abstimmungen", "Ergänzt Abstimmungssummen, Fraktionen und einzelne Stimmen.", "Analyse", requires=("dip-fetch",), enhances=("mp-pages", "aw-profiles"), costs_network=True, rebuild_hint="Bundestag-Abstimmungen werden beim nächsten Build abgerufen."),
     Feature("summaries", "KI-Zusammenfassungen", "Ergänzt KI-generierte Zusammenfassungen der Sitzung und Tagesordnungspunkte.", "Analyse", requires=("dip-fetch",), costs_network=True, rebuild_hint="Zusammenfassungen können zusätzliche API-Kosten verursachen."),
     Feature("aw-profiles", "abgeordnetenwatch-Profile", "Verknüpft Redner und Abstimmende mit ihren öffentlichen Profilen.", "Analyse", requires=("dip-fetch",), costs_network=True, rebuild_hint="Profildaten werden beim nächsten Build abgerufen."),
@@ -108,6 +108,15 @@ def all_selection() -> Selection:
     return resolve(base=REGISTRY)
 
 
+def publication_selection() -> Selection:
+    """Every capability shipped in the static publication.
+
+    Build-time enrichment choices deliberately do not affect this selection.
+    Visitors decide which non-core experiences are visible in their browser.
+    """
+    return all_selection()
+
+
 def resolve(
     *,
     base: Iterable[str] | None = None,
@@ -157,7 +166,7 @@ def resolve(
     return Selection(frozenset(selected))
 
 
-def inline_manifest(selection: Selection) -> dict[str, dict[str, int | str]]:
+def inline_manifest(selection: Selection) -> dict[str, dict[str, Any]]:
     modes = {"hide": "h", "reveal": "r", "none": "n"}
     return {
         feature.id: {
@@ -165,6 +174,11 @@ def inline_manifest(selection: Selection) -> dict[str, dict[str, int | str]]:
             "v": int(feature.default_visible),
             "c": int(feature.core),
             "m": modes[feature.client_mode],
+            "r": [
+                required
+                for required in feature.requires
+                if REGISTRY[required].client_mode != "none"
+            ],
         }
         for feature in FEATURES
     }
@@ -175,9 +189,26 @@ def manifest_json(selection: Selection) -> str:
     return json.dumps(inline_manifest(selection), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 
-def tooling_manifest(selection: Selection, *, generated_at: str | None = None) -> dict[str, Any]:
+def tooling_manifest(
+    selection: Selection,
+    *,
+    readiness: dict[str, str] | None = None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    readiness = readiness or {}
     return {
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+        "publication": {
+            "default_view": "core",
+            "browser_storage_key": "bundestag-pulse-features",
+            "experience_ids": [
+                feature.id for feature in FEATURES if not feature.core and feature.client_mode != "none"
+            ],
+        },
+        "data_readiness": {
+            feature_id: readiness.get(feature_id, "unavailable")
+            for feature_id in ("votes", "summaries", "aw-profiles", "mp-roster")
+        },
         "features": [
             {
                 "id": feature.id,
@@ -185,6 +216,8 @@ def tooling_manifest(selection: Selection, *, generated_at: str | None = None) -
                 "description": feature.description,
                 "category": feature.category,
                 "available": feature.id in selection,
+                "published": feature.id in selection,
+                "readiness": readiness.get(feature.id, "ready"),
                 "visible": feature.default_visible,
                 "core": feature.core,
                 "mode": feature.client_mode,

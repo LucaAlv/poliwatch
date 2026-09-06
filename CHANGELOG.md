@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0.0] - 2026-09-06
+
+### Added
+
+- Website Bausteine are now true per-browser preferences: every publication contains all user-facing areas, switches apply immediately, survive reloads, and default to the core-only view.
+- Settings report whether optional vote, summary, profile, and roster data is available, partial, or unavailable without triggering network requests.
+- `--enrich votes|aw-profiles|mp-roster|all` explicitly selects optional update-time data acquisition; summary generation remains separately protected by `--summary-mode`.
+
+### Changed
+
+- Offline and reduced-enrichment builds no longer remove bill or MP pages. Missing source data produces an honest empty state instead.
+- Browser dependencies are resolved locally: enabling bill following enables bills, and disabling bills disables bill following.
+- The old feature-selection CLI, JSON, and environment inputs are deprecated for one release. They remain accepted with warnings but no longer control published UI.
+
 ## [0.1.1.0] - 2026-08-03
 
 ### Changed

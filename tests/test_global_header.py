@@ -28,13 +28,12 @@ class GlobalHeaderTests(unittest.TestCase):
             with self.subTest(depth=depth):
                 self.assertIn(("../" * depth) + "database.html", pulse_html.render_global_header(depth=depth))
 
-    def test_disabled_feature_drops_nav_item(self) -> None:
+    def test_enrichment_selection_does_not_drop_published_nav_item(self) -> None:
         selection = resolve(base=("bills",), disable=("bills",))
         markup = pulse_html.render_global_header(features=selection)
         nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup).group(1)
-        self.assertNotIn("Gesetze verfolgen", nav)
-        enabled = pulse_html.render_global_header(features=all_selection())
-        self.assertIn('data-feature="bills"', enabled)
+        self.assertIn("Gesetze verfolgen", nav)
+        self.assertIn('data-feature="bills"', markup)
 
     def test_accessibility_state_is_wired(self) -> None:
         markup = pulse_html.render_global_header(active="overview", features=all_selection())
