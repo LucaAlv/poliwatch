@@ -1,6 +1,59 @@
 #!/usr/bin/env python3
 """Build a static Bundestag Pulse overview site for multiple sittings."""
 
+# NOTE: the docstring above is short on purpose - parse_args() passes it to
+# argparse as the --help description. The map of the build lives here instead.
+#
+# This is the top-level build script for the whole site. It fetches parliamentary
+# data, persists it into SQLite, and writes every HTML file of the site into
+# ``--output-dir`` (default ``.context/dip-pulse-site``). The site is fully static:
+# the only code that runs in a visitor's browser are the small inline ``<script>``
+# blocks that this file emits.
+#
+# Build pipeline -- see ``main()`` at the bottom of the file for the real sequence:
+#
+#   1. Resolve the "Bausteine" (feature flags) that decide which optional parts of
+#      the site are built at all -> ``resolve_from_args`` plus the ``features``
+#      package.
+#   2. Fetch the plenary-protocol catalog from the DIP API -> ``fetch_protocols``.
+#   3. For a subset of those sittings, build a full "dossier" (agenda items,
+#      speeches, documents, roll-call votes, optional LLM summaries) by delegating
+#      the heavy extraction work to ``validate_dip_protocol.build_report``
+#      -> ``write_report_and_page``. Every dossier is written twice: as JSON under
+#      ``data/`` and as an HTML page under ``protocols/``.
+#   4. Rebuild the SQLite graph store from those dossiers
+#      -> ``rebuild_database_from_entries`` (schema and writes live in
+#      ``persist_dip_pulse_store``).
+#   5. Read the store back to assemble the MP ("Abgeordnete") data
+#      -> ``collect_abgeordnete``.
+#   6. Render every remaining page of the site -> ``render_site``.
+#
+# Which code writes which part of the website:
+#
+#   index.html           ``render_landing_page``     explanatory home page
+#   puls.html            ``render_front_page``       "Aktueller Puls" dashboard
+#   overview.html        ``render_overview``         dossier cards + catalog teaser
+#   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
+#   sources.html         ``render_sources_page``     sources and method transparency
+#   database.html        ``render_database_page``    SQLite schema/sample explorer
+#   settings.html        ``render_settings_page``    per-browser Baustein toggles
+#   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
+#   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
+#   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
+#   abgeordnete/index.html   ``render_abgeordnete_index``   MP roster with filters
+#   abgeordnete/<id>.html    ``render_abgeordnete_detail``  one MP profile
+#   data/*.json          raw reports, catalog, bills.json, abgeordnete.json,
+#                        features.json
+#
+# Every page is emitted as one big f-string containing its own ``<style>`` block,
+# so a ``render_*`` function is self-contained: its Python code computes the
+# numbers, and the f-string right below it is the literal page markup. Shared
+# chrome (header, theme switch, feature runtime) comes from
+# ``render_dip_pulse_html`` and is imported as ``pulse_html``.
+#
+# The site copy is German because the audience is German; code and comments are
+# English.
+
 from __future__ import annotations
 
 import argparse
@@ -13,10 +66,20 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+# Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
+# file is run directly):
+#   pulse_html  - shared HTML helpers + the per-sitting dossier page renderer
+#   pulse_store - SQLite schema, upserts and report persistence
+#   dip         - DIP API client and the protocol -> report extraction pipeline
+#   aw          - abgeordnetenwatch.de profile lookup and caching
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
+# The "Bausteine" (building blocks) feature system. FEATURES/REGISTRY/CATEGORIES
+# describe every optional part of the site, Selection is a resolved set of
+# enabled ids, and features.loader lazily imports the addon component for each
+# enabled feature (bills, mp-pages, votes, summaries, ...).
 from features import (
     CATEGORIES,
     FEATURES,
@@ -30,6 +93,9 @@ from features import (
 from features import loader as feature_loader
 
 
+# Human-readable one-liners for every table in the SQLite store. Used only by the
+# database explorer page (database.html) to caption each table card; a table that
+# is missing here falls back to a generic sentence in read_database_snapshot().
 DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
     "parties": "Normalisierte Parteien und Rollen wie Regierung oder fraktionslos.",
@@ -49,29 +115,59 @@ DATABASE_TABLE_DESCRIPTIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Document numbers, slugs and sort keys
+#
+# A Bundestag document number looks like "21/84" (Wahlperiode/running number).
+# It is the primary human identifier for a sitting and gets turned into the
+# file names used under data/ and protocols/.
+# ---------------------------------------------------------------------------
+
+
+# Turn "21/84" into "21-84" so it can be used inside a file name.
 def slugify_document_number(document_number: str) -> str:
     value = document_number.strip().replace("/", "-")
     value = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value)
     return value.strip("-").lower()
 
 
+# Defensive string coercion: DIP sometimes yields None or padded values, and
+# document numbers are used as dict keys all over this file.
 def normalized_document_number(document_number: Any) -> str:
     return str(document_number or "").strip()
 
 
+# Sort protocols newest-first (used with reverse=True everywhere). Sitting date
+# is the primary key; the protocol id only breaks ties for same-day sittings.
 def protocol_sort_key(protocol: dict[str, Any]) -> tuple[str, str]:
     return (str(protocol.get("datum") or ""), str(protocol.get("id") or ""))
 
 
+# Same ordering, but for a built dossier entry (the dict returned by
+# write_report_files) rather than a bare protocol record.
 def entry_sort_key(entry: dict[str, Any]) -> tuple[str, str]:
     return protocol_sort_key((entry.get("report") or {}).get("protocol") or {})
 
 
+# Order Wahlperiode buckets numerically, lowest first. The bucket keys are
+# strings, so a plain sort puts "9" above "21". The non-numeric fallback bucket
+# ("unbekannt"/"unknown", used when a protocol carries no wahlperiode) sorts
+# after every real period.
+def period_sort_key(period: str) -> tuple[int, int, str]:
+    if period.isdigit():
+        return (0, int(period), "")
+    return (1, 0, period)
+
+
+# The official XML protocol URL. Its presence decides whether a sitting can get
+# a dossier at all - the XML is the authoritative source for agenda items,
+# speeches and speakers.
 def protocol_xml_url(protocol: dict[str, Any]) -> str:
     fundstelle = protocol.get("fundstelle") or {}
     return str(fundstelle.get("xml_url") or "").strip()
 
 
+# Human-readable label for log lines and warnings, e.g. "21/84 (ID 6122)".
 def protocol_label(protocol: dict[str, Any]) -> str:
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     protocol_id = str(protocol.get("id") or "").strip()
@@ -80,12 +176,21 @@ def protocol_label(protocol: dict[str, Any]) -> str:
     return document_number or protocol_id or "unbekanntes Protokoll"
 
 
+# ---------------------------------------------------------------------------
+# Fetching protocols and building dossiers
+# ---------------------------------------------------------------------------
+
+
 def build_dossiers_with_progress(
     protocols: list[dict[str, Any]],
     load_existing: Callable[[dict[str, Any]], dict[str, Any] | None],
     build_dossier: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Build dossiers sequentially while emitting human-readable progress to stderr."""
+    # Dossier building is the slow part of a build (XML download, DIP lookups,
+    # roll-call scraping, optionally LLM calls), so each sitting gets a
+    # numbered start/finish line on stderr. Failures print the elapsed time
+    # before re-raising, which makes a hung or slow sitting easy to spot.
     total = len(protocols)
     if total == 0:
         print("[dossiers] No dossiers selected for processing.", file=sys.stderr, flush=True)
@@ -127,6 +232,7 @@ def build_dossiers_with_progress(
     return entries
 
 
+# Look up exactly one sitting by its document number, e.g. "21/84".
 def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: str) -> dict[str, Any]:
     documents = client.list_all(
         "/plenarprotokoll",
@@ -137,6 +243,15 @@ def fetch_protocol_by_document_number(client: dip.ApiClient, document_number: st
     return documents[0]
 
 
+# Fetch the protocol catalog that the whole site is built from.
+#
+# Two modes:
+#   * explicit --document-number values -> fetch just those sittings
+#   * otherwise -> page through /plenarprotokoll until `limit` records are
+#     collected (limit <= 0 means "every available BT protocol")
+#
+# The DIP API returns documents sorted by `datum` descending, so the first page
+# already holds the newest sittings and a small --limit yields recent ones.
 def fetch_protocols(
     client: dip.ApiClient,
     limit: int,
@@ -144,15 +259,20 @@ def fetch_protocols(
     wahlperiode: int | None = None,
 ) -> list[dict[str, Any]]:
     if document_numbers:
+        # Explicit selection: fetch each requested number, then order newest first.
         protocols: list[dict[str, Any]] = []
         for document_number in document_numbers:
             protocols.append(fetch_protocol_by_document_number(client, document_number))
         return sorted(protocols, key=protocol_sort_key, reverse=True)
 
+    # Catalog mode. Narrowing by Wahlperiode only makes sense for a limited
+    # fetch; an unlimited fetch deliberately walks every period.
     protocols: list[dict[str, Any]] = []
     params: dict[str, Any] = {"f.zuordnung": "BT"}
     if limit > 0 and wahlperiode:
         params["f.wahlperiode"] = wahlperiode
+    # Cursor pagination: DIP keeps returning the same cursor once the result set
+    # is exhausted, which is the only reliable end-of-data signal.
     previous_cursor = None
     fetch_all = limit <= 0
     while fetch_all or len(protocols) < limit:
@@ -166,6 +286,15 @@ def fetch_protocols(
     return protocols if fetch_all else protocols[:limit]
 
 
+# Decide which of the fetched protocols get a full dossier page.
+#
+#   detail_limit  < 0  -> none (catalog-only build)
+#   detail_limit == 0  -> every protocol that has an XML URL
+#   detail_limit  > 0  -> the first N protocols that have an XML URL
+#   detail_limit is None -> no cap (used for explicitly requested dossiers)
+#
+# Protocols without fundstelle.xml_url are skipped with a warning because the
+# extraction pipeline has nothing to read for them.
 def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: int | None) -> list[dict[str, Any]]:
     if detail_limit is not None and detail_limit < 0:
         return []
@@ -183,6 +312,17 @@ def protocols_for_detail_pages(protocols: list[dict[str, Any]], detail_limit: in
     return selected
 
 
+# ---------------------------------------------------------------------------
+# Linking people to abgeordnetenwatch.de profiles
+#
+# Roll-call vote data from bundestag.de only carries a display name, so the
+# surname has to be recovered heuristically before it can be matched against a
+# profile. These two sets drive that heuristic.
+# ---------------------------------------------------------------------------
+
+
+# Lowercase nobiliary particles and connectors that belong to the surname
+# ("von der Leyen", "van Aken") and must not be mistaken for a first name.
 _VOTE_MEMBER_NAME_PARTICLES = {
     "auf",
     "da",
@@ -207,19 +347,25 @@ _VOTE_MEMBER_NAME_PARTICLES = {
     "zur",
 }
 
+# Academic titles that are stripped from the front of a name before splitting.
 _VOTE_MEMBER_TITLES = {"dr", "prof", "professor"}
 
 
 def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
     """Conservative first/last split for Bundestag roll-call member names."""
+    # Normalise whitespace (including NBSP) and drop a trailing ", MdB ..." tail.
     text = " ".join(str(name or "").replace("\xa0", " ").split()).strip()
     text = re.sub(r",\s*MdB\b.*$", "", text, flags=re.I).strip()
     if not text:
         return None, None
+    # "Nachname, Vorname" is unambiguous - take it as given.
     if "," in text:
         last, first = (part.strip() for part in text.split(",", 1))
         return first or None, last or None
 
+    # Otherwise: strip leading titles and a trailing MdB marker, then walk
+    # backwards over particles to find where the surname starts. Only the
+    # surname is returned; guessing the first name from free text is not safe.
     tokens = text.split()
     while tokens and tokens[0].strip(".").casefold() in _VOTE_MEMBER_TITLES:
         tokens.pop(0)
@@ -234,6 +380,8 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
     return None, " ".join(tokens[start:])
 
 
+# Agenda items carry either a list of roll-call votes ("votes") or a single
+# legacy "vote" dict. Normalise both shapes into a list.
 def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
 
@@ -278,6 +426,9 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
                 )
 
 
+# Handle --dossier-document-number: force these sittings to get a dossier even
+# when the catalog fetch or --detail-limit would not have selected them, without
+# narrowing the catalog itself.
 def add_explicit_dossier_protocols(
     client: dip.ApiClient,
     protocols: list[dict[str, Any]],
@@ -287,6 +438,8 @@ def add_explicit_dossier_protocols(
     if not document_numbers:
         return protocols, detail_protocols
 
+    # Index what we already have so an explicitly requested sitting is only
+    # fetched from the API when it is genuinely missing.
     protocols_by_number = {
         normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in protocols
     }
@@ -310,6 +463,16 @@ def add_explicit_dossier_protocols(
     return sorted(protocols, key=protocol_sort_key, reverse=True), detail_protocols
 
 
+# ---------------------------------------------------------------------------
+# Reading and writing dossier files
+#
+# Every dossier exists as two files that share one slug:
+#   data/plenarprotokoll-<slug>.json   the intermediate report (source of truth
+#                                      for rebuilds and for the SQLite store)
+#   protocols/plenarprotokoll-<slug>.html   the rendered dossier page
+# ---------------------------------------------------------------------------
+
+
 def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
     slug = slugify_document_number(document_number)
     return (
@@ -319,6 +482,9 @@ def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, st
     )
 
 
+# Persist one dossier: the JSON report plus its HTML page. The page itself is
+# rendered by the sibling module render_dip_pulse_html; mp_lookup lets speaker
+# names in it link to the Abgeordnete profile pages.
 def write_report_files(
     report: dict[str, Any],
     output_dir: Path,
@@ -346,6 +512,9 @@ def write_report_files(
     }
 
 
+# Load a previously built report for this sitting, if one is on disk. Used both
+# to reuse LLM summaries and to report "Refreshing" vs "Downloading" in the
+# progress log.
 def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str, Any] | None:
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     if not document_number:
@@ -360,6 +529,10 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
         return None
 
 
+# Collect cached dossiers from data/ for the given protocols (--preserve-existing-dossiers
+# and the offline render). Reports whose sitting is not part of this build's
+# catalog are ignored, and unreadable files are skipped with a warning instead
+# of failing the build.
 def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
@@ -451,6 +624,10 @@ def rebuild_cached_detail_pages(
     return entries
 
 
+# Combine cached and freshly generated dossiers into one list ordered like the
+# catalog. Generated entries come last in the input, so they overwrite cached
+# ones for the same sitting; the `seen` set keeps a sitting from appearing twice
+# when it matches both by id and by document number.
 def merge_detail_entries(
     protocols: list[dict[str, Any]],
     existing_entries: list[dict[str, Any]],
@@ -479,6 +656,11 @@ def merge_detail_entries(
     return merged
 
 
+# Rebuild the SQLite store from scratch out of the dossier reports.
+#
+# Written to a temporary file next to the target and moved into place only on
+# success, so a failed build never leaves a half-written database behind - the
+# database explorer page and the download link both read this file.
 def rebuild_database_from_entries(database_path: Path, entries: list[dict[str, Any]]) -> None:
     temp_path = database_path.with_name(f".{database_path.name}.tmp")
     if temp_path.exists():
@@ -496,6 +678,16 @@ def rebuild_database_from_entries(database_path: Path, entries: list[dict[str, A
     temp_path.replace(database_path)
 
 
+# ---------------------------------------------------------------------------
+# LLM summary reuse
+#
+# Summaries cost money, so the default --summary-mode is "reuse": no LLM call is
+# made, and summaries from the previous report are carried over into the new one.
+# ---------------------------------------------------------------------------
+
+
+# A summary is only worth keeping when it has text *and* the source chunks that
+# back it up - the site never shows an unsourced summary.
 def usable_llm_summary(summary: Any) -> bool:
     return (
         isinstance(summary, dict)
@@ -504,6 +696,8 @@ def usable_llm_summary(summary: Any) -> bool:
     )
 
 
+# Keys under which an agenda item's summary can be matched across two builds:
+# its TOP id first, its position in the sitting as a fallback.
 def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     keys = []
     top_id = str(item.get("top_id") or "").strip()
@@ -514,6 +708,9 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     return keys
 
 
+# Copy usable summaries from the previous report onto the new one, then record
+# what happened in report["summary_generation"]; the dossier page prints that
+# block to explain why a summary is present or missing.
 def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
@@ -546,6 +743,12 @@ def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[s
     }
 
 
+# Build one complete dossier for a single sitting and write both of its files.
+#
+# The heavy lifting (XML download, agenda/speech extraction, DIP lookups,
+# roll-call scraping, LLM summaries) happens in validate_dip_protocol.build_report.
+# This function only assembles the argparse.Namespace that function expects, then
+# lets the enabled feature components enrich the resulting report.
 def write_report_and_page(
     protocol: dict[str, Any],
     output_dir: Path,
@@ -565,6 +768,9 @@ def write_report_and_page(
     features: Selection | None = None,
 ) -> dict[str, Any]:
     features = features or default_selection()
+    # "reuse" is a mode of *this* script, not of the report builder: tell the
+    # builder not to call an LLM, then fill summaries in below from the cached
+    # report via the summaries component.
     effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
     args = argparse.Namespace(
         api_key=api_key,
@@ -582,6 +788,9 @@ def write_report_and_page(
         sleep=sleep,
     )
     report = dip.build_report(args, protocol=protocol)
+    # Post-processing steps that are feature-gated: "summaries" carries over the
+    # cached LLM summaries, "aw-profiles" attaches abgeordnetenwatch profiles to
+    # speakers and vote members. Both mutate `report` in place.
     components = {component.feature.id: component for component in feature_loader.load(features)}
     enrich_context = {
         "summary_mode": summary_mode,
@@ -597,10 +806,24 @@ def write_report_and_page(
     return write_report_files(report, output_dir, mp_lookup, features)
 
 
+# ---------------------------------------------------------------------------
+# PAGE: database.html - "Datenbank erkunden"
+#
+# A read-only, statically rendered explorer for the SQLite store: one card per
+# table with its columns, a sample of rows and the CREATE TABLE statement, plus
+# a foreign-key overview and a client-side filter box. No SQL runs in the
+# browser - everything below is snapshotted at build time.
+# ---------------------------------------------------------------------------
+
+
+# Quote a table or column name for interpolation into SQL. Table names come from
+# sqlite_schema rather than user input, but the queries below are built by string
+# formatting, so they are quoted anyway.
 def sqlite_identifier(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+# "12.4 MB" for the download panel and the summary band.
 def format_file_size(path: Path) -> str:
     size = path.stat().st_size if path.exists() else 0
     units = ["B", "KB", "MB", "GB"]
@@ -612,6 +835,8 @@ def format_file_size(path: Path) -> str:
     return f"{size} B"
 
 
+# Render one sample-row cell: NULL becomes a muted marker, long values are
+# truncated so a single row of speech text cannot blow up the page.
 def database_cell(value: Any, limit: int = 180) -> str:
     if value is None:
         return '<span class="null">NULL</span>'
@@ -621,6 +846,8 @@ def database_cell(value: Any, limit: int = 180) -> str:
     return pulse_html.esc(text)
 
 
+# Pick a stable ORDER BY for the sample rows: primary key first, otherwise the
+# most recent rows by timestamp/date, otherwise insertion order.
 def database_order_clause(columns: list[dict[str, Any]]) -> str:
     for column in columns:
         if column["pk"]:
@@ -632,6 +859,11 @@ def database_order_clause(columns: list[dict[str, Any]]) -> str:
     return ""
 
 
+# Read everything database.html needs out of the SQLite file in one pass:
+# table list, columns, foreign keys, row counts and up to `sample_limit` example
+# rows per table. Opened read-only via a file: URI so a build can never mutate
+# the store it is describing. Returns an empty snapshot when the file is absent
+# (e.g. a --no-persist build).
 def read_database_snapshot(database_path: Path, sample_limit: int = 12) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "path": database_path,
@@ -704,6 +936,8 @@ def read_database_snapshot(database_path: Path, sample_limit: int = 12) -> dict[
     return snapshot
 
 
+# The "Spalten" table inside one table card: name, type, and the flags derived
+# from PRAGMA table_info.
 def render_database_columns(columns: list[dict[str, Any]]) -> str:
     rows = []
     for column in columns:
@@ -726,6 +960,7 @@ def render_database_columns(columns: list[dict[str, Any]]) -> str:
     return "".join(rows)
 
 
+# The "Beispielzeilen" table inside one table card.
 def render_database_sample(table: dict[str, Any]) -> str:
     columns = [column["name"] for column in table["columns"]]
     if not columns:
@@ -747,10 +982,14 @@ def render_database_sample(table: dict[str, Any]) -> str:
     """
 
 
+# Render the whole database.html page.
 def render_database_page(database_path: Path, database_href: str | None, features: Selection | None = None) -> str:
     features = features or default_selection()
     snapshot = read_database_snapshot(database_path)
     tables = snapshot["tables"]
+    # One <article class="table-card"> per table: heading with row count, the
+    # column table, the sample rows, and a collapsed <details> with foreign keys
+    # and raw SQL schema. The data-search attribute feeds the filter box.
     table_cards = []
     for table in tables:
         fk_rows = "".join(
@@ -773,10 +1012,12 @@ def render_database_page(database_path: Path, database_href: str | None, feature
               <div class="table-body">
                 <section>
                   <h3>Spalten</h3>
-                  <table class="columns-table">
-                    <thead><tr><th>Name</th><th>Typ</th><th>Eigenschaft</th></tr></thead>
-                    <tbody>{render_database_columns(table['columns'])}</tbody>
-                  </table>
+                  <div class="table-scroll">
+                    <table class="columns-table">
+                      <thead><tr><th>Name</th><th>Typ</th><th>Eigenschaft</th></tr></thead>
+                      <tbody>{render_database_columns(table['columns'])}</tbody>
+                    </table>
+                  </div>
                 </section>
                 <section>
                   <h3>Beispielzeilen</h3>
@@ -792,6 +1033,8 @@ def render_database_page(database_path: Path, database_href: str | None, feature
             """
         )
 
+    # Cross-table foreign-key overview shown in the right-hand "Beziehungen"
+    # panel, with anchor links down to the two table cards involved.
     relationships = snapshot["relationships"]
     relationship_rows = "".join(
         f"""
@@ -813,6 +1056,12 @@ def render_database_page(database_path: Path, database_href: str | None, feature
         f'<a href="#table-{pulse_html.esc(table["name"])}">{pulse_html.esc(table["name"])} <span>{pulse_html.esc(table["row_count"])}</span></a>'
         for table in tables
     )
+    # Page anatomy, top to bottom:
+    #   global header -> page header with the SQLite download panel
+    #   summary band  -> table / row / relationship / file-size counters
+    #   explainer     -> what the view is for + table nav + foreign-key table
+    #   filter        -> search box wired to the inline script at the bottom
+    #   tables        -> the table cards built above
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -838,7 +1087,6 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       color:var(--ink);
       background:var(--paper);
       letter-spacing:0;
-      overflow-x:hidden;
     }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
@@ -971,7 +1219,7 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       background:#fff;
       font:inherit;
     }}
-    .tables {{ display:grid; gap:16px; margin-top:18px; }}
+    .tables {{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; margin-top:18px; }}
     .table-card[hidden] {{ display:none; }}
     .table-head {{
       display:grid;
@@ -991,7 +1239,7 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       color:#103a7a;
       white-space:nowrap;
     }}
-    .table-body {{ display:grid; gap:18px; margin-top:16px; }}
+    .table-body {{ display:grid; grid-template-columns:minmax(0,1fr); gap:18px; margin-top:16px; }}
     table {{ width:100%; border-collapse:collapse; font-size:13px; }}
     th, td {{
       padding:9px 8px;
@@ -1006,6 +1254,7 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       letter-spacing:.04em;
       white-space:nowrap;
     }}
+    .table-scroll {{ max-width:100%; overflow-x:auto; }}
     .sample-table {{
       max-width:100%;
       overflow:auto;
@@ -1061,13 +1310,13 @@ def render_database_page(database_path: Path, database_href: str | None, feature
     }}
     footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
     @media (max-width: 900px) {{
-      .page-header, .explainer {{ grid-template-columns:1fr; }}
-      .summary-band {{ grid-template-columns:1fr 1fr; }}
+      .page-header, .explainer {{ grid-template-columns:minmax(0,1fr); }}
+      .summary-band {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); }}
     }}
     @media (max-width: 640px) {{
       .shell {{ padding:18px 14px; }}
       h1 {{ font-size:29px; }}
-      .summary-band, .table-head {{ grid-template-columns:1fr; }}
+      .summary-band, .table-head {{ grid-template-columns:minmax(0,1fr); }}
     }}
   </style>
 </head>
@@ -1102,7 +1351,7 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       <div class="panel">
         <span class="eyebrow">Beziehungen</span>
         <h2>Fremdschlüssel</h2>
-        {('<table><thead><tr><th>Tabelle</th><th>Spalte</th><th>Ziel</th><th>Löschen</th></tr></thead><tbody>' + relationship_rows + '</tbody></table>') if relationship_rows else '<p class="muted">Dieses Schema enthält noch keine Fremdschlüssel.</p>'}
+        {('<div class="table-scroll"><table><thead><tr><th>Tabelle</th><th>Spalte</th><th>Ziel</th><th>Löschen</th></tr></thead><tbody>' + relationship_rows + '</tbody></table></div>') if relationship_rows else '<p class="muted">Dieses Schema enthält noch keine Fremdschlüssel.</p>'}
       </div>
     </section>
     <section class="filter" aria-label="Tabellen filtern">
@@ -1135,6 +1384,8 @@ def render_database_page(database_path: Path, database_href: str | None, feature
 """
 
 
+# Fallback for database.html when the build ran with --no-persist: same chrome,
+# but a short panel explaining that there is no SQLite file to explore.
 def render_database_unavailable_page(features: Selection) -> str:
     return f"""<!doctype html>
 <html lang="de">
@@ -1171,6 +1422,14 @@ def render_database_unavailable_page(features: Selection) -> str:
 """
 
 
+# ---------------------------------------------------------------------------
+# PAGE: index.html - the explanatory home page
+#
+# Not a data view: it states what Bundestag-Puls is, the four principles it
+# claims to follow, and links out to every other area of the site.
+# ---------------------------------------------------------------------------
+
+
 def render_landing_page(
     entries: list[dict[str, Any]],
     *,
@@ -1182,6 +1441,9 @@ def render_landing_page(
 ) -> str:
     """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
     features = features or default_selection()
+    # Right-hand "Aktueller Puls" card: a snapshot of the newest generated
+    # dossier (entries are ordered newest-first by render_site), or a placeholder
+    # when nothing has been generated yet.
     if entries:
         entry = entries[0]
         report = entry["report"]
@@ -1212,6 +1474,7 @@ def render_landing_page(
         </aside>
         """
 
+    # "Prinzipien" section - static editorial copy, four numbered cards.
     principles = [
         (
             "Nur Primärquellen",
@@ -1241,6 +1504,9 @@ def render_landing_page(
         for i, (title, desc) in enumerate(principles, start=1)
     )
 
+    # "Bereiche" section - the navigation cards. Optional areas are inserted
+    # only when the corresponding Baustein is enabled or the artifact exists,
+    # so the home page never links to a page this build did not write.
     areas = [
         (
             "Lageblick",
@@ -1301,6 +1567,13 @@ def render_landing_page(
         for tag, title, href, desc in areas
     )
 
+    # Page anatomy, top to bottom:
+    #   global header
+    #   hero        -> headline, lead paragraph, two CTAs + the snapshot card
+    #   stat band   -> sitting / dossier / bill counters
+    #   block 1     -> "Was ist Bundestag-Puls?" prose
+    #   block 2     -> the principle cards
+    #   block 3     -> the area cards
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -1485,6 +1758,16 @@ def render_landing_page(
 """
 
 
+# ---------------------------------------------------------------------------
+# PAGE: puls.html - "Was gerade im Bundestag laeuft"
+#
+# The dashboard for the single newest dossier: two highlight panels
+# ("Themenbewegung" and "Abstimmungsverschiebung") over a ranked list of the
+# agenda items that drew the most speaking time. Everything on it is derived
+# from entries[0]; older sittings live in the catalog pages instead.
+# ---------------------------------------------------------------------------
+
+
 def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
@@ -1492,6 +1775,7 @@ def render_front_page(
     features: Selection | None = None,
 ) -> str:
     features = features or default_selection()
+    # Nothing generated yet -> a minimal page with the shared chrome only.
     if not entries:
         return f"""<!doctype html>
 <html lang="de">
@@ -1546,6 +1830,9 @@ def render_front_page(
 </html>
 """
 
+    # From here on: the newest dossier. item_stats() gives per-agenda-item speech
+    # counts, character counts and a party breakdown; the shares below are
+    # computed against the sitting totals.
     entry = entries[0]
     report = entry["report"]
     protocol = report.get("protocol") or {}
@@ -1570,6 +1857,7 @@ def render_front_page(
         len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
         for item in items
     )
+    # "Themenbewegung" panel: the agenda item with the most speeches.
     top_focus = ranked_items[0] if ranked_items else None
     if top_focus:
         top_stats = stats_by_index[top_focus["index"]]
@@ -1583,6 +1871,8 @@ def render_front_page(
         focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
         focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
 
+    # "Abstimmungsverschiebung" panel: roll-call votes attached to agenda items.
+    # The whole panel is gated on the "votes" Baustein.
     vote_items = [
         item
         for item in items
@@ -1623,6 +1913,10 @@ def render_front_page(
       </article>
         """
 
+    # "Aufmerksamkeitsranking": up to six agenda-item cards, each with two share
+    # bars (speeches and characters), a stacked party bar and the document /
+    # position counts. Every card links back to its anchor in the dossier page,
+    # which is what keeps each number one click from its source.
     attention_rows = []
     for item in ranked_items[:6]:
         stats = stats_by_index[item["index"]]
@@ -1666,6 +1960,8 @@ def render_front_page(
             """
         )
 
+    # Validation warnings raised while extracting this sitting, surfaced above
+    # the ranking as a single banner.
     warnings = report.get("warnings") or []
     warning_html = ""
     if warnings:
@@ -1676,6 +1972,12 @@ def render_front_page(
             "</div>"
         )
 
+    # Page anatomy, top to bottom:
+    #   global header -> page header with in-page nav
+    #   radar-hero    -> lede panel + the sitting's source panel (metrics, links
+    #                    to XML/PDF/JSON/SQLite)
+    #   feature-grid  -> the Themenbewegung and Abstimmungsverschiebung panels
+    #   layout/main   -> warning banner + the attention ranking cards
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -2086,6 +2388,7 @@ def render_front_page(
     """
 
 
+# Small "XML | PDF" link pair for one protocol, used in the catalog rows.
 def protocol_source_links(protocol: dict[str, Any]) -> str:
     fundstelle = protocol.get("fundstelle") or {}
     links = []
@@ -2096,6 +2399,8 @@ def protocol_source_links(protocol: dict[str, Any]) -> str:
     return "".join(links) or '<span class="muted">Keine Quelllinks</span>'
 
 
+# Collapsed <details> holding the raw DIP record for one protocol, appended to
+# every catalog row so the API fields behind a row can be inspected.
 def render_catalog_json(protocol: dict[str, Any]) -> str:
     text = json.dumps(protocol, ensure_ascii=False, indent=2, sort_keys=True)
     return (
@@ -2106,6 +2411,18 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# PAGES: bills/index.html and bills/bill-*.html - "Gesetze verfolgen"
+#
+# These pages are derived data: nothing is fetched here. collect_bill_pages()
+# walks the dossiers that were already built and reassembles them by legislative
+# procedure (DIP "Vorgang") instead of by sitting, so one bill's documents,
+# plenary appearances, speakers and roll-call votes end up on a single page.
+# Gated on the "bills" Baustein.
+# ---------------------------------------------------------------------------
+
+
+# Return the first of the given values that is non-empty after stripping.
 def first_value(*values: Any) -> str:
     for value in values:
         if value is not None and str(value).strip():
@@ -2113,6 +2430,7 @@ def first_value(*values: Any) -> str:
     return ""
 
 
+# De-duplicate strings while preserving order.
 def unique_values(values: list[Any]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -2124,6 +2442,8 @@ def unique_values(values: list[Any]) -> list[str]:
     return result
 
 
+# De-duplicate dicts by a tuple of key fields while preserving order. Used to
+# collapse the same document / position / vote seen across several sittings.
 def unique_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[str, Any]]:
     seen: set[tuple[Any, ...]] = set()
     result: list[dict[str, Any]] = []
@@ -2135,11 +2455,16 @@ def unique_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list
     return result
 
 
+# File name for a bill's detail page, e.g. "bill-315678.html".
 def bill_slug(bill: dict[str, Any]) -> str:
     identity = first_value(bill.get("vorgang_id"), bill.get("primary_document"), bill.get("title"), "bill")
     return "bill-" + slugify_document_number(identity)
 
 
+# Decide whether a DIP Vorgangsposition is legislation at all. This is a
+# deliberately crude keyword test over the procedure type, position, title and
+# the linked documents - everything that does not look like a "Gesetz" is left
+# out of the bills section rather than guessed at.
 def bill_like(position: dict[str, Any], docs: list[dict[str, Any]]) -> bool:
     haystack = " ".join(
         [
@@ -2153,14 +2478,22 @@ def bill_like(position: dict[str, Any], docs: list[dict[str, Any]]) -> bool:
     return any(marker in haystack for marker in ("gesetz", "gesetzentwurf", "entwurf eines gesetzes"))
 
 
+# The set of Drucksache numbers attached to a bill, used to match roll-call
+# votes to it.
 def doc_numbers(docs: list[dict[str, Any]]) -> set[str]:
     return {str(doc.get("dokumentnummer")) for doc in docs if doc.get("dokumentnummer")}
 
 
+# Re-index the built dossiers by legislative procedure.
+#
+# Input: the dossier entries of this build. Output: one normalised bill record
+# per procedure, sorted newest activity first, ready for render_bills_index and
+# render_bill_detail.
 def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     bills: dict[str, dict[str, Any]] = {}
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
 
+    # Walk every dossier, every agenda item, every DIP position within it.
     for entry in detail_entries:
         report = entry["report"]
         protocol = report.get("protocol") or {}
@@ -2170,6 +2503,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
             linked_docs = api.get("linked_drucksachen") or []
             positions = api.get("positions") or []
             item_votes = item.get("votes") or []
+            # A position is one step of a procedure (first reading, committee
+            # report, ...). Collect the documents that belong to this procedure,
+            # adding the position's own source document when DIP did not link it.
             for position in positions:
                 vorgang_id = str(position.get("vorgang_id") or "")
                 position_docs = [doc for doc in linked_docs if str(doc.get("vorgang_id") or "") == vorgang_id]
@@ -2190,9 +2526,13 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                             "urheber": [],
                         }
                     )
+                # Skip anything that is not legislation.
                 if not bill_like(position, position_docs):
                     continue
 
+                # Identity for the bill: the DIP Vorgang id when present, else a
+                # document number, else the title. Records for the same key
+                # collected across several sittings are merged into one bill.
                 fallback_key = first_value(
                     vorgang_id,
                     *(doc.get("dokumentnummer") for doc in position_docs),
@@ -2230,6 +2570,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                 if not bill.get("primary_document"):
                     bill["primary_document"] = first_value(*(doc.get("dokumentnummer") for doc in position_docs))
 
+                # A "Plenarstelle": where in which sitting this bill was debated.
+                # href points at the agenda-item anchor inside the dossier page.
                 ref = {
                     "protocol_number": protocol.get("dokumentnummer"),
                     "protocol_date": protocol.get("datum"),
@@ -2242,6 +2584,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                 bill["protocol_refs"].append(ref)
                 bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
 
+                # Timeline entries ("Verlauf" on the detail page): one per linked
+                # document, plus one for the plenary debate itself.
                 for doc in position_docs:
                     bill["events"].append(
                         {
@@ -2262,6 +2606,10 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     }
                 )
 
+                # Attach roll-call votes from this agenda item, but only when the
+                # vote's Drucksache numbers overlap the bill's - an agenda item
+                # can bundle several procedures, and a vote must not be credited
+                # to the wrong one.
                 numbers = doc_numbers(position_docs)
                 for vote in item_votes:
                     vote_numbers = set(vote.get("document_numbers") or [])
@@ -2278,6 +2626,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         }
                     )
 
+                # Tally who spoke about this bill and how much, keyed by
+                # name+party. External ids are kept so the detail page can link
+                # the speaker to their Abgeordnete profile.
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for speech in item.get("xml_speakers") or []:
                     speaker = speech.get("speaker") or {}
@@ -2298,6 +2649,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     if speaker.get("xml_redner_id") and not entry_count.get("xml_redner_id"):
                         entry_count["xml_redner_id"] = speaker.get("xml_redner_id")
 
+    # Second pass: de-duplicate the accumulated lists, sort the timeline, and
+    # derive the "latest step / latest date" shown on the index cards.
     for key, bill in bills.items():
         bill["documents"] = unique_records(bill["documents"], ("vorgang_id", "dokumentnummer", "url"))
         bill["positions"] = unique_records(bill["positions"], ("id", "vorgang_id", "vorgangsposition"))
@@ -2323,6 +2676,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
     )
 
 
+# Collapsed raw-JSON block used in the "Rohdaten" section of a bill page.
 def render_bill_json_details(title: str, payload: Any) -> str:
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     return (
@@ -2333,6 +2687,9 @@ def render_bill_json_details(title: str, payload: Any) -> str:
     )
 
 
+# Inline script shared by both bill pages: the "Folgen" toggle. Followed bills
+# are kept in localStorage only - there is no account and no server, so the
+# marking never leaves the visitor's browser.
 def render_bill_script() -> str:
     return """
   <script>
@@ -2373,6 +2730,9 @@ def render_bill_script() -> str:
 """
 
 
+# CSS shared by bills/index.html and bills/bill-*.html. The Abgeordnete pages
+# extend this same sheet (see abgeordnete_styles), which is why the class names
+# below - .panel, .metric, .badge, .doc-row - reappear there.
 def bill_styles() -> str:
     return """
     :root {
@@ -2572,8 +2932,12 @@ def bill_styles() -> str:
 """
 
 
+# PAGE: bills/index.html - the list of detected legislative procedures.
 def render_bills_index(bills: list[dict[str, Any]], features: Selection | None = None) -> str:
     features = features or default_selection()
+    # One card per bill: type and latest date, title linking to the detail page,
+    # who introduced it, and badges counting documents, plenary appearances and
+    # roll-call votes. The follow button is gated on the "bill-follow" Baustein.
     rows = []
     for bill in bills:
         introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
@@ -2639,12 +3003,16 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 """
 
 
+# PAGE: bills/bill-<slug>.html - everything known about one procedure.
 def render_bill_detail(
     bill: dict[str, Any],
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
 ) -> str:
     features = features or default_selection()
+    # The four list sections of the page are built first, then interpolated into
+    # the template: Verlauf (timeline), Drucksachen, Rednerinnen und Redner
+    # (top 12, linked to their MP profile when resolvable) and Plenarstellen.
     introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
     events = []
     for event in bill.get("events") or []:
@@ -2774,6 +3142,9 @@ def render_bill_detail(
 """
 
 
+# Write the bills area: one detail page per bill, the index, and data/bills.json.
+# Called through features/bills.py so the whole area disappears when the Baustein
+# is off (see remove_generated_addon_pages).
 def write_bill_pages(
     output_dir: Path,
     bills: list[dict[str, Any]],
@@ -2791,6 +3162,23 @@ def write_bill_pages(
     return {"count": len(bills), "index_path": bills_dir / "index.html", "data_path": data_path}
 
 
+# ---------------------------------------------------------------------------
+# PAGES: abgeordnete/index.html and abgeordnete/<id>.html - "Abgeordnete"
+#
+# The MP area is assembled in three steps:
+#   1. ingest_mdb_roster()    - pull the full MdB roster from DIP /person into
+#                               the SQLite store, so the list is complete rather
+#                               than limited to people seen in ingested sittings
+#   2. collect_abgeordnete()  - read the store back and consolidate rows that
+#                               describe the same person into one profile
+#   3. render/write functions - emit the roster page and one profile per person
+#
+# Gated on the "mp-pages" Baustein (the roster fetch additionally on "mp-roster").
+# ---------------------------------------------------------------------------
+
+
+# DIP marks a person's roles in "funktion"; a Bundestag member has one that
+# contains "MdB".
 def _has_mdb_funktion(funktion: Any) -> bool:
     return any("mdb" in str(value).lower() for value in (funktion or []))
 
@@ -2872,6 +3260,14 @@ def ingest_mdb_roster(
     return stats
 
 
+# --- Identity consolidation -------------------------------------------------
+#
+# The same person can arrive from three directions with different keys: the DIP
+# roster (dip_person_id), a protocol speaker (xml_redner_id) and an
+# abgeordnetenwatch profile (aw_politician_id). The store holds them as separate
+# mps rows; the helpers below decide which rows are the same human being.
+
+
 def _parse_listish(value: Any) -> list[Any]:
     """Parse the list-shaped TEXT columns (function/wahlperiode/person_roles),
     which may be stored as JSON or as a Python list repr (e.g. "['MdB']")."""
@@ -2900,6 +3296,8 @@ def _mp_keys(row: dict[str, Any]) -> list[str]:
     return keys
 
 
+# The external ids a row carries, bucketed by kind. Two rows may only be merged
+# by name+party when their id buckets do not contradict each other.
 def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
     if row.get("aw_politician_id") is not None:
@@ -2913,6 +3311,7 @@ def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     return ids
 
 
+# Union of the id buckets across all rows already merged into one person.
 def _merge_external_ids(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
     merged: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
     for row in rows:
@@ -2921,6 +3320,8 @@ def _merge_external_ids(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
     return merged
 
 
+# True when both sides carry ids of the same kind and none of them overlap -
+# that is positive evidence of two different people, so no merge.
 def _external_ids_conflict(left: dict[str, set[str]], right: dict[str, set[str]]) -> bool:
     for kind in left:
         if left[kind] and right[kind] and not (left[kind] & right[kind]):
@@ -2936,10 +3337,13 @@ def _clean_mp_name(name: Any) -> str:
     return text.split(", MdB")[0].strip() or text
 
 
+# Casefolded, whitespace-collapsed name used as a merge bucket key.
 def _normalized_mp_name(name: Any) -> str:
     return re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip()
 
 
+# Party names differ in spelling between sources ("BÜNDNIS 90/DIE GRÜNEN" vs
+# "Grüne"), so compare the normalised token set instead of the raw string.
 def _normalized_mp_party(party: Any) -> str:
     text = str(party or "").strip()
     if not text:
@@ -2955,6 +3359,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     carries the bio; the protocol-speaker row carries the speeches). Returns the
     consolidated MPs plus a lookup from every external id to the page id, so
     speaker lists can link without dangling. One grouped query each avoids N+1."""
+    # One query per relation, then grouped in Python - three flat queries beat
+    # a per-MP query (N+1) by a wide margin at roster size.
     base = conn.execute(
         """
         SELECT m.id, m.display_name, m.title, m.function, m.wahlperiode,
@@ -2968,6 +3374,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     ).fetchall()
     rows = [dict(r) for r in base]
 
+    # All speeches with their protocol and agenda-item context, newest sitting
+    # first. Feeds the "Reden im Bundestag" list on a profile page.
     speeches_by_mp: dict[int, list[dict[str, Any]]] = {}
     for row in conn.execute(
         """
@@ -2994,6 +3402,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             }
         )
 
+    # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
+    # Abstimmungen" list and the participation tally.
     votes_by_mp: dict[int, list[dict[str, Any]]] = {}
     for row in conn.execute(
         """
@@ -3029,6 +3439,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         if ra != rb:
             parent[ra] = rb
 
+    # Pass 1: merge rows that share any external id. This is safe evidence.
     first_for_key: dict[str, int] = {}
     for row in rows:
         for key in _mp_keys(row):
@@ -3044,6 +3455,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     def can_union_by_name_party(a: int, b: int) -> bool:
         return not _external_ids_conflict(component_external_ids(a), component_external_ids(b))
 
+    # Pass 2: merge rows with the same name and party, but only when the two
+    # sides' external ids do not contradict each other. This is what bridges the
+    # DIP roster row (which has the biography) and the protocol speaker row
+    # (which has the speeches) for a person whose abgeordnetenwatch id was never
+    # resolved.
     name_party_buckets: dict[tuple[str, str], list[int]] = {}
     for row in rows:
         name_key = _normalized_mp_name(row.get("display_name"))
@@ -3058,12 +3474,15 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 if find(left) != find(right) and can_union_by_name_party(left, right):
                     union(left, right)
 
+    # Group the merged rows back into one bucket per person.
     components: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
         components.setdefault(find(row["id"]), []).append(row)
 
     mps: list[dict[str, Any]] = []
     lookup: dict[str, int] = {}
+    # Collapse each bucket into a single MP record: the roster row wins for the
+    # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
         # Canonical row: prefer an MdB (roster) row, then lowest id, for a stable
         # page id shared by the list and the profile.
@@ -3076,11 +3495,14 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                     return r[field]
             return None
 
+        # Pool speeches from every row of this person, newest first.
         merged_speeches: list[dict[str, Any]] = []
         for r in members:
             merged_speeches.extend(speeches_by_mp.get(r["id"], []))
         merged_speeches.sort(key=lambda s: (s.get("date") or ""), reverse=True)
 
+        # Pool votes, de-duplicated by vote id (the same vote can be reachable
+        # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
         seen_votes: set[Any] = set()
         for r in members:
@@ -3125,10 +3547,13 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                     lookup[key] = cid
 
     # Stable, useful order: most speeches first, then alphabetical.
+    # Stable, useful order: most speeches first, then alphabetical.
     mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
     return mps, lookup
 
 
+# The MP pages reuse the bill stylesheet and add the roster table, the party
+# filter chips and the vote/speech row layouts on top of it.
 def abgeordnete_styles() -> str:
     return bill_styles() + """
     .filter-bar {
@@ -3190,6 +3615,9 @@ def abgeordnete_styles() -> str:
 """
 
 
+# Inline script for abgeordnete/index.html: free-text search over name /
+# constituency / state plus a party chip filter, applied by toggling row
+# visibility. Purely client-side over the rows already in the HTML.
 def render_abgeordnete_script() -> str:
     return """
   <script>
@@ -3225,13 +3653,18 @@ def render_abgeordnete_script() -> str:
 """
 
 
+# "Wahlkreis · Bundesland" for the roster table, or an em dash when unknown.
 def _location_label(mp: dict[str, Any]) -> str:
     parts = [mp.get("wahlkreis"), mp.get("bundesland")]
     return " · ".join(p for p in parts if p) or "—"
 
 
+# PAGE: abgeordnete/index.html - the filterable MP roster.
 def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | None = None) -> str:
     features = features or default_selection()
+    # Only actual MdBs are listed. People who merely appear as speakers
+    # (ministers, Bundesrat guests) still get a profile page - see
+    # write_abgeordnete_pages - they just do not clutter the roster.
     listed = [mp for mp in mps if mp.get("is_mdb")]
     parties = sorted({mp["party"] for mp in listed if mp.get("party")})
     party_chips = "".join(
@@ -3300,8 +3733,14 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
 """
 
 
+# PAGE: abgeordnete/<id>.html - one MP profile.
+#
+# The <id> in the file name is the canonical mps row id chosen by
+# collect_abgeordnete, which is also what mp_lookup maps every external id to,
+# so speaker links from dossier and bill pages resolve here.
 def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = None) -> str:
     features = features or default_selection()
+    # Header link out to the abgeordnetenwatch.de profile, when one was resolved.
     profile_link = ""
     if mp.get("profile_url"):
         profile_link = (
@@ -3309,6 +3748,8 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
             "abgeordnetenwatch.de-Profil ↗</a>"
         )
 
+    # "Überblick" grid: only fields that actually exist in the data are shown -
+    # the page never invents a placeholder biography.
     overview_fields = []
     if mp.get("birth_year"):
         overview_fields.append(f'<div class="field"><span>Geburtsjahr</span><strong>{pulse_html.esc(mp["birth_year"])}</strong></div>')
@@ -3412,6 +3853,8 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
 """
 
 
+# Write the Abgeordnete area: profile pages, the roster index and
+# data/abgeordnete.json. Called through features/abgeordnete.py.
 def write_abgeordnete_pages(
     output_dir: Path,
     mps: list[dict[str, Any]],
@@ -3432,6 +3875,15 @@ def write_abgeordnete_pages(
     return {"count": listed, "detail_count": len(detail_mps), "index_path": abg_dir / "index.html"}
 
 
+# ---------------------------------------------------------------------------
+# PAGE: overview.html - "Plenarprotokoll-Katalog"
+#
+# The archive landing page: rich cards for the sittings that actually got a
+# dossier in this build, plus a call-to-action into the full searchable catalog
+# on api-sitzungen.html.
+# ---------------------------------------------------------------------------
+
+
 def render_overview(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
@@ -3442,6 +3894,10 @@ def render_overview(
     features: Selection | None = None,
 ) -> str:
     features = features or default_selection()
+    # One card per generated dossier: title linking to the dossier page, the four
+    # headline metrics from the validation summary, a preview of the four
+    # busiest agenda items, and the source links (XML/PDF/JSON/SQLite) plus a
+    # warning count when extraction flagged something.
     generated_cards = []
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
     database_page_link = (
@@ -3497,6 +3953,7 @@ def render_overview(
             """
         )
 
+    # Sitting counts per Wahlperiode, shown as badges under the summary band.
     by_period: dict[str, int] = {}
     for protocol in protocols:
         period = str(protocol.get("wahlperiode") or "unknown")
@@ -3504,7 +3961,7 @@ def render_overview(
 
     period_badges = "".join(
         f'<span class="badge">WP {pulse_html.esc(period)} <strong>{pulse_html.esc(count)}</strong></span>'
-        for period, count in sorted(by_period.items(), key=lambda item: item[0], reverse=True)
+        for period, count in sorted(by_period.items(), key=lambda item: period_sort_key(item[0]))
     )
     latest = protocols[0] if protocols else {}
     generated_latest = detail_entries[0]["report"].get("protocol", {}) if detail_entries else {}
@@ -3783,6 +4240,15 @@ def render_overview(
     """
 
 
+# ---------------------------------------------------------------------------
+# PAGE: api-sitzungen.html - "Alle API-Sitzungen"
+#
+# The complete DIP protocol catalog as one searchable, sortable, filterable
+# list. All filtering happens client-side over rows that are already in the
+# HTML (see render_catalog_script), so the page stays static.
+# ---------------------------------------------------------------------------
+
+
 def catalog_sortnum(protocol: dict[str, Any]) -> str:
     """Zero-padded numeric sort key derived from the document number (WP/Nr)."""
     match = re.match(r"\s*(\d+)\s*/\s*(\d+)", str(protocol.get("dokumentnummer") or ""))
@@ -3791,10 +4257,17 @@ def catalog_sortnum(protocol: dict[str, Any]) -> str:
     return "00000000000"
 
 
+# Build the catalog rows plus the per-Wahlperiode counts.
+#
+# Each row carries its filter state in data-* attributes (search haystack,
+# Wahlperiode, whether a dossier exists, date and numeric sort key); the inline
+# script only reads those attributes and never re-derives anything.
 def build_catalog_rows(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
 ) -> tuple[list[str], dict[str, int]]:
+    # Index the generated dossiers so a catalog row can tell whether this
+    # sitting has one, and link to it if so.
     entries_by_id = {
         str(entry["report"].get("protocol", {}).get("id")): entry for entry in detail_entries
     }
@@ -3819,6 +4292,7 @@ def build_catalog_rows(
                 f'{pulse_html.esc(summary.get("aktivitaet_count"))} Aktivitäten'
             )
 
+        # Everything the search box should match on, lowercased into one string.
         search_terms = " ".join(
             str(value)
             for value in (
@@ -3836,10 +4310,6 @@ def build_catalog_rows(
         rows.append(
             f"""
             <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-docnumber="{pulse_html.esc(document_number)}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
-              <label class="catalog-select" title="Für Dossier-Erzeugung auswählen">
-                <input type="checkbox" data-dossier-select value="{pulse_html.esc(document_number)}">
-                <span>Auswählen</span>
-              </label>
               <div>
                 <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
@@ -3869,6 +4339,9 @@ def build_catalog_rows(
     return rows, by_period
 
 
+# Inline script for api-sitzungen.html: filters and sorts the catalog rows in
+# place (search, Wahlperiode, dossier status) and keeps the result counter, the
+# period badges and the reset button in sync with the active filters.
 def render_catalog_script() -> str:
     return """
   <script>
@@ -3876,7 +4349,6 @@ def render_catalog_script() -> str:
       const container = document.querySelector('[data-catalog]');
       if (!container) return;
       const rows = Array.from(container.querySelectorAll('[data-row]'));
-      const checkboxes = Array.from(container.querySelectorAll('[data-dossier-select]'));
       const search = document.querySelector('[data-filter-search]');
       const wpSelect = document.querySelector('[data-filter-wp]');
       const dossierSelect = document.querySelector('[data-filter-dossier]');
@@ -3885,51 +4357,6 @@ def render_catalog_script() -> str:
       const noResults = document.querySelector('[data-no-results]');
       const resetBtn = document.querySelector('[data-filter-reset]');
       const badges = Array.from(document.querySelectorAll('[data-wp-filter]'));
-      const developerPanel = document.querySelector('[data-dossier-command]');
-      const selectedCountEl = document.querySelector('[data-selected-count]');
-      const commandEl = document.querySelector('[data-command-output]');
-      const refreshSummariesInput = document.querySelector('[data-refresh-summaries]');
-      const selectVisibleBtn = document.querySelector('[data-select-visible]');
-      const selectMissingBtn = document.querySelector('[data-select-missing]');
-      const clearSelectionBtn = document.querySelector('[data-clear-selection]');
-      const copyCommandBtn = document.querySelector('[data-copy-command]');
-
-      const shellQuote = (value) => {
-        const text = String(value);
-        return /^[A-Za-z0-9_./:=+-]+$/.test(text) ? text : "'" + text.replace(/'/g, "'\\\\''") + "'";
-      };
-
-      const selectedDocumentNumbers = () => checkboxes
-        .filter((checkbox) => checkbox.checked)
-        .map((checkbox) => checkbox.value)
-        .filter(Boolean);
-
-      const updateCommand = () => {
-        if (!developerPanel || !commandEl) return;
-        const docs = selectedDocumentNumbers();
-        if (selectedCountEl) selectedCountEl.textContent = String(docs.length);
-        if (copyCommandBtn) copyCommandBtn.disabled = docs.length === 0;
-        const outputDir = developerPanel.dataset.outputDir || '.context/dip-pulse-site';
-        const args = [
-          'python3',
-          'scripts/build_dip_pulse_site.py',
-          '--limit',
-          '0',
-          '--detail-limit',
-          '-1',
-          '--preserve-existing-dossiers',
-          '--output-dir',
-          outputDir,
-        ];
-        if (refreshSummariesInput && refreshSummariesInput.checked) {
-          args.push('--refresh-summaries');
-        }
-        docs.forEach((doc) => {
-          args.push('--dossier-document-number', doc);
-        });
-        commandEl.value = docs.length ? args.map(shellQuote).join(' ') : '';
-      };
-
       const apply = () => {
         const terms = (search.value || '').toLowerCase().trim().split(/\\s+/).filter(Boolean);
         const wp = wpSelect.value;
@@ -3985,71 +4412,27 @@ def render_catalog_script() -> str:
           apply();
         });
       }
-      checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateCommand));
-      if (refreshSummariesInput) {
-        refreshSummariesInput.addEventListener('change', updateCommand);
-      }
-      if (selectVisibleBtn) {
-        selectVisibleBtn.addEventListener('click', () => {
-          rows.forEach((row) => {
-            const checkbox = row.querySelector('[data-dossier-select]');
-            if (checkbox && !row.hidden) checkbox.checked = true;
-          });
-          updateCommand();
-        });
-      }
-      if (selectMissingBtn) {
-        selectMissingBtn.addEventListener('click', () => {
-          rows.forEach((row) => {
-            const checkbox = row.querySelector('[data-dossier-select]');
-            if (checkbox && !row.hidden && row.dataset.dossier === '0') checkbox.checked = true;
-          });
-          updateCommand();
-        });
-      }
-      if (clearSelectionBtn) {
-        clearSelectionBtn.addEventListener('click', () => {
-          checkboxes.forEach((checkbox) => {
-            checkbox.checked = false;
-          });
-          updateCommand();
-        });
-      }
-      if (copyCommandBtn && commandEl) {
-        copyCommandBtn.addEventListener('click', async () => {
-          if (!commandEl.value) return;
-          commandEl.select();
-          try {
-            await navigator.clipboard.writeText(commandEl.value);
-            copyCommandBtn.textContent = 'Kopiert';
-            window.setTimeout(() => {
-              copyCommandBtn.textContent = 'Befehl kopieren';
-            }, 1400);
-          } catch {
-            document.execCommand('copy');
-          }
-        });
-      }
       apply();
-      updateCommand();
     })();
   </script>
 """
 
 
+# PAGE: api-sitzungen.html.
 def render_catalog_page(
     protocols: list[dict[str, Any]],
     detail_entries: list[dict[str, Any]],
     catalog_path: Path,
-    output_dir: Path,
     overview_href: str = "overview.html",
     database_page_href: str | None = None,
     features: Selection | None = None,
 ) -> str:
     features = features or default_selection()
+    # Rows first, then the filter controls derived from them: the Wahlperiode
+    # dropdown and the clickable period badges share the same counts.
     rows, by_period = build_catalog_rows(protocols, detail_entries)
     rows_html = "".join(rows)
-    periods_sorted = sorted(by_period.items(), key=lambda item: item[0], reverse=True)
+    periods_sorted = sorted(by_period.items(), key=lambda item: period_sort_key(item[0]))
     wp_options = "".join(
         f'<option value="{pulse_html.esc(period)}">WP {pulse_html.esc(period)} ({pulse_html.esc(count)})</option>'
         for period, count in periods_sorted
@@ -4189,77 +4572,6 @@ def render_catalog_page(
       cursor:pointer;
     }}
     .link-button:hover {{ text-decoration:underline; }}
-    .developer-panel {{
-      display:grid;
-      gap:12px;
-      margin-top:16px;
-      padding:16px;
-      border:1px solid #bdd0ea;
-      border-radius:8px;
-      background:#f6f9ff;
-    }}
-    .developer-panel h2 {{
-      margin:0;
-      font-size:18px;
-      line-height:1.25;
-    }}
-    .developer-panel p {{
-      margin:0;
-      color:var(--muted);
-      line-height:1.45;
-    }}
-    .developer-actions {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      align-items:center;
-    }}
-    .developer-option {{
-      display:flex;
-      gap:8px;
-      align-items:flex-start;
-      color:var(--muted);
-      font-size:13px;
-      line-height:1.4;
-    }}
-    .developer-option input {{
-      width:17px;
-      height:17px;
-      margin:1px 0 0;
-      accent-color:#174ea6;
-    }}
-    .dev-button {{
-      min-height:34px;
-      padding:5px 11px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      color:var(--ink);
-      font:inherit;
-      font-size:13px;
-      font-weight:700;
-      cursor:pointer;
-    }}
-    .dev-button.primary {{
-      border-color:#bdd0ea;
-      background:#eef5ff;
-      color:#103a7a;
-    }}
-    .dev-button:disabled {{
-      cursor:not-allowed;
-      opacity:.55;
-    }}
-    .command-output {{
-      width:100%;
-      min-height:78px;
-      padding:10px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      color:#182230;
-      font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      resize:vertical;
-    }}
     .periods {{
       display:flex;
       flex-wrap:wrap;
@@ -4289,29 +4601,13 @@ def render_catalog_page(
     .catalog {{ display:grid; gap:10px; margin-top:18px; }}
     .catalog-row {{
       display:grid;
-      grid-template-columns:minmax(96px,.3fr) minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
+      grid-template-columns:minmax(260px,1.4fr) minmax(130px,.45fr) minmax(150px,.5fr) minmax(190px,.7fr);
       gap:14px;
       align-items:start;
       background:var(--panel);
       border:1px solid var(--line);
       border-radius:8px;
       padding:14px;
-    }}
-    .catalog-select {{
-      display:inline-flex;
-      gap:7px;
-      align-items:center;
-      min-height:32px;
-      color:var(--muted);
-      font-size:13px;
-      font-weight:650;
-      cursor:pointer;
-    }}
-    .catalog-select input {{
-      width:17px;
-      height:17px;
-      margin:0;
-      accent-color:#174ea6;
     }}
     .catalog-row[hidden] {{ display:none; }}
     .catalog-row h3 {{
@@ -4470,21 +4766,6 @@ def render_catalog_page(
       <span><span data-result-count>{pulse_html.esc(total)}</span> von {pulse_html.esc(total)} Sitzungen</span>
       <button type="button" class="link-button" data-filter-reset hidden>Filter zurücksetzen</button>
     </div>
-    {'<section class="developer-panel dev-only" data-feature="dev-view" data-dossier-command data-output-dir="' + pulse_html.esc(str(output_dir)) + '">' if 'dev-view' in features else '<section hidden>'}
-      <h2>Dossiers erzeugen</h2>
-      <p><strong data-selected-count>0</strong> Sitzungen ausgewählt. Der Befehl erzeugt oder regeneriert die ausgewählten Dossiers, erhält bestehende Dossiers und rendert diesen Katalog neu. Vorhandene KI-Zusammenfassungen werden wiederverwendet, bis sie aktiv neu erzeugt werden.</p>
-      <label class="developer-option">
-        <input type="checkbox" data-refresh-summaries>
-        <span>KI-Zusammenfassungen neu erzeugen und dafür den konfigurierten LLM-Anbieter aufrufen.</span>
-      </label>
-      <div class="developer-actions">
-        <button type="button" class="dev-button" data-select-visible>Sichtbare auswählen</button>
-        <button type="button" class="dev-button" data-select-missing>Sichtbare ohne Dossier</button>
-        <button type="button" class="dev-button" data-clear-selection>Auswahl leeren</button>
-        <button type="button" class="dev-button primary" data-copy-command disabled>Befehl kopieren</button>
-      </div>
-      <textarea class="command-output" data-command-output readonly placeholder="Sitzungen auswählen, um den Regenerationsbefehl zu erzeugen."></textarea>
-    </section>
     <div class="periods">{period_badges}</div>
     <section class="catalog" data-catalog>
       {rows_html}
@@ -4501,6 +4782,16 @@ def render_catalog_page(
 """
 
 
+# ---------------------------------------------------------------------------
+# PAGE: sources.html - "Quellen und Methode"
+#
+# The transparency page: which official sources are used, how each visible
+# feature is derived from them, and what is deliberately excluded. Mostly static
+# editorial copy inside the template; the only generated part is the table of
+# sittings produced in this build.
+# ---------------------------------------------------------------------------
+
+
 def render_sources_page(
     entries: list[dict[str, Any]],
     database_href: str | None = None,
@@ -4508,6 +4799,8 @@ def render_sources_page(
     features: Selection | None = None,
 ) -> str:
     features = features or default_selection()
+    # "Erzeugte Sitzungsdatensätze" table: one row per dossier with its metrics
+    # and direct links to the XML, the PDF and the generated JSON.
     generated_rows = []
     for entry in entries:
         report = entry["report"]
@@ -4545,6 +4838,8 @@ def render_sources_page(
     database_page_link = (
         f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
     )
+    # The SQLite bullet in the method list only appears when this build actually
+    # produced a database to link to.
     database_method_item = ""
     if database_page_href or database_href:
         database_links = []
@@ -4808,6 +5103,15 @@ def render_sources_page(
     """
 
 
+# ---------------------------------------------------------------------------
+# PAGE: settings.html - "Bausteine"
+#
+# Shows every feature grouped by category. The build decides what is *available*;
+# this page only lets a visitor show or hide available blocks in their own
+# browser, persisted in localStorage by the feature runtime in pulse_html.
+# ---------------------------------------------------------------------------
+
+
 def render_settings_page(features: Selection) -> str:
     groups = "".join(
         f'<section class="settings-card settings-group"><h2>{pulse_html.esc(category)}</h2>'
@@ -4854,6 +5158,11 @@ def render_settings_page(features: Selection) -> str:
 """
 
 
+# ---------------------------------------------------------------------------
+# Site assembly
+# ---------------------------------------------------------------------------
+
+
 def remove_generated_addon_pages(output_dir: Path, directory: str, data_file: str) -> None:
     """Remove stale generated addon pages when a later build omits that addon."""
     addon_dir = output_dir / directory
@@ -4865,6 +5174,11 @@ def remove_generated_addon_pages(output_dir: Path, directory: str, data_file: st
         data_path.unlink()
 
 
+# Write every page of the site that is not a per-sitting dossier.
+#
+# By the time this runs, all data work is done: `entries` are the built dossiers,
+# `abg_mps`/`mp_lookup` come from the store, and nothing here touches the
+# network. Returns the path of index.html, which main() prints on stdout.
 def render_site(
     *,
     output_dir: Path,
@@ -4886,6 +5200,8 @@ def render_site(
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
 
+    # Links to the SQLite artefacts, but only when this build actually wrote
+    # them; every page takes these as optional and omits the link when None.
     database_href = None
     if not no_persist:
         try:
@@ -4894,6 +5210,8 @@ def render_site(
             database_href = None
     database_page_href = "database.html" if not no_persist and database_path.exists() else None
 
+    # The raw catalog as JSON. It is also what load_cached_protocols() reads back
+    # for an --offline render.
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     components = {component.feature.id: component for component in feature_loader.load(features)}
@@ -4906,6 +5224,9 @@ def render_site(
         "write_bill_pages": write_bill_pages,
         "write_abgeordnete_pages": write_abgeordnete_pages,
     }
+    # Optional areas are written by their feature component, and *removed* when
+    # the Baustein is off, so a later build with fewer blocks does not leave
+    # orphaned pages behind in the output directory.
     bill_output: dict[str, Any] = {"count": 0}
     if "bills" in features:
         bill_output = components["bills"].write_pages(output_dir, component_context)
@@ -4920,6 +5241,7 @@ def render_site(
         )
     else:
         remove_generated_addon_pages(output_dir, "abgeordnete", "abgeordnete.json")
+    # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
     overview_path = output_dir / "overview.html"
@@ -4963,7 +5285,6 @@ def render_site(
             protocols,
             entries,
             catalog_path,
-            output_dir,
             database_page_href=database_page_href,
             features=features,
         ),
@@ -4981,6 +5302,19 @@ def render_site(
     return index_path
 
 
+# ---------------------------------------------------------------------------
+# Baustein (feature flag) resolution
+#
+# A selection can come from several places, applied in this order of increasing
+# precedence: the defaults, features.json / features.local.json in the repo root,
+# --features-file, the BUNDESTAG_PULSE_FEATURES environment variable, --features
+# (which replaces the base entirely), the legacy --no-* flags, and finally
+# --enable / --disable. `vetoes` remembers explicit disables so a dependency
+# cannot silently switch a block back on.
+# ---------------------------------------------------------------------------
+
+
+# Accept "a,b", ["a", "b"] and nested lists alike.
 def _split_feature_tokens(value: Any) -> list[str]:
     if value is None:
         return []
@@ -4994,6 +5328,8 @@ def _split_feature_tokens(value: Any) -> list[str]:
     raise FeatureError(f"Ungültige Baustein-Konfiguration: {value!r}")
 
 
+# Apply "+id" / "-id" / "id" tokens to the current set. An unknown id is fed
+# through resolve() purely so it raises the standard FeatureError message.
 def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]) -> None:
     for token in tokens:
         operation = token[:1] if token[:1] in {"+", "-"} else "+"
@@ -5008,6 +5344,8 @@ def _apply_feature_tokens(current: set[str], tokens: list[str], vetoes: set[str]
             vetoes.add(feature_id)
 
 
+# Load a JSON feature config. A bare list replaces the selection; an object may
+# carry "features" (replace), "enable" and "disable".
 def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -5033,6 +5371,8 @@ def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> Non
     _apply_feature_tokens(current, [f"-{item.lstrip('-')}" for item in _split_feature_tokens(payload.get("disable"))], vetoes)
 
 
+# Build the final Selection for this run, then let features.resolve() close it
+# over dependencies and validate it.
 def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
     current = set(default_selection().ids)
     vetoes: set[str] = set()
@@ -5069,6 +5409,9 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
     return resolve(base=current, disable=vetoes)
 
 
+# Mirror the resolved selection back onto the argparse namespace, so the parts of
+# the pipeline that still read the old flags stay consistent with it. Disabling
+# "votes" this way also skips the (slow) roll-call scraping.
 def apply_to_args(args: argparse.Namespace, selection: Selection) -> None:
     args.no_roster = "mp-roster" not in selection
     args.no_abgeordnetenwatch = "aw-profiles" not in selection
@@ -5078,6 +5421,7 @@ def apply_to_args(args: argparse.Namespace, selection: Selection) -> None:
         args.vote_scan_pages = 0
 
 
+# --list-features: print the Baustein table and exit without touching the network.
 def print_feature_table(selection: Selection) -> None:
     print("ID                 Status       Kategorie      Beschreibung")
     print("-" * 92)
@@ -5089,6 +5433,11 @@ def print_feature_table(selection: Selection) -> None:
         else:
             status = "aus"
         print(f"{feature.id:<18} {status:<12} {feature.category:<14} {feature.description}")
+
+
+# ---------------------------------------------------------------------------
+# Command line and entry point
+# ---------------------------------------------------------------------------
 
 
 def parse_args() -> argparse.Namespace:
@@ -5243,10 +5592,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+# Entry point: run the whole build and print the path of the generated
+# index.html on stdout (everything else this script says goes to stderr).
+#
+# Two paths through this function:
+#   --offline -> render from the cached JSON in OUTPUT_DIR/data only, no network
+#   default   -> fetch from DIP, build dossiers, persist, then render
 def main() -> int:
+    # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
     args = parse_args()
 
+    # Which Bausteine are on decides what the rest of this function even does,
+    # so resolve them before anything else. --list-features exits right here.
     try:
         features = resolve_from_args(args, root=Path(__file__).resolve().parents[1])
     except FeatureError as exc:
@@ -5259,6 +5617,8 @@ def main() -> int:
     # Import addon modules only after this module and the renderer are fully loaded.
     components = {component.feature.id: component for component in feature_loader.load(features)}
 
+    # Output layout: protocols/ and data/ always, bills/ and abgeordnete/ only
+    # when their Baustein is enabled.
     output_dir = args.output_dir
     (output_dir / "protocols").mkdir(parents=True, exist_ok=True)
     (output_dir / "data").mkdir(parents=True, exist_ok=True)
@@ -5268,6 +5628,9 @@ def main() -> int:
         (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
+    # --- offline render ----------------------------------------------------
+    # Re-render every page from what is already on disk. Useful for iterating on
+    # the HTML/CSS in this file without spending API calls or waiting on DIP.
     if args.offline:
         protocols = load_cached_protocols(output_dir)
         if not protocols:
@@ -5280,6 +5643,8 @@ def main() -> int:
 
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
+        # The MP pages are read out of the existing store; the roster fetch is
+        # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
             store = pulse_store.connect(database_path)
             try:
@@ -5296,6 +5661,8 @@ def main() -> int:
                 store.close()
 
         entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features)
+        # Dossier pages are regenerated from the cached JSON reports, then the
+        # rest of the site is rendered around them.
         index_path = render_site(
             output_dir=output_dir,
             database_path=database_path,
@@ -5310,11 +5677,14 @@ def main() -> int:
         print(index_path)
         return 0
 
+    # --- online build ------------------------------------------------------
     api_key = args.api_key or os.environ.get("DIP_API_KEY")
     if not api_key:
         print("error: Provide a DIP API key via --api-key or DIP_API_KEY.", file=sys.stderr)
         return 1
 
+    # The abgeordnetenwatch resolver caches every lookup to disk and throttles
+    # itself, because that API rate-limits aggressively.
     profile_resolver = None
     if not args.no_abgeordnetenwatch:
         cache_path = args.abgeordnetenwatch_cache or output_dir / "data" / "abgeordnetenwatch-cache.json"
@@ -5325,6 +5695,10 @@ def main() -> int:
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
     try:
+        # Step 1: the catalog, then the subset of it that gets a dossier.
+        # --dossier-document-number can add sittings to the dossier list without
+        # changing the catalog; the second protocols_for_detail_pages() call
+        # re-filters that combined list for a usable XML URL.
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         protocols = fetch_protocols(client, args.limit, args.document_number, protocol_wahlperiode)
         detail_limit = None if args.document_number else args.detail_limit
@@ -5336,12 +5710,16 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        # With --preserve-existing-dossiers, dossiers from earlier builds stay
+        # visible in the catalog even when this run only regenerates a few.
         existing_entries = (
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         try:
+            # Step 2: build the selected dossiers. Each one writes its own JSON
+            # report and HTML page as a side effect.
             generated_entries = build_dossiers_with_progress(
                 detail_protocols,
                 load_existing=lambda protocol: load_existing_report(output_dir, protocol),
@@ -5363,6 +5741,10 @@ def main() -> int:
                     features=features,
                 ),
             )
+            # Step 3: persist everything into a freshly rebuilt SQLite store,
+            # then read it back for the MP pages. The dossier pages are written
+            # a second time afterwards because mp_lookup only exists now, and it
+            # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
             if not args.no_persist:
                 rebuild_database_from_entries(database_path, entries)
@@ -5391,6 +5773,9 @@ def main() -> int:
                 finally:
                     store.close()
                 entries = [write_report_files(entry["report"], output_dir, mp_lookup, features) for entry in entries]
+        # Always flush the profile cache and report resolver statistics, even
+        # when the build failed partway through - the cache is what keeps the
+        # next run from re-hitting the rate-limited API.
         finally:
             if profile_resolver is not None:
                 profile_resolver.save()
@@ -5407,6 +5792,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # Step 4: render the rest of the site around the dossiers.
     index_path = render_site(
         output_dir=output_dir,
         database_path=database_path,

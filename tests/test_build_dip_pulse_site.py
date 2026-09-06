@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -395,6 +396,67 @@ class CurrentPulseOrderTests(unittest.TestCase):
         self.assertIn("--enable votes", markup)
         self.assertRegex(markup, r'data-feature-toggle="dip-fetch"[^>]*checked disabled')
         self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*disabled')
+
+
+class PeriodOrderTests(unittest.TestCase):
+    """Wahlperiode buckets are keyed by string, so they need a numeric sort."""
+
+    @staticmethod
+    def _protocol(wahlperiode: int | None, number: int) -> dict[str, Any]:
+        protocol: dict[str, Any] = {
+            "id": f"{number}",
+            "dokumentnummer": f"{wahlperiode or 0}/{number}",
+            "datum": "2026-06-12",
+            "titel": f"Protokoll {number}",
+        }
+        if wahlperiode is not None:
+            protocol["wahlperiode"] = wahlperiode
+        return protocol
+
+    def test_period_sort_key_orders_numerically_with_fallback_last(self) -> None:
+        periods = ["9", "21", "1", "unbekannt", "10", "2"]
+        self.assertEqual(
+            sorted(periods, key=build_dip_pulse_site.period_sort_key),
+            ["1", "2", "9", "10", "21", "unbekannt"],
+        )
+
+    def test_catalog_page_orders_periods_lowest_first(self) -> None:
+        # Shuffled input so the assertion cannot pass by accident of arrival order.
+        protocols = [
+            self._protocol(9, 1),
+            self._protocol(21, 2),
+            self._protocol(1, 3),
+            self._protocol(None, 4),
+            self._protocol(10, 5),
+            self._protocol(2, 6),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            markup = build_dip_pulse_site.render_catalog_page(
+                protocols,
+                [],
+                output_dir / "data" / "katalog.json",
+                output_dir,
+            )
+
+        expected = ["1", "2", "9", "10", "21", "unbekannt"]
+        # The clickable badges in div.periods and the Wahlperiode dropdown render
+        # from the same list, so both must read lowest period first.
+        self.assertEqual(re.findall(r'data-wp-filter="([^"]+)"', markup), expected)
+        self.assertEqual(re.findall(r'<option value="([^"]+)">WP ', markup), expected)
+
+    def test_overview_page_orders_periods_lowest_first(self) -> None:
+        protocols = [
+            self._protocol(9, 1),
+            self._protocol(21, 2),
+            self._protocol(1, 3),
+            self._protocol(10, 4),
+        ]
+
+        markup = build_dip_pulse_site.render_overview(protocols, [])
+
+        self.assertEqual(re.findall(r'class="badge">WP ([^ ]+) ', markup), ["1", "9", "10", "21"])
 
 
 class FeatureArgumentCompatibilityTests(unittest.TestCase):
