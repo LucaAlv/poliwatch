@@ -251,7 +251,7 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] :is(
       .site-nav a, .theme-toggle, .settings-toggle, .settings-close, .settings-reset, .settings-more,
       .button, .btn, .dev-toggle,
-      .page-actions a, .session-links a, .pulse-actions a,
+      .page-actions a, .session-links a,
       .feature-link, .doc-link, .top-jump
     ) {
       background:var(--panel) !important;
@@ -267,7 +267,7 @@ def global_header_styles() -> str:
       .metric, .download-panel, .summary-band div, .panel, .table-card,
       .filter, .sample-table, details, .snapshot, .snapshot-metrics div,
       .stat-band div, .principle, .area-card, .latest-panel, .pulse-feature,
-      .context-panel, .feature-microgrid div, .attention-card, .top-card,
+      .context-panel, .feature-microgrid div, .attention-card, .top-card, .lede-top,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
       .settings-panel, .settings-card, .settings-group

@@ -250,6 +250,86 @@ class CurrentPulseOrderTests(unittest.TestCase):
             (output_dir / name).mkdir(parents=True, exist_ok=True)
         return output_dir
 
+    @staticmethod
+    def _agenda_item(
+        index: int,
+        speech_count: int,
+        fractions: tuple[str, ...],
+        heading: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "index": index,
+            "top_id": f"TOP {index}",
+            "heading": f"Beratung des Antrags {index}" if heading is None else heading,
+            "xml_speech_count": speech_count,
+            "xml_speakers": [
+                {"speaker": {"fraktion": fraction}, "char_count": 1000}
+                for fraction in fractions
+            ],
+        }
+
+    def _render_pulse(
+        self,
+        sittings: list[tuple[dict[str, Any], list[dict[str, Any]]]],
+        features: Any = None,
+    ) -> str:
+        """Render a whole site for the given (protocol, agenda_items) sittings.
+
+        Returns puls.html, whose hero lede is an aggregate over entries[0].
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            entries = []
+            for protocol, items in sittings:
+                entry = self._entry(output_dir, protocol)
+                entry["report"]["agenda_items"] = items
+                entries.append(entry)
+            kwargs: dict[str, Any] = dict(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol for protocol, _ in sittings],
+                entries=entries,
+                abg_mps=[],
+                mp_lookup={},
+            )
+            if features is not None:
+                kwargs["features"] = features
+            build_dip_pulse_site.render_site(**kwargs)
+            return (output_dir / "puls.html").read_text(encoding="utf-8")
+
+    def _lede_panel(self, markup: str) -> str:
+        """The hero's left panel only, sliced out of puls.html.
+
+        Lede assertions must be scoped to it: fraction badges like "FDP 1" and
+        "#top-" anchors also render in the attention cards further down the page,
+        so a whole-document assertIn cannot tell the sitting-wide lede aggregate
+        apart from the per-item ranking and would pass for the wrong reason.
+        """
+        match = re.search(
+            r'<div class="latest-panel pulse-lede">(.*?)<div class="context-panel',
+            markup,
+            re.S,
+        )
+        self.assertIsNotNone(match, "puls.html has no hero lede panel")
+        return match.group(1)
+
+    @staticmethod
+    def _lede_rows(lede: str) -> list[tuple[str, str, str]]:
+        """(href, TOP id, speech share) per row of the "Meiste Aufmerksamkeit" block."""
+        return [
+            (href, top_id, share)
+            for href, top_id, _heading, share in re.findall(
+                r'<a class="lede-top" href="([^"]+)"><span>([^<]+)</span>'
+                r"<strong>([^<]*)</strong><em>([^<]+)</em></a>",
+                lede,
+            )
+        ]
+
+    @staticmethod
+    def _lede_badges(lede: str) -> list[str]:
+        return re.findall(r'<span class="badge">([^<]+)</span>', lede)
+
     def test_render_site_puts_newest_sitting_first(self) -> None:
         # Cached dossiers reach render_site in glob order, where the slug "20-100"
         # sorts before "21-84" even though its sitting is three years older.
@@ -278,6 +358,342 @@ class CurrentPulseOrderTests(unittest.TestCase):
             pulse_markup = (output_dir / "puls.html").read_text(encoding="utf-8")
             self.assertIn("2026-06-12", pulse_markup)
             self.assertNotIn("2023-04-27", pulse_markup)
+
+    def test_pulse_lede_summarises_the_newest_sitting(self) -> None:
+        # The hero's left panel is a summary of entries[0], not a nav bar: it
+        # aggregates item_stats() across the sitting into a fraction stack and the
+        # three busiest agenda items. It must never link #abstimmungen, whose
+        # target only exists when the votes Baustein is built.
+        pulse_markup = self._render_pulse(
+            [
+                (
+                    self._protocol("21/84", "5799", "2026-06-12"),
+                    [
+                        self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
+                        self._agenda_item(2, 2, ("SPD", "GRÜNE")),
+                        self._agenda_item(3, 1, ("DIE LINKE",)),
+                        self._agenda_item(4, 1, ("FDP",)),
+                    ],
+                )
+            ]
+        )
+        lede = self._lede_panel(pulse_markup)
+
+        self.assertIn("Zusammenfassung der aktuellsten Sitzung", pulse_markup)
+        self.assertIn("Redeanteile nach Fraktion", lede)
+        # Only the three busiest agenda items reach the lede.
+        self.assertEqual(lede.count('class="lede-top"'), 3)
+        self.assertIn("protocols/plenarprotokoll-21-84.html#top-1", lede)
+        self.assertNotIn("#top-4", lede)
+        # The fraction stack is built from every item, not just the ranked
+        # three. Asserted on the stack's own title attribute inside the lede:
+        # FDP is 6th by most_common(5) so it never earns a badge here, and
+        # the bare string "FDP 1" would otherwise match the attention card
+        # for TOP 4 further down the page.
+        self.assertIn('title="FDP: 1"', lede)
+        # #abstimmungen only exists when the votes Baustein is built.
+        self.assertNotIn("#abstimmungen", pulse_markup)
+
+    def test_lede_fraction_split_counts_agenda_items_outside_the_top_three(self) -> None:
+        # The stack aggregates every item's party_counts, but only the five
+        # loudest fractions get a badge; the rest collapse into "+N weitere".
+        # Scoped to the lede because the attention card for TOP 4 renders its own
+        # "FDP 1" badge and would satisfy a whole-page assertion by itself.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [
+                            self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
+                            self._agenda_item(2, 2, ("SPD", "GRÜNE")),
+                            self._agenda_item(3, 1, ("DIE LINKE",)),
+                            self._agenda_item(4, 1, ("FDP",)),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # TOP 4 never reaches the ranking rows, but its speaker still counts.
+        self.assertIn('title="FDP: 1"', lede)
+        # SPD spoke in two separate items and is summed, not overwritten.
+        self.assertIn('title="SPD: 2"', lede)
+        self.assertEqual(
+            self._lede_badges(lede),
+            ["SPD 2", "CDU/CSU 1", "AfD 1", "GRÜNE 1", "DIE LINKE 1", "+1 weitere"],
+        )
+
+    def test_lede_omits_the_overflow_badge_at_five_fractions(self) -> None:
+        # Boundary of `len(sitting_party_counts) > 5`: five fractions all fit.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [
+                            self._agenda_item(
+                                1,
+                                5,
+                                (
+                                    "SPD",
+                                    "CDU/CSU",
+                                    "AfD",
+                                    "BÜNDNIS 90/DIE GRÜNEN",
+                                    "Die Linke",
+                                ),
+                            )
+                        ],
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(
+            self._lede_badges(lede),
+            ["SPD 1", "CDU/CSU 1", "AfD 1", "BÜNDNIS 90/DIE GRÜNEN 1", "Die Linke 1"],
+        )
+        self.assertNotIn("weitere", lede)
+
+    def test_lede_rows_are_the_three_busiest_tops_in_order(self) -> None:
+        # Agenda order is deliberately not speech order, so a lost sort cannot
+        # pass by accident of arrival. Shares are counted against the sitting.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [
+                            self._agenda_item(1, 1, ("SPD",)),
+                            self._agenda_item(2, 5, ("CDU/CSU",)),
+                            self._agenda_item(3, 3, ("AfD",)),
+                            self._agenda_item(4, 2, ("SPD",)),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(
+            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
+            [("TOP 2", "45.5%"), ("TOP 3", "27.3%"), ("TOP 4", "18.2%")],
+        )
+
+    def test_lede_lists_every_top_when_the_sitting_has_fewer_than_three(self) -> None:
+        # `ranked_items[:3]` must not pad or index past the end of a short sitting.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [
+                            self._agenda_item(1, 2, ("SPD", "AfD")),
+                            self._agenda_item(2, 1, ("CDU/CSU",)),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        self.assertEqual(
+            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
+            [("TOP 1", "66.7%"), ("TOP 2", "33.3%")],
+        )
+
+    def test_lede_falls_back_to_an_empty_state_without_agenda_items(self) -> None:
+        # A dossier whose extraction found no TOPs still has to render a hero:
+        # the `else` arm replaces both blocks with one explanatory line rather
+        # than leaving an empty fraction stack and a headerless ranking.
+        markup = self._render_pulse([(self._protocol("21/84", "5799", "2026-06-12"), [])])
+        lede = self._lede_panel(markup)
+
+        self.assertIn("noch keine Tagesordnungspunkte extrahiert", lede)
+        self.assertEqual(markup.count('class="lede-top"'), 0)
+        self.assertNotIn("Redeanteile nach Fraktion", markup)
+        # No closing quote: render_party_stack() emits `class="stack empty"` for
+        # an empty counter, which the quoted form would silently miss.
+        self.assertNotIn('<div class="stack', lede)
+        self.assertNotIn('class="party-labels"', lede)
+        # The panel's own heading survives the empty state.
+        self.assertIn("Zusammenfassung der aktuellsten Sitzung", lede)
+        self.assertIn("Redeanteile und Schwerpunkte", lede)
+
+    def test_lede_survives_a_sitting_whose_tops_have_no_speeches(self) -> None:
+        # total_speeches == 0 divides the share; percent() and render_party_stack()
+        # must both take their zero guard instead of raising ZeroDivisionError.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [(self._protocol("21/84", "5799", "2026-06-12"), [self._agenda_item(1, 0, ())])]
+            )
+        )
+
+        self.assertIn('<div class="stack empty"></div>', lede)
+        self.assertEqual(self._lede_badges(lede), [])
+        self.assertEqual(
+            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
+            [("TOP 1", "0.0%")],
+        )
+
+    def test_lede_stack_widths_are_shares_of_the_whole_sitting(self) -> None:
+        # The bar widths are the sitting-wide denominator made visible. Without
+        # this, sitting_party_total can be wrong (or the wrong variable) and
+        # every other lede assertion still passes — the counts in the title
+        # attributes are independent of it.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [
+                            self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
+                            self._agenda_item(2, 2, ("SPD", "GRÜNE")),
+                            self._agenda_item(3, 1, ("DIE LINKE",)),
+                            self._agenda_item(4, 1, ("FDP",)),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        stack = re.search(r'<div class="stack">(.*?)</div>', lede, re.S)
+        self.assertIsNotNone(stack, "lede has no fraction stack")
+        widths = re.findall(
+            r'width:([\d.]+)%;background:[^"]*" title="([^:]+):', stack.group(1)
+        )
+        # Seven speakers across the whole sitting: SPD 2/7, everyone else 1/7.
+        self.assertEqual(widths[0], ("28.57", "SPD"))
+        self.assertTrue(all(width == "14.29" for width, _party in widths[1:]), widths)
+
+    def test_lede_escapes_top_ids_from_the_protocol(self) -> None:
+        # top_id is read verbatim out of the XML protocol, exactly like heading,
+        # so the row has to escape it too. Every other fixture uses the safe
+        # literal "TOP {index}", which cannot catch a dropped esc().
+        item = self._agenda_item(1, 1, ("SPD",))
+        item["top_id"] = "TOP <1> & 2"
+        lede = self._lede_panel(
+            self._render_pulse([(self._protocol("21/84", "5799", "2026-06-12"), [item])])
+        )
+
+        self.assertIn("TOP &lt;1&gt; &amp; 2", lede)
+        self.assertNotIn("<1>", lede)
+
+    def test_lede_escapes_and_shortens_top_headings(self) -> None:
+        # Headings come from the XML protocol verbatim, so the row has to escape
+        # them and clip them to 72 characters or the hero grid breaks.
+        heading = (
+            "Beratung des Antrags der Fraktion <B> & Co. zur Änderung des "
+            "Gesetzes über die Feststellung des Bundeshaushaltsplans"
+        )
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [self._agenda_item(1, 1, ("SPD",), heading=heading)],
+                    )
+                ]
+            )
+        )
+
+        self.assertNotIn("<B>", lede)
+        self.assertIn("&lt;B&gt; &amp; Co.", lede)
+        self.assertIn("…</strong>", lede)
+        self.assertNotIn("Bundeshaushaltsplans", lede)
+
+    def test_lede_summarises_only_the_newest_sitting(self) -> None:
+        # entries[0] is the current pulse; an older dossier in the same build must
+        # not leak its fractions or its dossier anchors into the hero.
+        lede = self._lede_panel(
+            self._render_pulse(
+                [
+                    (
+                        self._protocol("20/100", "4200", "2023-04-27"),
+                        [self._agenda_item(9, 7, ("AfD",))],
+                    ),
+                    (
+                        self._protocol("21/84", "5799", "2026-06-12"),
+                        [self._agenda_item(1, 1, ("SPD",))],
+                    ),
+                ]
+            )
+        )
+
+        self.assertEqual(
+            self._lede_rows(lede),
+            [("protocols/plenarprotokoll-21-84.html#top-1", "TOP 1", "100.0%")],
+        )
+        self.assertEqual(self._lede_badges(lede), ["SPD 1"])
+        self.assertNotIn("plenarprotokoll-20-100", lede)
+        self.assertNotIn("AfD", lede)
+
+    def test_pulse_hero_never_links_the_votes_panel(self) -> None:
+        # The hero used to carry a "#abstimmungen" action link that dangled
+        # whenever the votes Baustein was off. Neither Baustein state may bring
+        # it back, and the retired .pulse-actions styling must stay retired.
+        sitting = [
+            (
+                self._protocol("21/84", "5799", "2026-06-12"),
+                [self._agenda_item(1, 1, ("SPD",))],
+            )
+        ]
+
+        for label, features in (("votes off", default_selection()), ("votes on", all_selection())):
+            with self.subTest(features=label):
+                markup = self._render_pulse(sitting, features=features)
+                self.assertEqual(markup.count("#abstimmungen"), 0)
+                self.assertNotIn("pulse-actions", markup)
+                self.assertNotIn("primary-link", markup)
+
+        built = self._render_pulse(sitting, features=all_selection())
+        # The panel itself still renders as an anchor target when votes is built.
+        self.assertIn('id="abstimmungen"', built)
+        self.assertIn('data-feature="votes"', built)
+        self.assertNotIn('id="abstimmungen"', self._render_pulse(sitting, features=default_selection()))
+
+    def test_lede_row_anchors_resolve_in_the_generated_dossier(self) -> None:
+        # The retired hero link pointed at #abstimmungen, a target that only
+        # existed when the votes Baustein was built. Its replacement rows must
+        # not repeat that: every lede href has to land on a real anchor in the
+        # dossier page this same build wrote.
+        protocol = self._protocol("21/84", "5799", "2026-06-12")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            # Written through write_report_files() so the dossier page really
+            # exists on disk, the way it does in a production build.
+            entry = build_dip_pulse_site.write_report_files(
+                report={
+                    "protocol": protocol,
+                    "validation_summary": {},
+                    "agenda_items": [
+                        self._agenda_item(1, 3, ("SPD", "CDU/CSU")),
+                        self._agenda_item(2, 2, ("AfD",)),
+                        self._agenda_item(3, 1, ("SPD",)),
+                    ],
+                },
+                output_dir=output_dir,
+            )
+
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol],
+                entries=[entry],
+                abg_mps=[],
+                mp_lookup={},
+            )
+
+            rows = self._lede_rows(
+                self._lede_panel((output_dir / "puls.html").read_text(encoding="utf-8"))
+            )
+            self.assertEqual(len(rows), 3)
+            for href, top_id, _share in rows:
+                with self.subTest(top=top_id):
+                    page, _, anchor = href.partition("#")
+                    target = output_dir / page
+                    self.assertTrue(target.exists(), msg=href)
+                    self.assertIn(f'id="{anchor}"', target.read_text(encoding="utf-8"), msg=href)
 
     def test_render_site_writes_catalog_newest_first(self) -> None:
         # The DIP API orders by aktualisiert, so a corrected old protocol can arrive
