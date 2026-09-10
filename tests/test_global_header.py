@@ -35,6 +35,18 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn("Gesetze verfolgen", nav)
         self.assertIn('data-feature="bills"', markup)
 
+    def test_dark_theme_covers_lede_rows_and_drops_retired_pulse_actions(self) -> None:
+        # The dark palette is applied through two hand-maintained selector lists,
+        # so a new surface is invisible in dark mode until it is added by hand.
+        # .lede-top replaced the .pulse-actions links in the puls.html hero.
+        css = pulse_html.global_header_styles()
+        panels = re.search(
+            r':root\[data-theme="dark"\] :is\(\s*\.metric,(.*?)\)\s*\{', css, re.S
+        )
+        self.assertIsNotNone(panels, "dark-theme panel selector list not found")
+        self.assertIn(".lede-top", panels.group(1))
+        self.assertNotIn(".pulse-actions", css)
+
     def test_accessibility_state_is_wired(self) -> None:
         markup = pulse_html.render_global_header(active="overview", features=all_selection())
         self.assertEqual(markup.count('aria-current="page"'), 1)

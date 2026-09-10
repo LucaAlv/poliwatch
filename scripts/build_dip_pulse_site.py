@@ -63,6 +63,7 @@ import re
 import sqlite3
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
@@ -2185,8 +2186,59 @@ def render_front_page(
         focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
         focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
 
+    # "Zusammenfassung der aktuellsten Sitzung" lede: the sitting-wide party
+    # speech split plus the three agenda items that drew the most speeches. Both
+    # are aggregates over the same item_stats() the ranking below uses, so every
+    # row stays one click from its dossier anchor.
+    sitting_party_counts: Counter[str] = Counter()
+    for stats in stats_by_index.values():
+        sitting_party_counts.update(stats["party_counts"])
+    sitting_party_total = sum(sitting_party_counts.values())
+    lede_party_labels = [
+        f"{party} {count}" for party, count in sitting_party_counts.most_common(5)
+    ]
+    if len(sitting_party_counts) > 5:
+        lede_party_labels.append(f"+{len(sitting_party_counts) - 5} weitere")
+    lede_top_rows = []
+    for item in ranked_items[:3]:
+        stats = stats_by_index[item["index"]]
+        # Decimal point, not pulse_html.format_percent()'s German comma: the
+        # attention cards further down this same page render their shares as
+        # "19.2%", and the lede sits directly above them. Matching the dossier
+        # pages here would split the convention within one screen.
+        share = pulse_html.percent(stats["speech_count"], total_speeches)
+        lede_top_rows.append(
+            f'<a class="lede-top" href="{protocol_href}#top-{pulse_html.esc(item.get("index"))}">'
+            f'<span>{pulse_html.esc(item.get("top_id"))}</span>'
+            f'<strong>{pulse_html.esc(pulse_html.short(item.get("heading"), 72))}</strong>'
+            f'<em>{share:.1f}%</em>'
+            "</a>"
+        )
+    if lede_top_rows:
+        lede_body = f"""
+          <div class="lede-block">
+            <span class="eyebrow">Redeanteile nach Fraktion</span>
+            {pulse_html.render_party_stack(sitting_party_counts, sitting_party_total)}
+            <div class="party-labels">{pulse_html.render_badges(lede_party_labels)}</div>
+          </div>
+          <div class="lede-block">
+            <span class="eyebrow">Meiste Aufmerksamkeit</span>
+            <div class="lede-tops">{''.join(lede_top_rows)}</div>
+          </div>
+        """
+    else:
+        lede_body = (
+            '<div class="lede-block">'
+            "<p>F&uuml;r die neueste Auswertung sind noch keine Tagesordnungspunkte extrahiert.</p>"
+            "</div>"
+        )
+
     # "Abstimmungsverschiebung" panel: roll-call votes attached to agenda items.
     # The whole panel is gated on the "votes" Baustein.
+    # Its id="abstimmungen" is deliberately kept with no in-page link: the hero
+    # used to link it and pointed at nothing whenever this Baustein was off.
+    # The id stays as an external deep-link target, matching its still-linked
+    # siblings #bewegung and #aufmerksamkeit.
     vote_items = [
         item
         for item in items
@@ -2288,8 +2340,9 @@ def render_front_page(
 
     # Page anatomy, top to bottom:
     #   global header -> page header with in-page nav
-    #   radar-hero    -> lede panel + the sitting's source panel (metrics, links
-    #                    to XML/PDF/JSON/SQLite)
+    #   radar-hero    -> lede panel (sitting-wide fraction split + the three
+    #                    busiest TOPs) + the sitting's source panel (metrics,
+    #                    links to XML/PDF/JSON/SQLite)
     #   feature-grid  -> the Themenbewegung and Abstimmungsverschiebung panels
     #   layout/main   -> warning banner + the attention ranking cards
     return f"""<!doctype html>
@@ -2364,34 +2417,31 @@ def render_front_page(
       background:var(--panel);
       padding:18px;
     }}
-    .eyebrow, .metric span, .top-link span, label, .card-meta {{
+    .eyebrow, .metric span, .top-link span, .lede-top span, label, .card-meta {{
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .pulse-lede h2 {{ margin:6px 0 0; font-size:27px; line-height:1.16; }}
-    .pulse-lede p {{ max-width:760px; font-size:15px; line-height:1.5; }}
-    .pulse-actions {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:9px;
-      margin-top:16px;
-    }}
-    .pulse-actions a {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:36px;
-      padding:6px 12px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-size:13px;
-      font-weight:750;
+    .pulse-lede {{ display:grid; align-content:start; gap:12px; }}
+    .pulse-lede h2 {{ margin:0; font-size:27px; line-height:1.16; }}
+    .pulse-lede p {{ margin:0; max-width:760px; font-size:15px; line-height:1.5; }}
+    .lede-block {{ padding-top:12px; border-top:1px solid var(--line); }}
+    .lede-block .stack {{ margin-top:10px; }}
+    .lede-tops {{ display:grid; gap:8px; margin-top:10px; }}
+    .lede-top {{
+      display:grid;
+      grid-template-columns:auto minmax(0,1fr) auto;
+      gap:10px;
+      align-items:baseline;
+      padding:9px 11px;
+      border:1px solid #e2e7ef;
+      border-radius:8px;
+      background:#fbfcfd;
       color:var(--ink);
     }}
-    .pulse-actions .primary-link {{ color:var(--blue); }}
+    .lede-top strong {{ font-size:14px; line-height:1.3; overflow-wrap:anywhere; }}
+    .lede-top em {{ font-style:normal; font-weight:750; font-variant-numeric:tabular-nums; }}
     .context-title {{ margin:5px 0 0; font-size:19px; line-height:1.22; }}
     .metric-grid {{
       display:grid;
@@ -2423,7 +2473,7 @@ def render_front_page(
     .source-panel p {{ margin-top:4px; font-size:14px; line-height:1.45; }}
     .feature-grid {{
       display:grid;
-      grid-template-columns:repeat(2, minmax(0,1fr));
+      grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
       gap:18px;
       margin-top:18px;
     }}
@@ -2761,15 +2811,10 @@ def render_front_page(
 
     <section class="radar-hero">
       <div class="latest-panel pulse-lede">
-        <span class="eyebrow">Momentaufnahme aus Primärquellen</span>
-        <h2>Themen, Abstimmungen und Aufmerksamkeit statt Sitzungsreview</h2>
+        <span class="eyebrow">Zusammenfassung der aktuellsten Sitzung</span>
+        <h2>Redeanteile und Schwerpunkte</h2>
         <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
-        <div class="pulse-actions">
-          <a class="primary-link" href="#bewegung">Themenbewegung ansehen</a>
-          <a href="#wochenvergleich">Wochenvergleich</a>
-          <a href="#abstimmungen">Abstimmungsverschiebungen ansehen</a>
-          <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
-        </div>
+        {lede_body}
       </div>
       <div class="context-panel source-panel">
         <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
