@@ -12,7 +12,12 @@ from . import BaseComponent, REGISTRY
 def render_vote_summary(item: dict[str, Any]) -> str:
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
     if not votes:
-        return ""
+        return (
+            '<section class="vote-panel unavailable" data-feature="votes">'
+            "<h3>Namentliche Abstimmungen</h3>"
+            "<p>Für diesen Tagesordnungspunkt sind in dieser Veröffentlichung keine "
+            "namentlichen Abstimmungsdaten verfügbar.</p></section>"
+        )
     panels = []
     for vote in votes:
         fraction_rows = []

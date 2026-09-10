@@ -8,6 +8,7 @@ import html
 import json
 import re
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,9 @@ from features import (
     FEATURES,
     NAV_ITEMS,
     Selection,
-    default_selection,
     feature_css,
     manifest_json,
+    publication_selection,
 )
 
 
@@ -235,6 +236,9 @@ def global_header_styles() -> str:
     .settings-switch { flex:0 0 auto; margin-top:2px; accent-color:var(--blue); cursor:pointer; }
     .settings-switch:disabled { cursor:not-allowed; }
     .settings-badge { display:inline-flex !important; width:max-content; padding:2px 5px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2, #f4f6f9); }
+    .settings-badge.readiness-ready { border-color:#89c5ba; background:var(--green-soft, #e7f6f3); color:#0f5f59; }
+    .settings-badge.readiness-partial { border-color:#d9c48a; background:var(--amber-soft, #fbf6e7); color:#7a5a10; }
+    .settings-badge.readiness-unavailable { color:var(--muted); }
     .settings-item.is-unavailable { opacity:.72; }
     .settings-hint code { font-size:10px; }
     .settings-more { text-decoration:none; }
@@ -270,7 +274,8 @@ def global_header_styles() -> str:
       .context-panel, .feature-microgrid div, .attention-card, .top-card, .lede-top,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .settings-panel, .settings-card, .settings-group
+      .settings-panel, .settings-card, .settings-group,
+      .week-compare, .week-metric
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
@@ -299,7 +304,9 @@ def global_header_styles() -> str:
       .principle p, .area-card p, .metric span, .feature-microgrid span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
-      .session-summary-note, .settings-switch-text span, .settings-hint, .settings-count
+      .session-summary-note, .settings-switch-text span, .settings-hint, .settings-count,
+      .week-card h3, .week-label, .week-note, .week-sub,
+      .week-metric span, .week-metric-foot em, .week-trace em
     ) {
       color:var(--muted) !important;
     }
@@ -308,7 +315,7 @@ def global_header_styles() -> str:
       border-color:var(--warning-line) !important;
       color:var(--warning-ink) !important;
     }
-    :root[data-theme="dark"] :is(.bar, .stack, .vote-stack) {
+    :root[data-theme="dark"] :is(.bar, .stack, .vote-stack, .week-bar, .week-spark) {
       background:var(--surface-3) !important;
     }
     :root[data-theme="dark"] :is(
@@ -317,10 +324,18 @@ def global_header_styles() -> str:
       .position-list li, .doc-list li, .activity-list li,
       .people-list li, .people-section, .raw-top-api,
       .dev-top-details, .speech-section, details pre,
-      .settings-item, .settings-panel-head, .settings-panel-foot
+      .settings-item, .settings-panel-head, .settings-panel-foot,
+      .week-head, .week-row.return-row
     ) {
       border-color:var(--line) !important;
     }
+    :root[data-theme="dark"] .week-card {
+      background:var(--surface-2) !important;
+      border-color:var(--line) !important;
+      color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] .week-card strong,
+    :root[data-theme="dark"] .week-metric strong { color:var(--ink) !important; }
     :root[data-theme="dark"] pre,
     :root[data-theme="dark"] code {
       color:#dbe7f3;
@@ -392,7 +407,7 @@ def theme_runtime_script() -> str:
 
 
 def feature_bootstrap_script(selection: Selection | None = None) -> str:
-    selection = selection or default_selection()
+    selection = publication_selection()
     return f"""
   <script>
     (() => {{
@@ -401,10 +416,26 @@ def feature_bootstrap_script(selection: Selection | None = None) -> str:
       window.__BUNDESTAG_PULSE_FEATURES__ = manifest;
       let overrides = {{}};
       try {{ overrides = JSON.parse(window.localStorage.getItem(key) || "{{}}") || {{}}; }} catch (_) {{}}
+      const states = {{}};
       for (const [id, feature] of Object.entries(manifest)) {{
-        let on = Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v);
-        if (!feature.a) on = false;
-        if (feature.c) on = true;
+        states[id] = feature.c || (feature.a && (
+          Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v)
+        ));
+      }}
+      // An explicit/off dependency wins when restoring old or hand-edited state.
+      // Interactive enabling performs the inverse operation and enables its
+      // dependencies first (see feature_runtime_script).
+      let changed = true;
+      while (changed) {{
+        changed = false;
+        for (const [id, feature] of Object.entries(manifest)) {{
+          if (states[id] && (feature.r || []).some((required) => !states[required])) {{
+            states[id] = false;
+            changed = true;
+          }}
+        }}
+      }}
+      for (const [id, on] of Object.entries(states)) {{
         document.documentElement.toggleAttribute(`data-feature-${{id}}`, on);
       }}
     }})();
@@ -413,7 +444,6 @@ def feature_bootstrap_script(selection: Selection | None = None) -> str:
 
 
 def feature_runtime_script(selection: Selection | None = None) -> str:
-    selection = selection or default_selection()
     return """
   <script>
     (() => {
@@ -434,17 +464,33 @@ def feature_runtime_script(selection: Selection | None = None) -> str:
           control.dataset.inherited = inherited ? "true" : "false";
         });
         document.querySelectorAll("[data-settings-count]").forEach((node) => {
-          const count = Object.keys(manifest).filter((id) => manifest[id].a && root.hasAttribute(`data-feature-${id}`)).length;
+          const count = Object.keys(manifest).filter((id) => {
+            const feature = manifest[id];
+            return feature.a && !feature.c && feature.m !== "n" && root.hasAttribute(`data-feature-${id}`);
+          }).length;
           node.textContent = `${count} aktiv`;
         });
       };
       const setFeature = (id, on, persist = true) => {
         const feature = manifest[id];
         if (!feature || !feature.a || feature.c || feature.m === "n") return;
-        root.toggleAttribute(`data-feature-${id}`, Boolean(on));
+        const overrides = readOverrides();
+        const apply = (featureId, enabled) => {
+          const target = manifest[featureId];
+          if (!target || target.c || target.m === "n") return;
+          root.toggleAttribute(`data-feature-${featureId}`, Boolean(enabled));
+          if (persist) overrides[featureId] = Boolean(enabled);
+        };
+        if (on) {
+          for (const required of feature.r || []) apply(required, true);
+          apply(id, true);
+        } else {
+          apply(id, false);
+          for (const [dependentId, dependent] of Object.entries(manifest)) {
+            if ((dependent.r || []).includes(id)) apply(dependentId, false);
+          }
+        }
         if (persist) {
-          const overrides = readOverrides();
-          overrides[id] = Boolean(on);
           try { window.localStorage.setItem(key, JSON.stringify(overrides)); } catch (_) {}
         }
         updateControls();
@@ -511,29 +557,25 @@ SETTINGS_ICON_SVG = (
 )
 
 
-def render_settings_items(selection: Selection, category: str | None = None) -> str:
+def render_settings_items(
+    selection: Selection,
+    category: str | None = None,
+    readiness: dict[str, str] | None = None,
+) -> str:
     labels = {feature.id: feature.label for feature in FEATURES}
+    readiness = readiness or {}
+    readiness_labels = {
+        "ready": "Daten verfügbar",
+        "partial": "Daten teilweise verfügbar",
+        "unavailable": "Noch keine Daten verfügbar",
+    }
     rows = []
     for feature in FEATURES:
+        if feature.core or feature.client_mode == "none":
+            continue
         if category and feature.category != category:
             continue
-        available = feature.id in selection
-        toggleable = available and not feature.core and feature.client_mode != "none"
-        checked = " checked" if available and feature.default_visible else ""
-        disabled = "" if toggleable else " disabled"
-        classes = "settings-item" + (" is-unavailable" if not available else "")
-        if not available:
-            status = (
-                '<span class="settings-badge">Nicht in diesem Build</span>'
-                f'<span class="settings-hint"><code>--enable {esc(feature.id)}</code></span>'
-                + (f'<span class="settings-hint">{esc(feature.rebuild_hint)}</span>' if feature.rebuild_hint else "")
-            )
-        elif feature.core:
-            status = '<span class="settings-badge">Immer aktiv</span>'
-        elif feature.client_mode == "none":
-            status = '<span class="settings-badge">Nur beim Build</span>'
-        else:
-            status = ""
+        checked = " checked" if feature.default_visible else ""
         enhancement = ""
         if feature.enhances:
             enhancement = (
@@ -541,20 +583,27 @@ def render_settings_items(selection: Selection, category: str | None = None) -> 
                 + esc(", ".join(labels[feature_id] for feature_id in feature.enhances))
                 + ".</span>"
             )
+        state = readiness.get(feature.id)
+        status = (
+            f'<span class="settings-badge readiness-{esc(state)}">{esc(readiness_labels[state])}</span>'
+            if state in readiness_labels
+            else ""
+        )
         rows.append(
-            f'<label class="{classes}" data-settings-item="{esc(feature.id)}">'
+            f'<label class="settings-item" data-settings-item="{esc(feature.id)}">'
             f'<span class="settings-switch-text"><strong>{esc(feature.label)}</strong>'
             f'<span>{esc(feature.description)}</span>{enhancement}{status}</span>'
             f'<input class="settings-switch" type="checkbox" role="switch" data-feature-toggle="{esc(feature.id)}"'
-            f'{checked}{disabled}></label>'
+            f'{checked}></label>'
         )
     return "".join(rows)
 
 
 def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
     groups = "".join(
-        f'<section class="settings-group"><h3>{esc(category)}</h3>{render_settings_items(selection, category)}</section>'
+        f'<section class="settings-group"><h3>{esc(category)}</h3>{items}</section>'
         for category in CATEGORIES
+        if (items := render_settings_items(selection, category))
     )
     panel_id = "site-settings-panel"
     prefix = "../" * depth
@@ -571,7 +620,7 @@ def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
 
 
 def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
-    features = features or default_selection()
+    features = publication_selection()
     prefix = "../" * depth
     brand_href = f"{prefix}index.html"
     links = []
@@ -696,6 +745,268 @@ def item_stats(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Sitting-week aggregation
+#
+# puls.html compares the newest sitting week against the one before it. The ISO
+# calendar week is the unit because the weekday alone explains roughly 60% of
+# how big a sitting is - measured over 153 sittings since 2024, Wednesday runs a
+# median 163 speeches against Friday's 80, and Thursday carries 17 agenda items
+# against 7 either side. A sitting-to-sitting delta would therefore mostly
+# report which weekday it is (median swing 48%) rather than any political
+# movement; week to week the same figure is 9%.
+#
+# The design decision behind this is recorded in
+# docs/design/bundestag-pulse-design.md: the parliament's own Tagesordnungspunkte
+# are the topics, and the trend is "compare TOPs across sitting weeks". No topic
+# model is involved.
+# ---------------------------------------------------------------------------
+
+
+# Two sitting weeks further apart than this are not a "Wochenvergleich" any more.
+# Every real gap between consecutive sitting weeks in the archive is at most 10
+# weeks (the summer recess), so this never rejects a legitimate comparison - it
+# only stops a lone historical dossier from being compared against the present.
+MAX_WEEK_GAP = 12
+
+
+def iso_week_key(datum: Any) -> tuple[int, int] | None:
+    """"2026-06-12" -> (2026, 24). None when the date is missing or malformed."""
+    if not datum:
+        return None
+    try:
+        parsed = date.fromisoformat(str(datum)[:10])
+    except ValueError:
+        return None
+    year, week, _ = parsed.isocalendar()
+    return (int(year), int(week))
+
+
+def week_span(earlier: tuple[int, int], later: tuple[int, int]) -> int:
+    """Whole ISO weeks between two week keys."""
+    start = date.fromisocalendar(earlier[0], earlier[1], 1)
+    end = date.fromisocalendar(later[0], later[1], 1)
+    return abs((end - start).days) // 7
+
+
+def week_label(week: tuple[int, int]) -> str:
+    return f"KW {week[1]}/{week[0]}"
+
+
+def group_entries_by_week(entries: list[dict[str, Any]]) -> dict[tuple[int, int], list[dict[str, Any]]]:
+    """Bucket dossier entries by the ISO week of their sitting date.
+
+    Entries whose protocol carries no usable date are dropped rather than piled
+    into a fallback bucket - an undated sitting cannot take part in a week
+    comparison either way.
+    """
+    weeks: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for entry in entries:
+        protocol = ((entry.get("report") or {}).get("protocol")) or {}
+        key = iso_week_key(protocol.get("datum"))
+        if key is None:
+            continue
+        weeks.setdefault(key, []).append(entry)
+    for bucket in weeks.values():
+        bucket.sort(key=lambda item: str(_entry_protocol(item).get("datum") or ""))
+    return weeks
+
+
+def _entry_protocol(entry: dict[str, Any]) -> dict[str, Any]:
+    return ((entry.get("report") or {}).get("protocol")) or {}
+
+
+def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate one sitting week's dossiers into the figures puls.html shows."""
+    party_counts: Counter[str] = Counter()
+    vorgangstyp_counts: Counter[str] = Counter()
+    vorgang_ids: set[str] = set()
+    documents: list[str] = []
+    top_count = 0
+    speech_count = 0
+    total_chars = 0
+    vote_count = 0
+    truncated_items = 0
+
+    for entry in entries:
+        report = entry.get("report") or {}
+        documents.append(str(_entry_protocol(entry).get("dokumentnummer") or ""))
+        items = report.get("agenda_items") or []
+        top_count += len(items)
+        for item in items:
+            stats = item_stats(item)
+            speech_count += stats["speech_count"]
+            party_counts.update(stats["party_counts"])
+            # item_stats() falls back to xml_speakers_first - five speakers with
+            # no text - when xml_speakers is empty. Speech counts stay right in
+            # that case but character totals would silently under-report, so a
+            # truncated item is excluded from the text aggregate and flagged.
+            if item.get("xml_speakers"):
+                total_chars += stats["total_chars"]
+            elif stats["speakers"]:
+                truncated_items += 1
+            vote_count += len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
+            for position in ((item.get("api") or {}).get("positions") or []):
+                if position.get("vorgangstyp"):
+                    vorgangstyp_counts[str(position["vorgangstyp"])] += 1
+                if position.get("vorgang_id"):
+                    vorgang_ids.add(str(position["vorgang_id"]))
+
+    return {
+        "week": week,
+        "label": week_label(week),
+        "sitting_count": len(entries),
+        "documents": documents,
+        "top_count": top_count,
+        "speech_count": speech_count,
+        "total_chars": total_chars,
+        "chars_complete": truncated_items == 0,
+        "party_counts": party_counts,
+        "vorgangstyp_counts": vorgangstyp_counts,
+        "vorgang_ids": vorgang_ids,
+        "vote_count": vote_count,
+    }
+
+
+WEEK_METRICS = (
+    ("speech_count", "Reden", "int"),
+    ("top_count", "Tagesordnungspunkte", "int"),
+    ("total_chars", "Redetext (Zeichen)", "int"),
+)
+
+
+def week_comparison(current: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Compare two week_stats dicts, or None when there is nothing to compare against.
+
+    When the two weeks hold a different number of sittings every figure switches
+    to a per-sitting average. A week caught mid-flight - one sitting done of the
+    usual three - would otherwise read as a two-thirds collapse purely for being
+    unfinished. Sitting counts are always present in the data, whereas "is this
+    week over" is not knowable offline, which is why this is the normalisation
+    rule rather than hiding the running week.
+    """
+    if not previous or not current:
+        return None
+    normalised = current["sitting_count"] != previous["sitting_count"]
+
+    def figure(stats: dict[str, Any], key: str) -> float:
+        raw = float(stats[key])
+        if normalised and stats["sitting_count"]:
+            return raw / stats["sitting_count"]
+        return raw
+
+    metrics = []
+    for key, label, _kind in WEEK_METRICS:
+        # Drop the text metric entirely rather than print a number we know is short.
+        if key == "total_chars" and not (current["chars_complete"] and previous["chars_complete"]):
+            continue
+        now = figure(current, key)
+        before = figure(previous, key)
+        metrics.append(
+            {
+                "key": key,
+                "label": label,
+                "current": now,
+                "previous": before,
+                "delta": now - before,
+                "delta_percent": ((now - before) / before * 100) if before else None,
+            }
+        )
+
+    return {
+        "current": current,
+        "previous": previous,
+        "normalised": normalised,
+        "gap": week_span(previous["week"], current["week"]),
+        "metrics": metrics,
+    }
+
+
+def returning_vorgaenge(
+    weeks: dict[tuple[int, int], list[dict[str, Any]]],
+    current_week: tuple[int, int],
+) -> list[dict[str, Any]]:
+    """Procedures debated in `current_week` that already ran in an earlier week.
+
+    Keyed on vorgang_id, the only identifier stable across sittings - top_id is
+    just "Tagesordnungspunkt 6" and renumbers every sitting. This is the closest
+    thing in the data to a topic literally moving through parliament: a bill's
+    1. Beratung in one week and its 2. Beratung in another.
+    """
+    occurrences: dict[str, list[dict[str, Any]]] = {}
+    twins: dict[str, set[str]] = {}
+
+    for week in sorted(weeks):
+        if week > current_week:
+            continue
+        for entry in weeks[week]:
+            report = entry.get("report") or {}
+            protocol = _entry_protocol(entry)
+            for item in report.get("agenda_items") or []:
+                for position in ((item.get("api") or {}).get("positions") or []):
+                    vorgang_id = str(position.get("vorgang_id") or "")
+                    if not vorgang_id:
+                        continue
+                    occurrences.setdefault(vorgang_id, []).append(
+                        {
+                            "week": week,
+                            "label": week_label(week),
+                            "dokumentnummer": protocol.get("dokumentnummer"),
+                            "page_path": entry.get("page_path"),
+                            "index": item.get("index"),
+                            "vorgangsposition": position.get("vorgangsposition"),
+                            "titel": position.get("titel"),
+                            "vorgangstyp": position.get("vorgangstyp"),
+                        }
+                    )
+                    for twin in position.get("mitberaten") or []:
+                        if twin.get("id"):
+                            twins.setdefault(vorgang_id, set()).add(str(twin["id"]))
+
+    rows = []
+    for vorgang_id, records in occurrences.items():
+        seen = sorted({record["week"] for record in records})
+        if current_week not in seen or len(seen) < 2:
+            continue
+        ordered = sorted(records, key=lambda record: record["week"])
+        rows.append(
+            {
+                "vorgang_id": vorgang_id,
+                "titel": ordered[0].get("titel") or ordered[-1].get("titel") or "",
+                "vorgangstyp": ordered[0].get("vorgangstyp") or "",
+                "week_count": len(seen),
+                "first": ordered[0],
+                "latest": ordered[-1],
+            }
+        )
+
+    # DIP issues one vorgang_id per document, so a single bill can surface twice
+    # under sibling ids that name each other in `mitberaten`. Keep the first of
+    # each such group; the ordering below makes that choice deterministic.
+    rows.sort(key=lambda row: (-row["week_count"], -row["latest"]["week"][0], -row["latest"]["week"][1], row["vorgang_id"]))
+    kept: list[dict[str, Any]] = []
+    dropped: set[str] = set()
+    for row in rows:
+        if row["vorgang_id"] in dropped:
+            continue
+        kept.append(row)
+        dropped.update(twins.get(row["vorgang_id"], set()))
+    return kept
+
+
+def week_sparkline_points(
+    weeks: dict[tuple[int, int], list[dict[str, Any]]],
+    current_week: tuple[int, int],
+    span: int = 12,
+) -> list[dict[str, Any]]:
+    """The last `span` sitting weeks up to and including `current_week`."""
+    keys = [week for week in sorted(weeks) if week <= current_week][-span:]
+    points = []
+    for week in keys:
+        stats = week_stats(week, weeks[week])
+        points.append({"label": week_label(week), "value": stats["speech_count"], "week": week})
+    return points
+
 def protocol_title(report: dict[str, Any]) -> str:
     protocol = report.get("protocol") or {}
     return f"Bundestag-Puls · {protocol.get('dokumentnummer', 'Plenarprotokoll')}"
@@ -718,6 +1029,84 @@ def render_party_stack(counter: Counter[str], total: int) -> str:
         )
     return f'<div class="stack">{"".join(parts)}</div>'
 
+
+# Week-comparison markup. Same technique as render_party_stack above: plain divs
+# with an inline width or height percentage, no chart library and no SVG, because
+# the only script this site ships is the handful of inline blocks it emits itself.
+
+
+def render_delta(value: float | None, unit: str = "%", digits: int = 1) -> str:
+    """An up/down/flat delta chip. `None` means "no basis to compare"."""
+    if value is None:
+        return '<span class="week-delta flat">n/a</span>'
+    rounded = round(value, digits)
+    if rounded == 0:
+        return '<span class="week-delta flat">&plusmn;0</span>'
+    direction = "up" if rounded > 0 else "down"
+    arrow = "&#9650;" if rounded > 0 else "&#9660;"
+    sign = "+" if rounded > 0 else "&minus;"
+    number = f"{abs(rounded):.{digits}f}".replace(".", ",")
+    return f'<span class="week-delta {direction}">{arrow} {sign}{number}&nbsp;{esc(unit)}</span>'
+
+
+def render_sparkline(points: list[dict[str, Any]]) -> str:
+    """A CSS micro bar chart of one value per sitting week."""
+    if not points:
+        return '<div class="week-spark empty"></div>'
+    values = [max(0, int(point.get("value") or 0)) for point in points]
+    peak = max(values) or 1
+    bars = []
+    for point, value in zip(points, values):
+        height = max(6.0, value / peak * 100)
+        title = f'{point.get("label", "")}: {format_int(value)}'
+        bars.append(f'<span style="height:{height:.1f}%" title="{esc(title)}"></span>')
+    return f'<div class="week-spark">{"".join(bars)}</div>'
+
+
+def render_share_shift(current: Counter[str], previous: Counter[str] | None, limit: int = 8) -> str:
+    """Per-fraction share of the week's speeches, with the shift in percentage points."""
+    total_now = sum(current.values())
+    if not total_now:
+        return '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
+    total_before = sum(previous.values()) if previous else 0
+    rows = []
+    for party, count in current.most_common(limit):
+        share = percent(count, total_now)
+        shift = None
+        if total_before:
+            shift = share - percent(previous.get(party, 0), total_before)
+        color = PARTY_COLORS.get(party, "#6b7280")
+        rows.append(
+            f"""
+            <li class="week-row">
+              <span class="week-label">{esc(party)}</span>
+              <span class="week-bar"><span style="width:{share:.2f}%;background:{color}"></span></span>
+              <strong>{format_percent(share)}</strong>
+              {render_delta(shift, "pp")}
+            </li>"""
+        )
+    return f'<ul class="week-list">{"".join(rows)}</ul>'
+
+
+def render_type_mix(current: Counter[str], previous: Counter[str] | None, limit: int = 6) -> str:
+    """Which kinds of business the week was made of, against the week before."""
+    if not sum(current.values()):
+        return '<p class="week-note">Keine Vorgangspositionen zugeordnet.</p>'
+    peak = max(current.values())
+    rows = []
+    for kind, count in current.most_common(limit):
+        before = int((previous or {}).get(kind, 0))
+        width = max(4.0, count / peak * 100)
+        rows.append(
+            f"""
+            <li class="week-row">
+              <span class="week-label">{esc(kind)}</span>
+              <span class="week-bar"><span style="width:{width:.2f}%;background:var(--teal)"></span></span>
+              <strong>{esc(count)}</strong>
+              {render_delta(float(count - before), "", digits=0)}
+            </li>"""
+        )
+    return f'<ul class="week-list">{"".join(rows)}</ul>'
 
 def render_vote_stack(counts: dict[str, Any], total: int | None = None) -> str:
     total = total if total is not None else sum(int(counts.get(key) or 0) for key in VOTE_LABELS)
@@ -1214,7 +1603,7 @@ def render_html(
     features: Selection | None = None,
     mp_lookup: dict[str, int] | None = None,
 ) -> str:
-    features = features or default_selection()
+    features = publication_selection()
     from features.loader import load as load_components
 
     components = {component.feature.id: component for component in load_components(features)}

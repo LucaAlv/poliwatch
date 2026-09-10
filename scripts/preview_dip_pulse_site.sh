@@ -37,10 +37,9 @@ refresh DIP data before serving the preview.
 
 Examples:
   scripts/preview_dip_pulse_site.sh
-  scripts/preview_dip_pulse_site.sh --features all
-  scripts/preview_dip_pulse_site.sh --enable bills --enable mp-pages
-  scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2 --no-roster
-  scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster
+  scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2
+  scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
+  scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 EOF
 }
 

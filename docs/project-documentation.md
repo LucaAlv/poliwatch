@@ -83,8 +83,8 @@ scripts/preview_dip_pulse_site.sh
 This renders from cached files in `.context/dip-pulse-site/data` and does not call the DIP API. To fetch or refresh data, run one of the online modes:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2 --no-roster
-scripts/preview_dip_pulse_site.sh refresh --document-number 21/87 --no-roster
+scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2
+scripts/preview_dip_pulse_site.sh refresh --document-number 21/87
 scripts/preview_dip_pulse_site.sh fetch --document-number 21/87 --summary-mode off
 ```
 
@@ -155,43 +155,39 @@ Important generated files:
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline
-python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-roster
+python3 scripts/build_dip_pulse_site.py --document-number 21/87
 ```
 
 ## Bausteine und Einstellungen
 
-The default build is deliberately strict: only `dip-fetch`, `sitting-catalog`, `dossiers`, and `store` are built. Optional Bausteine are:
+Every static publication contains all user-facing Bausteine. First-time visitors see the core-only view; the gear in every header and `settings.html` apply optional visibility immediately and persist explicit overrides in browser `localStorage`.
 
-| ID | Purpose | Requirements |
-|---|---|---|
-| `votes` | Roll-call totals, fractions, and individual votes | `dip-fetch` |
-| `summaries` | LLM session and agenda-item summaries | `dip-fetch` |
-| `aw-profiles` | abgeordnetenwatch profile links | `dip-fetch` |
-| `mp-pages` | MP index and detail pages | `store` |
-| `mp-roster` | Full DIP MdB roster | `mp-pages` |
-| `bills` | Bill index and detail pages | `dip-fetch` |
-| `bill-follow` | Browser-local bill following | `bills` |
-| `dev-view` | Raw API panels and dossier command tools | `dossiers` |
+| Browser ID | Purpose |
+|---|---|
+| `votes` | Roll-call totals, fractions, and individual votes |
+| `summaries` | LLM session and agenda-item summaries |
+| `aw-profiles` | abgeordnetenwatch profile links |
+| `mp-pages` | MP index and detail pages |
+| `bills` | Bill index and detail pages |
+| `bill-follow` | Browser-local bill following; depends on `bills` |
+| `dev-view` | Raw API panels and dossier command tools |
 
-The build decides availability. The gear in every page header and `settings.html` decide visibility for the current browser, instantly and without rebuilding. Browser choices are stored as explicit overrides in `localStorage`; clearing them restores the build defaults.
+Data readiness is separate and read-only. The settings page reports `ready`, `partial`, or `unavailable`; turning on an unavailable experience shows its empty state and never starts a request.
 
-Feature configuration precedence is: registry defaults, `features.json`, gitignored `features.local.json`, `BUNDESTAG_PULSE_FEATURES`, `--features`, legacy flags, `--enable`, then `--disable`. Requirements are enabled automatically. An explicit disable cascades to dependents, and core features cannot be disabled.
+Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead.
 
 ```bash
-# Strict core-only build.
+# Publish every experience from the current cache.
 scripts/preview_dip_pulse_site.sh
 
-# Build everything.
-scripts/preview_dip_pulse_site.sh --features all
+# Acquire selected optional data during an online update.
+scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
 
-# Build selected areas; requirements are resolved automatically.
-scripts/preview_dip_pulse_site.sh --enable bills --enable mp-pages
-
-# Environment syntax accepts comma-separated additions and vetoes.
-BUNDESTAG_PULSE_FEATURES=+dev-view,-votes scripts/preview_dip_pulse_site.sh
+# Acquire every non-LLM enrichment and explicitly regenerate summaries.
+scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 ```
 
-`features.json` is the committed project default. Put personal defaults in `features.local.json`, not `.context/`, because `.context/` contains generated output rather than build configuration.
+`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings for one release but cannot remove published UI.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -301,13 +297,13 @@ scripts/preview_dip_pulse_site.sh
 Fetch/update online data, then serve it:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2 --no-roster
+scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2
 ```
 
 Build one specific protocol:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster
+scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 Regenerate only from cached files into a custom output directory:
@@ -352,10 +348,9 @@ Common options:
 
 | Option | Default | Effect |
 |---|---:|---|
-| `--enable ID` | none | Enable a Baustein; repeatable and requirements are added automatically |
-| `--disable ID` | none | Explicitly disable a Baustein and its dependents; repeatable |
-| `--features IDS` | core only | Replace the base selection with comma-separated IDs; `all` enables everything |
-| `--features-file PATH` | none | Apply an additional JSON feature configuration |
+| `--enrich ID` | none | Acquire `votes`, `aw-profiles`, `mp-roster`, or `all` during an online update; repeatable |
+| `--features-file PATH` | none | Read `{"enrich":[...]}` from another JSON file; legacy selection keys are deprecated |
+| `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
 | `--list-features` | off | Print the registry and exit before filesystem/network build work |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
 | `--limit N` | `0` | Number of recent Bundestag protocols in the catalog; `0` means all available |
@@ -368,14 +363,14 @@ Common options:
 | `--no-persist` | off | Skip SQLite graph-store generation |
 | `--preserve-existing-dossiers` | off | Keep cached dossier JSON files visible in the generated catalog |
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
-| `--vote-scan-pages N` | `30` | Bundestag roll-call vote list pages scanned per sitting |
+| `--vote-scan-pages N` | `0` / `30` | `0` normally; `30` with `--enrich votes`; an explicit positive value implies that enrichment |
 | `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
 | `--sleep SECONDS` | `0.0` | Delay between DIP API requests |
-| `--no-abgeordnetenwatch` | off | Skip speaker and vote-member profile resolution |
+| `--no-abgeordnetenwatch` | deprecated | Explicitly veto profile resolution during the compatibility window |
 | `--abgeordnetenwatch-cache PATH` | `OUTPUT_DIR/data/abgeordnetenwatch-cache.json` | Profile cache location |
 | `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
 | `--roster-wahlperiode N` | `21` | Legislative period used for full MdB roster pages |
-| `--no-roster` | off | Skip fetching the full MdB roster; MP pages cover only seen people |
+| `--no-roster` | deprecated | Explicitly veto full-roster acquisition during the compatibility window |
 
 Summary options:
 
@@ -399,20 +394,19 @@ Useful build examples:
 # Fast local rebuild from existing cache.
 python3 scripts/build_dip_pulse_site.py --offline
 
-# Fetch two recent protocols, generate two detailed dossiers, skip full roster.
-python3 scripts/build_dip_pulse_site.py --limit 2 --detail-limit 2 --no-roster
+# Fetch two recent protocols and generate two detailed dossiers without optional enrichments.
+python3 scripts/build_dip_pulse_site.py --limit 2 --detail-limit 2
 
 # Generate one specific protocol and no LLM summaries.
-python3 scripts/build_dip_pulse_site.py --document-number 21/87 --summary-mode off --no-roster
+python3 scripts/build_dip_pulse_site.py --document-number 21/87 --summary-mode off
 
 # Refresh cached summaries with Gemini.
 python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
   --refresh-summaries \
-  --summary-provider gemini \
-  --no-roster
+  --summary-provider gemini
 
 # Rebuild the site without the SQLite graph store.
-python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-persist --no-roster
+python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-persist
 ```
 
 ### Validation/Debug Commands
@@ -495,7 +489,8 @@ python3 scripts/abgeordnetenwatch.py \
 | `DIP_PULSE_PID_FILE` | preview script | No | Preview server PID file |
 | `DIP_PULSE_LOG_FILE` | preview script | No | Preview server log file |
 | `OPEN_BROWSER` | preview script | No | Set `0` to avoid opening browser |
-| `BUNDESTAG_PULSE_FEATURES` | build | No | Comma-separated feature changes such as `+dev-view,-votes` |
+| `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
+| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted for one release; use browser settings or `BUNDESTAG_PULSE_ENRICHMENTS` |
 
 ## Offline vs Online Behavior
 
@@ -517,14 +512,14 @@ error: No cached protocols found in .context/dip-pulse-site/data. Run an online 
 Online commands require `DIP_API_KEY` and can call several external services:
 
 - DIP API for Plenarprotokolle, Vorgangspositionen, Aktivitaeten, Personen, and Drucksachen links.
-- Bundestag web pages for roll-call vote list/detail pages.
-- abgeordnetenwatch.de API unless `--no-abgeordnetenwatch` is passed.
+- Bundestag web pages for roll-call vote list/detail pages only with `--enrich votes`.
+- abgeordnetenwatch.de API only with `--enrich aw-profiles`.
 - Anthropic or Gemini APIs only when summaries are generated/refreshed.
 
 For fast development, prefer:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster --summary-mode off
+scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 Then iterate offline with:
@@ -569,7 +564,7 @@ cp .env.example .env.local
 Passing the key for one command only works when `.env.local` does not define `DIP_API_KEY` at all:
 
 ```bash
-DIP_API_KEY=... scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster
+DIP_API_KEY=... scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 The preview script sources `.env.local` after it inherits the environment, so the empty `DIP_API_KEY=` line copied from `.env.example` overwrites the value passed on the command line and the script aborts with the same error. Either fill the key in `.env.local` or delete that line.
@@ -579,7 +574,7 @@ The preview script sources `.env.local` after it inherits the environment, so th
 Run one online update first:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster --summary-mode off
+scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 After that, offline rebuilds can use the generated files in `.context/dip-pulse-site/data`.
@@ -606,16 +601,15 @@ PORT=9000 scripts/preview_dip_pulse_site.sh
 Use a narrower online build:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster --summary-mode off
+scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 Useful speed levers:
 
 - `--document-number` instead of a broad catalog fetch.
 - `--detail-limit 1` or `--detail-limit 2`.
-- Leave `mp-roster`, `aw-profiles`, `votes`, and `summaries` disabled in the strict default build.
-- For a full build, use `--disable mp-roster`, `--disable aw-profiles`, `--disable votes`, or `--disable summaries` as targeted speed levers.
-- Legacy `--no-roster`, `--no-abgeordnetenwatch`, and `--summary-mode off` remain supported aliases.
+- Omit `--enrich` to skip full-roster, profile, and vote acquisition.
+- Keep the default `--summary-mode reuse` to preserve cached summaries without making an LLM request.
 - Offline mode after a first successful update.
 
 ### abgeordnetenwatch rate limits or outages
@@ -623,7 +617,7 @@ Useful speed levers:
 The resolver throttles requests and retries HTTP 429s. If profile links are not needed for a debug run, skip them:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-abgeordnetenwatch --no-roster
+scripts/preview_dip_pulse_site.sh update --document-number 21/87
 ```
 
 ### Summary generation fails
@@ -638,8 +632,8 @@ Try the current Bundestag filterlist id with either the CLI flag or environment 
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
-  --roll-call-list-id NEW-ID \
-  --no-roster
+  --enrich votes \
+  --roll-call-list-id NEW-ID
 
 BT_ROLL_CALL_LIST_ID=NEW-ID python3 scripts/validate_dip_protocol.py --document-number 21/87
 ```
@@ -655,7 +649,7 @@ BT_ROLL_CALL_LIST_ID=NEW-ID python3 scripts/validate_dip_protocol.py --document-
 2. Fetch one protocol without expensive enrichment.
 
    ```bash
-   scripts/preview_dip_pulse_site.sh update --document-number 21/87 --no-roster --summary-mode off
+   scripts/preview_dip_pulse_site.sh update --document-number 21/87
    ```
 
 3. Iterate on rendering offline.

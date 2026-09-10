@@ -13,6 +13,7 @@ from unittest import mock
 import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
+import render_dip_pulse_html as pulse_html
 from features import all_selection, default_selection
 
 
@@ -52,6 +53,84 @@ class DossierProgressTests(unittest.TestCase):
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
+    def test_database_rebuild_preserves_cached_roster_unless_refreshing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    party_id = pulse_store.upsert_party(conn, "SPD", now)
+                    pulse_store.upsert_mp(
+                        conn,
+                        now=now,
+                        display_name="Ada Lovelace",
+                        party_id=party_id,
+                        identity_key="dip:ada",
+                        dip_person_id="ada",
+                        is_mdb=True,
+                    )
+            finally:
+                conn.close()
+
+            build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+            build_dip_pulse_site.rebuild_database_from_entries(
+                database_path,
+                [],
+                preserve_roster=False,
+            )
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_cached_votes_and_profiles_survive_non_enriching_update(self) -> None:
+        cached_profile = {"id": 42, "url": "https://example.test/ada"}
+        previous = {
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "T1",
+                "votes": [{"id": "vote-1", "members": []}],
+                "xml_speakers": [{"speaker": {
+                    "xml_redner_id": "11001",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                    "abgeordnetenwatch": cached_profile,
+                }}],
+            }],
+        }
+        report = {
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "T1",
+                "xml_speakers": [{"speaker": {
+                    "xml_redner_id": "11001",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                }}],
+            }],
+        }
+
+        build_dip_pulse_site.reuse_existing_dossier_enrichments(
+            report,
+            previous,
+            votes=True,
+            profiles=True,
+        )
+
+        item = report["agenda_items"][0]
+        self.assertEqual(item["votes"][0]["id"], "vote-1")
+        self.assertEqual(item["xml_speakers"][0]["speaker"]["abgeordnetenwatch"], cached_profile)
+        self.assertIsNot(item["votes"], previous["agenda_items"][0]["votes"])
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
@@ -643,12 +722,15 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 self.assertEqual(markup.count("#abstimmungen"), 0)
                 self.assertNotIn("pulse-actions", markup)
                 self.assertNotIn("primary-link", markup)
-
-        built = self._render_pulse(sitting, features=all_selection())
-        # The panel itself still renders as an anchor target when votes is built.
-        self.assertIn('id="abstimmungen"', built)
-        self.assertIn('data-feature="votes"', built)
-        self.assertNotIn('id="abstimmungen"', self._render_pulse(sitting, features=default_selection()))
+                # The panel itself still renders as an anchor target. Publication
+                # is deliberately independent of the build-time selection --
+                # render_site() pins publication_selection() so a reduced
+                # enrichment run never removes a visitor-facing panel -- so the
+                # id is present under either Baustein state and visitors toggle
+                # it client-side through data-feature="votes". This test guards
+                # the hero link, not whether the panel was built.
+                self.assertIn('id="abstimmungen"', markup)
+                self.assertIn('data-feature="votes"', markup)
 
     def test_lede_row_anchors_resolve_in_the_generated_dossier(self) -> None:
         # The retired hero link pointed at #abstimmungen, a target that only
@@ -739,7 +821,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 self.assertEqual(key[0], "")
                 self.assertLess(key, build_dip_pulse_site.entry_sort_key(complete))
 
-    def test_reduced_render_skips_addon_pages_and_dangling_links(self) -> None:
+    def test_reduced_enrichment_selection_still_publishes_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
@@ -753,14 +835,14 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 mp_lookup={},
                 features=default_selection(),
             )
-            self.assertFalse((output_dir / "bills" / "index.html").exists())
-            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertTrue((output_dir / "bills" / "index.html").exists())
+            self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
-            self.assertNotIn('href="bills/index.html"', rendered)
-            self.assertNotIn('href="../bills/index.html"', rendered)
+            self.assertIn('href="bills/index.html"', rendered)
+            self.assertIn('data-feature="bills"', rendered)
 
-    def test_reduced_render_removes_stale_addon_pages(self) -> None:
+    def test_later_reduced_enrichment_render_keeps_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
@@ -776,11 +858,17 @@ class CurrentPulseOrderTests(unittest.TestCase):
             build_dip_pulse_site.render_site(**kwargs, features=all_selection())
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            stale_bill = output_dir / "bills" / "bill-removed.html"
+            stale_mp = output_dir / "abgeordnete" / "999.html"
+            stale_bill.write_text("stale", encoding="utf-8")
+            stale_mp.write_text("stale", encoding="utf-8")
             build_dip_pulse_site.render_site(**kwargs, features=default_selection())
-            self.assertFalse((output_dir / "bills" / "index.html").exists())
-            self.assertFalse((output_dir / "abgeordnete" / "index.html").exists())
-            self.assertFalse((output_dir / "data" / "bills.json").exists())
-            self.assertFalse((output_dir / "data" / "abgeordnete.json").exists())
+            self.assertTrue((output_dir / "bills" / "index.html").exists())
+            self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            self.assertTrue((output_dir / "data" / "bills.json").exists())
+            self.assertTrue((output_dir / "data" / "abgeordnete.json").exists())
+            self.assertFalse(stale_bill.exists())
+            self.assertFalse(stale_mp.exists())
 
     def test_feature_manifest_and_bootstrap_are_written_everywhere(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
@@ -799,19 +887,25 @@ class CurrentPulseOrderTests(unittest.TestCase):
             )
             manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
             available = {item["id"] for item in manifest["features"] if item["available"]}
-            self.assertEqual(available, selection.ids)
+            self.assertEqual(available, all_selection().ids)
+            self.assertTrue(all(item["readiness"] in {"ready", "partial", "unavailable"} for item in manifest["features"]))
             for page in output_dir.rglob("*.html"):
                 markup = page.read_text(encoding="utf-8")
                 self.assertIn("bundestag-pulse-features", markup, msg=str(page))
                 self.assertIn("data-feature-", markup, msg=str(page))
                 self.assertIn("settings-toggle", markup, msg=str(page))
 
-    def test_settings_page_distinguishes_core_and_unbuilt_features(self) -> None:
-        markup = build_dip_pulse_site.render_settings_page(default_selection())
-        self.assertIn("is-unavailable", markup)
-        self.assertIn("--enable votes", markup)
-        self.assertRegex(markup, r'data-feature-toggle="dip-fetch"[^>]*checked disabled')
-        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*disabled')
+    def test_settings_page_only_switches_user_facing_experiences(self) -> None:
+        markup = build_dip_pulse_site.render_settings_page(
+            default_selection(),
+            {"votes": "unavailable", "summaries": "partial"},
+        )
+        self.assertNotIn("--enable votes", markup)
+        self.assertNotIn('data-feature-toggle="dip-fetch"', markup)
+        self.assertNotIn('data-feature-toggle="mp-roster"', markup)
+        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*>')
+        self.assertIn("Noch keine Daten verfügbar", markup)
+        self.assertIn("Datenstand dieser Veröffentlichung", markup)
 
 
 class PeriodOrderTests(unittest.TestCase):
@@ -892,6 +986,319 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
                 selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
         self.assertIn("votes", selection)
         self.assertNotIn("bills", selection)
+
+    def test_enrich_selects_network_work_without_ui_features(self) -> None:
+        args = SimpleNamespace(
+            enrich=["votes", "mp-roster"],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertIn("votes", selection)
+        self.assertIn("mp-roster", selection)
+        self.assertNotIn("bills", selection)
+        self.assertEqual(args.vote_scan_pages, 30)
+        self.assertFalse(args.no_roster)
+        self.assertTrue(args.no_abgeordnetenwatch)
+
+    def test_default_update_enrichments_do_not_make_network_side_jobs(self) -> None:
+        args = SimpleNamespace(
+            enrich=[],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertTrue(args.no_roster)
+        self.assertTrue(args.no_abgeordnetenwatch)
+
+    def test_positive_vote_scan_pages_implies_vote_enrichment(self) -> None:
+        args = SimpleNamespace(
+            enrich=[],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=4,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertIn("votes", selection)
+        self.assertEqual(args.vote_scan_pages, 4)
+
+    def test_unknown_enrichment_fails_with_available_choices(self) -> None:
+        args = SimpleNamespace(
+            enrich=["bills"],
+            enable=[],
+            disable=[],
+            features=None,
+            features_file=None,
+            vote_scan_pages=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
+            build_dip_pulse_site.FeatureError,
+            "Verfügbar",
+        ):
+            build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+
+
+
+class SittingWeekComparisonTests(unittest.TestCase):
+    """The Wochenvergleich band on puls.html, and the aggregation behind it."""
+
+    @staticmethod
+    def _speaker(fraktion: str | None, chars: int, role: str | None = None) -> dict[str, Any]:
+        return {
+            "char_count": chars,
+            "speaker": {"fraktion": fraktion, "role": role, "display_name": "Test Person"},
+        }
+
+    @classmethod
+    def _item(
+        cls,
+        index: int,
+        parties: list[tuple[str, int]],
+        positions: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        speakers = [cls._speaker(party, chars) for party, chars in parties]
+        return {
+            "index": index,
+            "top_id": f"Tagesordnungspunkt {index}",
+            "heading": f"Beratung {index}",
+            "xml_speakers": speakers,
+            "xml_speech_count": len(speakers),
+            "api": {"positions": positions or []},
+        }
+
+    @classmethod
+    def _entry(cls, datum: str, document_number: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        slug = document_number.replace("/", "-")
+        return {
+            "report": {
+                "protocol": {"datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                "agenda_items": items,
+                "validation_summary": {},
+            },
+            "page_path": Path(f"plenarprotokoll-{slug}.html"),
+            "report_path": Path(f"plenarprotokoll-{slug}.json"),
+            "slug": slug,
+        }
+
+    # -- bucketing ---------------------------------------------------------
+
+    def test_iso_week_key_and_grouping(self) -> None:
+        self.assertEqual(pulse_html.iso_week_key("2026-06-12"), (2026, 24))
+        self.assertIsNone(pulse_html.iso_week_key(None))
+        self.assertIsNone(pulse_html.iso_week_key("nicht-ein-datum"))
+
+        entries = [
+            self._entry("2026-06-10", "21/82", []),
+            self._entry("2026-06-11", "21/83", []),
+            self._entry("2026-06-12", "21/84", []),
+        ]
+        weeks = pulse_html.group_entries_by_week(entries)
+        self.assertEqual(list(weeks), [(2026, 24)])
+        self.assertEqual(len(weeks[(2026, 24)]), 3)
+
+    def test_group_entries_by_week_drops_undated_sittings(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [self._entry("2026-06-12", "21/84", []), self._entry("", "21/85", [])]
+        )
+        self.assertEqual(list(weeks), [(2026, 24)])
+
+    # -- comparison --------------------------------------------------------
+
+    def test_equal_sitting_counts_compare_raw_totals(self) -> None:
+        current = pulse_html.week_stats(
+            (2026, 24),
+            [
+                self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+                self._entry("2026-06-11", "21/83", [self._item(1, [("SPD", 100)])]),
+            ],
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21),
+            [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100)])]),
+                self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])]),
+            ],
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+
+        self.assertFalse(comparison["normalised"])
+        speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
+        self.assertEqual(speeches["current"], 3.0)
+        self.assertEqual(speeches["previous"], 2.0)
+        self.assertEqual(speeches["delta"], 1.0)
+        self.assertAlmostEqual(speeches["delta_percent"], 50.0)
+
+    def test_unequal_sitting_counts_switch_to_per_sitting_figures(self) -> None:
+        # A week caught mid-flight - one sitting of the usual two - must not read
+        # as a collapse just for being unfinished.
+        current = pulse_html.week_stats(
+            (2026, 24),
+            [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])])],
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21),
+            [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+                self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            ],
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+
+        self.assertTrue(comparison["normalised"])
+        speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
+        self.assertEqual(speeches["current"], 2.0)
+        self.assertEqual(speeches["previous"], 2.0)
+        self.assertEqual(speeches["delta"], 0.0)
+
+    def test_truncated_dossier_drops_the_text_metric(self) -> None:
+        # item_stats() falls back to xml_speakers_first, which carries no text, so
+        # a character total from such a sitting would be short. Better no metric
+        # than a wrong one.
+        truncated = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])
+        item = truncated["report"]["agenda_items"][0]
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+
+        stats = pulse_html.week_stats((2026, 24), [truncated])
+        self.assertFalse(stats["chars_complete"])
+        self.assertEqual(stats["speech_count"], 1)
+
+        whole = pulse_html.week_stats(
+            (2026, 21), [self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100)])])]
+        )
+        comparison = pulse_html.week_comparison(stats, whole)
+        self.assertNotIn("total_chars", [m["key"] for m in comparison["metrics"]])
+
+    def test_week_span_measures_whole_weeks(self) -> None:
+        self.assertEqual(pulse_html.week_span((2026, 21), (2026, 24)), 3)
+        self.assertEqual(pulse_html.week_span((2023, 17), (2026, 24)), 163)
+
+    # -- returning procedures ---------------------------------------------
+
+    def test_returning_vorgaenge_match_on_vorgang_id(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry(
+                    "2026-03-04",
+                    "21/58",
+                    [self._item(6, [("SPD", 10)], [{"vorgang_id": "331625", "vorgangsposition": "1. Beratung",
+                                                    "vorgangstyp": "Gesetzgebung", "titel": "Ein Gesetz"}])],
+                ),
+                self._entry(
+                    "2026-06-12",
+                    "21/84",
+                    [self._item(5, [("SPD", 10)], [{"vorgang_id": "331625", "vorgangsposition": "2. Beratung",
+                                                    "vorgangstyp": "Gesetzgebung", "titel": "Ein Gesetz"}])],
+                ),
+            ]
+        )
+        rows = pulse_html.returning_vorgaenge(weeks, (2026, 24))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["vorgang_id"], "331625")
+        self.assertEqual(rows[0]["first"]["vorgangsposition"], "1. Beratung")
+        self.assertEqual(rows[0]["latest"]["vorgangsposition"], "2. Beratung")
+        self.assertEqual(rows[0]["latest"]["index"], 5)
+
+    def test_returning_vorgaenge_ignores_one_off_procedures(self) -> None:
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry("2026-03-04", "21/58",
+                            [self._item(1, [("SPD", 10)], [{"vorgang_id": "111", "titel": "A"}])]),
+                self._entry("2026-06-12", "21/84",
+                            [self._item(1, [("SPD", 10)], [{"vorgang_id": "222", "titel": "B"}])]),
+            ]
+        )
+        self.assertEqual(pulse_html.returning_vorgaenge(weeks, (2026, 24)), [])
+
+    def test_returning_vorgaenge_dedupes_mitberaten_twins(self) -> None:
+        # DIP issues one vorgang_id per document, so a single bill can surface
+        # twice under sibling ids that name each other in `mitberaten`.
+        def positions(position: str) -> list[dict[str, Any]]:
+            return [
+                {"vorgang_id": "331625", "vorgangsposition": position, "vorgangstyp": "Gesetzgebung",
+                 "titel": "Vaterschaft A", "mitberaten": [{"id": "329481"}]},
+                {"vorgang_id": "329481", "vorgangsposition": position, "vorgangstyp": "Gesetzgebung",
+                 "titel": "Vaterschaft B", "mitberaten": [{"id": "331625"}]},
+            ]
+
+        weeks = pulse_html.group_entries_by_week(
+            [
+                self._entry("2026-03-04", "21/58", [self._item(6, [("SPD", 10)], positions("1. Beratung"))]),
+                self._entry("2026-06-12", "21/84", [self._item(5, [("SPD", 10)], positions("2. Beratung"))]),
+            ]
+        )
+        rows = pulse_html.returning_vorgaenge(weeks, (2026, 24))
+        self.assertEqual(len(rows), 1)
+
+    # -- rendered markup ---------------------------------------------------
+
+    def _render(self, entries: list[dict[str, Any]]) -> str:
+        return build_dip_pulse_site.render_front_page(entries, features=default_selection())
+
+    def test_front_page_renders_the_week_comparison(self) -> None:
+        entries = [
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn('id="wochenvergleich"', markup)
+        self.assertIn("KW 24/2026", markup)
+        self.assertIn("KW 21/2026", markup)
+        self.assertIn("Redeanteil der Fraktionen", markup)
+        self.assertIn("Debattenprofil", markup)
+
+    def test_placeholder_is_gone(self) -> None:
+        markup = self._render(
+            [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        )
+        self.assertNotIn("sobald mehrere Sitzungswochen", markup)
+        self.assertNotIn("im selben Modell normalisiert", markup)
+
+    def test_gap_guard_suppresses_an_unrelated_week(self) -> None:
+        # Two sittings three years apart are not a Wochenvergleich. The band must
+        # say so rather than name a week from a different era.
+        entries = [
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])]),
+            self._entry("2023-04-27", "20/100", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn("Noch keine Vergleichswoche", markup)
+        self.assertNotIn("KW 17/2023", markup)
+        self.assertNotIn("2023-04-27", markup)
+
+    def test_single_week_has_no_comparison(self) -> None:
+        markup = self._render(
+            [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        )
+        self.assertIn("Noch keine Vergleichswoche", markup)
+
+    def test_running_week_is_labelled_per_sitting(self) -> None:
+        entries = [
+            self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+            self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn("Werte je Sitzung", markup)
+        self.assertIn("je Sitzung", markup)
 
 
 if __name__ == "__main__":
