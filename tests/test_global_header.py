@@ -47,6 +47,13 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn(".lede-top", panels.group(1))
         self.assertNotIn(".pulse-actions", css)
 
+    def test_dark_theme_styles_the_vorgangstyp_bubble_and_glossary_target(self) -> None:
+        # The Debattenprofil hover bubble and the glossary :target highlight are
+        # coloured inline for light mode, so dark mode needs explicit overrides.
+        css = pulse_html.global_header_styles()
+        self.assertIn(':root[data-theme="dark"] a.week-label[data-tip]::after', css)
+        self.assertIn(':root[data-theme="dark"] .method-list li:target', css)
+
     def test_accessibility_state_is_wired(self) -> None:
         markup = pulse_html.render_global_header(active="overview", features=all_selection())
         self.assertEqual(markup.count('aria-current="page"'), 1)

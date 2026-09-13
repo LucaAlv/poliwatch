@@ -2055,7 +2055,7 @@ def render_week_comparison_section(
         <article class="week-card">
           <h3>Debattenprofil</h3>
           {pulse_html.render_type_mix(current["vorgangstyp_counts"], previous["vorgangstyp_counts"])}
-          <p class="week-note">Vorgangspositionen nach Art, Ver&auml;nderung gegen&uuml;ber {pulse_html.esc(previous["label"])}.</p>
+          <p class="week-note">Vorgangspositionen nach Art, Ver&auml;nderung gegen&uuml;ber {pulse_html.esc(previous["label"])}. <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Was die Typen bedeuten</a></p>
         </article>
         <article class="week-card">
           <h3>Verfahren, die zur&uuml;ckkehren</h3>
@@ -2604,6 +2604,59 @@ def render_front_page(
       font-size:12px;
       overflow-wrap:anywhere;
     }}
+    /* Vorgangstyp labels link to the glossary on sources.html and carry the
+       one-line explanation as data-tip, shown as a CSS-only bubble on hover and
+       keyboard focus. Touch devices get no bubble; tapping follows the link. */
+    a.week-label {{
+      position:relative;
+      color:inherit;
+      text-decoration:underline dotted;
+      text-decoration-thickness:1px;
+      text-underline-offset:2px;
+    }}
+    a.week-label:hover,
+    a.week-label:focus-visible {{ color:var(--ink); }}
+    a.week-label:focus-visible {{ outline:2px solid var(--blue); outline-offset:2px; border-radius:2px; }}
+    a.week-label[data-tip]::after {{
+      content:attr(data-tip);
+      position:absolute;
+      left:0;
+      bottom:calc(100% + 6px);
+      z-index:5;
+      width:max-content;
+      max-width:min(260px, 70vw);
+      padding:7px 9px;
+      border-radius:6px;
+      background:#273142;
+      color:#fff;
+      font-size:12px;
+      font-weight:400;
+      line-height:1.4;
+      white-space:normal;
+      text-align:left;
+      box-shadow:0 4px 14px rgba(20,30,45,.18);
+      opacity:0;
+      visibility:hidden;
+      transform:translateY(2px);
+      pointer-events:none;
+      transition:opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
+    }}
+    a.week-label[data-tip]:hover::after,
+    a.week-label[data-tip]:focus-visible::after {{
+      opacity:1;
+      visibility:visible;
+      transform:none;
+      transition-delay:0s;
+    }}
+    @media (hover: none) {{
+      a.week-label[data-tip]::after {{ display:none; }}
+    }}
+    @media (prefers-reduced-motion: reduce) {{
+      a.week-label[data-tip]::after {{ transition:none; transform:none; }}
+    }}
+    .week-note a {{ color:inherit; text-decoration:underline; text-underline-offset:2px; }}
+    .week-note a:hover,
+    .week-note a:focus-visible {{ color:var(--ink); }}
     .week-bar {{
       display:block;
       height:9px;
@@ -5214,6 +5267,14 @@ def render_sources_page(
             f"{' · '.join(database_links)}."
             "</span></li>"
         )
+    # Glossary of the DIP vorgangstyp labels shown in the Debattenprofil card on
+    # puls.html; each label there links to its entry here by anchor.
+    vorgangstyp_items = "".join(
+        f'<li id="{pulse_html.vorgangstyp_anchor(kind)}">'
+        f"<strong>{pulse_html.esc(kind)}</strong>"
+        f"<span>{pulse_html.esc(entry['lang'])}</span></li>"
+        for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items()
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -5317,6 +5378,20 @@ def render_sources_page(
     .method-list li:last-child {{ border-bottom:0; padding-bottom:0; }}
     .method-list strong {{ color:#273142; }}
     .method-list span {{ color:var(--muted); }}
+    /* Glossary entries are link targets from the Debattenprofil on puls.html.
+       Their terms are long compound nouns, so the term column is wider and may
+       hyphenate instead of running into the explanation. */
+    .method-list li {{ scroll-margin-top:16px; }}
+    .method-list.glossary {{ margin-top:14px; }}
+    .method-list.glossary li {{ grid-template-columns:190px minmax(0,1fr); }}
+    .method-list.glossary strong {{ hyphens:auto; overflow-wrap:anywhere; }}
+    .method-list li:target {{
+      background:#eef4ff;
+      border-radius:6px;
+      padding:8px 8px 10px;
+      margin:-8px -8px 0;
+    }}
+    .method-list li:target:last-child {{ padding-bottom:8px; }}
     table {{
       width:100%;
       border-collapse:collapse;
@@ -5360,7 +5435,7 @@ def render_sources_page(
       .shell {{ padding:18px 14px; }}
       .page-header, .source-grid {{ grid-template-columns:1fr; }}
       h1 {{ font-size:29px; }}
-      .method-list li {{ grid-template-columns:1fr; gap:3px; }}
+      .method-list li, .method-list.glossary li {{ grid-template-columns:1fr; gap:3px; }}
       table, thead, tbody, tr, th, td {{ display:block; }}
       thead {{ display:none; }}
       td {{ padding:8px 0; }}
@@ -5430,6 +5505,13 @@ def render_sources_page(
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
           <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
           {database_method_item}
+        </ul>
+      </section>
+      <section class="panel" id="{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">
+        <h2>Vorgangstypen im Debattenprofil</h2>
+        <p>Jede Vorgangsposition einer Sitzung gehört zu einem Vorgang im DIP, und jeder Vorgang hat dort einen Typ. Das Debattenprofil auf der Puls-Seite zählt die Vorgangspositionen der Sitzungswoche nach diesem Typ. Die Bezeichnungen folgen der DIP-Klassifikation; die Erläuterungen fassen zusammen, was jeweils dahintersteht.</p>
+        <ul class="method-list glossary">
+          {vorgangstyp_items}
         </ul>
       </section>
       <section class="panel note">

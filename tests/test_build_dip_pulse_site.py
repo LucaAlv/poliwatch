@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import re
+from collections import Counter
 import tempfile
 import unittest
 from pathlib import Path
@@ -1391,6 +1392,55 @@ class SittingWeekComparisonTests(unittest.TestCase):
 
         self.assertIn("Werte je Sitzung", markup)
         self.assertIn("je Sitzung", markup)
+
+    # -- Debattenprofil glossary ------------------------------------------
+
+    def test_type_mix_links_known_types_to_the_glossary(self) -> None:
+        # Known vorgangstyp labels become links carrying the one-line explanation
+        # as data-tip (the hover bubble); unknown labels stay plain spans.
+        markup = pulse_html.render_type_mix(Counter({"Antrag": 3, "Nie gesehen": 1}), None)
+
+        self.assertIn('<a class="week-label" href="sources.html#vorgangstyp-antrag" data-tip="', markup)
+        self.assertIn('data-tip="Aufforderung einer Fraktion', markup)
+        self.assertIn('<span class="week-label">Nie gesehen</span>', markup)
+        self.assertEqual(markup.count("data-tip="), 1)
+        self.assertNotIn("title=", markup)
+
+    def test_type_mix_glossary_href_follows_page_depth(self) -> None:
+        markup = pulse_html.render_type_mix(Counter({"Antrag": 1}), None, glossary_href="../sources.html")
+        self.assertIn('href="../sources.html#vorgangstyp-antrag"', markup)
+
+    def test_debattenprofil_links_to_the_glossary_and_entries(self) -> None:
+        positions = [{"vorgangstyp": "Antrag"}, {"vorgangstyp": "Gesetzgebung"}]
+        entries = [
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)], positions)]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)], positions[:1])]),
+        ]
+        markup = self._render(entries)
+
+        self.assertIn('href="sources.html#vorgangstypen"', markup)
+        self.assertIn('href="sources.html#vorgangstyp-antrag"', markup)
+        self.assertIn('href="sources.html#vorgangstyp-gesetzgebung"', markup)
+        self.assertIn("a.week-label[data-tip]::after", markup)
+
+    def test_glossary_entries_are_complete_and_anchor_safe(self) -> None:
+        slugs = [entry["slug"] for entry in pulse_html.VORGANGSTYP_GLOSSARY.values()]
+        self.assertEqual(len(slugs), len(set(slugs)), "glossary slugs must be unique")
+        for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items():
+            self.assertRegex(entry["slug"], r"^[a-z0-9-]+$", msg=kind)
+            self.assertTrue(entry["kurz"].strip(), msg=kind)
+            self.assertTrue(entry["lang"].strip(), msg=kind)
+            self.assertLessEqual(len(entry["kurz"]), 200, msg=f"{kind}: bubble text too long")
+        self.assertIsNone(pulse_html.vorgangstyp_anchor("Nie gesehen"))
+
+    def test_sources_page_has_a_glossary_entry_per_vorgangstyp(self) -> None:
+        markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
+
+        self.assertIn('id="vorgangstypen"', markup)
+        self.assertIn("Vorgangstypen im Debattenprofil", markup)
+        for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items():
+            self.assertIn(f'<li id="vorgangstyp-{entry["slug"]}"><strong>{pulse_html.esc(kind)}</strong>', markup)
+        self.assertIn(".method-list li:target", markup)
 
 
 if __name__ == "__main__":
