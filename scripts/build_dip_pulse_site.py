@@ -1636,7 +1636,7 @@ def render_landing_page(
             "Lageblick",
             "Aktueller Puls",
             "puls.html",
-            "Was gerade im Bundestag auffällt: Themenbewegung, Abstimmungsverschiebungen und darunter das belegbare Aufmerksamkeitsranking der neuesten Auswertung.",
+            "Was gerade im Bundestag auffällt: Themenbewegung, Abstimmungsverschiebungen und der Wochenvergleich der neuesten Auswertung.",
         ),
         (
             "Archiv",
@@ -2070,7 +2070,6 @@ def render_week_comparison_section(
 def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
-    database_page_href: str | None = None,
     features: Selection | None = None,
 ) -> str:
     features = features or publication_selection()
@@ -2139,7 +2138,6 @@ def render_front_page(
     items = report.get("agenda_items") or []
     stats_by_index = {item["index"]: pulse_html.item_stats(item) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
-    total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     ranked_items = sorted(items, key=lambda item: stats_by_index[item["index"]]["speech_count"], reverse=True)
     # Week comparison. render_front_page receives every dossier of the build, not
     # just the newest one, so the sitting weeks are already here - they only need
@@ -2159,10 +2157,30 @@ def render_front_page(
     movement_text = week_headline(week_comparison_data)
     protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
     report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
-    sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite-Graph</a>' if database_href else ""
-    database_page_link = (
-        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank erkunden</a>' if database_page_href else ""
+    # "Quellen" row at the foot of the lede: the sitting's raw material. Only
+    # links with a real target are emitted -- cached protocols from older
+    # builds can lack xml_url/pdf_url, and an empty href would point the row
+    # back at puls.html itself. The dossier is not repeated here: the page
+    # header links it, and every lede row deep-links into it.
+    source_links = "".join(
+        f'<a href="{href}">{label}</a>'
+        for label, href in (
+            ("XML-Protokoll", pulse_html.esc(protocol.get("xml_url"))),
+            ("PDF-Protokoll", pulse_html.esc(protocol.get("pdf_url"))),
+            ("Erzeugtes JSON", report_href),
+            ("SQLite-Graph", pulse_html.esc(database_href)),
+        )
+        if href
     )
+    # Identity line under the lede heading. "verteilt am" only when the DIP
+    # record carries a distribution date.
+    lede_meta_parts = [
+        f"BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}",
+        f"Sitzung vom {pulse_html.esc(protocol.get('datum'))}",
+    ]
+    if protocol.get("verteildatum"):
+        lede_meta_parts.append(f"verteilt am {pulse_html.esc(protocol.get('verteildatum'))}")
+    lede_meta = " · ".join(lede_meta_parts)
     store_note = (
         " Die SQLite-Datei enthält MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze."
         if database_href
@@ -2186,10 +2204,12 @@ def render_front_page(
         focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
         focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
 
-    # "Zusammenfassung der aktuellsten Sitzung" lede: the sitting-wide party
-    # speech split plus the three agenda items that drew the most speeches. Both
-    # are aggregates over the same item_stats() the ranking below uses, so every
-    # row stays one click from its dossier anchor.
+    # "Zusammenfassung der aktuellsten Sitzung" lede -- the one hero card. It
+    # owns the sitting's identity line, fact row and source links (the former
+    # right-hand "Protokoll" panel duplicated them), plus the sitting-wide party
+    # speech split and the three agenda items that drew the most speeches. Both
+    # are aggregates over the same item_stats() the Themenbewegung panel uses,
+    # so every row stays one click from its dossier anchor.
     sitting_party_counts: Counter[str] = Counter()
     for stats in stats_by_index.values():
         sitting_party_counts.update(stats["party_counts"])
@@ -2202,16 +2222,12 @@ def render_front_page(
     lede_top_rows = []
     for item in ranked_items[:3]:
         stats = stats_by_index[item["index"]]
-        # Decimal point, not pulse_html.format_percent()'s German comma: the
-        # attention cards further down this same page render their shares as
-        # "19.2%", and the lede sits directly above them. Matching the dossier
-        # pages here would split the convention within one screen.
         share = pulse_html.percent(stats["speech_count"], total_speeches)
         lede_top_rows.append(
             f'<a class="lede-top" href="{protocol_href}#top-{pulse_html.esc(item.get("index"))}">'
             f'<span>{pulse_html.esc(item.get("top_id"))}</span>'
             f'<strong>{pulse_html.esc(pulse_html.short(item.get("heading"), 72))}</strong>'
-            f'<em>{share:.1f}%</em>'
+            f'<em>{pulse_html.format_percent(share)}</em>'
             "</a>"
         )
     if lede_top_rows:
@@ -2238,7 +2254,7 @@ def render_front_page(
     # Its id="abstimmungen" is deliberately kept with no in-page link: the hero
     # used to link it and pointed at nothing whenever this Baustein was off.
     # The id stays as an external deep-link target, matching its still-linked
-    # siblings #bewegung and #aufmerksamkeit.
+    # sibling #bewegung.
     vote_items = [
         item
         for item in items
@@ -2279,72 +2295,13 @@ def render_front_page(
       </article>
         """
 
-    # "Aufmerksamkeitsranking": up to six agenda-item cards, each with two share
-    # bars (speeches and characters), a stacked party bar and the document /
-    # position counts. Every card links back to its anchor in the dossier page,
-    # which is what keeps each number one click from its source.
-    attention_rows = []
-    for item in ranked_items[:6]:
-        stats = stats_by_index[item["index"]]
-        party_total = sum(stats["party_counts"].values())
-        speech_share = pulse_html.percent(stats["speech_count"], total_speeches)
-        text_share = pulse_html.percent(stats["total_chars"], total_chars)
-        party_labels = [
-            f"{party} {count}"
-            for party, count in stats["party_counts"].most_common(5)
-        ]
-        if len(stats["party_counts"]) > 5:
-            party_labels.append(f"+{len(stats['party_counts']) - 5} weitere")
-        doc_count = len(item.get("xml_drucksachen") or [])
-        attention_rows.append(
-            f"""
-            <article class="attention-card">
-              <a class="top-link" href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">
-                <span>{pulse_html.esc(item.get('top_id'))} · {pulse_html.esc(pulse_html.page_range_text(item))}</span>
-                <strong>{pulse_html.esc(pulse_html.short(item.get('heading'), 132))}</strong>
-              </a>
-              <div class="bar-grid">
-                <div>
-                  <label>Reden <strong>{stats['speech_count']} · {speech_share:.1f}%</strong></label>
-                  <div class="bar"><span style="width:{speech_share:.2f}%"></span></div>
-                </div>
-                <div>
-                  <label>Redetext <strong>{pulse_html.format_int(stats['total_chars'])} Zeichen · {text_share:.1f}%</strong></label>
-                  <div class="bar alt"><span style="width:{text_share:.2f}%"></span></div>
-                </div>
-              </div>
-              <div class="party-block">
-                {pulse_html.render_party_stack(stats['party_counts'], party_total)}
-                <div class="party-labels">{pulse_html.render_badges(party_labels)}</div>
-              </div>
-              <div class="card-meta">
-                <span>{doc_count} XML-Drucksachen</span>
-                <span>{len(item.get('api', {}).get('positions') or [])} API-Positionen</span>
-                <a href="{protocol_href}#top-{pulse_html.esc(item.get('index'))}">Prüfen</a>
-              </div>
-            </article>
-            """
-        )
-
-    # Validation warnings raised while extracting this sitting, surfaced above
-    # the ranking as a single banner.
-    warnings = report.get("warnings") or []
-    warning_html = ""
-    if warnings:
-        warning_html = (
-            '<div class="notice">'
-            f"{pulse_html.esc(str(len(warnings)))} Validierungswarnung"
-            f"{'' if len(warnings) == 1 else 'en'} zu dieser erzeugten Sitzung."
-            "</div>"
-        )
-
     # Page anatomy, top to bottom:
     #   global header -> page header with in-page nav
-    #   radar-hero    -> lede panel (sitting-wide fraction split + the three
-    #                    busiest TOPs) + the sitting's source panel (metrics,
-    #                    links to XML/PDF/JSON/SQLite)
+    #   radar-hero    -> one sitting card: identity line, fact row (TOPs, Reden,
+    #                    Drucksachen, Personen), sitting-wide fraction split +
+    #                    the three busiest TOPs, raw-source links (XML/PDF/JSON/SQLite)
     #   feature-grid  -> the Themenbewegung and Abstimmungsverschiebung panels
-    #   layout/main   -> warning banner + the attention ranking cards
+    #   week-compare  -> the Wochenvergleich section
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -2404,20 +2361,14 @@ def render_front_page(
       font-size:13px;
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
-    .radar-hero {{
-      display:grid;
-      grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);
-      gap:18px;
-      margin-top:18px;
-      align-items:stretch;
-    }}
-    .latest-panel, .pulse-feature, .context-panel {{
+    .radar-hero {{ display:grid; margin-top:18px; }}
+    .latest-panel, .pulse-feature {{
       border:1px solid var(--line);
       border-radius:8px;
       background:var(--panel);
       padding:18px;
     }}
-    .eyebrow, .metric span, .top-link span, .lede-top span, label, .card-meta {{
+    .eyebrow, .metric span, .lede-top span {{
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
@@ -2426,8 +2377,19 @@ def render_front_page(
     .pulse-lede {{ display:grid; align-content:start; gap:12px; }}
     .pulse-lede h2 {{ margin:0; font-size:27px; line-height:1.16; }}
     .pulse-lede p {{ margin:0; max-width:760px; font-size:15px; line-height:1.5; }}
+    .pulse-lede .lede-meta {{ font-size:14px; }}
+    .pulse-lede .metric-grid {{ margin-top:0; }}
     .lede-block {{ padding-top:12px; border-top:1px solid var(--line); }}
     .lede-block .stack {{ margin-top:10px; }}
+    .lede-columns {{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0,1fr));
+      gap:18px;
+      padding-top:12px;
+      border-top:1px solid var(--line);
+    }}
+    .lede-columns .lede-block {{ padding-top:0; border-top:0; }}
+    .lede-sources .session-links {{ margin-top:8px; }}
     .lede-tops {{ display:grid; gap:8px; margin-top:10px; }}
     .lede-top {{
       display:grid;
@@ -2442,14 +2404,12 @@ def render_front_page(
     }}
     .lede-top strong {{ font-size:14px; line-height:1.3; overflow-wrap:anywhere; }}
     .lede-top em {{ font-style:normal; font-weight:750; font-variant-numeric:tabular-nums; }}
-    .context-title {{ margin:5px 0 0; font-size:19px; line-height:1.22; }}
     .metric-grid {{
       display:grid;
       grid-template-columns:repeat(4, minmax(92px,1fr));
       gap:10px;
       margin-top:18px;
     }}
-    .context-panel .metric-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     .metric {{
       min-height:68px;
       border:1px solid #e2e7ef;
@@ -2465,12 +2425,6 @@ def render_front_page(
       gap:9px;
       margin-top:16px;
     }}
-    .source-panel {{
-      display:grid;
-      gap:12px;
-      border-left:4px solid var(--teal);
-    }}
-    .source-panel p {{ margin-top:4px; font-size:14px; line-height:1.45; }}
     .feature-grid {{
       display:grid;
       grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
@@ -2681,51 +2635,6 @@ def render_front_page(
       font-size:12px;
       line-height:1.45;
     }}
-    .layout {{
-      display:grid;
-      grid-template-columns:minmax(0,1fr);
-      gap:18px;
-      margin-top:28px;
-      align-items:start;
-    }}
-    main {{ display:grid; gap:12px; }}
-    .section-head {{
-      display:flex;
-      justify-content:space-between;
-      gap:14px;
-      align-items:end;
-      margin-bottom:2px;
-    }}
-    .section-head p {{ font-size:13px; }}
-    .attention-card {{
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:var(--panel);
-      padding:15px;
-    }}
-    .top-link {{
-      display:grid;
-      gap:5px;
-      color:var(--ink);
-    }}
-    .top-link strong {{ font-size:17px; line-height:1.27; overflow-wrap:anywhere; }}
-    .bar-grid {{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:14px;
-      margin-top:13px;
-    }}
-    label {{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      margin-bottom:6px;
-    }}
-    label strong {{ color:var(--ink); font-size:12px; }}
-    .bar {{ height:10px; overflow:hidden; border-radius:999px; background:#edf0f4; }}
-    .bar span {{ display:block; height:100%; border-radius:999px; background:var(--teal); }}
-    .bar.alt span {{ background:var(--amber); }}
-    .party-block {{ margin-top:13px; }}
     .stack {{ display:flex; overflow:hidden; height:13px; background:#edf0f4; border-radius:999px; }}
     .stack span {{ min-width:3px; }}
     .party-labels {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
@@ -2741,41 +2650,15 @@ def render_front_page(
       font-size:12px;
       white-space:nowrap;
     }}
-    .card-meta {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      align-items:center;
-      margin-top:12px;
-    }}
-    .card-meta a {{ margin-left:auto; font-weight:750; }}
-    .ranking-intro {{
-      display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
-      gap:14px;
-      align-items:end;
-      padding-top:24px;
-      border-top:1px solid var(--line);
-    }}
-    .notice {{
-      padding:11px 13px;
-      border:1px solid #e3c46a;
-      border-radius:8px;
-      background:#fff7d6;
-      color:#614a00;
-      font-size:13px;
-    }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      .page-header, .radar-hero, .layout, .feature-grid, .week-grid {{ grid-template-columns:1fr; }}
+      .page-header, .feature-grid, .week-grid, .lede-columns {{ grid-template-columns:1fr; }}
       .page-actions {{ justify-content:flex-start; }}
     }}
     @media (max-width: 700px) {{
       .shell {{ padding:16px 14px; }}
       h1 {{ font-size:29px; }}
-      .context-title {{ font-size:18px; }}
-      .metric-grid, .bar-grid {{ grid-template-columns:1fr 1fr; }}
-      .section-head, .ranking-intro {{ display:grid; grid-template-columns:1fr; }}
+      .metric-grid {{ grid-template-columns:1fr 1fr; }}
       .feature-head {{ display:grid; }}
       .feature-state {{ justify-self:start; white-space:normal; }}
       .feature-microgrid {{ grid-template-columns:1fr; }}
@@ -2784,8 +2667,7 @@ def render_front_page(
       .week-row {{ grid-template-columns:minmax(80px,1fr) minmax(0,1.6fr) auto auto; }}
     }}
     @media (max-width: 460px) {{
-      .metric-grid, .bar-grid {{ grid-template-columns:1fr; }}
-      .card-meta a {{ margin-left:0; width:100%; }}
+      .metric-grid {{ grid-template-columns:1fr; }}
       .week-metrics {{ grid-template-columns:1fr; }}
       .week-row {{ grid-template-columns:minmax(0,1fr) auto auto; }}
       .week-row .week-bar {{ grid-column:1 / -1; order:3; }}
@@ -2805,7 +2687,6 @@ def render_front_page(
         <a href="#bewegung">Zum Lageblick</a>
         <a href="#wochenvergleich">Wochenvergleich</a>
         <a href="{protocol_href}">Protokolldossier</a>
-        <a href="#aufmerksamkeit">Aufmerksamkeitsranking</a>
       </nav>
     </header>
 
@@ -2813,26 +2694,18 @@ def render_front_page(
       <div class="latest-panel pulse-lede">
         <span class="eyebrow">Zusammenfassung der aktuellsten Sitzung</span>
         <h2>Redeanteile und Schwerpunkte</h2>
+        <p class="lede-meta">{lede_meta}</p>
         <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
-        {lede_body}
-      </div>
-      <div class="context-panel source-panel">
-        <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
-        <h2 class="context-title">{pulse_html.esc(protocol.get('titel'))}</h2>
-        <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
         <div class="metric-grid">
-          <div class="metric"><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
+          <div class="metric"><span>Tagesordnungspunkte</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
           <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-          <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(total_votes)}</strong></div>
+          <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
           <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
         </div>
-        <div class="session-links">
-          <a href="{protocol_href}">Protokolldossier</a>
-          <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML-Protokoll</a>
-          <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF-Protokoll</a>
-          <a href="{report_href}">Erzeugtes JSON</a>
-          {database_page_link}
-          {sqlite_link}
+        <div class="lede-columns">{lede_body}</div>
+        <div class="lede-block lede-sources">
+          <span class="eyebrow">Quellen</span>
+          <div class="session-links">{source_links}</div>
         </div>
       </div>
     </section>
@@ -2848,11 +2721,6 @@ def render_front_page(
         </div>
         <div class="feature-body">
           <p>{pulse_html.esc(focus_text)}</p>
-          <div class="feature-microgrid">
-            <div><span>TOPs</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-          </div>
           <p>{pulse_html.esc(movement_text)}</p>
           <a class="feature-link" href="#wochenvergleich">Wochenvergleich ansehen</a>
           {focus_link}
@@ -2861,20 +2729,6 @@ def render_front_page(
       {vote_feature_html}
     </section>
 {week_compare_html}
-    <div class="layout">
-      <main>
-        <div class="ranking-intro" id="aufmerksamkeit">
-          <div>
-            <span class="eyebrow">Belegbares Detailmaterial</span>
-            <h2>Aufmerksamkeitsranking</h2>
-            <p>Die Informationen zu einzelnen Tagesordnungspunkten bleiben erhalten, stehen aber unter dem aktuellen Lageblick.</p>
-          </div>
-          <p>Sortiert nach extrahierter Redezahl.</p>
-        </div>
-        {warning_html}
-        {''.join(attention_rows)}
-      </main>
-    </div>
 
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
@@ -5817,7 +5671,7 @@ def render_site(
         encoding="utf-8",
     )
     pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, database_page_href=database_page_href, features=features),
+        render_front_page(entries, database_href=database_href, features=features),
         encoding="utf-8",
     )
     overview_path.write_text(
