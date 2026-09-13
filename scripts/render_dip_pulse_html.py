@@ -1146,6 +1146,17 @@ def render_source_links(item: dict[str, Any]) -> str:
     return "".join(links)
 
 
+def render_top_documents(item: dict[str, Any]) -> str:
+    if not item.get("xml_drucksachen"):
+        return ""
+    return (
+        '<section class="top-documents">'
+        "<h3>Drucksachen</h3>"
+        f'<div class="top-document-links">{render_source_links(item)}</div>'
+        "</section>"
+    )
+
+
 def render_linked_docs(item: dict[str, Any]) -> str:
     docs = item.get("api", {}).get("linked_drucksachen") or []
     if not docs:
@@ -1647,6 +1658,7 @@ def render_html(
         party_total = sum(stats["party_counts"].values())
         speech_share = percent(stats["speech_count"], total_speeches)
         text_share = percent(stats["total_chars"], total_chars)
+        top_documents = render_top_documents(item)
         party_labels = [
             f"{party} {count}"
             for party, count in stats["party_counts"].most_common()
@@ -1695,6 +1707,7 @@ def render_html(
                   <span>Reden</span>
                 </div>
               </div>
+              {top_documents}
               <div class="top-bars">
                 <div>
                   <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
@@ -1713,16 +1726,10 @@ def render_html(
               </div>
               {summary_sections}
               {vote_sections}
-              <div class="detail-grid">
-                <section>
-                  <h3>Rednerinnen und Redner</h3>
-                  {render_speakers(item, stats, mp_lookup if 'mp-pages' in features else None, '../abgeordnete/', 'aw-profiles' in features)}
-                </section>
-                <section>
-                  <h3>Drucksachen</h3>
-                  {render_source_links(item)}
-                </section>
-              </div>
+              <section class="speaker-section">
+                <h3>Rednerinnen und Redner</h3>
+                {render_speakers(item, stats, mp_lookup if 'mp-pages' in features else None, '../abgeordnete/', 'aw-profiles' in features)}
+              </section>
               {dev_sections}
               <section class="speech-section">
                 <h3>Reden</h3>
@@ -2233,6 +2240,27 @@ def render_html(
       background:white;
       font-weight:650;
     }}
+    .top-documents {{
+      display:flex;
+      align-items:baseline;
+      gap:10px;
+      margin-top:12px;
+    }}
+    .top-documents h3 {{
+      flex:0 0 auto;
+      margin:0;
+    }}
+    .top-document-links {{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      min-width:0;
+    }}
+    .top-document-links .doc-link {{
+      max-width:100%;
+      margin:0;
+      overflow-wrap:anywhere;
+    }}
     .detail-grid {{
       display:grid;
       grid-template-columns:repeat(2, minmax(0,1fr));
@@ -2248,11 +2276,12 @@ def render_html(
     }}
     .speaker-row {{
       display:grid;
-      grid-template-columns:10px minmax(96px, .85fr) minmax(110px, 1fr) 44px 20px;
+      grid-template-columns:10px minmax(96px, .85fr) minmax(110px, 1fr) 44px max-content;
       gap:8px;
       align-items:center;
       min-height:24px;
     }}
+    .speaker-row strong {{ min-width:0; overflow-wrap:anywhere; }}
     .party-dot {{ width:8px; height:8px; border-radius:50%; }}
     .speaker-row strong, .position-list strong, .doc-list strong, .activity-list strong, .people-list strong {{ font-weight:680; }}
     .speaker-row span, .position-list span, .doc-list span, .activity-list span, .people-list span {{ color:#3c4654; min-width:0; overflow-wrap:anywhere; }}
@@ -2343,6 +2372,7 @@ def render_html(
       padding-top:14px;
       border-top:1px solid #eef1f5;
     }}
+    .speaker-section {{ margin-top:18px; }}
     .dev-top-details {{
       margin-top:16px;
       padding-top:16px;
@@ -2444,7 +2474,7 @@ def render_html(
       .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:1fr; }}
       .vote-fraction-row {{ grid-template-columns:10px minmax(0,.7fr) minmax(90px,1fr); }}
       .vote-fraction-row em {{ display:none; }}
-      .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px 20px; }}
+      .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px max-content; }}
       .speaker-row span:nth-of-type(2) {{ display:none; }}
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
