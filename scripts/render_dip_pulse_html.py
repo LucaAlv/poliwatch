@@ -42,6 +42,332 @@ VOTE_LABELS = {
     "absent": "nicht abg.",
 }
 
+# DIP "vorgangstyp" values as they show up in the Debattenprofil on puls.html.
+# Keys are the raw DIP strings. "kurz" is the one-line hover bubble on the label,
+# "lang" the glossary paragraph on sources.html#vorgangstypen, "slug" the anchor.
+# Order = frequency in the data so the glossary starts with what readers meet
+# most often. Types missing here render as a plain label without link or bubble.
+VORGANGSTYP_GLOSSARY: dict[str, dict[str, str]] = {
+    "Antrag": {
+        "slug": "antrag",
+        "kurz": (
+            "Aufforderung einer Fraktion oder von mindestens fünf Prozent der Abgeordneten "
+            "an den Bundestag, einen Beschluss zu fassen – meist an die Bundesregierung gerichtet."
+        ),
+        "lang": (
+            "Mit einem Antrag verlangen eine Fraktion oder mindestens fünf Prozent der Abgeordneten, "
+            "dass der Bundestag einen bestimmten Beschluss fasst – häufig eine Aufforderung an die "
+            "Bundesregierung, etwas zu tun oder zu unterlassen. Ein angenommener Antrag ist politisch, "
+            "nicht rechtlich bindend; ein Gesetz entsteht daraus nicht."
+        ),
+    },
+    "Gesetzgebung": {
+        "slug": "gesetzgebung",
+        "kurz": (
+            "Gesetzentwurf im parlamentarischen Verfahren, eingebracht von Bundesregierung, Bundesrat "
+            "oder aus der Mitte des Bundestages, beraten in bis zu drei Lesungen."
+        ),
+        "lang": (
+            "Ein Gesetzgebungsvorgang beginnt mit einem Gesetzentwurf der Bundesregierung, des Bundesrates "
+            "oder aus der Mitte des Bundestages. Das Plenum berät ihn in bis zu drei Lesungen: Nach der "
+            "ersten wird er an die Ausschüsse überwiesen, in der zweiten werden Änderungen beschlossen, "
+            "in der dritten wird abschließend abgestimmt. Danach befasst sich der Bundesrat damit."
+        ),
+    },
+    "Petition": {
+        "slug": "petition",
+        "kurz": (
+            "Sammelübersichten des Petitionsausschusses über Eingaben von Bürgerinnen und Bürgern, "
+            "über die das Plenum abschließend entscheidet."
+        ),
+        "lang": (
+            "Jede Person kann sich mit einer Petition an den Bundestag wenden (Art. 17 GG). Der "
+            "Petitionsausschuss prüft die Eingaben und legt dem Plenum Sammelübersichten mit "
+            "Beschlussempfehlungen vor – etwa, eine Petition der Bundesregierung zu überweisen oder das "
+            "Verfahren abzuschließen. Das Plenum stimmt darüber in der Regel ohne Aussprache ab."
+        ),
+    },
+    "Entschließungsantrag BT": {
+        "slug": "entschliessungsantrag-bt",
+        "kurz": (
+            "Antrag, mit dem eine Fraktion zu einer laufenden Beratung – etwa einem Gesetzentwurf oder "
+            "einer Regierungserklärung – eine eigene Position zur Abstimmung stellt."
+        ),
+        "lang": (
+            "Ein Entschließungsantrag bezieht sich auf einen anderen Beratungsgegenstand, zum Beispiel "
+            "einen Gesetzentwurf, eine Regierungserklärung oder eine Große Anfrage (§ 88 GO-BT). Er lässt "
+            "die Fraktion eine Bewertung oder Forderung zum Thema formulieren, ohne den Text der Vorlage "
+            "zu ändern, und wird nach der Hauptsache abgestimmt. Der Zusatz „BT“ unterscheidet ihn in DIP "
+            "von Entschließungsanträgen im Bundesrat."
+        ),
+    },
+    "Aktuelle Stunde": {
+        "slug": "aktuelle-stunde",
+        "kurz": (
+            "Kurzfristig angesetzte Debatte zu einem aktuellen Thema mit Fünf-Minuten-Reden, "
+            "ohne Vorlage und ohne Abstimmung."
+        ),
+        "lang": (
+            "Eine Aktuelle Stunde kann eine Fraktion oder fünf Prozent der Abgeordneten zu einem Thema "
+            "von allgemeinem aktuellem Interesse verlangen (§ 106 GO-BT). Die Aussprache dauert in der "
+            "Regel eine Stunde, die Redezeit ist auf fünf Minuten begrenzt, es gibt keine Vorlage und am "
+            "Ende keine Abstimmung."
+        ),
+    },
+    "Bericht, Gutachten, Programm": {
+        "slug": "bericht-gutachten-programm",
+        "kurz": (
+            "Berichte, Gutachten und Programme, die dem Bundestag zugeleitet werden und die das Plenum "
+            "berät oder zur Kenntnis nimmt."
+        ),
+        "lang": (
+            "Unter diesem Typ fasst DIP Unterrichtungen zusammen, die dem Bundestag als Drucksache "
+            "zugeleitet werden: regelmäßige Berichte der Bundesregierung oder von Bundesorganen (etwa der "
+            "Jahreswirtschaftsbericht oder der Jahresbericht des Wehrbeauftragten), Gutachten von "
+            "Sachverständigenräten und Programme. Das Plenum kann sie debattieren, an Ausschüsse "
+            "überweisen oder zur Kenntnis nehmen."
+        ),
+    },
+    "Vereinbarte Debatte": {
+        "slug": "vereinbarte-debatte",
+        "kurz": (
+            "Im Ältestenrat vereinbarte Aussprache zu einem Thema ohne eigene Vorlage und ohne "
+            "Abstimmung – etwa zu Jahrestagen oder Grundsatzfragen."
+        ),
+        "lang": (
+            "Eine Vereinbarte Debatte setzen die Fraktionen im Ältestenrat einvernehmlich auf die "
+            "Tagesordnung. Es gibt keinen Antrag und keinen Gesetzentwurf, über den abgestimmt würde; das "
+            "Plenum tauscht sich zu einem Thema aus, zum Beispiel zu Gedenktagen, außenpolitischen Lagen "
+            "oder gesellschaftlichen Grundsatzfragen."
+        ),
+    },
+    "Geschäftsordnung": {
+        "slug": "geschaeftsordnung",
+        "kurz": (
+            "Verfahrensfragen des Bundestages selbst: Anträge zur Tagesordnung, zum Ablauf einer "
+            "Sitzung oder zur Änderung der Geschäftsordnung."
+        ),
+        "lang": (
+            "Hierunter fallen Vorgänge, die den Ablauf der Parlamentsarbeit betreffen: Anträge zur "
+            "Geschäftsordnung (etwa auf Absetzung oder Aufsetzung eines Tagesordnungspunkts), Änderungen "
+            "der Geschäftsordnung des Bundestages und Beschlüsse über Verfahrensregeln wie Redezeiten "
+            "oder Ausschussgrößen."
+        ),
+    },
+    "Regierungserklärung": {
+        "slug": "regierungserklaerung",
+        "kurz": (
+            "Erklärung der Kanzlerin oder des Kanzlers oder eines Kabinettsmitglieds zu einer "
+            "politischen Lage, in der Regel mit anschließender Aussprache."
+        ),
+        "lang": (
+            "Mit einer Regierungserklärung legt die Bundesregierung – meist die Kanzlerin oder der "
+            "Kanzler, sonst ein Mitglied des Kabinetts – ihre Haltung zu einem Thema dar, etwa vor einem "
+            "Europäischen Rat oder zu einer Krise. Es folgt in der Regel eine Aussprache; Fraktionen "
+            "können dazu Entschließungsanträge stellen."
+        ),
+    },
+    "Rechtsverordnung": {
+        "slug": "rechtsverordnung",
+        "kurz": (
+            "Verordnung der Bundesregierung oder eines Ministeriums, an der der Bundestag laut Gesetz "
+            "mitwirkt – etwa durch Zustimmung oder Änderungsverlangen."
+        ),
+        "lang": (
+            "Rechtsverordnungen erlässt die Exekutive auf Grundlage einer gesetzlichen Ermächtigung "
+            "(Art. 80 GG). Bei manchen Verordnungen sieht das Gesetz eine Beteiligung des Bundestages vor: "
+            "Sie werden ihm zugeleitet, er kann zustimmen, Änderungen verlangen oder sie ablehnen. Nur "
+            "diese Fälle erscheinen als Vorgang im Plenum."
+        ),
+    },
+    "Untersuchungsausschuss": {
+        "slug": "untersuchungsausschuss",
+        "kurz": (
+            "Einsetzung eines Untersuchungsausschusses (Art. 44 GG) oder Beratung seines Berichts – "
+            "ein Minderheitenrecht eines Viertels der Abgeordneten."
+        ),
+        "lang": (
+            "Ein Untersuchungsausschuss klärt mögliche Missstände in Regierung und Verwaltung auf. Ein "
+            "Viertel der Abgeordneten kann seine Einsetzung erzwingen (Art. 44 GG). Im Plenum erscheinen "
+            "der Einsetzungsantrag, gegebenenfalls Änderungen des Untersuchungsauftrags und am Ende die "
+            "Beratung des Abschlussberichts."
+        ),
+    },
+    "Große Anfrage": {
+        "slug": "grosse-anfrage",
+        "kurz": (
+            "Umfangreiche schriftliche Anfrage einer Fraktion an die Bundesregierung; die Antwort kann "
+            "im Plenum debattiert werden."
+        ),
+        "lang": (
+            "Eine Große Anfrage kann eine Fraktion oder fünf Prozent der Abgeordneten an die "
+            "Bundesregierung richten (§ 100 GO-BT). Anders als bei der Kleinen Anfrage wird die Antwort "
+            "auf Verlangen im Plenum beraten – deshalb taucht sie hier auf, Kleine Anfragen dagegen nicht."
+        ),
+    },
+    "Enquete-Kommission": {
+        "slug": "enquete-kommission",
+        "kurz": (
+            "Einsetzung oder Bericht einer Enquete-Kommission: Abgeordnete und externe Sachverständige "
+            "bearbeiten gemeinsam eine umfangreiche Zukunftsfrage."
+        ),
+        "lang": (
+            "Eine Enquete-Kommission besteht aus Abgeordneten und externen Sachverständigen und soll "
+            "umfassende, oft langfristige Themen aufarbeiten (§ 56 GO-BT). Ein Viertel der Abgeordneten "
+            "kann ihre Einsetzung verlangen. Im Plenum erscheinen der Einsetzungsantrag und die Beratung "
+            "ihrer Zwischen- und Abschlussberichte."
+        ),
+    },
+    "Verfahren vor dem Bundesverfassungsgericht": {
+        "slug": "verfahren-bundesverfassungsgericht",
+        "kurz": (
+            "Verfahren in Karlsruhe, an denen der Bundestag beteiligt ist; das Plenum entscheidet über "
+            "Beitritt und Stellungnahme."
+        ),
+        "lang": (
+            "Ist der Bundestag an einem Verfahren vor dem Bundesverfassungsgericht beteiligt – etwa bei "
+            "einem Organstreit oder einer Normenkontrolle –, entscheidet das Plenum auf Empfehlung des "
+            "Rechtsausschusses, ob es dem Verfahren beitritt, eine Stellungnahme abgibt und wer es vertritt."
+        ),
+    },
+    "Wahlprüfungsverfahren": {
+        "slug": "wahlpruefungsverfahren",
+        "kurz": (
+            "Entscheidung des Bundestages über Einsprüche gegen die Gültigkeit der Bundestagswahl "
+            "(Art. 41 GG)."
+        ),
+        "lang": (
+            "Über die Gültigkeit der Bundestagswahl und Einsprüche dagegen entscheidet der Bundestag "
+            "selbst (Art. 41 GG). Der Wahlprüfungsausschuss prüft die Einsprüche und legt dem Plenum "
+            "Beschlussempfehlungen vor; gegen die Entscheidung ist Beschwerde beim "
+            "Bundesverfassungsgericht möglich."
+        ),
+    },
+    "Wahl im BT": {
+        "slug": "wahl-im-bt",
+        "kurz": (
+            "Wahlen, die das Plenum vornimmt – etwa der Kanzlerin oder des Kanzlers, des Präsidiums, "
+            "des Wehrbeauftragten oder von Mitgliedern in Gremien."
+        ),
+        "lang": (
+            "Der Bundestag wählt neben der Kanzlerin oder dem Kanzler unter anderem sein Präsidium, den "
+            "Wehrbeauftragten, Mitglieder des Richterwahlausschusses, die Hälfte der Richterinnen und "
+            "Richter des Bundesverfassungsgerichts sowie Mitglieder von Kontrollgremien. Diese Wahlen "
+            "finden im Plenum statt, meist geheim."
+        ),
+    },
+    "Parlamentarische Sonderkommission": {
+        "slug": "parlamentarische-sonderkommission",
+        "kurz": (
+            "Einsetzung oder Bericht einer vom Bundestag eingesetzten Kommission, die weder Ausschuss "
+            "noch Enquete-Kommission ist – etwa zur Reform des Wahlrechts."
+        ),
+        "lang": (
+            "Der Bundestag kann für einzelne Aufgaben Kommissionen einsetzen, die keine Ausschüsse und "
+            "keine Enquete-Kommissionen sind, zum Beispiel die Kommission zur Reform des Bundeswahlrechts "
+            "und zur Modernisierung der Parlamentsarbeit. Im Plenum erscheinen Einsetzung, Zwischen- und "
+            "Abschlussbericht."
+        ),
+    },
+    "Ansprache/Erklärung/Mitteilung": {
+        "slug": "ansprache-erklaerung-mitteilung",
+        "kurz": (
+            "Ansprachen, Erklärungen und Mitteilungen im Plenum – etwa von Gästen, des Präsidiums oder "
+            "der Bundesregierung – ohne eigenen Beratungsgegenstand."
+        ),
+        "lang": (
+            "Dieser Typ sammelt Wortbeiträge, denen keine Vorlage zugrunde liegt: Ansprachen "
+            "ausländischer Gäste oder zu Gedenktagen, Erklärungen des Präsidiums oder der Bundesregierung "
+            "außerhalb einer Regierungserklärung sowie Mitteilungen zum Geschäftsgang. Abgestimmt wird "
+            "darüber nicht."
+        ),
+    },
+    "Besetzung interner Gremien des BT": {
+        "slug": "besetzung-interner-gremien",
+        "kurz": (
+            "Zusammensetzung von Ausschüssen und anderen Gremien des Bundestages, etwa Größe und "
+            "Sitzverteilung nach Fraktionsstärke."
+        ),
+        "lang": (
+            "Zu Beginn einer Wahlperiode und bei Änderungen beschließt das Plenum, wie viele Mitglieder "
+            "die Ausschüsse und weitere Gremien haben und wie sich die Sitze auf die Fraktionen verteilen. "
+            "Auch die Benennung von Mitgliedern in Gremien, für die keine Wahl vorgesehen ist, gehört "
+            "hierher."
+        ),
+    },
+    "Wahlperiodenwechsel": {
+        "slug": "wahlperiodenwechsel",
+        "kurz": (
+            "Vorgänge rund um den Beginn einer Wahlperiode, etwa die konstituierende Sitzung und die "
+            "Übernahme unerledigter Vorlagen."
+        ),
+        "lang": (
+            "Beim Übergang in eine neue Wahlperiode erscheinen hier die formalen Schritte der "
+            "konstituierenden Sitzung: Eröffnung durch die Alterspräsidentin oder den Alterspräsidenten, "
+            "Feststellung der Beschlussfähigkeit, Beschluss über die Geschäftsordnung und die Behandlung "
+            "nicht erledigter Vorlagen aus der vorigen Wahlperiode."
+        ),
+    },
+    "Vertrauensantrag des Bundeskanzlers": {
+        "slug": "vertrauensantrag",
+        "kurz": (
+            "Vertrauensfrage nach Art. 68 GG: Die Kanzlerin oder der Kanzler bittet den Bundestag, ihr "
+            "oder ihm das Vertrauen auszusprechen."
+        ),
+        "lang": (
+            "Mit der Vertrauensfrage (Art. 68 GG) beantragt die Kanzlerin oder der Kanzler, dass der "
+            "Bundestag ihr oder ihm das Vertrauen ausspricht. Findet der Antrag nicht die Mehrheit der "
+            "Mitglieder, kann der Bundespräsident auf Vorschlag der Kanzlerin oder des Kanzlers den "
+            "Bundestag innerhalb von 21 Tagen auflösen – der Weg zu vorgezogenen Neuwahlen."
+        ),
+    },
+    "Rechtsverordnung (Außenwirtschaftsrecht)": {
+        "slug": "rechtsverordnung-aussenwirtschaftsrecht",
+        "kurz": (
+            "Verordnung nach dem Außenwirtschaftsgesetz, die dem Bundestag zugeleitet wird und deren "
+            "Aufhebung er verlangen kann."
+        ),
+        "lang": (
+            "Sonderfall der Rechtsverordnung: Verordnungen nach dem Außenwirtschaftsgesetz – etwa zu "
+            "Ein- und Ausfuhrbeschränkungen – werden dem Bundestag unverzüglich mitgeteilt; er kann ihre "
+            "Aufhebung verlangen."
+        ),
+    },
+    "Anmerkung zur Plenarsitzung": {
+        "slug": "anmerkung-zur-plenarsitzung",
+        "kurz": (
+            "Vermerk zum Ablauf einer Sitzung, dem keine Vorlage zugrunde liegt – etwa Gedenkworte, "
+            "Glückwünsche oder Hinweise zur Tagesordnung."
+        ),
+        "lang": (
+            "Ein Hilfstyp in DIP für Vorkommnisse im Plenum, die keinem Beratungsgegenstand zuzuordnen "
+            "sind: Gedenkminuten, Nachrufe, Glückwünsche, Hinweise des Präsidiums zur Tagesordnung oder "
+            "zum Ablauf."
+        ),
+    },
+    "EU-Vorlage": {
+        "slug": "eu-vorlage",
+        "kurz": (
+            "Dokument der Europäischen Union – etwa ein Kommissionsvorschlag –, zu dem der Bundestag "
+            "Stellung nehmen oder eine Subsidiaritätsrüge erheben kann."
+        ),
+        "lang": (
+            "Die Bundesregierung leitet dem Bundestag EU-Vorhaben zu (Art. 23 GG, EUZBBG). Der Bundestag "
+            "kann dazu eine Stellungnahme beschließen, die die Bundesregierung ihren Verhandlungen "
+            "zugrunde legt, oder innerhalb von acht Wochen eine Subsidiaritätsrüge erheben. Im Plenum "
+            "erscheinen diese Vorlagen, wenn sie dort beraten oder beschlossen werden."
+        ),
+    },
+}
+
+VORGANGSTYP_GLOSSARY_ANCHOR = "vorgangstypen"
+
+
+def vorgangstyp_anchor(kind: str) -> str | None:
+    """Fragment id of the glossary entry for a DIP vorgangstyp, or None if unknown."""
+    entry = VORGANGSTYP_GLOSSARY.get(kind)
+    return f"vorgangstyp-{entry['slug']}" if entry else None
+
 
 def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
@@ -336,6 +662,18 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] .week-card strong,
     :root[data-theme="dark"] .week-metric strong { color:var(--ink) !important; }
+    :root[data-theme="dark"] a.week-label:hover,
+    :root[data-theme="dark"] a.week-label:focus-visible,
+    :root[data-theme="dark"] .week-note a:hover,
+    :root[data-theme="dark"] .week-note a:focus-visible { color:var(--ink) !important; }
+    :root[data-theme="dark"] a.week-label[data-tip]::after {
+      background:var(--surface-3);
+      color:var(--ink);
+      border:1px solid var(--line);
+      box-shadow:0 4px 14px rgba(0,0,0,.45);
+    }
+    :root[data-theme="dark"] .method-list strong { color:var(--ink) !important; }
+    :root[data-theme="dark"] .method-list li:target { background:var(--blue-soft) !important; }
     :root[data-theme="dark"] pre,
     :root[data-theme="dark"] code {
       color:#dbe7f3;
@@ -1088,8 +1426,17 @@ def render_share_shift(current: Counter[str], previous: Counter[str] | None, lim
     return f'<ul class="week-list">{"".join(rows)}</ul>'
 
 
-def render_type_mix(current: Counter[str], previous: Counter[str] | None, limit: int = 6) -> str:
-    """Which kinds of business the week was made of, against the week before."""
+def render_type_mix(
+    current: Counter[str],
+    previous: Counter[str] | None,
+    limit: int = 6,
+    glossary_href: str = "sources.html",
+) -> str:
+    """Which kinds of business the week was made of, against the week before.
+
+    Known vorgangstyp labels link to their glossary entry on ``glossary_href``
+    and carry the one-line explanation as ``data-tip`` for the hover bubble.
+    """
     if not sum(current.values()):
         return '<p class="week-note">Keine Vorgangspositionen zugeordnet.</p>'
     peak = max(current.values())
@@ -1097,10 +1444,18 @@ def render_type_mix(current: Counter[str], previous: Counter[str] | None, limit:
     for kind, count in current.most_common(limit):
         before = int((previous or {}).get(kind, 0))
         width = max(4.0, count / peak * 100)
+        anchor = vorgangstyp_anchor(kind)
+        if anchor:
+            label = (
+                f'<a class="week-label" href="{esc(glossary_href)}#{anchor}" '
+                f'data-tip="{esc(VORGANGSTYP_GLOSSARY[kind]["kurz"])}">{esc(kind)}</a>'
+            )
+        else:
+            label = f'<span class="week-label">{esc(kind)}</span>'
         rows.append(
             f"""
             <li class="week-row">
-              <span class="week-label">{esc(kind)}</span>
+              {label}
               <span class="week-bar"><span style="width:{width:.2f}%;background:var(--teal)"></span></span>
               <strong>{esc(count)}</strong>
               {render_delta(float(count - before), "", digits=0)}
