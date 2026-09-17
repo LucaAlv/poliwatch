@@ -42,6 +42,15 @@ VOTE_LABELS = {
     "absent": "nicht abg.",
 }
 
+# Aufmerksamkeitsrang sidebar on the dossier page. On desktop the aside is
+# sticky and its rows scroll inside it; at or below the 1120px breakpoint the
+# aside sits above the TOP list, so only the first rows are shown and a toggle
+# reveals the rest (3 rows on phones, where the page header alone is ~330px).
+# Both numbers are interpolated into the CSS nth-child rules; the JavaScript
+# never needs to know them.
+ATTENTION_PREVIEW_ROWS = 5
+ATTENTION_PREVIEW_ROWS_PHONE = 3
+
 # DIP "vorgangstyp" values as they show up in the Debattenprofil on puls.html.
 # Keys are the raw DIP strings. "kurz" is the one-line hover bubble on the label,
 # "lang" the glossary paragraph on sources.html#vorgangstypen, "slug" the anchor.
@@ -630,7 +639,7 @@ def global_header_styles() -> str:
       .principle p, .area-card p, .metric span, .feature-microgrid span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
-      .session-summary-note, .settings-switch-text span, .settings-hint, .settings-count,
+      .session-summary-note, .ranking-empty, .settings-switch-text span, .settings-hint, .settings-count,
       .week-card h3, .week-label, .week-note, .week-sub,
       .week-metric span, .week-metric-foot em, .week-trace em
     ) {
@@ -707,6 +716,45 @@ def theme_bootstrap_script() -> str:
           || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       } catch (_) {}
       root.dataset.theme = theme === "dark" ? "dark" : "light";
+      // Marks that scripts run: CSS that hides content behind a JS toggle is
+      // keyed on [data-js] so a no-JS reader still sees everything.
+      root.dataset.js = "1";
+    })();
+  </script>
+"""
+
+
+def attention_runtime_script() -> str:
+    """Behaviour for the dossier's Aufmerksamkeitsrang aside.
+
+    Emitted only by render_html (page_scripts is shared by every page), and
+    emitted directly after the aside rather than at the end of the body: the
+    collapse is visible from first paint, so the button must work as soon as
+    it is on screen, not after the 2-3 MB of TOP cards behind it have parsed.
+    One job: the expand/collapse toggle that the narrow layout shows. The
+    collapsed state itself is rendered server-side (data-collapsed on the
+    aside) and the media queries decide whether it has any effect, so this
+    script never inspects the viewport. The "more below" fade on the desktop
+    list is pure CSS (a sticky ::after), so there is nothing to keep in sync.
+    """
+    return """
+  <script>
+    (() => {
+      const aside = document.getElementById("aufmerksamkeitsrang");
+      const toggle = aside && aside.querySelector(".attention-toggle");
+      if (!toggle) return;
+      toggle.addEventListener("click", () => {
+        const collapsed = aside.dataset.collapsed !== "true";
+        // The first row that is hidden right now is where the reader lands
+        // after expanding; otherwise focus stays on the button below the
+        // revealed rows and Tab skips all of them.
+        const revealed = collapsed ? null : Array.from(aside.querySelectorAll(".attention-row")).find((row) => row.getClientRects().length === 0);
+        aside.dataset.collapsed = collapsed ? "true" : "false";
+        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        toggle.textContent = collapsed ? toggle.dataset.labelMore : toggle.dataset.labelLess;
+        if (collapsed) aside.scrollIntoView({ block: "nearest" });
+        else if (revealed) revealed.focus();
+      });
     })();
   </script>
 """
@@ -1997,7 +2045,7 @@ def render_html(
             '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
             '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
-                index=item["index"],
+                index=esc(item["index"]),
                 top=esc(item.get("top_id")),
                 title=esc(short(item.get("heading"), 78)),
                 speech_share=speech_share,
@@ -2006,6 +2054,39 @@ def render_html(
                 speeches=stats["speech_count"],
             )
         )
+
+    # The aside is a chart and a map at once. Server-side we decide whether it
+    # starts collapsed (narrow layouts only, via CSS) so the first paint is
+    # already the short form; nothing snaps once the 2-3 MB body has parsed.
+    has_ranking = bool(items) and total_speeches > 0
+    if not items:
+        ranking_body = '<p class="ranking-empty">Keine Tagesordnungspunkte im XML-Protokoll gefunden.</p>'
+    elif not has_ranking:
+        ranking_body = '<p class="ranking-empty">Keine Reden im XML extrahiert – kein Ranking möglich.</p>'
+    else:
+        ranking_body = f'<div class="attention-list" id="attention-list">{"".join(attention_rows)}</div>'
+    ranking_collapsed = has_ranking and len(items) > ATTENTION_PREVIEW_ROWS
+    aside_attrs = ' data-collapsed="true"' if ranking_collapsed else ""
+    if ranking_collapsed:
+        label_more = f"Alle {esc(len(items))} Tagesordnungspunkte anzeigen"
+        attention_toggle = (
+            '<button class="attention-toggle" type="button" aria-expanded="false" aria-controls="attention-list" '
+            f'data-label-more="{label_more}" data-label-less="Weniger anzeigen">{label_more}</button>'
+        )
+    else:
+        attention_toggle = ""
+    ranking_legend = (
+        '<div class="legend"><span><i></i>Reden</span><span><i></i>Redetext</span></div>' if has_ranking else ""
+    )
+    ranking_note = (
+        '<div class="ranking-note">Nach Anzahl der Reden sortiert · Balken: Anteil an der gesamten Sitzung</div>'
+        if has_ranking
+        else ""
+    )
+
+    back_to_rank = (
+        '<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Aufmerksamkeitsrang</a>' if has_ranking else ""
+    )
 
     top_sections = []
     for item in items:
@@ -2055,6 +2136,7 @@ def render_html(
               <div class="top-head">
                 <div>
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>
+                  {back_to_rank}
                   <h2>{esc(item.get('heading'))}</h2>
                 </div>
                 <div class="score">
@@ -2298,16 +2380,62 @@ def render_html(
       gap:18px;
       margin-top:18px;
       align-items:start;
+      --aside-gap:14px;
     }}
+    /*
+      Aufmerksamkeitsrang aside — CSS layer order:
+        base                              sticky, capped to the viewport, only .attention-list scrolls
+        @media (max-width:1120px), (max-height:480px), print
+                                          aside static (above <main> when narrow); cap removed, fade off
+        @media screen and (1120)          [data-js] collapse to ATTENTION_PREVIEW_ROWS + toggle (never in print)
+        @media screen and (720)           [data-js] collapse to ATTENTION_PREVIEW_ROWS_PHONE
+        @media print                      controls hidden (belt and braces: they are screen-only already)
+      aside: display:flex, flex-direction:column, max-height, plus
+      .attention-list: overflow-y:auto, min-height:0 are one fix: drop any of
+      them and the sticky aside clips its tail again. (No braces in this
+      comment: the stylesheet is a Python f-string.) --aside-gap is the sticky
+      offset; the viewport cap is 100vh minus that gap on both ends. The three
+      1120px blocks (and the two 720px blocks) must stay in lockstep.
+    */
     aside {{
       position:sticky;
-      top:14px;
+      top:var(--aside-gap);
+      display:flex;
+      flex-direction:column;
+      max-height:calc(100vh - 2 * var(--aside-gap));
+      max-height:calc(100dvh - 2 * var(--aside-gap));
+      scroll-margin-top:var(--aside-gap);
       background:var(--panel);
       border:1px solid var(--line);
       border-radius:8px;
       overflow:hidden;
     }}
-    aside h2 {{ margin:0; padding:14px 16px; font-size:15px; border-bottom:1px solid var(--line); }}
+    .ranking-head {{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:12px 16px;
+      border-bottom:1px solid var(--line);
+    }}
+    .ranking-head h2 {{ margin:0; font-size:15px; }}
+    .ranking-head .legend {{ font-size:12px; color:var(--muted); }}
+    .attention-list {{
+      overflow-y:auto;
+      min-height:0;
+    }}
+    /* "More below" cue: sticks to the bottom of the scrollport while rows are
+       below it and scrolls away by itself over the last 14px, so it needs no
+       script. Over the panel background at rest it is invisible. */
+    .attention-list::after {{
+      content:"";
+      display:block;
+      position:sticky;
+      bottom:0;
+      height:14px;
+      background:linear-gradient(transparent, var(--panel));
+      pointer-events:none;
+    }}
     .attention-row {{
       display:grid;
       gap:5px;
@@ -2316,14 +2444,39 @@ def render_html(
       color:var(--ink);
     }}
     .ranking-note {{
-      display:grid;
-      gap:7px;
-      padding:12px 16px;
+      padding:8px 16px;
       border-bottom:1px solid #edf0f4;
       color:var(--muted);
       font-size:12px;
       line-height:1.35;
     }}
+    .ranking-empty {{
+      margin:0;
+      padding:14px 16px;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+    }}
+    .attention-toggle {{
+      display:none;
+      appearance:none;
+      width:100%;
+      min-height:44px;
+      padding:10px 16px;
+      border:0;
+      border-top:1px solid var(--line);
+      background:var(--panel);
+      color:var(--blue);
+      font:inherit;
+      font-size:14px;
+      font-weight:650;
+      text-align:center;
+      cursor:pointer;
+    }}
+    .attention-toggle:hover {{ background:var(--blue-soft, #eef5ff); }}
+    .attention-toggle:focus-visible {{ outline:2px solid var(--blue); outline-offset:-2px; }}
+    aside[data-collapsed="true"] .attention-toggle {{ border-top:0; }}
+    .back-to-rank {{ display:none; }}
     .legend {{
       display:flex;
       flex-wrap:wrap;
@@ -2365,6 +2518,7 @@ def render_html(
       border:1px solid var(--line);
       border-radius:8px;
       padding:18px;
+      scroll-margin-top:var(--aside-gap); /* pairs with the aside's sticky offset */
     }}
     .top-head {{
       display:grid;
@@ -2809,9 +2963,13 @@ def render_html(
       background:#202833;
       color:#fff;
     }}
+    @media (max-width: 1120px), (max-height: 480px), print {{
+      aside {{ position:static; max-height:none; }}
+      .attention-list {{ overflow:visible; }}
+      .attention-list::after {{ display:none; }}
+    }}
     @media (max-width: 1120px) {{
       .layout {{ grid-template-columns:1fr; }}
-      aside {{ position:static; }}
       .detail-grid {{ grid-template-columns:1fr; }}
       .api-record-grid {{ grid-template-columns:1fr; }}
       .source-strip {{ grid-template-columns:1fr; }}
@@ -2839,6 +2997,25 @@ def render_html(
       .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
       footer {{ align-items:flex-start; flex-direction:column; }}
     }}
+    @media screen and (max-width: 1120px) {{
+      :root[data-js] aside[data-collapsed="true"] .attention-row:nth-child(n+{ATTENTION_PREVIEW_ROWS + 1}) {{ display:none; }}
+      :root[data-js] .attention-toggle {{ display:block; }}
+      .back-to-rank {{
+        display:inline-flex;
+        align-items:center;
+        padding-block:14px 6px;
+        margin-block:-14px -6px;
+        margin-inline-start:12px;
+        font-size:13px;
+        font-weight:650;
+      }}
+    }}
+    @media screen and (max-width: 720px) {{
+      :root[data-js] aside[data-collapsed="true"] .attention-row:nth-child(n+{ATTENTION_PREVIEW_ROWS_PHONE + 1}) {{ display:none; }}
+    }}
+    @media print {{
+      .attention-toggle, .back-to-rank {{ display:none; }}
+    }}
   </style>
 </head>
 <body>
@@ -2859,14 +3036,16 @@ def render_html(
     {protocol_dev_sections}
     {session_summary_sections}
     <div class="layout">
-      <aside>
-        <h2>Aufmerksamkeitsrang</h2>
-        <div class="ranking-note">
-          <span>Sortiert nach Anzahl der Reden. Die Balken zeigen den Anteil jedes Tagesordnungspunktes an der gesamten Sitzung.</span>
-          <div class="legend"><span><i></i>Reden</span><span><i></i>Redetext</span></div>
+      <aside id="aufmerksamkeitsrang"{aside_attrs}>
+        <div class="ranking-head">
+          <h2>Aufmerksamkeitsrang</h2>
+          {ranking_legend}
         </div>
-        {''.join(attention_rows)}
+        {ranking_note}
+        {ranking_body}
+        {attention_toggle}
       </aside>
+      {attention_runtime_script()}
       <main>
         {warning_html}
         {''.join(top_sections)}
