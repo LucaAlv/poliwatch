@@ -304,7 +304,13 @@ class CollectAbgeordneteTests(unittest.TestCase):
 
 
 class CurrentPulseOrderTests(unittest.TestCase):
-    """The site treats entries[0]/protocols[0] as the current pulse."""
+    """The site treats entries[0]/protocols[0] as the current pulse; puls.html renders its week."""
+
+    def setUp(self) -> None:
+        # puls.html logs its week to stderr on every render; keep the test output clean.
+        patcher = mock.patch.object(sys, "stderr", new_callable=io.StringIO)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @staticmethod
     def _protocol(document_number: str, protocol_id: str, datum: str) -> dict[str, Any]:
@@ -360,8 +366,8 @@ class CurrentPulseOrderTests(unittest.TestCase):
     ) -> str:
         """Render a whole site for the given (protocol, agenda_items) sittings.
 
-        Returns puls.html, whose hero lede is an aggregate over entries[0].
-        `warnings` are attached to that newest report.
+        Returns puls.html, built on 2026-09-15 for the newest dated week.
+        `warnings` are attached to the newest report.
         """
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
@@ -385,38 +391,6 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 kwargs["features"] = features
             build_dip_pulse_site.render_site(**kwargs, today=date(2026, 9, 15))
             return (output_dir / "puls.html").read_text(encoding="utf-8")
-
-    def _lede_panel(self, markup: str) -> str:
-        """The hero card only, sliced out of puls.html.
-
-        Lede assertions must be scoped to it: "#top-" anchors also render in
-        the Themenbewegung and Abstimmungen panels further down the page, so a
-        whole-document assertIn cannot tell a lede row apart from those panel
-        links and would pass for the wrong reason.
-        """
-        match = re.search(
-            r'<div class="latest-panel pulse-lede">(.*?)</section>',
-            markup,
-            re.S,
-        )
-        self.assertIsNotNone(match, "puls.html has no hero lede panel")
-        return match.group(1)
-
-    @staticmethod
-    def _lede_rows(lede: str) -> list[tuple[str, str, str]]:
-        """(href, TOP id, speech share) per row of the "Meiste Aufmerksamkeit" block."""
-        return [
-            (href, top_id, share)
-            for href, top_id, _heading, share in re.findall(
-                r'<a class="lede-top" href="([^"]+)"><span>([^<]+)</span>'
-                r"<strong>([^<]*)</strong><em>([^<]+)</em></a>",
-                lede,
-            )
-        ]
-
-    @staticmethod
-    def _lede_badges(lede: str) -> list[str]:
-        return re.findall(r'<span class="badge">([^<]+)</span>', lede)
 
     def test_render_site_puts_newest_sitting_first(self) -> None:
         # Cached dossiers reach render_site in glob order, where the slug "20-100"
@@ -444,276 +418,15 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 markup = (output_dir / page).read_text(encoding="utf-8")
                 self.assertIn("21/84", markup, msg=page)
 
+            # The sitting chip keeps the ISO date in the markup as <time datetime>.
             pulse_markup = (output_dir / "puls.html").read_text(encoding="utf-8")
-            self.assertIn("2026-06-12", pulse_markup)
+            self.assertIn('<time datetime="2026-06-12">Fr 12.06.</time> · 21/84', pulse_markup)
+            self.assertIn("KW 24/2026", pulse_markup)
             self.assertNotIn("2023-04-27", pulse_markup)
+            self.assertNotIn("KW 17/2023", pulse_markup)
 
-    def test_pulse_lede_summarises_the_newest_sitting(self) -> None:
-        # The hero's left panel is a summary of entries[0], not a nav bar: it
-        # aggregates item_stats() across the sitting into a fraction stack and the
-        # three busiest agenda items. It must never link #abstimmungen, whose
-        # target only exists when the votes Baustein is built.
-        pulse_markup = self._render_pulse(
-            [
-                (
-                    self._protocol("21/84", "5799", "2026-06-12"),
-                    [
-                        self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
-                        self._agenda_item(2, 2, ("SPD", "GRÜNE")),
-                        self._agenda_item(3, 1, ("DIE LINKE",)),
-                        self._agenda_item(4, 1, ("FDP",)),
-                    ],
-                )
-            ]
-        )
-        lede = self._lede_panel(pulse_markup)
-
-        self.assertIn("Zusammenfassung der aktuellsten Sitzung", pulse_markup)
-        self.assertIn("Redeanteile nach Fraktion", lede)
-        # Only the three busiest agenda items reach the lede.
-        self.assertEqual(lede.count('class="lede-top"'), 3)
-        self.assertIn("protocols/plenarprotokoll-21-84.html#top-1", lede)
-        self.assertNotIn("#top-4", lede)
-        # The fraction stack is built from every item, not just the ranked
-        # three. Asserted on the stack's own title attribute: FDP is 6th by
-        # most_common(5) so it never earns a badge, and the title is the only
-        # place its count surfaces.
-        self.assertIn('title="FDP: 1"', lede)
-        # #abstimmungen only exists when the votes Baustein is built.
-        self.assertNotIn("#abstimmungen", pulse_markup)
-
-    def test_lede_fraction_split_counts_agenda_items_outside_the_top_three(self) -> None:
-        # The stack aggregates every item's party_counts, but only the five
-        # loudest fractions get a badge; the rest collapse into "+N weitere".
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [
-                            self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
-                            self._agenda_item(2, 2, ("SPD", "GRÜNE")),
-                            self._agenda_item(3, 1, ("DIE LINKE",)),
-                            self._agenda_item(4, 1, ("FDP",)),
-                        ],
-                    )
-                ]
-            )
-        )
-
-        # TOP 4 never reaches the three lede rows, but its speaker still counts.
-        self.assertIn('title="FDP: 1"', lede)
-        # SPD spoke in two separate items and is summed, not overwritten.
-        self.assertIn('title="SPD: 2"', lede)
-        self.assertEqual(
-            self._lede_badges(lede),
-            ["SPD 2", "CDU/CSU 1", "AfD 1", "GRÜNE 1", "DIE LINKE 1", "+1 weitere"],
-        )
-
-    def test_lede_omits_the_overflow_badge_at_five_fractions(self) -> None:
-        # Boundary of `len(sitting_party_counts) > 5`: five fractions all fit.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [
-                            self._agenda_item(
-                                1,
-                                5,
-                                (
-                                    "SPD",
-                                    "CDU/CSU",
-                                    "AfD",
-                                    "BÜNDNIS 90/DIE GRÜNEN",
-                                    "Die Linke",
-                                ),
-                            )
-                        ],
-                    )
-                ]
-            )
-        )
-
-        self.assertEqual(
-            self._lede_badges(lede),
-            ["SPD 1", "CDU/CSU 1", "AfD 1", "BÜNDNIS 90/DIE GRÜNEN 1", "Die Linke 1"],
-        )
-        self.assertNotIn("weitere", lede)
-
-    def test_lede_rows_are_the_three_busiest_tops_in_order(self) -> None:
-        # Agenda order is deliberately not speech order, so a lost sort cannot
-        # pass by accident of arrival. Shares are counted against the sitting.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [
-                            self._agenda_item(1, 1, ("SPD",)),
-                            self._agenda_item(2, 5, ("CDU/CSU",)),
-                            self._agenda_item(3, 3, ("AfD",)),
-                            self._agenda_item(4, 2, ("SPD",)),
-                        ],
-                    )
-                ]
-            )
-        )
-
-        self.assertEqual(
-            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
-            [("TOP 2", "45,5%"), ("TOP 3", "27,3%"), ("TOP 4", "18,2%")],
-        )
-
-    def test_lede_lists_every_top_when_the_sitting_has_fewer_than_three(self) -> None:
-        # `ranked_items[:3]` must not pad or index past the end of a short sitting.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [
-                            self._agenda_item(1, 2, ("SPD", "AfD")),
-                            self._agenda_item(2, 1, ("CDU/CSU",)),
-                        ],
-                    )
-                ]
-            )
-        )
-
-        self.assertEqual(
-            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
-            [("TOP 1", "66,7%"), ("TOP 2", "33,3%")],
-        )
-
-    def test_lede_falls_back_to_an_empty_state_without_agenda_items(self) -> None:
-        # A dossier whose extraction found no TOPs still has to render a hero:
-        # the `else` arm replaces both blocks with one explanatory line rather
-        # than leaving an empty fraction stack and an empty top-three list.
-        markup = self._render_pulse([(self._protocol("21/84", "5799", "2026-06-12"), [])])
-        lede = self._lede_panel(markup)
-
-        self.assertIn("noch keine Tagesordnungspunkte extrahiert", lede)
-        self.assertEqual(markup.count('class="lede-top"'), 0)
-        self.assertNotIn("Redeanteile nach Fraktion", markup)
-        # No closing quote: render_party_stack() emits `class="stack empty"` for
-        # an empty counter, which the quoted form would silently miss.
-        self.assertNotIn('<div class="stack', lede)
-        self.assertNotIn('class="party-labels"', lede)
-        # The panel's own heading survives the empty state.
-        self.assertIn("Zusammenfassung der aktuellsten Sitzung", lede)
-        self.assertIn("Redeanteile und Schwerpunkte", lede)
-
-    def test_lede_survives_a_sitting_whose_tops_have_no_speeches(self) -> None:
-        # total_speeches == 0 divides the share; percent() and render_party_stack()
-        # must both take their zero guard instead of raising ZeroDivisionError.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [(self._protocol("21/84", "5799", "2026-06-12"), [self._agenda_item(1, 0, ())])]
-            )
-        )
-
-        self.assertIn('<div class="stack empty"></div>', lede)
-        self.assertEqual(self._lede_badges(lede), [])
-        self.assertEqual(
-            [(top_id, share) for _href, top_id, share in self._lede_rows(lede)],
-            [("TOP 1", "0,0%")],
-        )
-
-    def test_lede_stack_widths_are_shares_of_the_whole_sitting(self) -> None:
-        # The bar widths are the sitting-wide denominator made visible. Without
-        # this, sitting_party_total can be wrong (or the wrong variable) and
-        # every other lede assertion still passes — the counts in the title
-        # attributes are independent of it.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [
-                            self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
-                            self._agenda_item(2, 2, ("SPD", "GRÜNE")),
-                            self._agenda_item(3, 1, ("DIE LINKE",)),
-                            self._agenda_item(4, 1, ("FDP",)),
-                        ],
-                    )
-                ]
-            )
-        )
-
-        stack = re.search(r'<div class="stack">(.*?)</div>', lede, re.S)
-        self.assertIsNotNone(stack, "lede has no fraction stack")
-        widths = re.findall(
-            r'width:([\d.]+)%;background:[^"]*" title="([^:]+):', stack.group(1)
-        )
-        # Seven speakers across the whole sitting: SPD 2/7, everyone else 1/7.
-        self.assertEqual(widths[0], ("28.57", "SPD"))
-        self.assertTrue(all(width == "14.29" for width, _party in widths[1:]), widths)
-
-    def test_lede_escapes_top_ids_from_the_protocol(self) -> None:
-        # top_id is read verbatim out of the XML protocol, exactly like heading,
-        # so the row has to escape it too. Every other fixture uses the safe
-        # literal "TOP {index}", which cannot catch a dropped esc().
-        item = self._agenda_item(1, 1, ("SPD",))
-        item["top_id"] = "TOP <1> & 2"
-        lede = self._lede_panel(
-            self._render_pulse([(self._protocol("21/84", "5799", "2026-06-12"), [item])])
-        )
-
-        self.assertIn("TOP &lt;1&gt; &amp; 2", lede)
-        self.assertNotIn("<1>", lede)
-
-    def test_lede_escapes_and_shortens_top_headings(self) -> None:
-        # Headings come from the XML protocol verbatim, so the row has to escape
-        # them and clip them to 72 characters or the hero grid breaks.
-        heading = (
-            "Beratung des Antrags der Fraktion <B> & Co. zur Änderung des "
-            "Gesetzes über die Feststellung des Bundeshaushaltsplans"
-        )
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [self._agenda_item(1, 1, ("SPD",), heading=heading)],
-                    )
-                ]
-            )
-        )
-
-        self.assertNotIn("<B>", lede)
-        self.assertIn("&lt;B&gt; &amp; Co.", lede)
-        self.assertIn("…</strong>", lede)
-        self.assertNotIn("Bundeshaushaltsplans", lede)
-
-    def test_lede_summarises_only_the_newest_sitting(self) -> None:
-        # entries[0] is the current pulse; an older dossier in the same build must
-        # not leak its fractions or its dossier anchors into the hero.
-        lede = self._lede_panel(
-            self._render_pulse(
-                [
-                    (
-                        self._protocol("20/100", "4200", "2023-04-27"),
-                        [self._agenda_item(9, 7, ("AfD",))],
-                    ),
-                    (
-                        self._protocol("21/84", "5799", "2026-06-12"),
-                        [self._agenda_item(1, 1, ("SPD",))],
-                    ),
-                ]
-            )
-        )
-
-        self.assertEqual(
-            self._lede_rows(lede),
-            [("protocols/plenarprotokoll-21-84.html#top-1", "TOP 1", "100,0%")],
-        )
-        self.assertEqual(self._lede_badges(lede), ["SPD 1"])
-        self.assertNotIn("plenarprotokoll-20-100", lede)
-        self.assertNotIn("AfD", lede)
-
-    def test_pulse_hero_never_links_the_votes_panel(self) -> None:
-        # The hero used to carry a "#abstimmungen" action link that dangled
+    def test_page_actions_never_link_the_votes_panel(self) -> None:
+        # The old hero carried a "#abstimmungen" action link that dangled
         # whenever the votes Baustein was off. Neither Baustein state may bring
         # it back, and the retired .pulse-actions styling must stay retired.
         sitting = [
@@ -729,22 +442,21 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 self.assertEqual(markup.count("#abstimmungen"), 0)
                 self.assertNotIn("pulse-actions", markup)
                 self.assertNotIn("primary-link", markup)
-                # The panel itself still renders as an anchor target. Publication
+                # The votes card still renders as an anchor target. Publication
                 # is deliberately independent of the build-time selection --
                 # render_site() pins publication_selection() so a reduced
-                # enrichment run never removes a visitor-facing panel -- so the
+                # enrichment run never removes a visitor-facing block -- so the
                 # id is present under either Baustein state and visitors toggle
-                # it client-side through data-feature="votes". This test guards
-                # the hero link, not whether the panel was built.
+                # it client-side through data-feature="votes".
                 self.assertIn('id="abstimmungen"', markup)
                 self.assertIn('data-feature="votes"', markup)
 
     def test_pulse_page_carries_no_attention_ranking(self) -> None:
         # The per-item Aufmerksamkeitsranking cards were retired from puls.html:
         # the dossier page already ranks the same items. Neither Baustein state
-        # may bring the section, its hero link, or the validation-warning
-        # banner that used to live inside it back, and the remaining hero
-        # links must stay intact.
+        # may bring the section, the validation-warning banner that used to live
+        # inside it, or the retired Themenbewegung anchor back; the page actions
+        # are the Wochenvergleich and the newest protocol of the week.
         sitting = [
             (
                 self._protocol("21/84", "5799", "2026-06-12"),
@@ -763,94 +475,116 @@ class CurrentPulseOrderTests(unittest.TestCase):
                     "ranking-intro",
                     "Aufmerksamkeitsranking",
                     "Validierungswarnung",
+                    "#bewegung",
+                    "Protokolldossier",
                 ):
                     self.assertNotIn(retired, markup)
-                self.assertIn('href="#bewegung"', markup)
                 self.assertIn('href="#wochenvergleich"', markup)
                 self.assertIn(
-                    'href="protocols/plenarprotokoll-21-84.html">Protokolldossier</a>', markup
+                    'href="protocols/plenarprotokoll-21-84.html">Neuestes Protokoll</a>', markup
                 )
 
-    def test_hero_is_one_sitting_card(self) -> None:
-        # The hero used to be two cards: the lede plus a "Protokoll der ...
-        # Sitzung" panel whose counts and links repeated the page-header
-        # actions, the Themenbewegung grid and the global nav. The lede is now
-        # the only hero card and carries what the panel alone had: the
-        # sitting's identity line, its fact row and the raw-source links.
+    def test_header_is_the_week_identity(self) -> None:
+        # The page header names the sitting week, not one sitting: eyebrow, h1,
+        # one chip per sitting, the facts sentence and the two actions. The
+        # former hero's identity line, fact tiles and raw-source links are gone
+        # (the dossier carries them).
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         protocol["verteildatum"] = "2026-06-15"
         protocol["xml_url"] = "https://dserver.bundestag.de/btp/21/21084.xml"
         protocol["pdf_url"] = "https://dserver.bundestag.de/btp/21/21084.pdf"
         markup = self._render_pulse([(protocol, [self._agenda_item(1, 1, ("SPD",))])])
-        lede = self._lede_panel(markup)
+        header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
 
+        # _render_pulse builds on 2026-09-15, fourteen ISO weeks after KW 24:
+        # the stale-archive state, which leads with the age.
+        self.assertIn('<span class="eyebrow">Letzte Sitzungswoche</span>', header)
+        self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
+        self.assertIn(
+            '<a href="protocols/plenarprotokoll-21-84.html"><time datetime="2026-06-12">Fr 12.06.</time> · 21/84</a>',
+            header,
+        )
+        self.assertIn(
+            "Letzte Sitzungswoche vor 14 Wochen · 1 Rede in 1 Tagesordnungspunkt · 1 Sitzung, "
+            'letztes Protokoll 21/84 verteilt am <time datetime="2026-06-15">15.06.2026</time> · '
+            'Auswertung vom <time datetime="2026-09-15">15.09.2026</time>',
+            header,
+        )
+        self.assertIn('<a href="#wochenvergleich">Wochenvergleich</a>', header)
+        self.assertIn('<a href="protocols/plenarprotokoll-21-84.html">Neuestes Protokoll</a>', header)
+        for retired in ("BT-PlPr", "Sitzung vom", "metric-grid", "Drucksachen", "21084.xml", "Erzeugtes JSON", "lede-sources"):
+            self.assertNotIn(retired, markup, msg=retired)
         self.assertNotIn("source-panel", markup)
-        self.assertNotIn("context-panel", markup)
-        self.assertIn("BT-PlPr 21/84 · Sitzung vom 2026-06-12 · verteilt am 2026-06-15", lede)
-        for label in ("Tagesordnungspunkte", "Reden", "Drucksachen", "Personen"):
-            self.assertIn(f"<span>{label}</span>", lede)
-        self.assertIn('href="https://dserver.bundestag.de/btp/21/21084.xml"', lede)
-        self.assertIn('href="https://dserver.bundestag.de/btp/21/21084.pdf"', lede)
-        self.assertIn('href="data/plenarprotokoll-21-84.json"', lede)
-        # The dossier link lives in the page-header actions only, and the
-        # global nav already reaches the database page.
-        self.assertEqual(markup.count("Protokolldossier"), 1)
         self.assertNotIn("Datenbank erkunden", markup)
 
-    def test_hero_omits_source_links_without_urls(self) -> None:
-        # Cached protocols from older builds can lack xml_url/pdf_url and
-        # verteildatum. The old panel rendered the links as href="" -- a link
+    def test_header_falls_back_to_the_sitting_date_without_verteildatum(self) -> None:
+        # Cached protocols from older builds can lack verteildatum and the
+        # source URLs. The old panel rendered the links as href="" -- a link
         # back to puls.html itself -- and a dangling "verteilt am".
         markup = self._render_pulse(
             [(self._protocol("21/84", "5799", "2026-06-12"), [self._agenda_item(1, 1, ("SPD",))])]
         )
-        lede = self._lede_panel(markup)
+        header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
 
-        self.assertNotIn('href=""', lede)
-        self.assertNotIn("XML-Protokoll", lede)
-        self.assertNotIn("PDF-Protokoll", lede)
-        self.assertIn("Erzeugtes JSON", lede)
-        self.assertIn("BT-PlPr 21/84 · Sitzung vom 2026-06-12</p>", lede)
-        self.assertNotIn("verteilt am", lede)
+        self.assertNotIn('href=""', markup)
+        self.assertIn('letztes Protokoll 21/84 vom <time datetime="2026-06-12">12.06.2026</time>', header)
+        self.assertNotIn("verteilt am", header)
 
-    def test_themenbewegung_has_no_count_grid(self) -> None:
-        # The Themenbewegung card's TOPs/Reden/Drucksachen grid repeated the
-        # sitting fact row that now sits in the hero. The card keeps its focus
-        # sentence, week headline and links; only the votes card still carries
-        # a microgrid, because those counts are its own subject.
+    def test_retired_hero_blocks_are_gone(self) -> None:
+        # The hero card, the fact tiles, the "Quellen" row, the Themenbewegung
+        # card and the per-sitting votes panel were dissolved into the radar and
+        # the Wochenvergleich band. None of their markup or copy may survive.
         sitting = [(self._protocol("21/84", "5799", "2026-06-12"), [self._agenda_item(1, 1, ("SPD",))])]
         markup = self._render_pulse(sitting, features=all_selection())
-        movement = re.search(r'<article class="pulse-feature movement">(.*?)</article>', markup, re.S)
-        votes = re.search(r'<article class="pulse-feature votes"(.*?)</article>', markup, re.S)
-        self.assertIsNotNone(movement, "puls.html has no Themenbewegung card")
-        self.assertIsNotNone(votes, "puls.html has no votes card")
+        for retired in (
+            "pulse-feature ",
+            "feature-grid",
+            "feature-microgrid",
+            "radar-hero",
+            "latest-panel",
+            "pulse-lede",
+            "lede-",
+            "Themenbewegung",
+            "Was nach vorne r",
+            "Zusammenfassung der aktuellsten Sitzung",
+            "Abstimmungsverschiebung",
+            "Wo Stimmen das Bild ver",
+            "Aktueller Lageblick",
+            "Belege zum Schwerpunkt",
+            "sobald gen",
+        ):
+            self.assertNotIn(retired, markup, msg=retired)
+        self.assertIn('<section class="radar" aria-labelledby="radar-h2">', markup)
+        self.assertIn('id="wochenvergleich"', markup)
 
-        self.assertNotIn("feature-microgrid", movement.group(1))
-        self.assertIn("Wochenvergleich ansehen", movement.group(1))
-        self.assertIn("Belege zum Schwerpunkt", movement.group(1))
-        self.assertIn("feature-microgrid", votes.group(1))
-
-    def test_lede_row_anchors_resolve_in_the_generated_dossier(self) -> None:
-        # The retired hero link pointed at #abstimmungen, a target that only
-        # existed when the votes Baustein was built. Its replacement rows must
-        # not repeat that: every lede href has to land on a real anchor in the
-        # dossier page this same build wrote.
+    def test_radar_hrefs_resolve_in_the_generated_dossier(self) -> None:
+        # Every radar href (title, footer link, trace, receipts) has to land on
+        # a real anchor in the dossier page this same build wrote. A receipt
+        # whose speech is not in the item's speaker list degrades to a span.
         protocol = self._protocol("21/84", "5799", "2026-06-12")
+        items = [
+            self._agenda_item(1, 3, ("SPD", "CDU/CSU", "AfD")),
+            self._agenda_item(2, 2, ("AfD", "SPD")),
+            self._agenda_item(3, 1, ("SPD",)),
+        ]
+        for item in items:
+            for n, speech in enumerate(item["xml_speakers"], start=1):
+                speech["rede_id"] = f"ID{item['index']}0{n}"
+                speech["speaker"]["display_name"] = f"Person {n}"
+        items[0]["llm_summary"] = {
+            "text": "Kurz gesagt.",
+            "source_chunks": [
+                {"id": "R-1", "rede_id": "ID101", "source_page": {"page": "100"}},
+                {"id": "R-9", "rede_id": "NOPE", "source_page": {"page": "101"}},
+            ],
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._output_dir(tmp)
             # Written through write_report_files() so the dossier page really
             # exists on disk, the way it does in a production build.
             entry = build_dip_pulse_site.write_report_files(
-                report={
-                    "protocol": protocol,
-                    "validation_summary": {},
-                    "agenda_items": [
-                        self._agenda_item(1, 3, ("SPD", "CDU/CSU")),
-                        self._agenda_item(2, 2, ("AfD",)),
-                        self._agenda_item(3, 1, ("SPD",)),
-                    ],
-                },
+                report={"protocol": protocol, "validation_summary": {}, "agenda_items": items},
                 output_dir=output_dir,
             )
 
@@ -865,12 +599,15 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 today=date(2026, 9, 15),
             )
 
-            rows = self._lede_rows(
-                self._lede_panel((output_dir / "puls.html").read_text(encoding="utf-8"))
-            )
-            self.assertEqual(len(rows), 3)
-            for href, top_id, _share in rows:
-                with self.subTest(top=top_id):
+            markup = (output_dir / "puls.html").read_text(encoding="utf-8")
+            radar = re.search(r'<section class="radar".*?</section>', markup, re.S).group(0)
+            hrefs = re.findall(r'href="(protocols/[^"]+)"', radar)
+            self.assertEqual(len(re.findall(r'<li class="radar-row"', radar)), 3)
+            self.assertIn("protocols/plenarprotokoll-21-84.html#speech-1-ID101", hrefs)
+            self.assertIn("<span>R-9 · S. 101</span>", radar)
+            self.assertGreaterEqual(len(hrefs), 7)
+            for href in hrefs:
+                with self.subTest(href=href):
                     page, _, anchor = href.partition("#")
                     target = output_dir / page
                     self.assertTrue(target.exists(), msg=href)
@@ -1158,6 +895,12 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
 
 class SittingWeekComparisonTests(unittest.TestCase):
     """The Wochenvergleich band on puls.html, and the aggregation behind it."""
+
+    def setUp(self) -> None:
+        # puls.html logs its week to stderr on every render; keep the test output clean.
+        patcher = mock.patch.object(sys, "stderr", new_callable=io.StringIO)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @staticmethod
     def _speaker(fraktion: str | None, chars: int, role: str | None = None) -> dict[str, Any]:
@@ -1597,9 +1340,12 @@ class WeekTopicRowsTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["share"], 7 / 29 * 100)
         # Ties at 3: newest sitting first (Fri), then Wed by agenda order.
         self.assertEqual([(r["dokumentnummer"], r["index"]) for r in rows[2:]], [("21/84", 1), ("21/82", 2), ("21/82", 3)])
-        label, count, share, href = radar["formats"][0]
-        self.assertEqual((label, count, href), ("Befragung der Bundesregierung", 6, "protocols/plenarprotokoll-21-82.html#top-1"))
-        self.assertAlmostEqual(share, 6 / 29 * 100)
+        befragung = radar["formats"][0]
+        self.assertEqual(
+            (befragung["heading"], befragung["speech_count"], befragung["href"], befragung["datum"], befragung["index"]),
+            ("Befragung der Bundesregierung", 6, "protocols/plenarprotokoll-21-82.html#top-1", "2026-06-10", 1),
+        )
+        self.assertAlmostEqual(befragung["share"], 6 / 29 * 100)
         self.assertEqual(radar["remaining"], [("21/83", Path("plenarprotokoll-21-83.html"), 1), ("21/84", Path("plenarprotokoll-21-84.html"), 1)])
 
     def test_tied_rows_at_the_cutoff_are_included_up_to_the_cap(self) -> None:
@@ -1790,6 +1536,12 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
 class BuildClockAndWeekTests(unittest.TestCase):
     """--today / --week / SOURCE_DATE_EPOCH threading for puls.html (build order §7)."""
 
+    def setUp(self) -> None:
+        # puls.html logs its week to stderr on every render; keep the test output clean.
+        patcher = mock.patch.object(sys, "stderr", new_callable=io.StringIO)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     _item = SittingWeekComparisonTests._item
     _entry = SittingWeekComparisonTests._entry
 
@@ -1874,21 +1626,27 @@ class BuildClockAndWeekTests(unittest.TestCase):
 
     # -- PR1 invariant: the clock and week are threaded, not yet rendered ------
 
-    def test_puls_page_is_byte_identical_whatever_clock_and_week_are_passed(self) -> None:
+    def test_puls_page_is_reproducible_for_the_same_clock_and_week(self) -> None:
+        # The page reads the clock and the week now, so two renders agree byte
+        # for byte only when both are pinned the same way: --today and an
+        # equivalent SOURCE_DATE_EPOCH are interchangeable, and a different
+        # clock or week changes the header.
         older = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100), ("CDU/CSU", 100)])])
         newest = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)] * 3), self._item(2, [("AfD", 100)])])
-        for entry in (older, newest):
-            entry["report"]["validation_summary"] = {"xml_top_count": 1, "xml_speech_count": 1}
         entries = [newest, older]
-        baseline = build_dip_pulse_site.render_front_page(entries, database_href=None)
-        self.assertIn("Wochenvergleich", baseline)
-        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789338600"}):
-            via_epoch = build_dip_pulse_site.render_front_page(entries, database_href=None)
-        pinned = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2020, 1, 1), week=(2026, 24))
-        older_week = build_dip_pulse_site.render_front_page(entries, database_href=None, today=datetime(2030, 12, 31, 23, 59), week=(2026, 21))
-        self.assertEqual(baseline, via_epoch)
-        self.assertEqual(baseline, pinned)
-        self.assertEqual(baseline, older_week)
+        pinned = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 24))
+        again = build_dip_pulse_site.render_front_page(entries, database_href=None, today=datetime(2026, 9, 15, 23, 59), week=(2026, 24))
+        self.assertEqual(pinned, again)
+        self.assertIn("Wochenvergleich", pinned)
+        # 1789453800 is 2026-09-15 06:30 UTC.
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789453800"}):
+            via_epoch = build_dip_pulse_site.render_front_page(entries, database_href=None, week=(2026, 24))
+        self.assertEqual(pinned, via_epoch)
+        other_day = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 6, 16), week=(2026, 24))
+        other_week = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 21))
+        self.assertNotEqual(pinned, other_day)
+        self.assertIn("Stand: 1 Sitzung", other_day)
+        self.assertIn("KW 21/2026 verhandelt hat", other_week)
 
     def test_render_front_page_fails_on_a_bad_epoch_and_on_an_unknown_week_even_for_an_empty_archive(self) -> None:
         with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}):
@@ -2142,21 +1900,35 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             code = build_dip_pulse_site.main()
         return code, stderr.getvalue()
 
-    def test_offline_rebuild_with_week_and_today_matches_the_plain_rebuild(self) -> None:
-        with tempfile.TemporaryDirectory() as plain_tmp, tempfile.TemporaryDirectory() as pinned_tmp:
+    def test_offline_rebuild_with_pinned_flags_is_byte_identical(self) -> None:
+        # Two offline rebuilds with the same --week/--today produce the same
+        # puls.html; the plain rebuild (wall clock) differs only in the header
+        # clock, and the dossier does not read the clock at all.
+        with (
+            tempfile.TemporaryDirectory() as plain_tmp,
+            tempfile.TemporaryDirectory() as first_tmp,
+            tempfile.TemporaryDirectory() as second_tmp,
+        ):
             plain_dir = self._seed(plain_tmp)
-            pinned_dir = self._seed(pinned_tmp)
+            first_dir = self._seed(first_tmp)
+            second_dir = self._seed(second_tmp)
             code, stderr = self._build(plain_dir)
             self.assertEqual(code, 0, stderr)
-            code, stderr = self._build(pinned_dir, "--week", "2024-20", "--today", "2026-09-17")
-            self.assertEqual(code, 0, stderr)
+            for output_dir in (first_dir, second_dir):
+                code, stderr = self._build(output_dir, "--week", "2024-20", "--today", "2026-09-17")
+                self.assertEqual(code, 0, stderr)
             self.assertIn("offline: rendered 1 cached dossiers", stderr)
+            self.assertRegex(stderr, r"\[puls\] KW 20/2024: 1 Sitzung, \d+ Themen?, \d+ Frageformate?, \d+ weitere, today=2026-09-17")
+            first = (first_dir / "puls.html").read_text(encoding="utf-8")
+            second = (second_dir / "puls.html").read_text(encoding="utf-8")
             plain = (plain_dir / "puls.html").read_text(encoding="utf-8")
-            pinned = (pinned_dir / "puls.html").read_text(encoding="utf-8")
-            self.assertIn("20/999", plain)
-            self.assertEqual(plain, pinned)
+            self.assertIn("20/999", first)
+            self.assertIn("KW 20/2024", first)
+            self.assertIn('Auswertung vom <time datetime="2026-09-17">17.09.2026</time>', first)
+            self.assertEqual(first, second)
+            self.assertNotEqual(plain, first)
             plain_dossier = (plain_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
-            pinned_dossier = (pinned_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
+            pinned_dossier = (first_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
             self.assertEqual(plain_dossier, pinned_dossier)
 
     def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
@@ -2209,6 +1981,446 @@ class SourceLinkGuardTests(unittest.TestCase):
         for markup in (overview, sources):
             self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21084.xml">XML</a>', markup)
             self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21084.pdf">PDF</a>', markup)
+
+
+class WeekRadarPageTests(unittest.TestCase):
+    """puls.html as a week radar: header, rows, Außerdem line, band states (build order §9-13)."""
+
+    _item = SittingWeekComparisonTests._item
+    _entry = SittingWeekComparisonTests._entry
+    _pos = staticmethod(WeekRadarDataTests._pos)
+    TODAY = date(2026, 9, 15)
+
+    def _week(self) -> list[dict[str, Any]]:
+        """Wed/Thu/Fri of KW 24/2026 plus an older week sharing one procedure.
+
+        Wed: Befragung (6, the week's biggest), KI-Antrag (3), Wohngeld (3).
+        Thu: bill with two Antrag twins (7, roll-call vote, summary), a four-Antrag
+        group (4, returning from KW 21), Zwerg (1), a zero-speech item.
+        Fri: Freitag drei (3), an untitled TOP (2 speeches, one recorded speaker).
+        """
+        wed = self._entry("2026-06-10", "21/82", [
+            dict(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), heading="Befragung der Bundesregierung (einleitend BMJ)"),
+            self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
+            self._item(3, [("CDU/CSU", 100)] * 3, [self._pos("W1", "Wohngeld retten")]),
+        ])
+        thu = self._entry("2026-06-11", "21/83", [
+            dict(
+                self._item(
+                    1,
+                    [("CDU/CSU", 100)] * 3 + [("BÜNDNIS 90/DIE GRÜNEN", 100)] * 2 + [("AfD", 100)] * 2,
+                    [self._pos("G1", "Gesetz zur Sache", "Gesetzgebung", "1. Beratung",
+                               twins=[("A8", "Begleitantrag eins", "Antrag", "Beratung"), ("A9", "Begleitantrag zwei", "Antrag", "Beratung")])],
+                ),
+                heading="Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Sache",
+                votes=[{"id": "vote-1"}, {"id": "vote-1"}],
+                llm_summary={
+                    "text": "Die Koalition warb für das Gesetz, die Opposition hielt dagegen.",
+                    "source_chunks": [
+                        {"id": "R-1", "rede_id": "R1", "source_page": {"page": "100", "quadrant": "A"}},
+                        {"id": "R-2", "rede_id": "MISSING", "source_page": {"page": "101"}},
+                    ],
+                },
+            ),
+            dict(
+                self._item(2, [("SPD", 100)] * 4, [
+                    self._pos("A1", "Bildung bezahlbar machen"),
+                    self._pos("A2", "Zukunftsinvestitionen statt Kürzungen"),
+                    self._pos("A3", "BAföG stärken"),
+                    self._pos("A4", "Studienstarthilfe ausweiten"),
+                ]),
+                heading="Beratung der Anträge zur Bildung",
+            ),
+            self._item(3, [("SPD", 100)], [self._pos("Z1", "Zwerg")]),
+            dict(self._item(4, []), xml_speech_count=0),
+        ])
+        thu["report"]["protocol"]["verteildatum"] = "2026-06-15"
+        thu["report"]["protocol"]["pdf_url"] = "https://dserver.bundestag.de/btp/21/21083.pdf"
+        thu["report"]["agenda_items"][0]["xml_speakers"][0]["rede_id"] = "R1"
+        fri = self._entry("2026-06-12", "21/84", [
+            self._item(1, [("AfD", 100)] * 3, [self._pos("F1", "Freitag drei")]),
+            dict(self._item(2, [("Die Linke", 100)]), xml_speech_count=2),
+        ])
+        older = self._entry("2026-05-21", "21/80", [
+            self._item(1, [("SPD", 100)] * 2, [self._pos("A2", "Zukunftsinvestitionen statt Kürzungen", "Antrag", "1. Beratung")]),
+        ])
+        return [fri, thu, wed, older]
+
+    def _render(self, entries=None, *, today=None, features=None, week=None) -> str:
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
+            return build_dip_pulse_site.render_front_page(
+                entries if entries is not None else self._week(),
+                database_href=None,
+                features=features or all_selection(),
+                today=today or self.TODAY,
+                week=week,
+            )
+
+    @staticmethod
+    def _section(markup: str, class_name: str) -> str:
+        match = re.search(rf'<section class="{class_name}".*?</section>', markup, re.S)
+        assert match, f"no <section class=\"{class_name}\">"
+        return match.group(0)
+
+    @staticmethod
+    def _rows(radar: str) -> list[str]:
+        return radar.split('<li class="radar-row"')[1:]
+
+    # -- header -----------------------------------------------------------
+
+    def test_header_running_week(self) -> None:
+        markup = self._render(today=date(2026, 6, 11))
+        header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
+        self.assertIn('<span class="eyebrow">Sitzungswoche · Aktueller Puls</span>', header)
+        self.assertIn("<h1>Was der Bundestag in KW 24/2026 bisher verhandelt hat</h1>", header)
+        self.assertIn(
+            '29 Reden in 9 Tagesordnungspunkten · Stand <time datetime="2026-06-11">11.06.2026</time>: '
+            "3 Sitzungen erfasst, Sitzungswoche l&auml;uft",
+            header,
+        )
+        self.assertNotIn("Auswertung vom", header)
+        self.assertNotIn("Datenstand", header)
+
+    def test_header_past_week_within_one_iso_week(self) -> None:
+        markup = self._render(today=date(2026, 6, 16))
+        header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
+        self.assertIn('<span class="eyebrow">Sitzungswoche · Aktueller Puls</span>', header)
+        self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
+        self.assertIn(
+            "29 Reden in 9 Tagesordnungspunkten · Stand: 3 Sitzungen, letztes Protokoll 21/84 vom "
+            '<time datetime="2026-06-12">12.06.2026</time> · Auswertung vom <time datetime="2026-06-16">16.06.2026</time>',
+            header,
+        )
+
+    def test_header_older_week_leads_with_its_age(self) -> None:
+        markup = self._render(today=date(2026, 9, 15))
+        header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
+        self.assertIn('<span class="eyebrow">Letzte Sitzungswoche</span>', header)
+        self.assertIn("Letzte Sitzungswoche vor 14 Wochen · 29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll 21/84 vom", header)
+        self.assertIn('Auswertung vom <time datetime="2026-09-15">15.09.2026</time>', header)
+        # A build dated before the week renders as a past week and warns.
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+            early = build_dip_pulse_site.render_front_page(self._week(), database_href=None, today=date(2026, 6, 1))
+        self.assertIn("Stand: 3 Sitzungen", early)
+        self.assertIn("warning: [puls] Auswertung liegt vor der Sitzungswoche", stderr.getvalue())
+
+    def test_header_uses_verteildatum_when_the_newest_protocol_has_one(self) -> None:
+        entries = self._week()
+        entries[0]["report"]["protocol"]["verteildatum"] = "2026-06-15T00:00:00"
+        markup = self._render(entries, today=date(2026, 6, 16))
+        self.assertIn('letztes Protokoll 21/84 verteilt am <time datetime="2026-06-15">15.06.2026</time>', markup)
+
+    def test_sitting_chips_in_date_order_with_stem_fallback(self) -> None:
+        entries = self._week()
+        del entries[2]["report"]["protocol"]["dokumentnummer"]
+        markup = self._render(entries)
+        chips = re.search(r'<nav class="week-chips" aria-label="Sitzungen dieser Woche">(.*?)</nav>', markup, re.S).group(1)
+        self.assertEqual(
+            re.findall(r'<a href="([^"]+)">(.*?)</a>', chips),
+            [
+                ("protocols/plenarprotokoll-21-82.html", '<time datetime="2026-06-10">Mi 10.06.</time> · plenarprotokoll-21-82'),
+                ("protocols/plenarprotokoll-21-83.html", '<time datetime="2026-06-11">Do 11.06.</time> · 21/83'),
+                ("protocols/plenarprotokoll-21-84.html", '<time datetime="2026-06-12">Fr 12.06.</time> · 21/84'),
+            ],
+        )
+        self.assertIn('<a href="protocols/plenarprotokoll-21-84.html">Neuestes Protokoll</a>', markup)
+
+    def test_undated_sittings_are_noted_and_warned_about(self) -> None:
+        entries = self._week()
+        entries.append(self._entry("", "21/90", [self._item(1, [("SPD", 100)])]))
+        entries.append(self._entry("kein Datum", "21/91", [self._item(1, [("SPD", 100)])]))
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+            markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
+        self.assertIn('<p class="week-note">2 neuere Sitzungen ohne Datum nicht ber&uuml;cksichtigt</p>', markup)
+        self.assertIn("warning: [puls] 2 Sitzungen ohne Datum ausgeschlossen (21/90, 21/91)", stderr.getvalue())
+        self.assertRegex(stderr.getvalue(), r"\[puls\] KW 24/2026: 3 Sitzungen, 5 Themen, 1 Frageformat, 2 weitere, today=2026-09-15, 2 Sitzungen ohne gültiges Datum")
+
+    def test_only_undated_sittings_render_the_shell_sentence(self) -> None:
+        entries = [self._entry("", "21/90", [self._item(1, [("SPD", 100)])])]
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+            markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
+        self.assertIn("Die erzeugten Sitzungen tragen kein Datum, ein Wochenradar ist nicht möglich.", markup)
+        self.assertNotIn("Es wurden noch keine Sitzungen erzeugt.", markup)
+        self.assertNotIn('<li class="radar-row"', markup)
+        self.assertIn("warning: [puls] kein Wochenradar möglich: keine datierte Sitzung", stderr.getvalue())
+        empty = self._render([])
+        self.assertIn("Es wurden noch keine Sitzungen erzeugt.", empty)
+
+    def test_zero_speech_week_keeps_the_heading_and_one_note(self) -> None:
+        entries = [self._entry("2026-06-12", "21/84", [dict(self._item(1, []), xml_speech_count=0), dict(self._item(2, []), xml_speech_count=0)])]
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+            markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
+        radar = self._section(markup, "radar")
+        self.assertIn("<h2 id=\"radar-h2\">Wor&uuml;ber am meisten gesprochen wurde</h2>", radar)
+        self.assertIn('<p class="week-note">In dieser Sitzungswoche wurden keine Reden extrahiert.</p>', radar)
+        self.assertNotIn("radar-method", radar)
+        self.assertNotIn("radar-row", radar)
+        self.assertNotIn("radar-also", radar)
+        self.assertIn("0 Reden in 2 Tagesordnungspunkten", markup)
+        self.assertIn("warning: [puls] KW 24/2026: keine Reden extrahiert (leere Eingabe oder Extraktion), Abruf prüfen", stderr.getvalue())
+
+    # -- radar rows -------------------------------------------------------
+
+    def test_rows_rank_across_the_three_sittings_with_one_denominator(self) -> None:
+        markup = self._render()
+        radar = self._section(markup, "radar")
+        self.assertIn("Anteil an allen 29 Reden; Frageformate wie die Befragung der Bundesregierung (einleitend BMJ) (6 Wortmeldungen) zählen mit, werden aber nicht als Thema gerankt.", radar)
+        rows = self._rows(radar)
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(
+            [re.search(r'<strong>(\d+ Reden?)</strong><small>([^<]+)</small>', row).groups() for row in rows],
+            [("7 Reden", "24,1% der Woche"), ("4 Reden", "13,8% der Woche"), ("3 Reden", "10,3% der Woche"), ("3 Reden", "10,3% der Woche"), ("3 Reden", "10,3% der Woche")],
+        )
+        self.assertEqual([re.search(r'style="width:([\d.]+)%"', row).group(1) for row in rows], ["100.00", "57.14", "42.86", "42.86", "42.86"])
+        self.assertEqual(
+            [re.search(r'class="radar-open"><a href="([^"]+)">', row).group(1) for row in rows],
+            [
+                "protocols/plenarprotokoll-21-83.html#top-1",
+                "protocols/plenarprotokoll-21-83.html#top-2",
+                "protocols/plenarprotokoll-21-84.html#top-1",
+                "protocols/plenarprotokoll-21-82.html#top-2",
+                "protocols/plenarprotokoll-21-82.html#top-3",
+            ],
+        )
+        self.assertIn("Do 11.06. · Tagesordnungspunkt 1 · Debatte im Protokoll öffnen", rows[0])
+        self.assertNotIn("Aufmerksamkeit", radar)
+        self.assertNotIn("Neu auf der Tagesordnung", radar)
+        # No rank ordinals: the rows are an unordered list with ids only.
+        self.assertIn('<ul class="radar-list">', radar)
+        self.assertNotIn("<ol", radar)
+
+    def test_lead_title_row_with_twins_and_the_heading_in_the_title_attribute(self) -> None:
+        row = self._rows(self._section(self._render(), "radar"))[0]
+        self.assertIn('<span class="eyebrow">Gesetzgebung · 1. Beratung · mit 2 Anträgen</span>', row)
+        self.assertIn(
+            '<strong class="radar-title"><a href="protocols/plenarprotokoll-21-83.html#top-1" '
+            'title="Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Sache">Gesetz zur Sache</a></strong>',
+            row,
+        )
+        self.assertIn('<p class="radar-siblings">mit: Begleitantrag eins · Begleitantrag zwei</p>', row)
+        self.assertNotIn("Erste Beratung des von", row.split("radar-title")[1].split("</strong>")[1])
+
+    def test_equal_weight_row_links_the_label_and_lists_titles_alike(self) -> None:
+        row = self._rows(self._section(self._render(), "radar"))[1]
+        self.assertNotIn('<strong class="radar-title">', row)
+        self.assertIn(
+            '<span class="eyebrow"><a href="protocols/plenarprotokoll-21-83.html#top-2" title="Beratung der Anträge zur Bildung">'
+            "Antrag · Beratung · 4 Anträge gemeinsam</a></span>",
+            row,
+        )
+        titles = re.search(r'<ul class="radar-titles">(.*?)</ul>', row, re.S).group(1)
+        self.assertEqual(
+            re.findall(r'<li class="radar-group-title">([^<]+)</li>', titles),
+            ["Bildung bezahlbar machen", "Zukunftsinvestitionen statt Kürzungen", "BAföG stärken"],
+        )
+        self.assertIn(
+            '<li class="radar-group-more"><a href="protocols/plenarprotokoll-21-83.html#top-2" title="Studienstarthilfe ausweiten">und 1 weitere</a></li>',
+            titles,
+        )
+        # The heading is only ever a title attribute, never a visible title.
+        self.assertEqual(row.count("Beratung der Anträge zur Bildung"), 1)
+        self.assertNotIn(">Beratung der Anträge zur Bildung<", row)
+
+    def test_trace_links_only_the_earlier_occurrence(self) -> None:
+        rows = self._rows(self._section(self._render(), "radar"))
+        self.assertIn(
+            '<p class="radar-trace">Fortgesetzt: <a href="protocols/plenarprotokoll-21-80.html#top-1">1. Beratung in KW 21/2026</a> &rarr; Beratung diese Woche</p>',
+            rows[1],
+        )
+        self.assertEqual(sum("radar-trace" in row for row in rows), 1)
+
+    def test_who_stack_legend_short_names_and_truncation_suffix(self) -> None:
+        rows = self._rows(self._section(self._render(), "radar"))
+        self.assertIn('<p class="radar-legend">CDU/CSU 3 · Grüne 2 · AfD 2</p>', rows[0])
+        stack = re.search(r'<div aria-hidden="true"><div class="who-stack">(.*?)</div></div>', rows[0]).group(1)
+        self.assertEqual(re.findall(r'width:([\d.]+)%', stack), ["42.86", "28.57", "28.57"])
+        self.assertIn('title="BÜNDNIS 90/DIE GRÜNEN: 2"', stack)
+        # Five speeches, two recorded speakers: the stack spans the two recorded
+        # ones and the legend says so (item_stats' xml_speakers_first fallback).
+        entries = [self._entry("2026-06-12", "21/84", [dict(self._item(1, [("Die Linke", 100), ("SPD", 100)]), xml_speech_count=5)])]
+        truncated = self._rows(self._section(self._render(entries), "radar"))[0]
+        self.assertIn("<strong>5 Reden</strong>", truncated)
+        self.assertIn('<p class="radar-legend">Linke 1 · SPD 1 · Fraktionen nur für die ersten 2 Reden bekannt</p>', truncated)
+        self.assertEqual(re.findall(r'width:([\d.]+)%', truncated.split("who-stack")[1]), ["50.00", "50.00"])
+
+    def test_who_stack_without_any_recorded_fraktion(self) -> None:
+        entries = [self._entry("2026-06-12", "21/84", [dict(self._item(1, []), xml_speech_count=4)])]
+        row = self._rows(self._section(self._render(entries), "radar"))[0]
+        self.assertIn('<div class="who-stack empty"></div>', row)
+        self.assertIn('<p class="radar-legend">Fraktionen nicht erfasst</p>', row)
+
+    def test_summary_block_is_gated_and_receipts_point_at_the_dossier(self) -> None:
+        with_summaries = self._rows(self._section(self._render(), "radar"))[0]
+        self.assertIn('<div class="radar-summary" data-feature="summaries"><p>Die Koalition warb für das Gesetz, die Opposition hielt dagegen.</p>', with_summaries)
+        receipts = re.search(r'<p class="radar-receipts">(.*?)</p>', with_summaries).group(1)
+        self.assertEqual(
+            receipts,
+            '<a href="protocols/plenarprotokoll-21-83.html#speech-1-R1">R-1 · S. 100A</a>'
+            "<span>R-2 · S. 101</span>"
+            '<a href="https://dserver.bundestag.de/btp/21/21083.pdf">Originalprotokoll</a>',
+        )
+        without = self._rows(self._section(self._render(features=default_selection()), "radar"))[0]
+        self.assertNotIn("radar-summary", without)
+        # Rows without a usable summary have no slot at all.
+        self.assertEqual(sum("radar-summary" in row for row in self._rows(self._section(self._render(), "radar"))), 1)
+
+    def test_vote_badge_is_gated_on_the_votes_baustein(self) -> None:
+        rows = self._rows(self._section(self._render(), "radar"))
+        self.assertIn('<span class="badge radar-badge" data-feature="votes">namentlich abgestimmt</span>', rows[0])
+        self.assertEqual(sum("radar-badge" in row for row in rows), 1)
+        without = self._rows(self._section(self._render(features=default_selection()), "radar"))
+        self.assertFalse(any("radar-badge" in row for row in without))
+
+    def test_api_titles_and_headings_are_escaped(self) -> None:
+        entries = [self._entry("2026-06-12", "21/84", [
+            dict(self._item(1, [("SPD", 100)] * 2, [self._pos("X1", "<script>alert(1)</script> & Co")]), heading="<b>fett</b>"),
+        ])]
+        markup = self._render(entries)
+        self.assertNotIn("<script>alert(1)</script>", markup)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt; &amp; Co", markup)
+        self.assertIn('title="&lt;b&gt;fett&lt;/b&gt;"', markup)
+
+    # -- Außerdem line ----------------------------------------------------
+
+    def test_ausserdem_line_formats_and_remaining(self) -> None:
+        radar = self._section(self._render(), "radar")
+        self.assertIn(
+            '<p class="radar-also">Außerdem, nicht als Thema gerankt: '
+            '<a href="protocols/plenarprotokoll-21-82.html#top-1">Befragung der Bundesregierung (einleitend BMJ)</a> · 6 Wortmeldungen · 20,7% (Mi 10.06., TOP 1) · '
+            'Weitere 2 Tagesordnungspunkte: <a href="protocols/plenarprotokoll-21-83.html">21/83</a> (1) · <a href="protocols/plenarprotokoll-21-84.html">21/84</a> (1)</p>',
+            radar,
+        )
+
+    def test_ausserdem_line_formats_only(self) -> None:
+        entries = [self._entry("2026-06-10", "21/82", [
+            dict(self._item(1, [("SPD", 50)] * 2), heading="Fragestunde"),
+            self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
+        ])]
+        radar = self._section(self._render(entries), "radar")
+        self.assertIn('<p class="radar-also">Außerdem, nicht als Thema gerankt: <a href="protocols/plenarprotokoll-21-82.html#top-1">Fragestunde</a> · 2 Wortmeldungen · 40,0% (Mi 10.06., TOP 1)</p>', radar)
+        self.assertNotIn("Weitere", radar)
+
+    def test_ausserdem_line_remaining_only_and_singular(self) -> None:
+        items = [self._item(i, [("SPD", 100)] * (7 - i), [self._pos(f"P{i}", f"Punkt {i}")]) for i in range(1, 7)]
+        entries = [self._entry("2026-06-10", "21/82", items)]
+        radar = self._section(self._render(entries), "radar")
+        self.assertIn('<p class="radar-also">1 weiterer Tagesordnungspunkt: <a href="protocols/plenarprotokoll-21-82.html">21/82</a> (1)</p>', radar)
+        self.assertNotIn("Außerdem", radar)
+
+    def test_ausserdem_line_absent_without_formats_or_remaining(self) -> None:
+        entries = [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)] * 2, [self._pos("K1", "KI-Antrag")])])]
+        self.assertNotIn("radar-also", self._section(self._render(entries), "radar"))
+
+    # -- Wochenvergleich band ---------------------------------------------
+
+    def test_votes_card_counts_distinct_votes_across_the_week(self) -> None:
+        entries = self._week()
+        entries[0]["report"]["agenda_items"][0]["votes"] = [{"id": "vote-2"}]
+        entries[0]["report"]["agenda_items"][1]["votes"] = [{"id": "vote-2"}, {"id": "vote-3"}]
+        band = self._section(self._render(entries), "week-compare")
+        card = re.search(r'<article class="week-card votes-card" id="abstimmungen" data-feature="votes">(.*?)</article>', band, re.S).group(1)
+        self.assertIn('<span class="eyebrow">Erfasst</span>', card)
+        self.assertIn("<h3>Namentliche Abstimmungen</h3>", card)
+        self.assertIn('<p class="week-text">3 namentliche Abstimmungen in 3 Tagesordnungspunkten dieser Woche</p>', card)
+        self.assertEqual(
+            re.findall(r'<li class="vote-row"><a href="([^"]+)">([^<]+)</a></li>', card),
+            [
+                ("protocols/plenarprotokoll-21-83.html#top-1", "21/83 · 1 Abstimmung"),
+                ("protocols/plenarprotokoll-21-84.html#top-1", "21/84 · 2 Abstimmungen"),
+            ],
+        )
+        self.assertNotIn("Vergleichsdaten", card)
+        self.assertNotIn("Sitzungsbelege", card)
+
+    def test_votes_card_singulars_and_empty_state(self) -> None:
+        card = re.search(r'<article class="week-card votes-card".*?</article>', self._render(), re.S).group(0)
+        self.assertIn("1 namentliche Abstimmung in 1 Tagesordnungspunkt dieser Woche", card)
+        entries = [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        markup = self._render(entries)
+        card = re.search(r'<article class="week-card votes-card".*?</article>', markup, re.S).group(0)
+        self.assertIn("Keine namentlichen Abstimmungen in dieser Sitzungswoche erfasst.", card)
+        self.assertIn('<a class="feature-link" href="protocols/plenarprotokoll-21-84.html">Sitzungsbelege pr&uuml;fen</a>', card)
+        # Not built at all without the votes Baustein; present in both band states with it.
+        self.assertNotIn('<article class="week-card votes-card"', self._render(entries, features=default_selection()))
+        self.assertIn('id="abstimmungen"', self._section(self._render(entries), "week-compare"))
+        self.assertIn('id="abstimmungen"', self._section(self._render(), "week-compare"))
+
+    def test_no_comparison_state_renders_the_current_week_without_deltas(self) -> None:
+        entries = [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100), ("AfD", 100)]), dict(self._item(2, []), xml_speech_count=3)])]
+        band = self._section(self._render(entries), "week-compare")
+        self.assertIn('<h2 id="wochenvergleich-h2">Noch keine Vergleichswoche</h2>', band)
+        self.assertIn("<h3>Wochenpuls</h3>", band)
+        self.assertIn("<h3>Redeanteil der Fraktionen</h3>", band)
+        self.assertEqual(re.findall(r"<span>(Reden|Tagesordnungspunkte|Redetext \(Zeichen\))</span>", band), ["Reden", "Tagesordnungspunkte"])
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
+        self.assertEqual(metrics.count('<span class="week-delta flat">n/a</span>'), 2)
+        self.assertNotIn("<em>", metrics)
+        self.assertNotIn("week-spark", band)
+        self.assertNotIn("Debattenprofil", band)
+        self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
+        self.assertIn('<li class="week-row">', band)
+
+    def test_normalised_comparison_uses_na_chips_and_the_caveat_note(self) -> None:
+        # E16 middle path: differing sitting counts keep the per-sitting figures
+        # and the Redeanteil pp column, but the Wochenpuls chips read n/a.
+        entries = self._week()
+        entries.append(self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)] * 2)]))
+        band = self._section(self._render(entries), "week-compare")
+        self.assertIn("Werte je Sitzung", band)
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<div class="week-spark', band, re.S).group(1)
+        self.assertEqual(metrics.count('<span class="week-delta flat">n/a</span>'), 3)
+        self.assertIn("Anteile gegen&uuml;ber KW 21/2026 (2 Sitzungen); bei abweichender Sitzungszahl verschiebt die Tagesmischung die Anteile.", band)
+        self.assertIn("Fraktionen f&uuml;r 28 von 29 Reden erfasst.", band)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        self.assertRegex(shares, r'<span class="week-delta (up|down|flat)">')
+
+    def test_equal_sitting_counts_keep_the_delta_chips(self) -> None:
+        entries = self._week()
+        for datum, document in (("2026-05-20", "21/78"), ("2026-05-22", "21/81")):
+            entries.append(self._entry(datum, document, [self._item(1, [("SPD", 100)] * 2)]))
+        band = self._section(self._render(entries), "week-compare")
+        self.assertNotIn("Werte je Sitzung", band)
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<div class="week-spark', band, re.S).group(1)
+        self.assertNotIn("n/a", metrics)
+        self.assertNotIn("je Sitzung</span>", metrics)
+        self.assertIn("Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten gegen&uuml;ber KW 21/2026.", band)
+
+    # -- CSS contract -----------------------------------------------------
+
+    def test_content_hiding_rules_are_screen_scoped(self) -> None:
+        # Print must keep every block: display:none is only allowed inside a
+        # screen or max-width media block, on pseudo-elements, or on the page
+        # actions in print.
+        markup = self._render()
+        css = re.search(r"<style>(.*?)</style>", markup, re.S).group(1)
+        for query, body in re.findall(r"@media([^{]*)\{((?:[^{}]*\{[^{}]*\})*)\s*\}", css, re.S):
+            if "screen" in query or "max-width" in query:
+                continue
+            for selector, rules in re.findall(r"([^{}]+)\{([^{}]*)\}", body):
+                if "display:none" in rules.replace(" ", ""):
+                    self.assertTrue(
+                        "::before" in selector or "::after" in selector or ".page-actions" in selector,
+                        msg=f"@media{query.strip()} hides {selector.strip()}",
+                    )
+        self.assertIn("@media print", css)
+        # New rules use tokens only, no hex literals.
+        for selector, rules in re.findall(r"([^{}@]+)\{([^{}]*)\}", css):
+            if ".radar" in selector or ".who-stack" in selector:
+                self.assertNotIn("#", rules, msg=selector.strip())
+        self.assertIn(".radar-row a { text-decoration-line:underline; text-decoration-color:transparent;", css)
+        self.assertIn(".radar-row a:visited { text-decoration-color:var(--muted); }", css)
+        for class_name in (".radar", ".radar-row", ".radar-title", ".radar-titles", ".radar-group-title", ".radar-share", ".who-stack", ".radar-legend", ".radar-trace", ".radar-summary", ".radar-also"):
+            self.assertRegex(css, rf"(^|[\s,]){re.escape(class_name)}[\s,][^{{]*{{", msg=class_name)
+        self.assertIn('<section class="radar" aria-labelledby="radar-h2">', markup)
+        self.assertIn('<section class="week-compare" id="wochenvergleich" aria-labelledby="wochenvergleich-h2">', markup)
+        self.assertIn('<div class="radar-bar" aria-hidden="true">', markup)
+        self.assertIn('<div aria-hidden="true"><div class="who-stack">', markup)
+
+    def test_format_percent_strings(self) -> None:
+        self.assertEqual(pulse_html.format_percent(4.64), "4,6%")
+        self.assertEqual(pulse_html.format_percent(28.36), "28,4%")
+        self.assertEqual(pulse_html.format_percent(0.0), "0,0%")
+        self.assertEqual(pulse_html.format_percent(100.0), "100,0%")
 
 
 if __name__ == "__main__":
