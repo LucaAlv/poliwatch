@@ -137,7 +137,7 @@ Important generated files:
 | Path | Purpose |
 |---|---|
 | `index.html` | Landing page for the local static site |
-| `puls.html` | Main Pulse/front-page view |
+| `puls.html` | Front page: the newest sitting (lede, Themenbewegung, Abstimmungsverschiebung) plus the Wochenvergleich band; the week-topic-radar view (docs/designs/puls-wochenradar.md) is designed but not wired in yet |
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
@@ -257,6 +257,10 @@ python3 scripts/abgeordnetenwatch.py \
 
 Product/design rationale. It explains the original thesis: a primary-source, receipt-backed civic radar for Bundestag activity. Use it for product intent and constraints, not command reference.
 
+### `docs/designs/`
+
+Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe.
+
 ### `.env.example` and `.env.local`
 
 `.env.example` lists supported local secrets:
@@ -361,6 +365,8 @@ Common options:
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
+| `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date, validated and threaded through; `puls.html` does not read it yet (lands with the week radar) |
+| `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` still renders the newest sitting regardless of which week is named — the value is not read by the page yet |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
 | `--no-persist` | off | Skip SQLite graph-store generation |
 | `--preserve-existing-dossiers` | off | Keep cached dossier JSON files visible in the generated catalog |
@@ -484,6 +490,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `GEMINI_API_KEY` | build/validation | Only Gemini summaries | Gemini summary generation |
 | `GOOGLE_API_KEY` | validation | Optional Gemini fallback | Alternative Gemini key name |
 | `BT_ROLL_CALL_LIST_ID` | build/validation | No | Bundestag roll-call vote filterlist id override; `--roll-call-list-id` wins when both are set |
+| `SOURCE_DATE_EPOCH` | build | No | Integer Unix timestamp read as UTC; pins the build clock for puls.html (`--today` wins when both are set) |
 | `PORT` | preview script | No | HTTP server port |
 | `PREVIEW_BIND` | preview script | No | HTTP server bind host; defaults to localhost-only |
 | `CONDUCTOR_PORT` | preview script | No | Port fallback inside Conductor |

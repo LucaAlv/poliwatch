@@ -188,6 +188,8 @@ python3 scripts/build_dip_pulse_site.py --list-features
 | `bill-follow` | Browser-local bill following; enabling it also enables bills |
 | `dev-view` | Raw API panels and dossier command tools |
 
+On `puls.html` the Abstimmungsverschiebung panel (`votes`) is gated this way: it renders into every build and is hidden by the visitor's setting, so the page reads correctly either way. The week-radar view designed in [docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md) adds its own `votes`- and `summaries`-gated elements once it lands (TODOS.md).
+
 The ordinary offline preview needs no feature arguments:
 
 ```bash
@@ -228,6 +230,19 @@ For durable operator defaults, use the gitignored `features.local.json` next to 
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. All three are validated on every build now — a bad `SOURCE_DATE_EPOCH` or a `--week` outside the archive fails the build before any file is written — but `puls.html` does not read them yet: the rendered page is unaffected until the week radar ([docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md)) lands in a later release. Pin them anyway so builds stay reproducible once it does:
+
+| Input | Effect |
+|---|---|
+| `--today YYYY-MM-DD` | Build date, validated; not yet reflected in `puls.html`'s wording |
+| `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC |
+| neither | The current date at build time |
+| `--week YYYY-WW` | ISO sitting week, validated against the archive; `puls.html` still shows the newest sitting regardless of which week is named. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps with `--preserve-existing-dossiers`) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+
+```bash
+python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24
+```
+
 Stop the server before changing `PORT`, `PREVIEW_BIND`, or `DIP_PULSE_OUTPUT_DIR`. The script only checks whether *a* server is alive, not which port or directory it serves, so changing these while it runs rebuilds the files, leaves the old server in place, and prints the new URL even though nothing is listening there.
 
 ## 7. Hosting the generated site elsewhere
@@ -255,9 +270,11 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
+| `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
 
 ## 9. More documentation
 
 - [docs/project-documentation.md](docs/project-documentation.md) — full command, flag, and environment reference, pipeline internals, SQLite schema.
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
+- [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar.
 - [CHANGELOG.md](CHANGELOG.md) — release history. [TODOS.md](TODOS.md) — tracked follow-up work.
