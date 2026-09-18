@@ -188,7 +188,7 @@ python3 scripts/build_dip_pulse_site.py --list-features
 | `bill-follow` | Browser-local bill following; enabling it also enables bills |
 | `dev-view` | Raw API panels and dossier command tools |
 
-On `puls.html` the Abstimmungsverschiebung panel (`votes`) is gated this way: it renders into every build and is hidden by the visitor's setting, so the page reads correctly either way. The week-radar view designed in [docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md) adds its own `votes`- and `summaries`-gated elements once it lands (TODOS.md).
+On `puls.html` the week radar ([docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md)) gates three blocks this way: the "namentlich abgestimmt" badge on a radar row and the "Namentliche Abstimmungen" card in the Wochenvergleich band (`votes`), and the KI-Zusammenfassung with its receipts under a radar row (`summaries`). All of them render into every build and are hidden by the visitor's setting, so the page reads correctly either way.
 
 The ordinary offline preview needs no feature arguments:
 
@@ -230,14 +230,14 @@ For durable operator defaults, use the gitignored `features.local.json` next to 
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
-`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. All three are validated on every build now — a bad `SOURCE_DATE_EPOCH` or a `--week` outside the archive fails the build before any file is written — but `puls.html` does not read them yet: the rendered page is unaffected until the week radar ([docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md)) lands in a later release. Pin them anyway so builds stay reproducible once it does:
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. The page is the only one whose wording depends on when it was built: whether the sitting week is still running (Monday to Sunday of the week), how old it is ("Letzte Sitzungswoche vor 13 Wochen"), and the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
 
 | Input | Effect |
 |---|---|
-| `--today YYYY-MM-DD` | Build date, validated; not yet reflected in `puls.html`'s wording |
-| `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC |
+| `--today YYYY-MM-DD` | Build date: decides running vs. past week and is printed as "Auswertung vom" |
+| `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC (a CI build with a pinned epoch shows that UTC date) |
 | neither | The current date at build time |
-| `--week YYYY-WW` | ISO sitting week, validated against the archive; `puls.html` still shows the newest sitting regardless of which week is named. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps with `--preserve-existing-dossiers`) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps with `--preserve-existing-dossiers`) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24
@@ -271,6 +271,8 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
+| `warning: [puls] N Sitzungen ohne Datum ausgeschlossen (21/82, …)` | Those cached dossiers carry no `datum`, so they cannot be placed in a sitting week; the radar renders from the dated ones and the page header notes the count. Re-fetch the named sittings with `update --document-number …`. With no dated sitting at all the page shows only "Die erzeugten Sitzungen tragen kein Datum". |
+| Radar shows no rows (`warning: [puls] KW …: keine Reden extrahiert`) | Every agenda item of that week has zero extracted speeches, so there is nothing to rank; the page says so in one note. Usually the XML speeches were not fetched or the extraction was empty — re-run `update --document-number …` for the week's sittings and check the dossier's validation warnings. |
 
 ## 9. More documentation
 

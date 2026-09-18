@@ -605,8 +605,7 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] :is(
       .metric, .download-panel, .summary-band div, .panel, .table-card,
       .filter, .sample-table, details, .snapshot, .snapshot-metrics div,
-      .stat-band div, .principle, .area-card, .latest-panel, .pulse-feature,
-      .feature-microgrid div, .top-card, .lede-top,
+      .stat-band div, .principle, .area-card, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
       .settings-panel, .settings-card, .settings-group,
@@ -618,7 +617,8 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] :is(
       .badge, .summary-count, .session-summary-sources a,
-      .session-summary-sources span, .empty, .filter input
+      .session-summary-sources span, .radar-receipts a, .radar-receipts span,
+      .empty, .filter input
     ) {
       background:var(--surface-2) !important;
       border-color:var(--line) !important;
@@ -629,19 +629,21 @@ def global_header_styles() -> str:
       .llm-summary > p, .summary-sources p, .speech-text,
       .speaker-row span, .position-list span, .doc-list span,
       .activity-list span, .people-list span, .feature-state,
-      .aw-profile, .table-head strong, .settings-switch-text strong, .settings-panel-head strong
+      .aw-profile, .table-head strong, .settings-switch-text strong, .settings-panel-head strong,
+      .radar-title, .radar-group-title, .radar-share strong, .radar-also, .week-text, .week-facts
     ) {
       color:var(--ink) !important;
     }
     :root[data-theme="dark"] :is(
       .muted, .eyebrow, .row-top, .row-metric, label, .card-meta,
       th, .snapshot-date, .snapshot-metrics span, .stat-band span,
-      .principle p, .area-card p, .metric span, .feature-microgrid span,
+      .principle p, .area-card p, .metric span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
       .session-summary-note, .ranking-empty, .settings-switch-text span, .settings-hint, .settings-count,
       .week-card h3, .week-label, .week-note, .week-sub,
-      .week-metric span, .week-metric-foot em, .week-trace em
+      .week-metric span, .week-metric-foot em, .week-trace em,
+      .radar-siblings, .radar-trace, .radar-legend, .radar-share small
     ) {
       color:var(--muted) !important;
     }
@@ -650,9 +652,10 @@ def global_header_styles() -> str:
       border-color:var(--warning-line) !important;
       color:var(--warning-ink) !important;
     }
-    :root[data-theme="dark"] :is(.bar, .stack, .vote-stack, .week-bar, .week-spark) {
+    :root[data-theme="dark"] :is(.bar, .stack, .vote-stack, .week-bar, .week-spark, .radar-bar, .who-stack) {
       background:var(--surface-3) !important;
     }
+    :root[data-theme="dark"] .who-stack { outline:1px solid var(--line); }
     :root[data-theme="dark"] :is(
       .table-head, th, td, .ranking-note, .attention-row,
       .session-summary-item, .summary-sources li, .member-votes,
@@ -660,10 +663,13 @@ def global_header_styles() -> str:
       .people-list li, .people-section, .raw-top-api,
       .dev-top-details, .speech-section, details pre,
       .settings-item, .settings-panel-head, .settings-panel-foot,
-      .week-head, .week-row.return-row
+      .week-head, .week-row.return-row, .radar-row, .radar-summary
     ) {
       border-color:var(--line) !important;
     }
+    :root[data-theme="dark"] .radar-row a { color:var(--ink) !important; }
+    :root[data-theme="dark"] .radar-row .eyebrow a { color:var(--muted) !important; }
+    :root[data-theme="dark"] .radar-badge { color:var(--amber) !important; border-color:var(--amber) !important; }
     :root[data-theme="dark"] .week-card {
       background:var(--surface-2) !important;
       border-color:var(--line) !important;
@@ -1740,13 +1746,15 @@ def week_topic_rows(
     first rows already tie beyond the cap) the first `rank_limit` rows are shown.
 
     Returns {"rows", "formats", "remaining"}: `formats` are the excluded,
-    speech-bearing question formats; `remaining` counts the speech-bearing,
-    unranked, non-format items per sitting as (dokumentnummer, page_path, n).
+    speech-bearing question formats as {heading, speech_count, share, href,
+    datum, index}; `remaining` counts the speech-bearing, unranked, non-format
+    items per sitting as (dokumentnummer, page_path, n).
     """
     candidates: list[dict[str, Any]] = []
-    formats: list[tuple[str, int, float, str]] = []
+    formats: list[dict[str, Any]] = []
     for entry in week_entries:
         report = entry.get("report") or {}
+        protocol = _entry_protocol(entry)
         dossier_href = dossier_href_for(entry)
         for item in report.get("agenda_items") or []:
             speech_count = int(item_stats(item)["speech_count"])
@@ -1754,12 +1762,14 @@ def week_topic_rows(
                 continue
             if is_question_format(item):
                 formats.append(
-                    (
-                        " ".join(str(item.get("heading") or "").split()),
-                        speech_count,
-                        percent(speech_count, total),
-                        f"{dossier_href}#top-{item.get('index')}",
-                    )
+                    {
+                        "heading": " ".join(str(item.get("heading") or "").split()),
+                        "speech_count": speech_count,
+                        "share": percent(speech_count, total),
+                        "href": f"{dossier_href}#top-{item.get('index')}",
+                        "datum": protocol.get("datum"),
+                        "index": item.get("index"),
+                    }
                 )
                 continue
             candidates.append(topic_row(item, entry, total=total, occurrences=occurrences, dossier_href=dossier_href))
