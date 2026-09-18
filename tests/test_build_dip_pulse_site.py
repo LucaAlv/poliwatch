@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import io
 import json
+import os
 import re
+import sys
 from collections import Counter
+from datetime import date, datetime
 import tempfile
 import unittest
 from pathlib import Path
@@ -379,7 +383,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             )
             if features is not None:
                 kwargs["features"] = features
-            build_dip_pulse_site.render_site(**kwargs)
+            build_dip_pulse_site.render_site(**kwargs, today=date(2026, 9, 15))
             return (output_dir / "puls.html").read_text(encoding="utf-8")
 
     def _lede_panel(self, markup: str) -> str:
@@ -433,6 +437,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 entries=entries,
                 abg_mps=[],
                 mp_lookup={},
+                today=date(2026, 9, 15),
             )
 
             for page in ("puls.html", "index.html", "overview.html", "sources.html"):
@@ -857,6 +862,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 entries=[entry],
                 abg_mps=[],
                 mp_lookup={},
+                today=date(2026, 9, 15),
             )
 
             rows = self._lede_rows(
@@ -889,6 +895,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 entries=[],
                 abg_mps=[],
                 mp_lookup={},
+                today=date(2026, 9, 15),
             )
 
             catalog = json.loads(
@@ -927,6 +934,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 abg_mps=[],
                 mp_lookup={},
                 features=default_selection(),
+                today=date(2026, 9, 15),
             )
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
@@ -948,14 +956,14 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 abg_mps=[],
                 mp_lookup={},
             )
-            build_dip_pulse_site.render_site(**kwargs, features=all_selection())
+            build_dip_pulse_site.render_site(**kwargs, features=all_selection(), today=date(2026, 9, 15))
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
             stale_bill = output_dir / "bills" / "bill-removed.html"
             stale_mp = output_dir / "abgeordnete" / "999.html"
             stale_bill.write_text("stale", encoding="utf-8")
             stale_mp.write_text("stale", encoding="utf-8")
-            build_dip_pulse_site.render_site(**kwargs, features=default_selection())
+            build_dip_pulse_site.render_site(**kwargs, features=default_selection(), today=date(2026, 9, 15))
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
             self.assertTrue((output_dir / "data" / "bills.json").exists())
@@ -977,6 +985,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 abg_mps=[],
                 mp_lookup={},
                 features=selection,
+                today=date(2026, 9, 15),
             )
             manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
             available = {item["id"] for item in manifest["features"] if item["available"]}
@@ -1441,6 +1450,765 @@ class SittingWeekComparisonTests(unittest.TestCase):
         for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items():
             self.assertIn(f'<li id="vorgangstyp-{entry["slug"]}"><strong>{pulse_html.esc(kind)}</strong>', markup)
         self.assertIn(".method-list li:target", markup)
+
+
+class WeekRadarDataTests(unittest.TestCase):
+    """Occurrence index, returning card on the index, week_stats extensions (build order §3-4)."""
+
+    # Reuse the sitting/item builders without re-running the parent's tests.
+    _item = SittingWeekComparisonTests._item
+    _entry = SittingWeekComparisonTests._entry
+
+    @staticmethod
+    def _pos(vorgang_id: str, titel: str, typ: str = "Antrag", stage: str = "Beratung", twins=()):
+        return {
+            "vorgang_id": vorgang_id,
+            "titel": titel,
+            "vorgangstyp": typ,
+            "vorgangsposition": stage,
+            "mitberaten": [
+                {"id": tid, "titel": tt, "vorgangstyp": ttyp, "vorgangsposition": tstage}
+                for tid, tt, ttyp, tstage in twins
+            ],
+        }
+
+    def test_occurrence_index_keeps_twins_and_week_order(self) -> None:
+        older = self._entry("2026-05-20", "21/70", [
+            self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")]),
+        ])
+        current = self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)], [self._pos("A", "Antrag A", twins=[("B", "Gesetz B", "Gesetzgebung", "2. Beratung")])]),
+        ])
+        weeks = pulse_html.group_entries_by_week([older, current])
+        index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
+        self.assertEqual([o["week"] for o in index["B"]], [(2026, 21), (2026, 24)])
+        self.assertEqual([o["twin"] for o in index["B"]], [False, True])
+        self.assertEqual(index["B"][1]["vorgangsposition"], "2. Beratung")
+        self.assertEqual([o["week"] for o in index["A"]], [(2026, 24)])
+
+    def test_returning_card_ignores_twin_only_appearances_and_accepts_a_prebuilt_index(self) -> None:
+        # B appears as a position only in the older week; in the current week it is
+        # only a twin of A, so the card (positions in two weeks) must not list it.
+        older = self._entry("2026-05-20", "21/70", [
+            self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")]),
+        ])
+        current = self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)], [self._pos("A", "Antrag A", twins=[("B", "Gesetz B", "Gesetzgebung", "2. Beratung")])]),
+        ])
+        weeks = pulse_html.group_entries_by_week([older, current])
+        index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
+        self.assertEqual(pulse_html.returning_vorgaenge(weeks, (2026, 24)), [])
+        self.assertEqual(pulse_html.returning_vorgaenge(weeks, (2026, 24), index), [])
+        # With B as a position in both weeks, the card lists it whichever way it is built.
+        current_pos = self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]),
+        ])
+        weeks = pulse_html.group_entries_by_week([older, current_pos])
+        direct = pulse_html.returning_vorgaenge(weeks, (2026, 24))
+        via_index = pulse_html.returning_vorgaenge(weeks, (2026, 24), pulse_html.vorgang_occurrences(weeks, (2026, 24)))
+        self.assertEqual([r["vorgang_id"] for r in direct], ["B"])
+        self.assertEqual(direct, via_index)
+
+    def test_week_stats_counts_distinct_votes_not_attachments(self) -> None:
+        vote = {"id": "v1", "title": "Namentlich", "date": "2026-06-10"}
+        entry = self._entry("2026-06-10", "21/82", [
+            dict(self._item(1, [("SPD", 100)]), votes=[vote]),
+            dict(self._item(2, [("SPD", 100)]), votes=[vote, {"id": "v2", "title": "Zweite", "date": "2026-06-10"}]),
+            dict(self._item(3, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-10"}),
+        ])
+        stats = pulse_html.week_stats((2026, 24), [entry])
+        self.assertEqual(stats["vote_count"], 3)  # v1 once, v2, legacy
+        self.assertEqual(stats["vote_top_count"], 3)
+        self.assertEqual(stats["vote_sittings"], [("21/82", Path("plenarprotokoll-21-82.html"), 1, 3)])
+
+    def test_week_stats_has_no_vote_sittings_without_votes(self) -> None:
+        stats = pulse_html.week_stats((2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])])
+        self.assertEqual((stats["vote_count"], stats["vote_top_count"], stats["vote_sittings"]), (0, 0, []))
+
+    def test_week_stats_coverage_flags(self) -> None:
+        complete = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("CDU/CSU", 100)])])
+        self.assertTrue(pulse_html.week_stats((2026, 24), [complete])["speakers_complete"])
+        self.assertTrue(pulse_html.week_stats((2026, 24), [complete])["chars_complete"])
+
+        truncated_item = self._item(1, [("SPD", 100)] * 5)
+        truncated_item["xml_speech_count"] = 40
+        truncated_item["xml_speakers_first"] = truncated_item.pop("xml_speakers")
+        truncated = self._entry("2026-06-11", "21/83", [truncated_item])
+        stats = pulse_html.week_stats((2026, 24), [truncated])
+        self.assertEqual(stats["speech_count"], 40)
+        self.assertFalse(stats["speakers_complete"])
+        self.assertFalse(stats["chars_complete"])
+
+        bare_item = {"index": 1, "top_id": "TOP 1", "heading": "x", "xml_speech_count": 12, "api": {"positions": []}}
+        stats = pulse_html.week_stats((2026, 24), [self._entry("2026-06-12", "21/84", [bare_item])])
+        self.assertEqual(stats["speech_count"], 12)
+        self.assertFalse(stats["speakers_complete"])
+        self.assertFalse(stats["chars_complete"])  # speeches without any speaker array are incomplete text
+
+
+class WeekTopicRowsTests(unittest.TestCase):
+    """week_topic_rows / topic_row on a three-sitting week (build order §6)."""
+
+    _item = SittingWeekComparisonTests._item
+    _entry = SittingWeekComparisonTests._entry
+    _pos = staticmethod(WeekRadarDataTests._pos)
+
+    @staticmethod
+    def _href(entry) -> str:
+        return f"protocols/{entry['page_path'].name}"
+
+    def _week(self):
+        """Wed/Thu/Fri sittings: a Befragung (most speeches), a bill, a 4-Antrag group, ties."""
+        wed = self._entry("2026-06-10", "21/82", [
+            dict(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), heading="Befragung der Bundesregierung"),
+            self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
+            self._item(3, [("CDU/CSU", 100)] * 3, [self._pos("W1", "Wohngeld retten")]),
+        ])
+        thu = self._entry("2026-06-11", "21/83", [
+            self._item(1, [("CDU/CSU", 100)] * 5 + [("AfD", 100)] * 2,
+                       [self._pos("G1", "Gesetz zur Sache", "Gesetzgebung", "1. Beratung")]),
+            self._item(2, [("SPD", 100)] * 4, [
+                self._pos("A1", "Bildung bezahlbar machen", twins=[("A2", "Zukunftsinvestitionen", "Antrag", "Beratung")]),
+                self._pos("A2", "Zukunftsinvestitionen", twins=[("A1", "Bildung bezahlbar machen", "Antrag", "Beratung")]),
+            ]),
+            self._item(3, [("SPD", 100)], [self._pos("Z1", "Zwerg")]),
+            dict(self._item(4, []), xml_speech_count=0),
+        ])
+        fri = self._entry("2026-06-12", "21/84", [
+            self._item(1, [("AfD", 100)] * 3, [self._pos("F1", "Freitag drei")]),
+            self._item(2, [("Die Linke", 100)] * 2, [self._pos("F2", "Freitag zwei")]),
+        ])
+        return [wed, thu, fri]
+
+    def _radar(self, entries, older=(), **kwargs):
+        weeks = pulse_html.group_entries_by_week(list(older) + list(entries))
+        stats = pulse_html.week_stats((2026, 24), weeks[(2026, 24)])
+        index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
+        radar = pulse_html.week_topic_rows(weeks[(2026, 24)], index, total=stats["speech_count"], dossier_href_for=self._href, **kwargs)
+        return radar, stats
+
+    def test_rows_rank_across_sittings_with_formats_in_the_denominator(self) -> None:
+        radar, stats = self._radar(self._week())
+        self.assertEqual(stats["speech_count"], 29)
+        rows = radar["rows"]
+        self.assertEqual([r["speech_count"] for r in rows], [7, 4, 3, 3, 3])
+        self.assertEqual(rows[0]["identity"]["lead_title"], "Gesetz zur Sache")
+        self.assertEqual(rows[0]["dossier_href"], "protocols/plenarprotokoll-21-83.html")
+        self.assertAlmostEqual(rows[0]["share"], 7 / 29 * 100)
+        # Ties at 3: newest sitting first (Fri), then Wed by agenda order.
+        self.assertEqual([(r["dokumentnummer"], r["index"]) for r in rows[2:]], [("21/84", 1), ("21/82", 2), ("21/82", 3)])
+        label, count, share, href = radar["formats"][0]
+        self.assertEqual((label, count, href), ("Befragung der Bundesregierung", 6, "protocols/plenarprotokoll-21-82.html#top-1"))
+        self.assertAlmostEqual(share, 6 / 29 * 100)
+        self.assertEqual(radar["remaining"], [("21/83", Path("plenarprotokoll-21-83.html"), 1), ("21/84", Path("plenarprotokoll-21-84.html"), 1)])
+
+    def test_tied_rows_at_the_cutoff_are_included_up_to_the_cap(self) -> None:
+        entries = [self._entry("2026-06-10", "21/82", [
+            self._item(i, [("SPD", 100)] * (10 if i == 1 else 2), [self._pos(f"P{i}", f"Titel {i}")]) for i in range(1, 8)
+        ])]
+        radar, _ = self._radar(entries)
+        self.assertEqual(len(radar["rows"]), 7)  # 1 + 6 tied at 2, within the cap of 8
+        self.assertEqual(radar["remaining"], [])
+
+    def test_a_tied_group_that_overflows_the_cap_is_cut_back_to_the_last_full_rank(self) -> None:
+        entries = [self._entry("2026-06-10", "21/82", [
+            self._item(i, [("SPD", 100)] * (10 if i == 1 else 2), [self._pos(f"P{i}", f"Titel {i}")]) for i in range(1, 11)
+        ])]
+        radar, _ = self._radar(entries)
+        self.assertEqual([r["index"] for r in radar["rows"]], [1])
+        self.assertEqual(radar["remaining"], [("21/82", Path("plenarprotokoll-21-82.html"), 9)])
+
+    def test_without_any_full_rank_the_first_rank_limit_rows_are_shown(self) -> None:
+        entries = [self._entry("2026-06-10", "21/82", [
+            self._item(i, [("SPD", 100)] * 2, [self._pos(f"P{i}", f"Titel {i}")]) for i in range(1, 11)
+        ])]
+        radar, _ = self._radar(entries)
+        self.assertEqual([r["index"] for r in radar["rows"]], [1, 2, 3, 4, 5])
+        self.assertEqual(radar["remaining"][0][2], 5)
+
+    def test_trace_uses_the_occurrence_index_over_positions_and_twins(self) -> None:
+        older = [self._entry("2026-05-20", "21/70", [
+            self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")]),
+            self._item(2, [("SPD", 100)], [self._pos("L", "Lead-Antrag")]),
+        ])]
+        current = [self._entry("2026-06-10", "21/82", [
+            # asymmetric twins: B is only a twin here, but was a position in KW 21 -> trace
+            self._item(1, [("SPD", 100)] * 5, [self._pos("A", "Antrag A", twins=[("B", "Gesetz B", "Gesetzgebung", "2. Beratung")])]),
+            # mitberaten-only with no earlier position anywhere -> no trace
+            self._item(2, [("SPD", 100)] * 4, [self._pos("C", "Antrag C", twins=[("D", "Antrag D", "Antrag", "Beratung")])]),
+            # lead id preferred: both L and M returned? only L did; the lead (Gesetzgebung M) has no history
+            self._item(3, [("SPD", 100)] * 3, [self._pos("M", "Gesetz M", "Gesetzgebung", "1. Beratung"), self._pos("L", "Lead-Antrag")]),
+            # no ids at all -> no trace
+            self._item(4, [("SPD", 100)] * 2, []),
+        ])]
+        radar, _ = self._radar(current, older=older)
+        by_index = {row["index"]: row for row in radar["rows"]}
+        self.assertEqual(by_index[1]["trace"]["vorgang_id"], "B")
+        self.assertEqual(by_index[1]["trace"]["first"]["label"], "KW 21/2026")
+        self.assertEqual(by_index[1]["trace"]["first"]["vorgangsposition"], "1. Beratung")
+        self.assertEqual(by_index[1]["trace"]["current_position"], "2. Beratung")
+        self.assertIsNone(by_index[2]["trace"])
+        self.assertEqual(by_index[3]["trace"]["vorgang_id"], "L")  # lead M has no history, so L
+        self.assertIsNone(by_index[4]["trace"])
+
+    def test_one_procedure_in_two_current_tops_traces_each_to_the_earlier_week(self) -> None:
+        older = [self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")])])]
+        current = [self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)] * 3, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]),
+            self._item(2, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "3. Beratung")]),
+        ])]
+        radar, _ = self._radar(current, older=older)
+        self.assertEqual(len(radar["rows"]), 2)
+        for row in radar["rows"]:
+            self.assertEqual(row["trace"]["first"]["label"], "KW 21/2026")
+
+    def test_row_carries_coverage_summary_and_vote_flags(self) -> None:
+        item = self._item(1, [("SPD", 100)] * 5, [self._pos("A", "Antrag A")])
+        item["xml_speech_count"] = 40
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+        item["llm_summary"] = {"text": "Text", "source_chunks": [{"id": "C1"}]}
+        item["votes"] = [{"id": "v1"}]
+        no_chunks = self._item(2, [("SPD", 100)] * 2, [self._pos("B", "Antrag B")])
+        no_chunks["llm_summary"] = {"text": "Text ohne Belege"}
+        radar, _ = self._radar([self._entry("2026-06-10", "21/82", [item, no_chunks])])
+        row, other = radar["rows"]
+        self.assertFalse(row["speakers_complete"])
+        self.assertEqual(row["party_total"], 5)
+        self.assertEqual(row["speech_count"], 40)
+        self.assertEqual(row["summary"]["text"], "Text")
+        self.assertTrue(row["has_votes"])
+        self.assertTrue(other["speakers_complete"])
+        self.assertIsNone(other["summary"])
+        self.assertFalse(other["has_votes"])
+
+    def test_zero_speech_week_yields_nothing(self) -> None:
+        radar, stats = self._radar([self._entry("2026-06-10", "21/82", [dict(self._item(1, []), xml_speech_count=0)])])
+        self.assertEqual(stats["speech_count"], 0)
+        self.assertEqual(radar, {"rows": [], "formats": [], "remaining": []})
+
+    def test_occurrence_index_dedups_within_a_top_and_stops_at_the_current_week(self) -> None:
+        # B is a position and its own twin inside one TOP (real DIP shape): one record, as position.
+        current = self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)], [
+                self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung", twins=[("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]),
+                self._pos("", "Ohne Id"),
+            ]),
+            self._item(2, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]),
+        ])
+        later = self._entry("2026-06-17", "21/85", [self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "3. Beratung")])])
+        weeks = pulse_html.group_entries_by_week([current, later])
+        index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
+        self.assertEqual(sorted(index), ["B"])
+        self.assertEqual([(o["index"], o["twin"]) for o in index["B"]], [(1, False), (2, False)])
+        self.assertNotIn((2026, 25), {o["week"] for o in index["B"]})
+        # The current week is included when asked for a later one, in week order.
+        self.assertEqual([o["week"] for o in pulse_html.vorgang_occurrences(weeks, (2026, 25))["B"]], [(2026, 24), (2026, 24), (2026, 25)])
+
+    def test_undated_sittings_in_topic_row_and_in_the_tie_sort(self) -> None:
+        older = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")])])
+        weeks = pulse_html.group_entries_by_week([older])
+        index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
+        item = dict(self._item(3, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]), vote={"title": "Legacy"})
+        undated = self._entry("", "21/99", [item])
+        row = pulse_html.topic_row(item, undated, total=10, occurrences=index, dossier_href="protocols/x.html")
+        # No week of its own: the sitting cannot be placed in time, so no trace
+        # is claimed even though the Vorgang is indexed for KW 21.
+        self.assertIsNone(row["trace"])
+        self.assertTrue(row["has_votes"])
+        self.assertEqual(row["datum"], "")  # passed through raw; the sort treats it as date.min
+        self.assertEqual((row["speech_count"], row["share"]), (2, 20.0))
+        self.assertEqual(row["dossier_href"], "protocols/x.html")
+        # A sitting in the same week as the only appearance has nothing earlier to trace.
+        same_week = self._entry("2026-05-22", "21/71", [item])
+        row = pulse_html.topic_row(item, same_week, total=10, occurrences=index, dossier_href="protocols/y.html")
+        self.assertIsNone(row["trace"])
+        # In the ranking, an undated sitting sorts after a dated one within a tie.
+        dated = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)] * 2, [self._pos("P1", "Datiert")])])
+        undated = self._entry("", "21/99", [self._item(1, [("SPD", 100)] * 2, [self._pos("P2", "Undatiert")])])
+        index = pulse_html.vorgang_occurrences(pulse_html.group_entries_by_week([dated]), (2026, 24))
+        radar = pulse_html.week_topic_rows([undated, dated], index, total=4, dossier_href_for=self._href)
+        self.assertEqual([r["dokumentnummer"] for r in radar["rows"]], ["21/82", "21/99"])
+        self.assertEqual(radar["remaining"], [])
+
+    def test_remaining_keeps_unnumbered_sittings_apart(self) -> None:
+        # Two sittings without a dokumentnummer must not merge into one "Weitere" bucket;
+        # the sitting is told apart by its page and labelled by the page stem.
+        def sitting(page: str, indexes: list[int]) -> dict:
+            entry = self._entry("2026-06-10", "", [self._item(i, [("SPD", 100)] * 2, [self._pos(f"P{page}{i}", f"Thema {i}")]) for i in indexes])
+            entry["page_path"] = Path(page)
+            return entry
+        first = sitting("plenarprotokoll-21-98.html", [1, 2, 3])
+        second = sitting("plenarprotokoll-21-99.html", [1, 2])
+        index = pulse_html.vorgang_occurrences(pulse_html.group_entries_by_week([first, second]), (2026, 24))
+        radar = pulse_html.week_topic_rows([first, second], index, total=10, dossier_href_for=self._href, rank_limit=1, hard_cap=1)
+        self.assertEqual(len(radar["rows"]), 1)
+        self.assertEqual(radar["rows"][0]["page_path"], Path("plenarprotokoll-21-98.html"))
+        self.assertEqual(
+            radar["remaining"],
+            [("plenarprotokoll-21-98", Path("plenarprotokoll-21-98.html"), 2), ("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2)],
+        )
+
+
+class WeekStatsVoteSittingTests(unittest.TestCase):
+    """week_stats vote bookkeeping over several sittings of one week."""
+
+    _item = SittingWeekComparisonTests._item
+    _entry = SittingWeekComparisonTests._entry
+
+    def test_vote_sittings_follow_sitting_order_and_ids_dedup_across_the_week(self) -> None:
+        shared = {"id": "v-shared", "title": "Geteilt", "date": "2026-06-10"}
+        wed = self._entry("2026-06-10", "21/82", [
+            self._item(1, [("SPD", 100)]),
+            dict(self._item(3, [("SPD", 100)]), votes=[shared, {"id": "v-wed"}]),
+            dict(self._item(4, [("SPD", 100)]), votes=[shared]),
+        ])
+        thu = self._entry("2026-06-11", "21/83", [
+            dict(self._item(1, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-11"}),
+            dict(self._item(2, [("SPD", 100)]), votes=[shared]),
+        ])
+        fri = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+        stats = pulse_html.week_stats((2026, 24), [wed, thu, fri])
+        self.assertEqual(stats["vote_count"], 3)  # v-shared, v-wed, Legacy|2026-06-11
+        self.assertEqual(stats["vote_top_count"], 4)
+        self.assertEqual(
+            stats["vote_sittings"],
+            [
+                ("21/82", Path("plenarprotokoll-21-82.html"), 3, 2),
+                ("21/83", Path("plenarprotokoll-21-83.html"), 1, 2),
+            ],
+        )
+        # A sitting without a dokumentnummer is labelled by its page stem.
+        unnumbered = self._entry("2026-06-12", "", [dict(self._item(2, [("SPD", 100)]), votes=[{"id": "v-fri"}])])
+        unnumbered["page_path"] = Path("plenarprotokoll-21-99.html")
+        stats = pulse_html.week_stats((2026, 24), [unnumbered])
+        self.assertEqual(stats["vote_sittings"], [("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2, 1)])
+        self.assertEqual(pulse_html._vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
+        self.assertEqual(pulse_html._vote_key({}), "|")
+        self.assertEqual(pulse_html._vote_key({"id": 42, "title": "x"}), "42")
+
+
+class BuildClockAndWeekTests(unittest.TestCase):
+    """--today / --week / SOURCE_DATE_EPOCH threading for puls.html (build order §7)."""
+
+    _item = SittingWeekComparisonTests._item
+    _entry = SittingWeekComparisonTests._entry
+
+    def test_resolve_today_prefers_explicit_then_epoch_then_clock(self) -> None:
+        self.assertEqual(build_dip_pulse_site.resolve_today(date(2026, 9, 15)), date(2026, 9, 15))
+        self.assertEqual(build_dip_pulse_site.resolve_today(datetime(2026, 9, 15, 23, 59)), date(2026, 9, 15))
+        # 2026-09-13T22:30Z is still Sunday in UTC even though it is Monday in CEST.
+        self.assertEqual(build_dip_pulse_site.resolve_today(None, environ={"SOURCE_DATE_EPOCH": "1789338600"}), date(2026, 9, 13))
+        self.assertEqual(build_dip_pulse_site.resolve_today(None, environ={}), date.today())
+        with self.assertRaises(ValueError):
+            build_dip_pulse_site.resolve_today(None, environ={"SOURCE_DATE_EPOCH": "gestern"})
+
+    def test_today_converter_accepts_only_the_dashed_form(self) -> None:
+        self.assertEqual(build_dip_pulse_site.parse_iso_date_arg(" 2026-06-15 "), date(2026, 6, 15))
+        for bad in ("20260615", "2026-W25-1", "2026-6-15", "15.06.2026", ""):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                build_dip_pulse_site.parse_iso_date_arg(bad)
+
+    def test_argparse_converters_reject_bad_values_with_a_readable_error(self) -> None:
+        self.assertEqual(build_dip_pulse_site.parse_iso_date_arg("2026-09-15"), date(2026, 9, 15))
+        self.assertEqual(build_dip_pulse_site.parse_iso_week_arg("2026-24"), (2026, 24))
+        self.assertEqual(build_dip_pulse_site.parse_iso_week_arg("2026-W05"), (2026, 5))
+        for bad in ("15.09.2026", "2026-13-01"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                build_dip_pulse_site.parse_iso_date_arg(bad)
+        for bad in ("2026-99", "24", "2026/24"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                build_dip_pulse_site.parse_iso_week_arg(bad)
+
+    def test_select_pulse_week_defaults_to_newest_and_fails_fast_on_an_unknown_week(self) -> None:
+        entries = [
+            self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)])]),
+            self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])]),
+            self._entry("", "21/85", [self._item(1, [("SPD", 100)])]),
+        ]
+        selected, weeks = build_dip_pulse_site.select_pulse_week(entries)
+        self.assertEqual(selected, (2026, 24))
+        self.assertEqual(sorted(weeks), [(2026, 21), (2026, 24)])
+        self.assertEqual(build_dip_pulse_site.select_pulse_week(entries, (2026, 21))[0], (2026, 21))
+        with self.assertRaises(ValueError) as caught:
+            build_dip_pulse_site.select_pulse_week(entries, (2026, 30))
+        self.assertIn("2026-21, 2026-24", str(caught.exception))
+        self.assertEqual(build_dip_pulse_site.select_pulse_week([])[0], None)
+
+    def test_render_front_page_accepts_the_clock_and_week_keywords(self) -> None:
+        entries = [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
+        for entry in entries:
+            entry["report"]["validation_summary"] = {"xml_top_count": 1, "xml_speech_count": 1}
+        markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2026, 9, 15), week=(2026, 24))
+        self.assertIn("Bundestag-Puls", markup)
+        with self.assertRaises(ValueError):
+            build_dip_pulse_site.render_front_page(entries, database_href=None, week=(2025, 1))
+
+    def test_cli_parses_the_new_flags(self) -> None:
+        with mock.patch.object(sys, "argv", ["build", "--offline", "--today", "2026-09-15", "--week", "2026-24"]):
+            args = build_dip_pulse_site.parse_args()
+        self.assertEqual(args.today, date(2026, 9, 15))
+        self.assertEqual(args.week, (2026, 24))
+        with mock.patch.object(sys, "argv", ["build", "--offline"]):
+            args = build_dip_pulse_site.parse_args()
+        self.assertIsNone(args.today)
+        self.assertIsNone(args.week)
+
+    def test_offline_main_refuses_an_unknown_week_before_rendering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            args = SimpleNamespace(output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=(2030, 1), today=None)
+            with (
+                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached", "datum": "2026-06-12"}]),
+                mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[entry]),
+                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[entry]) as rebuild,
+                mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 2)
+            rebuild.assert_not_called()  # nothing written before the week check
+            render_site.assert_not_called()
+            self.assertIn("2026-24", stderr.getvalue())
+
+    # -- PR1 invariant: the clock and week are threaded, not yet rendered ------
+
+    def test_puls_page_is_byte_identical_whatever_clock_and_week_are_passed(self) -> None:
+        older = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100), ("CDU/CSU", 100)])])
+        newest = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)] * 3), self._item(2, [("AfD", 100)])])
+        for entry in (older, newest):
+            entry["report"]["validation_summary"] = {"xml_top_count": 1, "xml_speech_count": 1}
+        entries = [newest, older]
+        baseline = build_dip_pulse_site.render_front_page(entries, database_href=None)
+        self.assertIn("Wochenvergleich", baseline)
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789338600"}):
+            via_epoch = build_dip_pulse_site.render_front_page(entries, database_href=None)
+        pinned = build_dip_pulse_site.render_front_page(entries, database_href=None, today=date(2020, 1, 1), week=(2026, 24))
+        older_week = build_dip_pulse_site.render_front_page(entries, database_href=None, today=datetime(2030, 12, 31, 23, 59), week=(2026, 21))
+        self.assertEqual(baseline, via_epoch)
+        self.assertEqual(baseline, pinned)
+        self.assertEqual(baseline, older_week)
+
+    def test_render_front_page_fails_on_a_bad_epoch_and_on_an_unknown_week_even_for_an_empty_archive(self) -> None:
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}):
+            with self.assertRaises(ValueError) as caught:
+                build_dip_pulse_site.render_front_page([], database_href=None)
+        self.assertIn("SOURCE_DATE_EPOCH", str(caught.exception))
+        with mock.patch.dict(os.environ, {}, clear=True):
+            empty = build_dip_pulse_site.render_front_page([], database_href=None)
+        self.assertIn("Es wurden noch keine Sitzungen erzeugt.", empty)
+        with self.assertRaises(ValueError) as caught:
+            build_dip_pulse_site.render_front_page([], database_href=None, week=(2026, 1))
+        self.assertIn("vorhanden: keine", str(caught.exception))
+
+    def test_resolve_today_edge_cases_for_the_epoch_convention(self) -> None:
+        self.assertEqual(build_dip_pulse_site.resolve_today(None, environ={"SOURCE_DATE_EPOCH": ""}), date.today())
+        self.assertEqual(build_dip_pulse_site.resolve_today(None, environ={"SOURCE_DATE_EPOCH": "0"}), date(1970, 1, 1))
+        for bad in ("99999999999999999999", "1.5", "-"):
+            with self.assertRaises(ValueError) as caught:
+                build_dip_pulse_site.resolve_today(None, environ={"SOURCE_DATE_EPOCH": bad})
+            self.assertIn(repr(bad), str(caught.exception))
+        # environ=None reads the process environment.
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789338600"}):
+            self.assertEqual(build_dip_pulse_site.resolve_today(), date(2026, 9, 13))
+        # An explicit value wins over the environment without even reading it.
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}):
+            self.assertEqual(build_dip_pulse_site.resolve_today(date(2026, 9, 15)), date(2026, 9, 15))
+
+    def test_parse_iso_week_arg_knows_which_years_have_a_53rd_week(self) -> None:
+        self.assertEqual(build_dip_pulse_site.parse_iso_week_arg("2020-53"), (2020, 53))
+        self.assertEqual(build_dip_pulse_site.parse_iso_week_arg(" 2026-24 "), (2026, 24))
+        self.assertEqual(build_dip_pulse_site.parse_iso_week_arg("2026-1"), (2026, 1))
+        for bad in ("2021-53", "2026-00", "2026-W", "2026-W123", ""):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                build_dip_pulse_site.parse_iso_week_arg(bad)
+
+    def test_unknown_week_error_skips_undated_protocols_and_lists_what_exists(self) -> None:
+        protocols = [
+            {"dokumentnummer": "21/84", "datum": "2026-06-12"},
+            {"dokumentnummer": "21/70", "datum": "2026-05-20"},
+            {"dokumentnummer": "21/85"},
+            {"dokumentnummer": "21/86", "datum": "12.06.2026"},
+        ]
+        self.assertIsNone(build_dip_pulse_site.unknown_week_error(None, protocols))
+        self.assertIsNone(build_dip_pulse_site.unknown_week_error(None, []))
+        self.assertIsNone(build_dip_pulse_site.unknown_week_error((2026, 21), protocols))
+        self.assertEqual(
+            build_dip_pulse_site.unknown_week_error((2026, 30), protocols),
+            "--week 2026-30 ist nicht im Archiv; vorhanden: 2026-21, 2026-24",
+        )
+        self.assertEqual(
+            build_dip_pulse_site.unknown_week_error((2026, 5), []),
+            "--week 2026-05 ist nicht im Archiv; vorhanden: keine",
+        )
+
+    def test_render_site_threads_today_and_week_into_the_front_page(self) -> None:
+        protocol = CurrentPulseOrderTests._protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = CurrentPulseOrderTests._output_dir(tmp)
+            entries = [CurrentPulseOrderTests._entry(output_dir, protocol)]
+            kwargs: dict[str, Any] = dict(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[protocol],
+                entries=entries,
+                abg_mps=[],
+                mp_lookup={},
+            )
+            with (
+                mock.patch.object(build_dip_pulse_site, "render_front_page", return_value="<html></html>") as front,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+            ):
+                build_dip_pulse_site.render_site(**kwargs, today=date(2026, 9, 15), week=(2026, 24))
+                self.assertEqual(front.call_args.kwargs["today"], date(2026, 9, 15))
+                self.assertEqual(front.call_args.kwargs["week"], (2026, 24))
+                build_dip_pulse_site.render_site(**kwargs)
+                self.assertIsNone(front.call_args.kwargs["today"])
+                self.assertIsNone(front.call_args.kwargs["week"])
+            # Unmocked, an unknown week is the renderer's ValueError, so main() must pre-check.
+            with mock.patch.object(sys, "stderr", new_callable=io.StringIO), self.assertRaises(ValueError):
+                build_dip_pulse_site.render_site(**kwargs, week=(2030, 1))
+
+    def test_offline_main_threads_a_known_week_and_the_clock_into_render_site(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            args = SimpleNamespace(
+                output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=(2026, 24), today=date(2026, 9, 15)
+            )
+            with (
+                mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}),  # --today wins, the env is never read
+                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached", "datum": "2026-06-12"}]),
+                mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[entry]),
+                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[entry]) as rebuild,
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0)
+            rebuild.assert_called_once()
+            # The dossiers loaded for the --week check are handed on, not parsed twice.
+            self.assertEqual(rebuild.call_args.kwargs["cached_entries"], [entry])
+            self.assertEqual(render_site.call_args.kwargs["today"], date(2026, 9, 15))
+            self.assertEqual(render_site.call_args.kwargs["week"], (2026, 24))
+            self.assertIs(render_site.call_args.kwargs["entries"][0], entry)
+
+    def _online_argv(self, output_dir: Path, *extra: str) -> list[str]:
+        return ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir), *extra]
+
+    @staticmethod
+    def _catalog_protocol(document_number: str, protocol_id: str, datum: str) -> dict[str, Any]:
+        return {
+            "id": protocol_id,
+            "dokumentnummer": document_number,
+            "datum": datum,
+            "titel": f"Protokoll {document_number}",
+            "fundstelle": {"xml_url": f"https://example.test/{protocol_id}.xml"},
+        }
+
+    def test_online_main_refuses_an_unknown_week_before_building_any_dossier(self) -> None:
+        catalog = [self._catalog_protocol("21/84", "5799", "2026-06-12"), self._catalog_protocol("21/70", "5780", "2026-05-20")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--week", "2030-01")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress") as build_dossiers,
+                mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 2)
+            self.assertIn("--week 2030-01 ist nicht im Archiv; vorhanden: 2026-21, 2026-24", stderr.getvalue())
+            build_dossiers.assert_not_called()
+            render_site.assert_not_called()
+            # Only the empty output directories exist; not a single file was written.
+            self.assertEqual([p for p in output_dir.rglob("*") if p.is_file()], [])
+
+    def test_online_main_threads_a_known_week_and_the_clock_into_render_site(self) -> None:
+        protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            entry["report"]["protocol"]["id"] = "5799"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--week", "2026-24", "--today", "2026-09-15")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=[protocol]),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[entry]) as build_dossiers,
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0)
+            build_dossiers.assert_called_once()
+            self.assertEqual(render_site.call_args.kwargs["today"], date(2026, 9, 15))
+            self.assertEqual(render_site.call_args.kwargs["week"], (2026, 24))
+            self.assertEqual([e["slug"] for e in render_site.call_args.kwargs["entries"]], ["21-84"])
+
+    def test_online_main_accepts_a_week_held_only_by_preserved_dossiers(self) -> None:
+        # The catalog holds both sittings, this run rebuilds only 21/84, and the
+        # preserved 21/70 dossier keeps KW 21 in the archive.
+        catalog = [self._catalog_protocol("21/84", "5799", "2026-06-12"), self._catalog_protocol("21/70", "5780", "2026-05-20")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            preserved = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)])])
+            preserved["report"]["protocol"]["id"] = "5780"
+            fresh = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            fresh["report"]["protocol"]["id"] = "5799"
+            with (
+                mock.patch.object(
+                    sys, "argv",
+                    self._online_argv(output_dir, "--week", "2026-21", "--detail-limit", "1", "--preserve-existing-dossiers"),
+                ),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[preserved]),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[fresh]),
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0, stderr.getvalue())
+            self.assertEqual(render_site.call_args.kwargs["week"], (2026, 21))
+            self.assertEqual([e["slug"] for e in render_site.call_args.kwargs["entries"]], ["21-84", "21-70"])
+
+    def test_online_main_reports_a_week_whose_dossiers_failed_to_build(self) -> None:
+        catalog = [self._catalog_protocol("21/84", "5799", "2026-06-12"), self._catalog_protocol("21/70", "5780", "2026-05-20")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            fresh = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            fresh["report"]["protocol"]["id"] = "5799"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--week", "2026-21")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
+                # 21/70 is in the catalog (so the pre-check passes) but its dossier never materialises.
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[fresh]),
+                mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 2)
+            self.assertIn("--week 2026-21 ist nicht im Archiv; vorhanden: 2026-24 (Dossiers wurden bereits geschrieben", stderr.getvalue())
+            render_site.assert_not_called()
+
+    def test_online_main_without_week_skips_the_archive_check(self) -> None:
+        protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir)),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=[protocol]),
+                mock.patch.object(build_dip_pulse_site, "unknown_week_error", wraps=build_dip_pulse_site.unknown_week_error) as check,
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[]),
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0)
+            # Both archive checks (catalog, then built entries) run with no week and refuse nothing.
+            self.assertEqual([c.args[0] for c in check.call_args_list], [None, None])
+            self.assertEqual(check.call_args_list[0].args[1], [protocol])
+            self.assertIsNone(render_site.call_args.kwargs["week"])
+            self.assertEqual(render_site.call_args.kwargs["today"], date.today())
+
+
+class OfflineRebuildEndToEndTests(unittest.TestCase):
+    """[E2E] The offline build path with --week/--today against a fixture cache, unmocked."""
+
+    @staticmethod
+    def _seed(tmp: str) -> Path:
+        output_dir = Path(tmp) / "site"
+        (output_dir / "data").mkdir(parents=True)
+        report = (_support.FIXTURES / "report.json").read_bytes()
+        (output_dir / "data" / "plenarprotokoll-20-999.json").write_bytes(report)
+        return output_dir
+
+    def _build(self, output_dir: Path, *extra: str) -> tuple[int, str]:
+        argv = ["build", "--offline", "--no-persist", "--output-dir", str(output_dir), *extra]
+        with (
+            mock.patch.dict(os.environ, {}, clear=False),
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            os.environ.pop("SOURCE_DATE_EPOCH", None)
+            code = build_dip_pulse_site.main()
+        return code, stderr.getvalue()
+
+    def test_offline_rebuild_with_week_and_today_matches_the_plain_rebuild(self) -> None:
+        with tempfile.TemporaryDirectory() as plain_tmp, tempfile.TemporaryDirectory() as pinned_tmp:
+            plain_dir = self._seed(plain_tmp)
+            pinned_dir = self._seed(pinned_tmp)
+            code, stderr = self._build(plain_dir)
+            self.assertEqual(code, 0, stderr)
+            code, stderr = self._build(pinned_dir, "--week", "2024-20", "--today", "2026-09-17")
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("offline: rendered 1 cached dossiers", stderr)
+            plain = (plain_dir / "puls.html").read_text(encoding="utf-8")
+            pinned = (pinned_dir / "puls.html").read_text(encoding="utf-8")
+            self.assertIn("20/999", plain)
+            self.assertEqual(plain, pinned)
+            plain_dossier = (plain_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
+            pinned_dossier = (pinned_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
+            self.assertEqual(plain_dossier, pinned_dossier)
+
+    def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            code, stderr = self._build(output_dir, "--week", "2024-21")
+            self.assertEqual(code, 2)
+            self.assertIn("--week 2024-21 ist nicht im Archiv; vorhanden: 2024-20", stderr)
+            self.assertFalse((output_dir / "puls.html").exists())
+            self.assertFalse((output_dir / "index.html").exists())
+            self.assertEqual(list((output_dir / "protocols").iterdir()), [])
+            self.assertEqual([p.name for p in (output_dir / "data").iterdir()], ["plenarprotokoll-20-999.json"])
+
+    def test_offline_rebuild_with_a_bad_epoch_exits_before_reading_the_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            argv = ["build", "--offline", "--no-persist", "--output-dir", str(output_dir)]
+            with (
+                mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 2)
+            self.assertIn("SOURCE_DATE_EPOCH must be an integer Unix timestamp, got 'gestern'", stderr.getvalue())
+            self.assertFalse((output_dir / "protocols").exists())
+
+
+class SourceLinkGuardTests(unittest.TestCase):
+    """The overview cards and the Daten table only link to http(s) XML/PDF sources."""
+
+    def _pages(self, xml_url: str, pdf_url: str) -> tuple[str, str]:
+        protocol = dict(CurrentPulseOrderTests._protocol("21/84", "5799", "2026-06-12"), xml_url=xml_url, pdf_url=pdf_url)
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = CurrentPulseOrderTests._entry(CurrentPulseOrderTests._output_dir(tmp), protocol)
+            overview = build_dip_pulse_site.render_overview([protocol], [entry], features=default_selection())
+            sources = build_dip_pulse_site.render_sources_page([entry], features=default_selection())
+        return overview, sources
+
+    def test_unsafe_protocol_urls_render_as_empty_hrefs(self) -> None:
+        overview, sources = self._pages("javascript:alert(1)", "data:text/html,x")
+        for markup in (overview, sources):
+            self.assertNotIn("javascript:", markup)
+            self.assertNotIn("data:text", markup)
+            self.assertIn('<a href="">XML</a>', markup)
+            self.assertIn('<a href="">PDF</a>', markup)
+
+    def test_http_protocol_urls_keep_their_links(self) -> None:
+        overview, sources = self._pages("https://dserver.bundestag.de/btp/21/21084.xml", "https://dserver.bundestag.de/btp/21/21084.pdf")
+        for markup in (overview, sources):
+            self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21084.xml">XML</a>', markup)
+            self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21084.pdf">PDF</a>', markup)
 
 
 if __name__ == "__main__":

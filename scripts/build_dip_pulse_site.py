@@ -30,7 +30,7 @@
 # Which code writes which part of the website:
 #
 #   index.html           ``render_landing_page``     explanatory home page
-#   puls.html            ``render_front_page``       "Aktueller Puls" dashboard
+#   puls.html            ``render_front_page``       "Aktueller Puls": week radar + Wochenvergleich
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
@@ -64,6 +64,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -620,10 +621,17 @@ def rebuild_cached_detail_pages(
     protocols: list[dict[str, Any]],
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
+    cached_entries: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Regenerate dossier HTML from cached JSON reports without API calls."""
+    """Regenerate dossier HTML from cached JSON reports without API calls.
+
+    Pass `cached_entries` when the caller already loaded them; the reports are
+    large enough that a second parse of every file is noticeable.
+    """
+    if cached_entries is None:
+        cached_entries = load_existing_detail_entries(output_dir, protocols)
     entries = []
-    for entry in load_existing_detail_entries(output_dir, protocols):
+    for entry in cached_entries:
         entries.append(write_report_files(entry["report"], output_dir, mp_lookup, features))
     return entries
 
@@ -2067,12 +2075,113 @@ def render_week_comparison_section(
 """
 
 
+# ---------------------------------------------------------------------------
+# Build clock and week selection for puls.html.
+#
+# puls.html is the only page whose wording depends on *when* it was rendered
+# ("Auswertung vom", "vor N Wochen", running vs. past week). The clock is
+# injectable so tests and CI builds are reproducible: --today, else the
+# SOURCE_DATE_EPOCH convention (UTC, reproducible-builds.org), else the wall
+# clock at call time. --week pins the sitting week instead of "newest".
+# ---------------------------------------------------------------------------
+
+
+def resolve_today(value: date | datetime | None = None, *, environ: dict[str, str] | None = None) -> date:
+    """The build date: an explicit value, else SOURCE_DATE_EPOCH (UTC), else today."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    env = os.environ if environ is None else environ
+    epoch = env.get("SOURCE_DATE_EPOCH")
+    if epoch:
+        try:
+            return datetime.fromtimestamp(int(epoch), tz=timezone.utc).date()
+        except (ValueError, OverflowError, OSError) as exc:
+            raise ValueError(f"SOURCE_DATE_EPOCH must be an integer Unix timestamp, got {epoch!r}") from exc
+    return date.today()
+
+
+def parse_iso_date_arg(value: str) -> date:
+    """argparse converter for --today (YYYY-MM-DD only; fromisoformat alone
+    accepts more forms from Python 3.11 on, and the grammar must not depend
+    on the interpreter)."""
+    text = value.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        raise argparse.ArgumentTypeError(f"--today expects YYYY-MM-DD, got {value!r}")
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--today expects YYYY-MM-DD, got {value!r}") from exc
+
+
+def parse_iso_week_arg(value: str) -> tuple[int, int]:
+    """argparse converter for --week (YYYY-WW, ISO week)."""
+    match = re.fullmatch(r"(\d{4})-W?(\d{1,2})", value.strip())
+    if not match:
+        raise argparse.ArgumentTypeError(f"--week expects YYYY-WW (ISO week), got {value!r}")
+    year, week = int(match.group(1)), int(match.group(2))
+    try:
+        date.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--week {value!r} is not a valid ISO week") from exc
+    return (year, week)
+
+
+def select_pulse_week(
+    entries: list[dict[str, Any]],
+    week: tuple[int, int] | None = None,
+) -> tuple[tuple[int, int] | None, dict[tuple[int, int], list[dict[str, Any]]]]:
+    """The sitting week puls.html shows: `week` if given, else the newest dated week.
+
+    Raises ValueError, listing the available weeks, when `week` is not in the
+    archive - callers check this before any output is written.
+    """
+    weeks = pulse_html.group_entries_by_week(entries)
+    if week is not None:
+        if week not in weeks:
+            available = ", ".join(f"{y}-{w:02d}" for y, w in sorted(weeks)) or "keine"
+            raise ValueError(f"--week {week[0]}-{week[1]:02d} ist nicht im Archiv; vorhanden: {available}")
+        return week, weeks
+    return (max(weeks) if weeks else None), weeks
+
+
+def unknown_week_error(week: tuple[int, int] | None, protocols: list[dict[str, Any]]) -> str | None:
+    """An error message when `week` is not among the protocols' sitting weeks, else None."""
+    if week is None:
+        return None
+    known = {
+        key for key in (pulse_html.iso_week_key(protocol.get("datum")) for protocol in protocols) if key is not None
+    }
+    if week in known:
+        return None
+    available = ", ".join(f"{y}-{w:02d}" for y, w in sorted(known)) or "keine"
+    return f"--week {week[0]}-{week[1]:02d} ist nicht im Archiv; vorhanden: {available}"
+
+
+def reject_unknown_week(week: tuple[int, int] | None, protocols: list[dict[str, Any]], *, note: str = "") -> bool:
+    """Print the --week error for main() and say whether to stop (exit 2)."""
+    week_error = unknown_week_error(week, protocols)
+    if not week_error:
+        return False
+    print(f"error: {week_error}{note}", file=sys.stderr)
+    return True
+
+
 def render_front_page(
     entries: list[dict[str, Any]],
     database_href: str | None = "data/bundestag-pulse.sqlite",
     features: Selection | None = None,
+    *,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
 ) -> str:
     features = features or publication_selection()
+    # Both calls validate their input (a bad SOURCE_DATE_EPOCH, a week not in the
+    # archive) and fail loudly; the page does not read the results until the
+    # week radar lands, which is why they are not used below yet.
+    today = resolve_today(today)
+    selected_week, weeks_by_key = select_pulse_week(entries, week)
     # Nothing generated yet -> a minimal page with the shared chrome only.
     if not entries:
         return f"""<!doctype html>
@@ -4357,8 +4466,8 @@ def render_overview(
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
               <div class="session-links">
-                <a href="{pulse_html.esc(protocol.get('xml_url'))}">XML</a>
-                <a href="{pulse_html.esc(protocol.get('pdf_url'))}">PDF</a>
+                <a href="{pulse_html.esc(pulse_html.safe_href(protocol.get('xml_url')) or '')}">XML</a>
+                <a href="{pulse_html.esc(pulse_html.safe_href(protocol.get('pdf_url')) or '')}">PDF</a>
                 <a href="data/{pulse_html.esc(entry['report_path'].name)}">JSON</a>
                 {sqlite_link}
                 {warning_html}
@@ -5239,8 +5348,8 @@ def render_sources_page(
                 date=pulse_html.esc(protocol.get("datum")),
                 tops=pulse_html.esc(summary.get("xml_top_count")),
                 speeches=pulse_html.esc(summary.get("xml_speech_count")),
-                xml_url=pulse_html.esc(protocol.get("xml_url")),
-                pdf_url=pulse_html.esc(protocol.get("pdf_url")),
+                xml_url=pulse_html.esc(pulse_html.safe_href(protocol.get("xml_url")) or ""),
+                pdf_url=pulse_html.esc(pulse_html.safe_href(protocol.get("pdf_url")) or ""),
                 json_file=pulse_html.esc(entry["report_path"].name),
             )
         )
@@ -5676,6 +5785,8 @@ def render_site(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
     features: Selection | None = None,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -5753,7 +5864,7 @@ def render_site(
         encoding="utf-8",
     )
     pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, features=features),
+        render_front_page(entries, database_href=database_href, features=features, today=today, week=week),
         encoding="utf-8",
     )
     overview_path.write_text(
@@ -6039,6 +6150,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
     parser.add_argument(
+        "--today",
+        type=parse_iso_date_arg,
+        default=None,
+        help=(
+            "Build date for puls.html (YYYY-MM-DD). Default: SOURCE_DATE_EPOCH (UTC) when set, "
+            "else the current date. Pin it for reproducible builds."
+        ),
+    )
+    parser.add_argument(
+        "--week",
+        type=parse_iso_week_arg,
+        default=None,
+        help="Sitting week for puls.html as ISO YYYY-WW (e.g. 2026-24). Default: the newest dated week.",
+    )
+    parser.add_argument(
         "--offline",
         action="store_true",
         help=(
@@ -6178,6 +6304,15 @@ def main() -> int:
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()
+    # The puls.html clock is resolved once, before any file is written, so a bad
+    # SOURCE_DATE_EPOCH fails here and both render paths share one value. Tests
+    # stub parse_args with a bare namespace, hence getattr.
+    pulse_week = getattr(args, "week", None)
+    try:
+        build_today = resolve_today(getattr(args, "today", None))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     # Import addon modules only after this module and the renderer are fully loaded.
     components = {component.feature.id: component for component in feature_loader.load(features)}
 
@@ -6223,7 +6358,14 @@ def main() -> int:
             finally:
                 store.close()
 
-        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features)
+        # --week must name a week with a cached dossier (the catalog lists every
+        # protocol back to 1949; only dossiers can be rendered). Check it before
+        # any dossier page is regenerated so a typo leaves the output untouched.
+        cached_entries = load_existing_detail_entries(output_dir, protocols)
+        if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
+            return 2
+
+        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features, cached_entries=cached_entries)
         # Dossier pages are regenerated from the cached JSON reports, then the
         # rest of the site is rendered around them.
         index_path = render_site(
@@ -6235,6 +6377,8 @@ def main() -> int:
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
             features=features,
+            today=build_today,
+            week=pulse_week,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -6278,6 +6422,14 @@ def main() -> int:
         existing_entries = (
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
+        # --week must name a week this build will actually hold; check it against
+        # the dossier catalog (plus the preserved dossiers that stay in the
+        # archive) now, before any dossier is written.
+        if reject_unknown_week(
+            pulse_week,
+            [*detail_protocols, *(entry["report"].get("protocol") or {} for entry in existing_entries)],
+        ):
+            return 2
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         try:
@@ -6309,6 +6461,14 @@ def main() -> int:
             # a second time afterwards because mp_lookup only exists now, and it
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
+            # A dossier of the requested week can still have failed to build;
+            # say so instead of letting the renderer's ValueError escape.
+            if reject_unknown_week(
+                pulse_week,
+                [entry["report"].get("protocol") or {} for entry in entries],
+                note=" (Dossiers wurden bereits geschrieben, puls.html nicht)",
+            ):
+                return 2
             if not args.no_persist:
                 rebuild_database_from_entries(
                     database_path,
@@ -6369,6 +6529,8 @@ def main() -> int:
         abg_mps=abg_mps,
         mp_lookup=mp_lookup,
         features=features,
+        today=build_today,
+        week=pulse_week,
     )
     print(index_path)
     return 0
