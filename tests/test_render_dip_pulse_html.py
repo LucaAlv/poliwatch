@@ -453,5 +453,393 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertIn(".ranking-head .legend { font-size:12px; color:var(--muted); }", css)
 
 
+class WeekRadarHelperTests(unittest.TestCase):
+    """Pure helpers behind the puls.html week radar (build order §1-2)."""
+
+    @staticmethod
+    def _position(vorgang_id: str, titel: str, typ: str = "Antrag", stage: str = "Beratung", twins=()):
+        return {
+            "id": f"pos-{vorgang_id}",
+            "vorgang_id": vorgang_id,
+            "titel": titel,
+            "vorgangstyp": typ,
+            "vorgangsposition": stage,
+            "mitberaten": [
+                {"id": tid, "titel": ttitel, "vorgangstyp": ttyp, "vorgangsposition": tstage}
+                for tid, ttitel, ttyp, tstage in twins
+            ],
+        }
+
+    @staticmethod
+    def _item(positions, heading="Beratung des Antrags der Abgeordneten X", top_id="Tagesordnungspunkt 8", index=8):
+        return {"index": index, "top_id": top_id, "heading": heading, "api": {"positions": positions}}
+
+    # -- dates and counts ---------------------------------------------------
+
+    def test_date_helpers_use_a_fixed_german_weekday_table(self) -> None:
+        self.assertEqual(pulse_html.format_sitting_date("2026-06-12"), "Fr 12.06.")
+        self.assertEqual(pulse_html.format_date("2026-06-12"), "12.06.2026")
+        self.assertEqual(pulse_html.format_date("2026-06-12T09:00:00"), "12.06.2026")
+        self.assertEqual(pulse_html.format_sitting_date(None), "")
+        self.assertEqual(pulse_html.format_date("12.06.2026"), "")
+        self.assertEqual(pulse_html.format_date("2026-13-40"), "")
+
+    def test_format_count_picks_singular_and_thousands_separator(self) -> None:
+        self.assertEqual(pulse_html.format_count(1, "Rede", "Reden"), "1 Rede")
+        self.assertEqual(pulse_html.format_count(1234, "Rede", "Reden"), "1.234 Reden")
+        self.assertEqual(pulse_html.format_count(0, "Wortmeldung", "Wortmeldungen"), "0 Wortmeldungen")
+
+    def test_question_format_is_a_prefix_match_on_the_normalised_heading(self) -> None:
+        self.assertTrue(pulse_html.is_question_format({"heading": "  Befragung  der Bundesregierung (einleitend BMJ)"}))
+        self.assertTrue(pulse_html.is_question_format({"heading": "Fragestunde"}))
+        self.assertTrue(pulse_html.is_question_format({"heading": "Regierungsbefragung"}))
+        self.assertFalse(pulse_html.is_question_format({"heading": "Beratung des Antrags: Befragung der Bundesregierung reformieren"}))
+        self.assertFalse(pulse_html.is_question_format({"heading": None}))
+        self.assertFalse(pulse_html.is_question_format({}))
+
+    def test_safe_href_allows_only_http_schemes(self) -> None:
+        self.assertEqual(pulse_html.safe_href("https://dserver.bundestag.de/x.pdf"), "https://dserver.bundestag.de/x.pdf")
+        self.assertEqual(pulse_html.safe_href(" HTTP://example.test/a "), "HTTP://example.test/a")
+        self.assertIsNone(pulse_html.safe_href("javascript:alert(1)"))
+        self.assertIsNone(pulse_html.safe_href("data:text/html,hi"))
+        self.assertIsNone(pulse_html.safe_href(""))
+        self.assertIsNone(pulse_html.safe_href(None))
+
+    # -- party stack ---------------------------------------------------------
+
+    def test_party_stack_exact_widths_and_own_class_for_the_radar(self) -> None:
+        counter = pulse_html.Counter({"CDU/CSU": 18, "fraktionslos": 1})
+        markup = pulse_html.render_party_stack(counter, 19, min_width=0.0, class_name="who-stack")
+        self.assertIn('<div class="who-stack">', markup)
+        self.assertIn('width:5.26%', markup)
+        self.assertIn('title="fraktionslos: 1"', markup)
+        self.assertEqual(pulse_html.render_party_stack(pulse_html.Counter(), 0, class_name="who-stack"), '<div class="who-stack empty"></div>')
+
+    def test_party_stack_default_call_keeps_the_dossier_contract(self) -> None:
+        counter = pulse_html.Counter({"CDU/CSU": 99, "fraktionslos": 1})
+        markup = pulse_html.render_party_stack(counter, 100)
+        self.assertIn('<div class="stack">', markup)
+        self.assertIn('width:4.00%', markup)  # the 4% floor still applies by default
+        self.assertEqual(pulse_html.render_party_stack(pulse_html.Counter(), 0), '<div class="stack empty"></div>')
+
+    # -- topic identity -----------------------------------------------------
+
+    def test_gesetzgebung_position_leads_a_mixed_group(self) -> None:
+        item = self._item([
+            self._position("A1", "Antrag eins"),
+            self._position("G1", "Gesetz zur Sache", "Gesetzgebung", "1. Beratung"),
+            self._position("A2", "Antrag zwei"),
+        ])
+        identity = pulse_html.topic_identity(item)
+        self.assertEqual(identity["lead_title"], "Gesetz zur Sache")
+        self.assertFalse(identity["equal_weight"])
+        self.assertEqual(identity["titles"], ["Antrag eins", "Gesetz zur Sache", "Antrag zwei"])
+        self.assertEqual(identity["vorgang_ids"], ["A1", "G1", "A2"])
+        self.assertEqual(pulse_html.type_label(identity), "Gesetzgebung · 1. Beratung · mit 2 Anträgen")
+
+    def test_a_gesetzgebung_twin_leads_even_when_every_position_is_an_antrag(self) -> None:
+        item = self._item([
+            self._position("A1", "Antrag eins", twins=[("G1", "Gebäudeenergiegesetz", "Gesetzgebung", "1. Beratung")]),
+        ])
+        identity = pulse_html.topic_identity(item)
+        self.assertEqual(identity["lead_title"], "Gebäudeenergiegesetz")
+        self.assertEqual(identity["vorgang_ids"], ["A1", "G1"])
+        self.assertEqual(pulse_html.type_label(identity), "Gesetzgebung · 1. Beratung · mit 1 Antrag")
+
+    def test_antrag_only_group_with_several_titles_is_equal_weight(self) -> None:
+        # Real shape: every position lists the other three as mitberaten twins.
+        ids = [("A1", "Bildung bezahlbar machen"), ("A2", "Zukunftsinvestitionen statt Kürzungen"),
+               ("A3", "Bildung darf nicht vom Einkommen abhängen"), ("A4", "BAföG stärken")]
+        positions = [
+            self._position(vid, titel, twins=[(oid, otitel, "Antrag", "Beratung") for oid, otitel in ids if oid != vid])
+            for vid, titel in ids
+        ]
+        identity = pulse_html.topic_identity(item := self._item(positions))
+        self.assertTrue(identity["equal_weight"])
+        self.assertIsNone(identity["lead_title"])
+        self.assertEqual(len(identity["procedures"]), 4)  # twins must not double-count
+        self.assertEqual(identity["titles"], [titel for _, titel in ids])
+        self.assertEqual(pulse_html.type_label(identity), "Antrag · Beratung · 4 Anträge gemeinsam")
+        self.assertNotIn(item["heading"], identity["titles"])
+
+    def test_identical_titles_under_different_ids_stay_two_procedures(self) -> None:
+        item = self._item([self._position("A1", "Gleicher Titel"), self._position("A2", "Gleicher  Titel ")])
+        identity = pulse_html.topic_identity(item)
+        self.assertEqual(len(identity["procedures"]), 2)
+        self.assertEqual(identity["titles"], ["Gleicher Titel"])  # whitespace variant collapsed for display
+        self.assertFalse(identity["equal_weight"])  # one distinct title, so a lead
+        self.assertEqual(identity["lead_title"], "Gleicher Titel")
+        self.assertEqual(pulse_html.type_label(identity), "Antrag · Beratung · 2 Anträge gemeinsam")
+
+    def test_single_antrag_has_a_plain_label(self) -> None:
+        identity = pulse_html.topic_identity(self._item([self._position("A1", "Nur einer")]))
+        self.assertEqual(identity["lead_title"], "Nur einer")
+        self.assertEqual(pulse_html.type_label(identity), "Antrag · Beratung")
+
+    def test_mixed_non_gesetzgebung_remainder_uses_the_neutral_noun(self) -> None:
+        item = self._item([
+            self._position("G1", "Gesetz", "Gesetzgebung", "2. Beratung"),
+            self._position("A1", "Antrag", "Antrag"),
+            self._position("E1", "Entschließung", "Entschließungsantrag"),
+        ])
+        self.assertEqual(pulse_html.type_label(pulse_html.topic_identity(item)), "Gesetzgebung · 2. Beratung · mit 2 weiteren Vorlagen")
+
+    def test_fallback_chain_applies_only_without_titles(self) -> None:
+        heading = "Abgabe einer Regierungserklärung durch den Bundeskanzler"
+        identity = pulse_html.topic_identity(self._item([], heading=heading))
+        self.assertEqual(identity["lead_title"], heading)
+        self.assertFalse(identity["equal_weight"])
+        self.assertEqual(pulse_html.type_label(identity), "")
+        self.assertEqual(pulse_html.topic_identity(self._item([], heading="", top_id="Einzelplan 17"))["lead_title"], "Einzelplan 17")
+        self.assertEqual(pulse_html.topic_identity(self._item([], heading="", top_id="", index=3))["lead_title"], "Tagesordnungspunkt 3")
+        long_heading = "x" * 300
+        self.assertLessEqual(len(pulse_html.topic_identity(self._item([], heading=long_heading))["lead_title"]), pulse_html.RADAR_TITLE_CHARS)
+
+    def test_positions_without_titles_still_yield_procedures(self) -> None:
+        item = self._item([self._position("A1", ""), self._position("A2", "")], heading="Beratung ohne Titel")
+        identity = pulse_html.topic_identity(item)
+        self.assertEqual(identity["vorgang_ids"], ["A1", "A2"])
+        self.assertEqual(identity["titles"], [])
+        self.assertEqual(identity["lead_title"], "Beratung ohne Titel")
+        self.assertFalse(identity["equal_weight"])
+
+
+class SessionSummaryReceiptTests(unittest.TestCase):
+    """Characterization of the dossier's KI-Zusammenfassung receipts, taken before the
+    receipt construction is shared with the puls.html week radar (build order §5)."""
+
+    @staticmethod
+    def _item(index: int, chunks, rede_ids=("r-1", "r-2", "r-3", "r-4", "r-5", "r-6")) -> dict:
+        speakers = [
+            {"rede_id": rid, "char_count": 100, "speaker": {"fraktion": "SPD", "display_name": f"P{rid}"}}
+            for rid in rede_ids
+        ]
+        return {
+            "index": index,
+            "top_id": f"Tagesordnungspunkt {index}",
+            "heading": "Erste Beratung <b>x</b>",
+            "xml_speakers": speakers,
+            "xml_speech_count": len(speakers),
+            "llm_summary": {"text": "Zusammenfassung & <Test>", "source_chunks": chunks},
+        }
+
+    @classmethod
+    def _render(cls, items, pdf_url="https://example.test/pp.pdf") -> str:
+        stats = {item["index"]: pulse_html.item_stats(item) for item in items}
+        protocol = {"pdf_url": pdf_url} if pdf_url else {}
+        return pulse_html.render_session_llm_summary(items, stats, {"enabled": True}, protocol)
+
+    def test_receipts_link_resolved_chunks_and_cap_at_four(self) -> None:
+        chunks = [{"id": f"C{i}", "rede_id": f"r-{i}", "source_page": {"page": 100 + i, "quadrant": "A"}} for i in range(1, 7)]
+        markup = self._render([self._item(1, chunks)])
+        sources = re.search(r'<div class="session-summary-sources">(.*?)</div>', markup, re.S).group(1)
+        self.assertEqual(sources.count("<a "), 5)  # 4 chunks + Originalprotokoll
+        self.assertIn('<a href="#speech-1-r-1">C1 · S. 101A</a>', sources)
+        self.assertIn('<a href="#speech-1-r-4">C4 · S. 104A</a>', sources)
+        self.assertNotIn("C5", sources)
+        self.assertIn('<a href="https://example.test/pp.pdf">Originalprotokoll</a>', sources)
+
+    def test_unresolved_chunk_degrades_to_a_span_and_missing_pdf_drops_the_link(self) -> None:
+        chunks = [{"id": "C9", "rede_id": "r-missing", "source_page": {"page": 7}}, {"id": "C1", "rede_id": "r-1"}]
+        markup = self._render([self._item(1, chunks)], pdf_url=None)
+        sources = re.search(r'<div class="session-summary-sources">(.*?)</div>', markup, re.S).group(1)
+        self.assertIn("<span>C9 · S. 7</span>", sources)
+        self.assertIn('<a href="#speech-1-r-1">C1</a>', sources)
+        self.assertNotIn("Originalprotokoll", sources)
+
+    def test_summary_text_and_heading_are_escaped(self) -> None:
+        markup = self._render([self._item(1, [{"id": "C1", "rede_id": "r-1"}])])
+        self.assertIn("<p>Zusammenfassung &amp; &lt;Test&gt;</p>", markup)
+        self.assertIn("<h3>Erste Beratung &lt;b&gt;x&lt;/b&gt;</h3>", markup)
+
+    def test_section_shape_is_stable(self) -> None:
+        markup = self._render([self._item(1, [{"id": "C1", "rede_id": "r-1"}]), self._item(2, [])])
+        # Only the item with chunks is summarised; the count label reflects it.
+        self.assertIn('<span class="summary-count">1 TOP-Zusammenfassung</span>', markup)
+        self.assertEqual(markup.count('<article class="session-summary-item">'), 1)
+        self.assertIn('<a class="top-jump" href="#top-1">Tagesordnungspunkt 1</a>', markup)
+
+    def test_render_receipts_prefixes_a_dossier_href_and_refuses_unsafe_pdf_urls(self) -> None:
+        item = self._item(3, [{"id": "C1", "rede_id": "r-1"}, {"id": "C2", "rede_id": "r-9"}])
+        stats = pulse_html.item_stats(item)
+        markup = pulse_html.render_receipts(
+            item, stats, item["llm_summary"], dossier_href="protocols/plenarprotokoll-21-84.html", pdf_url="javascript:alert(1)"
+        )
+        self.assertIn('<a href="protocols/plenarprotokoll-21-84.html#speech-3-r-1">C1</a>', markup)
+        self.assertIn("<span>C2</span>", markup)
+        self.assertNotIn("Originalprotokoll", markup)
+        self.assertNotIn("javascript:", markup)
+        capped = pulse_html.render_receipts(
+            item, stats, {"source_chunks": [{"id": f"C{i}", "rede_id": "r-1"} for i in range(9)]}, limit=2
+        )
+        self.assertEqual(capped.count("<a "), 2)
+
+    def test_receipts_label_chunks_without_page_or_id_and_tolerate_a_summary_without_chunks(self) -> None:
+        item = self._item(4, [])
+        stats = pulse_html.item_stats(item)
+        chunks = [{"id": "C7", "rede_id": "r-2"}, {"rede_id": "r-3"}, {}]
+        markup = pulse_html.render_receipts(item, stats, {"source_chunks": chunks}, pdf_url="https://example.test/pp.pdf")
+        self.assertEqual(
+            markup,
+            '<a href="#speech-4-r-2">C7</a>'
+            '<a href="#speech-4-r-3">Quelle</a>'
+            "<span>Quelle</span>"
+            '<a href="https://example.test/pp.pdf">Originalprotokoll</a>',
+        )
+        self.assertEqual(pulse_html.render_receipts(item, stats, {}), "")
+        self.assertEqual(pulse_html.render_receipts(item, stats, {"source_chunks": None}, pdf_url=" https://x.test/p.pdf "),
+                         '<a href="https://x.test/p.pdf">Originalprotokoll</a>')
+
+    def test_dossier_summary_drops_a_non_http_pdf_link(self) -> None:
+        # The dossier page shares render_receipts, so a scheme-less or scripted
+        # pdf_url from a cached protocol no longer becomes an Originalprotokoll link.
+        for url in ("javascript:alert(1)", "dserver.bundestag.de/pp.pdf", "data:text/html,x"):
+            markup = self._render([self._item(1, [{"id": "C1", "rede_id": "r-1"}])], pdf_url=url)
+            sources = re.search(r'<div class="session-summary-sources">(.*?)</div>', markup, re.S).group(1)
+            self.assertEqual(sources, '<a href="#speech-1-r-1">C1</a>', url)
+        markup = self._render([self._item(1, [{"id": "C1", "rede_id": "r-1"}])], pdf_url="HTTPS://dserver.bundestag.de/pp.pdf")
+        self.assertIn('<a href="HTTPS://dserver.bundestag.de/pp.pdf">Originalprotokoll</a>', markup)
+
+
+class WeekRadarLabelEdgeTests(unittest.TestCase):
+    """type_label / topic_identity branches not reached by the mainline groups."""
+
+    _position = staticmethod(WeekRadarHelperTests._position)
+    _item = staticmethod(WeekRadarHelperTests._item)
+
+    def _label(self, positions) -> str:
+        return pulse_html.type_label(pulse_html.topic_identity(self._item(positions)))
+
+    def test_remainder_wording_by_type_count_and_case(self) -> None:
+        self.assertEqual(
+            self._label([
+                self._position("G1", "Erstes Gesetz", "Gesetzgebung", "1. Beratung"),
+                self._position("G2", "Zweites Gesetz", "Gesetzgebung", "1. Beratung"),
+                self._position("G3", "Drittes Gesetz", "Gesetzgebung", "1. Beratung"),
+            ]),
+            "Gesetzgebung · 1. Beratung · 3 Gesetzentwürfe gemeinsam",
+        )
+        self.assertEqual(
+            self._label([
+                self._position("E1", "Entschließung eins", "Entschließungsantrag"),
+                self._position("E2", "Entschließung zwei", "Entschließungsantrag"),
+            ]),
+            "Entschließungsantrag · Beratung · 2 Entschließungsanträge gemeinsam",
+        )
+        # A type without a plural table entry, repeated: the neutral noun.
+        self.assertEqual(
+            self._label([
+                self._position("U1", "Bericht eins", "Unterrichtung"),
+                self._position("U2", "Bericht zwei", "Unterrichtung"),
+            ]),
+            "Unterrichtung · Beratung · 2 Vorlagen gemeinsam",
+        )
+        # Mixed remainders of one known type take the dative plural or the singular.
+        self.assertEqual(
+            self._label([
+                self._position("A1", "Antrag", "Antrag"),
+                self._position("E1", "Entschließung eins", "Entschließungsantrag"),
+                self._position("E2", "Entschließung zwei", "Entschließungsantrag"),
+            ]),
+            "Antrag · Beratung · mit 2 Entschließungsanträgen",
+        )
+        self.assertEqual(
+            self._label([
+                self._position("A1", "Antrag", "Antrag"),
+                self._position("E1", "Entschließung", "Entschließungsantrag"),
+            ]),
+            "Antrag · Beratung · mit 1 Entschließungsantrag",
+        )
+        self.assertEqual(
+            self._label([
+                self._position("A1", "Antrag", "Antrag"),
+                self._position("G1", "Gesetz", "Gesetzgebung", "2. Beratung"),
+                self._position("G2", "Gesetz zwei", "Gesetzgebung", "2. Beratung"),
+            ]),
+            # The first Gesetzgebung leads even when listed second; the remainder
+            # (an Antrag and a second Gesetzentwurf) is mixed, hence the neutral noun.
+            "Gesetzgebung · 2. Beratung · mit 2 weiteren Vorlagen",
+        )
+
+    def test_unknown_single_remainder_and_untyped_remainders_use_the_neutral_singular(self) -> None:
+        self.assertEqual(
+            self._label([
+                self._position("G1", "Gesetz", "Gesetzgebung", "1. Beratung"),
+                self._position("U1", "Bericht", "Unterrichtung"),
+            ]),
+            "Gesetzgebung · 1. Beratung · mit 1 weiteren Vorlage",
+        )
+        self.assertEqual(
+            self._label([
+                self._position("A1", "Antrag", "Antrag"),
+                self._position("X1", "Ohne Typ", ""),
+                self._position("X2", "Auch ohne Typ", ""),
+            ]),
+            "Antrag · Beratung · mit 2 weiteren Vorlagen",
+        )
+        # Empty ids never become procedures; a lead without a title borrows the first title.
+        identity = pulse_html.topic_identity(self._item([
+            self._position("", "Verwaist", "Antrag"),
+            self._position("G1", "", "Gesetzgebung", "1. Beratung"),
+            self._position("A1", "Antrag mit Titel", "Antrag"),
+        ]))
+        self.assertEqual(identity["vorgang_ids"], ["G1", "A1"])
+        self.assertEqual(identity["lead"]["vorgang_id"], "G1")
+        self.assertEqual(identity["lead_title"], "Antrag mit Titel")
+        self.assertFalse(identity["equal_weight"])
+        self.assertEqual(pulse_html.type_label(identity), "Gesetzgebung · 1. Beratung · mit 1 Antrag")
+
+
+class DossierSourceLinkTests(unittest.TestCase):
+    """The dossier's own source links share safe_href with the receipts."""
+
+    def test_position_and_activity_titles_link_only_to_http_pdfs(self) -> None:
+        item = {
+            "api": {
+                "positions": [
+                    {"titel": "Gesetz A", "vorgangsposition": "1. Beratung", "vorgang_id": "V1",
+                     "source": {"pdf_url": "https://dserver.bundestag.de/btp/21/21082.pdf"}},
+                    {"titel": "Gesetz B", "vorgangsposition": "1. Beratung", "vorgang_id": "V2",
+                     "source": {"pdf_url": "javascript:alert(1)"}},
+                    {"titel": "Gesetz C", "vorgangsposition": "1. Beratung", "vorgang_id": "V3"},
+                ],
+                "activities": [
+                    {"titel": "Rede A", "aktivitaetsart": "Rede", "pdf_url": "https://dserver.bundestag.de/btp/21/21082.pdf"},
+                    {"titel": "Rede B", "aktivitaetsart": "Rede", "pdf_url": "data:text/html,x"},
+                ],
+            }
+        }
+        positions = pulse_html.render_positions(item)
+        self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21082.pdf">Gesetz A</a>', positions)
+        self.assertNotIn("javascript:", positions)
+        self.assertIn("Gesetz B", positions)
+        self.assertIn("Gesetz C", positions)
+        self.assertEqual(positions.count("<a "), 1)
+        activities = pulse_html.render_activities(item)
+        self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21082.pdf">Rede A</a>', activities)
+        self.assertNotIn("data:", activities)
+        self.assertIn("Rede B", activities)
+        self.assertEqual(activities.count("<a "), 1)
+
+    def test_dev_details_pdf_source_links_only_to_http(self) -> None:
+        def details(url: str) -> str:
+            item = {"index": 1, "api": {"positions": [{"titel": "X", "source": {"pdf_url": url}}]}}
+            return pulse_html.render_top_dev_details(item)
+        self.assertIn('<a href="https://dserver.bundestag.de/btp/21/21082.pdf">PDF-Quelle</a>', details("https://dserver.bundestag.de/btp/21/21082.pdf"))
+        unsafe = details("javascript:alert(1)")
+        self.assertNotIn("javascript:", unsafe)
+        self.assertIn("Keine direkte PDF-Verknüpfung", unsafe)
+
+    def test_per_top_summary_offers_the_original_only_for_http_pdfs(self) -> None:
+        item = SessionSummaryReceiptTests._item(1, [{"id": "C1", "rede_id": "r-1", "speaker": {"display_name": "P", "fraktion": "SPD"}}])
+        stats = pulse_html.item_stats(item)
+        with_pdf = pulse_html.render_llm_summary(item, stats, {"enabled": True}, {"pdf_url": "https://example.test/pp.pdf"})
+        self.assertIn('<a href="https://example.test/pp.pdf">Originalprotokoll (PDF)</a>', with_pdf)
+        without = pulse_html.render_llm_summary(item, stats, {"enabled": True}, {"pdf_url": "javascript:alert(1)"})
+        self.assertNotIn("Originalprotokoll (PDF)", without)
+        self.assertNotIn("javascript:", without)
+        self.assertEqual(without, pulse_html.render_llm_summary(item, stats, {"enabled": True}, {}))
+
+
 if __name__ == "__main__":
     unittest.main()

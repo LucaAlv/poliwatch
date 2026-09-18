@@ -10,7 +10,7 @@ import re
 from collections import Counter
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from features import (
     CATEGORIES,
@@ -1155,6 +1155,44 @@ def item_stats(item: dict[str, Any]) -> dict[str, Any]:
 # only stops a lone historical dossier from being compared against the present.
 MAX_WEEK_GAP = 12
 
+# ---------------------------------------------------------------------------
+# Week radar (puls.html "Themen der Woche")
+#
+# The radar ranks the agenda items of the newest sitting week by speech count.
+# Tuning knobs live here so a change is one line and greppable.
+# ---------------------------------------------------------------------------
+
+# Rows shown; every row tied with the RADAR_ROWS-th count is included too, up to
+# RADAR_ROWS_MAX. A tied group that does not fit is cut back to the last full rank.
+RADAR_ROWS = 5
+RADAR_ROWS_MAX = 8
+RADAR_TITLE_CHARS = 120
+RADAR_SUMMARY_CHARS = 280
+RADAR_RECEIPTS = 4
+RADAR_SIBLINGS = 3
+RADAR_TOOLTIP_TITLES = 10
+
+# Question formats stay in the week's speech total but are never ranked as a
+# topic: every question and answer counts as a Rede, so "Befragung der
+# Bundesregierung" alone would top 74 of the 95 sitting weeks in the archive
+# (measured 2026-09-14) and say nothing about the week's subjects. Prefix match on
+# the whitespace-normalised heading; the cache also holds "Befragung der
+# Bundesregierung (einleitend BMJ)" and Antraege with "Befragung" mid-string.
+QUESTION_FORMAT_PREFIXES = (
+    "Befragung der Bundesregierung",
+    "Fragestunde",
+    "Regierungsbefragung",
+)
+
+# Short fraktion labels for the radar legend only; the raw string stays in every
+# title attribute and in render_share_shift.
+PARTY_SHORT = {
+    "BÜNDNIS 90/DIE GRÜNEN": "Grüne",
+    "Die Linke": "Linke",
+}
+
+WEEKDAY_SHORT = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+
 
 def iso_week_key(datum: Any) -> tuple[int, int] | None:
     """"2026-06-12" -> (2026, 24). None when the date is missing or malformed."""
@@ -1211,14 +1249,24 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
     top_count = 0
     speech_count = 0
     total_chars = 0
-    vote_count = 0
+    # Roll-call votes are matched to agenda items by page overlap and can attach
+    # to two TOPs of one sitting (29 of 246 attachments in the 2026-09 cache), so
+    # votes are counted by id, never by attachment.
+    vote_ids: set[str] = set()
+    vote_top_count = 0
+    vote_sittings: list[tuple[str, Any, int, int]] = []
     truncated_items = 0
+    speakers_incomplete = 0
 
     for entry in entries:
         report = entry.get("report") or {}
-        documents.append(str(_entry_protocol(entry).get("dokumentnummer") or ""))
+        protocol = _entry_protocol(entry)
+        document = str(protocol.get("dokumentnummer") or "")
+        documents.append(document)
         items = report.get("agenda_items") or []
         top_count += len(items)
+        sitting_vote_ids: set[str] = set()
+        first_vote_index = None
         for item in items:
             stats = item_stats(item)
             speech_count += stats["speech_count"]
@@ -1227,16 +1275,30 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             # no text - when xml_speakers is empty. Speech counts stay right in
             # that case but character totals would silently under-report, so a
             # truncated item is excluded from the text aggregate and flagged.
+            # An item with speeches but no speaker array at all is incomplete too.
             if item.get("xml_speakers"):
                 total_chars += stats["total_chars"]
-            elif stats["speakers"]:
+            elif stats["speech_count"]:
                 truncated_items += 1
-            vote_count += len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
+            if stats["speech_count"] and sum(stats["party_counts"].values()) < stats["speech_count"]:
+                speakers_incomplete += 1
+            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+            if votes:
+                vote_top_count += 1
+                if first_vote_index is None:
+                    first_vote_index = item.get("index")
+                for vote in votes:
+                    sitting_vote_ids.add(_vote_key(vote))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
                 if position.get("vorgang_id"):
                     vorgang_ids.add(str(position["vorgang_id"]))
+        if sitting_vote_ids:
+            page_path = entry.get("page_path")
+            label = document or (Path(page_path).stem if page_path else "")
+            vote_sittings.append((label, page_path, first_vote_index, len(sitting_vote_ids)))
+        vote_ids.update(sitting_vote_ids)
 
     return {
         "week": week,
@@ -1247,11 +1309,21 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
         "speech_count": speech_count,
         "total_chars": total_chars,
         "chars_complete": truncated_items == 0,
+        "speakers_complete": speakers_incomplete == 0,
         "party_counts": party_counts,
         "vorgangstyp_counts": vorgangstyp_counts,
         "vorgang_ids": vorgang_ids,
-        "vote_count": vote_count,
+        "vote_count": len(vote_ids),
+        "vote_top_count": vote_top_count,
+        "vote_sittings": vote_sittings,
     }
+
+
+def _vote_key(vote: dict[str, Any]) -> str:
+    """Identity of a roll-call vote: its id, or (title, date) for legacy records."""
+    if vote.get("id"):
+        return str(vote["id"])
+    return f"{vote.get('title') or ''}|{vote.get('date') or ''}"
 
 
 WEEK_METRICS = (
@@ -1308,20 +1380,19 @@ def week_comparison(current: dict[str, Any], previous: dict[str, Any] | None) ->
     }
 
 
-def returning_vorgaenge(
+def vorgang_occurrences(
     weeks: dict[tuple[int, int], list[dict[str, Any]]],
     current_week: tuple[int, int],
-) -> list[dict[str, Any]]:
-    """Procedures debated in `current_week` that already ran in an earlier week.
+) -> dict[str, list[dict[str, Any]]]:
+    """Every appearance of every procedure id up to and including `current_week`.
 
-    Keyed on vorgang_id, the only identifier stable across sittings - top_id is
-    just "Tagesordnungspunkt 6" and renumbers every sitting. This is the closest
-    thing in the data to a topic literally moving through parliament: a bill's
-    1. Beratung in one week and its 2. Beratung in another.
+    Keyed on vorgang_id, the only identifier stable across sittings. Positions and
+    their ``mitberaten`` twins are both indexed (twins carry id, titel, vorgangstyp
+    and vorgangsposition), with no dedup: the radar trace and the returning card
+    each apply their own rules on top of this. Occurrences are in week order, and
+    in agenda order within a week.
     """
     occurrences: dict[str, list[dict[str, Any]]] = {}
-    twins: dict[str, set[str]] = {}
-
     for week in sorted(weeks):
         if week > current_week:
             continue
@@ -1329,10 +1400,16 @@ def returning_vorgaenge(
             report = entry.get("report") or {}
             protocol = _entry_protocol(entry)
             for item in report.get("agenda_items") or []:
-                for position in ((item.get("api") or {}).get("positions") or []):
-                    vorgang_id = str(position.get("vorgang_id") or "")
-                    if not vorgang_id:
+                positions = (item.get("api") or {}).get("positions") or []
+                records = [(str(p.get("vorgang_id") or ""), p, False) for p in positions]
+                for position in positions:
+                    for twin in position.get("mitberaten") or []:
+                        records.append((str(twin.get("id") or ""), twin, True))
+                seen_here: set[str] = set()
+                for vorgang_id, record, is_twin in records:
+                    if not vorgang_id or vorgang_id in seen_here:
                         continue
+                    seen_here.add(vorgang_id)
                     occurrences.setdefault(vorgang_id, []).append(
                         {
                             "week": week,
@@ -1340,21 +1417,50 @@ def returning_vorgaenge(
                             "dokumentnummer": protocol.get("dokumentnummer"),
                             "page_path": entry.get("page_path"),
                             "index": item.get("index"),
-                            "vorgangsposition": position.get("vorgangsposition"),
-                            "titel": position.get("titel"),
-                            "vorgangstyp": position.get("vorgangstyp"),
+                            "vorgangsposition": record.get("vorgangsposition"),
+                            "titel": record.get("titel"),
+                            "vorgangstyp": record.get("vorgangstyp"),
+                            "twin": is_twin,
                         }
                     )
+    return occurrences
+
+
+def returning_vorgaenge(
+    weeks: dict[tuple[int, int], list[dict[str, Any]]],
+    current_week: tuple[int, int],
+    occurrences: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
+    """Procedures debated in `current_week` that already ran in an earlier week.
+
+    This is the closest thing in the data to a topic literally moving through
+    parliament: a bill's 1. Beratung in one week and its 2. Beratung in another.
+    A procedure qualifies when it appears as a *position* in the current week and
+    in at least one earlier week; twin-only appearances feed the dedup only, as
+    before. Pass a precomputed `occurrences` index to avoid a second pass.
+    """
+    index = occurrences if occurrences is not None else vorgang_occurrences(weeks, current_week)
+    twins: dict[str, set[str]] = {}
+    for week in sorted(weeks):
+        if week > current_week:
+            continue
+        for entry in weeks[week]:
+            for item in (entry.get("report") or {}).get("agenda_items") or []:
+                for position in ((item.get("api") or {}).get("positions") or []):
+                    vorgang_id = str(position.get("vorgang_id") or "")
+                    if not vorgang_id:
+                        continue
                     for twin in position.get("mitberaten") or []:
                         if twin.get("id"):
                             twins.setdefault(vorgang_id, set()).add(str(twin["id"]))
 
     rows = []
-    for vorgang_id, records in occurrences.items():
-        seen = sorted({record["week"] for record in records})
+    for vorgang_id, records in index.items():
+        as_position = [record for record in records if not record["twin"]]
+        seen = sorted({record["week"] for record in as_position})
         if current_week not in seen or len(seen) < 2:
             continue
-        ordered = sorted(records, key=lambda record: record["week"])
+        ordered = sorted(as_position, key=lambda record: record["week"])
         rows.append(
             {
                 "vorgang_id": vorgang_id,
@@ -1393,6 +1499,304 @@ def week_sparkline_points(
         points.append({"label": week_label(week), "value": stats["speech_count"], "week": week})
     return points
 
+def _parse_datum(datum: Any) -> date | None:
+    """ISO date from a DIP/XML value, or None. Time suffixes are sliced off."""
+    text = str(datum or "")[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def format_sitting_date(datum: Any) -> str:
+    """"2026-06-12" -> "Fr 12.06."; "" when missing or invalid."""
+    parsed = _parse_datum(datum)
+    if parsed is None:
+        return ""
+    return f"{WEEKDAY_SHORT[parsed.weekday()]} {parsed.day:02d}.{parsed.month:02d}."
+
+
+def format_date(datum: Any) -> str:
+    """"2026-06-12" -> "12.06.2026"; "" when missing or invalid."""
+    parsed = _parse_datum(datum)
+    if parsed is None:
+        return ""
+    return f"{parsed.day:02d}.{parsed.month:02d}.{parsed.year}"
+
+
+def format_count(count: int, singular: str, plural: str) -> str:
+    """"1 Rede" / "19 Reden"."""
+    n = int(count)
+    return f"{format_int(n)} {singular if n == 1 else plural}"
+
+
+def is_question_format(item: dict[str, Any]) -> bool:
+    """Befragung / Fragestunde / Regierungsbefragung: counted, never ranked."""
+    heading = " ".join(str(item.get("heading") or "").split())
+    return heading.startswith(QUESTION_FORMAT_PREFIXES)
+
+
+def safe_href(url: Any) -> str | None:
+    """The url when it is http(s), else None. Guards hrefs taken from DIP payloads."""
+    text = str(url or "").strip()
+    if re.match(r"(?i)https?://", text):
+        return text
+    return None
+
+
+def _normalised_title(title: Any) -> str:
+    return " ".join(str(title or "").split())
+
+
+def topic_identity(item: dict[str, Any]) -> dict[str, Any]:
+    """What a radar row is named after.
+
+    Procedures come from ``api.positions`` in DIP order, then from each position's
+    ``mitberaten`` twins (they carry id, titel, vorgangstyp and vorgangsposition;
+    in 40 TOPs of the archive the only Gesetzgebung procedure is a twin). Dedup is
+    first-seen by id; titles are compared after whitespace normalisation.
+
+    Lead = the first Gesetzgebung procedure, else the first procedure. A group with
+    no Gesetzgebung and several distinct titles is ``equal_weight``: it has no lead
+    title and renders every title alike (Final Gate decision, 2026-09-15). Items
+    without any title fall back to the XML heading, then the TOP id.
+    """
+    positions = (item.get("api") or {}).get("positions") or []
+    procedures: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    def add(record: dict[str, Any], vorgang_id: Any) -> None:
+        key = str(vorgang_id or "")
+        if not key or key in seen_ids:
+            return
+        seen_ids.add(key)
+        procedures.append(
+            {
+                "vorgang_id": key,
+                "titel": _normalised_title(record.get("titel")),
+                "vorgangstyp": str(record.get("vorgangstyp") or ""),
+                "vorgangsposition": str(record.get("vorgangsposition") or ""),
+            }
+        )
+
+    for position in positions:
+        add(position, position.get("vorgang_id"))
+    for position in positions:
+        for twin in position.get("mitberaten") or []:
+            add(twin, twin.get("id"))
+
+    titles: list[str] = []
+    for procedure in procedures:
+        if procedure["titel"] and procedure["titel"] not in titles:
+            titles.append(procedure["titel"])
+    type_counts: Counter[str] = Counter(p["vorgangstyp"] for p in procedures if p["vorgangstyp"])
+
+    lead = next((p for p in procedures if p["vorgangstyp"] == "Gesetzgebung"), None)
+    if lead is None and procedures:
+        lead = procedures[0]
+
+    equal_weight = lead is not None and lead["vorgangstyp"] != "Gesetzgebung" and len(titles) > 1
+    if equal_weight:
+        lead_title = None
+    elif titles:
+        lead_title = lead["titel"] if lead and lead["titel"] else titles[0]
+    else:
+        lead_title = (
+            short(item.get("heading"), RADAR_TITLE_CHARS)
+            or str(item.get("top_id") or "").strip()
+            or f"Tagesordnungspunkt {item.get('index')}"
+        )
+
+    return {
+        "procedures": procedures,
+        "vorgang_ids": [p["vorgang_id"] for p in procedures],
+        "titles": titles,
+        "type_counts": type_counts,
+        "lead": lead,
+        "lead_title": lead_title,
+        "lead_type": lead["vorgangstyp"] if lead else "",
+        "lead_position": lead["vorgangsposition"] if lead else "",
+        "equal_weight": equal_weight,
+    }
+
+
+# (nominative singular, nominative plural, dative plural)
+_TYPE_PLURALS = {
+    "Antrag": ("Antrag", "Anträge", "Anträgen"),
+    "Entschließungsantrag": ("Entschließungsantrag", "Entschließungsanträge", "Entschließungsanträgen"),
+    "Gesetzgebung": ("Gesetzentwurf", "Gesetzentwürfe", "Gesetzentwürfen"),
+}
+
+
+def type_label(identity: dict[str, Any]) -> str:
+    """"Gesetzgebung · 1. Beratung · mit 2 Anträgen" and friends.
+
+    Counts are over procedures, never over titles. Unknown or mixed remainders use
+    the type-neutral "Vorlagen"; the types themselves go into the element's title
+    attribute by the caller.
+    """
+    parts = [identity.get("lead_type") or "", identity.get("lead_position") or ""]
+    procedures = identity.get("procedures") or []
+    others = [p for p in procedures if p is not identity.get("lead")]
+    if others:
+        other_types = Counter(p["vorgangstyp"] for p in others)
+        only_type = next(iter(other_types)) if len(other_types) == 1 else None
+        n = len(others)
+        if identity.get("lead_type") and only_type == identity.get("lead_type") and only_type in _TYPE_PLURALS:
+            plural = _TYPE_PLURALS[only_type][1]
+            parts.append(f"{n + 1} {plural} gemeinsam")
+        elif only_type in _TYPE_PLURALS:
+            singular, _, dative = _TYPE_PLURALS[only_type]
+            parts.append(f"mit {n} {singular if n == 1 else dative}")
+        elif only_type == identity.get("lead_type") and only_type:
+            parts.append(f"{n + 1} Vorlagen gemeinsam")
+        else:
+            parts.append(f"mit {n} weiteren Vorlagen" if n > 1 else "mit 1 weiteren Vorlage")
+    return " · ".join(part for part in parts if part)
+
+
+def topic_row(
+    item: dict[str, Any],
+    entry: dict[str, Any],
+    *,
+    total: int,
+    occurrences: dict[str, list[dict[str, Any]]],
+    dossier_href: str,
+) -> dict[str, Any]:
+    """One radar row: what the TOP is, how much of the week it took, who spoke."""
+    stats = item_stats(item)
+    identity = topic_identity(item)
+    protocol = _entry_protocol(entry)
+    current_week = iso_week_key(protocol.get("datum"))
+    speech_count = int(stats["speech_count"])
+    party_total = sum(stats["party_counts"].values())
+
+    # Earliest earlier-week appearance over the row's procedures, lead id first.
+    # A sitting without a date cannot be placed in time, so it gets no trace.
+    trace = None
+    candidate_ids = []
+    if identity["lead"]:
+        candidate_ids.append(identity["lead"]["vorgang_id"])
+    candidate_ids.extend(v for v in identity["vorgang_ids"] if v not in candidate_ids)
+    for vorgang_id in candidate_ids if current_week is not None else []:
+        earlier = [o for o in occurrences.get(vorgang_id, []) if o["week"] < current_week]
+        if earlier:
+            first = earlier[0]
+            current = next((p for p in identity["procedures"] if p["vorgang_id"] == vorgang_id), None)
+            trace = {
+                "vorgang_id": vorgang_id,
+                "first": first,
+                "current_position": current["vorgangsposition"] if current else "",
+            }
+            break
+
+    summary = item.get("llm_summary") or {}
+    if not (summary.get("text") and summary.get("source_chunks")):
+        summary = None
+    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+
+    return {
+        "page_path": entry.get("page_path"),
+        "dossier_href": dossier_href,
+        "datum": protocol.get("datum"),
+        "dokumentnummer": protocol.get("dokumentnummer"),
+        "index": item.get("index"),
+        "top_id": item.get("top_id"),
+        "heading": item.get("heading"),
+        "speech_count": speech_count,
+        "share": percent(speech_count, total),
+        "party_counts": stats["party_counts"],
+        "party_total": party_total,
+        "speakers": stats["speakers"],
+        "speakers_complete": party_total >= speech_count,
+        "identity": identity,
+        "trace": trace,
+        "summary": summary,
+        "has_votes": bool(votes),
+        "item": item,
+        "stats": stats,
+    }
+
+
+def week_topic_rows(
+    week_entries: list[dict[str, Any]],
+    occurrences: dict[str, list[dict[str, Any]]],
+    *,
+    total: int,
+    dossier_href_for: Callable[[dict[str, Any]], str],
+    rank_limit: int = RADAR_ROWS,
+    hard_cap: int = RADAR_ROWS_MAX,
+) -> dict[str, Any]:
+    """The week's radar: ranked debate rows, the question formats, the rest.
+
+    `total` is the week's speech count from week_stats() so the header and every
+    share use one denominator. Zero-speech items and question formats never rank.
+    Rows are sorted by speech count, then newest sitting first, then agenda order.
+    Every row tied with the `rank_limit`-th count is included; if that tied group
+    does not fit within `hard_cap`, the list is cut back to the last full rank and
+    the tied rows count towards `remaining`. When no full rank exists (the very
+    first rows already tie beyond the cap) the first `rank_limit` rows are shown.
+
+    Returns {"rows", "formats", "remaining"}: `formats` are the excluded,
+    speech-bearing question formats; `remaining` counts the speech-bearing,
+    unranked, non-format items per sitting as (dokumentnummer, page_path, n).
+    """
+    candidates: list[dict[str, Any]] = []
+    formats: list[tuple[str, int, float, str]] = []
+    for entry in week_entries:
+        report = entry.get("report") or {}
+        dossier_href = dossier_href_for(entry)
+        for item in report.get("agenda_items") or []:
+            speech_count = int(item_stats(item)["speech_count"])
+            if not speech_count:
+                continue
+            if is_question_format(item):
+                formats.append(
+                    (
+                        " ".join(str(item.get("heading") or "").split()),
+                        speech_count,
+                        percent(speech_count, total),
+                        f"{dossier_href}#top-{item.get('index')}",
+                    )
+                )
+                continue
+            candidates.append(topic_row(item, entry, total=total, occurrences=occurrences, dossier_href=dossier_href))
+
+    # Count desc; within a count the newest sitting first, then agenda order.
+    candidates.sort(key=lambda row: (-row["speech_count"], -(_parse_datum(row["datum"]) or date.min).toordinal(), row["index"] or 0))
+
+    if len(candidates) <= rank_limit:
+        rows = candidates
+    else:
+        cutoff = candidates[rank_limit - 1]["speech_count"]
+        above = [row for row in candidates if row["speech_count"] > cutoff]
+        tied = [row for row in candidates if row["speech_count"] == cutoff]
+        if len(above) + len(tied) <= hard_cap:
+            rows = above + tied
+        elif above:
+            rows = above
+        else:
+            rows = candidates[:rank_limit]
+
+    # Unranked debates per sitting, in the week's sitting order. Sittings are
+    # told apart by page path (a dokumentnummer can be missing), rows by item.
+    ranked = {id(row["item"]) for row in rows}
+    per_sitting: dict[Any, list[Any]] = {}
+    for entry in week_entries:
+        page_path = entry.get("page_path")
+        document = str(_entry_protocol(entry).get("dokumentnummer") or "") or (Path(page_path).stem if page_path else "")
+        per_sitting[page_path] = [document, 0]
+    for row in candidates:
+        if id(row["item"]) in ranked:
+            continue
+        per_sitting[row["page_path"]][1] += 1
+    remaining = [(document, page_path, n) for page_path, (document, n) in per_sitting.items() if n]
+
+    return {"rows": rows, "formats": formats, "remaining": remaining}
+
+
 def protocol_title(report: dict[str, Any]) -> str:
     protocol = report.get("protocol") or {}
     return f"Bundestag-Puls · {protocol.get('dokumentnummer', 'Plenarprotokoll')}"
@@ -1402,18 +1806,24 @@ def render_badges(items: list[dict[str, Any]], class_name: str = "badge") -> str
     return "".join(f'<span class="{class_name}">{esc(item)}</span>' for item in items)
 
 
-def render_party_stack(counter: Counter[str], total: int) -> str:
+def render_party_stack(
+    counter: Counter[str],
+    total: int,
+    min_width: float = 4.0,
+    class_name: str = "stack",
+) -> str:
+    """Stacked party bar. The radar passes min_width=0 for exact widths."""
     if total <= 0:
-        return '<div class="stack empty"></div>'
+        return f'<div class="{class_name} empty"></div>'
     parts = []
     for party, count in counter.most_common():
-        width = max(4, count / total * 100)
+        width = max(min_width, count / total * 100)
         color = PARTY_COLORS.get(party, "#6b7280")
         parts.append(
             f'<span style="width:{width:.2f}%;background:{color}" '
             f'title="{esc(party)}: {count}"></span>'
         )
-    return f'<div class="stack">{"".join(parts)}</div>'
+    return f'<div class="{class_name}">{"".join(parts)}</div>'
 
 
 # Week-comparison markup. Same technique as render_party_stack above: plain divs
@@ -1590,7 +2000,7 @@ def render_positions(item: dict[str, Any]) -> str:
     parts = []
     for position in positions:
         source = position.get("source") or {}
-        pdf = source.get("pdf_url")
+        pdf = safe_href(source.get("pdf_url"))
         title = esc(position.get("titel"))
         kind = esc(position.get("vorgangsposition"))
         vorgang = esc(position.get("vorgang_id"))
@@ -1614,7 +2024,7 @@ def render_activities(item: dict[str, Any]) -> str:
         kind = esc(activity.get("aktivitaetsart") or "Aktivität")
         person = esc(activity.get("person_id") or "")
         page = esc(activity.get("seite") or "")
-        pdf = activity.get("pdf_url")
+        pdf = safe_href(activity.get("pdf_url"))
         label = f'<a href="{esc(pdf)}">{title}</a>' if pdf else title
         person_text = f"Person {person}" if person else "Keine Personen-ID"
         page_text = f"Seite {page}" if page else "Keine Seite"
@@ -1694,7 +2104,7 @@ def render_top_dev_details(item: dict[str, Any]) -> str:
     source_url = None
     positions = item.get("api", {}).get("positions") or []
     if positions:
-        source_url = (positions[0].get("source") or {}).get("pdf_url")
+        source_url = safe_href((positions[0].get("source") or {}).get("pdf_url"))
 
     return f"""
               <section class="dev-only dev-top-details">
@@ -1835,7 +2245,7 @@ def render_llm_summary(
             "</section>"
         )
 
-    pdf_url = (protocol or {}).get("pdf_url")
+    pdf_url = safe_href((protocol or {}).get("pdf_url"))
     first_anchor = source_chunk_anchor(item, stats, chunks[0])
     label = esc(summary.get("label") or "Automatische Zusammenfassung — zur Quelle")
     label_html = f'<a href="#{esc(first_anchor)}">{label}</a>' if first_anchor else f"<span>{label}</span>"
@@ -1926,17 +2336,6 @@ def render_session_llm_summary(
     for item in visible_items:
         stats = stats_by_index[item["index"]]
         summary = item.get("llm_summary") or {}
-        chunk_links = []
-        for chunk in (summary.get("source_chunks") or [])[:4]:
-            anchor = source_chunk_anchor(item, stats, chunk)
-            source = source_page_text(chunk.get("source_page"))
-            label = f"{chunk.get('id')} · S. {source}" if source else str(chunk.get("id") or "Quelle")
-            if anchor:
-                chunk_links.append(f'<a href="#{esc(anchor)}">{esc(label)}</a>')
-            else:
-                chunk_links.append(f"<span>{esc(label)}</span>")
-        if pdf_url:
-            chunk_links.append(f'<a href="{esc(pdf_url)}">Originalprotokoll</a>')
         rows.append(
             '<article class="session-summary-item">'
             '<div class="session-summary-item-head">'
@@ -1944,7 +2343,7 @@ def render_session_llm_summary(
             f"<h3>{esc(short(item.get('heading'), 120))}</h3>"
             "</div>"
             f"<p>{esc(summary.get('text'))}</p>"
-            f'<div class="session-summary-sources">{"".join(chunk_links)}</div>'
+            f'<div class="session-summary-sources">{render_receipts(item, stats, summary, pdf_url=pdf_url)}</div>'
             "</article>"
         )
 
@@ -1971,6 +2370,37 @@ def render_session_llm_summary(
         f"{more_note}"
         "</section>"
     )
+
+
+def render_receipts(
+    item: dict[str, Any],
+    stats: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    dossier_href: str = "",
+    pdf_url: Any = None,
+    limit: int = RADAR_RECEIPTS,
+) -> str:
+    """The receipt links under a KI-Zusammenfassung: cited chunks, then the PDF.
+
+    Shared by the dossier page (dossier_href="") and the puls.html week radar,
+    where the anchors must point at the dossier page. A chunk whose speech is not
+    in the item's speaker list degrades to plain text; the PDF link is emitted only
+    for an http(s) url.
+    """
+    links = []
+    for chunk in (summary.get("source_chunks") or [])[:limit]:
+        anchor = source_chunk_anchor(item, stats, chunk)
+        source = source_page_text(chunk.get("source_page"))
+        label = f"{chunk.get('id')} · S. {source}" if source else str(chunk.get("id") or "Quelle")
+        if anchor:
+            links.append(f'<a href="{esc(dossier_href)}#{esc(anchor)}">{esc(label)}</a>')
+        else:
+            links.append(f"<span>{esc(label)}</span>")
+    pdf = safe_href(pdf_url)
+    if pdf:
+        links.append(f'<a href="{esc(pdf)}">Originalprotokoll</a>')
+    return "".join(links)
 
 
 def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_enabled: bool = True) -> str:
