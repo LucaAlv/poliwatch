@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0.0] - 2026-09-19
+
+### Added
+
+- The "Daten" page (`database.html`) replaces the sample-row explorer with a download page: one click gets the gzipped SQLite distribution copy or any of the 16 CSV tables, each with its size and full sha256; a Datenstand band shows how many catalog protocols are covered as dossiers and which Bausteine (roll-call votes, abgeordnetenwatch profiles, MdB roster) the file contains; five SQL "Rezepte" run at every build against the very file offered for download, with their result rows shown next to the SQL and linked to the MP, protocol and bill pages; a "So geht's los" section gives three copy-paste routes (shell, Python stdlib, pandas); every table's columns, keys and foreign keys are listed in compact schema rows with a data dictionary that marks which source each column comes from.
+- The distribution copy is built by `export_distribution_data()`: `speeches.paragraphs_json` (a duplicate of `speeches.text`) is dropped, `mp_canonical` maps every `mps` row to its consolidated person, and a `datenstand` table plus `PRAGMA user_version` mark the file as a distribution copy. Export needs SQLite ≥ 3.35; older builds render the page with a "Daten nicht erzeugt" notice naming the reason. Files are deterministic (gzip without timestamps), so unchanged inputs give byte-identical downloads; the export is skipped when nothing it depends on changed (store, recipes, export format, tag, licence, issues URL, coverage counts, Baustein readiness), re-run with `--force-export`, and skipped entirely when `--data-manifest` overrides it. Each export writes a fresh `data/exports/g-<hash>/` generation and removes the previous one only after `datenstand.json` points at the new one; concurrent builds are serialised by `data/exports/.lock`, and a lock left by a crashed build is cleared automatically.
+- New CLI flags `--data-base-url`, `--data-manifest`, `--force-export`, `--data-license`, `--data-issues-url` with `BUNDESTAG_PULSE_DATA_*` env fallbacks (CLI beats env beats default); a `--data-manifest` URL is an explicit opt-in fetch (10 s timeout, 32 MB cap) that `--offline` refuses; an override manifest is shape-checked before rendering and the issues URL must use `https://`, `http://`, `mailto:` or a site-relative path. Documented in `docs/project-documentation.md`; the licence wording lives in `docs/data-license.md` (still pending).
+- `persist_dip_pulse_store.connect()` refuses to open a distribution copy as a build store.
+
+### Changed
+
+- Nav label and every "Datenbank"/"Datenbank erkunden" mention across `index.html`, `overview.html`, `api-sitzungen.html` and `sources.html` renamed to "Daten"; the index page's two SQLite-download/explorer cards merge into one "Daten" card with a "Stand … · N Protokolle" line; the SQLite download link on every page now points at the distribution copy instead of the build store, and the in-page "Daten" links appear exactly when the page has content.
+- `collect_abgeordnete()` returns a third value, `canonical_by_mp_id`, mapping every `mps.id` (not only page-eligible ones) to its consolidated person.
+- `sources.html` gains a "Lizenz und Weiterverwendung" entry (`#lizenz`) that the Daten page links to; the wording is a placeholder until the data licence is settled.
+
+### Fixed
+
+- SQLite errors while building the distribution copy (locked store, full disk) surface as a named `error:` line instead of a traceback.
+
+### Known stale docs
+
+- `docs/bundestag-puls-architecture.html`/`.json` still shows `database.html` as a sample-row explorer with no export step; not regenerated in this change (tracked in TODOS.md).
+
 ## [0.3.0.0] - 2026-09-18
 
 ### Added

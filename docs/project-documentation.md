@@ -127,6 +127,7 @@ It creates these directories under the output directory:
 |-- settings.html
 |-- database.html
 |-- data/
+|   `-- exports/            # distribution SQLite + CSVs + datenstand.json, unless --no-persist
 |-- protocols/
 |-- bills/                  # when the bills Baustein is built
 `-- abgeordnete/            # when the mp-pages Baustein is built
@@ -142,13 +143,15 @@ Important generated files:
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
 | `settings.html` | Browser visibility controls and exact rebuild hints for unavailable Bausteine |
-| `database.html` | Human-readable SQLite table snapshot, or a clear `--no-persist` explanation when persistence is disabled |
+| `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Verbose build manifest for tooling |
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
+| `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 16 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -379,6 +382,18 @@ Common options:
 | `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
 | `--roster-wahlperiode N` | `21` | Legislative period used for full MdB roster pages |
 | `--no-roster` | deprecated | Explicitly veto full-roster acquisition during the compatibility window |
+
+Daten export options (`data/exports/`, the Daten page's download panel, Datenstand and recipes):
+
+| Option | Default | Effect |
+|---|---:|---|
+| `--data-base-url URL` | `data/exports/` or `$BUNDESTAG_PULSE_DATA_BASE_URL` | Where the page's download links point; absolute only for `https://`, `http://` or a leading `/` |
+| `--data-manifest PATH\|URL` | `OUTPUT_DIR/data/exports/datenstand.json` or `$BUNDESTAG_PULSE_DATA_MANIFEST` | Which manifest the Daten page renders from; a URL is an explicit opt-in fetch (10 s timeout, 32 MB cap) and is rejected under `--offline`. The local export is skipped while an override is given (unless `--force-export`) |
+| `--force-export` | off | Re-run the export even when its inputs (store, recipes, export format, tag, licence, issues URL, coverage counts) are unchanged, or when `--data-manifest` would otherwise skip it |
+| `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
+| `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
+
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 16 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 

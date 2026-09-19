@@ -1,5 +1,101 @@
 # TODOS
 
+## Daten
+
+### `parties.name` holds Python-list-repr duplicates of the same party
+
+**What:** On the real store, `parties` has both clean rows (`'AfD'`, `'CDU/CSU'`, `'BÜNDNIS 90/DIE GRÜNEN'`, `'SPD'`, `'DIE LINKE'`, `'fraktionslos'`) and duplicate rows whose `name` is a Python list repr of the same value (`"['AfD']"`, `"['CDU/CSU']"`, `"['BÜNDNIS 90/DIE GRÜNEN']"`, `"['fraktionslos']"`, `"['Die Linke (Gruppe)']"`, `"['FDP']"`, `"['BSW (Gruppe)']"`), plus at least two rows that look like two names concatenated (`'SPDSPD'`, `'SPDCDU/CSU'`). Some `mps.party_id` foreign keys point at the dirty rows (e.g. Stephan Brandner → `"['AfD']"`, Lisa Paus → `"['BÜNDNIS 90/DIE GRÜNEN']"`).
+
+**Why:** Found while building the Daten page's R1/R2/R3 recipes (`fraktion` column), which are the first place on the site to render `parties.name` verbatim rather than through a display helper — so this is very likely older than this branch, not introduced by it. It also means R2's "Redeanteil je Fraktion" percentages can undercount a party split across a clean and a dirty row, and any future feature that trusts `parties.name` as a display string inherits the bug.
+
+**Context:** Almost certainly a party-name-normalization bug in `persist_dip_pulse_store.upsert_party` or a caller passing a list instead of a string (`str(["AfD"])` → `"['AfD']"`) at some point in the ingestion history; the concatenated names (`SPDSPD`) suggest a second, separate bug appending instead of matching. Needs a repro against `validate_dip_protocol`/`persist_dip_pulse_store` call sites, then a migration to merge the duplicate `parties` rows and repoint `mps.party_id`/`vote_fractions.party_id`/`vote_members.party_id`.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Regenerate the architecture diagram for the Daten export step
+
+**What:** `docs/bundestag-puls-architecture.html`/`.json` still describe `database.html` as a 12-row sample explorer with no export step. Regenerate them so the diagram shows `export_distribution_data()` between the store and `render_site`, the `data/exports/g-<hash>/` + `datenstand.json` generation switch, and the `--data-manifest` override path.
+
+**Why:** Deferred from the fix-datenbank plan at the ship gate (2026-09-19) to keep the 0.4.0.0 PR focused; the CHANGELOG's "Known stale docs" entry discloses the gap. Deferred from plan: `~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md` (CEO task T22).
+
+**Context:** The pipeline comment block at the top of `scripts/build_dip_pulse_site.py` (steps 1-7 and the file table) is already updated and is the source for the diagram text.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### Stop persisting `speeches.paragraphs_json`
+
+**What:** A migration dropping the column from the live schema (duplicate of `speeches.text`, ~115 MB on the current store, no reader in site code — `collect_abgeordnete` and every dossier renderer read `snippet`/`char_count`/`text`, never `paragraphs_json`); then remove the export-time `DROP COLUMN` from `export_distribution_data` since it would no longer be needed.
+
+**Why:** Halves the store size; the distribution copy already drops the column at export time, so the schema change is pure cleanup at this point, not a data-loss risk.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Site hosting plan for the 2.4 GB generated site
+
+**What:** Make the HTML deployable under a capped static host (e.g. GitHub Pages' 1 GB limit): extend `--data-base-url`-style externalisation to `data/plenarprotokoll-*.json` (602 MB) and `data/bills.json` (386 MB), or a deploy profile that excludes `data/`, or a host without the cap.
+
+**Why:** The Daten page and `--data-base-url` (this branch) make the *data* shippable to a public audience; the *site* itself is still 2.4 GB and cannot go to a capped host today. Both outside voices in the `/autoplan` review flagged this; the user's go/no-go framing ("ship to a larger audience in a few weeks") depends on the site being public, not only the download.
+
+**Effort:** L
+**Priority:** P1
+**Depends on:** This branch (the base-URL pattern already exists for the two export files)
+
+### Scheduled data-release workflow
+
+**What:** A GitHub Actions workflow on a schedule: online build → export → immutable dated release tag → upload assets → `--offline` rebuild with the release's `--data-base-url` → deploy.
+
+**Why:** The design doc's own constraint is "must stay current automatically"; `scripts/publish_dip_pulse_data.sh` (PR2, manual) is upkeep a solo maintainer will eventually miss. The user's explicit decision at the Final Gate keeps PR2 manual for now; this is the follow-up once that has been exercised a few times.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** PR2 (`scripts/publish_dip_pulse_data.sh`), a `GITHUB_TOKEN` with release-upload scope as a repo secret
+
+### Pilot gate: decide keep/remove for the Daten page
+
+**What:** 8 weeks after the first public data release, decide keep/remove using `gh release view --json assets` download counts, any inbound question or citation, and whether the builder himself used the downloaded file for anything.
+
+**Why:** The user's own go/no-go framing ("if it doesn't work for v1, that is not a deal breaker"); the audience ("developers and researchers") is chosen, not demand-tested, so this is the cheap way to find out without a demand study.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** First public release (PR2)
+
+### Recipe SQL copy buttons, base URL for report JSON, recipe result CSVs / DATA.md / dossier "Daten" footer link
+
+**What:** (a) A "Kopieren" clipboard button on each recipe's SQL block. (b) Extend `--data-base-url`-style externalisation to `data/plenarprotokoll-*.json` links on `puls.html`/dossiers (folds into the site-hosting TODO above). (c) Per-recipe result CSVs, a `DATA.md` in the release, and a "Daten" link in dossier footers.
+
+**Why:** All three were scoped out of this branch (no new script per the design doc; b is outside `build_dip_pulse_site.py`'s Daten-page blast radius; c is an Approach-C follow-up once the data path has real usage).
+
+**Effort:** S–M
+**Priority:** P3
+**Depends on:** None
+
+### DESIGN.md via `/design-consultation`
+
+**What:** Name the site's type scale, tokens (including the light `--surface-2`/`--surface-3` this branch had to invent), and focus/visited/selection rules once, in one place.
+
+**Why:** Every page redefines its own `:root` today; this branch is the second page (after the dossier's) to have had to invent tokens a shared system would already provide.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Site-wide `:visited` and `:focus-visible` rules in `global_header_styles`
+
+**What:** Move this branch's `.recipe a:visited`/`.file a:visited` (teal) and `:focus-visible` outline rules up into the shared stylesheet so every link-dense page (catalog, dossiers, MP pages) gets them too.
+
+**Why:** Those pages have the same link-density gap this branch closed only for the Daten page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** This branch (proves the rules)
+
 ## Protokoll-Dossier
 
 ### Ranking row titles that skip the "Beratung des Antrags der Abgeordneten …" boilerplate

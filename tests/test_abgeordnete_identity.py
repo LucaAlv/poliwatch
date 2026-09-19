@@ -101,7 +101,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         conn = memory_conn()
         store.persist_report(conn, report)
 
-        mps, lookup = site.collect_abgeordnete(conn)
+        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Erika von Beispiel"]
 
         self.assertEqual(len(matches), 1)
@@ -138,7 +138,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         item["votes"] = []
         store.persist_report(conn, report)
 
-        mps, lookup = site.collect_abgeordnete(conn)
+        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Dr. Erika Beispiel"]
 
         self.assertEqual(len(matches), 1)
@@ -163,7 +163,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 is_mdb=True,
             )
 
-        mps, _lookup = site.collect_abgeordnete(conn)
+        mps, _lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Alex Beispiel" and mp["party"] == "SPD"]
 
         self.assertEqual(len(matches), 2)

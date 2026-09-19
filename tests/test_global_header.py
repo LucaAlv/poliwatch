@@ -66,6 +66,14 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn(':root[data-theme="dark"] a.week-label[data-tip]::after', css)
         self.assertIn(':root[data-theme="dark"] .method-list li:target', css)
 
+    def test_database_nav_item_is_labelled_daten(self) -> None:
+        for depth in (0, 1, 2):
+            with self.subTest(depth=depth):
+                markup = pulse_html.render_global_header(depth=depth)
+                nav = re.search(r"<nav[^>]*>(.*?)</nav>", markup, re.S).group(1)
+                self.assertIn(">Daten<", nav)
+                self.assertNotIn("Datenbank<", nav)
+
     def test_accessibility_state_is_wired(self) -> None:
         markup = pulse_html.render_global_header(active="overview", features=all_selection())
         self.assertEqual(markup.count('aria-current="page"'), 1)

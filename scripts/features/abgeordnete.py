@@ -16,7 +16,7 @@ class AbgeordneteComponent(BaseComponent):
             )
         collect = ctx.get("collect_abgeordnete")
         if collect:
-            ctx["abg_mps"], ctx["mp_lookup"] = collect(conn)
+            ctx["abg_mps"], ctx["mp_lookup"], ctx["canonical_by_mp_id"] = collect(conn)
 
     def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
         return ctx["write_abgeordnete_pages"](
