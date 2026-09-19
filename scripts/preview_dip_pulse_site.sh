@@ -19,15 +19,24 @@ fi
 
 PORT="${PORT:-${CONDUCTOR_PORT:-8000}}"
 BIND="${PREVIEW_BIND:-127.0.0.1}"
-OUTPUT_DIR="${DIP_PULSE_OUTPUT_DIR:-.context/dip-pulse-site}"
-PID_FILE="${DIP_PULSE_PID_FILE:-.context/dip-pulse-server.pid}"
-LOG_FILE="${DIP_PULSE_LOG_FILE:-.context/dip-pulse-server.log}"
+MODE="${1:-offline}"
+if [ "$MODE" = "demo" ]; then
+  shift
+  OUTPUT_DIR="${DIP_PULSE_OUTPUT_DIR:-.context/dip-pulse-demo}"
+  PID_FILE="${DIP_PULSE_PID_FILE:-.context/dip-pulse-demo-server.pid}"
+  LOG_FILE="${DIP_PULSE_LOG_FILE:-.context/dip-pulse-demo-server.log}"
+else
+  OUTPUT_DIR="${DIP_PULSE_OUTPUT_DIR:-.context/dip-pulse-site}"
+  PID_FILE="${DIP_PULSE_PID_FILE:-.context/dip-pulse-server.pid}"
+  LOG_FILE="${DIP_PULSE_LOG_FILE:-.context/dip-pulse-server.log}"
+fi
 URL="http://localhost:${PORT}/"
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/preview_dip_pulse_site.sh [render options]
+  scripts/preview_dip_pulse_site.sh demo
   scripts/preview_dip_pulse_site.sh update [fetch/build options]
   scripts/preview_dip_pulse_site.sh stop
 
@@ -36,6 +45,7 @@ and never calls the DIP API. Use "update" when you explicitly want to fetch or
 refresh DIP data before serving the preview.
 
 Examples:
+  scripts/preview_dip_pulse_site.sh demo
   scripts/preview_dip_pulse_site.sh
   scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2
   scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
@@ -69,7 +79,12 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 BUILD_ARGS=(--output-dir "$OUTPUT_DIR")
-if [ "${1:-}" = "update" ] || [ "${1:-}" = "refresh" ] || [ "${1:-}" = "fetch" ]; then
+BUILD_PROGRAM=(python3 scripts/build_dip_pulse_site.py)
+if [ "$MODE" = "demo" ]; then
+  info "Demo mode enabled; building the committed fixture without network access or API keys."
+  BUILD_PROGRAM=(python3 scripts/build_demo_site.py)
+  BUILD_ARGS+=("$@")
+elif [ "${1:-}" = "update" ] || [ "${1:-}" = "refresh" ] || [ "${1:-}" = "fetch" ]; then
   shift
   if [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ -z "${DIP_API_KEY:-}" ]; then
     echo "error: DIP_API_KEY is not set. Add it to .env.local or export it before running update." >&2
@@ -83,14 +98,14 @@ else
 fi
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  python3 scripts/build_dip_pulse_site.py "${BUILD_ARGS[@]}"
+  "${BUILD_PROGRAM[@]}" "${BUILD_ARGS[@]}"
   exit 0
 fi
 
 # 1. Rebuild the static site in place. The build overwrites files individually
 #    and never wipes the directory, so a running server keeps serving safely.
 info "Building static preview into ${OUTPUT_DIR}."
-python3 scripts/build_dip_pulse_site.py "${BUILD_ARGS[@]}"
+"${BUILD_PROGRAM[@]}" "${BUILD_ARGS[@]}"
 info "Static preview build finished."
 
 # 2. Ensure the static file server is up. http.server reads from disk on every

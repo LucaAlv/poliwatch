@@ -1,85 +1,56 @@
 from __future__ import annotations
 
-import io
-import json
-import re
 import unittest
-from contextlib import redirect_stderr
 
 import _support  # noqa: F401
 import render_dip_pulse_html as pulse_html
-from features import FEATURES, NAV_ITEMS, REGISTRY, FeatureError, all_selection, feature_css, manifest_json, resolve
+from features import ENRICHMENT_REGISTRY, EnrichmentSelection, FeatureError, NAV_ITEMS
+from features import loader
 
 
-class FeatureRegistryTests(unittest.TestCase):
-    def test_registry_is_self_consistent(self) -> None:
-        ids = [feature.id for feature in FEATURES]
-        self.assertEqual(len(ids), len(set(ids)))
-        self.assertTrue(all(re.fullmatch(r"[a-z][a-z0-9-]*", feature_id) for feature_id in ids))
-        nav_keys = {item.key for item in NAV_ITEMS}
-        for feature in FEATURES:
-            self.assertTrue(set(feature.requires).issubset(REGISTRY))
-            self.assertTrue(set(feature.enhances).issubset(REGISTRY))
-            if feature.nav_key:
-                self.assertIn(feature.nav_key, nav_keys)
+class FixedPresentationTests(unittest.TestCase):
+    def test_navigation_is_the_fixed_six_destination_product(self) -> None:
+        self.assertEqual(
+            [(item.key, item.label, item.path) for item in NAV_ITEMS],
+            [
+                ("pulse", "Aktueller Puls", "puls.html"),
+                ("overview", "Sitzungen", "overview.html"),
+                ("bills", "Gesetze", "bills/index.html"),
+                ("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+                ("database", "Daten", "database.html"),
+                ("sources", "Quellen", "sources.html"),
+            ],
+        )
+        markup = pulse_html.render_global_header(active="overview")
+        self.assertEqual(markup.count("<nav"), 1)
+        self.assertEqual(markup.count('aria-current="page"'), 1)
+        self.assertNotIn("settings", markup.lower())
+        self.assertNotIn("data-feature", markup)
 
-    def test_core_features_cannot_be_disabled(self) -> None:
-        with self.assertRaisesRegex(FeatureError, "Kern-Bausteine"):
-            resolve(disable=("store",))
+    def test_only_three_operator_enrichments_exist(self) -> None:
+        self.assertEqual(set(ENRICHMENT_REGISTRY), {"votes", "aw-profiles", "mp-roster"})
+        selection = EnrichmentSelection(frozenset({"votes", "mp-roster"}))
+        self.assertEqual(selection.ids, frozenset({"votes", "mp-roster"}))
+        with self.assertRaisesRegex(FeatureError, "Unbekannte Anreicherung"):
+            EnrichmentSelection(frozenset({"bills"}))
 
-    def test_unknown_id_lists_real_ids(self) -> None:
-        with self.assertRaisesRegex(FeatureError, "votes"):
-            resolve(enable=("not-real",))
+    def test_public_components_are_unconditional_and_dev_view_is_explicit(self) -> None:
+        public_ids = {component.feature.id for component in loader.load()}
+        self.assertEqual(public_ids, {"votes", "summaries", "aw-profiles", "mp-pages", "bills"})
+        self.assertNotIn("dev-view", public_ids)
+        dev_ids = {component.feature.id for component in loader.load(include_dev_view=True)}
+        self.assertEqual(dev_ids, public_ids | {"dev-view"})
 
-    def test_requirements_are_added_with_a_note(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            selection = resolve(base=(), enable=("bill-follow",))
-        self.assertTrue({"bill-follow", "bills", "dip-fetch"}.issubset(selection.ids))
-        self.assertIn("automatisch aktiviert", stderr.getvalue())
-
-    def test_explicit_veto_cascades_and_wins(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            selection = resolve(base=REGISTRY, enable=("bills",), disable=("bills",))
-        self.assertNotIn("bills", selection)
-        self.assertNotIn("bill-follow", selection)
-        self.assertIn("ausdrücklich deaktiviert", stderr.getvalue())
-
-    def test_manifest_is_compact_and_safe(self) -> None:
-        payload = manifest_json(all_selection())
-        decoded = json.loads(payload)
-        self.assertNotIn("</", payload)
-        self.assertNotIn("Namentliche Abstimmungen", payload)
-        self.assertTrue(decoded)
-        self.assertTrue(all(set(value) == {"a", "v", "c", "m", "r"} for value in decoded.values()))
-        self.assertEqual(decoded["bill-follow"]["r"], ["bills"])
-        self.assertFalse(decoded["bills"]["v"])
-
-    def test_feature_css_has_expected_polarity(self) -> None:
-        css = feature_css()
-        for feature in FEATURES:
-            selector = f'html:not([data-feature-{feature.id}]) [data-feature="{feature.id}"]'
-            if feature.client_mode == "hide":
-                self.assertEqual(css.count(selector), 1)
-            else:
-                self.assertNotIn(selector, css)
-        self.assertIn("html[data-feature-dev-view] .dev-only", css)
-        self.assertIn(".dev-only { display:none", css)
-
-    def test_global_styles_embed_feature_css(self) -> None:
+    def test_general_feature_runtime_is_not_emitted(self) -> None:
+        head = pulse_html.page_head()
+        scripts = pulse_html.page_scripts()
         styles = pulse_html.global_header_styles()
-        self.assertNotIn("{feature_css()}", styles)
-        self.assertIn('html:not([data-feature-votes]) [data-feature="votes"]', styles)
-
-    def test_browser_runtime_persists_preferences_and_resolves_dependencies(self) -> None:
-        bootstrap = pulse_html.feature_bootstrap_script(resolve(base=()))
-        runtime = pulse_html.feature_runtime_script()
-        self.assertIn('const key = "bundestag-pulse-features"', bootstrap)
-        self.assertIn('"bill-follow":{"a":1,"v":0,"c":0,"m":"h","r":["bills"]}', bootstrap)
-        self.assertIn("for (const required of feature.r || []) apply(required, true)", runtime)
-        self.assertIn("if ((dependent.r || []).includes(id)) apply(dependentId, false)", runtime)
-        self.assertIn("window.localStorage.setItem(key, JSON.stringify(overrides))", runtime)
+        for output in (head, scripts, styles):
+            self.assertNotIn("bundestag-pulse-features", output)
+            self.assertNotIn("data-feature-", output)
+        self.assertIn("bundestag-pulse-ai-summaries-v1", scripts)
+        self.assertIn('root.dataset.aiSummaryController = "ready"', scripts)
+        self.assertIn("body.hidden = collapsed", scripts)
 
 
 if __name__ == "__main__":

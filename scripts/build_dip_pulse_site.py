@@ -13,7 +13,7 @@
 # Build pipeline -- see ``main()`` at the bottom of the file for the real sequence:
 #
 #   1. Resolve optional update-time enrichments. The published HTML always
-#      contains every visitor-facing Baustein; the browser controls visibility.
+#      contains the fixed public component set.
 #   2. Fetch the plenary-protocol catalog from the DIP API -> ``fetch_protocols``.
 #   3. For a subset of those sittings, build a full "dossier" (agenda items,
 #      speeches, documents, roll-call votes, optional LLM summaries) by delegating
@@ -38,7 +38,7 @@
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
-#   settings.html        ``render_settings_page``    per-browser Baustein toggles
+#   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
 #   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
 #   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
@@ -51,7 +51,7 @@
 # Every page is emitted as one big f-string containing its own ``<style>`` block,
 # so a ``render_*`` function is self-contained: its Python code computes the
 # numbers, and the f-string right below it is the literal page markup. Shared
-# chrome (header, theme switch, feature runtime) comes from
+# chrome (header, theme switch, AI disclosure runtime) comes from
 # ``render_dip_pulse_html`` and is imported as ``pulse_html``.
 #
 # The site copy is German because the audience is German; code and comments are
@@ -93,20 +93,17 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
-# The "Bausteine" (building blocks) feature system. FEATURES/REGISTRY/CATEGORIES
-# describe every optional part of the site, Selection is a resolved set of
-# enabled ids, and features.loader lazily imports the addon component for each
-# enabled feature (bills, mp-pages, votes, summaries, ...).
+import publication_state as publication
+# Public components are fixed product structure. EnrichmentSelection is the
+# separate operator-controlled set of optional network acquisition jobs.
 from features import (
-    CATEGORIES,
-    FEATURES,
+    ENRICHMENT_REGISTRY,
     REGISTRY,
+    EnrichmentSelection,
     FeatureError,
     Selection,
-    default_selection,
     publication_selection,
     resolve,
-    tooling_manifest,
 )
 from features import loader as feature_loader
 
@@ -233,6 +230,15 @@ def build_dossiers_with_progress(
         print(f"[dossiers] [{index}/{total}] {action}: {label}.", file=sys.stderr, flush=True)
         try:
             entry = build_dossier(protocol, existing_report)
+        except dip.DipError as exc:
+            elapsed = time.monotonic() - started
+            protocol["dossier_failure_reasons"] = ["source_unavailable"]
+            print(
+                f"[dossiers] [{index}/{total}] Skipped unavailable {label} after {elapsed:.1f}s: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
         except Exception:
             elapsed = time.monotonic() - started
             print(
@@ -250,7 +256,11 @@ def build_dossiers_with_progress(
         )
 
     elapsed = time.monotonic() - overall_started
-    print(f"[dossiers] Completed {total}/{total} dossier(s) in {elapsed:.1f}s.", file=sys.stderr, flush=True)
+    print(
+        f"[dossiers] Completed {len(entries)}/{total} dossier(s) in {elapsed:.1f}s.",
+        file=sys.stderr,
+        flush=True,
+    )
     return entries
 
 
@@ -512,6 +522,8 @@ def write_report_files(
     output_dir: Path,
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
+    *,
+    include_dev_view: bool = False,
 ) -> dict[str, Any]:
     features = publication_selection()
     protocol = report.get("protocol") or {}
@@ -523,6 +535,7 @@ def write_report_files(
             report,
             features=features,
             mp_lookup=mp_lookup,
+            include_dev_view=include_dev_view,
         ),
         encoding="utf-8",
     )
@@ -639,6 +652,8 @@ def rebuild_cached_detail_pages(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
     cached_entries: list[dict[str, Any]] | None = None,
+    *,
+    include_dev_view: bool = False,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls.
 
@@ -649,7 +664,15 @@ def rebuild_cached_detail_pages(
         cached_entries = load_existing_detail_entries(output_dir, protocols)
     entries = []
     for entry in cached_entries:
-        entries.append(write_report_files(entry["report"], output_dir, mp_lookup, features))
+        entries.append(
+            write_report_files(
+                entry["report"],
+                output_dir,
+                mp_lookup,
+                features,
+                include_dev_view=include_dev_view,
+            )
+        )
     return entries
 
 
@@ -787,10 +810,10 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     return keys
 
 
-# Copy usable summaries from the previous report onto the new one, then record
-# what happened in report["summary_generation"]; the dossier page prints that
-# block to explain why a summary is present or missing.
-def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+# Copy only source-compatible, fully cited summaries from the previous report.
+def _reuse_valid_cached_summaries(
+    report: dict[str, Any], existing_report: dict[str, Any] | None
+) -> tuple[int, int]:
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
         summary = item.get("llm_summary")
@@ -800,26 +823,128 @@ def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[s
             existing_by_key[key] = summary
 
     reused = 0
+    invalid = 0
+    pdf_url = (report.get("protocol") or {}).get("pdf_url")
     for item in report.get("agenda_items") or []:
-        if usable_llm_summary(item.get("llm_summary")):
+        top = {
+            "top_id": item.get("top_id"),
+            "heading": item.get("heading"),
+            "speeches": item.get("xml_speakers") or [],
+        }
+        current_valid, _ = dip.validate_usable_summary(item.get("llm_summary"), top, pdf_url=pdf_url)
+        if current_valid:
             continue
         for key in agenda_item_reuse_keys(item):
             summary = existing_by_key.get(key)
             if summary:
-                item["llm_summary"] = summary
-                reused += 1
+                valid, reason = dip.validate_usable_summary(summary, top, pdf_url=pdf_url)
+                if valid:
+                    item["llm_summary"] = copy.deepcopy(summary)
+                    reused += 1
+                else:
+                    invalid += 1
+                    print(
+                        f"warning: cached summary for {item.get('top_id') or item.get('index')} "
+                        f"was not reused ({reason or 'invalid_citations'}).",
+                        file=sys.stderr,
+                    )
                 break
 
+    return reused, invalid
+
+
+def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    reused, invalid = _reuse_valid_cached_summaries(report, existing_report)
     report["summary_generation"] = {
         "enabled": False,
         "mode": "reuse",
         "reason": "refresh not requested",
         "reused_top_count": reused,
+        "invalid_cache_count": invalid,
         "generated_top_count": 0,
         "available_top_count": sum(
             1 for item in report.get("agenda_items") or [] if usable_llm_summary(item.get("llm_summary"))
         ),
     }
+
+
+def reconcile_generated_and_cached_summaries(
+    report: dict[str, Any],
+    existing_report: dict[str, Any] | None,
+) -> None:
+    """Fill generation gaps from validated cache and keep provenance counters exact."""
+    fallback_count, invalid_cache_count = _reuse_valid_cached_summaries(report, existing_report)
+    generation = report.setdefault("summary_generation", {})
+    generation["reused_top_count"] = fallback_count
+    generation["invalid_cache_count"] = invalid_cache_count
+
+    raw = (report.setdefault("acquisition", {}).get("summaries") or {})
+    eligible = int(raw.get("eligible") or 0)
+    generated = int(raw.get("generated") or 0)
+    pdf_url = (report.get("protocol") or {}).get("pdf_url")
+    valid_top_ids: set[str] = set()
+    valid_count = 0
+    for item in report.get("agenda_items") or []:
+        top = {
+            "top_id": item.get("top_id"),
+            "heading": item.get("heading"),
+            "speeches": item.get("xml_speakers") or [],
+        }
+        if len(dip.summary_source_chunks(top)) < dip.SUMMARY_CHUNK_MIN:
+            continue
+        valid, _ = dip.validate_usable_summary(item.get("llm_summary"), top, pdf_url=pdf_url)
+        if valid:
+            valid_count += 1
+            valid_top_ids.add(str(item.get("top_id") or item.get("index") or "unknown"))
+
+    failures = [
+        failure
+        for failure in generation.get("failures") or []
+        if str(failure.get("top_id") or "unknown") not in valid_top_ids
+    ]
+    generation["failures"] = failures
+    generation["available_top_count"] = valid_count
+    reused = max(0, valid_count - generated)
+    raw_failed = int(raw.get("failed") or 0)
+    failed = max(len(failures), raw_failed - fallback_count)
+    omitted = max(0, eligible - generated - reused - failed)
+    failure_reasons = tuple(
+        dict.fromkeys(
+            str(reason)
+            for reason in (
+                [failure["reason"] for failure in failures]
+                or (raw.get("failure_reasons") or [])
+            )
+        )
+    ) if failed else ()
+    if failed:
+        state = publication.AcquisitionState.PARTIAL if valid_count else publication.AcquisitionState.FAILED
+    elif omitted:
+        state = publication.AcquisitionState.PARTIAL
+    else:
+        state = publication.AcquisitionState.COMPLETE
+    acquired_at = raw.get("acquired_at")
+    if reused and not acquired_at:
+        acquired_at = _prior_acquired_at(existing_report, "summaries")
+    report["acquisition"]["summaries"] = publication.DomainFacts(
+        domain="summaries",
+        acquisition_state=state,
+        source="llm-with-bundestag-citations",
+        records=valid_count,
+        reused=reused,
+        rejected=failed,
+        failure_reasons=failure_reasons,
+        acquired_at=acquired_at,
+        attempted_at=raw.get("attempted_at"),
+        attempted=bool(raw.get("attempted")),
+        counters={
+            "eligible": eligible,
+            "generated": generated,
+            "omitted": omitted,
+            "failed": failed,
+            "fallbacks": fallback_count,
+        },
+    ).as_dict()
 
 
 def reuse_existing_dossier_enrichments(
@@ -886,6 +1011,141 @@ def reuse_existing_dossier_enrichments(
                     member["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
 
 
+def _report_profile_counts(report: dict[str, Any]) -> tuple[int, int]:
+    targets = 0
+    records = 0
+    for item in report.get("agenda_items") or []:
+        for speech in item.get("xml_speakers") or []:
+            speaker = speech.get("speaker") or {}
+            targets += 1
+            if (speaker.get("abgeordnetenwatch") or {}).get("url"):
+                records += 1
+        for vote in _iter_report_votes(item):
+            for member in vote.get("members") or []:
+                targets += 1
+                if (member.get("abgeordnetenwatch") or {}).get("url"):
+                    records += 1
+    return records, targets
+
+
+def _prior_acquired_at(existing_report: dict[str, Any] | None, domain: str) -> str | None:
+    return (
+        (((existing_report or {}).get("acquisition") or {}).get(domain) or {}).get("acquired_at")
+    )
+
+
+def annotate_report_acquisition(
+    report: dict[str, Any],
+    existing_report: dict[str, Any] | None,
+    *,
+    vote_scan_pages: int,
+    profile_resolver: Any | None,
+    summary_mode: str,
+) -> None:
+    """Finalize report-level optional-domain provenance after reuse/enrichment."""
+    acquisition = report.setdefault("acquisition", {})
+
+    vote_records = sum(
+        len(_iter_report_votes(item)) for item in report.get("agenda_items") or []
+    )
+    if vote_scan_pages == 0:
+        acquisition["votes"] = publication.DomainFacts(
+            domain="votes",
+            acquisition_state=(
+                publication.AcquisitionState.COMPLETE
+                if vote_records
+                else publication.AcquisitionState.NOT_REQUESTED
+            ),
+            source="bundestag-roll-call",
+            records=vote_records,
+            reused=vote_records,
+            acquired_at=_prior_acquired_at(existing_report, "votes") if vote_records else None,
+        ).as_dict()
+
+    profile_records, _profile_targets = _report_profile_counts(report)
+    if profile_resolver is None:
+        profile_state = (
+            publication.AcquisitionState.COMPLETE
+            if profile_records
+            else publication.AcquisitionState.NOT_REQUESTED
+        )
+        acquisition["profiles"] = publication.DomainFacts(
+            domain="profiles",
+            acquisition_state=profile_state,
+            source="abgeordnetenwatch",
+            records=profile_records,
+            reused=profile_records,
+            acquired_at=_prior_acquired_at(existing_report, "profiles") if profile_records else None,
+        ).as_dict()
+    else:
+        now = dip.utc_now()
+        acquisition["profiles"] = publication.DomainFacts(
+            domain="profiles",
+            acquisition_state=publication.AcquisitionState.COMPLETE,
+            source="abgeordnetenwatch",
+            records=profile_records,
+            acquired_at=now if profile_records else None,
+            attempted_at=now,
+            attempted=True,
+        ).as_dict()
+
+    if summary_mode == "reuse":
+        eligible = sum(
+            1
+            for item in report.get("agenda_items") or []
+            if len(
+                dip.summary_source_chunks(
+                    {
+                        "top_id": item.get("top_id"),
+                        "heading": item.get("heading"),
+                        "speeches": item.get("xml_speakers") or [],
+                    }
+                )
+            )
+            >= dip.SUMMARY_CHUNK_MIN
+        )
+        reused = sum(
+            1
+            for item in report.get("agenda_items") or []
+            if usable_llm_summary(item.get("llm_summary"))
+        )
+        invalid = min(
+            max(0, eligible - reused),
+            int((report.get("summary_generation") or {}).get("invalid_cache_count") or 0),
+        )
+        omitted = max(0, eligible - reused - invalid)
+        if invalid:
+            summary_state = (
+                publication.AcquisitionState.PARTIAL
+                if reused
+                else publication.AcquisitionState.FAILED
+            )
+            reasons = ("invalid_citations",)
+        elif reused:
+            summary_state = publication.AcquisitionState.COMPLETE
+            reasons = ()
+        else:
+            summary_state = publication.AcquisitionState.NOT_REQUESTED
+            reasons = ()
+        acquisition["summaries"] = publication.DomainFacts(
+            domain="summaries",
+            acquisition_state=summary_state,
+            source="llm-with-bundestag-citations",
+            records=reused,
+            reused=reused,
+            rejected=invalid,
+            failure_reasons=reasons,
+            acquired_at=_prior_acquired_at(existing_report, "summaries") if reused else None,
+            counters={
+                "eligible": eligible,
+                "generated": 0,
+                "omitted": omitted,
+                "failed": invalid,
+                "fallbacks": 0,
+            },
+        ).as_dict()
+
+
 # Build one complete dossier for a single sitting and write both of its files.
 #
 # The heavy lifting (XML download, agenda/speech extraction, DIP lookups,
@@ -909,12 +1169,17 @@ def write_report_and_page(
     profile_resolver: Any | None = None,
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
+    include_dev_view: bool = False,
+    summary_max_calls: int = 25,
+    summary_timeout: float = 60,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
     # builder not to call an LLM, then fill summaries in below from the cached
     # report via the summaries component.
-    effective_summary_mode = "off" if summary_mode == "reuse" else summary_mode
+    effective_summary_mode = "off" if summary_mode == "reuse" else (
+        "auto" if summary_mode == "required" else summary_mode
+    )
     args = argparse.Namespace(
         api_key=api_key,
         protocol_id=str(protocol["id"]),
@@ -928,19 +1193,29 @@ def write_report_and_page(
         anthropic_api_key=anthropic_api_key,
         gemini_api_key=gemini_api_key,
         summary_model=summary_model,
+        summary_max_calls=summary_max_calls,
+        summary_timeout=summary_timeout,
+        # A cache may satisfy some or all required summaries. Without a cache,
+        # fail before making any provider calls when the budget cannot suffice.
+        summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
     )
     report = dip.build_report(args, protocol=protocol)
+    if summary_mode in {"auto", "required"}:
+        reconcile_generated_and_cached_summaries(report, existing_report)
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
         votes=vote_scan_pages == 0,
         profiles=profile_resolver is None,
     )
-    # Post-processing steps that are feature-gated: "summaries" carries over the
-    # cached LLM summaries, "aw-profiles" attaches abgeordnetenwatch profiles to
-    # speakers and vote members. Both mutate `report` in place.
-    components = {component.feature.id: component for component in feature_loader.load(features)}
+    # Post-processing steps supplied by enrichment components. In reuse mode the
+    # summaries component carries cached summaries over; aw-profiles attaches
+    # abgeordnetenwatch profiles to speakers and vote members.
+    components = {
+        component.feature.id: component
+        for component in feature_loader.load(features, include_dev_view=include_dev_view)
+    }
     enrich_context = {
         "summary_mode": summary_mode,
         "existing_report": existing_report,
@@ -952,7 +1227,43 @@ def write_report_and_page(
         component = components.get(feature_id)
         if component:
             component.enrich_report(report, enrich_context)
-    return write_report_files(report, output_dir, mp_lookup, features)
+    annotate_report_acquisition(
+        report,
+        existing_report,
+        vote_scan_pages=vote_scan_pages,
+        profile_resolver=profile_resolver,
+        summary_mode=summary_mode,
+    )
+    if summary_mode == "required":
+        missing = []
+        for item in report.get("agenda_items") or []:
+            top = {
+                "top_id": item.get("top_id"),
+                "heading": item.get("heading"),
+                "speeches": item.get("xml_speakers") or [],
+            }
+            if len(dip.summary_source_chunks(top)) < dip.SUMMARY_CHUNK_MIN:
+                continue
+            valid, _ = dip.validate_usable_summary(
+                item.get("llm_summary"),
+                top,
+                pdf_url=(report.get("protocol") or {}).get("pdf_url"),
+            )
+            if not valid:
+                missing.append(str(item.get("top_id") or item.get("index")))
+        if missing:
+            raise dip.DipError(
+                "Required summaries are incomplete for "
+                + ", ".join(missing)
+                + ". Fix: increase --summary-max-calls, provide provider credentials, or use --summary-mode auto."
+            )
+    return write_report_files(
+        report,
+        output_dir,
+        mp_lookup,
+        features,
+        include_dev_view=include_dev_view,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2439,7 +2750,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
   <div class="shell">
     {pulse_html.render_global_header(active="database", features=features)}
     <main class="panel">
-      <span class="eyebrow">Kern-Baustein</span>
+      <span class="eyebrow">Primärquellen</span>
       <h1>Daten nicht erzeugt</h1>
       <p>{body}</p>
       <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um diese Seite zu füllen.</p>
@@ -2534,7 +2845,7 @@ def render_landing_page(
     )
 
     # "Bereiche" section - the navigation cards. Optional areas are inserted
-    # only when the corresponding Baustein is enabled or the artifact exists,
+    # only when the corresponding artifact exists,
     # so the home page never links to a page this build did not write.
     areas = [
         (
@@ -2822,7 +3133,7 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
     """The week's roll-call votes, counted by vote id across every sitting.
 
     Rendered in both band states and gated client-side through
-    data-feature="votes"; id="abstimmungen" stays an external deep-link target.
+    id="abstimmungen" stays an external deep-link target.
     """
     count = int(stats.get("vote_count") or 0)
     if count:
@@ -2845,7 +3156,7 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
             f'<a class="feature-link" href="{newest_href}">Sitzungsbelege pr&uuml;fen</a>'
         )
     return f"""
-        <article class="week-card votes-card" id="abstimmungen" data-feature="votes">
+        <article class="week-card votes-card" id="abstimmungen">
           <span class="eyebrow">Erfasst</span>
           <h3>Namentliche Abstimmungen</h3>
           {body}
@@ -3384,19 +3695,19 @@ def render_radar_row(
         trace_html = f'<p class="radar-trace">Fortgesetzt: {earlier} &rarr; {esc(now)}</p>'
 
     summary_html = ""
-    if row["summary"] and "summaries" in features:
+    if row["summary"]:
         text = pulse_html.short(row["summary"].get("text"), pulse_html.RADAR_SUMMARY_CHARS)
         receipts = pulse_html.render_receipts(
             row["item"], row["stats"], row["summary"], dossier_href=row["dossier_href"], pdf_url=pdf_url
         )
         summary_html = (
-            f'<div class="radar-summary" data-feature="summaries"><p>{esc(text)}</p>'
+            f'<div class="radar-summary"><p>{esc(text)}</p>'
             f'<p class="radar-receipts">{receipts}</p></div>'
         )
 
     badge_html = ""
-    if row["has_votes"] and "votes" in features:
-        badge_html = '<span class="badge radar-badge" data-feature="votes">namentlich abgestimmt</span>'
+    if row["has_votes"]:
+        badge_html = '<span class="badge radar-badge">namentlich abgestimmt</span>'
 
     foot_parts = [pulse_html.format_sitting_date(row["datum"]), f"Tagesordnungspunkt {row['index']}", "Debatte im Protokoll öffnen"]
     foot_html = f'<p class="radar-open"><a href="{href}">{" · ".join(esc(part) for part in foot_parts if part)}</a></p>'
@@ -3999,7 +4310,7 @@ def render_front_page(
 {radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Plenarprotokoll-Katalog</a>{'<a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''}<a href="sources.html">Quellen und Methode</a><a href="settings.html">Einstellungen</a></span>
+      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetze</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -4013,7 +4324,7 @@ def protocol_source_links(protocol: dict[str, Any]) -> str:
     fundstelle = protocol.get("fundstelle") or {}
     links = []
     for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
-        url = fundstelle.get(key)
+        url = pulse_html.safe_href(fundstelle.get(key))
         if url:
             links.append(f'<a href="{pulse_html.esc(url)}">{label}</a>')
     return "".join(links) or '<span class="muted">Keine Quelllinks</span>'
@@ -4038,7 +4349,7 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
 # walks the dossiers that were already built and reassembles them by legislative
 # procedure (DIP "Vorgang") instead of by sitting, so one bill's documents,
 # plenary appearances, speakers and roll-call votes end up on a single page.
-# Gated on the "bills" Baustein.
+# Public bill pages are always generated, including an honest empty state.
 # ---------------------------------------------------------------------------
 
 
@@ -4557,7 +4868,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     features = features or publication_selection()
     # One card per bill: type and latest date, title linking to the detail page,
     # who introduced it, and badges counting documents, plenary appearances and
-    # roll-call votes. The follow button is gated on the "bill-follow" Baustein.
+    # roll-call votes. Following is a page-local browser interaction.
     rows = []
     for bill in bills:
         introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
@@ -4576,7 +4887,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
                 </div>
               </div>
               <div class="actions">
-                {'<button class="follow-button" type="button" data-feature="bill-follow" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>' if 'bill-follow' in features else ''}
+                {'<button class="follow-button" type="button" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>'}
                 <a class="open-button" href="{pulse_html.esc(bill['slug'])}.html">Details</a>
               </div>
             </article>
@@ -4624,6 +4935,16 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 
 
 # PAGE: bills/bill-<slug>.html - everything known about one procedure.
+def _bill_event_href(value: Any) -> str:
+    """Accept an allowlisted official source or our generated dossier anchor."""
+    href = str(value or "")
+    if href.startswith("https://"):
+        return pulse_html.source_url(href, "bundestag-dip")
+    if re.fullmatch(r"\.\./protocols/plenarprotokoll-[a-z0-9-]+\.html#top-[0-9]+", href):
+        return href
+    raise publication.PublicationStateError("unsafe bill timeline URL")
+
+
 def render_bill_detail(
     bill: dict[str, Any],
     mp_lookup: dict[str, int] | None = None,
@@ -4638,7 +4959,9 @@ def render_bill_detail(
     for event in bill.get("events") or []:
         title = pulse_html.esc(event.get("title") or "")
         if event.get("url"):
-            title = f'<a href="{pulse_html.esc(event.get("url"))}">{title}</a>'
+            title = (
+                f'<a href="{pulse_html.esc(_bill_event_href(event.get("url")))}">{title}</a>'
+            )
         events.append(
             '<li class="timeline-row">'
             f'<time>{pulse_html.esc(event.get("date") or "")}</time>'
@@ -4650,7 +4973,11 @@ def render_bill_detail(
     docs = []
     for doc in bill.get("documents") or []:
         number = pulse_html.esc(doc.get("dokumentnummer") or "")
-        label = f'<a href="{pulse_html.esc(doc.get("url"))}">{number}</a>' if doc.get("url") else number
+        label = (
+            f'<a href="{pulse_html.esc(pulse_html.source_url(doc.get("url"), "bundestag-dip"))}">{number}</a>'
+            if doc.get("url")
+            else number
+        )
         docs.append(
             '<li class="doc-row">'
             f"<strong>{label}</strong>"
@@ -4709,7 +5036,7 @@ def render_bill_detail(
         <p>Rohdatenübersicht zu Vorgang, Drucksachen, Plenarstellen, Rednern und Abstimmungen.</p>
       </div>
       <div class="actions">
-        {'<button class="follow-button" type="button" data-feature="bill-follow" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>' if 'bill-follow' in features else ''}
+        {'<button class="follow-button" type="button" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>'}
       </div>
     </header>
     <section class="summary-grid">
@@ -4801,7 +5128,7 @@ def write_bill_pages(
 #                               describe the same person into one profile
 #   3. render/write functions - emit the roster page and one profile per person
 #
-# Gated on the "mp-pages" Baustein (the roster fetch additionally on "mp-roster").
+# MP pages are public; only full-roster acquisition is operator-controlled.
 # ---------------------------------------------------------------------------
 
 
@@ -5233,6 +5560,14 @@ def abgeordnete_styles() -> str:
     .mp-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
     .mp-table tr[hidden] { display:none; }
     .mp-empty { margin-top:16px; }
+    .mp-notice {
+      margin:16px 0 0;
+      padding:11px 13px;
+      border-left:3px solid #c49024;
+      background:#fbf6e7;
+      color:#654b13;
+      line-height:1.5;
+    }
     .vote-row { display:grid; grid-template-columns:96px minmax(0,1fr) auto; gap:10px; padding-bottom:10px; border-bottom:1px solid #eef1f5; font-size:13px; }
     .vote-row:last-child { border-bottom:0; padding-bottom:0; }
     .vote-row time { color:var(--muted); }
@@ -5295,7 +5630,23 @@ def _location_label(mp: dict[str, Any]) -> str:
 
 
 # PAGE: abgeordnete/index.html - the filterable MP roster.
-def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | None = None) -> str:
+def _mp_domain_notice(domain: str, state: str) -> str:
+    copy = {
+        ("roster", "not_requested"): "Hinweis: Der vollständige Abgeordnetenkader wurde nicht abgerufen.",
+        ("roster", "partial"): "Teilweise verfügbar: Der Abgeordnetenkader ist unvollständig.",
+        ("roster", "failed"): "Nicht verfügbar: Der Abgeordnetenkader konnte nicht abgerufen werden.",
+        ("profiles", "not_requested"): "Hinweis: Profilverknüpfungen wurden nicht abgerufen.",
+        ("profiles", "partial"): "Teilweise verfügbar: Einige Profilverknüpfungen fehlen.",
+        ("profiles", "failed"): "Nicht verfügbar: Profilverknüpfungen konnten nicht abgerufen werden.",
+    }.get((domain, state))
+    return f'<p class="mp-notice">{pulse_html.esc(copy)}</p>' if copy else ""
+
+
+def render_abgeordnete_index(
+    mps: list[dict[str, Any]],
+    features: Selection | None = None,
+    publication_domains: dict[str, Any] | None = None,
+) -> str:
     features = features or publication_selection()
     # Only actual MdBs are listed. People who merely appear as speakers
     # (ministers, Bundesrat guests) still get a profile page - see
@@ -5326,6 +5677,13 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
 
     with_speeches = sum(1 for mp in listed if (mp.get("speech_count") or 0) > 0)
     total_speeches = sum(mp.get("speech_count") or 0 for mp in listed)
+    domains = publication_domains or {}
+    notices = "".join(
+        (
+            _mp_domain_notice("roster", str((domains.get("roster") or {}).get("acquisition_state") or "complete")),
+            _mp_domain_notice("profiles", str((domains.get("profiles") or {}).get("acquisition_state") or "complete")),
+        )
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -5354,6 +5712,7 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
       <div class="metric"><span>Mit Reden</span><strong>{pulse_html.esc(with_speeches)}</strong></div>
       <div class="metric"><span>Reden gesamt</span><strong>{pulse_html.esc(total_speeches)}</strong></div>
     </section>
+    {notices}
     <div class="filter-bar">
       <input type="search" data-mp-search placeholder="Nach Name, Wahlkreis oder Bundesland suchen…" aria-label="Abgeordnete suchen">
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
@@ -5373,13 +5732,17 @@ def render_abgeordnete_index(mps: list[dict[str, Any]], features: Selection | No
 # The <id> in the file name is the canonical mps row id chosen by
 # collect_abgeordnete, which is also what mp_lookup maps every external id to,
 # so speaker links from dossier and bill pages resolve here.
-def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = None) -> str:
+def render_abgeordnete_detail(
+    mp: dict[str, Any],
+    features: Selection | None = None,
+    publication_domains: dict[str, Any] | None = None,
+) -> str:
     features = features or publication_selection()
     # Header link out to the abgeordnetenwatch.de profile, when one was resolved.
     profile_link = ""
     if mp.get("profile_url"):
         profile_link = (
-            f'<a class="source-link" data-feature="aw-profiles" href="{pulse_html.esc(mp["profile_url"])}" target="_blank" rel="noopener">'
+            f'<a class="source-link" href="{pulse_html.esc(pulse_html.source_url(mp["profile_url"], "abgeordnetenwatch"))}" target="_blank" rel="noopener">'
             "abgeordnetenwatch.de-Profil ↗</a>"
         )
 
@@ -5422,7 +5785,9 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
         label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "Abwesend"}.get(direction, vote.get("vote") or "—")
         title = pulse_html.esc(vote.get("title") or vote.get("topic") or "Namentliche Abstimmung")
         if vote.get("detail_url"):
-            title = f'<a href="{pulse_html.esc(vote.get("detail_url"))}">{title}</a>'
+            title = (
+                f'<a href="{pulse_html.esc(pulse_html.source_url(vote.get("detail_url"), "bundestag-roll-call"))}">{title}</a>'
+            )
         votes.append(
             '<li class="vote-row">'
             f'<time>{pulse_html.esc(vote.get("date") or "")}</time>'
@@ -5433,6 +5798,13 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
 
     tally = mp.get("vote_tally") or {}
     participation = tally.get("yes", 0) + tally.get("no", 0) + tally.get("abstain", 0)
+    domains = publication_domains or {}
+    notices = "".join(
+        (
+            _mp_domain_notice("roster", str((domains.get("roster") or {}).get("acquisition_state") or "complete")),
+            _mp_domain_notice("profiles", str((domains.get("profiles") or {}).get("acquisition_state") or "complete")),
+        )
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -5462,6 +5834,7 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
       <div class="metric"><span>Reden</span><strong>{pulse_html.esc(mp.get('speech_count') or 0)}</strong></div>
       <div class="metric"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(participation)}</strong></div>
     </section>
+    {notices}
     <div class="content-grid">
       <main>
         <section class="panel">
@@ -5475,8 +5848,8 @@ def render_abgeordnete_detail(mp: dict[str, Any], features: Selection | None = N
       </main>
       <aside>
         <section class="panel">
-          <h2 data-feature="votes">Namentliche Abstimmungen</h2>
-          <ul class="doc-list" data-feature="votes">{''.join(votes) if votes else '<li>Keine namentlichen Abstimmungen erfasst.</li>'}</ul>
+          <h2>Namentliche Abstimmungen</h2>
+          <ul class="doc-list">{''.join(votes) if votes else '<li>Keine namentlichen Abstimmungen erfasst.</li>'}</ul>
         </section>
       </aside>
     </div>
@@ -5494,6 +5867,7 @@ def write_abgeordnete_pages(
     output_dir: Path,
     mps: list[dict[str, Any]],
     features: Selection | None = None,
+    publication_domains: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     features = features or publication_selection()
     abg_dir = output_dir / "abgeordnete"
@@ -5506,8 +5880,14 @@ def write_abgeordnete_pages(
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
             stale_page.unlink()
     for mp in detail_mps:
-        (abg_dir / f"{mp['id']}.html").write_text(render_abgeordnete_detail(mp, features), encoding="utf-8")
-    (abg_dir / "index.html").write_text(render_abgeordnete_index(mps, features), encoding="utf-8")
+        (abg_dir / f"{mp['id']}.html").write_text(
+            render_abgeordnete_detail(mp, features, publication_domains),
+            encoding="utf-8",
+        )
+    (abg_dir / "index.html").write_text(
+        render_abgeordnete_index(mps, features, publication_domains),
+        encoding="utf-8",
+    )
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     listed = sum(1 for mp in mps if mp.get("is_mdb"))
@@ -5562,6 +5942,11 @@ def render_overview(
         if warnings:
             warning_label = "Warnung" if len(warnings) == 1 else "Warnungen"
             warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
+        source_links = []
+        for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
+            safe_url = pulse_html.safe_href(protocol.get(key))
+            if safe_url:
+                source_links.append(f'<a href="{pulse_html.esc(safe_url)}">{label}</a>')
 
         generated_cards.append(
             f"""
@@ -5582,8 +5967,7 @@ def render_overview(
               </div>
               <ul class="top-preview">{''.join(top_preview)}</ul>
               <div class="session-links">
-                <a href="{pulse_html.esc(pulse_html.safe_href(protocol.get('xml_url')) or '')}">XML</a>
-                <a href="{pulse_html.esc(pulse_html.safe_href(protocol.get('pdf_url')) or '')}">PDF</a>
+                {''.join(source_links)}
                 <a href="data/{pulse_html.esc(entry['report_path'].name)}">JSON</a>
                 {sqlite_link}
                 {warning_html}
@@ -5870,7 +6254,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a>{' · <a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''}{database_footer_link} · <a href="sources.html">Quellen und Methode</a> · <a href="settings.html">Einstellungen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -6436,6 +6820,7 @@ def render_sources_page(
     database_href: str | None = None,
     database_page_href: str | None = None,
     features: Selection | None = None,
+    publication_manifest: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
     # "Erzeugte Sitzungsdatensätze" table: one row per dossier with its metrics
@@ -6445,6 +6830,14 @@ def render_sources_page(
         report = entry["report"]
         protocol = report.get("protocol") or {}
         summary = report.get("validation_summary") or {}
+        source_actions = []
+        for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
+            safe_url = pulse_html.safe_href(protocol.get(key))
+            if safe_url:
+                source_actions.append(f'<a href="{pulse_html.esc(safe_url)}">{label}</a>')
+        source_actions.append(
+            f'<a href="data/{pulse_html.esc(entry["report_path"].name)}">JSON</a>'
+        )
         generated_rows.append(
             """
             <tr>
@@ -6453,9 +6846,7 @@ def render_sources_page(
               <td>{tops}</td>
               <td>{speeches}</td>
               <td class="source-actions">
-                <a href="{xml_url}">XML</a>
-                <a href="{pdf_url}">PDF</a>
-                <a href="data/{json_file}">JSON</a>
+                {source_actions}
               </td>
             </tr>
             """.format(
@@ -6464,9 +6855,7 @@ def render_sources_page(
                 date=pulse_html.esc(protocol.get("datum")),
                 tops=pulse_html.esc(summary.get("xml_top_count")),
                 speeches=pulse_html.esc(summary.get("xml_speech_count")),
-                xml_url=pulse_html.esc(pulse_html.safe_href(protocol.get("xml_url")) or ""),
-                pdf_url=pulse_html.esc(pulse_html.safe_href(protocol.get("pdf_url")) or ""),
-                json_file=pulse_html.esc(entry["report_path"].name),
+                source_actions="".join(source_actions),
             )
         )
 
@@ -6474,6 +6863,46 @@ def render_sources_page(
         generated_rows.append('<tr><td colspan="5" class="muted">In diesem Build wurden keine Sitzungen erzeugt.</td></tr>')
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
+    status_manifest = publication_manifest or {}
+    status_domains = status_manifest.get("domains") or {}
+    status_labels = {
+        "ready": "Verfügbar",
+        "domain_empty": "Keine passenden Daten",
+        "partial": "Teilweise verfügbar",
+        "unavailable": "Nicht verfügbar",
+        "omitted": "Nicht veröffentlicht",
+    }
+    source_details = {
+        "votes": ("Abstimmungen", "Bundestag", "https://www.bundestag.de/parlament/plenum/abstimmung"),
+        "profiles": ("Profilverknüpfungen", "abgeordnetenwatch.de", "https://www.abgeordnetenwatch.de/api"),
+        "roster": ("Abgeordnetenkader", "Bundestag DIP", "https://dip.bundestag.de"),
+        "summaries": ("KI-Zusammenfassungen", "Bundestag-Protokolle mit KI", "#ki-zusammenfassungen"),
+    }
+    status_rows = []
+    for domain_id in ("votes", "profiles", "roster", "summaries"):
+        domain = status_domains.get(domain_id) or {}
+        title, source_label, source_url = source_details[domain_id]
+        state = str(domain.get("presentation_state") or "unavailable")
+        timing = []
+        if domain.get("acquired_at"):
+            timing.append(f'Daten abgerufen: <time datetime="{pulse_html.esc(domain["acquired_at"])}">{pulse_html.esc(domain["acquired_at"])}</time>')
+        if state in {"partial", "unavailable"} and domain.get("attempted_at"):
+            timing.append(f'Letzter Versuch: <time datetime="{pulse_html.esc(domain["attempted_at"])}">{pulse_html.esc(domain["attempted_at"])}</time>')
+        if domain.get("source_updated_at"):
+            timing.append(f'Quellstand: <time datetime="{pulse_html.esc(domain["source_updated_at"])}">{pulse_html.esc(domain["source_updated_at"])}</time>')
+        else:
+            timing.append("Kein Quellstand von der Quelle angegeben")
+        status_rows.append(
+            '<li class="status-row status-{}"><div><strong>{}</strong><span>{}</span></div>'
+            '<div><b>{}</b><small>{}</small></div></li>'.format(
+                pulse_html.esc(state),
+                pulse_html.esc(title),
+                f'<a href="{pulse_html.esc(source_url)}">{pulse_html.esc(source_label)}</a>',
+                pulse_html.esc(status_labels.get(state, "Nicht verfügbar")),
+                " · ".join(timing),
+            )
+        )
+    generated_at = status_manifest.get("generated_at") or ""
     database_page_link = (
         f'<a href="{pulse_html.esc(database_page_href)}">Daten</a>' if database_page_href else ""
     )
@@ -6661,12 +7090,23 @@ def render_sources_page(
       padding-left:12px;
     }}
     .muted {{ color:var(--muted); }}
+    .status-list {{ list-style:none; margin:14px 0 0; padding:0; }}
+    .status-row {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,1fr); gap:18px; padding:13px 0; border-bottom:1px solid var(--line); }}
+    .status-row:last-child {{ border-bottom:0; }}
+    .status-row div {{ display:grid; gap:4px; }}
+    .status-row span, .status-row small {{ color:var(--muted); line-height:1.45; }}
+    .status-row b {{ width:max-content; padding:3px 7px; border-radius:4px; font-size:13px; }}
+    .status-ready b, .status-domain_empty b {{ background:#e7f6f3; color:#0f5f59; }}
+    .status-partial b {{ background:#fbf1d3; color:#765410; }}
+    .status-unavailable b {{ background:#fbe8e8; color:#8a2424; }}
+    .status-omitted b {{ background:#eef1f5; color:#4f5b6b; }}
     footer {{ padding-top:8px; color:var(--muted); font-size:12px; }}
     @media (max-width: 760px) {{
       .shell {{ padding:18px 14px; }}
       .page-header, .source-grid {{ grid-template-columns:1fr; }}
       h1 {{ font-size:29px; }}
       .method-list li, .method-list.glossary li {{ grid-template-columns:1fr; gap:3px; }}
+      .status-row {{ grid-template-columns:1fr; }}
       table, thead, tbody, tr, th, td {{ display:block; }}
       thead {{ display:none; }}
       td {{ padding:8px 0; }}
@@ -6690,6 +7130,11 @@ def render_sources_page(
       </div>
     </header>
     <main>
+      <section class="panel" id="datenstand">
+        <h2>Datenstand dieser Veröffentlichung</h2>
+        <p>Veröffentlicht: <time datetime="{pulse_html.esc(generated_at)}">{pulse_html.esc(generated_at)}</time>. Optionale Quellen werden getrennt ausgewiesen, damit fehlende Daten nicht mit einem echten Null-Ergebnis verwechselt werden.</p>
+        <ul class="status-list">{''.join(status_rows)}</ul>
+      </section>
       <section class="panel">
         <h2>Primärquellen</h2>
         <div class="source-grid">
@@ -6711,13 +7156,13 @@ def render_sources_page(
             <p>Dokumentnummern werden aus Protokoll-Links extrahiert und mit DIP-Positionen abgeglichen. PDF-Links erscheinen, wenn der offizielle Datensatz sie enthält.</p>
             <a href="https://dip.bundestag.de">DIP-Dokumentensuche</a>
           </article>
-          <article class="source-card" data-feature="votes">
+          <article class="source-card">
             <span class="eyebrow">Namentliche Abstimmungen</span>
             <h3>Namentliche Abstimmungen</h3>
             <p>Abstimmungssummen, Fraktionssummen und einzelne Stimmen kommen von den Bundestag-Seiten zu namentlichen Abstimmungen und werden über Sitzungsdatum und Drucksachennummern zugeordnet.</p>
             <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Bundestag namentliche Abstimmungen</a>
           </article>
-          <article class="source-card" data-feature="aw-profiles">
+          <article class="source-card">
             <span class="eyebrow">Abgeordnetenprofile</span>
             <h3>abgeordnetenwatch.de</h3>
             <p>Rednerinnen und Redner werden mit ihrem Profil auf abgeordnetenwatch.de verknüpft — primär über die Bundestags-Redner-ID (ext_id_bundestagsverwaltung), ersatzweise über Name und Fraktion. Die offenen Daten stehen unter CC0.</p>
@@ -6735,6 +7180,7 @@ def render_sources_page(
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
           <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
+          <li id="ki-zusammenfassungen"><strong>KI-Zusammenfassungen</strong><span>Sie sind als „KI-generiert · nicht redaktionell geprüft“ markiert und verlinken drei bis fünf technisch geprüfte Belegstellen. Diese Linkprüfung beweist weder sachliche Richtigkeit noch Ausgewogenheit oder Vollständigkeit.</span></li>
           {database_method_item}
           {licence_method_item}
         </ul>
@@ -6769,7 +7215,7 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Plenarprotokoll-Katalog</a>{' · <a href="bills/index.html" data-feature="bills">Gesetze verfolgen</a>' if 'bills' in features else ''} · <a href="settings.html">Einstellungen</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -6779,12 +7225,268 @@ def render_sources_page(
 
 
 # ---------------------------------------------------------------------------
-# PAGE: settings.html - "Bausteine"
-#
-# Shows every feature grouped by category. The build decides what is *available*;
-# this page only lets a visitor show or hide available blocks in their own
-# browser, persisted in localStorage by the feature runtime in pulse_html.
+# PAGE: settings.html - temporary 0.5.x compatibility notice.
 # ---------------------------------------------------------------------------
+
+
+def _publication_timestamp() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def build_publication_manifest(
+    *,
+    root: Path,
+    protocols: list[dict[str, Any]],
+    entries: list[dict[str, Any]],
+    abg_mps: list[dict[str, Any]],
+    bill_count: int,
+    enrichments: EnrichmentSelection | None,
+    summary_mode: str,
+    acquisition_attempted: bool,
+    development_output: bool,
+    previous_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Aggregate validated schema-v2 facts after acquisition has finished."""
+    now = _publication_timestamp()
+    selected = set(enrichments.ids if enrichments is not None else ())
+    reports = [entry.get("report") or {} for entry in entries]
+    previous_domains = (previous_manifest or {}).get("domains") or {}
+
+    def previous_time(domain: str, field: str) -> str | None:
+        value = (previous_domains.get(domain) or {}).get(field)
+        return str(value) if value else None
+    agenda_items = [item for report in reports for item in (report.get("agenda_items") or [])]
+    entry_by_number = {
+        normalized_document_number((entry.get("report") or {}).get("protocol", {}).get("dokumentnummer")): entry
+        for entry in entries
+    }
+    dossier_items = []
+    for protocol in protocols:
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        entry = entry_by_number.get(document_number)
+        if entry:
+            dossier_items.append(
+                publication.DossierItem(
+                    document_number=document_number,
+                    presentation_state="ready",
+                    report_path=entry["report_path"].relative_to(root).as_posix(),
+                    page_path=entry["page_path"].relative_to(root).as_posix(),
+                )
+            )
+        else:
+            reasons = tuple(protocol.get("dossier_failure_reasons") or ())
+            dossier_items.append(
+                publication.DossierItem(
+                    document_number=document_number,
+                    presentation_state="unavailable" if reasons else "not_requested",
+                    failure_reasons=reasons,
+                )
+            )
+
+    vote_records = sum(len(_iter_report_votes(item)) for item in agenda_items)
+    profile_targets = len(abg_mps) + sum(len(item.get("xml_speakers") or []) for item in agenda_items)
+    profile_records = sum(1 for mp in abg_mps if mp.get("profile_url")) + sum(
+        1
+        for item in agenda_items
+        for speech in (item.get("xml_speakers") or [])
+        if ((speech.get("speaker") or {}).get("abgeordnetenwatch") or {}).get("url")
+    )
+    roster_records = sum(1 for mp in abg_mps if mp.get("is_mdb"))
+    summary_records = sum(1 for item in agenda_items if usable_llm_summary(item.get("llm_summary")))
+    summary_eligible = max(summary_records, sum(
+        1
+        for item in agenda_items
+        if sum(
+            1
+            for speech in (item.get("xml_speakers") or [])
+            if speech.get("text") or speech.get("paragraphs")
+        )
+        >= 3
+    ))
+
+    def optional_domain(domain: str, source: str, records: int, selected_id: str) -> publication.DomainFacts:
+        requested = selected_id in selected
+        cached = records > 0 and not requested
+        state = publication.AcquisitionState.COMPLETE if requested or cached else publication.AcquisitionState.NOT_REQUESTED
+        return publication.DomainFacts(
+            domain=domain,
+            acquisition_state=state,
+            source=source,
+            records=records,
+            reused=records if cached else 0,
+            acquired_at=now if requested and acquisition_attempted and records else None,
+            attempted_at=now if requested and acquisition_attempted else None,
+            attempted=requested and acquisition_attempted,
+        )
+
+    def aggregate_report_domain(
+        domain: str,
+        source: str,
+        records: int,
+        selected_id: str,
+    ) -> publication.DomainFacts:
+        raw_facts = [
+            ((report.get("acquisition") or {}).get(domain) or {})
+            for report in reports
+            if ((report.get("acquisition") or {}).get(domain) or {})
+        ]
+        if not raw_facts:
+            if domain == "summaries":
+                requested = summary_mode != "off"
+                generated = records if requested and acquisition_attempted else 0
+                reused_count = records - generated
+                return publication.DomainFacts(
+                    domain=domain,
+                    acquisition_state=(
+                        publication.AcquisitionState.COMPLETE
+                        if requested or records
+                        else publication.AcquisitionState.NOT_REQUESTED
+                    ),
+                    source=source,
+                    records=records,
+                    reused=reused_count,
+                    acquired_at=now if generated else None,
+                    attempted_at=now if requested and acquisition_attempted else None,
+                    attempted=requested and acquisition_attempted,
+                    counters={
+                        "eligible": summary_eligible,
+                        "generated": generated,
+                        "omitted": max(0, summary_eligible - records),
+                        "failed": 0,
+                        "fallbacks": 0,
+                    },
+                )
+            return optional_domain(domain, source, records, selected_id)
+
+        states = [str(fact.get("acquisition_state")) for fact in raw_facts]
+        aggregate_records = sum(int(fact.get("records") or 0) for fact in raw_facts)
+        reused = sum(int(fact.get("reused") or 0) for fact in raw_facts)
+        rejected = sum(int(fact.get("rejected") or 0) for fact in raw_facts)
+        reasons = tuple(
+            dict.fromkeys(
+                reason
+                for fact in raw_facts
+                for reason in (fact.get("failure_reasons") or [])
+            )
+        )
+        if all(state == "not_requested" for state in states):
+            state = publication.AcquisitionState.NOT_REQUESTED
+        elif any(state in {"partial", "failed"} for state in states) or len(set(states)) > 1:
+            state = (
+                publication.AcquisitionState.PARTIAL
+                if aggregate_records
+                else publication.AcquisitionState.FAILED
+            )
+            if state is publication.AcquisitionState.FAILED and not reasons:
+                reasons = ("source_unavailable",)
+        else:
+            state = publication.AcquisitionState.COMPLETE
+
+        acquired_times = sorted(str(fact["acquired_at"]) for fact in raw_facts if fact.get("acquired_at"))
+        attempted_times = sorted(str(fact["attempted_at"]) for fact in raw_facts if fact.get("attempted_at"))
+        source_times = sorted(str(fact["source_updated_at"]) for fact in raw_facts if fact.get("source_updated_at"))
+        counters: dict[str, int] = {}
+        if domain == "summaries":
+            counters = {
+                key: sum(int(fact.get(key) or 0) for fact in raw_facts)
+                for key in ("eligible", "generated", "omitted", "failed", "fallbacks")
+            }
+        return publication.DomainFacts(
+            domain=domain,
+            acquisition_state=state,
+            source=source,
+            records=aggregate_records,
+            reused=reused,
+            rejected=rejected,
+            failure_reasons=reasons,
+            acquired_at=acquired_times[0] if acquired_times else None,
+            attempted_at=attempted_times[-1] if attempted_times else None,
+            source_updated_at=source_times[0] if source_times else None,
+            attempted=bool(attempted_times),
+            counters=counters,
+        )
+
+    catalog_state = publication.AcquisitionState.COMPLETE if protocols else publication.AcquisitionState.FAILED
+    catalog_reasons = () if protocols else ("empty_required_dataset",)
+    version = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
+    domains = (
+        publication.DomainFacts(
+            domain="catalog",
+            acquisition_state=catalog_state,
+            source="bundestag-dip",
+            records=len(protocols),
+            reused=len(protocols) if protocols and not acquisition_attempted else 0,
+            failure_reasons=catalog_reasons,
+            acquired_at=(now if acquisition_attempted and protocols else previous_time("catalog", "acquired_at")),
+            attempted_at=now if acquisition_attempted else None,
+            attempted=acquisition_attempted,
+        ),
+        publication.DomainFacts(
+            domain="dossiers",
+            acquisition_state=(publication.AcquisitionState.COMPLETE if entries else publication.AcquisitionState.NOT_REQUESTED),
+            source="bundestag-xml",
+            records=len(entries),
+            reused=len(entries) if not acquisition_attempted else 0,
+            acquired_at=(now if acquisition_attempted and entries else previous_time("dossiers", "acquired_at")),
+            attempted_at=now if acquisition_attempted and entries else None,
+            attempted=acquisition_attempted and bool(entries),
+            items=tuple(dossier_items),
+        ),
+        aggregate_report_domain("votes", "bundestag-roll-call", vote_records, "votes"),
+        aggregate_report_domain("profiles", "abgeordnetenwatch", profile_records, "aw-profiles"),
+        (
+            publication.DomainFacts(
+                domain="roster",
+                acquisition_state=publication.AcquisitionState.COMPLETE,
+                source="bundestag-dip",
+                records=roster_records,
+                reused=roster_records if "mp-roster" not in selected else 0,
+                acquired_at=(
+                    now
+                    if "mp-roster" in selected and acquisition_attempted
+                    else previous_time("roster", "acquired_at")
+                ),
+                attempted_at=now if "mp-roster" in selected and acquisition_attempted else None,
+                attempted="mp-roster" in selected and acquisition_attempted,
+            )
+            if roster_records
+            else publication.DomainFacts(
+                domain="roster",
+                acquisition_state=(
+                    publication.AcquisitionState.FAILED
+                    if "mp-roster" in selected and acquisition_attempted
+                    else publication.AcquisitionState.NOT_REQUESTED
+                ),
+                source="bundestag-dip",
+                records=0,
+                failure_reasons=(
+                    ("empty_required_dataset",)
+                    if "mp-roster" in selected and acquisition_attempted
+                    else ()
+                ),
+                attempted_at=now if "mp-roster" in selected and acquisition_attempted else None,
+                attempted="mp-roster" in selected and acquisition_attempted,
+            )
+        ),
+        publication.DomainFacts(
+            domain="bills",
+            acquisition_state=publication.AcquisitionState.COMPLETE,
+            source="derived-dip",
+            records=bill_count,
+        ),
+        aggregate_report_domain(
+            "summaries",
+            "llm-with-bundestag-citations",
+            summary_records,
+            "summaries",
+        ),
+    )
+    return publication.manifest(
+        generated_at=now,
+        version=version,
+        development_output=development_output,
+        domains=domains,
+    )
 
 
 def derive_feature_readiness(
@@ -6793,7 +7495,7 @@ def derive_feature_readiness(
     *,
     bill_count: int,
 ) -> dict[str, str]:
-    """Describe cached publication data without changing browser preferences."""
+    """Summarize acquired coverage for export metadata, never for UI gating."""
     reports = [entry.get("report") or {} for entry in entries]
     agenda_items = [item for report in reports for item in (report.get("agenda_items") or [])]
     vote_items = sum(1 for item in agenda_items if _iter_report_votes(item))
@@ -6812,12 +7514,11 @@ def derive_feature_readiness(
         return "ready" if total > 0 and present >= total else "partial"
 
     bills_state = "ready" if bill_count else "unavailable"
-    mp_state = "ready" if abg_mps else "unavailable"
     return {
         "votes": coverage(vote_items, len(agenda_items)),
         "summaries": coverage(summary_items, len(agenda_items)),
         "aw-profiles": coverage(profile_count, profile_targets),
-        "mp-pages": mp_state,
+        "mp-pages": "ready" if abg_mps else "unavailable",
         "mp-roster": "ready" if any(mp.get("is_mdb") for mp in abg_mps) else "unavailable",
         "bills": bills_state,
         "bill-follow": bills_state,
@@ -6825,30 +7526,17 @@ def derive_feature_readiness(
     }
 
 
-def render_settings_page(features: Selection, readiness: dict[str, str] | None = None) -> str:
-    readiness = readiness or {}
-    groups = "".join(
-        f'<section class="settings-card settings-group"><h2>{pulse_html.esc(category)}</h2>'
-        f'{items}</section>'
-        for category in CATEGORIES
-        if (items := pulse_html.render_settings_items(features, category, readiness))
-    )
-    readiness_labels = {"ready": "verfügbar", "partial": "teilweise", "unavailable": "noch nicht verfügbar"}
-    enrichment_rows = "".join(
-        '<li><span>' + pulse_html.esc(REGISTRY[feature_id].label) + '</span>'
-        + '<strong class="settings-badge readiness-{}">{}</strong></li>'.format(
-            pulse_html.esc(readiness.get(feature_id, "unavailable")),
-            pulse_html.esc(readiness_labels.get(readiness.get(feature_id, "unavailable"), "unbekannt")),
-        )
-        for feature_id in ("votes", "summaries", "aw-profiles", "mp-roster")
-    )
+def render_settings_page(
+    features: Selection | None = None,
+    readiness: dict[str, str] | None = None,
+) -> str:
     return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Bausteine</title>
-  {pulse_html.page_head(features)}
+  <title>Bundestag-Puls · Feste öffentliche Ansicht</title>
+  {pulse_html.page_head()}
   <style>
     :root {{ --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa; --panel:#fff; --blue:#174ea6; }}
     * {{ box-sizing:border-box; }}
@@ -6860,29 +7548,31 @@ def render_settings_page(features: Selection, readiness: dict[str, str] | None =
     .page-header {{ margin-bottom:22px; }}
     .page-header h1 {{ margin:0; font-size:34px; }}
     .page-header p {{ max-width:760px; color:var(--muted); line-height:1.55; }}
-    .settings-page-actions {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; }}
-    .readiness-card {{ margin-top:16px; }}
-    .readiness-card h2 {{ margin-top:0; }}
-    .readiness-list {{ list-style:none; margin:0; padding:0; }}
-    .readiness-list li {{ display:flex; justify-content:space-between; gap:14px; padding:9px 0; border-bottom:1px solid var(--line); }}
-    .readiness-list li:last-child {{ border-bottom:0; }}
+    .compatibility-card {{ max-width:760px; padding:24px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }}
+    .compatibility-card h2 {{ margin-top:0; }}
+    .compatibility-card p {{ line-height:1.6; }}
+    .button {{ display:inline-flex; min-height:44px; align-items:center; padding:8px 14px; border:1px solid var(--blue); border-radius:6px; font-weight:700; }}
+    .button:focus-visible {{ outline:2px solid var(--blue); outline-offset:3px; }}
     footer {{ margin-top:24px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }}
   </style>
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(features=features)}
+    {pulse_html.render_global_header()}
     <header class="page-header">
-      <span class="eyebrow">Einstellungen</span>
-      <h1>Bausteine</h1>
-      <p>Diese Auswahl gilt nur für diesen Browser, wird lokal gespeichert und sofort angewendet. Sie löst keine Downloads oder kostenpflichtigen API-Aufrufe aus.</p>
+      <span class="eyebrow">Kompatibilitätsseite · Version 0.5.x</span>
+      <h1>Eine feste öffentliche Ansicht</h1>
+      <p>Bundestag-Puls veröffentlicht jetzt eine gemeinsame, redaktionell gestaltete Ansicht. Frühere Baustein-Einstellungen in diesem Browser werden nicht mehr verwendet.</p>
     </header>
-    <div class="settings-page-actions"><span class="settings-count" data-settings-count></span><button class="settings-reset" type="button" data-settings-reset>Browser-Auswahl zurücksetzen</button></div>
-    <main class="settings-page-grid">{groups}</main>
-    <section class="settings-card readiness-card"><h2>Datenstand dieser Veröffentlichung</h2><p>Diese Angaben beschreiben die bereits veröffentlichten Daten; sie sind keine weiteren Schalter.</p><ul class="readiness-list">{enrichment_rows}</ul></section>
-    <footer>Kernbereiche sind immer aktiv. Fehlende Daten können nur bei einem kontrollierten Update ergänzt werden. <a href="sources.html">Quellen und Methode</a></footer>
+    <main class="compatibility-card">
+      <h2>Was sich geändert hat</h2>
+      <p>Sitzungen, Abstimmungen, Gesetze und Abgeordnetenprofile werden immer dann gezeigt, wenn sie für die jeweilige Seite gelten. Fehlende oder unvollständige Daten werden direkt am betroffenen Inhalt erklärt.</p>
+      <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
+      <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
+    </main>
+    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.6.0 erreichbar. <a href="sources.html">Quellen und Methode</a></footer>
   </div>
-  {pulse_html.page_scripts(features)}
+  {pulse_html.page_scripts()}
 </body>
 </html>
 """
@@ -6908,6 +7598,10 @@ def render_site(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
     features: Selection | None = None,
+    enrichments: EnrichmentSelection | None = None,
+    summary_mode: str = "reuse",
+    acquisition_attempted: bool = False,
+    include_dev_view: bool = False,
     today: date | datetime | None = None,
     week: tuple[int, int] | None = None,
     manifest: dict[str, Any] | None = None,
@@ -6928,6 +7622,18 @@ def render_site(
     # the DIP catalog arrives newest-first, but that ordering is undocumented.
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
+
+    previous_manifest = None
+    previous_manifest_path = output_dir / "data" / "features.json"
+    if previous_manifest_path.is_file():
+        try:
+            previous_manifest = publication.validate_manifest(
+                json.loads(previous_manifest_path.read_text(encoding="utf-8"))
+            )
+        except (OSError, json.JSONDecodeError, publication.PublicationStateError):
+            # Legacy or damaged manifests never control the new publication;
+            # they simply cannot contribute trusted acquisition timestamps.
+            previous_manifest = None
 
     # The download link on every other page ("SQLite herunterladen") points at
     # the distribution copy named in the manifest, never at the build store
@@ -6950,7 +7656,10 @@ def render_site(
     # for an --offline render.
     catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
     catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    components = {component.feature.id: component for component in feature_loader.load(features)}
+    components = {
+        component.feature.id: component
+        for component in feature_loader.load(features, include_dev_view=include_dev_view)
+    }
     component_context = {
         "selection": features,
         "entries": entries,
@@ -6963,16 +7672,24 @@ def render_site(
     # Visitor-facing areas are always present. They render honest empty states
     # when the corresponding enrichment data has not been acquired yet.
     bill_output = components["bills"].write_pages(output_dir, component_context)
+    publication_manifest = build_publication_manifest(
+        root=output_dir,
+        protocols=protocols,
+        entries=entries,
+        abg_mps=abg_mps,
+        bill_count=int(bill_output["count"]),
+        enrichments=enrichments,
+        summary_mode=summary_mode,
+        acquisition_attempted=acquisition_attempted,
+        development_output=include_dev_view,
+        previous_manifest=previous_manifest,
+    )
+    component_context["publication_domains"] = publication_manifest["domains"]
     abg_output = components["mp-pages"].write_pages(output_dir, component_context)
     print(
         f"abgeordnete: {abg_output['count']} gelistet, "
         f"{abg_output['detail_count']} Profilseiten",
         file=sys.stderr,
-    )
-    readiness = derive_feature_readiness(
-        entries,
-        abg_mps,
-        bill_count=int(bill_output["count"]),
     )
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
@@ -6984,7 +7701,7 @@ def render_site(
     settings_path = output_dir / "settings.html"
     feature_manifest_path = output_dir / "data" / "features.json"
     feature_manifest_path.write_text(
-        json.dumps(tooling_manifest(features, readiness=readiness), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(publication_manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     index_path.write_text(
@@ -7024,7 +7741,13 @@ def render_site(
         encoding="utf-8",
     )
     sources_path.write_text(
-        render_sources_page(entries, database_href=database_href, database_page_href=database_page_href, features=features),
+        render_sources_page(
+            entries,
+            database_href=database_href,
+            database_page_href=database_page_href,
+            features=features,
+            publication_manifest=publication_manifest,
+        ),
         encoding="utf-8",
     )
     if manifest is not None:
@@ -7051,7 +7774,9 @@ def render_site(
             render_database_unavailable_page(features, reason=data_export_error),
             encoding="utf-8",
         )
-    settings_path.write_text(render_settings_page(features, readiness), encoding="utf-8")
+    settings_path.write_text(render_settings_page(), encoding="utf-8")
+    if not include_dev_view:
+        publication.validate_publication_directory(output_dir)
     return index_path
 
 
@@ -7130,70 +7855,100 @@ def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> Non
 
 # Build the final Selection for this run, then let features.resolve() close it
 # over dependencies and validate it.
-def resolve_from_args(args: argparse.Namespace, *, root: Path) -> Selection:
-    current = set(default_selection().ids)
-    vetoes: set[str] = set()
-    for path in (root / "features.json", root / "features.local.json"):
-        if path.exists():
-            _apply_features_file(path, current, vetoes)
-    features_file = getattr(args, "features_file", None)
-    if features_file:
-        _apply_features_file(Path(features_file), current, vetoes)
-    _apply_feature_tokens(current, _split_feature_tokens(os.environ.get("BUNDESTAG_PULSE_FEATURES")), vetoes)
+def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSelection:
+    """Resolve operator acquisition as one ordered, provenance-carrying stream."""
+    current: set[str] = set()
+    operations: list[tuple[str, str, str]] = []
 
-    explicit_base = getattr(args, "features", None)
-    if explicit_base:
-        tokens = _split_feature_tokens(explicit_base)
+    def validate_id(value: str, source: str) -> tuple[str, ...]:
+        if value == "all":
+            return tuple(ENRICHMENT_REGISTRY)
+        if value not in ENRICHMENT_REGISTRY:
+            choices = ", ".join(ENRICHMENT_REGISTRY)
+            raise FeatureError(
+                f"ERROR [invalid-enrichment]: {value!r} from {source}. "
+                f"Valid values: {choices}, all. Fix: use --list-capabilities. "
+                "Docs: README.md#operator-controls"
+            )
+        return (value,)
+
+    def replace(values: Any, source: str) -> None:
+        tokens = _split_feature_tokens(values)
+        previous = sorted(current)
         current.clear()
-        vetoes.clear()
-        if tokens == ["all"]:
-            current.update(REGISTRY)
-        else:
-            _apply_feature_tokens(current, tokens, vetoes)
+        for value in previous:
+            operations.append(("overridden", value, source))
+        for token in tokens:
+            for value in validate_id(token.lstrip("+"), source):
+                current.add(value)
+                operations.append(("replace", value, source))
 
-    # Legacy aliases are deliberately centralized here.
+    def add(values: Any, source: str) -> None:
+        for token in _split_feature_tokens(values):
+            for value in validate_id(token.lstrip("+"), source):
+                current.add(value)
+                operations.append(("add", value, source))
+
+    def remove(values: Any, source: str) -> None:
+        for token in _split_feature_tokens(values):
+            raw = token[1:] if token.startswith("-") else token
+            if raw not in ENRICHMENT_REGISTRY:
+                continue
+            current.discard(raw)
+            operations.append(("remove", raw, source))
+
+    def load_config(path: Path, *, replace_enrich: bool) -> None:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise FeatureError(
+                f"ERROR [invalid-enrichment-config]: {path}: {exc}. "
+                "Fix: use a JSON object with an enrich array. Docs: README.md#operator-controls"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise FeatureError(f"ERROR [invalid-enrichment-config]: {path} must contain a JSON object")
+        if "enrich" in payload:
+            (replace if replace_enrich else add)(payload["enrich"], str(path))
+        if "features" in payload:
+            legacy = [token for token in _split_feature_tokens(payload["features"]) if token in ENRICHMENT_REGISTRY or token == "all"]
+            replace(legacy, f"{path} (legacy features)")
+        add([token for token in _split_feature_tokens(payload.get("enable")) if token in ENRICHMENT_REGISTRY], f"{path} (legacy enable)")
+        remove(payload.get("disable"), f"{path} (legacy disable)")
+
+    repository_config = root / "features.json"
+    if repository_config.exists():
+        load_config(repository_config, replace_enrich=True)
+    local_config = root / "features.local.json"
+    if local_config.exists():
+        load_config(local_config, replace_enrich=True)
+    if getattr(args, "features_file", None):
+        load_config(Path(args.features_file), replace_enrich=True)
+
+    legacy_env = _split_feature_tokens(os.environ.get("BUNDESTAG_PULSE_FEATURES"))
+    if legacy_env:
+        replace([token for token in legacy_env if token in ENRICHMENT_REGISTRY or token == "all"], "BUNDESTAG_PULSE_FEATURES")
+    add(os.environ.get("BUNDESTAG_PULSE_ENRICHMENTS"), "BUNDESTAG_PULSE_ENRICHMENTS")
+
+    if getattr(args, "features", None):
+        tokens = [token for token in _split_feature_tokens(args.features) if token in ENRICHMENT_REGISTRY or token == "all"]
+        replace(tokens, "--features")
+    add([value for value in (getattr(args, "enable", None) or []) if value in ENRICHMENT_REGISTRY], "--enable")
+    remove(getattr(args, "disable", None), "--disable")
     if getattr(args, "no_roster", False):
-        _apply_feature_tokens(current, ["-mp-roster"], vetoes)
+        remove(("mp-roster",), "--no-roster")
     if getattr(args, "no_abgeordnetenwatch", False):
-        _apply_feature_tokens(current, ["-aw-profiles"], vetoes)
-    if getattr(args, "summary_mode", None) == "off":
-        _apply_feature_tokens(current, ["-summaries"], vetoes)
+        remove(("aw-profiles",), "--no-abgeordnetenwatch")
 
-    for feature_id in getattr(args, "enable", None) or []:
-        _apply_feature_tokens(current, [f"+{feature_id}"], vetoes)
-    for feature_id in getattr(args, "disable", None) or []:
-        _apply_feature_tokens(current, [f"-{feature_id}"], vetoes)
-
-    enrichment_tokens = _split_feature_tokens(os.environ.get("BUNDESTAG_PULSE_ENRICHMENTS"))
-    enrichment_tokens.extend(_split_feature_tokens(getattr(args, "enrich", None)))
-    for feature_id in enrichment_tokens:
-        if feature_id == "all":
-            current.update(ENRICHMENT_IDS)
-            continue
-        if feature_id not in ENRICHMENT_IDS:
-            choices = ", ".join(sorted(ENRICHMENT_IDS))
-            raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
-        current.add(feature_id)
-
-    # Explicit negative compatibility flags retain their old highest-priority
-    # behavior during the deprecation window.
-    if getattr(args, "no_roster", False):
-        _apply_feature_tokens(current, ["-mp-roster"], vetoes)
-    if getattr(args, "no_abgeordnetenwatch", False):
-        _apply_feature_tokens(current, ["-aw-profiles"], vetoes)
-    for feature_id in getattr(args, "disable", None) or []:
-        _apply_feature_tokens(current, [f"-{feature_id}"], vetoes)
-
-    # Supplying the expert tuning flag directly remains a convenient shorthand.
+    add(getattr(args, "enrich", None), "--enrich")
     if (getattr(args, "vote_scan_pages", None) or 0) > 0:
-        current.add("votes")
-    return resolve(base=current, disable=vetoes)
+        add(("votes",), "--vote-scan-pages")
+    return EnrichmentSelection(frozenset(current), tuple(operations))
 
 
 # Mirror the resolved selection back onto the argparse namespace, so the parts of
 # the pipeline that still read the old flags stay consistent with it. Disabling
 # "votes" this way also skips the (slow) roll-call scraping.
-def apply_to_args(args: argparse.Namespace, selection: Selection) -> None:
+def apply_to_args(args: argparse.Namespace, selection: EnrichmentSelection) -> None:
     args.no_roster = "mp-roster" not in selection
     args.no_abgeordnetenwatch = "aw-profiles" not in selection
     if "votes" in selection:
@@ -7233,27 +7988,39 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
         print(
             "warning: "
             + ", ".join(used)
-            + " is deprecated. Website visibility is now controlled in the browser; "
-            "use --enrich for update-time data acquisition.",
+            + " is deprecated and will be removed in 0.6.0. "
+            "Public sections are fixed; use --enrich for optional acquisition, "
+            "--summary-mode for AI generation, or --include-dev-view for developer output.",
             file=sys.stderr,
         )
 
 
-# --list-features: print the Baustein table and exit without touching the network.
-def print_feature_table(selection: Selection) -> None:
-    print("ID                 Website       Datenupdate   Beschreibung")
-    print("-" * 96)
-    for feature in FEATURES:
-        if feature.core:
-            website = "immer"
-        elif feature.client_mode != "none":
-            website = "Browser"
-        else:
-            website = "Datenquelle"
-        update = "aktiv" if feature.id in ENRICHMENT_IDS and feature.id in selection else (
-            "aus" if feature.id in ENRICHMENT_IDS else "—"
-        )
-        print(f"{feature.id:<18} {website:<13} {update:<13} {feature.description}")
+# Capability introspection exits before touching the network or output tree.
+def print_capability_table(selection: EnrichmentSelection) -> None:
+    print("Feste öffentliche Bereiche")
+    print("  Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Quellen")
+    print("\nOptionale Datenerfassung")
+    for enrichment_id, enrichment in ENRICHMENT_REGISTRY.items():
+        state = "ausgewählt" if enrichment_id in selection else "nicht ausgewählt"
+        print(f"  {enrichment_id:<14} {state:<20} {enrichment.rebuild_hint}")
+    print("\nKI-Zusammenfassungen")
+    print("  --summary-mode reuse|off|auto|required (Standard: reuse)")
+    print("\nEntwicklung")
+    print("  --include-dev-view (nur mit separatem --output-dir)")
+
+
+def print_effective_config(selection: EnrichmentSelection, args: argparse.Namespace) -> None:
+    print("Effective operator configuration (no network or writes)")
+    print(f"summary_mode={getattr(args, 'summary_mode', 'reuse')} source=--summary-mode/default")
+    print(f"include_dev_view={str(bool(getattr(args, 'include_dev_view', False))).lower()} source=--include-dev-view/default")
+    if not selection.ids:
+        print("enrichments=(none) source=resolved configuration")
+    else:
+        for enrichment_id in sorted(selection.ids):
+            winners = [source for action, value, source in selection.provenance if value == enrichment_id and action in {"add", "replace"}]
+            print(f"enrichment={enrichment_id} source={winners[-1] if winners else 'default'}")
+    for action, enrichment_id, source in selection.provenance:
+        print(f"operation={action} enrichment={enrichment_id} source={source}")
 
 
 # ---------------------------------------------------------------------------
@@ -7363,11 +8130,21 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
-    parser.add_argument("--enable", metavar="ID", action="append", default=[], help="Deprecated compatibility alias; use browser settings or --enrich.")
+    parser.add_argument("--enable", metavar="ID", action="append", default=[], help="Deprecated compatibility alias; use --enrich.")
     parser.add_argument("--disable", metavar="ID", action="append", default=[], help="Deprecated compatibility veto for update enrichments.")
     parser.add_argument("--features", help="Deprecated compatibility selection; published website areas are always included.")
     parser.add_argument("--features-file", type=Path, help="Enrichment JSON file; legacy feature keys are deprecated.")
-    parser.add_argument("--list-features", action="store_true", help="Alle Bausteine auflisten und ohne Netzwerkzugriff beenden.")
+    parser.add_argument("--list-features", action="store_true", help="Deprecated alias for --list-capabilities.")
+    parser.add_argument(
+        "--list-capabilities",
+        action="store_true",
+        help="List fixed public areas, optional acquisitions, summary modes, and developer output; then exit.",
+    )
+    parser.add_argument(
+        "--explain-config",
+        action="store_true",
+        help="Print effective operator configuration with provenance; then exit without network access or writes.",
+    )
     parser.add_argument(
         "--enrich",
         metavar="ID",
@@ -7403,6 +8180,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--output-dir", type=Path, default=Path(".context/dip-pulse-site"))
+    parser.add_argument(
+        "--include-dev-view",
+        action="store_true",
+        help="Include developer-only dossier payloads. Requires a non-public output directory.",
+    )
+    parser.add_argument(
+        "--validate-publication",
+        type=Path,
+        metavar="DIR",
+        help="Validate an existing ordinary publication directory and exit without network access or writes.",
+    )
     parser.add_argument(
         "--today",
         type=parse_iso_date_arg,
@@ -7480,6 +8268,18 @@ def parse_args() -> argparse.Namespace:
             "Comma-separated provider model IDs to try for summaries. "
             "Defaults depend on --summary-provider."
         ),
+    )
+    parser.add_argument(
+        "--summary-max-calls",
+        type=int,
+        default=25,
+        help="Hard limit for LLM HTTP requests in auto/required mode (default 25; 0 disables calls).",
+    )
+    parser.add_argument(
+        "--summary-timeout",
+        type=float,
+        default=60,
+        help="Timeout in seconds for each summary-provider request (default 60).",
     )
     parser.add_argument(
         "--vote-scan-pages",
@@ -7680,6 +8480,17 @@ def main() -> int:
     # Reads .env so DIP_API_KEY and the LLM keys can live outside the shell.
     dip.load_local_env()
     args = parse_args()
+    args.include_dev_view = bool(getattr(args, "include_dev_view", False))
+    args.summary_mode = getattr(args, "summary_mode", "reuse")
+
+    if getattr(args, "validate_publication", None):
+        try:
+            publication.validate_publication_directory(args.validate_publication)
+        except publication.PublicationStateError as exc:
+            print(f"ERROR [invalid-publication]: {exc}", file=sys.stderr)
+            return 1
+        print(f"validated: {args.validate_publication}")
+        return 0
 
     # Resolve update-time enrichments before doing any network work.
     root = Path(__file__).resolve().parents[1]
@@ -7689,11 +8500,26 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if getattr(args, "list_features", False):
-        print_feature_table(enrichments)
+        print("warning: --list-features is deprecated; use --list-capabilities. Removal: 0.6.0.", file=sys.stderr)
+        print_capability_table(enrichments)
+        return 0
+    if getattr(args, "list_capabilities", False):
+        print_capability_table(enrichments)
+        return 0
+    if getattr(args, "explain_config", False):
+        warn_deprecated_feature_configuration(args, root=root)
+        print_effective_config(enrichments, args)
         return 0
     warn_deprecated_feature_configuration(args, root=root)
     apply_to_args(args, enrichments)
     features = publication_selection()
+    if args.include_dev_view and args.output_dir.resolve() == Path(".context/dip-pulse-site").resolve():
+        print(
+            "ERROR [unsafe-dev-output]: --include-dev-view cannot write to the ordinary publication directory. "
+            "Fix: add --output-dir .context/dip-pulse-site-dev. Docs: README.md#developer-output",
+            file=sys.stderr,
+        )
+        return 2
     # The puls.html clock is resolved once, before any file is written, so a bad
     # SOURCE_DATE_EPOCH fails here and both render paths share one value. Tests
     # stub parse_args with a bare namespace, hence getattr.
@@ -7704,7 +8530,10 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     # Import addon modules only after this module and the renderer are fully loaded.
-    components = {component.feature.id: component for component in feature_loader.load(features)}
+    components = {
+        component.feature.id: component
+        for component in feature_loader.load(features, include_dev_view=args.include_dev_view)
+    }
 
     # Every visitor-facing output directory exists in every publication.
     output_dir = args.output_dir
@@ -7757,7 +8586,14 @@ def main() -> int:
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
-        entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features, cached_entries=cached_entries)
+        entries = rebuild_cached_detail_pages(
+            output_dir,
+            protocols,
+            mp_lookup,
+            features,
+            cached_entries=cached_entries,
+            include_dev_view=args.include_dev_view,
+        )
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -7783,6 +8619,10 @@ def main() -> int:
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
             features=features,
+            enrichments=enrichments,
+            summary_mode=args.summary_mode,
+            acquisition_attempted=False,
+            include_dev_view=args.include_dev_view,
             today=build_today,
             week=pulse_week,
             manifest=manifest,
@@ -7863,9 +8703,12 @@ def main() -> int:
                     anthropic_api_key=args.anthropic_api_key,
                     gemini_api_key=args.gemini_api_key,
                     summary_model=args.summary_model,
+                    summary_max_calls=args.summary_max_calls,
+                    summary_timeout=args.summary_timeout,
                     existing_report=existing_report,
                     profile_resolver=profile_resolver,
                     features=features,
+                    include_dev_view=args.include_dev_view,
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -7912,7 +8755,16 @@ def main() -> int:
                         canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
                 finally:
                     store.close()
-                entries = [write_report_files(entry["report"], output_dir, mp_lookup, features) for entry in entries]
+                entries = [
+                    write_report_files(
+                        entry["report"],
+                        output_dir,
+                        mp_lookup,
+                        features,
+                        include_dev_view=args.include_dev_view,
+                    )
+                    for entry in entries
+                ]
         # Always flush the profile cache and report resolver statistics, even
         # when the build failed partway through - the cache is what keeps the
         # next run from re-hitting the rate-limited API.
@@ -7957,6 +8809,10 @@ def main() -> int:
         abg_mps=abg_mps,
         mp_lookup=mp_lookup,
         features=features,
+        enrichments=enrichments,
+        summary_mode=args.summary_mode,
+        acquisition_attempted=True,
+        include_dev_view=args.include_dev_view,
         today=build_today,
         week=pulse_week,
         manifest=manifest,

@@ -141,7 +141,7 @@
       "type": "backend",
       "label": "Site Builder",
       "sublabel": "build_dip_pulse_site.py",
-      "tag": "orchestrator + Bausteine",
+      "tag": "orchestrator + publication state",
       "pos": [
         300,
         250
@@ -406,8 +406,8 @@
         "DIP: apikey in the query, cursor paging, 429/5xx retries.",
         "Roll calls are scraped from bundestag.de HTML; drift only warns.",
         "abgeordnetenwatch throttles and trips a breaker; build survives.",
-        "Votes, summaries, profiles, MP pages: Bausteine, off by default.",
-        "features.json → local → env → --features → --enable/--disable."
+        "Public components are fixed; optional data reports explicit acquisition state.",
+        "features.json → local → env → --enrich; legacy aliases warn through 0.5.x."
       ]
     },
     {

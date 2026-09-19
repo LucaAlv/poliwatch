@@ -1,6 +1,6 @@
 # Bundestag Pulse Project Documentation
 
-This repository builds a static, local preview of "Bundestag Pulse": a primary-source view of German Bundestag activity. The core pipeline fetches official DIP Plenarprotokoll data and renders a sitting catalog, protocol dossiers, and SQLite graph explorer. Optional Bausteine add roll-call votes, summaries, MP/profile data, bill tracking, and developer views.
+This repository builds a static, local preview of "Bundestag Pulse": a primary-source view of German Bundestag activity. The pipeline fetches official DIP Plenarprotokoll data and renders one fixed public experience with a sitting catalog, protocol dossiers, votes, laws, MP/profile pages, source links, and an optional labelled AI-summary layer. Operator enrichments control acquisition work, not visitor visibility.
 
 The codebase is intentionally small. There is no package manager or web framework; the scripts use Python standard-library modules plus public HTTP APIs.
 
@@ -129,8 +129,8 @@ It creates these directories under the output directory:
 |-- data/
 |   `-- exports/            # distribution SQLite + CSVs + datenstand.json, unless --no-persist
 |-- protocols/
-|-- bills/                  # when the bills Baustein is built
-`-- abgeordnete/            # when the mp-pages Baustein is built
+|-- bills/                  # always published; honest empty state without matching data
+`-- abgeordnete/            # always published; observed MPs remain available without a full roster
 ```
 
 Important generated files:
@@ -142,9 +142,9 @@ Important generated files:
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
-| `settings.html` | Browser visibility controls and exact rebuild hints for unavailable Bausteine |
+| `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
 | `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
-| `data/features.json` | Verbose build manifest for tooling |
+| `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
@@ -161,21 +161,29 @@ python3 scripts/build_dip_pulse_site.py --offline
 python3 scripts/build_dip_pulse_site.py --document-number 21/87
 ```
 
-## Bausteine und Einstellungen
+### `scripts/build_demo_site.py` and `scripts/extract_demo_fixture.py`
 
-Every static publication contains all user-facing Bausteine. First-time visitors see the core-only view; the gear in every header and `settings.html` apply optional visibility immediately and persist explicit overrides in browser `localStorage`.
+`build_demo_site.py` turns the committed Plenarprotokoll 21/84 TOP 32 a/b fixture into a complete static site without credentials or network access. It is the implementation behind `scripts/preview_dip_pulse_site.sh demo`, validates ordinary public output, and prints the exact dossier path plus the next online-update command.
 
-| Browser ID | Purpose |
-|---|---|
-| `votes` | Roll-call totals, fractions, and individual votes |
-| `summaries` | LLM session and agenda-item summaries |
-| `aw-profiles` | abgeordnetenwatch profile links |
-| `mp-pages` | MP index and detail pages |
-| `bills` | Bill index and detail pages |
-| `bill-follow` | Browser-local bill following; depends on `bills` |
-| `dev-view` | Raw API panels and dossier command tools |
+`extract_demo_fixture.py` reproducibly rebuilds that fixture from a local copy of the official XML transcript. It deliberately performs no download itself: an operator must explicitly supply the local XML path, and the script refuses an unexpected document set or speech count rather than silently changing the acceptance case.
 
-Data readiness is separate and read-only. The settings page reports `ready`, `partial`, or `unavailable`; turning on an unavailable experience shows its empty state and never starts a request.
+```bash
+python3 scripts/extract_demo_fixture.py \
+  --xml /path/to/21084.xml \
+  --output tests/fixtures/demo-report-21-84.json
+```
+
+### `scripts/publication_state.py`
+
+Shared schema-v2 trust boundary for acquisition facts, presentation-state derivation, allowed source URLs, confined generated paths, and public-artifact validation. Producers and renderers use this module instead of independently guessing whether absent data means “not requested,” “failed,” or a genuine empty result.
+
+## Fixed public presentation and enrichments
+
+Every ordinary static publication has six stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
+
+Votes, profile links, and the full roster have explicit acquisition states: `not_requested`, `complete`, `partial`, or `failed`. Renderers derive contextual public copy from those facts. A successful lookup with zero matching votes is therefore different from a build that never requested vote data. `data/features.json` aggregates those facts and `sources.html#datenstand` explains them.
+
+AI summaries are controlled separately through `reuse`, `off`, `auto`, and `required` modes. A usable summary is expanded by default, permanently labelled `KI-generiert · nicht redaktionell geprüft`, and has 3–5 distinct resolvable citations. The browser stores only the global expanded/collapsed preference under `bundestag-pulse-ai-summaries-v1`.
 
 Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead.
 
@@ -190,7 +198,7 @@ scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
 scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 ```
 
-`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings for one release but cannot remove published UI.
+`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.5.x`, cannot remove published UI, and are scheduled for removal in `0.6.0`.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -360,7 +368,11 @@ Common options:
 | `--enrich ID` | none | Acquire `votes`, `aw-profiles`, `mp-roster`, or `all` during an online update; repeatable |
 | `--features-file PATH` | none | Read `{"enrich":[...]}` from another JSON file; legacy selection keys are deprecated |
 | `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
-| `--list-features` | off | Print the registry and exit before filesystem/network build work |
+| `--list-capabilities` | off | Print operator enrichments and summary/developer controls, then exit before build work |
+| `--explain-config` | off | Print effective enrichment configuration with provenance, then exit |
+| `--list-features` | deprecated | Compatibility alias for `--list-capabilities` through `0.5.x` |
+| `--include-dev-view` | off | Include developer markup only in a separate, explicit output directory |
+| `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
 | `--limit N` | `0` | Number of recent Bundestag protocols in the catalog; `0` means all available |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
@@ -514,7 +526,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `DIP_PULSE_LOG_FILE` | preview script | No | Preview server log file |
 | `OPEN_BROWSER` | preview script | No | Set `0` to avoid opening browser |
 | `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
-| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted for one release; use browser settings or `BUNDESTAG_PULSE_ENRICHMENTS` |
+| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.5.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
 
 ## Offline vs Online Behavior
 

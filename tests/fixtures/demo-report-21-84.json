@@ -1,0 +1,743 @@
+{
+  "fixture_provenance": {
+    "source": "https://dserver.bundestag.de/btp/21/21084.xml",
+    "extracted_scope": "Plenarprotokoll 21/84, Tagesordnungspunkt 32 a/b",
+    "note": "DIP position wrappers are fixture-derived from the two XML Drucksachen."
+  },
+  "protocol": {
+    "id": "official-demo-21-84",
+    "dokumentnummer": "21/84",
+    "datum": "2026-06-12",
+    "titel": "Plenarprotokoll 21/84",
+    "pdf_url": "https://dserver.bundestag.de/btp/21/21084.pdf",
+    "xml_url": "https://dserver.bundestag.de/btp/21/21084.xml",
+    "xml_header": {
+      "wahlperiode": "21",
+      "sitzung_nr": "84",
+      "sitzung_datum": "12.06.2026",
+      "sitzung_start": "09:00",
+      "sitzung_end": "15:36",
+      "start_page": "10219"
+    }
+  },
+  "sampled_people": [],
+  "agenda_items": [
+    {
+      "index": 1,
+      "top_id": "Tagesordnungspunkt 32 a/b",
+      "heading": "a) Beratung des Antrags der Abgeordneten Robin Jünger, Ruben Rupp, Alexander Arpaschi, weiterer Abgeordneter und der Fraktion der AfD Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze b) Beratung des Antrags der Abgeordneten Robin Jünger, Nicole Höchst, Dr. Michael Kaufmann, weiterer Abgeordneter und der Fraktion der AfD Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+      "page_range": {
+        "start": {
+          "page": 10237,
+          "quadrant": "B"
+        },
+        "end": {
+          "page": 10252,
+          "quadrant": "C"
+        }
+      },
+      "xml_drucksachen": [
+        {
+          "dokumentnummer": "21/6354",
+          "url": "https://dserver.bundestag.de/btd/21/063/2106354.pdf"
+        },
+        {
+          "dokumentnummer": "21/4833",
+          "url": "https://dserver.bundestag.de/btd/21/048/2104833.pdf"
+        }
+      ],
+      "xml_speakers": [
+        {
+          "rede_id": "ID218402000",
+          "source_page": {
+            "page": 10237,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005561",
+            "display_name": "Ruben Rupp",
+            "first_name": "Ruben",
+            "last_name": "Rupp",
+            "fraktion": "AfD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 20,
+          "char_count": 6415,
+          "text": "Sehr geehrte Frau Präsidentin! Geehrte Abgeordnete! 55 Prozent aller Unternehmen in Deutschland nutzen künstliche Intelligenz – ChatGPT hat 1 Milliarde monatliche Nutzer, Google AI Overviews hat 2,5 Milliarden Nutzer pro Monat. Künstliche Intelligenz ist also nicht mehr nur Zukunftsmusik, sondern gehört bereits für viele Nutzer zum Alltag. Aber diese großen, leistungsfähigen KI-Modelle und KI-Agenten kommen eben nicht aus Deutschland, sondern vor allem von US-Unternehmen: OpenAI mit ChatGPT, Google DeepMind mit Gemini, Anthropic mit Claude. Und man muss es deutlich sagen: Es ist Ihr Versagen als Regierung, gemeinsam mit der Ampel und den CDU-Regierungen davor, dass wir in Sachen KI mittlerweile vollkommen abgehängt sind. Das ist ein großes Problem; denn, meine Damen und Herren, was wir hier erleben, ist nichts Geringeres als eine Revolution, vergleichbar mit der Industrialisierung. Und sie wird unaufhörlich alle Bereiche unserer Gesellschaft und Wirtschaft nachhaltig strukturell verändern. Nur wer sich an die innovative Weltspitze kämpft und Standards setzt, wird einen sehr starken Produktivitätsschub und Hunderttausende neue Arbeitsplätze erhalten und seine Wettbewerbsfähigkeit deutlich erhöhen. Genau das bräuchte Deutschland jetzt, um der durch Ihre Energiewende verursachten Deindustrialisierung und dem Abbau von unzähligen Arbeitsplätzen etwas entgegenzusetzen und um als Wirtschaftsmacht nicht von der Bildfläche zu verschwinden. Herr Digitalminister, Sie sprachen diese Woche von Deutschland als KI-Weltmeister und einem eigenen Frontier-Modell. Das geht in die richtige Richtung und ist sehr ambitioniert; aber Sie merken doch selber, dass Sie davon aufgrund Ihrer Koalition mit den Sozialisten rein gar nichts umsetzen können. Sie sind doch sogar gezwungen, völligen Unsinn in Ihre Rechenzentrumsstrategie zu schreiben. Den wachsenden Energiehunger der Rechenzentren von mindestens 10 Gigawatt wollen Sie über den Ausbau erneuerbarer Energien decken. Das können Sie nicht ernst meinen als Mann aus der Wirtschaft; das ist völlig unwirtschaftlich. Und auch deshalb fordern wir, dass die Rechenzentrumsstrategie mit einer soliden, realistischen Energiestrategie verzahnt wird und nicht mit Ideologieunsinn der Links-Grünen. Die AfD liefert Ihnen heute einen ganzheitlichen Ansatz, wie wir Deutschland in die Lage versetzen können, endlich marktwirtschaftlich eine eigene KI-Digitalindustrie aufzubauen, die ihren Namen auch verdient. Die Grundvoraussetzung für unsere gesamte Industrie sowie die Digitalindustrie und besonders deren zentraler Infrastruktur, die Rechenzentren, ist günstige Energie. Damit steht und fällt alles, und um das Ziel zu erreichen, wird die AfD im ersten Schritt das Angebot ausweiten, Atomenergie reaktivieren, das Ende der Sanktionen und damit Gas und Öl aus Russland und den sofortigen Stopp des Kohleausstiegs durchsetzen. Nur mit diesem Plan schaffen wir günstige Energie- und Strompreise. Mit links-grüner Energiepolitik muss hingegen Schluss sein! Jede Woche haben wir hier im Bundestag neue Verordnungen von der EU, die unsere Unternehmen und Start-ups in Bürokratie ersticken, gestern erst die KI-Verordnung. Die Regierung setzt diese EU-Bürokratie willfährig um. Daher ist der zweite Schritt der AfD wohl der wichtigste Befreiungsschlag für die deutsche Wirtschaft: Wir brauchen einen radikalen Kahlschlag der EU-Bürokratie von 80 Prozent oder mehr, wenn nicht sogar ein Reset der EU, um endlich die deutsche Innovationskraft freizusetzen und die deutsche Wirtschaft von ihren Fesseln zu lösen. Deutschland kann es, aber nicht mit den bürokratischen Fesseln der EU an den Händen. Die KI-Revolution ist in vollem Gange; aber die Regierung hat keinen Plan, welche Bereiche sie konkret mitgestalten muss oder will. Bis heute betreiben das Kanzleramt und das Digitalministerium zum Thema KI unabgestimmte Schaufensterprojekte mit einem vagen Fokus auf Wirtschaft. Das ist zu wenig, Herr Wildberger. Die KI-Revolution ist eben nicht nur Industrie und Arbeit 5.0, sondern auch moderne Medizintechnik und KI-Diagnostik, autonome Verkehrsformen, intelligente Stadtbebauung, zeitgemäße Sicherheits- und Ordnungssysteme und automatisierte digitale Verwaltung. Daher wird nach unserem Plan im Schritt 3 das Kanzleramt eine ressortübergreifende KI-Gesamtstrategie entwickeln, die alle zentralen Lebens- und Wirtschaftsbereiche berücksichtigt. Nur so wird eine strukturelle, geplante Modernisierung Deutschlands sichergestellt – und eben nicht mit Ihrem plan- und kopflosen Flickenteppich im Digitalministerium und Kanzleramt. Aber es ist zu befürchten, dass Ihnen nicht nur die Strategie, sondern auch der Mut und die Kraft für strukturelle Veränderungen fehlen. Exemplarisch trauen Sie sich ja nicht ran an die notwendige Änderung des Grundgesetzes, Artikel 91c, und machen stattdessen eine Deutschland-App, die mit Ansage scheitern wird. Und natürlich: Bei aller gebotenen Euphorie, die wir alle haben angesichts der segensreichen Möglichkeiten der künstlichen Intelligenz, die uns vielleicht sogar von den schlimmsten Übeln der Welt, wie Krebs, befreien könnte, gibt es auf der anderen Seite auch Risiken, die wir nicht aus den Augen verlieren dürfen. Daher müssen ethische Rahmenbedingungen für den KI-Einsatz, ausgeklügelte Sicherheitsmechanismen und die Risikominimierung in Entscheidungsprozessen kommen. Das muss stets mitgedacht werden. Für uns ist klar: In Sachen KI muss der Mensch immer der Entscheider bleiben, und er muss immer das letzte Wort haben. Auf der anderen Seite ist aber auch klar: Wenn wir keine eigenen Frontier-Modelle entwickeln können, dann brauchen wir hier im Deutschen Bundestag in Zukunft gar nicht über die Risiken von KI sprechen; denn dann wird das alleine in den USA und gegebenenfalls noch in China entwickelt und ohne Mitsprache Deutschlands entschieden. Dann heißt es: Friss oder stirb! Nur wer eigene leistungsfähige KI trainieren und betreiben kann, wird sich in der Welt technologisch behaupten können und überhaupt ernst genommen. Sehr geehrte Vertreter der Bundesregierung, die KI-Revolution fragt nicht nach Ideologien, nach Koalitionsverträgen oder nach Brandmauern. Sie ist da. Die Frage ist nur, ob Deutschland, wie es die AfD heute in ihrem Antrag einfordert, vorne dabei ist oder ob Deutschland von der KI-Revolution überrollt wird. Für die CDU/CSU-Fraktion hat Herr Abgeordneter Ralph Brinkhaus das Wort. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! Geehrte Abgeordnete! 55 Prozent aller Unternehmen in Deutschland nutzen künstliche Intelligenz – ChatGPT hat 1 Milliarde monatliche Nutzer,",
+            "Google AI Overviews hat 2,5 Milliarden Nutzer pro Monat. Künstliche Intelligenz ist also nicht mehr nur Zukunftsmusik, sondern gehört bereits für viele Nutzer zum Alltag.",
+            "Aber diese großen, leistungsfähigen KI-Modelle und KI-Agenten kommen eben nicht aus Deutschland, sondern vor allem von US-Unternehmen: OpenAI mit ChatGPT, Google DeepMind mit Gemini, Anthropic mit Claude. Und man muss es deutlich sagen: Es ist Ihr Versagen als Regierung, gemeinsam mit der Ampel und den CDU-Regierungen davor, dass wir in Sachen KI mittlerweile vollkommen abgehängt sind.",
+            "Das ist ein großes Problem; denn, meine Damen und Herren, was wir hier erleben, ist nichts Geringeres als eine Revolution, vergleichbar mit der Industrialisierung. Und sie wird unaufhörlich alle Bereiche unserer Gesellschaft und Wirtschaft nachhaltig strukturell verändern.",
+            "Nur wer sich an die innovative Weltspitze kämpft und Standards setzt, wird einen sehr starken Produktivitätsschub und Hunderttausende neue Arbeitsplätze erhalten und seine Wettbewerbsfähigkeit deutlich erhöhen. Genau das bräuchte Deutschland jetzt, um der durch Ihre Energiewende verursachten Deindustrialisierung und dem Abbau von unzähligen Arbeitsplätzen etwas entgegenzusetzen und um als Wirtschaftsmacht nicht von der Bildfläche zu verschwinden.",
+            "Herr Digitalminister, Sie sprachen diese Woche von Deutschland als KI-Weltmeister und einem eigenen Frontier-Modell. Das geht in die richtige Richtung und ist sehr ambitioniert; aber Sie merken doch selber, dass Sie davon aufgrund Ihrer Koalition mit den Sozialisten rein gar nichts umsetzen können. Sie sind doch sogar gezwungen, völligen Unsinn in Ihre Rechenzentrumsstrategie zu schreiben. Den wachsenden Energiehunger der Rechenzentren von mindestens 10 Gigawatt wollen Sie über den Ausbau erneuerbarer Energien decken. Das können Sie nicht ernst meinen als Mann aus der Wirtschaft; das ist völlig unwirtschaftlich.",
+            "Und auch deshalb fordern wir, dass die Rechenzentrumsstrategie mit einer soliden, realistischen Energiestrategie verzahnt wird und nicht mit Ideologieunsinn der Links-Grünen. Die AfD liefert Ihnen heute einen ganzheitlichen Ansatz, wie wir Deutschland in die Lage versetzen können, endlich marktwirtschaftlich eine eigene KI-Digitalindustrie aufzubauen, die ihren Namen auch verdient.",
+            "Die Grundvoraussetzung für unsere gesamte Industrie sowie die Digitalindustrie und besonders deren zentraler Infrastruktur, die Rechenzentren, ist günstige Energie. Damit steht und fällt alles, und um das Ziel zu erreichen, wird die AfD im ersten Schritt das Angebot ausweiten, Atomenergie reaktivieren, das Ende der Sanktionen und damit Gas und Öl aus Russland und den sofortigen Stopp des Kohleausstiegs durchsetzen. Nur mit diesem Plan schaffen wir günstige Energie- und Strompreise.",
+            "Mit links-grüner Energiepolitik muss hingegen Schluss sein!",
+            "Jede Woche haben wir hier im Bundestag neue Verordnungen von der EU, die unsere Unternehmen und Start-ups in Bürokratie ersticken, gestern erst die KI-Verordnung. Die Regierung setzt diese EU-Bürokratie willfährig um. Daher ist der zweite Schritt der AfD wohl der wichtigste Befreiungsschlag für die deutsche Wirtschaft: Wir brauchen einen radikalen Kahlschlag der EU-Bürokratie von 80 Prozent oder mehr, wenn nicht sogar ein Reset der EU, um endlich die deutsche Innovationskraft freizusetzen und die deutsche Wirtschaft von ihren Fesseln zu lösen.",
+            "Deutschland kann es, aber nicht mit den bürokratischen Fesseln der EU an den Händen.",
+            "Die KI-Revolution ist in vollem Gange; aber die Regierung hat keinen Plan, welche Bereiche sie konkret mitgestalten muss oder will. Bis heute betreiben das Kanzleramt und das Digitalministerium zum Thema KI unabgestimmte Schaufensterprojekte mit einem vagen Fokus auf Wirtschaft. Das ist zu wenig, Herr Wildberger.",
+            "Die KI-Revolution ist eben nicht nur Industrie und Arbeit 5.0, sondern auch moderne Medizintechnik und KI-Diagnostik, autonome Verkehrsformen, intelligente Stadtbebauung, zeitgemäße Sicherheits- und Ordnungssysteme und automatisierte digitale Verwaltung. Daher wird nach unserem Plan im Schritt 3 das Kanzleramt eine ressortübergreifende KI-Gesamtstrategie entwickeln, die alle zentralen Lebens- und Wirtschaftsbereiche berücksichtigt. Nur so wird eine strukturelle, geplante Modernisierung Deutschlands sichergestellt – und eben nicht mit Ihrem plan- und kopflosen Flickenteppich im Digitalministerium und Kanzleramt.",
+            "Aber es ist zu befürchten, dass Ihnen nicht nur die Strategie, sondern auch der Mut und die Kraft für strukturelle Veränderungen fehlen. Exemplarisch trauen Sie sich ja nicht ran an die notwendige Änderung des Grundgesetzes, Artikel 91c, und machen stattdessen eine Deutschland-App, die mit Ansage scheitern wird.",
+            "Und natürlich: Bei aller gebotenen Euphorie, die wir alle haben angesichts der segensreichen Möglichkeiten der künstlichen Intelligenz, die uns vielleicht sogar von den schlimmsten Übeln der Welt, wie Krebs, befreien könnte,",
+            "gibt es auf der anderen Seite auch Risiken, die wir nicht aus den Augen verlieren dürfen. Daher müssen ethische Rahmenbedingungen für den KI-Einsatz, ausgeklügelte Sicherheitsmechanismen und die Risikominimierung in Entscheidungsprozessen kommen. Das muss stets mitgedacht werden.",
+            "Für uns ist klar: In Sachen KI muss der Mensch immer der Entscheider bleiben, und er muss immer das letzte Wort haben.",
+            "Auf der anderen Seite ist aber auch klar: Wenn wir keine eigenen Frontier-Modelle entwickeln können, dann brauchen wir hier im Deutschen Bundestag in Zukunft gar nicht über die Risiken von KI sprechen; denn dann wird das alleine in den USA und gegebenenfalls noch in China entwickelt und ohne Mitsprache Deutschlands entschieden. Dann heißt es: Friss oder stirb! Nur wer eigene leistungsfähige KI trainieren und betreiben kann, wird sich in der Welt technologisch behaupten können und überhaupt ernst genommen.",
+            "Sehr geehrte Vertreter der Bundesregierung, die KI-Revolution fragt nicht nach Ideologien, nach Koalitionsverträgen oder nach Brandmauern. Sie ist da. Die Frage ist nur, ob Deutschland, wie es die AfD heute in ihrem Antrag einfordert, vorne dabei ist oder ob Deutschland von der KI-Revolution überrollt wird.",
+            "Für die CDU/CSU-Fraktion hat Herr Abgeordneter Ralph Brinkhaus das Wort. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! Geehrte Abgeordnete! 55 Prozent aller Unternehmen in Deutschland nutzen künstliche Intelligenz – ChatGPT hat 1 Milliarde monatliche Nutzer, Google AI Overviews hat 2,5 Milliarden Nutzer pro Monat. Künstliche I"
+        },
+        {
+          "rede_id": "ID218402100",
+          "source_page": {
+            "page": 10238,
+            "quadrant": "D"
+          },
+          "speaker": {
+            "xml_redner_id": "11004021",
+            "display_name": "Ralph Brinkhaus",
+            "first_name": "Ralph",
+            "last_name": "Brinkhaus",
+            "fraktion": "CDU/CSU",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 29,
+          "char_count": 5905,
+          "text": "Frau Präsidentin! Meine Damen und Herren! Ich muss Ihnen widersprechen, Herr Rupp. Sie haben sinngemäß gesagt, KI sei so was wie die industrielle Revolution. Nein, sie ist wesentlich mehr. Das ist die größte Disruption, die wir nicht nur in unserer Generation, sondern wahrscheinlich in der Menschheitsgeschichte haben werden. Und deswegen ist es richtig, dass wir uns übrigens schon zum zweiten Mal in dieser Woche hier im Deutschen Bundestag mit dem Thema KI beschäftigen. Und es ist auch richtig, dass wir über Technologie reden, dass wir über Souveränität reden. Es ist richtig, dass wir über Rechenzentren reden. Es ist richtig, dass wir über Wissenschaft und Forschung reden. Und das tut die Bundesregierung im Übrigen auch, nicht nur im Bundeskanzleramt, nicht nur im Ministerium von Karsten Wildberger, sondern auch bei Doro Bär. Wir haben unsere Hightech-Strategie; da wird eine Menge gemacht. Und trotzdem, meine Damen und Herren, glaube ich, dass das Bild unvollständig ist; denn wir machen KI nur zu einer technologischen Herausforderung und zu einer wissenschaftlichen Herausforderung. KI ist meines Erachtens die größte politische, gesellschaftliche und soziale Herausforderung, vor der wir stehen, und ich möchte Ihnen das an einem Beispiel erläutern. Ich baue jetzt mal ein Szenario auf – ein Szenario heißt: wie die Zukunft sich entwickeln könnte, nicht zwingenderweise muss –, und ich behaupte in diesem Szenario mal – und das ist nicht unrealistisch –, dass in den nächsten zwei Jahrzehnten weit über 50 Prozent der menschlichen Arbeit durch KI ersetzt wird – weit über 50 Prozent –, und zwar ersatzlos. Und wenn wir dieses Szenario dann mal weiterdenken, dann müssen wir uns als Politikerinnen und Politiker damit beschäftigen: Was bedeutet das eigentlich? Wir reden momentan sehr, sehr viel darüber, wie wir unsere Sozialversicherungssysteme reformieren. Diese Sozialversicherungssysteme beruhen auf der Verbeitragung von menschlicher Arbeit. Was ist, wenn 50 Prozent der menschlichen Arbeit verschwinden? Ja – und das stimmt auch –, die Menschen leben von menschlicher Arbeit. Auch da werden wir uns etwas überlegen müssen. Wir haben eine Einkommensteuerreform vor uns. Steuern basieren zu ganz, ganz großen Teilen auf menschlicher Arbeit. Das wird so nicht mehr funktionieren. Aber menschliche Arbeit ist ja nicht nur ein monetärer Faktor, menschliche Arbeit ist sinnstiftend, menschliche Arbeit bringt Struktur in den Alltag, menschliche Arbeit schafft Wertschätzung und Anerkennung im sozialen System. Was passiert, wenn wir 50 Prozent der Bevölkerung nicht mehr mit menschlicher Arbeit versorgen können? Es ist aber auch so, dass es eine Eigentumsfrage ist. Meine Damen und Herren, das Aufstiegsversprechen, das in der sozialen Marktwirtschaft immer da war, lautete: Wer fleißig ist und wer hart arbeitet, kann aufsteigen und kann Wohlstand erwerben. Wenn der Faktor „menschliche Arbeit“ wegfällt, was bedeutet das, meine Damen und Herren, für dieses Aufstiegsversprechen, das wir immer gegeben haben? Und um mal – das wird den Linken jetzt gefallen – was Weiteres zu konstruieren: Wir haben Kapital dadurch demokratisiert, dass es menschliche Arbeit gab. Die Auseinandersetzung zwischen Arbeit und Kapital haben Generationen von Politikerinnen und Politikern vor uns betrieben. Und wie gesagt: Der Machtblock von Menschen, die Eigentum haben, ist dadurch ein wenig konterkariert worden, dass es Menschen gibt, die arbeiten und die auch wichtig sind in unserem Wirtschaftssystem. Das heißt, wir werden auch Eigentumsfragen klären müssen. Und wir werden auch klären müssen, was beispielsweise passiert, wenn das Wissen über KI vielleicht nur noch im Besitz, im Eigentum von drei Unternehmen oder vielleicht auch nur von zwei Gesellschaften und zwei Staaten ist. Meine Damen und Herren, ich konnte damit jetzt wohl zeigen, dass wir noch ein paar größere Herausforderungen haben, ohne kleinzureden, dass auch über Rechenzentren und Energie geredet wird, und ich glaube, dass der Deutsche Bundestag genau der Ort ist, wo wir diese Debatten führen müssen. Herr Abgeordneter, lassen Sie eine Zwischenfrage zu bei diesem TOP? Nein. Gut. Meine Damen und Herren, wir werden die Frage klären müssen, wie wir damit umgehen. Was wir momentan in der Politik machen – und ich möchte Ihnen das auch an zwei, drei Beispielen erläutern –, ist, dass wir die Welt so betrachten, wie sie ist, und versuchen, sie zu optimieren. Nehmen wir die Rentenkommission. Ich weiß nicht, was dabei rauskommt, aber ich glaube mal, dass die Rentenkommission nicht in irgendeiner Art und Weise antizipiert hat, was ich eben gerade gesagt habe, dass vielleicht menschliche Arbeit als Beitragsträger, als Quelle für das Geld, was wir auszahlen, tatsächlich nicht mehr in dem Umfang verfügbar ist. Wir können uns auch anschauen, was jetzt im Bereich Pflege oder gerade im Bereich Gesundheit diskutiert worden ist. Auch da ist das nicht berücksichtigt worden. Meine Damen und Herren, ich sage das auch mit meiner politischen Erfahrung: Wir machen als Politiker immer eines: Wir versuchen immer, die Gegenwart zu optimieren, und verpassen es dabei, die Zukunft zu gestalten. Deswegen würde ich mir wünschen, dass wir diese Diskussion weiter führen als Ihr Antrag, Herr Rupp, und sie auch sehr grundsätzlich führen. Wir als Deutscher Bundestag sind natürlich dafür verantwortlich, dass wir die technologischen Rahmenbedingungen schaffen. Aber wir sind vor allen Dingen dafür verantwortlich, wie die Welt in diesem Land in Zukunft aussehen wird. Und das müssen wir jetzt besprechen und nicht erst, wenn es zu spät ist. Ich glaube, wir können das auch – ich sage das mit viel Zuversicht –, weil wir in diesem Land die Kraft haben, auch aus der KI-Entwicklung was Gutes zu machen. Ihre Zeit. Lassen Sie uns damit anfangen! Herzlichen Dank. Für Bündnis 90/Die Grünen hat nun Frau Abgeordnete Rebecca Lenhard das Wort. Bitte.",
+          "paragraphs": [
+            "Frau Präsidentin! Meine Damen und Herren! Ich muss Ihnen widersprechen, Herr Rupp. Sie haben sinngemäß gesagt, KI sei so was wie die industrielle Revolution. Nein, sie ist wesentlich mehr. Das ist die größte Disruption, die wir nicht nur in unserer Generation, sondern wahrscheinlich in der Menschheitsgeschichte haben werden. Und deswegen ist es richtig, dass wir uns übrigens schon zum zweiten Mal in dieser Woche hier im Deutschen Bundestag mit dem Thema KI beschäftigen.",
+            "Und es ist auch richtig, dass wir über Technologie reden, dass wir über Souveränität reden. Es ist richtig, dass wir über Rechenzentren reden. Es ist richtig, dass wir über Wissenschaft und Forschung reden. Und das tut die Bundesregierung im Übrigen auch, nicht nur im Bundeskanzleramt, nicht nur im Ministerium von Karsten Wildberger, sondern auch bei Doro Bär.",
+            "Wir haben unsere Hightech-Strategie; da wird eine Menge gemacht.",
+            "Und trotzdem, meine Damen und Herren, glaube ich, dass das Bild unvollständig ist; denn wir machen KI nur zu einer technologischen Herausforderung und zu einer wissenschaftlichen Herausforderung. KI ist meines Erachtens die größte politische, gesellschaftliche und soziale Herausforderung, vor der wir stehen, und ich möchte Ihnen das an einem Beispiel erläutern.",
+            "Ich baue jetzt mal ein Szenario auf – ein Szenario heißt: wie die Zukunft sich entwickeln könnte, nicht zwingenderweise muss –, und ich behaupte in diesem Szenario mal – und das ist nicht unrealistisch –, dass in den nächsten zwei Jahrzehnten weit über 50 Prozent der menschlichen Arbeit durch KI ersetzt wird – weit über 50 Prozent –, und zwar ersatzlos. Und wenn wir dieses Szenario dann mal weiterdenken, dann müssen wir uns als Politikerinnen und Politiker damit beschäftigen: Was bedeutet das eigentlich?",
+            "Wir reden momentan sehr, sehr viel darüber, wie wir unsere Sozialversicherungssysteme reformieren. Diese Sozialversicherungssysteme beruhen auf der Verbeitragung von menschlicher Arbeit. Was ist, wenn 50 Prozent der menschlichen Arbeit verschwinden?",
+            "Ja – und das stimmt auch –, die Menschen leben von menschlicher Arbeit. Auch da werden wir uns etwas überlegen müssen.",
+            "Wir haben eine Einkommensteuerreform vor uns. Steuern basieren zu ganz, ganz großen Teilen auf menschlicher Arbeit. Das wird so nicht mehr funktionieren.",
+            "Aber menschliche Arbeit ist ja nicht nur ein monetärer Faktor, menschliche Arbeit ist sinnstiftend, menschliche Arbeit bringt Struktur in den Alltag, menschliche Arbeit schafft Wertschätzung und Anerkennung im sozialen System. Was passiert, wenn wir 50 Prozent der Bevölkerung nicht mehr mit menschlicher Arbeit versorgen können?",
+            "Es ist aber auch so, dass es eine Eigentumsfrage ist. Meine Damen und Herren, das Aufstiegsversprechen, das in der sozialen Marktwirtschaft immer da war, lautete: Wer fleißig ist und wer hart arbeitet, kann aufsteigen und kann Wohlstand erwerben.",
+            "Wenn der Faktor „menschliche Arbeit“ wegfällt, was bedeutet das, meine Damen und Herren, für dieses Aufstiegsversprechen, das wir immer gegeben haben?",
+            "Und um mal – das wird den Linken jetzt gefallen – was Weiteres zu konstruieren:",
+            "Wir haben Kapital dadurch demokratisiert, dass es menschliche Arbeit gab. Die Auseinandersetzung zwischen Arbeit und Kapital haben Generationen von Politikerinnen und Politikern vor uns betrieben. Und wie gesagt: Der Machtblock von Menschen, die Eigentum haben, ist dadurch ein wenig konterkariert worden, dass es Menschen gibt, die arbeiten und die auch wichtig sind in unserem Wirtschaftssystem.",
+            "Das heißt, wir werden auch Eigentumsfragen klären müssen. Und wir werden auch klären müssen, was beispielsweise passiert, wenn das Wissen über KI vielleicht nur noch im Besitz, im Eigentum von drei Unternehmen oder vielleicht auch nur von zwei Gesellschaften und zwei Staaten ist.",
+            "Meine Damen und Herren, ich konnte damit jetzt wohl zeigen, dass wir noch ein paar größere Herausforderungen haben, ohne kleinzureden, dass auch über Rechenzentren und Energie geredet wird, und ich glaube, dass der Deutsche Bundestag genau der Ort ist, wo wir diese Debatten führen müssen.",
+            "Herr Abgeordneter, lassen Sie eine Zwischenfrage zu bei diesem TOP?",
+            "Nein.",
+            "Gut.",
+            "Meine Damen und Herren, wir werden die Frage klären müssen, wie wir damit umgehen.",
+            "Was wir momentan in der Politik machen – und ich möchte Ihnen das auch an zwei, drei Beispielen erläutern –, ist, dass wir die Welt so betrachten, wie sie ist, und versuchen, sie zu optimieren.",
+            "Nehmen wir die Rentenkommission. Ich weiß nicht, was dabei rauskommt, aber ich glaube mal, dass die Rentenkommission nicht in irgendeiner Art und Weise antizipiert hat, was ich eben gerade gesagt habe, dass vielleicht menschliche Arbeit als Beitragsträger, als Quelle für das Geld, was wir auszahlen, tatsächlich nicht mehr in dem Umfang verfügbar ist.",
+            "Wir können uns auch anschauen, was jetzt im Bereich Pflege oder gerade im Bereich Gesundheit diskutiert worden ist. Auch da ist das nicht berücksichtigt worden.",
+            "Meine Damen und Herren, ich sage das auch mit meiner politischen Erfahrung: Wir machen als Politiker immer eines: Wir versuchen immer, die Gegenwart zu optimieren, und verpassen es dabei, die Zukunft zu gestalten.",
+            "Deswegen würde ich mir wünschen, dass wir diese Diskussion weiter führen als Ihr Antrag, Herr Rupp, und sie auch sehr grundsätzlich führen.",
+            "Wir als Deutscher Bundestag sind natürlich dafür verantwortlich, dass wir die technologischen Rahmenbedingungen schaffen. Aber wir sind vor allen Dingen dafür verantwortlich, wie die Welt in diesem Land in Zukunft aussehen wird. Und das müssen wir jetzt besprechen und nicht erst, wenn es zu spät ist. Ich glaube, wir können das auch – ich sage das mit viel Zuversicht –, weil wir in diesem Land die Kraft haben, auch aus der KI-Entwicklung was Gutes zu machen.",
+            "Ihre Zeit.",
+            "Lassen Sie uns damit anfangen!",
+            "Herzlichen Dank.",
+            "Für Bündnis 90/Die Grünen hat nun Frau Abgeordnete Rebecca Lenhard das Wort. Bitte."
+          ],
+          "snippet": "Frau Präsidentin! Meine Damen und Herren! Ich muss Ihnen widersprechen, Herr Rupp. Sie haben sinngemäß gesagt, KI sei so was wie die industrielle Revolution. Nein, sie ist wesentlich mehr. Das ist die größte Disruption, die wir nicht nur in"
+        },
+        {
+          "rede_id": "ID218402200",
+          "source_page": {
+            "page": 10240,
+            "quadrant": "A"
+          },
+          "speaker": {
+            "xml_redner_id": "11005519",
+            "display_name": "Rebecca Lenhard",
+            "first_name": "Rebecca",
+            "last_name": "Lenhard",
+            "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 26,
+          "char_count": 3754,
+          "text": "Sehr geehrte Frau Präsidentin! Sehr geehrte Zuhörende! Dieselbe Partei, die Musk in ihren Wahlkampf geholt hat, Namen und Informationen an MAGA weitergegeben hat, US-Sanktionen gegen HateAid bejubelt hat und in Bayern sogar ein bayerisches ICE nach US-Vorbild gefordert hat, diese Partei macht sich jetzt also Sorgen um die US-Techdominanz. Haben Sie von der AfD Ihren Freunden Trump und Musk eigentlich schon gesagt, dass Sie jetzt plötzlich Angst vor deren Macht haben? Die AfD verspricht in ihrem Antrag „einen nationalen Aufbruch an die digitale Weltspitze“ – im Alleingang. Machen wir uns mal klar, was das bedeutet. China plant fast 300 Milliarden Dollar für den KI-Ausbau; die USA planen eine halbe Billion US-Dollar. Und der Plan der AfD ist: Deutschland tritt solo an. Und es wird noch schlimmer. Ihre Forderungen nach einer neuen Organisation mit Zugang zum EU-Binnenmarkt ist ein Dexit durch die Hintertür. Fragen Sie doch mal die Menschen, die Unternehmen in Großbritannien, wie das mit dem Brexit dort gelaufen ist! Das träfe uns doch noch viel härter. Das ist nämlich Ihr Plan: Sie wollen alles aufs Spiel setzen, was uns starkmacht. Die EU ist die einzige Ebene, die es mit Big Tech überhaupt aufnehmen kann. Wir brauchen keinen Dexit, wir brauchen ein starkes Europa. Während wir hier debattieren, führt Putin einen Krieg gegen die Ukraine: seit Jahren, jeden Tag und auch heute. Und was fordert jetzt die AfD in ihrem Antrag zur KI-Zukunft? Die Sanktionen gegen Russland aufzuheben. Was hat das mit KI zu tun? Gar nichts. Was sagt das über die AfD aus? Alles. Der Dienst am Kreml darf offenbar in keinem Ihrer Anträge fehlen. Diese Sanktionen entziehen dem Kreml die Mittel für seinen Krieg. Eine Aufhebung ohne russisches Einlenken ist nichts anderes als Kapitulation. Und das ist kein Ausrutscher. Stichworte sind hier Pro-Putin-Reden, Reisen nach Moskau, solche Anträge. Autokraten wie Putin wollen Deutschland destabilisieren, und Sie von der AfD liefern verlässlich. Ihre Forderungen sind brandgefährlich für die Ukraine und für die Sicherheit in ganz Europa. In Ihrem Antrag warnen Sie vor Abhängigkeiten, führen uns aber direkt in die nächsten hinein. Sie sprechen von einer Zukunft und liefern uns ein Energiemuseum. Sie fordern die Rückkehr zur Atomkraft. Aber wer soll das eigentlich machen? Die Betreiber winken ab: Das ist zu teuer, zu aufwendig, nicht wirtschaftlich. Die Versicherer? Niemand möchte Atomkraftwerke versichern. Die Anwohner? Niemand will einen Reaktor vor der Haustür haben. Die Kommunen? Niemand will ein Endlager. Niemand will zurück zur Atomkraft, außer Ihnen. Erneuerbare sind billiger, sie sind sicherer, sie sind unabhängiger. Das ist die Lösung und nicht Ihre Energienostalgie. Inzwischen hat anscheinend auch die AfD realisiert: Nicht jeder Arbeitsplatz in Deutschland lässt sich mit der eigenen Verwandtschaft besetzen. Sie beklagen in Ihrem zweiten Antrag den Abfluss von Fachwissen und Talenten. Sie fordern Rückholprogramme für IT-Fachkräfte. Schauen Sie doch mal in den Spiegel! Ihre Politik ist doch der Grund, warum Menschen dieses Land verlassen. Ihre Politik ist der Grund, warum die Besten gar nicht erst kommen: weil internationale Fachkräfte überall hingehen können. Warum sollten sie denn in ein Land kommen, in dem Ihre Partei täglich das Klima gegen sie vergiftet, in dem sich ihre Kinder fragen müssen, ob sie hier überhaupt willkommen sind? Ihre Politik ist ein Standortnachteil für Deutschland. Die AfD löst keine Probleme, sie ist das Problem. Deutschland hat Besseres verdient. Und es hat auch Besseres verdient als diese Anträge. Sie sind widersprüchlich, substanzlos und brandgefährlich. Vielen Dank. Für die SPD-Fraktion hat Frau Abgeordnete Dr. Carolin Wagner das Wort. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! Sehr geehrte Zuhörende! Dieselbe Partei, die Musk in ihren Wahlkampf geholt hat,",
+            "Namen und Informationen an MAGA weitergegeben hat, US-Sanktionen gegen HateAid bejubelt hat",
+            "und in Bayern sogar ein bayerisches ICE nach US-Vorbild gefordert hat,",
+            "diese Partei macht sich jetzt also Sorgen um die US-Techdominanz. Haben Sie von der AfD Ihren Freunden Trump und Musk eigentlich schon gesagt, dass Sie jetzt plötzlich Angst vor deren Macht haben?",
+            "Die AfD verspricht in ihrem Antrag „einen nationalen Aufbruch an die digitale Weltspitze“ – im Alleingang. Machen wir uns mal klar, was das bedeutet. China plant fast 300 Milliarden Dollar für den KI-Ausbau; die USA planen eine halbe Billion US-Dollar. Und der Plan der AfD ist: Deutschland tritt solo an.",
+            "Und es wird noch schlimmer. Ihre Forderungen nach einer neuen Organisation mit Zugang zum EU-Binnenmarkt ist ein Dexit durch die Hintertür. Fragen Sie doch mal die Menschen, die Unternehmen in Großbritannien, wie das mit dem Brexit dort gelaufen ist!",
+            "Das träfe uns doch noch viel härter.",
+            "Das ist nämlich Ihr Plan: Sie wollen alles aufs Spiel setzen, was uns starkmacht. Die EU ist die einzige Ebene, die es mit Big Tech überhaupt aufnehmen kann.",
+            "Wir brauchen keinen Dexit, wir brauchen ein starkes Europa.",
+            "Während wir hier debattieren, führt Putin einen Krieg gegen die Ukraine: seit Jahren, jeden Tag und auch heute. Und was fordert jetzt die AfD in ihrem Antrag zur KI-Zukunft? Die Sanktionen gegen Russland aufzuheben.",
+            "Was hat das mit KI zu tun? Gar nichts. Was sagt das über die AfD aus? Alles.",
+            "Der Dienst am Kreml darf offenbar in keinem Ihrer Anträge fehlen. Diese Sanktionen entziehen dem Kreml die Mittel für seinen Krieg. Eine Aufhebung ohne russisches Einlenken ist nichts anderes als Kapitulation. Und das ist kein Ausrutscher. Stichworte sind hier Pro-Putin-Reden, Reisen nach Moskau, solche Anträge.",
+            "Autokraten wie Putin wollen Deutschland destabilisieren, und Sie von der AfD liefern verlässlich.",
+            "Ihre Forderungen sind brandgefährlich für die Ukraine und für die Sicherheit in ganz Europa.",
+            "In Ihrem Antrag warnen Sie vor Abhängigkeiten, führen uns aber direkt in die nächsten hinein. Sie sprechen von einer Zukunft und liefern uns ein Energiemuseum. Sie fordern die Rückkehr zur Atomkraft.",
+            "Aber wer soll das eigentlich machen? Die Betreiber winken ab: Das ist zu teuer, zu aufwendig, nicht wirtschaftlich.",
+            "Die Versicherer? Niemand möchte Atomkraftwerke versichern.",
+            "Die Anwohner? Niemand will einen Reaktor vor der Haustür haben. Die Kommunen? Niemand will ein Endlager. Niemand will zurück zur Atomkraft, außer Ihnen.",
+            "Erneuerbare sind billiger, sie sind sicherer, sie sind unabhängiger. Das ist die Lösung und nicht Ihre Energienostalgie.",
+            "Inzwischen hat anscheinend auch die AfD realisiert: Nicht jeder Arbeitsplatz in Deutschland lässt sich mit der eigenen Verwandtschaft besetzen.",
+            "Sie beklagen in Ihrem zweiten Antrag den Abfluss von Fachwissen und Talenten. Sie fordern Rückholprogramme für IT-Fachkräfte. Schauen Sie doch mal in den Spiegel! Ihre Politik ist doch der Grund, warum Menschen dieses Land verlassen.",
+            "Ihre Politik ist der Grund, warum die Besten gar nicht erst kommen: weil internationale Fachkräfte überall hingehen können. Warum sollten sie denn in ein Land kommen, in dem Ihre Partei täglich das Klima gegen sie vergiftet,",
+            "in dem sich ihre Kinder fragen müssen, ob sie hier überhaupt willkommen sind? Ihre Politik ist ein Standortnachteil für Deutschland.",
+            "Die AfD löst keine Probleme, sie ist das Problem. Deutschland hat Besseres verdient. Und es hat auch Besseres verdient als diese Anträge. Sie sind widersprüchlich, substanzlos und brandgefährlich.",
+            "Vielen Dank.",
+            "Für die SPD-Fraktion hat Frau Abgeordnete Dr. Carolin Wagner das Wort. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! Sehr geehrte Zuhörende! Dieselbe Partei, die Musk in ihren Wahlkampf geholt hat, Namen und Informationen an MAGA weitergegeben hat, US-Sanktionen gegen HateAid bejubelt hat und in Bayern sogar ein bayerisches "
+        },
+        {
+          "rede_id": "ID218402300",
+          "source_page": {
+            "page": 10241,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005247",
+            "display_name": "Dr. Carolin Wagner",
+            "first_name": "Carolin",
+            "last_name": "Wagner",
+            "fraktion": "SPD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 20,
+          "char_count": 2828,
+          "text": "Sehr geehrte Frau Präsidentin! Werte Damen und Herren! Die AfD will eine starke KI-Landschaft für Deutschland. Dafür will sie wieder tonnenweise Atommüll erzeugen und die Verantwortung dafür ganz großzügig an die künftigen Generationen abwälzen. Und Sie will die Bürgerinnen und Bürger weniger gegen Gefahren, die von KI-Produkten ausgehen, schützen und damit ihre Rechte gegenüber Unternehmen schröpfen. Dass man es überhaupt schafft, einen Antrag zur KI-Landschaft zu schreiben und kein einziges Wort, keine Silbe über die Gefahren von KI für unsere Demokratie durch Deepfake-Videos und Deepfake-Telefonanrufe, wie man es zum Beispiel in den USA im Präsidentschaftswahlkampf gesehen hat, zu verlieren, das zeigt, wes Geistes Kind Sie sind. Der Schutz von Demokratie, Verbraucher/-innenrechten und der Lebensgrundlage künftiger Generationen, das alles sind keine Anliegen der AfD, meine Damen und Herren. Wir setzen auf eine saubere Betreibung von Rechenzentren. Wir wollen, dass sie mit Strom aus Erneuerbaren laufen, dass die Abwärme genutzt wird. Die AfD aber will zurück zu Atomstrom, Kohle und Gas aus Russland. Auch hier sieht man, wes Geistes Kind Sie sind. Sich wieder wirtschaftlich abhängig zu machen von Putin, der für den Tod Tausender Soldatinnen und Soldaten verantwortlich ist, der für die Verschleppung von über 20 000 Kindern aus der Ukraine verantwortlich ist – Kinderschicksale, die Sie für billiges Gas vom Tisch wischen –, das ist widerlich. Auch andere Fakten sprechen eine klare Sprache. China ist Vorreiter bei der KI-Entwicklung und setzt auf Erneuerbare. 2025 hat China 800 Milliarden US-Dollar in saubere Energie investiert. China will sein Energiesystem bis 2060 nahezu vollständig elektrifizieren und auf Erneuerbare umstellen. Wir sind den Weg hier schon so weit gegangen. Da jetzt umzukehren, das wäre ein Standortnachteil für unsere deutsche KI-Entwicklung. Wir wollen außerdem, dass sich die Menschen in der EU darauf verlassen können, dass KI-Produkte auf Sicherheit oder auf Auswirkungen auf ihre Gesundheit kontrolliert werden, so wie bei allen anderen Produkten, die in Umlauf kommen. Das ist werteorientierte KI made in Europe. Und auch das ist ein großer Standortvorteil im Gegensatz zu den USA und China. Die AfD aber will einen Kahlschlag – so schreiben Sie es in Ihrem Antrag – gegenüber den EU-Regeln. Sie wollen Regeln abschaffen, um die uns andere Länder weltweit beneiden, die uns zum Vorbild nehmen und die sie uns nachmachen. Sie von der AfD kämpfen für deregulierte KI. Sie kämpfen dafür, dass die Interessen der Konzerne ganz oben stehen und nicht die Interessen der Menschen. Wer die AfD wählt, meine Damen und Herren, will keine Alternative, sondern den Abstieg für Deutschland. Vielen Dank. Für die Fraktion Die Linke hat Frau Abgeordnete Donata Vogtschmidt das Wort. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! Werte Damen und Herren! Die AfD will eine starke KI-Landschaft für Deutschland.",
+            "Dafür will sie wieder tonnenweise Atommüll erzeugen",
+            "und die Verantwortung dafür ganz großzügig an die künftigen Generationen abwälzen. Und Sie will die Bürgerinnen und Bürger weniger gegen Gefahren, die von KI-Produkten ausgehen, schützen und damit ihre Rechte gegenüber Unternehmen schröpfen.",
+            "Dass man es überhaupt schafft, einen Antrag zur KI-Landschaft zu schreiben und kein einziges Wort, keine Silbe über die Gefahren von KI für unsere Demokratie",
+            "durch Deepfake-Videos und Deepfake-Telefonanrufe, wie man es zum Beispiel in den USA im Präsidentschaftswahlkampf gesehen hat, zu verlieren, das zeigt, wes Geistes Kind Sie sind.",
+            "Der Schutz von Demokratie, Verbraucher/-innenrechten und der Lebensgrundlage künftiger Generationen, das alles sind keine Anliegen der AfD, meine Damen und Herren.",
+            "Wir setzen auf eine saubere Betreibung von Rechenzentren.",
+            "Wir wollen, dass sie mit Strom aus Erneuerbaren laufen, dass die Abwärme genutzt wird. Die AfD aber will zurück zu Atomstrom, Kohle und Gas aus Russland.",
+            "Auch hier sieht man, wes Geistes Kind Sie sind. Sich wieder wirtschaftlich abhängig zu machen von Putin,",
+            "der für den Tod Tausender Soldatinnen und Soldaten verantwortlich ist, der für die Verschleppung von über 20 000 Kindern aus der Ukraine verantwortlich ist – Kinderschicksale, die Sie für billiges Gas vom Tisch wischen –, das ist widerlich.",
+            "Auch andere Fakten sprechen eine klare Sprache. China ist Vorreiter bei der KI-Entwicklung und setzt auf Erneuerbare.",
+            "2025 hat China 800 Milliarden US-Dollar in saubere Energie investiert. China will sein Energiesystem bis 2060 nahezu vollständig elektrifizieren und auf Erneuerbare umstellen.",
+            "Wir sind den Weg hier schon so weit gegangen. Da jetzt umzukehren, das wäre ein Standortnachteil für unsere deutsche KI-Entwicklung.",
+            "Wir wollen außerdem, dass sich die Menschen in der EU darauf verlassen können, dass KI-Produkte auf Sicherheit oder auf Auswirkungen auf ihre Gesundheit kontrolliert werden, so wie bei allen anderen Produkten, die in Umlauf kommen. Das ist werteorientierte KI made in Europe.",
+            "Und auch das ist ein großer Standortvorteil im Gegensatz zu den USA und China.",
+            "Die AfD aber will einen Kahlschlag – so schreiben Sie es in Ihrem Antrag – gegenüber den EU-Regeln. Sie wollen Regeln abschaffen, um die uns andere Länder weltweit beneiden,",
+            "die uns zum Vorbild nehmen und die sie uns nachmachen. Sie von der AfD kämpfen für deregulierte KI. Sie kämpfen dafür, dass die Interessen der Konzerne ganz oben stehen und nicht die Interessen der Menschen.",
+            "Wer die AfD wählt, meine Damen und Herren, will keine Alternative, sondern den Abstieg für Deutschland.",
+            "Vielen Dank.",
+            "Für die Fraktion Die Linke hat Frau Abgeordnete Donata Vogtschmidt das Wort. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! Werte Damen und Herren! Die AfD will eine starke KI-Landschaft für Deutschland. Dafür will sie wieder tonnenweise Atommüll erzeugen und die Verantwortung dafür ganz großzügig an die künftigen Generationen abwä"
+        },
+        {
+          "rede_id": "ID218402400",
+          "source_page": {
+            "page": 10242,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005601",
+            "display_name": "Donata Vogtschmidt",
+            "first_name": "Donata",
+            "last_name": "Vogtschmidt",
+            "fraktion": "Die Linke",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 12,
+          "char_count": 3005,
+          "text": "Sehr geehrte Frau Präsidentin! „Technologische Souveränität durch deutsches Fachwissen sichern“: Schon der Titel eines der heute hier debattierten Anträge verrät, dass die AfD nichts verstanden hat. Software funktioniert so nicht. Wissen funktioniert so auch nicht. Open Source kennt keine Staatsgrenzen, Ihr Antrag hingegen schon. Und Ihre kognitive Auffassungsgabe scheint ebenfalls begrenzt. Linux, das Internet, die Grundlagen moderner KI: Das alles ist das Ergebnis globaler Zusammenarbeit. Wer digitale Souveränität durch deutsches Fachwissen erreichen will, hat wirklich nicht verstanden, wie Softwareentwicklung funktioniert. Aber Ihr zweiter Antrag gibt noch weitaus mehr Anlass zur Besorgnis: Bürokratieabbau um 80 Prozent für eine radikale Freisetzung der Innovationskraft der deutschen Digitalwirtschaft, einschließlich Abbau aller Sanktionen gegen Russland, damit KI noch ein bisschen mehr boomt und Putin noch ein bisschen mehr bombt. Ich bin wirklich fassungslos. Das schreit zum Himmel, und der brennt in der Ukraine weiterhin jede Nacht. Aber auch der im Vergleich scheinbar seichte zweite Antrag besticht vor allem durch seine bemerkenswerte Distanz zur von Ihnen gelebten Realität. Sie wollen angeblich vor Konzernen schützen, die Daten abgreifen, Abhängigkeiten schaffen und Nutzer/-innen ausbeuten. Dann sollten Sie vielleicht erst einmal mit sich selber anfangen; denn genau das macht ja auch Ihr guter Freund Elon Musk mit X, mit xAI, mit jedem Datenpunkt, den die europäischen Nutzer/-innen täglich produzieren. Und während diese Programme hier bei europäischen Datenschutzbehörden auf dem Tisch liegen, sitzt Ihre Vorsitzende bei ihm im Interview und lächelt fröhlich in die Kamera. Sie schreiben Souveränität ins Gesetz, um sie gleichzeitig persönlich zu untergraben. Aber so sind Sie und Ihre Anträge: Sie spielen sich als Feuerwehr auf, während Sie verdächtig nach Benzin riechen. In Ihrem Antrag fordern Sie Forschungsgelder für Exzellenzcluster und Unternehmensförderung. Sie fordern sehr viel Geld, sehr viele Daten und sehr viel Macht für sehr, sehr wenige. Hier will die AfD unser Steuergeld dann also doch – nur eben nicht für uns, nicht für die Jugend, nicht für die Familien, sondern für ein datenhungriges KI-Flaggschiff. Was wir stattdessen brauchen, ist echte digitale Souveränität: Open-Source-Infrastruktur statt konzernkontrollierender Plattformen, freier Wissenszugang statt Exzellenzcluster für wenige und echte Datenhoheit für uns Bürger/-innen. Aber davon steht nichts in Ihrem Antrag. Kein einziges Wort! Um es auch hier noch mal klar zu sagen: Wir widersetzen uns dieser Ideologie, diesem Antrag, dieser Partei und auch ihrem Feldzug gegen unsere Freundinnen und Freunde und gegen die vielfältige Gesellschaft: in unserem Land, im Plenum, auf der Straße, in Erfurt und überall. Vielen Dank. Für die Bundesregierung hat nun das Wort der Parlamentarische Staatssekretär beim Bundesminister für Digitales und Staatsmodernisierung, Herr Thomas Jarzombek. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! „Technologische Souveränität durch deutsches Fachwissen sichern“: Schon der Titel eines der heute hier debattierten Anträge verrät, dass die AfD nichts verstanden hat. Software funktioniert so nicht. Wissen funktioniert so auch nicht. Open Source kennt keine Staatsgrenzen, Ihr Antrag hingegen schon. Und Ihre kognitive Auffassungsgabe scheint ebenfalls begrenzt.",
+            "Linux, das Internet, die Grundlagen moderner KI: Das alles ist das Ergebnis globaler Zusammenarbeit. Wer digitale Souveränität durch deutsches Fachwissen erreichen will, hat wirklich nicht verstanden, wie Softwareentwicklung funktioniert.",
+            "Aber Ihr zweiter Antrag gibt noch weitaus mehr Anlass zur Besorgnis: Bürokratieabbau um 80 Prozent für eine radikale Freisetzung der Innovationskraft der deutschen Digitalwirtschaft, einschließlich Abbau aller Sanktionen gegen Russland, damit KI noch ein bisschen mehr boomt und Putin noch ein bisschen mehr bombt. Ich bin wirklich fassungslos. Das schreit zum Himmel, und der brennt in der Ukraine weiterhin jede Nacht.",
+            "Aber auch der im Vergleich scheinbar seichte zweite Antrag besticht vor allem durch seine bemerkenswerte Distanz zur von Ihnen gelebten Realität.",
+            "Sie wollen angeblich vor Konzernen schützen, die Daten abgreifen, Abhängigkeiten schaffen und Nutzer/-innen ausbeuten. Dann sollten Sie vielleicht erst einmal mit sich selber anfangen; denn genau das macht ja auch Ihr guter Freund Elon Musk mit X, mit xAI, mit jedem Datenpunkt, den die europäischen Nutzer/-innen täglich produzieren. Und während diese Programme hier bei europäischen Datenschutzbehörden auf dem Tisch liegen, sitzt Ihre Vorsitzende bei ihm im Interview und lächelt fröhlich in die Kamera.",
+            "Sie schreiben Souveränität ins Gesetz, um sie gleichzeitig persönlich zu untergraben. Aber so sind Sie und Ihre Anträge: Sie spielen sich als Feuerwehr auf, während Sie verdächtig nach Benzin riechen.",
+            "In Ihrem Antrag fordern Sie Forschungsgelder für Exzellenzcluster und Unternehmensförderung. Sie fordern sehr viel Geld, sehr viele Daten und sehr viel Macht für sehr, sehr wenige. Hier will die AfD unser Steuergeld dann also doch – nur eben nicht für uns, nicht für die Jugend, nicht für die Familien, sondern für ein datenhungriges KI-Flaggschiff.",
+            "Was wir stattdessen brauchen, ist echte digitale Souveränität: Open-Source-Infrastruktur statt konzernkontrollierender Plattformen, freier Wissenszugang statt Exzellenzcluster für wenige und echte Datenhoheit für uns Bürger/-innen. Aber davon steht nichts in Ihrem Antrag. Kein einziges Wort!",
+            "Um es auch hier noch mal klar zu sagen: Wir widersetzen uns dieser Ideologie,",
+            "diesem Antrag, dieser Partei und auch ihrem Feldzug gegen unsere Freundinnen und Freunde und gegen die vielfältige Gesellschaft: in unserem Land, im Plenum, auf der Straße, in Erfurt und überall.",
+            "Vielen Dank.",
+            "Für die Bundesregierung hat nun das Wort der Parlamentarische Staatssekretär beim Bundesminister für Digitales und Staatsmodernisierung, Herr Thomas Jarzombek. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! „Technologische Souveränität durch deutsches Fachwissen sichern“: Schon der Titel eines der heute hier debattierten Anträge verrät, dass die AfD nichts verstanden hat. Software funktioniert so nicht. Wissen fu"
+        },
+        {
+          "rede_id": "ID218402500",
+          "source_page": {
+            "page": 10243,
+            "quadrant": "A"
+          },
+          "speaker": {
+            "xml_redner_id": "11004061",
+            "display_name": "Thomas Jarzombek",
+            "first_name": "Thomas",
+            "last_name": "Jarzombek",
+            "fraktion": null,
+            "role": "Parl. Staatssekretär beim Bundesminister für Digitales und Staatsmodernisierung",
+            "role_short": "Parl. Staatssekretär BMDS"
+          },
+          "paragraph_count": 14,
+          "char_count": 4782,
+          "text": "Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Künstliche Intelligenz ist das Thema, das die Wirtschaft heute schon am meisten verändert und das sie in den kommenden Jahren noch stärker verändern wird. Über 300 Milliarden Euro an jährlichem Wertschöpfungspotenzial sagen Studien voraus. Es ist für die Wettbewerbsfähigkeit der Unternehmen das absolute A und O, das Thema KI für sich zu nutzen und hier Champion zu werden. Man muss immer die Frage stellen: Was ist eigentlich die Aufgabe des Staates, und was ist die Aufgabe der Unternehmen? Das ist übrigens in einem der heute vorliegenden Anträge der Opposition ziemlich verwaschen worden. Wir als Staat dürfen den Unternehmen vor allem nicht im Weg stehen. In dieser Hinsicht haben wir in den letzten Wochen und Monaten vieles getan. Auf europäischer Ebene haben wir mit dem KI-Omnibus vor allem die Erleichterungen für sehr kleine Unternehmen ausgeweitet. Diese gelten nun für den gesamten Mittelstand, also für Unternehmen bis 750 Beschäftigte. Das ist eine riesige Bürokratieentlastung für den Mittelstand. Wir haben Fristen dort verlängert, wo die Kommission die Standards noch nicht gesetzt hat. Vor allem haben wir den gesamten Bereich der Maschinenverordnung noch einmal deutlich vereinfacht; denn gerade hier schlägt das Herz der deutschen Industrie. Meine Damen und Herren, wir haben gestern das KI-MIG beschlossen und damit die nationale Umsetzung dieser KI-Verordnung auf den Weg gebracht. Dabei handelt es sich um eine echte Eins-zu-eins-Umsetzung, wie wir es versprochen haben, mit klaren Strukturen und dem Grundprinzip, dass die Behörden, die heute schon für Unternehmen verantwortlich sind, auch in Zukunft verantwortlich sein werden. Doppelstrukturen werden dabei vermieden, mit starker Koordination der Bundesnetzagentur. Das sind die Dinge, die wir unternommen haben, um hier Bürokratie abzubauen. Ich will sagen: Die Regulierung ist kein Problem, sondern sie ist wichtig. Es ist wichtig, dass wir einen einheitlichen Rechtsrahmen haben. Mit dem EU AI Act und dem KI-MIG haben wir diesen jetzt. Allein in den USA gibt es auf Ebene der Bundesstaaten 145 unterschiedliche beschlossene Gesetze. Das zeigt, was für eine Leistung wir hier erbringen. Hier gewisse Standards zu setzen, ist wichtig, wenn es zum Beispiel darum geht, KI-Inhalte zu kennzeichnen, damit erkennbar ist, was von echten Menschen stammt und was KI-generiert ist. Erwähnen möchte ich auch das Verbot von „Nudifier“-Apps, wo Personen in Nacktdarstellungen gefakt werden. Das sind wichtige Dinge. Was wir außerdem tun – das ist der zweite Block –, ist, dass wir als Staat auch selbst vorangehen. Wir haben uns mit der Rechenzentrumsstrategie gerade selbst das Ziel vorgegeben, die KI-Kapazitäten zu vervierfachen – nicht indem wir sie selber bauen, sondern indem wir zum Beispiel den Netzanschluss deutlich erleichtern und das Thema Abwärme flexibler handhaben. Wir haben gerade bei uns selbst eine Vergabe durchgeführt und die AI-Infrastruktur, die Cloud, an deutsche Unternehmen vergeben, um unsere heimische Wirtschaft zu stärken. Wir haben mit SPARK eine Genehmigungsplattform, mit der wir im Bereich Infrastruktur – bei der Eisenbahn, bei Brücken – Genehmigungszeiten schon jetzt mindestens halbieren können; in Zukunft noch deutlich mehr. Wir haben mit dem Agentic AI Hub gerade mit neun Start-ups und 20 Kommunen ein Instrument gebaut. Damit wollen wir die Leistungen von Start-ups in Deutschland über alle Kommunen hinweg skalieren, um die Nutzung von Bürgerdiensten einfacher zu machen. Wir bauen das AI Safety Institute auf, um Kompetenz zu schaffen, um neue KI-Modelle besser zu beurteilen, um unsere Lösungen sicherer zu machen. Wir haben eine exzellente Forschungslandschaft. Dorothee Bär trägt dafür Sorge. ELLIS und viele andere Institute setzen hier wirklich World Class Standards. Bundesminister Karsten Wildberger hat sich sehr dafür eingesetzt, dass wir auch im Bereich der Unternehmen weiter vorankommen. Wir haben jetzt eine Kooperation zwischen Cohere und Aleph Alpha. Wir werden auch hier deutlich stärker werden. Aber reicht das alles? Nein, meine Damen und Herren, das reicht nicht. Warum reicht es nicht? Weil es das ist, was der Staat tun kann. Am Ende müssen die Unternehmen, muss die Industrie in das Thema KI einsteigen. Wir verbessern die Rahmenbedingungen, aber der Satz „It’s the economy, stupid!“ trifft hier wie in keinem anderen Feld zu. Wenn Sie in der Opposition Anträge stellen, in denen Sie fordern, alles zu verstaatlichen, dann muss ich sagen: Der Staat ist nicht der bessere Unternehmer. Wir setzen auf Marktwirtschaft. Wir setzen auf die Fähigkeit des Individuums. Damit werden wir nach vorne kommen. Vielen Dank. Für die AfD-Fraktion hat Herr Abgeordneter Robin Jünger das Wort. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Künstliche Intelligenz ist das Thema, das die Wirtschaft heute schon am meisten verändert und das sie in den kommenden Jahren noch stärker verändern wird. Über 300 Milliarden Euro an jährlichem Wertschöpfungspotenzial sagen Studien voraus. Es ist für die Wettbewerbsfähigkeit der Unternehmen das absolute A und O, das Thema KI für sich zu nutzen und hier Champion zu werden.",
+            "Man muss immer die Frage stellen: Was ist eigentlich die Aufgabe des Staates, und was ist die Aufgabe der Unternehmen? Das ist übrigens in einem der heute vorliegenden Anträge der Opposition ziemlich verwaschen worden.",
+            "Wir als Staat dürfen den Unternehmen vor allem nicht im Weg stehen. In dieser Hinsicht haben wir in den letzten Wochen und Monaten vieles getan. Auf europäischer Ebene haben wir mit dem KI-Omnibus vor allem die Erleichterungen für sehr kleine Unternehmen ausgeweitet. Diese gelten nun für den gesamten Mittelstand, also für Unternehmen bis 750 Beschäftigte. Das ist eine riesige Bürokratieentlastung für den Mittelstand.",
+            "Wir haben Fristen dort verlängert, wo die Kommission die Standards noch nicht gesetzt hat. Vor allem haben wir den gesamten Bereich der Maschinenverordnung noch einmal deutlich vereinfacht; denn gerade hier schlägt das Herz der deutschen Industrie.",
+            "Meine Damen und Herren, wir haben gestern das KI-MIG beschlossen und damit die nationale Umsetzung dieser KI-Verordnung auf den Weg gebracht. Dabei handelt es sich um eine echte Eins-zu-eins-Umsetzung, wie wir es versprochen haben, mit klaren Strukturen und dem Grundprinzip, dass die Behörden, die heute schon für Unternehmen verantwortlich sind, auch in Zukunft verantwortlich sein werden. Doppelstrukturen werden dabei vermieden, mit starker Koordination der Bundesnetzagentur.",
+            "Das sind die Dinge, die wir unternommen haben, um hier Bürokratie abzubauen. Ich will sagen: Die Regulierung ist kein Problem, sondern sie ist wichtig. Es ist wichtig, dass wir einen einheitlichen Rechtsrahmen haben. Mit dem EU AI Act und dem KI-MIG haben wir diesen jetzt. Allein in den USA gibt es auf Ebene der Bundesstaaten 145 unterschiedliche beschlossene Gesetze. Das zeigt, was für eine Leistung wir hier erbringen.",
+            "Hier gewisse Standards zu setzen, ist wichtig, wenn es zum Beispiel darum geht, KI-Inhalte zu kennzeichnen, damit erkennbar ist, was von echten Menschen stammt und was KI-generiert ist. Erwähnen möchte ich auch das Verbot von „Nudifier“-Apps, wo Personen in Nacktdarstellungen gefakt werden. Das sind wichtige Dinge.",
+            "Was wir außerdem tun – das ist der zweite Block –, ist, dass wir als Staat auch selbst vorangehen. Wir haben uns mit der Rechenzentrumsstrategie gerade selbst das Ziel vorgegeben, die KI-Kapazitäten zu vervierfachen – nicht indem wir sie selber bauen, sondern indem wir zum Beispiel den Netzanschluss deutlich erleichtern und das Thema Abwärme flexibler handhaben.",
+            "Wir haben gerade bei uns selbst eine Vergabe durchgeführt und die AI-Infrastruktur, die Cloud, an deutsche Unternehmen vergeben, um unsere heimische Wirtschaft zu stärken. Wir haben mit SPARK eine Genehmigungsplattform, mit der wir im Bereich Infrastruktur – bei der Eisenbahn, bei Brücken – Genehmigungszeiten schon jetzt mindestens halbieren können; in Zukunft noch deutlich mehr. Wir haben mit dem Agentic AI Hub gerade mit neun Start-ups und 20 Kommunen ein Instrument gebaut. Damit wollen wir die Leistungen von Start-ups in Deutschland über alle Kommunen hinweg skalieren, um die Nutzung von Bürgerdiensten einfacher zu machen. Wir bauen das AI Safety Institute auf, um Kompetenz zu schaffen, um neue KI-Modelle besser zu beurteilen, um unsere Lösungen sicherer zu machen.",
+            "Wir haben eine exzellente Forschungslandschaft. Dorothee Bär trägt dafür Sorge. ELLIS und viele andere Institute setzen hier wirklich World Class Standards. Bundesminister Karsten Wildberger hat sich sehr dafür eingesetzt, dass wir auch im Bereich der Unternehmen weiter vorankommen. Wir haben jetzt eine Kooperation zwischen Cohere und Aleph Alpha. Wir werden auch hier deutlich stärker werden.",
+            "Aber reicht das alles? Nein, meine Damen und Herren, das reicht nicht. Warum reicht es nicht? Weil es das ist, was der Staat tun kann. Am Ende müssen die Unternehmen, muss die Industrie in das Thema KI einsteigen. Wir verbessern die Rahmenbedingungen, aber der Satz „It’s the economy, stupid!“ trifft hier wie in keinem anderen Feld zu. Wenn Sie in der Opposition Anträge stellen, in denen Sie fordern, alles zu verstaatlichen, dann muss ich sagen: Der Staat ist nicht der bessere Unternehmer.",
+            "Wir setzen auf Marktwirtschaft. Wir setzen auf die Fähigkeit des Individuums. Damit werden wir nach vorne kommen.",
+            "Vielen Dank.",
+            "Für die AfD-Fraktion hat Herr Abgeordneter Robin Jünger das Wort. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Künstliche Intelligenz ist das Thema, das die Wirtschaft heute schon am meisten verändert und das sie in den kommenden Jahren noch stärker verändern wird. Über 300 Milliarden Eu"
+        },
+        {
+          "rede_id": "ID218402600",
+          "source_page": {
+            "page": 10244,
+            "quadrant": "A"
+          },
+          "speaker": {
+            "xml_redner_id": "11005493",
+            "display_name": "Robin Jünger",
+            "first_name": "Robin",
+            "last_name": "Jünger",
+            "fraktion": "AfD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 27,
+          "char_count": 6268,
+          "text": "Frau Präsidentin! Meine Damen und Herren! Liebe Kollegen! Herr Brinkhaus hat es gesagt: Wir laufen Gefahr, dass die große KI das Eigentum von drei Unternehmen ist. Die Enteignungsfraktion schlägt vor: Dann besteuern wir die eben alle. Aber was wollen Sie denn besteuern, wenn die KI nicht in der Hand von europäischen Unternehmen ist? Dann haben Sie nichts zu besteuern. Herr Jarzombek, Sie haben auch richtig gesagt: Sie tun viel, und Sie tun auch viel Richtiges. Wir freuen uns auch über vieles, was Sie tun, weil Sie die richtigen Schritte gehen. Aber Sie sagen, Sie wollen nicht im Weg stehen. Mit dem KI-MIG beispielsweise, das wir gestern wieder durchgewunken haben, stehen Sie den Unternehmen, gerade den kleinen Unternehmen und den Mittelständlern, massiv im Weg. Deshalb ist es nicht ganz richtig, zu sagen: „Wir tun alles, um nicht im Weg zu stehen“, wenn wir uns nicht endlich von dieser EU-Bürokratie trennen. Mein Kollege Rupp hat es ganz richtig gesagt: Da draußen läuft ein globales Wettrennen. Da draußen läuft eine Revolution. In den USA und China ist das im Bereich künstlicher Intelligenz längst Gegenwart. – Und wir hierzulande? Wir schauen uns das Ganze immer noch als „Zukunftstechnologie“ vom Feldrand an. Deshalb legen wir Ihnen heute den Aufbruch ins digitale Zeitalter vor. Wir von der Alternative für Deutschland wollen Deutschland wieder an die Weltspitze bringen. Wir sagen in unseren Anträgen auch ganz konkret, wie: Erstens stellen wir die Energieversorgung als bedingungslose Grundlage ins Zentrum des Handelns. KI-Rechenzentren verschlingen gewaltige Mengen an Strom: grundlastfähigem Strom, rund um die Uhr, zu wettbewerbsfähigen Preisen. Ohne Strom keine KI! So einfach ist das. Amerika baut Kraftwerke für seine Rechenzentren. China baut Kraftwerke für seine Rechenzentren. Und Deutschland? Deutschland sprengt seine Kraftwerke und schreibt dann eine Strategie über die Risiken der künstlichen Intelligenz. Sie verwalten nur noch den Abstieg. Wir fordern: Kernkraft zurück ans Netz! Ganz einfach. Wir koppeln die Energie- mit der Rechenzentrumsstrategie – das haben Sie übersehen –; denn daran führt kein Weg vorbei. Sie haben eine Rechenzentrumsstrategie geschrieben, die ganz klar ohne das Thema Energie auskommt. Zweitens fördern wir Freiheit, statt die Fesseln anzulegen. Wir legen Ihnen die Werkzeuge in die Hand, um die EU-Bürokratie zurückzuweisen und eigene Maßgaben in den Vordergrund zu stellen. Wir wollen einen Bürokratiekahlschlag, der diesen Namen auch wirklich verdient, nicht Ihre Gesetze zur Reduzierung von Gesetzen, die jeden Verbesserungsversuch ad absurdum führen. Herr Abgeordneter, lassen Sie eine Zwischenfrage aus den Reihen der SPD zu? Nein, schreiben Sie es auf. Ich beschäftige mich später damit. Drittens heben wir Kapital. Gründer mit vielversprechenden Ideen finden hierzulande kaum Wachstumskapital und gehen dorthin, wo man sie willkommen heißt. Wir wollen privates Risikokapital heben durch attraktive Rahmenbedingungen für institutionelle Anleger, damit deutsches Geld in deutsche Digitalunternehmen fließt statt in fremde Technologien. Viertens zeigen wir auf, wie KI für Menschen erlebbar wird: in der Industrie, in der Medizin, im Verkehr, in der Stadtplanung, bei Sicherheit und Ordnung und in einer Verwaltung, die endlich digital arbeitet, statt in Aktenbergen zu ersticken. KI made in Germany, der die Bürger vertrauen und die zum neuen Exportschlager werden kann, das ist unser Ansatzpunkt. Ihr Antrag – das sehen nicht nur wir in der Debatte so, sondern die Gesamtargumentation in den Ausschusssitzungen geht in genau die gleiche Richtung – ist nur noch die getreue Erfüllung von EU-Überregulierung. Das lässt nur einen Schluss zu: Sie sind weder willens noch imstande, die Grundlagen zu schaffen, dass unsere Wirtschaft konkurrenzfähige Produkte herstellen kann. Nein, Sie regulieren die Innovation zu Tode, um Ihr eigenes Unvermögen zu kaschieren. Sie verstecken sich hinter den Regularien der EU-Kommission und schieben die Verantwortung von sich weg. Die stolze Technologienation Deutschland droht zur digitalen Kolonie zu verkommen, die für teures Geld fremde Produkte einkauft und die Kontrolle über die eigenen Daten gleich mitliefert. – Doch, genau so ist es. – Sie verstehen Ihre eigenen Positionen nicht. Das ist das Problem. Sie liefern uns aus. Liebe Kollegen, wenn Souveränität für Sie mehr sein soll als nur ein Buzzword für Ihre Instagram-Clips, dann müssen Sie investieren, statt zu regulieren. Jetzt haben Sie, liebe Kollegen von der Union, doch so lange für das Digitalministerium gekämpft. Und nun bringen Sie die PS nicht auf die Straße, weil Ihnen die deutsche Souveränität in der Sache fehlt, weil Sie sich von Brüssel E10 in Ihren vermeintlichen Hochoktanmotor kippen lassen, und das wird so nichts. Wir hingegen stellen Ihnen mit den beiden Anträgen in den Bereichen Digitales und Forschung zwei ausgezeichnete Möglichkeiten zur Abstimmung, die der Rolle Deutschlands in Europa mit Blick auf die digitale Zukunft auch gerecht werden. Denn mit dem KI-Airbus-Antrag liefern wir Ihnen neben dem gangbaren nationalen Weg auch noch die Blaupause für einen bereits erfolgreich beschrittenen europäischen Weg. Airbus, ESA, CERN: Überall dort, wo Europa Kompetenzen gebündelt hat, statt sie zu verfasern, ist Weltklasse entstanden. Und genau das braucht es jetzt für die KI-Basistechnologien: unter deutscher Führung, gerne in europäischer Koordination und Kooperation mit klarer Aufgabenverteilung, aber nicht mit dem Brüsseler Bürokratiewahnsinn, damit das Rennen um die Technologievorherrschaft nicht komplett verloren geht. Liebe Kollegen von der Union, Ihr Koalitionsvertrag, die Arbeitsgrundlage, heißt „Verantwortung für Deutschland“ und nicht „Wegducken vor Brüssel“. Werden Sie endlich dieser Aussage gerecht, und stimmen Sie unseren Anträgen zu. Es ist so einfach. Und wenn Sie das nicht können oder wenn Sie das nicht dürfen, dann machen Sie doch einfach den Weg frei für Neuwahlen, oder werfen Sie Ihren unwilligen Koalitionspartner raus und suchen Sie sich hier im Haus Mehrheiten, die auch ohne Friedrich Merz bereit sind, wirklich Verantwortung für Deutschland zu übernehmen. Herzlichen Dank. Für die SPD-Fraktion hat Herr Abgeordneter Holger Mann das Wort.",
+          "paragraphs": [
+            "Frau Präsidentin! Meine Damen und Herren! Liebe Kollegen! Herr Brinkhaus hat es gesagt: Wir laufen Gefahr, dass die große KI das Eigentum von drei Unternehmen ist. Die Enteignungsfraktion schlägt vor: Dann besteuern wir die eben alle.",
+            "Aber was wollen Sie denn besteuern, wenn die KI nicht in der Hand von europäischen Unternehmen ist? Dann haben Sie nichts zu besteuern.",
+            "Herr Jarzombek, Sie haben auch richtig gesagt: Sie tun viel, und Sie tun auch viel Richtiges. Wir freuen uns auch über vieles, was Sie tun, weil Sie die richtigen Schritte gehen. Aber Sie sagen, Sie wollen nicht im Weg stehen. Mit dem KI-MIG beispielsweise, das wir gestern wieder durchgewunken haben, stehen Sie den Unternehmen, gerade den kleinen Unternehmen und den Mittelständlern, massiv im Weg. Deshalb ist es nicht ganz richtig, zu sagen: „Wir tun alles, um nicht im Weg zu stehen“, wenn wir uns nicht endlich von dieser EU-Bürokratie trennen.",
+            "Mein Kollege Rupp hat es ganz richtig gesagt: Da draußen läuft ein globales Wettrennen. Da draußen läuft eine Revolution. In den USA und China ist das im Bereich künstlicher Intelligenz längst Gegenwart. – Und wir hierzulande? Wir schauen uns das Ganze immer noch als „Zukunftstechnologie“ vom Feldrand an. Deshalb legen wir Ihnen heute den Aufbruch ins digitale Zeitalter vor. Wir von der Alternative für Deutschland wollen Deutschland wieder an die Weltspitze bringen. Wir sagen in unseren Anträgen auch ganz konkret, wie:",
+            "Erstens stellen wir die Energieversorgung als bedingungslose Grundlage ins Zentrum des Handelns. KI-Rechenzentren verschlingen gewaltige Mengen an Strom: grundlastfähigem Strom, rund um die Uhr, zu wettbewerbsfähigen Preisen. Ohne Strom keine KI! So einfach ist das. Amerika baut Kraftwerke für seine Rechenzentren. China baut Kraftwerke für seine Rechenzentren. Und Deutschland? Deutschland sprengt seine Kraftwerke",
+            "und schreibt dann eine Strategie über die Risiken der künstlichen Intelligenz. Sie verwalten nur noch den Abstieg. Wir fordern: Kernkraft zurück ans Netz! Ganz einfach.",
+            "Wir koppeln die Energie- mit der Rechenzentrumsstrategie – das haben Sie übersehen –; denn daran führt kein Weg vorbei. Sie haben eine Rechenzentrumsstrategie geschrieben, die ganz klar ohne das Thema Energie auskommt.",
+            "Zweitens fördern wir Freiheit, statt die Fesseln anzulegen. Wir legen Ihnen die Werkzeuge in die Hand, um die EU-Bürokratie zurückzuweisen und eigene Maßgaben in den Vordergrund zu stellen. Wir wollen einen Bürokratiekahlschlag, der diesen Namen auch wirklich verdient, nicht Ihre Gesetze zur Reduzierung von Gesetzen, die jeden Verbesserungsversuch ad absurdum führen.",
+            "Herr Abgeordneter, lassen Sie eine Zwischenfrage aus den Reihen der SPD zu?",
+            "Nein, schreiben Sie es auf. Ich beschäftige mich später damit.",
+            "Drittens heben wir Kapital. Gründer mit vielversprechenden Ideen finden hierzulande kaum Wachstumskapital und gehen dorthin, wo man sie willkommen heißt. Wir wollen privates Risikokapital heben durch attraktive Rahmenbedingungen für institutionelle Anleger, damit deutsches Geld in deutsche Digitalunternehmen fließt statt in fremde Technologien.",
+            "Viertens zeigen wir auf, wie KI für Menschen erlebbar wird: in der Industrie, in der Medizin, im Verkehr, in der Stadtplanung, bei Sicherheit und Ordnung und in einer Verwaltung, die endlich digital arbeitet, statt in Aktenbergen zu ersticken. KI made in Germany,",
+            "der die Bürger vertrauen und die zum neuen Exportschlager werden kann, das ist unser Ansatzpunkt.",
+            "Ihr Antrag – das sehen nicht nur wir in der Debatte so, sondern die Gesamtargumentation in den Ausschusssitzungen geht in genau die gleiche Richtung – ist nur noch die getreue Erfüllung von EU-Überregulierung. Das lässt nur einen Schluss zu: Sie sind weder willens noch imstande, die Grundlagen zu schaffen, dass unsere Wirtschaft konkurrenzfähige Produkte herstellen kann.",
+            "Nein, Sie regulieren die Innovation zu Tode, um Ihr eigenes Unvermögen zu kaschieren. Sie verstecken sich hinter den Regularien der EU-Kommission und schieben die Verantwortung von sich weg. Die stolze Technologienation Deutschland droht zur digitalen Kolonie zu verkommen, die für teures Geld fremde Produkte einkauft und die Kontrolle über die eigenen Daten gleich mitliefert.",
+            "– Doch, genau so ist es.",
+            "– Sie verstehen Ihre eigenen Positionen nicht. Das ist das Problem. Sie liefern uns aus.",
+            "Liebe Kollegen, wenn Souveränität für Sie mehr sein soll als nur ein Buzzword für Ihre Instagram-Clips, dann müssen Sie investieren, statt zu regulieren.",
+            "Jetzt haben Sie, liebe Kollegen von der Union, doch so lange für das Digitalministerium gekämpft. Und nun bringen Sie die PS nicht auf die Straße, weil Ihnen die deutsche Souveränität in der Sache fehlt, weil Sie sich von Brüssel E10 in Ihren vermeintlichen Hochoktanmotor kippen lassen,",
+            "und das wird so nichts.",
+            "Wir hingegen stellen Ihnen mit den beiden Anträgen in den Bereichen Digitales und Forschung zwei ausgezeichnete Möglichkeiten zur Abstimmung, die der Rolle Deutschlands in Europa mit Blick auf die digitale Zukunft auch gerecht werden.",
+            "Denn mit dem KI-Airbus-Antrag liefern wir Ihnen neben dem gangbaren nationalen Weg auch noch die Blaupause für einen bereits erfolgreich beschrittenen europäischen Weg. Airbus, ESA, CERN: Überall dort, wo Europa Kompetenzen gebündelt hat, statt sie zu verfasern, ist Weltklasse entstanden. Und genau das braucht es jetzt für die KI-Basistechnologien: unter deutscher Führung, gerne in europäischer Koordination und Kooperation mit klarer Aufgabenverteilung, aber nicht mit dem Brüsseler Bürokratiewahnsinn, damit das Rennen um die Technologievorherrschaft nicht komplett verloren geht.",
+            "Liebe Kollegen von der Union, Ihr Koalitionsvertrag, die Arbeitsgrundlage, heißt „Verantwortung für Deutschland“ und nicht „Wegducken vor Brüssel“. Werden Sie endlich dieser Aussage gerecht, und stimmen Sie unseren Anträgen zu. Es ist so einfach. Und wenn Sie das nicht können",
+            "oder wenn Sie das nicht dürfen, dann machen Sie doch einfach den Weg frei für Neuwahlen, oder werfen Sie Ihren unwilligen Koalitionspartner raus und suchen Sie sich hier im Haus Mehrheiten,",
+            "die auch ohne Friedrich Merz bereit sind, wirklich Verantwortung für Deutschland zu übernehmen.",
+            "Herzlichen Dank.",
+            "Für die SPD-Fraktion hat Herr Abgeordneter Holger Mann das Wort."
+          ],
+          "snippet": "Frau Präsidentin! Meine Damen und Herren! Liebe Kollegen! Herr Brinkhaus hat es gesagt: Wir laufen Gefahr, dass die große KI das Eigentum von drei Unternehmen ist. Die Enteignungsfraktion schlägt vor: Dann besteuern wir die eben alle. Aber "
+        },
+        {
+          "rede_id": "ID218402700",
+          "source_page": {
+            "page": 10245,
+            "quadrant": "C"
+          },
+          "speaker": {
+            "xml_redner_id": "11005140",
+            "display_name": "Holger Mann",
+            "first_name": "Holger",
+            "last_name": "Mann",
+            "fraktion": "SPD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 35,
+          "char_count": 5898,
+          "text": "Sehr geehrte Frau Präsidentin! Meine Damen und Herren! Die AfD beschreibt auf drei Seiten veraltete Vorstellungen zu KI und zur Industriepolitik. Ehe ich im Detail darauf eingehe, noch mal ein Blick darauf, was Sie als Partei mit künstlicher Intelligenz tun. Alle der Demokratie verpflichteten Fraktionen in diesem Haus haben sich auf ein Fairnessabkommen für den Wahlkampf geeinigt. Kein Deepfake-Einsatz gegen politische Mitbewerber; das war einer der Grundsätze. Die AfD aber verweigert sich bis heute diesem Konsens und damit einem fairen politischen Wettbewerb. Stattdessen setzen Sie Deepfakes gegen Mitbewerber ein: Angela Merkel verfinstert, Karl Lauterbach in Handschellen. Vor weniger Monaten hat Ihr AfD-Fraktionsmitglied Herr Holm, Spitzenkandidat in Mecklenburg-Vorpommern, hier gerechtfertigt, dass ein AfD-Landtagsabgeordneter aus Meck-Pomm in Videos Manuela Schwesigs Gesicht und ihre Stimme missbraucht hat. Im Clip lassen Sie den digitalen Avatar die Ministerpräsidentin sich vermeintlich selbst diskreditieren. Meine Damen und Herren, solche Bilder bleiben im Kopf, selbst wenn man weiß, dass sie gefälscht sind. Und das sind keine Pannen, das ist antidemokratische Methode. – Das erkläre ich Ihnen gleich. – Das ist der stete Tropfen, der das Vertrauen in Personen und Institutionen schleichend zersetzt. Meine Damen und Herren, wer KI so einsetzt, hat aus meiner Sicht jedes Recht verwirkt, sich hier im Plenum als Hüter technologischer Souveränität aufzuspielen. Und zu Ihrem Antrag: Sie fordern mit dem KI-Airbus eine staatlich koordinierte Großorganisation nach dem Muster des 20. Jahrhunderts. Die Idee ist nicht nur veraltet, sie verkennt die Technologieentwicklung, wie sie heute funktioniert. Wir setzen als Koalition deshalb in der Hightech Agenda nicht auf neue schwerfällige Behörden und zentralistische Apparate, sondern stärken vorhandene Exzellenz mit dezentralen agilen Ökosystemen. Und während Sie auf nationalen Protektionismus setzen, setzen wir auf internationale Kooperation und Alleinstellungsmerkmale – der Staatssekretär hat es gesagt –, wie Transparenz, Vertrauenswürdigkeit und Rechtssicherheit durch den europäischen AI Act. Meine Damen und Herren, „Made in Germany“ gewinnt eben nicht durch Abschottung, sondern durch Qualität und Glaubwürdigkeit. Herr Abgeordneter, lassen Sie eine Zwischenfrage aus der AfD-Fraktion zu? Wenn es denn sein muss. Ja oder nein? Ja. Ja, bitte. Vielen Dank, dass Sie die Frage zulassen. – Die Frage ist eigentlich ziemlich simpel. Wir sehen, dass China, Südkorea, Japan und die USA aktuell führend sind. Ja, es wurde richtig erkannt, dass zukünftig die Robotik zusammen mit der KI viel Arbeit übernehmen wird. Das Energieproblem lassen wir erst mal beiseite. Was ist denn Ihre Meinung? Wieso kriegen wir es nicht hin, eine signifikante KI-Infrastruktur auf die Beine zu stellen, die auch weltweit genutzt wird, obwohl wir so eine supertolle Regulierung haben? Vielen Dank. Zum einen will ich sagen: Das, was die AfD hier regelmäßig macht, ist, Äpfel mit Birnen zu vergleichen. Wenn Sie unser eigenes Land mit einer Volkswirtschaft wie den USA oder auch der Größe und auch dem Kapital einer Volkswirtschaft wie China vergleichen, dann bedeutet das, Äpfel mit Birnen zu vergleichen. Die deutsche KI-Forschungslandschaft und auch der Mittelstand haben Stärken, gerade in der industrienahen Anwendung von KI, die wir gezielt fördern sollten. Aber das, was in Ihrem Antrag steht, dass wir jetzt ausgerechnet von heute auf morgen mit dem begrenzten Kapital – das wurde hier schon ausgeführt – in Wettbewerb mit Nationen und Märkten treten sollen, die Billionen mobilisieren, ist wirklich wirklichkeitsfern. Wenn wir in eine europäische Aktion gehen, dann müssen wir vielleicht darüber reden, mit den Franzosen und dem Unternehmen Mistral ein großes Sprachmodell zu entwickeln. Aber das, was Sie hier an die Wand zeichnen, ist schon im Ansatz zum Scheitern verurteilt. Und zum anderen, gerade weil heute mit SpaceX ein weiteres Unternehmen von Elon Musk an den Markt geht – und das leistet Ihr Antrag überhaupt nicht –: Es wird ein Unternehmen in einer Selbstbewertung mit dem fast Hundertfachen des Umsatzes – wohlgemerkt: Umsatzes – und nicht des Gewinns an die Börse gehen. Die Risiken, die darin bestehen – – Entschuldigung, ganz kurz. Es ist doch nicht so schwer, dass dann, wenn man eine Frage gestellt hat, aus der eigenen Fraktion nicht noch Zwischenrufe bei der Antwort kommen. Bitte. Danke schön. – Die Risiken, die darin bestehen, dass hier eine Wette auf die Zukunft getätigt wird, ohne dass realistische Werte dahinterstehen, müssen später Banken, Privatanleger und vielleicht Rentner in den USA und andere ausbaden. Man hätte gedacht, dass aus der Dotcomblase was gelernt wurde. Inzwischen warnen selbst Investmentbanken davor, dass die riesigen Investitionen in Rechenzentren in den USA nicht in den Bilanzen auftauchen. Auch diesen Risiken sollte man sich mal widmen. Und deswegen machen wir hier eine gemeinsame, eine abgestimmte europäische Technologiepolitik. Zu guter Letzt – und das will ich hier deutlich sagen –: Während die AfD Regulierung für KI-Systeme radikal streichen will, damit noch mehr Missbrauch gefördert wird, setzen wir auf klare europäische KI-Standards. Wir wollen in Reallaboren und Testumgebung KI unter sicheren Bedingungen statt an Menschen erproben. Sie ignorieren aber die gerade schon ausgeführten Warnungen, unter anderem nicht nur von Nobelpreisträgern, sondern auch von KI-Marktführern wie Anthropic, die eine Pause in der aktiengetriebenen Entwicklung von KI fordern. Meine Damen und Herren, dieser Antrag verbindet veraltete Industriepolitik mit dem Versuch, von der manipulativen Nutzung von künstlicher Intelligenz durch die AfD abzulenken. Wir lehnen ihn deshalb ab. Danke schön. Für die Fraktion Bündnis 90/Die Grünen hat Frau Abgeordnete Dr. Andrea Lübcke das Wort. Bitte.",
+          "paragraphs": [
+            "Sehr geehrte Frau Präsidentin! Meine Damen und Herren! Die AfD beschreibt auf drei Seiten veraltete Vorstellungen zu KI und zur Industriepolitik. Ehe ich im Detail darauf eingehe, noch mal ein Blick darauf, was Sie als Partei mit künstlicher Intelligenz tun.",
+            "Alle der Demokratie verpflichteten Fraktionen in diesem Haus haben sich auf ein Fairnessabkommen für den Wahlkampf geeinigt. Kein Deepfake-Einsatz gegen politische Mitbewerber; das war einer der Grundsätze. Die AfD aber verweigert sich bis heute diesem Konsens und damit einem fairen politischen Wettbewerb.",
+            "Stattdessen setzen Sie Deepfakes gegen Mitbewerber ein: Angela Merkel verfinstert, Karl Lauterbach in Handschellen. Vor weniger Monaten hat Ihr AfD-Fraktionsmitglied Herr Holm, Spitzenkandidat in Mecklenburg-Vorpommern,",
+            "hier gerechtfertigt, dass ein AfD-Landtagsabgeordneter aus Meck-Pomm in Videos Manuela Schwesigs Gesicht und ihre Stimme missbraucht hat.",
+            "Im Clip lassen Sie den digitalen Avatar die Ministerpräsidentin sich vermeintlich selbst diskreditieren.",
+            "Meine Damen und Herren, solche Bilder bleiben im Kopf, selbst wenn man weiß, dass sie gefälscht sind. Und das sind keine Pannen, das ist antidemokratische Methode.",
+            "– Das erkläre ich Ihnen gleich. – Das ist der stete Tropfen, der das Vertrauen in Personen und Institutionen schleichend zersetzt. Meine Damen und Herren, wer KI so einsetzt, hat aus meiner Sicht jedes Recht verwirkt, sich hier im Plenum als Hüter technologischer Souveränität aufzuspielen.",
+            "Und zu Ihrem Antrag: Sie fordern mit dem KI-Airbus eine staatlich koordinierte Großorganisation nach dem Muster des 20. Jahrhunderts. Die Idee ist nicht nur veraltet, sie verkennt die Technologieentwicklung, wie sie heute funktioniert.",
+            "Wir setzen als Koalition deshalb in der Hightech Agenda nicht auf neue schwerfällige Behörden und zentralistische Apparate, sondern stärken vorhandene Exzellenz mit dezentralen agilen Ökosystemen. Und während Sie auf nationalen Protektionismus setzen, setzen wir auf internationale Kooperation und Alleinstellungsmerkmale – der Staatssekretär hat es gesagt –, wie Transparenz, Vertrauenswürdigkeit und Rechtssicherheit durch den europäischen AI Act.",
+            "Meine Damen und Herren, „Made in Germany“ gewinnt eben nicht durch Abschottung, sondern durch Qualität und Glaubwürdigkeit.",
+            "Herr Abgeordneter, lassen Sie eine Zwischenfrage aus der AfD-Fraktion zu?",
+            "Wenn es denn sein muss.",
+            "Ja oder nein?",
+            "Ja.",
+            "Ja, bitte.",
+            "Vielen Dank, dass Sie die Frage zulassen. – Die Frage ist eigentlich ziemlich simpel. Wir sehen, dass China, Südkorea, Japan und die USA aktuell führend sind. Ja, es wurde richtig erkannt, dass zukünftig die Robotik zusammen mit der KI viel Arbeit übernehmen wird. Das Energieproblem lassen wir erst mal beiseite.",
+            "Was ist denn Ihre Meinung? Wieso kriegen wir es nicht hin, eine signifikante KI-Infrastruktur auf die Beine zu stellen, die auch weltweit genutzt wird, obwohl wir so eine supertolle Regulierung haben?",
+            "Vielen Dank.",
+            "Zum einen will ich sagen: Das, was die AfD hier regelmäßig macht, ist, Äpfel mit Birnen zu vergleichen.",
+            "Wenn Sie unser eigenes Land mit einer Volkswirtschaft wie den USA oder auch der Größe und auch dem Kapital einer Volkswirtschaft wie China vergleichen, dann bedeutet das, Äpfel mit Birnen zu vergleichen.",
+            "Die deutsche KI-Forschungslandschaft und auch der Mittelstand haben Stärken, gerade in der industrienahen Anwendung von KI, die wir gezielt fördern sollten.",
+            "Aber das, was in Ihrem Antrag steht, dass wir jetzt ausgerechnet von heute auf morgen mit dem begrenzten Kapital – das wurde hier schon ausgeführt – in Wettbewerb mit Nationen und Märkten treten sollen, die Billionen mobilisieren, ist wirklich wirklichkeitsfern.",
+            "Wenn wir in eine europäische Aktion gehen, dann müssen wir vielleicht darüber reden, mit den Franzosen und dem Unternehmen Mistral ein großes Sprachmodell zu entwickeln. Aber das, was Sie hier an die Wand zeichnen, ist schon im Ansatz zum Scheitern verurteilt.",
+            "Und zum anderen, gerade weil heute mit SpaceX ein weiteres Unternehmen von Elon Musk an den Markt geht – und das leistet Ihr Antrag überhaupt nicht –: Es wird ein Unternehmen in einer Selbstbewertung mit dem fast Hundertfachen des Umsatzes – wohlgemerkt: Umsatzes – und nicht des Gewinns an die Börse gehen.",
+            "Die Risiken, die darin bestehen – –",
+            "Entschuldigung, ganz kurz. Es ist doch nicht so schwer, dass dann, wenn man eine Frage gestellt hat, aus der eigenen Fraktion nicht noch Zwischenrufe bei der Antwort kommen. Bitte.",
+            "Danke schön. – Die Risiken, die darin bestehen, dass hier eine Wette auf die Zukunft getätigt wird, ohne dass realistische Werte dahinterstehen, müssen später Banken, Privatanleger und vielleicht Rentner in den USA und andere ausbaden. Man hätte gedacht, dass aus der Dotcomblase was gelernt wurde.",
+            "Inzwischen warnen selbst Investmentbanken davor, dass die riesigen Investitionen in Rechenzentren in den USA nicht in den Bilanzen auftauchen.",
+            "Auch diesen Risiken sollte man sich mal widmen.",
+            "Und deswegen machen wir hier eine gemeinsame, eine abgestimmte europäische Technologiepolitik.",
+            "Zu guter Letzt – und das will ich hier deutlich sagen –: Während die AfD Regulierung für KI-Systeme radikal streichen will, damit noch mehr Missbrauch gefördert wird, setzen wir auf klare europäische KI-Standards.",
+            "Wir wollen in Reallaboren und Testumgebung KI unter sicheren Bedingungen statt an Menschen erproben. Sie ignorieren aber die gerade schon ausgeführten Warnungen, unter anderem nicht nur von Nobelpreisträgern, sondern auch von KI-Marktführern wie Anthropic, die eine Pause in der aktiengetriebenen Entwicklung von KI fordern.",
+            "Meine Damen und Herren, dieser Antrag verbindet veraltete Industriepolitik mit dem Versuch, von der manipulativen Nutzung von künstlicher Intelligenz durch die AfD abzulenken. Wir lehnen ihn deshalb ab.",
+            "Danke schön.",
+            "Für die Fraktion Bündnis 90/Die Grünen hat Frau Abgeordnete Dr. Andrea Lübcke das Wort. Bitte."
+          ],
+          "snippet": "Sehr geehrte Frau Präsidentin! Meine Damen und Herren! Die AfD beschreibt auf drei Seiten veraltete Vorstellungen zu KI und zur Industriepolitik. Ehe ich im Detail darauf eingehe, noch mal ein Blick darauf, was Sie als Partei mit künstliche"
+        },
+        {
+          "rede_id": "ID218402800",
+          "source_page": {
+            "page": 10247,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005624",
+            "display_name": "Dr. Andrea Lübcke",
+            "first_name": "Andrea",
+            "last_name": "Lübcke",
+            "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 15,
+          "char_count": 3669,
+          "text": "Frau Präsidentin! Sehr geehrte Damen und Herren! Technologische Souveränität im Bereich der KI ist ohne Zweifel eine zentrale Zukunftsfrage unserer Zeit. Europa darf nicht dauerhaft und einseitig abhängig sein von China oder den USA bei KI-Modellen, Daten, Cloud-Infrastrukturen, Chips oder Rechenpower. So weit, so richtig. Aber die AfD findet auf diese Frage nur falsche Antworten. Drei Gründe möchte ich dafür nennen. Erstens. Es ist das falsche Instrument; das haben wir schon gehört. Die AfD schlägt einen KI-Airbus vor, ein multinationales Großprojekt wie Airbus, CERN oder die ESA. Das muss man sich mal auf der Zunge zergehen lassen. Ausgerechnet die AfD, die ständig bei jeder Gelegenheit gegen Staat, Regulierung und Bürokratie wettert, fordert jetzt ein staatlich koordiniertes öffentlich-rechtlich organisiertes Großprojekt. Dort, wo sonst auf den Markt gewettet wird, der alles regeln soll, soll jetzt der Staat führen, kontrollieren und zuteilen. Dieses Instrument passt nicht zur Technologie. Airbus, ESA oder CERN, das sind Strukturen für große Hardwareprojekte wie Teilchenbeschleuniger, Flugzeuge oder Raketen. Die KI ist ein hochdynamisches Umfeld mit Innovationszyklen von wenigen Monaten, teilweise nur Wochen. Das ist so, als würden Sie ein Slalomrennen mit Supertankern gegen hochbewegliche Speedboote veranstalten wollen. Zweitens. Der Antrag spricht von Europa, aber denkt national. „Unter deutscher Führung“, das ist die zentrale Logik dieses Antrags. Oben ist Deutschland, der Rest bekommt Zuständigkeiten zugewiesen. Besonders deutlich wird das am Beispiel der geforderten europäischen Exzellenzcluster. Die sollen nicht wettbewerblich, auf Basis wissenschaftlicher Begutachtung, nach dem überzeugendsten Konzept oder der besten Idee vergeben werden. Nein, die AfD ordnet zu: Deutschland führt, Frankreich macht die Raumfahrt, die Niederlande Halbleiter, Skandinavien Telekommunikation und Deutschland KI. Das hat nichts mit Exzellenz zu tun. Denn Exzellenz entsteht im Wettbewerb der besten Ideen, der besten Konsortien, der besten Köpfe – wissenschaftsgeleitet und transparent. Interessant im Übrigen: In der gestrigen Debatte zu Forschung und Innovation und auch heute früh hat Herr Rupp gesagt, dass Deutschland im Bereich KI abgehängt sei. Ja, was denn nun? Exzellent und führend oder abgehängt? Drittens. Die AfD verwechselt Souveränität mit Kontrolle. Souveränität heißt nicht, alles national zu beaufsichtigen. Souveränität heißt, gestalten zu können. Souveränität heißt auch nicht, nur ein Modell zu trainieren. Souveränität heißt, KI in der Breite anwenden zu können: in der Industrie, in der Verwaltung, in der Wissenschaft, in der Lehre, im Mittelstand. Dazu braucht es eine KI, der die Menschen, Unternehmen, Verwaltung vertrauen können. Deshalb braucht es den AI Act als verlässlichen Rahmen: innovationsfreundlich, bürokratiearm, aber klar bei Grundrechten, Transparenz und Sicherheit. Wir müssen auch über Nachhaltigkeit reden. In einer Welt, die an die planetaren Grenzen stößt, ist Rohstoffverfügbarkeit eine harte Standort- und Souveränitätsfrage. Wer die effizientesten Chips entwickelt, die ressourcenschonendsten Rechenzentren baut, wer Wasser spart, Rohstoffe im Kreis führt, der wird technologisch vorne sein. Nachhaltigkeit wird zum entscheidenden Wettbewerbsvorteil. Liebe Kolleginnen und Kollegen, die AfD verwechselt Souveränität mit Kontrolle. Wir verstehen Souveränität als Gestaltungsfähigkeit – europäisch, offen, nachhaltig, vertrauenswürdig und innovationsfreundlich. Nichts davon ist die AfD. Wir lehnen deshalb den Antrag ab. Vielen Dank. – Die nächste Rednerin ist Sonja Lemke für die Fraktion Die Linke.",
+          "paragraphs": [
+            "Frau Präsidentin! Sehr geehrte Damen und Herren! Technologische Souveränität im Bereich der KI ist ohne Zweifel eine zentrale Zukunftsfrage unserer Zeit. Europa darf nicht dauerhaft und einseitig abhängig sein von China oder den USA bei KI-Modellen, Daten, Cloud-Infrastrukturen, Chips oder Rechenpower. So weit, so richtig.",
+            "Aber die AfD findet auf diese Frage nur falsche Antworten. Drei Gründe möchte ich dafür nennen.",
+            "Erstens. Es ist das falsche Instrument; das haben wir schon gehört. Die AfD schlägt einen KI-Airbus vor, ein multinationales Großprojekt wie Airbus, CERN oder die ESA.",
+            "Das muss man sich mal auf der Zunge zergehen lassen. Ausgerechnet die AfD, die ständig bei jeder Gelegenheit gegen Staat, Regulierung und Bürokratie wettert,",
+            "fordert jetzt ein staatlich koordiniertes öffentlich-rechtlich organisiertes Großprojekt. Dort, wo sonst auf den Markt gewettet wird, der alles regeln soll, soll jetzt der Staat führen, kontrollieren und zuteilen.",
+            "Dieses Instrument passt nicht zur Technologie. Airbus, ESA oder CERN, das sind Strukturen für große Hardwareprojekte wie Teilchenbeschleuniger, Flugzeuge oder Raketen. Die KI ist ein hochdynamisches Umfeld mit Innovationszyklen von wenigen Monaten, teilweise nur Wochen. Das ist so, als würden Sie ein Slalomrennen mit Supertankern gegen hochbewegliche Speedboote veranstalten wollen.",
+            "Zweitens. Der Antrag spricht von Europa, aber denkt national. „Unter deutscher Führung“, das ist die zentrale Logik dieses Antrags. Oben ist Deutschland, der Rest bekommt Zuständigkeiten zugewiesen. Besonders deutlich wird das am Beispiel der geforderten europäischen Exzellenzcluster. Die sollen nicht wettbewerblich, auf Basis wissenschaftlicher Begutachtung, nach dem überzeugendsten Konzept oder der besten Idee vergeben werden. Nein, die AfD ordnet zu: Deutschland führt, Frankreich macht die Raumfahrt, die Niederlande Halbleiter, Skandinavien Telekommunikation und Deutschland KI. Das hat nichts mit Exzellenz zu tun. Denn Exzellenz entsteht im Wettbewerb",
+            "der besten Ideen, der besten Konsortien, der besten Köpfe – wissenschaftsgeleitet und transparent.",
+            "Interessant im Übrigen: In der gestrigen Debatte zu Forschung und Innovation und auch heute früh hat Herr Rupp gesagt, dass Deutschland im Bereich KI abgehängt sei. Ja, was denn nun? Exzellent und führend oder abgehängt?",
+            "Drittens. Die AfD verwechselt Souveränität mit Kontrolle. Souveränität heißt nicht, alles national zu beaufsichtigen. Souveränität heißt, gestalten zu können. Souveränität heißt auch nicht, nur ein Modell zu trainieren. Souveränität heißt, KI in der Breite anwenden zu können: in der Industrie, in der Verwaltung, in der Wissenschaft, in der Lehre, im Mittelstand. Dazu braucht es eine KI, der die Menschen, Unternehmen, Verwaltung vertrauen können.",
+            "Deshalb braucht es den AI Act als verlässlichen Rahmen: innovationsfreundlich, bürokratiearm, aber klar bei Grundrechten, Transparenz und Sicherheit.",
+            "Wir müssen auch über Nachhaltigkeit reden. In einer Welt, die an die planetaren Grenzen stößt, ist Rohstoffverfügbarkeit eine harte Standort- und Souveränitätsfrage. Wer die effizientesten Chips entwickelt, die ressourcenschonendsten Rechenzentren baut, wer Wasser spart, Rohstoffe im Kreis führt, der wird technologisch vorne sein. Nachhaltigkeit wird zum entscheidenden Wettbewerbsvorteil.",
+            "Liebe Kolleginnen und Kollegen, die AfD verwechselt Souveränität mit Kontrolle.",
+            "Wir verstehen Souveränität als Gestaltungsfähigkeit – europäisch, offen, nachhaltig, vertrauenswürdig und innovationsfreundlich. Nichts davon ist die AfD. Wir lehnen deshalb den Antrag ab.",
+            "Vielen Dank. – Die nächste Rednerin ist Sonja Lemke für die Fraktion Die Linke."
+          ],
+          "snippet": "Frau Präsidentin! Sehr geehrte Damen und Herren! Technologische Souveränität im Bereich der KI ist ohne Zweifel eine zentrale Zukunftsfrage unserer Zeit. Europa darf nicht dauerhaft und einseitig abhängig sein von China oder den USA bei KI-"
+        },
+        {
+          "rede_id": "ID218402900",
+          "source_page": {
+            "page": 10248,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005518",
+            "display_name": "Sonja Lemke",
+            "first_name": "Sonja",
+            "last_name": "Lemke",
+            "fraktion": "Die Linke",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 9,
+          "char_count": 3110,
+          "text": "Herr Präsident! Sehr geehrte Zuhörende! Die AfD präsentiert heute gleich zwei Anträge, die übliche Mischung aus dem Hinterherrennen des KI-Hypes und dem völlig verstrahlten Atom- und Kohlewahnsinn. Aber warum liebt die AfD alles, was mit KI-Systemen zu tun hat? Der erste Grund ist offensichtlich: Je mehr KI-Systeme, desto mehr stärkt das die Macht der Tech-Bros, die die AfD unterstützen. Deswegen auch das EU-Bashing, deswegen auch der Hass auf jede Form der Regulierung. Und vor allen Dingen helfen KI-Systeme den Tech-Bros, ihre Macht weiter auszubauen. In den USA werden mit Gesichtserkennung und Palantir Menschen gefunden und deportiert. Dort dienen KI-Systeme jetzt schon ganz real dem Faschismus und machen Überwachungsdystopien möglich. Aber KI-Systeme schwächen schon vorher Demokratien überall auf der Welt. Und das ist der zweite Grund, warum die AfD KI-Systeme so toll findet: KI-Systeme übernehmen die Hetze für Sie; Herr Mann hat dazu schon einiges ausgeführt. Und dazu kommt: Millionen von Bots sind im Internet unterwegs, schon vor KI-Textgenerierung, aber seitdem noch viel authentischer, noch viel effizienter. Es gibt immer mehr Desinformationen, ob aus Russland, den USA oder von hier. Und immer lassen sie es so aussehen, als ob es eine Mehrheit gibt, die gar nicht existiert – für Frauenfeindlichkeit, für Rassismus und für Faschismus. Mit der Ära der Chatbots weiten die Tech-Bros ihre Macht auf den Diskurs ins Unendliche aus. Wenn jede Suche im Internet nur noch vorgefiltert wird und die originalen Inhalte gar nicht mehr gesehen werden, wenn jeder nur noch einen Chatbot befragt, der komplett unter der Kontrolle der Tech-Bros steht – es ist egal, aus welchem Land er kommt –, wenn selbst der Digitalminister keine eigenen Ideen mehr hat, sondern nur noch vorstrukturierte Gedanken, dann ist der Einfluss von Tech-Bros auf unsere Demokratien größer, als wir es gerade abschätzen können. Und das ist eine reale Gefahr. Wenn wir jetzt auch noch KI-Systeme in unsere Verwaltung bringen wollen, dann ist auch das ein gigantisches Risiko. KI-Systeme sind oft nur all unsere internalisierten Vorurteile in ein Programm gegossen, gaukeln dabei Neutralität vor und schaden dann massiv den Schwächsten. Wenn die Bundesregierung jetzt anfängt, Personal zu kürzen und durch KI-Systeme zu ersetzen, dann bringt das ein weiteres Problem mit sich: Es macht den Staat angreifbar – durch die Unternehmen, bei denen eingekauft wird, und alle faschistischen Akteure im Innern. Denn KI-Systeme wehren sich nicht, wenn man ihren Zweck ändert. Menschen können Nein sagen, wenn Menschenfeindlichkeit ihre neue Aufgabe wird. KI-Systeme tun einfach. Deswegen ist es so wichtig, dass wir genau jetzt unsere Demokratie stärken. Das tun wir, indem wir, erstens, KI-Systeme noch stärker regulieren, als es die KI-Verordnung vorsieht, damit gerade schädliche Auswirkungen auf demokratische Prozesse unterbunden werden, und indem wir, zweitens, endlich ein Verbotsverfahren gegen die AfD einleiten. Vielen Dank. Vielen Dank. – Für die nächste Rede erteile ich das Wort Joachim Ebmeyer von der CDU/CSU-Fraktion.",
+          "paragraphs": [
+            "Herr Präsident! Sehr geehrte Zuhörende! Die AfD präsentiert heute gleich zwei Anträge, die übliche Mischung aus dem Hinterherrennen des KI-Hypes und dem völlig verstrahlten Atom- und Kohlewahnsinn.",
+            "Aber warum liebt die AfD alles, was mit KI-Systemen zu tun hat? Der erste Grund ist offensichtlich: Je mehr KI-Systeme, desto mehr stärkt das die Macht der Tech-Bros, die die AfD unterstützen.",
+            "Deswegen auch das EU-Bashing, deswegen auch der Hass auf jede Form der Regulierung. Und vor allen Dingen helfen KI-Systeme den Tech-Bros, ihre Macht weiter auszubauen. In den USA werden mit Gesichtserkennung und Palantir Menschen gefunden und deportiert. Dort dienen KI-Systeme jetzt schon ganz real dem Faschismus und machen Überwachungsdystopien möglich.",
+            "Aber KI-Systeme schwächen schon vorher Demokratien überall auf der Welt. Und das ist der zweite Grund, warum die AfD KI-Systeme so toll findet: KI-Systeme übernehmen die Hetze für Sie; Herr Mann hat dazu schon einiges ausgeführt. Und dazu kommt: Millionen von Bots sind im Internet unterwegs, schon vor KI-Textgenerierung, aber seitdem noch viel authentischer, noch viel effizienter. Es gibt immer mehr Desinformationen, ob aus Russland, den USA oder von hier. Und immer lassen sie es so aussehen, als ob es eine Mehrheit gibt, die gar nicht existiert – für Frauenfeindlichkeit, für Rassismus und für Faschismus.",
+            "Mit der Ära der Chatbots weiten die Tech-Bros ihre Macht auf den Diskurs ins Unendliche aus. Wenn jede Suche im Internet nur noch vorgefiltert wird und die originalen Inhalte gar nicht mehr gesehen werden, wenn jeder nur noch einen Chatbot befragt, der komplett unter der Kontrolle der Tech-Bros steht – es ist egal, aus welchem Land er kommt –, wenn selbst der Digitalminister keine eigenen Ideen mehr hat, sondern nur noch vorstrukturierte Gedanken, dann ist der Einfluss von Tech-Bros auf unsere Demokratien größer, als wir es gerade abschätzen können. Und das ist eine reale Gefahr.",
+            "Wenn wir jetzt auch noch KI-Systeme in unsere Verwaltung bringen wollen, dann ist auch das ein gigantisches Risiko. KI-Systeme sind oft nur all unsere internalisierten Vorurteile in ein Programm gegossen, gaukeln dabei Neutralität vor und schaden dann massiv den Schwächsten. Wenn die Bundesregierung jetzt anfängt, Personal zu kürzen und durch KI-Systeme zu ersetzen, dann bringt das ein weiteres Problem mit sich: Es macht den Staat angreifbar – durch die Unternehmen, bei denen eingekauft wird, und alle faschistischen Akteure im Innern. Denn KI-Systeme wehren sich nicht, wenn man ihren Zweck ändert. Menschen können Nein sagen, wenn Menschenfeindlichkeit ihre neue Aufgabe wird. KI-Systeme tun einfach. Deswegen ist es so wichtig, dass wir genau jetzt unsere Demokratie stärken. Das tun wir, indem wir, erstens, KI-Systeme noch stärker regulieren, als es die KI-Verordnung vorsieht,",
+            "damit gerade schädliche Auswirkungen auf demokratische Prozesse unterbunden werden, und indem wir, zweitens, endlich ein Verbotsverfahren gegen die AfD einleiten.",
+            "Vielen Dank.",
+            "Vielen Dank. – Für die nächste Rede erteile ich das Wort Joachim Ebmeyer von der CDU/CSU-Fraktion."
+          ],
+          "snippet": "Herr Präsident! Sehr geehrte Zuhörende! Die AfD präsentiert heute gleich zwei Anträge, die übliche Mischung aus dem Hinterherrennen des KI-Hypes und dem völlig verstrahlten Atom- und Kohlewahnsinn. Aber warum liebt die AfD alles, was mit KI"
+        },
+        {
+          "rede_id": "ID218403000",
+          "source_page": {
+            "page": 10248,
+            "quadrant": "D"
+          },
+          "speaker": {
+            "xml_redner_id": "11005447",
+            "display_name": "Joachim Ebmeyer",
+            "first_name": "Joachim",
+            "last_name": "Ebmeyer",
+            "fraktion": "CDU/CSU",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 17,
+          "char_count": 4448,
+          "text": "Herr Präsident! Meine Damen und Herren! Die AfD-Fraktion zeichnet mit ihrem Antrag „Deutschland in die KI-Zukunft bringen“ ein Bild von Deutschland und Europa, das ich so nicht teile. Wer den Antrag liest, bekommt den Eindruck: Europa ist abgehängt, Talente fliehen ins Ausland, wir stehen mit leeren Händen da. Ich frage mich: Waren die Abgeordneten der AfD im September in Jülich? Bundeskanzler Friedrich Merz hat dort den schnellsten Supercomputer Europas eingeweiht. JUPITER, Platz vier weltweit, steht nicht in San Francisco und nicht in Shanghai, sondern in Nordrhein-Westfalen. Siemens, Bosch und die Fraunhofer-Gesellschaft gehören zu den 20 größten KI-Patentanmeldern weltweit. Das ist das Ergebnis jahrelanger intensiver Forschung. Natürlich gibt es noch gut zu tun: bei der Skalierung von Wachstumsunternehmen, bei Recheninfrastruktur, beim Bürokratierückbau. Aber das ist Lichtjahre entfernt von der Abwärtsspirale, die der Antrag beschreibt. Wer Deutschland schlechtreden will, der soll das tun; wir tun es nicht. Nun der Vorschlag eines europäischen KI-Airbusses. Das klingt griffig. Nur lohnt sich ein Blick in die Geschichtsbücher. Airbus wurde 1970 gegründet. 30 Jahre hat es gedauert, bis das Unternehmen profitabel wurde. Beim Flugzeugbau ist das auch kein Problem; ein Flugzeugtyp fliegt 20 Jahre. Aber KI ist kein Flugzeug. Ein Modell, das heute führend ist, ist in zwölf Monaten überholt. Wer hier auf staatliche Koordination wartet, wartet auf einen Zug, der längst abgefahren ist. Was tut die Bundesregierung? Im Juli 2025 haben wir die Hightech Agenda Deutschland beschlossen: sechs Schlüsseltechnologien, konkrete Roadmaps, konkrete Zeitpläne. Dieses Jahr zünden wir den KI-Robotikbooster – Transferzentren, die gerade Start-ups und den Mittelstand direkt zusammenbringen. Parallel laufen Förderprojekte in Automobil, Medizin und Chemie an. Und ab diesem Quartal fördern wir Projekte, die mit KI-Methoden Arzneimittel bis zu 50 Prozent schneller zur Zulassung bringen sollen. Das liegt nicht mehr in der Schublade; das wird jetzt konkret umgesetzt. Mit Dorothee Bär und Karsten Wildberger haben wir zwei Ressortchefs, die liefern. Bär kennt die Materie seit Jahren, und Wildberger kommt aus der Unternehmensführung und weiß, was Umsetzung bedeutet. Das neue Digitalministerium hat einen Zustimmungsvorbehalt bei IT-Vorhaben anderer Ministerien. Wer weiß, wie Digitalprojekte bisher zwischen Ressorts zerrieben wurden, weiß, was das bedeutet. Zu den AI-Gigafactories. Schauen wir uns an, was auf der anderen Seite des Atlantiks passiert. Das Stargate-Projekt allein hat über 400 Milliarden Dollar in den ersten drei Jahren zugesagt. Rechnet man Amazon, Alphabet, Meta und Microsoft dazu, kommen die US-Hyperscaler auf über 600 Milliarden Dollar. Europa hat 20 Milliarden Euro für bis zu fünf Gigafactories angekündigt. Das Wettbewerbsverfahren dazu hätte zu Jahresbeginn starten sollen. Es muss jetzt kommen, am besten sofort. Eine Gigafactory ist die Voraussetzung dafür, dass europäische Unternehmen, dass Forschung und Behörden KI-Modelle auf souveräner Infrastruktur trainieren können, ohne dass jeder Datensatz über Server läuft, auf die wir keinen Einfluss haben. Wer jetzt zögert und auf irgendwelche Abnahmegarantien wartet, bevor er baut, der übersieht: Der Wettbewerb fragt nicht, ob wir bereit sind; der wird woanders nachfragen. Die AfD will Gigafactories auch, aber über ein staatliches Konsortiummodell, das 30 Jahre braucht. Wir setzen auf öffentlich-private Partnerschaften, die heute handlungsfähig sind und mit dem Staat als Ankerkunden fungieren. Das ist der Unterschied. Ich will aber auch benennen, wo wir nachlegen müssen: Ein Rechenzentrumsbetreiber zahlt in Deutschland beim Strom fast doppelt so viel wie in den Niederlanden oder Frankreich. Das ist ein Standortnachteil, den wir uns nicht leisten können. Hier müssen wir uns anstrengen und eine sichere, verfügbare und wettbewerbsfähige Stromversorgung gewährleisten. Meine Damen und Herren, liebe Kolleginnen und Kollegen, die Frage, ob Europa technologische Souveränität braucht, stellt sich nicht mehr. Die Frage ist der Weg: staatlich koordiniertes Großprojekt, das Jahrzehnte braucht, oder konkrete Programme, die jetzt wirken? Wir haben definitiv den zweiten Weg gewählt. Deswegen lehnen wir die Anträge der AfD ab. Wir sind da echt schon viel weiter. Vielen Dank. Vielen Dank. – Die nächste Rednerin ist Maja Wallstein für die SPD-Fraktion.",
+          "paragraphs": [
+            "Herr Präsident! Meine Damen und Herren! Die AfD-Fraktion zeichnet mit ihrem Antrag „Deutschland in die KI-Zukunft bringen“ ein Bild von Deutschland und Europa, das ich so nicht teile. Wer den Antrag liest, bekommt den Eindruck: Europa ist abgehängt,",
+            "Talente fliehen ins Ausland, wir stehen mit leeren Händen da.",
+            "Ich frage mich: Waren die Abgeordneten der AfD im September in Jülich? Bundeskanzler Friedrich Merz hat dort den schnellsten Supercomputer Europas eingeweiht. JUPITER, Platz vier weltweit, steht nicht in San Francisco und nicht in Shanghai, sondern in Nordrhein-Westfalen.",
+            "Siemens, Bosch und die Fraunhofer-Gesellschaft gehören zu den 20 größten KI-Patentanmeldern weltweit. Das ist das Ergebnis jahrelanger intensiver Forschung.",
+            "Natürlich gibt es noch gut zu tun: bei der Skalierung von Wachstumsunternehmen, bei Recheninfrastruktur, beim Bürokratierückbau. Aber das ist Lichtjahre entfernt von der Abwärtsspirale, die der Antrag beschreibt. Wer Deutschland schlechtreden will, der soll das tun; wir tun es nicht.",
+            "Nun der Vorschlag eines europäischen KI-Airbusses. Das klingt griffig. Nur lohnt sich ein Blick in die Geschichtsbücher. Airbus wurde 1970 gegründet. 30 Jahre hat es gedauert, bis das Unternehmen profitabel wurde. Beim Flugzeugbau ist das auch kein Problem; ein Flugzeugtyp fliegt 20 Jahre. Aber KI ist kein Flugzeug. Ein Modell, das heute führend ist, ist in zwölf Monaten überholt. Wer hier auf staatliche Koordination wartet, wartet auf einen Zug, der längst abgefahren ist.",
+            "Was tut die Bundesregierung? Im Juli 2025 haben wir die Hightech Agenda Deutschland beschlossen: sechs Schlüsseltechnologien, konkrete Roadmaps, konkrete Zeitpläne. Dieses Jahr zünden wir den KI-Robotikbooster – Transferzentren, die gerade Start-ups und den Mittelstand direkt zusammenbringen. Parallel laufen Förderprojekte in Automobil, Medizin und Chemie an. Und ab diesem Quartal fördern wir Projekte, die mit KI-Methoden Arzneimittel bis zu 50 Prozent schneller zur Zulassung bringen sollen. Das liegt nicht mehr in der Schublade; das wird jetzt konkret umgesetzt.",
+            "Mit Dorothee Bär und Karsten Wildberger haben wir zwei Ressortchefs, die liefern. Bär kennt die Materie seit Jahren, und Wildberger kommt aus der Unternehmensführung und weiß, was Umsetzung bedeutet.",
+            "Das neue Digitalministerium hat einen Zustimmungsvorbehalt bei IT-Vorhaben anderer Ministerien. Wer weiß, wie Digitalprojekte bisher zwischen Ressorts zerrieben wurden, weiß, was das bedeutet.",
+            "Zu den AI-Gigafactories. Schauen wir uns an, was auf der anderen Seite des Atlantiks passiert. Das Stargate-Projekt allein hat über 400 Milliarden Dollar in den ersten drei Jahren zugesagt. Rechnet man Amazon, Alphabet, Meta und Microsoft dazu, kommen die US-Hyperscaler auf über 600 Milliarden Dollar. Europa hat 20 Milliarden Euro für bis zu fünf Gigafactories angekündigt. Das Wettbewerbsverfahren dazu hätte zu Jahresbeginn starten sollen. Es muss jetzt kommen, am besten sofort.",
+            "Eine Gigafactory ist die Voraussetzung dafür,",
+            "dass europäische Unternehmen, dass Forschung und Behörden KI-Modelle auf souveräner Infrastruktur trainieren können, ohne dass jeder Datensatz über Server läuft, auf die wir keinen Einfluss haben.",
+            "Wer jetzt zögert und auf irgendwelche Abnahmegarantien wartet, bevor er baut, der übersieht: Der Wettbewerb fragt nicht, ob wir bereit sind; der wird woanders nachfragen. Die AfD will Gigafactories auch, aber über ein staatliches Konsortiummodell, das 30 Jahre braucht. Wir setzen auf öffentlich-private Partnerschaften, die heute handlungsfähig sind und mit dem Staat als Ankerkunden fungieren. Das ist der Unterschied.",
+            "Ich will aber auch benennen, wo wir nachlegen müssen: Ein Rechenzentrumsbetreiber zahlt in Deutschland beim Strom fast doppelt so viel wie in den Niederlanden oder Frankreich. Das ist ein Standortnachteil, den wir uns nicht leisten können. Hier müssen wir uns anstrengen und eine sichere, verfügbare und wettbewerbsfähige Stromversorgung gewährleisten.",
+            "Meine Damen und Herren, liebe Kolleginnen und Kollegen, die Frage, ob Europa technologische Souveränität braucht, stellt sich nicht mehr. Die Frage ist der Weg: staatlich koordiniertes Großprojekt, das Jahrzehnte braucht, oder konkrete Programme, die jetzt wirken? Wir haben definitiv den zweiten Weg gewählt. Deswegen lehnen wir die Anträge der AfD ab. Wir sind da echt schon viel weiter.",
+            "Vielen Dank.",
+            "Vielen Dank. – Die nächste Rednerin ist Maja Wallstein für die SPD-Fraktion."
+          ],
+          "snippet": "Herr Präsident! Meine Damen und Herren! Die AfD-Fraktion zeichnet mit ihrem Antrag „Deutschland in die KI-Zukunft bringen“ ein Bild von Deutschland und Europa, das ich so nicht teile. Wer den Antrag liest, bekommt den Eindruck: Europa ist a"
+        },
+        {
+          "rede_id": "ID218403100",
+          "source_page": {
+            "page": 10249,
+            "quadrant": "D"
+          },
+          "speaker": {
+            "xml_redner_id": "11005249",
+            "display_name": "Maja Wallstein",
+            "first_name": "Maja",
+            "last_name": "Wallstein",
+            "fraktion": "SPD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 13,
+          "char_count": 2942,
+          "text": "Sehr geehrter Herr Präsident! Werte Kolleginnen und Kollegen! Liebe Besucherinnen und Besucher! Schön, dass Sie da sind, mitten in einer Debatte um einen AfD-Antrag. Es heißt ja immer, wir sollten die AfD inhaltlich stellen. Na klar! Aber, ehrlich gesagt, ich will auch die Union, die Grünen auch Die Linke inhaltlich stellen. Das ist so in der Demokratie, das machen wir halt. Aber das Problem ist, dass es schwierig ist, Menschen oder Parteien inhaltlich zu stellen, die keine Haltung und keine Position haben. Dieser Antrag zeigt genau das wieder. Im Antrag sagt die AfD zu Recht: Wir brauchen Talente und sollten um sie werben. Aber gleichzeitig – und das wissen Sie alle – arbeitet die AfD gegen jede Willkommenskultur, die aber immer Voraussetzung ist. In ihrem Antrag bewegt sich die AfD zwischen europäischer Kooperation und nationalem Hegemoniestreben. Eigentlich weiß doch jeder, dass sich das ausschließt. Einerseits fordert die AfD in ihrem Antrag marktwirtschaftliche Entlastung, und andererseits setzt sie auf massiven Staatsdirigismus. Die AfD bezieht sich bei ihren Zukunftsvorschlägen auf die hochdynamische und dezentrale KI-Welt des 21. Jahrhunderts und rekurriert dann aber auf die Luftfahrtindustrie des 20. Jahrhunderts, die ja ganz anders funktioniert. Im Gegensatz dazu steht die Arbeit der Bundesregierung und unserer Koalition. Unsere KI-Roadmap zur Hightech Agenda fördert genau das: Die Agenda vernetzt Spitzenzentren, Länderinitiativen und kleine Unternehmen durch konkrete Meilensteine: 50 Prozent KI-Nutzung im Mittelstand, 4 000 neue Start-ups, eigene Reallabore für Medizin und Robotik. Wir öffnen die Tür für alle. Wir stellen Datenräume bereit. Wir fördern offenen Austausch. Die AfD präsentiert wieder mal keine echten Lösungen, hat keine Haltung, aber Widersprüche. Diese sind – vielleicht haben Sie das auch schon mal gemerkt – bei der AfD normal. Die AfD hetzt täglich gegen vielfältige Lebensweisen, aber Alice Weidel ist ihre Galionsfigur. Sie bekämpft Elektroautos, aber Elon Musk ist ihr Held. Sie behauptet, gegen vermeintliche Eliten und Vetternwirtschaft zu sein, beschäftigt aber auf Steuerzahler/-innenkosten die eigenen Familienmitglieder. Sie nennen sich Patrioten, aber lassen sich offenbar von ausländischen Regimen kaufen. Die AfD behauptet, für Ordnung und Sicherheit zu sein, aber sie hat die meisten Straftäter unter ihren Funktionärinnen und Funktionären. Sie sind keine Patrioten. Sie sind ein Sicherheitsrisiko für unser Land, für unsere Demokratie. Wir müssen unsere Demokratie überall schützen. Das bedeutet im Übrigen auch, dass wir uns alle starkmachen müssen für die Überprüfung der Verfassungsmäßigkeit der AfD durch das Bundesverfassungsgericht. Ich frage mich: Welche demokratische Partei fürchtet die Überprüfung ihrer Verfassungsmäßigkeit durch das höchste Gericht unseres Landes? Vielen Dank. Vielen Dank. – Der nächste Redner ist Dr. Hans Theiss für die CDU/CSU-Fraktion.",
+          "paragraphs": [
+            "Sehr geehrter Herr Präsident! Werte Kolleginnen und Kollegen! Liebe Besucherinnen und Besucher! Schön, dass Sie da sind, mitten in einer Debatte um einen AfD-Antrag. Es heißt ja immer, wir sollten die AfD inhaltlich stellen. Na klar! Aber, ehrlich gesagt, ich will auch die Union, die Grünen auch Die Linke inhaltlich stellen.",
+            "Das ist so in der Demokratie, das machen wir halt. Aber das Problem ist, dass es schwierig ist, Menschen oder Parteien inhaltlich zu stellen, die keine Haltung und keine Position haben. Dieser Antrag zeigt genau das wieder. Im Antrag sagt die AfD zu Recht: Wir brauchen Talente und sollten um sie werben. Aber gleichzeitig – und das wissen Sie alle – arbeitet die AfD gegen jede Willkommenskultur, die aber immer Voraussetzung ist.",
+            "In ihrem Antrag bewegt sich die AfD zwischen europäischer Kooperation und nationalem Hegemoniestreben. Eigentlich weiß doch jeder, dass sich das ausschließt. Einerseits fordert die AfD in ihrem Antrag marktwirtschaftliche Entlastung, und andererseits setzt sie auf massiven Staatsdirigismus. Die AfD bezieht sich bei ihren Zukunftsvorschlägen auf die hochdynamische und dezentrale KI-Welt des 21. Jahrhunderts und rekurriert dann aber auf die Luftfahrtindustrie des 20. Jahrhunderts, die ja ganz anders funktioniert. Im Gegensatz dazu steht die Arbeit der Bundesregierung und unserer Koalition. Unsere KI-Roadmap zur Hightech Agenda fördert genau das: Die Agenda vernetzt Spitzenzentren, Länderinitiativen und kleine Unternehmen durch konkrete Meilensteine:",
+            "50 Prozent KI-Nutzung im Mittelstand, 4 000 neue Start-ups, eigene Reallabore für Medizin und Robotik. Wir öffnen die Tür für alle. Wir stellen Datenräume bereit. Wir fördern offenen Austausch.",
+            "Die AfD präsentiert wieder mal keine echten Lösungen, hat keine Haltung, aber Widersprüche. Diese sind – vielleicht haben Sie das auch schon mal gemerkt – bei der AfD normal. Die AfD hetzt täglich gegen vielfältige Lebensweisen, aber Alice Weidel ist ihre Galionsfigur.",
+            "Sie bekämpft Elektroautos, aber Elon Musk ist ihr Held. Sie behauptet, gegen vermeintliche Eliten und Vetternwirtschaft zu sein, beschäftigt aber auf Steuerzahler/-innenkosten die eigenen Familienmitglieder.",
+            "Sie nennen sich Patrioten, aber lassen sich offenbar von ausländischen Regimen kaufen.",
+            "Die AfD behauptet, für Ordnung und Sicherheit zu sein, aber sie hat die meisten Straftäter unter ihren Funktionärinnen und Funktionären.",
+            "Sie sind keine Patrioten. Sie sind ein Sicherheitsrisiko für unser Land,",
+            "für unsere Demokratie. Wir müssen unsere Demokratie überall schützen. Das bedeutet im Übrigen auch, dass wir uns alle starkmachen müssen für die Überprüfung der Verfassungsmäßigkeit der AfD durch das Bundesverfassungsgericht.",
+            "Ich frage mich: Welche demokratische Partei fürchtet die Überprüfung ihrer Verfassungsmäßigkeit durch das höchste Gericht unseres Landes?",
+            "Vielen Dank.",
+            "Vielen Dank. – Der nächste Redner ist Dr. Hans Theiss für die CDU/CSU-Fraktion."
+          ],
+          "snippet": "Sehr geehrter Herr Präsident! Werte Kolleginnen und Kollegen! Liebe Besucherinnen und Besucher! Schön, dass Sie da sind, mitten in einer Debatte um einen AfD-Antrag. Es heißt ja immer, wir sollten die AfD inhaltlich stellen. Na klar! Aber, "
+        },
+        {
+          "rede_id": "ID218403200",
+          "source_page": {
+            "page": 10250,
+            "quadrant": "C"
+          },
+          "speaker": {
+            "xml_redner_id": "11005593",
+            "display_name": "Dr. Hans Theiss",
+            "first_name": "Hans",
+            "last_name": "Theiss",
+            "fraktion": "CDU/CSU",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 10,
+          "char_count": 4084,
+          "text": "Sehr geehrter Herr Präsident! Sehr geehrte Frau Ministerin! Sehr geehrter Herr Minister! Liebe Kolleginnen und Kollegen! Die künstliche Intelligenz revolutioniert schon heute unser Leben, und Deutschland muss und wird in diesem Feld international eine Spitzenrolle spielen. Mit der Hightech Agenda Deutschland der aktuellen Bundesregierung sorgen wir dafür, dass Deutschland und damit auch Europa im Bereich der KI international ganz vorne mitspielen wird. Nicht umsonst ist die KI eine der sechs Schlüsseltechnologien, die wir ganz besonders in den Fokus nehmen. Für diesen Weitblick und diesen raschen ersten Schritt in der Umsetzung gebührt unserer Forschungsministerin Dorothee Bär und natürlich auch unserem Digitalminister Karsten Wildberger und ihren Häusern großer Dank. Künstliche Intelligenz bietet enorme Chancen für Wertschöpfung, für Innovation und für gesellschaftlichen Fortschritt – in der Wirtschaft, in der Wissenschaft, in der Medizin und Pflege und in vielen anderen verschiedenen Bereichen. Wirtschaftlichen Herausforderungen wie technologischer Abhängigkeit, Fachkräftemangel und unzureichender Infrastruktur begegnet die Hightech Agenda Deutschland mit gezielten Investitionen, dem Ausbau eigener Kompetenzen und europäischen Partnerschaften. Damit wird die Hightech Agenda dafür sorgen, dass Deutschland den Anschluss an die Weltspitze der KI-Forschung findet und auch hält. Selbstverständlich denken wir als CDU/CSU Wissenschaft und Wirtschaft im europäischen Kontext. Airbus – darauf bezieht sich auch die AfD in ihrem Antrag – ist hier in der Tat ein Musterbeispiel. Es ging aus einer gemeinsamen Initiative mehrerer europäischer Staaten unter besonderer Mitwirkung von Franz Josef Strauß hervor, zu einer Zeit, wo niemand angesichts von Boeing an eine europäische Flugzeugindustrie glaubte, und vereint heute Forschung, Produktion sowie hochqualifizierte Fachleute über nationale Grenzen hinweg. Es verbindet wirtschaftlichen Erfolg mit europäischer Innovationskraft und ist damit weit mehr als ein Unternehmen: Es ist ein Leuchtturmprojekt für die Handlungsfähigkeit und die Zukunft Europas. Kurz gesagt: Airbus steht sinnbildlich dafür, dass eine politische Vision Realität wird, und für den europäischen Gedanken – ein Gedanke, der in der politischen DNA der AfD null Komma null zu finden ist. Dass nun ausgerechnet die AfD ein europäisches Projekt starten möchte, ist deshalb blanker Hohn. So sehen selbstvergessener Populismus und politische Schizophrenie aus. Sind es nicht Sie und Ihre Parteifreunde der sogenannten Alternative für Deutschland, die regelmäßig den Dexit, also den Austritt Deutschlands aus der Europäischen Union, fordern, die eine geordnete Auflösung der EU anstrebten? Sind es nicht Sie und Ihre Parteifreunde, die sich für die Abschaffung des Euros und die Wiedereinführung der D-Mark und anderer regionaler Währungen einsetzen? Sind es nicht Sie und Ihre Parteifreunde, die sich mehr und mehr von unseren verlässlichen Partnerstaaten – im Übrigen genau von denjenigen, mit denen Airbus zum europäischen Erfolgsprojekt wurde – verabschieden wollen und auf Kuschelkurs mit Putins Russland gehen? In Ihrem Antrag führen Sie aus: „Die Fähigkeit Europas, selbstbestimmt über seine technologische Zukunft zu entscheiden, ist essenziell für seine politische und wirtschaftliche Souveränität.“ Das ist richtig. Es ist aber nicht das, was Ihrer politischen Agenda entspricht. Sie sind es doch, die unser Europa zerstören wollen, nämlich das Europa, aus dem solche starken Unternehmen und Zusammenarbeiten hervorgehen können. Ihr Weg ist kein europäischer. Ihr Weg ist antieuropäisch, antiökonomisch, antiwissenschaftlich. Es ist ein Weg zu massivem Wohlstandsverlust, dem Verlust von Millionen von Arbeitsplätzen und dem Verlust von Sicherheit, von Verlässlichkeit und Partnerschaft auf europäischer Ebene. Ihren politischen Weg werden wir auf keinen Fall unterstützen. Daher stimmen wir gegen Ihren Antrag. Vielen Dank. Vielen Dank. – Für die letzte Rede in dieser Debatte erteile ich das Wort Matthias David Mieves für die SPD-Fraktion.",
+          "paragraphs": [
+            "Sehr geehrter Herr Präsident! Sehr geehrte Frau Ministerin! Sehr geehrter Herr Minister! Liebe Kolleginnen und Kollegen! Die künstliche Intelligenz revolutioniert schon heute unser Leben, und Deutschland muss und wird in diesem Feld international eine Spitzenrolle spielen. Mit der Hightech Agenda Deutschland der aktuellen Bundesregierung sorgen wir dafür, dass Deutschland und damit auch Europa im Bereich der KI international ganz vorne mitspielen wird. Nicht umsonst ist die KI eine der sechs Schlüsseltechnologien, die wir ganz besonders in den Fokus nehmen. Für diesen Weitblick und diesen raschen ersten Schritt in der Umsetzung gebührt unserer Forschungsministerin Dorothee Bär und natürlich auch unserem Digitalminister Karsten Wildberger und ihren Häusern großer Dank.",
+            "Künstliche Intelligenz bietet enorme Chancen für Wertschöpfung, für Innovation und für gesellschaftlichen Fortschritt – in der Wirtschaft, in der Wissenschaft, in der Medizin und Pflege und in vielen anderen verschiedenen Bereichen. Wirtschaftlichen Herausforderungen wie technologischer Abhängigkeit, Fachkräftemangel und unzureichender Infrastruktur begegnet die Hightech Agenda Deutschland mit gezielten Investitionen, dem Ausbau eigener Kompetenzen und europäischen Partnerschaften. Damit wird die Hightech Agenda dafür sorgen, dass Deutschland den Anschluss an die Weltspitze der KI-Forschung findet und auch hält.",
+            "Selbstverständlich denken wir als CDU/CSU Wissenschaft und Wirtschaft im europäischen Kontext. Airbus – darauf bezieht sich auch die AfD in ihrem Antrag – ist hier in der Tat ein Musterbeispiel. Es ging aus einer gemeinsamen Initiative mehrerer europäischer Staaten unter besonderer Mitwirkung von Franz Josef Strauß hervor, zu einer Zeit, wo niemand angesichts von Boeing an eine europäische Flugzeugindustrie glaubte, und vereint heute Forschung, Produktion sowie hochqualifizierte Fachleute über nationale Grenzen hinweg. Es verbindet wirtschaftlichen Erfolg mit europäischer Innovationskraft und ist damit weit mehr als ein Unternehmen: Es ist ein Leuchtturmprojekt für die Handlungsfähigkeit und die Zukunft Europas.",
+            "Kurz gesagt: Airbus steht sinnbildlich dafür, dass eine politische Vision Realität wird, und für den europäischen Gedanken – ein Gedanke, der in der politischen DNA der AfD null Komma null zu finden ist. Dass nun ausgerechnet die AfD ein europäisches Projekt starten möchte, ist deshalb blanker Hohn. So sehen selbstvergessener Populismus und politische Schizophrenie aus.",
+            "Sind es nicht Sie und Ihre Parteifreunde der sogenannten Alternative für Deutschland, die regelmäßig den Dexit, also den Austritt Deutschlands aus der Europäischen Union, fordern, die eine geordnete Auflösung der EU anstrebten? Sind es nicht Sie und Ihre Parteifreunde, die sich für die Abschaffung des Euros und die Wiedereinführung der D-Mark und anderer regionaler Währungen einsetzen? Sind es nicht Sie und Ihre Parteifreunde, die sich mehr und mehr von unseren verlässlichen Partnerstaaten – im Übrigen genau von denjenigen, mit denen Airbus zum europäischen Erfolgsprojekt wurde – verabschieden wollen und auf Kuschelkurs mit Putins Russland gehen?",
+            "In Ihrem Antrag führen Sie aus: „Die Fähigkeit Europas, selbstbestimmt über seine technologische Zukunft zu entscheiden, ist essenziell für seine politische und wirtschaftliche Souveränität.“ Das ist richtig. Es ist aber nicht das, was Ihrer politischen Agenda entspricht. Sie sind es doch, die unser Europa zerstören wollen, nämlich das Europa, aus dem solche starken Unternehmen und Zusammenarbeiten hervorgehen können.",
+            "Ihr Weg ist kein europäischer. Ihr Weg ist antieuropäisch, antiökonomisch, antiwissenschaftlich. Es ist ein Weg zu massivem Wohlstandsverlust, dem Verlust von Millionen von Arbeitsplätzen und dem Verlust von Sicherheit, von Verlässlichkeit und Partnerschaft auf europäischer Ebene. Ihren politischen Weg werden wir auf keinen Fall unterstützen.",
+            "Daher stimmen wir gegen Ihren Antrag.",
+            "Vielen Dank.",
+            "Vielen Dank. – Für die letzte Rede in dieser Debatte erteile ich das Wort Matthias David Mieves für die SPD-Fraktion."
+          ],
+          "snippet": "Sehr geehrter Herr Präsident! Sehr geehrte Frau Ministerin! Sehr geehrter Herr Minister! Liebe Kolleginnen und Kollegen! Die künstliche Intelligenz revolutioniert schon heute unser Leben, und Deutschland muss und wird in diesem Feld interna"
+        },
+        {
+          "rede_id": "ID218403300",
+          "source_page": {
+            "page": 10251,
+            "quadrant": "C"
+          },
+          "speaker": {
+            "xml_redner_id": "11005154",
+            "display_name": "Matthias David Mieves",
+            "first_name": "Matthias David",
+            "last_name": "Mieves",
+            "fraktion": "SPD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 13,
+          "char_count": 3008,
+          "text": "Sehr geehrter Herr Präsident! Sehr geehrte Damen und Herren! Wenn man sich die Anträge der AfD durchliest, dann muss man sich ja wirklich die Augen reiben. Denn die Partei, die Fraktion, die morgens, mittags und abends den Standort Deutschland permanent schlechtredet, die den Untergang des Abendlandes herbeiredet, stellt doch tatsächlich fest, dass die Wirtschaftsmacht Deutschland die stärkste Wirtschaftsmacht in Europa ist. Da kann ich an die Adresse der AfD nur sagen: Herzlich willkommen in der Realität! Aber das Ganze mit diesen AfD-Anträgen wird ja noch kurioser; denn sie schlägt jetzt auf einmal vor, dass wir in Sachen KI auf europäischer Ebene kooperieren sollten. Wow! Und das von der Partei, die jeden Tag Abschottung predigt; die sagt, wir sollten am besten alles isoliert und alleine machen. Da frage ich mich schon, ob dieser ketzerische Vorschlag überhaupt mit der Fraktionsführerin Weidel abgestimmt ist. Oder ist es reine Schaufensterpolitik? In jedem Fall zeigt es mal wieder: Die AfD hat keinerlei Glaubwürdigkeit, um auch nur irgendetwas Sinnvolles zum Thema KI beizutragen. Es ist wichtig, dass wir über die Dinge reden, auf die es tatsächlich ankommt bei KI, und das sind im Wesentlichen die drei Felder, über die Johannes Schätzl und ich schon mehrfach gesprochen haben. Der erste Punkt ist: Wir brauchen eigene Kompetenzen und Kapazitäten, wenn es um Rechenzentren geht, wenn es um Giga Grids geht und wenn es darum geht, Start-ups, Scale-ups, große Unternehmen dabei zu unterstützen, Wertschöpfung in Europa und Deutschland aufzubauen. Dafür müssen wir vor allem privates Kapital nutzen, das schon da ist: in den Pensionskassen, bei den Versicherungen. Wenn wir eine echte Kapitalmarktunion in Europa schaffen, können wir 1 Billion Euro mobilisieren für Investitionen in diese neuen Wirtschaftsfelder. Zweitens. Wir müssen den Staat – damit meine ich Europa, Deutschland, die Bundesländer, die Kommunen – dazu bringen, in Europa einzukaufen. Wir haben Softwareunternehmen, wir haben Cloud-Anbieter. Deutsches und europäisches Geld darf nicht in so starkem Maße in die USA gehen. Es muss in Europa ausgegeben werden, und der Einkauf muss darauf ausgerichtet werden. Herr Kollege, erlauben Sie eine Zwischenfrage von Dr. Paul Schmidt aus der AfD-Fraktion? Natürlich nicht. Dann setzen Sie fort. Drittens. Wir brauchen eine echte Talentinitiative. Wir müssen die Toptalente, die international an den Unis ausgebildet werden, nach Deutschland holen und ihnen ein gutes Umfeld bieten. Sie müssen mit einer One-Stop-Shop-Lösung hier zu uns kommen und Behördengänge online auf Englisch machen können, um sich schneller integrieren zu können. Die Toptalente sollen hier bei uns eine gute Heimat finden. Das ist der Dreiklang für echte Wertschöpfung, für Fortschritt, für das Aufholen und für Wachstum beim Thema KI in Deutschland und Europa. Danke schön für die Aufmerksamkeit. Vielen Dank. – Für eine Kurzintervention erteile ich das Wort dem Abgeordneten Dr. Paul Schmidt von der AfD.",
+          "paragraphs": [
+            "Sehr geehrter Herr Präsident! Sehr geehrte Damen und Herren! Wenn man sich die Anträge der AfD durchliest, dann muss man sich ja wirklich die Augen reiben. Denn die Partei, die Fraktion, die morgens, mittags und abends den Standort Deutschland permanent schlechtredet, die den Untergang des Abendlandes herbeiredet, stellt doch tatsächlich fest, dass die Wirtschaftsmacht Deutschland die stärkste Wirtschaftsmacht in Europa ist. Da kann ich an die Adresse der AfD nur sagen: Herzlich willkommen in der Realität!",
+            "Aber das Ganze mit diesen AfD-Anträgen wird ja noch kurioser; denn sie schlägt jetzt auf einmal vor, dass wir in Sachen KI auf europäischer Ebene kooperieren sollten. Wow! Und das von der Partei, die jeden Tag Abschottung predigt; die sagt, wir sollten am besten alles isoliert und alleine machen.",
+            "Da frage ich mich schon, ob dieser ketzerische Vorschlag überhaupt mit der Fraktionsführerin Weidel abgestimmt ist. Oder ist es reine Schaufensterpolitik? In jedem Fall zeigt es mal wieder: Die AfD hat keinerlei Glaubwürdigkeit, um auch nur irgendetwas Sinnvolles zum Thema KI beizutragen.",
+            "Es ist wichtig, dass wir über die Dinge reden, auf die es tatsächlich ankommt bei KI, und das sind im Wesentlichen die drei Felder, über die Johannes Schätzl und ich schon mehrfach gesprochen haben.",
+            "Der erste Punkt ist: Wir brauchen eigene Kompetenzen und Kapazitäten, wenn es um Rechenzentren geht, wenn es um Giga Grids geht und wenn es darum geht, Start-ups, Scale-ups, große Unternehmen dabei zu unterstützen, Wertschöpfung in Europa und Deutschland aufzubauen. Dafür müssen wir vor allem privates Kapital nutzen, das schon da ist: in den Pensionskassen, bei den Versicherungen. Wenn wir eine echte Kapitalmarktunion in Europa schaffen, können wir 1 Billion Euro mobilisieren für Investitionen in diese neuen Wirtschaftsfelder.",
+            "Zweitens. Wir müssen den Staat – damit meine ich Europa, Deutschland, die Bundesländer, die Kommunen – dazu bringen, in Europa einzukaufen. Wir haben Softwareunternehmen, wir haben Cloud-Anbieter. Deutsches und europäisches Geld darf nicht in so starkem Maße in die USA gehen. Es muss in Europa ausgegeben werden, und der Einkauf muss darauf ausgerichtet werden.",
+            "Herr Kollege, erlauben Sie eine Zwischenfrage von Dr. Paul Schmidt aus der AfD-Fraktion?",
+            "Natürlich nicht.",
+            "Dann setzen Sie fort.",
+            "Drittens. Wir brauchen eine echte Talentinitiative. Wir müssen die Toptalente, die international an den Unis ausgebildet werden, nach Deutschland holen und ihnen ein gutes Umfeld bieten. Sie müssen mit einer One-Stop-Shop-Lösung hier zu uns kommen und Behördengänge online auf Englisch machen können, um sich schneller integrieren zu können. Die Toptalente sollen hier bei uns eine gute Heimat finden.",
+            "Das ist der Dreiklang für echte Wertschöpfung, für Fortschritt, für das Aufholen und für Wachstum beim Thema KI in Deutschland und Europa.",
+            "Danke schön für die Aufmerksamkeit.",
+            "Vielen Dank. – Für eine Kurzintervention erteile ich das Wort dem Abgeordneten Dr. Paul Schmidt von der AfD."
+          ],
+          "snippet": "Sehr geehrter Herr Präsident! Sehr geehrte Damen und Herren! Wenn man sich die Anträge der AfD durchliest, dann muss man sich ja wirklich die Augen reiben. Denn die Partei, die Fraktion, die morgens, mittags und abends den Standort Deutschl"
+        },
+        {
+          "rede_id": "ID218403400",
+          "source_page": {
+            "page": 10252,
+            "quadrant": "B"
+          },
+          "speaker": {
+            "xml_redner_id": "11005572",
+            "display_name": "Dr. Paul Schmidt",
+            "first_name": "Paul",
+            "last_name": "Schmidt",
+            "fraktion": "AfD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 5,
+          "char_count": 1029,
+          "text": "Vielen Dank, Herr Präsident, dass Sie diese Kurzintervention zulassen. Lieber Kollege von der SPD, Sie haben gerade erzählt, Sie wollen Geld einsammeln, Sie wollen hier in Deutschland auf die Art und Weise die KI ankurbeln. Sie meinen, dass wir hier wirtschaftlich auf die Art und Weise erfolgreich sein können. Meiner Meinung nach blenden Sie dabei völlig aus, dass wir sehr hohe Strompreise haben; sie gehören zu den höchsten weltweit. Wir schaffen es nur mit massiven steuerlichen Subventionen, den Industriestrompreis zu drücken auf etwa 11 Cent die Kilowattstunde. Das ist immer noch anderthalbmal so hoch wie der Strompreis in den USA oder China. Ist Ihnen bekannt, dass wir sehr viel Strom brauchen für KI? Und dann frage ich Sie: Wie wollen Sie ohne Kernkraft, wie wollen Sie mit diesen teuren Strompreisen ein KI-Projekt in Deutschland in großem Maß aufziehen? Nur Geld alleine wird es dafür nicht geben, weil die Randbedingungen einfach keine erfolgreiche KI zulassen. Herr Mieves, möchten Sie antworten? – Bitte schön.",
+          "paragraphs": [
+            "Vielen Dank, Herr Präsident, dass Sie diese Kurzintervention zulassen.",
+            "Lieber Kollege von der SPD, Sie haben gerade erzählt, Sie wollen Geld einsammeln, Sie wollen hier in Deutschland auf die Art und Weise die KI ankurbeln. Sie meinen, dass wir hier wirtschaftlich auf die Art und Weise erfolgreich sein können.",
+            "Meiner Meinung nach blenden Sie dabei völlig aus, dass wir sehr hohe Strompreise haben; sie gehören zu den höchsten weltweit. Wir schaffen es nur mit massiven steuerlichen Subventionen, den Industriestrompreis zu drücken auf etwa 11 Cent die Kilowattstunde. Das ist immer noch anderthalbmal so hoch wie der Strompreis in den USA oder China.",
+            "Ist Ihnen bekannt, dass wir sehr viel Strom brauchen für KI? Und dann frage ich Sie: Wie wollen Sie ohne Kernkraft, wie wollen Sie mit diesen teuren Strompreisen ein KI-Projekt in Deutschland in großem Maß aufziehen? Nur Geld alleine wird es dafür nicht geben, weil die Randbedingungen einfach keine erfolgreiche KI zulassen.",
+            "Herr Mieves, möchten Sie antworten? – Bitte schön."
+          ],
+          "snippet": "Vielen Dank, Herr Präsident, dass Sie diese Kurzintervention zulassen. Lieber Kollege von der SPD, Sie haben gerade erzählt, Sie wollen Geld einsammeln, Sie wollen hier in Deutschland auf die Art und Weise die KI ankurbeln. Sie meinen, dass"
+        },
+        {
+          "rede_id": "ID218403500",
+          "source_page": {
+            "page": 10252,
+            "quadrant": "C"
+          },
+          "speaker": {
+            "xml_redner_id": "11005154",
+            "display_name": "Matthias David Mieves",
+            "first_name": "Matthias David",
+            "last_name": "Mieves",
+            "fraktion": "SPD",
+            "role": null,
+            "role_short": null
+          },
+          "paragraph_count": 5,
+          "char_count": 939,
+          "text": "Zur Frage, ob mir bekannt ist, dass Rechenzentren Strom brauchen: Ja, das ist mir tatsächlich bekannt. Was mir aber auch bekannt ist: Um hier in Deutschland und in Europa eine zukunftsfähige KI-Industrie aufzubauen, brauchen wir Rahmenbedingungen, die die AfD jeden Tag bekämpft. Es wird uns nicht helfen, wenn wir mehr Gas in Russland einkaufen. Es wird uns nicht mehr bringen, wenn wir mit russischen korrupten, diktatorischen Politikern zusammenarbeiten. Es wird uns nicht helfen, wenn wir Rechtsextreme und Kriminelle in Fraktionen im Bundestag dulden. Und es wird uns nicht helfen, wenn wir jeden Tag Menschen gegeneinander aufhetzen und damit Talente verschrecken. All das, was Sie tun, hindert uns daran, eine zukunftsfähige Wirtschaft aufzubauen. Ihre Politik schadet Deutschland. Sie schadet unserer Wirtschaft. Sie schadet den Menschen. Ich habe eine Empfehlung: Wandern Sie doch nach Russland aus! Dann haben wir alle was davon.",
+          "paragraphs": [
+            "Zur Frage, ob mir bekannt ist, dass Rechenzentren Strom brauchen: Ja, das ist mir tatsächlich bekannt.",
+            "Was mir aber auch bekannt ist: Um hier in Deutschland und in Europa eine zukunftsfähige KI-Industrie aufzubauen, brauchen wir Rahmenbedingungen, die die AfD jeden Tag bekämpft.",
+            "Es wird uns nicht helfen, wenn wir mehr Gas in Russland einkaufen. Es wird uns nicht mehr bringen, wenn wir mit russischen korrupten, diktatorischen Politikern zusammenarbeiten.",
+            "Es wird uns nicht helfen, wenn wir Rechtsextreme und Kriminelle in Fraktionen im Bundestag dulden. Und es wird uns nicht helfen, wenn wir jeden Tag Menschen gegeneinander aufhetzen und damit Talente verschrecken.",
+            "All das, was Sie tun, hindert uns daran, eine zukunftsfähige Wirtschaft aufzubauen. Ihre Politik schadet Deutschland. Sie schadet unserer Wirtschaft. Sie schadet den Menschen. Ich habe eine Empfehlung: Wandern Sie doch nach Russland aus! Dann haben wir alle was davon."
+          ],
+          "snippet": "Zur Frage, ob mir bekannt ist, dass Rechenzentren Strom brauchen: Ja, das ist mir tatsächlich bekannt. Was mir aber auch bekannt ist: Um hier in Deutschland und in Europa eine zukunftsfähige KI-Industrie aufzubauen, brauchen wir Rahmenbedin"
+        }
+      ],
+      "xml_speech_count": 16,
+      "api": {
+        "positions": [
+          {
+            "id": "fixture-position-1",
+            "vorgang_id": "fixture-procedure-21-6354",
+            "vorgangsposition": "Beratung und Ausschussüberweisung",
+            "vorgangstyp": "Antrag",
+            "titel": "a) Beratung des Antrags der Abgeordneten Robin Jünger, Ruben Rupp, Alexander Arpaschi, weiterer Abgeordneter und der Fraktion der AfD Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze b) Beratung des Antrags der Abgeordneten Robin Jünger, Nicole Höchst, Dr. Michael Kaufmann, weiterer Abgeordneter und der Fraktion der AfD Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+            "dokumentart": "Drucksache",
+            "aktivitaet_anzahl": 0,
+            "source": {
+              "dokumentnummer": "21/6354",
+              "pdf_url": "https://dserver.bundestag.de/btd/21/063/2106354.pdf"
+            },
+            "mitberaten": []
+          },
+          {
+            "id": "fixture-position-2",
+            "vorgang_id": "fixture-procedure-21-4833",
+            "vorgangsposition": "Beratung und Ausschussüberweisung",
+            "vorgangstyp": "Antrag",
+            "titel": "a) Beratung des Antrags der Abgeordneten Robin Jünger, Ruben Rupp, Alexander Arpaschi, weiterer Abgeordneter und der Fraktion der AfD Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze b) Beratung des Antrags der Abgeordneten Robin Jünger, Nicole Höchst, Dr. Michael Kaufmann, weiterer Abgeordneter und der Fraktion der AfD Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+            "dokumentart": "Drucksache",
+            "aktivitaet_anzahl": 0,
+            "source": {
+              "dokumentnummer": "21/4833",
+              "pdf_url": "https://dserver.bundestag.de/btd/21/048/2104833.pdf"
+            },
+            "mitberaten": []
+          }
+        ],
+        "linked_drucksachen": [
+          {
+            "dokumentnummer": "21/6354",
+            "url": "https://dserver.bundestag.de/btd/21/063/2106354.pdf",
+            "drucksachetyp": "Antrag",
+            "datum": "2026-06-12",
+            "titel": "a) Beratung des Antrags der Abgeordneten Robin Jünger, Ruben Rupp, Alexander Arpaschi, weiterer Abgeordneter und der Fraktion der AfD Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze b) Beratung des Antrags der Abgeordneten Robin Jünger, Nicole Höchst, Dr. Michael Kaufmann, weiterer Abgeordneter und der Fraktion der AfD Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+            "urheber": [
+              "Fraktion der AfD"
+            ],
+            "vorgang_id": "fixture-procedure-21-6354",
+            "vorgangsposition_id": "fixture-position-1"
+          },
+          {
+            "dokumentnummer": "21/4833",
+            "url": "https://dserver.bundestag.de/btd/21/048/2104833.pdf",
+            "drucksachetyp": "Antrag",
+            "datum": "2026-06-12",
+            "titel": "a) Beratung des Antrags der Abgeordneten Robin Jünger, Ruben Rupp, Alexander Arpaschi, weiterer Abgeordneter und der Fraktion der AfD Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze b) Beratung des Antrags der Abgeordneten Robin Jünger, Nicole Höchst, Dr. Michael Kaufmann, weiterer Abgeordneter und der Fraktion der AfD Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+            "urheber": [
+              "Fraktion der AfD"
+            ],
+            "vorgang_id": "fixture-procedure-21-4833",
+            "vorgangsposition_id": "fixture-position-2"
+          }
+        ]
+      },
+      "votes": []
+    }
+  ],
+  "warnings": [],
+  "validation_summary": {
+    "xml_top_count": 1,
+    "xml_speech_count": 16,
+    "xml_drucksache_count": 2,
+    "unique_person_ids": 15,
+    "extracted_text_char_count": 62084
+  }
+}

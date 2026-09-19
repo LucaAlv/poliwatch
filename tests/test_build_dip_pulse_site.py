@@ -19,7 +19,7 @@ import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as pulse_html
-from features import all_selection, default_selection
+from features import EnrichmentSelection, all_selection, default_selection
 
 
 class DossierProgressTests(unittest.TestCase):
@@ -55,6 +55,29 @@ class DossierProgressTests(unittest.TestCase):
         self.assertIn("[dossiers] Completed 2/2 dossier(s)", output)
         self.assertEqual(built, [("5805", None), ("5806", cached_report)])
         self.assertEqual(len(entries), 2)
+
+    def test_expected_dossier_failure_keeps_valid_dossiers(self) -> None:
+        protocols = [
+            {"id": "5805", "dokumentnummer": "21/87"},
+            {"id": "5806", "dokumentnummer": "21/88"},
+        ]
+
+        def build(protocol: dict[str, Any], _existing: dict[str, Any] | None) -> dict[str, Any]:
+            if protocol["id"] == "5805":
+                raise build_dip_pulse_site.dip.DipError("XML unavailable")
+            return {"report": {"protocol": protocol}}
+
+        stderr = io.StringIO()
+        with mock.patch("sys.stderr", stderr):
+            entries = build_dip_pulse_site.build_dossiers_with_progress(
+                protocols,
+                load_existing=lambda _protocol: None,
+                build_dossier=build,
+            )
+
+        self.assertEqual([entry["report"]["protocol"]["id"] for entry in entries], ["5806"])
+        self.assertEqual(protocols[0]["dossier_failure_reasons"], ["source_unavailable"])
+        self.assertIn("Completed 1/2 dossier(s)", stderr.getvalue())
 
 
 class CollectAbgeordneteTests(unittest.TestCase):
@@ -231,6 +254,128 @@ class CollectAbgeordneteTests(unittest.TestCase):
 
         self.assertIs(entry, expected_entry)
         self.assertIs(build_report.call_args.kwargs["protocol"], protocol)
+
+    def test_required_summaries_use_valid_cache_after_provider_failure(self) -> None:
+        speeches = [
+            {
+                "rede_id": f"rede-{index}",
+                "source_page": {"page": 20 + index},
+                "speaker": {"display_name": f"Person {index}"},
+                "text": f"Quellentext {index}",
+            }
+            for index in range(1, 5)
+        ]
+        top = {"top_id": "TOP 1", "heading": "Beratung", "speeches": speeches}
+        chunks = build_dip_pulse_site.dip.summary_source_chunks(top)[:3]
+        cached_summary = {
+            "provider": "test",
+            "model": "test",
+            "summary_schema_version": build_dip_pulse_site.dip.SUMMARY_SCHEMA_VERSION,
+            "prompt_version": build_dip_pulse_site.dip.SUMMARY_PROMPT_VERSION,
+            "source_fingerprint": build_dip_pulse_site.dip.summary_source_fingerprint(top),
+            "text": "Eine belegte Zusammenfassung.",
+            "source_chunk_ids": [chunk["id"] for chunk in chunks],
+            "source_chunks": chunks,
+        }
+        current_item = {
+            "index": 1,
+            "top_id": top["top_id"],
+            "heading": top["heading"],
+            "xml_speakers": speeches,
+        }
+        report = {
+            "protocol": {"id": "5805", "pdf_url": "https://dserver.bundestag.de/btp/21/21084.pdf"},
+            "agenda_items": [current_item],
+            "summary_generation": {
+                "enabled": True,
+                "generated_top_count": 0,
+                "failures": [{"top_id": "TOP 1", "reason": "provider_timeout"}],
+            },
+            "acquisition": {
+                "summaries": {
+                    "eligible": 1,
+                    "generated": 0,
+                    "omitted": 0,
+                    "failed": 1,
+                    "fallbacks": 0,
+                    "records": 0,
+                    "reused": 0,
+                    "rejected": 1,
+                    "failure_reasons": ["provider_timeout"],
+                    "source": "llm-with-bundestag-citations",
+                    "acquisition_state": "failed",
+                    "attempted": True,
+                    "attempted_at": "2026-09-19T10:00:00Z",
+                }
+            },
+        }
+        existing = {
+            "agenda_items": [{**current_item, "llm_summary": cached_summary}],
+            "acquisition": {"summaries": {"acquired_at": "2026-09-18T10:00:00Z"}},
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(build_dip_pulse_site.dip, "build_report", return_value=report),
+            mock.patch.object(
+                build_dip_pulse_site,
+                "write_report_files",
+                return_value={"report": report},
+            ) as write_files,
+        ):
+            build_dip_pulse_site.write_report_and_page(
+                protocol={"id": "5805"},
+                output_dir=Path(tmp),
+                api_key="test-key",
+                sleep=0,
+                person_limit=0,
+                vote_scan_pages=0,
+                roll_call_list_id=None,
+                summary_mode="required",
+                summary_provider="anthropic",
+                anthropic_api_key="test-key",
+                gemini_api_key=None,
+                summary_model=None,
+                existing_report=existing,
+            )
+
+        written = write_files.call_args.args[0]
+        self.assertEqual(written["agenda_items"][0]["llm_summary"], cached_summary)
+        self.assertEqual(written["acquisition"]["summaries"]["acquisition_state"], "complete")
+        self.assertEqual(written["acquisition"]["summaries"]["reused"], 1)
+        self.assertEqual(written["acquisition"]["summaries"]["fallbacks"], 1)
+        self.assertEqual(written["summary_generation"]["failures"], [])
+
+    def test_summary_cache_reconciliation_preserves_domain_failure(self) -> None:
+        speeches = [
+            {"rede_id": f"rede-{index}", "text": f"Text {index}"}
+            for index in range(1, 5)
+        ]
+        report = {
+            "protocol": {},
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "TOP 1",
+                "heading": "Beratung",
+                "xml_speakers": speeches,
+            }],
+            "summary_generation": {"enabled": False, "reason": "source_unavailable"},
+            "acquisition": {"summaries": {
+                "eligible": 1,
+                "generated": 0,
+                "omitted": 0,
+                "failed": 1,
+                "fallbacks": 0,
+                "failure_reasons": ["source_unavailable"],
+            }},
+        }
+
+        build_dip_pulse_site.reconcile_generated_and_cached_summaries(report, None)
+
+        facts = report["acquisition"]["summaries"]
+        self.assertEqual(facts["acquisition_state"], "failed")
+        self.assertEqual(facts["failed"], 1)
+        self.assertEqual(facts["failure_reasons"], ["source_unavailable"])
 
     def test_collect_abgeordnete_groups_rows_sharing_external_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -451,7 +596,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 # id is present under either Baustein state and visitors toggle
                 # it client-side through data-feature="votes".
                 self.assertIn('id="abstimmungen"', markup)
-                self.assertIn('data-feature="votes"', markup)
+                self.assertNotIn('data-feature="votes"', markup)
 
     def test_pulse_page_carries_no_attention_ranking(self) -> None:
         # The per-item Aufmerksamkeitsranking cards were retired from puls.html:
@@ -680,7 +825,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
             self.assertIn('href="bills/index.html"', rendered)
-            self.assertIn('data-feature="bills"', rendered)
+            self.assertNotIn('data-feature=', rendered)
 
     def test_later_reduced_enrichment_render_keeps_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
@@ -710,7 +855,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             self.assertFalse(stale_bill.exists())
             self.assertFalse(stale_mp.exists())
 
-    def test_feature_manifest_and_bootstrap_are_written_everywhere(self) -> None:
+    def test_schema_v2_manifest_and_fixed_presentation_are_written_everywhere(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         selection = all_selection()
         with tempfile.TemporaryDirectory() as tmp:
@@ -727,26 +872,79 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 today=date(2026, 9, 15),
             )
             manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
-            available = {item["id"] for item in manifest["features"] if item["available"]}
-            self.assertEqual(available, all_selection().ids)
-            self.assertTrue(all(item["readiness"] in {"ready", "partial", "unavailable"} for item in manifest["features"]))
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["presentation"], {"mode": "fixed", "ai_summary_default": "expanded"})
+            self.assertEqual(
+                set(manifest["domains"]),
+                {"catalog", "dossiers", "votes", "profiles", "roster", "bills", "summaries"},
+            )
             for page in output_dir.rglob("*.html"):
                 markup = page.read_text(encoding="utf-8")
-                self.assertIn("bundestag-pulse-features", markup, msg=str(page))
-                self.assertIn("data-feature-", markup, msg=str(page))
-                self.assertIn("settings-toggle", markup, msg=str(page))
+                self.assertNotIn("bundestag-pulse-features", markup, msg=str(page))
+                self.assertNotIn("data-feature", markup, msg=str(page))
+                self.assertNotIn("settings-toggle", markup, msg=str(page))
 
-    def test_settings_page_only_switches_user_facing_experiences(self) -> None:
+    def test_settings_page_is_compatibility_copy_without_switches(self) -> None:
         markup = build_dip_pulse_site.render_settings_page(
             default_selection(),
             {"votes": "unavailable", "summaries": "partial"},
         )
-        self.assertNotIn("--enable votes", markup)
-        self.assertNotIn('data-feature-toggle="dip-fetch"', markup)
-        self.assertNotIn('data-feature-toggle="mp-roster"', markup)
-        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*>')
-        self.assertIn("Noch keine Daten verfügbar", markup)
+        self.assertNotIn("data-feature", markup)
+        self.assertNotIn('role="switch"', markup)
+        self.assertIn("Frühere Baustein-Einstellungen", markup)
         self.assertIn("Datenstand dieser Veröffentlichung", markup)
+        self.assertIn('href="sources.html#datenstand"', markup)
+
+    def test_mp_pages_render_separate_roster_and_profile_provenance(self) -> None:
+        markup = build_dip_pulse_site.render_abgeordnete_index(
+            [],
+            default_selection(),
+            {
+                "roster": {"acquisition_state": "not_requested"},
+                "profiles": {"acquisition_state": "failed"},
+            },
+        )
+        self.assertIn("Der vollständige Abgeordnetenkader wurde nicht abgerufen", markup)
+        self.assertIn("Profilverknüpfungen konnten nicht abgerufen werden", markup)
+
+    def test_manifest_preserves_cached_acquisition_times_and_fails_empty_requested_roster(self) -> None:
+        previous_time = "2026-08-01T10:00:00Z"
+        previous = {
+            "domains": {
+                "catalog": {"acquired_at": previous_time},
+                "dossiers": {"acquired_at": previous_time},
+                "roster": {"acquired_at": previous_time},
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            cached = build_dip_pulse_site.build_publication_manifest(
+                root=Path(tmp),
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[{"is_mdb": True}],
+                bill_count=0,
+                enrichments=EnrichmentSelection(frozenset()),
+                summary_mode="reuse",
+                acquisition_attempted=False,
+                development_output=False,
+                previous_manifest=previous,
+            )
+            self.assertEqual(cached["domains"]["catalog"]["acquired_at"], previous_time)
+            self.assertEqual(cached["domains"]["roster"]["acquired_at"], previous_time)
+
+            failed = build_dip_pulse_site.build_publication_manifest(
+                root=Path(tmp),
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[],
+                bill_count=0,
+                enrichments=EnrichmentSelection(frozenset({"mp-roster"})),
+                summary_mode="reuse",
+                acquisition_attempted=True,
+                development_output=False,
+            )
+            self.assertEqual(failed["domains"]["roster"]["acquisition_state"], "failed")
+            self.assertEqual(failed["domains"]["roster"]["failure_reasons"], ["empty_required_dataset"])
 
 
 class PeriodOrderTests(unittest.TestCase):
@@ -811,6 +1009,54 @@ class PeriodOrderTests(unittest.TestCase):
 
 
 class FeatureArgumentCompatibilityTests(unittest.TestCase):
+    @staticmethod
+    def _config_args(**overrides: Any) -> SimpleNamespace:
+        values = {
+            "enrich": [],
+            "enable": [],
+            "disable": [],
+            "features": None,
+            "features_file": None,
+            "vote_scan_pages": None,
+            "no_roster": False,
+            "no_abgeordnetenwatch": False,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_enrichment_precedence_matrix(self) -> None:
+        scenarios = (
+            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles"}),
+            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster"}),
+            (
+                "canonical env follows legacy env",
+                {},
+                {"env": {"BUNDESTAG_PULSE_FEATURES": "votes", "BUNDESTAG_PULSE_ENRICHMENTS": "aw-profiles"}},
+                {"votes", "aw-profiles"},
+            ),
+            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster"}),
+            ("empty local replacement clears repository", {"repo": ["votes"], "local": []}, {}, set()),
+            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
+        )
+        for label, files, inputs, expected in scenarios:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                if "repo" in files:
+                    (root / "features.json").write_text(json.dumps({"enrich": files["repo"]}), encoding="utf-8")
+                if "local" in files:
+                    (root / "features.local.json").write_text(json.dumps({"enrich": files["local"]}), encoding="utf-8")
+                args_values = dict(inputs.get("args") or {})
+                if "explicit" in files:
+                    explicit = root / "operator.json"
+                    explicit.write_text(json.dumps({"enrich": files["explicit"]}), encoding="utf-8")
+                    args_values["features_file"] = explicit
+                with mock.patch.dict("os.environ", inputs.get("env") or {}, clear=True):
+                    selection = build_dip_pulse_site.resolve_from_args(
+                        self._config_args(**args_values), root=root
+                    )
+                self.assertEqual(set(selection), expected)
+                self.assertTrue(selection.provenance or not files and not inputs)
+
     def test_legacy_flags_map_with_sparse_namespaces(self) -> None:
         args = SimpleNamespace(no_roster=True, no_abgeordnetenwatch=True, summary_mode="off")
         with tempfile.TemporaryDirectory() as tmp:
@@ -889,9 +1135,43 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
             build_dip_pulse_site.FeatureError,
-            "Verfügbar",
+            "invalid-enrichment",
         ):
             build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+
+    def test_capability_commands_exit_before_network_access(self) -> None:
+        stdout = io.StringIO()
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py", "--list-capabilities"]), mock.patch(
+            "build_dip_pulse_site.dip.load_local_env"
+        ), mock.patch("build_dip_pulse_site.dip.ApiClient") as api_client, mock.patch(
+            "sys.stdout", stdout
+        ):
+            self.assertEqual(build_dip_pulse_site.main(), 0)
+        api_client.assert_not_called()
+        self.assertIn("Feste öffentliche Bereiche", stdout.getvalue())
+        self.assertIn("mp-roster", stdout.getvalue())
+
+        stdout = io.StringIO()
+        with mock.patch(
+            "sys.argv",
+            ["build_dip_pulse_site.py", "--enrich", "votes", "--explain-config"],
+        ), mock.patch("build_dip_pulse_site.dip.load_local_env"), mock.patch(
+            "build_dip_pulse_site.dip.ApiClient"
+        ) as api_client, mock.patch("sys.stdout", stdout):
+            self.assertEqual(build_dip_pulse_site.main(), 0)
+        api_client.assert_not_called()
+        self.assertIn("enrichment=votes", stdout.getvalue())
+        self.assertIn("source=--enrich", stdout.getvalue())
+
+    def test_developer_view_refuses_the_public_output_directory_before_writes(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch(
+            "sys.argv", ["build_dip_pulse_site.py", "--include-dev-view"]
+        ), mock.patch("build_dip_pulse_site.dip.load_local_env"), mock.patch(
+            "sys.stderr", stderr
+        ):
+            self.assertEqual(build_dip_pulse_site.main(), 2)
+        self.assertIn("unsafe-dev-output", stderr.getvalue())
 
 
 
@@ -1960,7 +2240,7 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
 
 
 class SourceLinkGuardTests(unittest.TestCase):
-    """The overview cards and the Daten table only link to http(s) XML/PDF sources."""
+    """The overview cards and Daten table only link to allowlisted https sources."""
 
     def _pages(self, xml_url: str, pdf_url: str) -> tuple[str, str]:
         protocol = dict(CurrentPulseOrderTests._protocol("21/84", "5799", "2026-06-12"), xml_url=xml_url, pdf_url=pdf_url)
@@ -1970,13 +2250,12 @@ class SourceLinkGuardTests(unittest.TestCase):
             sources = build_dip_pulse_site.render_sources_page([entry], features=default_selection())
         return overview, sources
 
-    def test_unsafe_protocol_urls_render_as_empty_hrefs(self) -> None:
+    def test_unsafe_protocol_urls_are_omitted(self) -> None:
         overview, sources = self._pages("javascript:alert(1)", "data:text/html,x")
         for markup in (overview, sources):
             self.assertNotIn("javascript:", markup)
             self.assertNotIn("data:text", markup)
-            self.assertIn('<a href="">XML</a>', markup)
-            self.assertIn('<a href="">PDF</a>', markup)
+            self.assertNotIn('href=""', markup)
 
     def test_http_protocol_urls_keep_their_links(self) -> None:
         overview, sources = self._pages("https://dserver.bundestag.de/btp/21/21084.xml", "https://dserver.bundestag.de/btp/21/21084.pdf")
@@ -2251,9 +2530,9 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertIn('<div class="who-stack empty"></div>', row)
         self.assertIn('<p class="radar-legend">Fraktionen nicht erfasst</p>', row)
 
-    def test_summary_block_is_gated_and_receipts_point_at_the_dossier(self) -> None:
+    def test_summary_block_is_unconditional_and_receipts_point_at_the_dossier(self) -> None:
         with_summaries = self._rows(self._section(self._render(), "radar"))[0]
-        self.assertIn('<div class="radar-summary" data-feature="summaries"><p>Die Koalition warb für das Gesetz, die Opposition hielt dagegen.</p>', with_summaries)
+        self.assertIn('<div class="radar-summary"><p>Die Koalition warb für das Gesetz, die Opposition hielt dagegen.</p>', with_summaries)
         receipts = re.search(r'<p class="radar-receipts">(.*?)</p>', with_summaries).group(1)
         self.assertEqual(
             receipts,
@@ -2262,16 +2541,16 @@ class WeekRadarPageTests(unittest.TestCase):
             '<a href="https://dserver.bundestag.de/btp/21/21083.pdf">Originalprotokoll</a>',
         )
         without = self._rows(self._section(self._render(features=default_selection()), "radar"))[0]
-        self.assertNotIn("radar-summary", without)
+        self.assertIn("radar-summary", without)
         # Rows without a usable summary have no slot at all.
         self.assertEqual(sum("radar-summary" in row for row in self._rows(self._section(self._render(), "radar"))), 1)
 
-    def test_vote_badge_is_gated_on_the_votes_baustein(self) -> None:
+    def test_vote_badge_is_unconditional(self) -> None:
         rows = self._rows(self._section(self._render(), "radar"))
-        self.assertIn('<span class="badge radar-badge" data-feature="votes">namentlich abgestimmt</span>', rows[0])
+        self.assertIn('<span class="badge radar-badge">namentlich abgestimmt</span>', rows[0])
         self.assertEqual(sum("radar-badge" in row for row in rows), 1)
         without = self._rows(self._section(self._render(features=default_selection()), "radar"))
-        self.assertFalse(any("radar-badge" in row for row in without))
+        self.assertEqual(sum("radar-badge" in row for row in without), 1)
 
     def test_api_titles_and_headings_are_escaped(self) -> None:
         entries = [self._entry("2026-06-12", "21/84", [
@@ -2320,7 +2599,7 @@ class WeekRadarPageTests(unittest.TestCase):
         entries[0]["report"]["agenda_items"][0]["votes"] = [{"id": "vote-2"}]
         entries[0]["report"]["agenda_items"][1]["votes"] = [{"id": "vote-2"}, {"id": "vote-3"}]
         band = self._section(self._render(entries), "week-compare")
-        card = re.search(r'<article class="week-card votes-card" id="abstimmungen" data-feature="votes">(.*?)</article>', band, re.S).group(1)
+        card = re.search(r'<article class="week-card votes-card" id="abstimmungen">(.*?)</article>', band, re.S).group(1)
         self.assertIn('<span class="eyebrow">Erfasst</span>', card)
         self.assertIn("<h3>Namentliche Abstimmungen</h3>", card)
         self.assertIn('<p class="week-text">3 namentliche Abstimmungen in 3 Tagesordnungspunkten dieser Woche</p>', card)
