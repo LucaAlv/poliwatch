@@ -35,7 +35,7 @@
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
 #   database.html        ``render_database_page``    SQLite schema/sample explorer
-#   settings.html        ``render_settings_page``    0.3.x compatibility notice
+#   settings.html        ``render_settings_page``    0.4.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
 #   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
 #   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
@@ -213,6 +213,15 @@ def build_dossiers_with_progress(
         print(f"[dossiers] [{index}/{total}] {action}: {label}.", file=sys.stderr, flush=True)
         try:
             entry = build_dossier(protocol, existing_report)
+        except dip.DipError as exc:
+            elapsed = time.monotonic() - started
+            protocol["dossier_failure_reasons"] = ["source_unavailable"]
+            print(
+                f"[dossiers] [{index}/{total}] Skipped unavailable {label} after {elapsed:.1f}s: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
         except Exception:
             elapsed = time.monotonic() - started
             print(
@@ -230,7 +239,11 @@ def build_dossiers_with_progress(
         )
 
     elapsed = time.monotonic() - overall_started
-    print(f"[dossiers] Completed {total}/{total} dossier(s) in {elapsed:.1f}s.", file=sys.stderr, flush=True)
+    print(
+        f"[dossiers] Completed {len(entries)}/{total} dossier(s) in {elapsed:.1f}s.",
+        file=sys.stderr,
+        flush=True,
+    )
     return entries
 
 
@@ -780,10 +793,10 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     return keys
 
 
-# Copy usable summaries from the previous report onto the new one, then record
-# what happened in report["summary_generation"]; the dossier page prints that
-# block to explain why a summary is present or missing.
-def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+# Copy only source-compatible, fully cited summaries from the previous report.
+def _reuse_valid_cached_summaries(
+    report: dict[str, Any], existing_report: dict[str, Any] | None
+) -> tuple[int, int]:
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
         summary = item.get("llm_summary")
@@ -820,6 +833,11 @@ def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[s
                     )
                 break
 
+    return reused, invalid
+
+
+def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    reused, invalid = _reuse_valid_cached_summaries(report, existing_report)
     report["summary_generation"] = {
         "enabled": False,
         "mode": "reuse",
@@ -831,6 +849,85 @@ def reuse_existing_llm_summaries(report: dict[str, Any], existing_report: dict[s
             1 for item in report.get("agenda_items") or [] if usable_llm_summary(item.get("llm_summary"))
         ),
     }
+
+
+def reconcile_generated_and_cached_summaries(
+    report: dict[str, Any],
+    existing_report: dict[str, Any] | None,
+) -> None:
+    """Fill generation gaps from validated cache and keep provenance counters exact."""
+    fallback_count, invalid_cache_count = _reuse_valid_cached_summaries(report, existing_report)
+    generation = report.setdefault("summary_generation", {})
+    generation["reused_top_count"] = fallback_count
+    generation["invalid_cache_count"] = invalid_cache_count
+
+    raw = (report.setdefault("acquisition", {}).get("summaries") or {})
+    eligible = int(raw.get("eligible") or 0)
+    generated = int(raw.get("generated") or 0)
+    pdf_url = (report.get("protocol") or {}).get("pdf_url")
+    valid_top_ids: set[str] = set()
+    valid_count = 0
+    for item in report.get("agenda_items") or []:
+        top = {
+            "top_id": item.get("top_id"),
+            "heading": item.get("heading"),
+            "speeches": item.get("xml_speakers") or [],
+        }
+        if len(dip.summary_source_chunks(top)) < dip.SUMMARY_CHUNK_MIN:
+            continue
+        valid, _ = dip.validate_usable_summary(item.get("llm_summary"), top, pdf_url=pdf_url)
+        if valid:
+            valid_count += 1
+            valid_top_ids.add(str(item.get("top_id") or item.get("index") or "unknown"))
+
+    failures = [
+        failure
+        for failure in generation.get("failures") or []
+        if str(failure.get("top_id") or "unknown") not in valid_top_ids
+    ]
+    generation["failures"] = failures
+    generation["available_top_count"] = valid_count
+    reused = max(0, valid_count - generated)
+    raw_failed = int(raw.get("failed") or 0)
+    failed = max(len(failures), raw_failed - fallback_count)
+    omitted = max(0, eligible - generated - reused - failed)
+    failure_reasons = tuple(
+        dict.fromkeys(
+            str(reason)
+            for reason in (
+                [failure["reason"] for failure in failures]
+                or (raw.get("failure_reasons") or [])
+            )
+        )
+    ) if failed else ()
+    if failed:
+        state = publication.AcquisitionState.PARTIAL if valid_count else publication.AcquisitionState.FAILED
+    elif omitted:
+        state = publication.AcquisitionState.PARTIAL
+    else:
+        state = publication.AcquisitionState.COMPLETE
+    acquired_at = raw.get("acquired_at")
+    if reused and not acquired_at:
+        acquired_at = _prior_acquired_at(existing_report, "summaries")
+    report["acquisition"]["summaries"] = publication.DomainFacts(
+        domain="summaries",
+        acquisition_state=state,
+        source="llm-with-bundestag-citations",
+        records=valid_count,
+        reused=reused,
+        rejected=failed,
+        failure_reasons=failure_reasons,
+        acquired_at=acquired_at,
+        attempted_at=raw.get("attempted_at"),
+        attempted=bool(raw.get("attempted")),
+        counters={
+            "eligible": eligible,
+            "generated": generated,
+            "omitted": omitted,
+            "failed": failed,
+            "fallbacks": fallback_count,
+        },
+    ).as_dict()
 
 
 def reuse_existing_dossier_enrichments(
@@ -1081,18 +1178,23 @@ def write_report_and_page(
         summary_model=summary_model,
         summary_max_calls=summary_max_calls,
         summary_timeout=summary_timeout,
+        # A cache may satisfy some or all required summaries. Without a cache,
+        # fail before making any provider calls when the budget cannot suffice.
+        summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
     )
     report = dip.build_report(args, protocol=protocol)
+    if summary_mode in {"auto", "required"}:
+        reconcile_generated_and_cached_summaries(report, existing_report)
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
         votes=vote_scan_pages == 0,
         profiles=profile_resolver is None,
     )
-    # Post-processing steps that are feature-gated: "summaries" carries over the
-    # cached LLM summaries, "aw-profiles" attaches abgeordnetenwatch profiles to
-    # speakers and vote members. Both mutate `report` in place.
+    # Post-processing steps supplied by enrichment components. In reuse mode the
+    # summaries component carries cached summaries over; aw-profiles attaches
+    # abgeordnetenwatch profiles to speakers and vote members.
     components = {
         component.feature.id: component
         for component in feature_loader.load(features, include_dev_view=include_dev_view)
@@ -6211,7 +6313,7 @@ def render_sources_page(
 
 
 # ---------------------------------------------------------------------------
-# PAGE: settings.html - temporary 0.3.x compatibility notice.
+# PAGE: settings.html - temporary 0.4.x compatibility notice.
 # ---------------------------------------------------------------------------
 
 
@@ -6260,10 +6362,12 @@ def build_publication_manifest(
                 )
             )
         else:
+            reasons = tuple(protocol.get("dossier_failure_reasons") or ())
             dossier_items.append(
                 publication.DossierItem(
                     document_number=document_number,
-                    presentation_state="not_requested",
+                    presentation_state="unavailable" if reasons else "not_requested",
+                    failure_reasons=reasons,
                 )
             )
 
@@ -6507,7 +6611,7 @@ def render_settings_page(
   <div class="shell">
     {pulse_html.render_global_header()}
     <header class="page-header">
-      <span class="eyebrow">Kompatibilitätsseite · Version 0.3.x</span>
+      <span class="eyebrow">Kompatibilitätsseite · Version 0.4.x</span>
       <h1>Eine feste öffentliche Ansicht</h1>
       <p>Bundestag-Puls veröffentlicht jetzt eine gemeinsame, redaktionell gestaltete Ansicht. Frühere Baustein-Einstellungen in diesem Browser werden nicht mehr verwendet.</p>
     </header>
@@ -6517,7 +6621,7 @@ def render_settings_page(
       <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
       <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
     </main>
-    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.4.0 erreichbar. <a href="sources.html">Quellen und Methode</a></footer>
+    <footer>Diese Seite bleibt für alte Lesezeichen bis Version 0.5.0 erreichbar. <a href="sources.html">Quellen und Methode</a></footer>
   </div>
   {pulse_html.page_scripts()}
 </body>
@@ -6903,7 +7007,7 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
         print(
             "warning: "
             + ", ".join(used)
-            + " is deprecated and will be removed in 0.4.0. "
+            + " is deprecated and will be removed in 0.5.0. "
             "Public sections are fixed; use --enrich for optional acquisition, "
             "--summary-mode for AI generation, or --include-dev-view for developer output.",
             file=sys.stderr,
@@ -7180,7 +7284,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if getattr(args, "list_features", False):
-        print("warning: --list-features is deprecated; use --list-capabilities. Removal: 0.4.0.", file=sys.stderr)
+        print("warning: --list-features is deprecated; use --list-capabilities. Removal: 0.5.0.", file=sys.stderr)
         print_capability_table(enrichments)
         return 0
     if getattr(args, "list_capabilities", False):

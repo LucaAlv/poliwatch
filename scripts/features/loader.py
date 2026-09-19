@@ -27,7 +27,7 @@ def load(
 ) -> tuple[Component, ...]:
     """Load every public component plus the explicitly requested dev view.
 
-    ``selection`` remains accepted during the 0.3.x operator migration, but it
+    ``selection`` remains accepted during the 0.4.x operator migration, but it
     no longer controls which public components exist.
     """
     components = []

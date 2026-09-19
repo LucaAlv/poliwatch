@@ -407,7 +407,7 @@
         "Roll calls are scraped from bundestag.de HTML; drift only warns.",
         "abgeordnetenwatch throttles and trips a breaker; build survives.",
         "Public components are fixed; optional data reports explicit acquisition state.",
-        "features.json → local → env → --enrich; legacy aliases warn through 0.3.x."
+        "features.json → local → env → --enrich; legacy aliases warn through 0.4.x."
       ]
     },
     {

@@ -1150,6 +1150,11 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
         "used": 0,
         "limit": max(0, int(getattr(args, "summary_max_calls", 25))),
     }
+    if (mode == "required" or getattr(args, "summary_required_preflight", False)) and budget["limit"] < eligible:
+        raise DipError(
+            "summary_budget_exhausted: required summaries need at least "
+            f"{eligible} provider call(s), but --summary-max-calls is {budget['limit']}."
+        )
     timeout = max(1.0, float(getattr(args, "summary_timeout", 60)))
     for item in report.get("agenda_items") or []:
         try:

@@ -56,6 +56,29 @@ class DossierProgressTests(unittest.TestCase):
         self.assertEqual(built, [("5805", None), ("5806", cached_report)])
         self.assertEqual(len(entries), 2)
 
+    def test_expected_dossier_failure_keeps_valid_dossiers(self) -> None:
+        protocols = [
+            {"id": "5805", "dokumentnummer": "21/87"},
+            {"id": "5806", "dokumentnummer": "21/88"},
+        ]
+
+        def build(protocol: dict[str, Any], _existing: dict[str, Any] | None) -> dict[str, Any]:
+            if protocol["id"] == "5805":
+                raise build_dip_pulse_site.dip.DipError("XML unavailable")
+            return {"report": {"protocol": protocol}}
+
+        stderr = io.StringIO()
+        with mock.patch("sys.stderr", stderr):
+            entries = build_dip_pulse_site.build_dossiers_with_progress(
+                protocols,
+                load_existing=lambda _protocol: None,
+                build_dossier=build,
+            )
+
+        self.assertEqual([entry["report"]["protocol"]["id"] for entry in entries], ["5806"])
+        self.assertEqual(protocols[0]["dossier_failure_reasons"], ["source_unavailable"])
+        self.assertIn("Completed 1/2 dossier(s)", stderr.getvalue())
+
 
 class CollectAbgeordneteTests(unittest.TestCase):
     def test_database_rebuild_preserves_cached_roster_unless_refreshing_it(self) -> None:
@@ -231,6 +254,128 @@ class CollectAbgeordneteTests(unittest.TestCase):
 
         self.assertIs(entry, expected_entry)
         self.assertIs(build_report.call_args.kwargs["protocol"], protocol)
+
+    def test_required_summaries_use_valid_cache_after_provider_failure(self) -> None:
+        speeches = [
+            {
+                "rede_id": f"rede-{index}",
+                "source_page": {"page": 20 + index},
+                "speaker": {"display_name": f"Person {index}"},
+                "text": f"Quellentext {index}",
+            }
+            for index in range(1, 5)
+        ]
+        top = {"top_id": "TOP 1", "heading": "Beratung", "speeches": speeches}
+        chunks = build_dip_pulse_site.dip.summary_source_chunks(top)[:3]
+        cached_summary = {
+            "provider": "test",
+            "model": "test",
+            "summary_schema_version": build_dip_pulse_site.dip.SUMMARY_SCHEMA_VERSION,
+            "prompt_version": build_dip_pulse_site.dip.SUMMARY_PROMPT_VERSION,
+            "source_fingerprint": build_dip_pulse_site.dip.summary_source_fingerprint(top),
+            "text": "Eine belegte Zusammenfassung.",
+            "source_chunk_ids": [chunk["id"] for chunk in chunks],
+            "source_chunks": chunks,
+        }
+        current_item = {
+            "index": 1,
+            "top_id": top["top_id"],
+            "heading": top["heading"],
+            "xml_speakers": speeches,
+        }
+        report = {
+            "protocol": {"id": "5805", "pdf_url": "https://dserver.bundestag.de/btp/21/21084.pdf"},
+            "agenda_items": [current_item],
+            "summary_generation": {
+                "enabled": True,
+                "generated_top_count": 0,
+                "failures": [{"top_id": "TOP 1", "reason": "provider_timeout"}],
+            },
+            "acquisition": {
+                "summaries": {
+                    "eligible": 1,
+                    "generated": 0,
+                    "omitted": 0,
+                    "failed": 1,
+                    "fallbacks": 0,
+                    "records": 0,
+                    "reused": 0,
+                    "rejected": 1,
+                    "failure_reasons": ["provider_timeout"],
+                    "source": "llm-with-bundestag-citations",
+                    "acquisition_state": "failed",
+                    "attempted": True,
+                    "attempted_at": "2026-09-19T10:00:00Z",
+                }
+            },
+        }
+        existing = {
+            "agenda_items": [{**current_item, "llm_summary": cached_summary}],
+            "acquisition": {"summaries": {"acquired_at": "2026-09-18T10:00:00Z"}},
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(build_dip_pulse_site.dip, "build_report", return_value=report),
+            mock.patch.object(
+                build_dip_pulse_site,
+                "write_report_files",
+                return_value={"report": report},
+            ) as write_files,
+        ):
+            build_dip_pulse_site.write_report_and_page(
+                protocol={"id": "5805"},
+                output_dir=Path(tmp),
+                api_key="test-key",
+                sleep=0,
+                person_limit=0,
+                vote_scan_pages=0,
+                roll_call_list_id=None,
+                summary_mode="required",
+                summary_provider="anthropic",
+                anthropic_api_key="test-key",
+                gemini_api_key=None,
+                summary_model=None,
+                existing_report=existing,
+            )
+
+        written = write_files.call_args.args[0]
+        self.assertEqual(written["agenda_items"][0]["llm_summary"], cached_summary)
+        self.assertEqual(written["acquisition"]["summaries"]["acquisition_state"], "complete")
+        self.assertEqual(written["acquisition"]["summaries"]["reused"], 1)
+        self.assertEqual(written["acquisition"]["summaries"]["fallbacks"], 1)
+        self.assertEqual(written["summary_generation"]["failures"], [])
+
+    def test_summary_cache_reconciliation_preserves_domain_failure(self) -> None:
+        speeches = [
+            {"rede_id": f"rede-{index}", "text": f"Text {index}"}
+            for index in range(1, 5)
+        ]
+        report = {
+            "protocol": {},
+            "agenda_items": [{
+                "index": 1,
+                "top_id": "TOP 1",
+                "heading": "Beratung",
+                "xml_speakers": speeches,
+            }],
+            "summary_generation": {"enabled": False, "reason": "source_unavailable"},
+            "acquisition": {"summaries": {
+                "eligible": 1,
+                "generated": 0,
+                "omitted": 0,
+                "failed": 1,
+                "fallbacks": 0,
+                "failure_reasons": ["source_unavailable"],
+            }},
+        }
+
+        build_dip_pulse_site.reconcile_generated_and_cached_summaries(report, None)
+
+        facts = report["acquisition"]["summaries"]
+        self.assertEqual(facts["acquisition_state"], "failed")
+        self.assertEqual(facts["failed"], 1)
+        self.assertEqual(facts["failure_reasons"], ["source_unavailable"])
 
     def test_collect_abgeordnete_groups_rows_sharing_external_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

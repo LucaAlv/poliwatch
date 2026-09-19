@@ -8,6 +8,8 @@ Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
 
+Implementation note (2026-09-19): the release target moved from `0.3.0` to `0.4.0.0` after `main` independently shipped `0.3.0.0`. The promised one-release compatibility window therefore runs through `0.4.x`, with removal deferred to `0.5.0`; historical review text below retains the version numbers used when the plan was approved.
+
 ## Problem Statement
 
 The Baustein system was introduced to let visitors choose how much of Bundestag-Puls they see. In practice, the first-time `core-only` view hides public features that make the site useful, while the gear menu asks visitors to make product-architecture decisions before they know what the hidden sections contain. The same `Feature` model now controls build dependencies, data acquisition, page generation, navigation, CSS visibility, browser persistence, and developer tools. That multiplies implementation and test combinations without serving a likely user need.
@@ -1279,27 +1281,27 @@ The repository architecture diagram remains directionally accurate for the build
 
 Synthesized from this review's findings. Each task derives from a specific finding above.
 
-- [ ] **T1 (P1, human: ~2h / CC: ~20min)** — Presentation boundary — Remove visitor capability state and render the fixed public surface
+- [x] **T1 (P1, human: ~2h / CC: ~20min)** — Presentation boundary — Remove visitor capability state and render the fixed public surface
   - Surfaced by: Premise challenge and Sections 1/11 — public areas are product content, not preferences.
   - Files: `scripts/features/__init__.py`, `scripts/features/loader.py`, `scripts/render_dip_pulse_html.py`, `scripts/build_dip_pulse_site.py`
   - Verify: fixed navigation/public-section renderer tests; no gear, general feature bootstrap, or `bundestag-pulse-features` state in ordinary output.
-- [ ] **T2 (P1, human: ~3h / CC: ~30min)** — Acquisition truth — Add the minimal optional-domain acquisition-status contract
+- [x] **T2 (P1, human: ~3h / CC: ~30min)** — Acquisition truth — Add the minimal optional-domain acquisition-status contract
   - Surfaced by: Sections 2/4 — absence must distinguish not requested, complete-empty, partial, and failed.
   - Files: `scripts/validate_dip_protocol.py`, `scripts/build_dip_pulse_site.py`, `scripts/features/votes.py`, `scripts/features/abgeordnetenwatch.py`
   - Verify: complete/no-data/not-requested/partial/failed fixture tests and report/manifest contract tests.
-- [ ] **T3 (P1, human: ~3h / CC: ~30min)** — AI trust and interaction — Implement the single-purpose summary disclosure and structural validator
+- [x] **T3 (P1, human: ~3h / CC: ~30min)** — AI trust and interaction — Implement the single-purpose summary disclosure and structural validator
   - Surfaced by: Sections 3/4/11 — AI remains optional, labelled, traceable, and honest about what validation proves.
   - Files: `scripts/validate_dip_protocol.py`, `scripts/render_dip_pulse_html.py`, `scripts/features/summaries.py`
   - Verify: summary-mode, invalid-citation, malformed-storage, no-JS, keyboard, multi-control, and print tests.
-- [ ] **T4 (P1, human: ~1.5h / CC: ~15min)** — Developer boundary — Move developer output behind an explicit build flag
+- [x] **T4 (P1, human: ~1.5h / CC: ~15min)** — Developer boundary — Move developer output behind an explicit build flag
   - Surfaced by: Section 3 — ordinary public HTML must not contain developer payloads or local paths.
   - Files: `scripts/build_dip_pulse_site.py`, `scripts/features/loader.py`, `scripts/features/devview.py`
   - Verify: ordinary generated HTML denylist test and positive `--include-dev-view` test.
-- [ ] **T5 (P2, human: ~2h / CC: ~20min)** — Migration and documentation — Preserve operator compatibility and rewrite Baustein guidance
+- [x] **T5 (P2, human: ~2h / CC: ~20min)** — Migration and documentation — Preserve operator compatibility and rewrite Baustein guidance
   - Surfaced by: Sections 8/9 — avoid an operator outage while changing the visitor model.
   - Files: `README.md`, `docs/project-documentation.md`, `docs/bundestag-puls-architecture.json`, `CHANGELOG.md`, configuration examples and CLI tests
-  - Verify: documentation search finds no contradictory visitor-switch guidance; legacy aliases warn through `0.3.x`; `settings.html` is explanatory only.
-- [ ] **T6 (P2, human: ~1h / CC: ~10min)** — Product validation — Run representative task and visual checks
+  - Verify: documentation search finds no contradictory visitor-switch guidance; legacy aliases warn through `0.4.x`; `settings.html` is explanatory only.
+- [x] **T6 (P2, human: ~1h / CC: ~10min)** — Product validation — Run representative task and visual checks
   - Surfaced by: Product outcome and Section 11 — implementation properties alone do not prove clarity.
   - Files: deterministic generated fixtures and review notes under `docs/designs/`
   - Verify: three task walkthroughs, desktop/mobile/keyboard/print screenshots, and dossier HTML size comparison.

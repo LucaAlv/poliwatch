@@ -178,7 +178,7 @@ scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 
 ## 5. Public presentation and operator controls
 
-Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.3.x`; old `bundestag-pulse-features` browser data is inert.
+Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.4.x`; old `bundestag-pulse-features` browser data is inert.
 
 AI summaries are visible when a usable, structurally validated summary exists. The exact label is `KI-generiert · nicht redaktionell geprüft`. Visitors can expand or collapse all summaries with one control; that single preference uses `bundestag-pulse-ai-summaries-v1`. Structural citation validation proves that cited targets resolve, not that every claim is factually supported or balanced.
 
@@ -220,7 +220,7 @@ For durable operator defaults, use the gitignored `features.local.json` next to 
 { "enrich": ["votes", "aw-profiles"] }
 ```
 
-`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.3.x`; they no longer remove published UI and are scheduled for removal in `0.4.0`.
+`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.4.x`; they no longer remove published UI and are scheduled for removal in `0.5.0`.
 
 Developer payloads are separate from presentation and enrichment. Use `--include-dev-view` only with a dedicated output directory such as `.context/dip-pulse-site-dev`; the builder rejects attempts to mix it into the ordinary public output.
 

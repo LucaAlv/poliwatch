@@ -103,6 +103,17 @@ class SummaryValidationTests(unittest.TestCase):
                 budget={"used": 0, "limit": 0},
             )
 
+    def test_required_mode_rejects_insufficient_budget_before_provider_call(self) -> None:
+        report = self.report()
+        args = self.args("required", api_key="test-key")
+        args.summary_max_calls = 0
+        with (
+            mock.patch.object(dip, "generate_top_summary") as generate,
+            self.assertRaisesRegex(dip.DipError, "summary_budget_exhausted"),
+        ):
+            dip.enrich_with_llm_summaries(report, args)
+        generate.assert_not_called()
+
     def test_generated_summary_carries_cache_binding_metadata(self) -> None:
         top = source_top()
         response = '{"sentences":["Kurz und neutral."],"source_chunk_ids":["S1","S2","S3"]}'

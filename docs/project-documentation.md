@@ -141,7 +141,7 @@ Important generated files:
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
-| `settings.html` | Temporary `0.3.x` compatibility page explaining the fixed presentation |
+| `settings.html` | Temporary `0.4.x` compatibility page explaining the fixed presentation |
 | `database.html` | Human-readable SQLite table snapshot, or a clear `--no-persist` explanation when persistence is disabled |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
@@ -195,7 +195,7 @@ scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
 scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 ```
 
-`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.3.x`, cannot remove published UI, and are scheduled for removal in `0.4.0`.
+`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.4.x`, cannot remove published UI, and are scheduled for removal in `0.5.0`.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -367,7 +367,7 @@ Common options:
 | `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
 | `--list-capabilities` | off | Print operator enrichments and summary/developer controls, then exit before build work |
 | `--explain-config` | off | Print effective enrichment configuration with provenance, then exit |
-| `--list-features` | deprecated | Compatibility alias for `--list-capabilities` through `0.3.x` |
+| `--list-features` | deprecated | Compatibility alias for `--list-capabilities` through `0.4.x` |
 | `--include-dev-view` | off | Include developer markup only in a separate, explicit output directory |
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
@@ -511,7 +511,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `DIP_PULSE_LOG_FILE` | preview script | No | Preview server log file |
 | `OPEN_BROWSER` | preview script | No | Set `0` to avoid opening browser |
 | `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
-| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.3.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
+| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.4.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
 
 ## Offline vs Online Behavior
 
