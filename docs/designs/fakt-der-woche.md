@@ -325,12 +325,18 @@ differ, the plan wins. What changed, in one line each:
 
 ### A0 result (fill in after the replay)
 
+Replayed 2026-09-20 on the store built 2026-09-19 (protocols 20/14 to 21/94, 97 sitting
+weeks, 217 roll-call votes to 2026-06-12) with
+`python3 scripts/facts.py --replay 30 --cards /tmp/fakt-cards`; the 30 weeks are 2025-W13 to
+2026-W37 (all WP21). 2026-W28 and 2026-W37 are incomplete for votes (cached reports say
+`not_requested`), so only `laengste-rede` could win there.
+
 | Criterion | Value | Pass |
 |---|---|---|
-| max cards per speaker (≤ 5) | | |
-| wins per metric (≥ 6 each) | | |
-| winners changed wp→all (≤ ⅓) | | |
-| winners vs week_n (report) | | |
+| max cards per speaker (≤ 5) | 6 (Friedrich Merz; next Lars Klingbeil 3, Stephan Brandner 2, Bernd Baumann 2, eight others 1) | fail (by one) |
+| wins per metric (≥ 6 each) | laengste-rede 21, knappste-abstimmung 9, no fact 0 | pass |
+| winners changed wp→all (≤ ⅓) | 1 of 30 (3 %) | pass |
+| winners vs week_n (report) | knappste-abstimmung: 19 weeks observed, Pearson(week_n, percentile) = +0.40, median week_n 2, won 5/9 above vs 4/10 at or below; laengste-rede: 30 weeks, Pearson = +0.35, median week_n 397, won 11/15 above vs 10/15 at or below | reported (busier weeks win somewhat more often) |
 | sample cards "would post" (≥ 6/10) | | |
 
 ## What I noticed about how you think
