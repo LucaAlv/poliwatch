@@ -39,6 +39,7 @@ NAV_ITEMS = (
     NavItem("overview", "Sitzungen", "overview.html"),
     NavItem("bills", "Gesetze", "bills/index.html"),
     NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+    NavItem("database", "Daten", "database.html"),
     NavItem("sources", "Quellen", "sources.html"),
 )
 

@@ -432,7 +432,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         (agenda_item_id, speaker_mp_id, now, now),
                     )
 
-                mps, lookup = build_dip_pulse_site.collect_abgeordnete(conn)
+                mps, lookup, canonical_by_mp_id = build_dip_pulse_site.collect_abgeordnete(conn)
 
                 self.assertEqual(len(mps), 1)
                 mp = mps[0]
@@ -444,6 +444,8 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 self.assertEqual(lookup["aw:77"], roster_mp_id)
                 self.assertEqual(lookup["dip:dip-ada"], roster_mp_id)
                 self.assertEqual(lookup["xml:11001"], roster_mp_id)
+                self.assertEqual(canonical_by_mp_id[roster_mp_id], roster_mp_id)
+                self.assertEqual(canonical_by_mp_id[speaker_mp_id], roster_mp_id)
             finally:
                 conn.close()
 

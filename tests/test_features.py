@@ -9,7 +9,7 @@ from features import loader
 
 
 class FixedPresentationTests(unittest.TestCase):
-    def test_navigation_is_the_fixed_five_destination_product(self) -> None:
+    def test_navigation_is_the_fixed_six_destination_product(self) -> None:
         self.assertEqual(
             [(item.key, item.label, item.path) for item in NAV_ITEMS],
             [
@@ -17,6 +17,7 @@ class FixedPresentationTests(unittest.TestCase):
                 ("overview", "Sitzungen", "overview.html"),
                 ("bills", "Gesetze", "bills/index.html"),
                 ("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+                ("database", "Daten", "database.html"),
                 ("sources", "Quellen", "sources.html"),
             ],
         )

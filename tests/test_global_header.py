@@ -21,10 +21,10 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn('href="../abgeordnete/index.html"', markup)
         self.assertNotIn("bills/abgeordnete", markup)
         nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup).group(1)
-        self.assertEqual(nav.count("<a "), 5)
-        for label in ("Aktueller Puls", "Sitzungen", "Gesetze", "Abgeordnete", "Quellen"):
+        self.assertEqual(nav.count("<a "), 6)
+        for label in ("Aktueller Puls", "Sitzungen", "Gesetze", "Abgeordnete", "Daten", "Quellen"):
             self.assertIn(label, nav)
-        for retired in ("database.html", "api-sitzungen.html", "settings.html", "data-feature"):
+        for retired in ("api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)
 
     def test_dark_theme_covers_the_radar_and_drops_retired_pulse_surfaces(self) -> None:
@@ -57,6 +57,14 @@ class GlobalHeaderTests(unittest.TestCase):
         css = pulse_html.global_header_styles()
         self.assertIn(':root[data-theme="dark"] a.week-label[data-tip]::after', css)
         self.assertIn(':root[data-theme="dark"] .method-list li:target', css)
+
+    def test_database_nav_item_is_labelled_daten(self) -> None:
+        for depth in (0, 1, 2):
+            with self.subTest(depth=depth):
+                markup = pulse_html.render_global_header(depth=depth)
+                nav = re.search(r"<nav[^>]*>(.*?)</nav>", markup, re.S).group(1)
+                self.assertIn(">Daten<", nav)
+                self.assertNotIn("Datenbank<", nav)
 
     def test_accessibility_state_is_wired(self) -> None:
         markup = pulse_html.render_global_header(active="overview")

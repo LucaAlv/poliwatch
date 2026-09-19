@@ -9,6 +9,37 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 `.context/` is gitignored: it is build output and cache, never source.
 
+## Daten nutzen (für Forschende und Datenjournalisten)
+
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 16 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit ihren Ergebniszeilen daneben.
+
+Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
+
+```bash
+# Shell (sqlite3)
+curl -LO http://localhost:8000/data/exports/g-<hash>/bundestag-pulse-local.sqlite.gz
+gunzip bundestag-pulse-local.sqlite.gz
+sqlite3 -header -column bundestag-pulse-local.sqlite
+```
+
+```python
+# Python stdlib
+import gzip, shutil, sqlite3, urllib.request
+urllib.request.urlretrieve(url, "bundestag-pulse.sqlite.gz")
+with gzip.open("bundestag-pulse.sqlite.gz", "rb") as src, open("bundestag-pulse.sqlite", "wb") as dst:
+    shutil.copyfileobj(src, dst)
+conn = sqlite3.connect("bundestag-pulse.sqlite")
+```
+
+```python
+# pandas, either the SQLite file or a CSV
+import pandas as pd
+pd.read_sql("SELECT * FROM speeches", conn)
+pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={"mp_id": "Int64"})
+```
+
+SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Ein öffentlicher, versionierter Release über GitHub Releases ist geplant (`scripts/publish_dip_pulse_data.sh`, separates PR) und noch nicht verfügbar; die Lizenz-/Nutzungsformulierung steht ebenfalls noch aus (Platzhalter auf der Seite: "siehe Quellen und Methode").
+
 ## 1. Prerequisites
 
 | Requirement | Notes |
@@ -73,7 +104,7 @@ Run every command from the repository root. The preview script `cd`s there itsel
 scripts/preview_dip_pulse_site.sh        # offline rebuild from cache + serve
 ```
 
-The default mode is offline: it re-renders all HTML from cached JSON/SQLite and makes zero API calls. It finishes in well under a second, which is what makes it the right command for UI and rendering work.
+The default mode is offline: it re-renders all HTML from cached JSON/SQLite and makes zero API calls. It finishes in well under a second, which is what makes it the right command for UI and rendering work. The Daten export (`data/exports/`) follows the same rule: it re-runs only when its inputs changed (the store, the recipes, the export format, the tag/licence/issues-URL flags, or the catalog/dossier/Baustein coverage it reports), so an unchanged offline rebuild stays sub-second too; the first export after a real data change costs a few seconds to tens of seconds depending on store size.
 
 ```bash
 scripts/preview_dip_pulse_site.sh stop   # stop the background server
@@ -178,7 +209,7 @@ scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 
 ## 5. Public presentation and operator controls
 
-Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.4.x`; old `bundestag-pulse-features` browser data is inert.
+Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.5.x`; old `bundestag-pulse-features` browser data is inert.
 
 AI summaries are visible when a usable, structurally validated summary exists. The exact label is `KI-generiert · nicht redaktionell geprüft`. Visitors can expand or collapse all summaries with one control; that single preference uses `bundestag-pulse-ai-summaries-v1`. Structural citation validation proves that cited targets resolve, not that every claim is factually supported or balanced.
 
@@ -220,7 +251,7 @@ For durable operator defaults, use the gitignored `features.local.json` next to 
 { "enrich": ["votes", "aw-profiles"] }
 ```
 
-`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.4.x`; they no longer remove published UI and are scheduled for removal in `0.5.0`.
+`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.5.x`; they no longer remove published UI and are scheduled for removal in `0.6.0`.
 
 Developer payloads are separate from presentation and enrichment. Use `--include-dev-view` only with a dedicated output directory such as `.context/dip-pulse-site-dev`; the builder rejects attempts to mix it into the ordinary public output.
 

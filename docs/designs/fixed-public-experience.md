@@ -8,7 +8,7 @@ Repo: LucaAlv/poliwatch
 Status: APPROVED
 Mode: Builder
 
-Implementation note (2026-09-19): the release target moved from `0.3.0` to `0.4.0.0` after `main` independently shipped `0.3.0.0`. The promised one-release compatibility window therefore runs through `0.4.x`, with removal deferred to `0.5.0`; historical review text below retains the version numbers used when the plan was approved.
+Implementation note (2026-09-19): the release target moved from `0.3.0` to `0.5.0.0` after `main` independently shipped `0.3.0.0` and `0.4.0.0`. The promised one-release compatibility window therefore runs through `0.5.x`, with removal deferred to `0.6.0`; historical review text below retains the version numbers used when the plan was approved.
 
 ## Problem Statement
 
@@ -1300,7 +1300,7 @@ Synthesized from this review's findings. Each task derives from a specific findi
 - [x] **T5 (P2, human: ~2h / CC: ~20min)** — Migration and documentation — Preserve operator compatibility and rewrite Baustein guidance
   - Surfaced by: Sections 8/9 — avoid an operator outage while changing the visitor model.
   - Files: `README.md`, `docs/project-documentation.md`, `docs/bundestag-puls-architecture.json`, `CHANGELOG.md`, configuration examples and CLI tests
-  - Verify: documentation search finds no contradictory visitor-switch guidance; legacy aliases warn through `0.4.x`; `settings.html` is explanatory only.
+  - Verify: documentation search finds no contradictory visitor-switch guidance; legacy aliases warn through `0.5.x`; `settings.html` is explanatory only.
 - [x] **T6 (P2, human: ~1h / CC: ~10min)** — Product validation — Run representative task and visual checks
   - Surfaced by: Product outcome and Section 11 — implementation properties alone do not prove clarity.
   - Files: deterministic generated fixtures and review notes under `docs/designs/`

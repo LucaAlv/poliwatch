@@ -127,6 +127,7 @@ It creates these directories under the output directory:
 |-- settings.html
 |-- database.html
 |-- data/
+|   `-- exports/            # distribution SQLite + CSVs + datenstand.json, unless --no-persist
 |-- protocols/
 |-- bills/                  # always published; honest empty state without matching data
 `-- abgeordnete/            # always published; observed MPs remain available without a full roster
@@ -141,14 +142,16 @@ Important generated files:
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
-| `settings.html` | Temporary `0.4.x` compatibility page explaining the fixed presentation |
-| `database.html` | Human-readable SQLite table snapshot, or a clear `--no-persist` explanation when persistence is disabled |
+| `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
+| `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
+| `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 16 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -176,7 +179,7 @@ Shared schema-v2 trust boundary for acquisition facts, presentation-state deriva
 
 ## Fixed public presentation and enrichments
 
-Every ordinary static publication has five stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
+Every ordinary static publication has six stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
 
 Votes, profile links, and the full roster have explicit acquisition states: `not_requested`, `complete`, `partial`, or `failed`. Renderers derive contextual public copy from those facts. A successful lookup with zero matching votes is therefore different from a build that never requested vote data. `data/features.json` aggregates those facts and `sources.html#datenstand` explains them.
 
@@ -195,7 +198,7 @@ scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
 scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 ```
 
-`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.4.x`, cannot remove published UI, and are scheduled for removal in `0.5.0`.
+`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.5.x`, cannot remove published UI, and are scheduled for removal in `0.6.0`.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -367,7 +370,7 @@ Common options:
 | `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
 | `--list-capabilities` | off | Print operator enrichments and summary/developer controls, then exit before build work |
 | `--explain-config` | off | Print effective enrichment configuration with provenance, then exit |
-| `--list-features` | deprecated | Compatibility alias for `--list-capabilities` through `0.4.x` |
+| `--list-features` | deprecated | Compatibility alias for `--list-capabilities` through `0.5.x` |
 | `--include-dev-view` | off | Include developer markup only in a separate, explicit output directory |
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
@@ -391,6 +394,18 @@ Common options:
 | `--abgeordnetenwatch-sleep SECONDS` | `0.5` | Minimum delay between abgeordnetenwatch API requests |
 | `--roster-wahlperiode N` | `21` | Legislative period used for full MdB roster pages |
 | `--no-roster` | deprecated | Explicitly veto full-roster acquisition during the compatibility window |
+
+Daten export options (`data/exports/`, the Daten page's download panel, Datenstand and recipes):
+
+| Option | Default | Effect |
+|---|---:|---|
+| `--data-base-url URL` | `data/exports/` or `$BUNDESTAG_PULSE_DATA_BASE_URL` | Where the page's download links point; absolute only for `https://`, `http://` or a leading `/` |
+| `--data-manifest PATH\|URL` | `OUTPUT_DIR/data/exports/datenstand.json` or `$BUNDESTAG_PULSE_DATA_MANIFEST` | Which manifest the Daten page renders from; a URL is an explicit opt-in fetch (10 s timeout, 32 MB cap) and is rejected under `--offline`. The local export is skipped while an override is given (unless `--force-export`) |
+| `--force-export` | off | Re-run the export even when its inputs (store, recipes, export format, tag, licence, issues URL, coverage counts) are unchanged, or when `--data-manifest` would otherwise skip it |
+| `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
+| `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
+
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 16 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -511,7 +526,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `DIP_PULSE_LOG_FILE` | preview script | No | Preview server log file |
 | `OPEN_BROWSER` | preview script | No | Set `0` to avoid opening browser |
 | `BUNDESTAG_PULSE_ENRICHMENTS` | build | No | Comma-separated update enrichments such as `votes,aw-profiles` |
-| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.4.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
+| `BUNDESTAG_PULSE_FEATURES` | build | Deprecated | Accepted through `0.5.x`; use `BUNDESTAG_PULSE_ENRICHMENTS` |
 
 ## Offline vs Online Behavior
 
