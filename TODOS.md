@@ -16,6 +16,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P1
 **Depends on:** None
 
+### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
+
+**What:** A `protocol_acquisition(protocol_id, component, state, fetched_at)` table written at persist time from each report's acquisition states (votes: `acquisition_state` as consumed by `render_vote_summary`; XML parsed or not; AI summaries), exported with the Daten CSVs; the facts engine and the Daten page read it instead of re-deriving it.
+
+**Why:** The store cannot tell "no roll-call vote happened" from "votes were not fetched"; the state lives only in the report JSON. The facts engine (A1) gates week completeness from the in-memory `entries` and A0's replay re-derives the same map from the cached JSON, so two derivations of "complete" exist and can drift, and the download keeps a silent gap. Chosen at the eng review 2026-09-19 (D10: gate from entries now, schema later; D17: record).
+
+**Context:** Needs a stable state vocabulary per component (`complete`, `partial`, `failed`, `not_requested` already exist for votes in `scripts/features/votes.py`). Natural B / Daten-pilot item.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None (A1 works without it)
+
 ### Regenerate the architecture diagram for the Daten export step
 
 **What:** `docs/bundestag-puls-architecture.html`/`.json` (2026-09-06) is a seven-node runtime diagram (DIP API → Fetch & Extract → SQLite Store → `render_html()` → "Static Site Output · pages + data/ cache" → Preview Server) with no export step and no Daten page. Regenerate it so it shows `export_distribution_data()` between the store and `render_site`, the `data/exports/g-<hash>/` + `datenstand.json` generation switch, and the `--data-manifest` override path.
@@ -215,6 +227,68 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
+
+## Fakten
+
+Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; the items below are the full implementation that A is the test for. They are deliberately not discarded.
+
+### Fakt der Woche, A0: read-only replay and sample cards (the test run)
+
+**What:** `scripts/facts.py` with the metric registry (`laengste-rede`, `knappste-abstimmung`; `depends_on`, `tie_rank`, `min_history_weeks = 8`), the rule as pure functions (sitting weeks with Wahlperiode from `protocols.document_number`, one observation per metric per complete week, percentile = strictly-beaten prior weekly observations in the metric's direction, same-WP baseline with all-coverage fallback, `tie_rank` on metric ties), receipts keyed by `(document_number, rede_id)` or the page anchor for synthetic ids, and a `--replay N --cards DIR` entry point that opens the store read-only, derives per-week completeness from the cached `data/plenarprotokoll-*.json`, prints the 30-week table with `week_n` and the pass metrics, and writes sample SVG cards (textwrap, ≤3 lines, system font stack). No writes, no pages, no export. Done when the replay runs on the real store and the five pass criteria are filled in the design doc addendum: no speaker on > 5 of 30 cards; each eligible metric wins ≥ 6 of 30; ≤ ⅓ of winners change between `wp` and `all` baselines; winners-vs-`week_n` reported; ≥ 6 of the 10 most recent sample cards rated "would post".
+
+**Why:** Office hours (2026-09-19) chose the surprise rule; the eng review's outside voice showed the original acceptance test was vacuous and that building persistence and pages before the experiment contradicts "replay first". A0 answers "are these cards worth posting?" for a day of work. Plan: `~/.gstack/projects/LucaAlv-poliwatch/fakt-der-woche-plan.md` (decisions D1–D19).
+
+**Context:** Store measured 2026-09-19: 97 ISO sitting weeks, WP20 from protocol 20/14 (2022-01-27), WP21 from 21/1 (2025-03-25); closest vote 348:344 on 2025-01-29; longest speech 42,341 chars (2025-05-14). Card copy must name the population it was computed on ("… der wöchentlich knappsten Abstimmungen seit …") and say "seit Januar 2022" for the WP20 baseline, never "seit Beginn der 20. Wahlperiode". `mp_canonical` is NOT needed (MP links resolve via `mp_lookup` like recipes). Tests: `tests/_facts_fixture.py:seed_weeks()` parametric generator; `tests/test_facts.py`; real-store test `skipUnless` the `.context` store exists.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Fakt der Woche, A1: engine in the build, pages, Methodik, export
+
+**What:** On top of A0 (only if A0 passes): `compute_and_store` runs on every build right before `export_distribution_data` (`scripts/build_dip_pulse_site.py` ~8443), takes the completeness map from the in-memory `entries`, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs (single transaction; `fact_metrics.sql_sha256`; `--no-persist` never writes; `CREATE TABLE IF NOT EXISTS` in the engine), prints a changed-winners report, and aborts the build when a metric's SQL raises. `speeches.fraktion` (TEXT, from the XML speaker's `fraktion` at persist) captions the card; R2 switches to it. Pages `fakt/index.html`, `fakt/<year>-W<ww>.html`, `fakt/<year>-W<ww>.svg`, `fakt/methodik.html` (rule, N, tie order, the "spätere Wochen ändern frühere Karten nicht; Datenkorrekturen können es" guarantee, the opportunity-count caveat, unbuilt metrics); `facts` component + nav "Fakten"; `_resolve_recipe_link` renamed `resolve_entity_link` and shared; `format_int`/`speaker_party` reused. Export: three new CSVs (19 total), `DATABASE_TABLE_DESCRIPTIONS`, `_TABLE_SOURCE_DERIVED`, `docs/data-license.md` line. Done when two consecutive builds on an unchanged store leave the store mtime unchanged and skip the export (regression test), cards are byte-identical under `SOURCE_DATE_EPOCH`, and one card has been rasterised with `qlmanage` and posted.
+
+**Why:** The facts table is the product (design premise 2); A1 is where it becomes a store table, a download and a page. Every rule above is a decision in the plan file, not a suggestion.
+
+**Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12).
+
+**Effort:** L
+**Priority:** P1
+**Depends on:** A0 pass; `parties.name` fix (Daten, P1)
+
+### Fakt der Woche, publication ledger (`facts_published`)
+
+**What:** A `facts_published` table (or a JSON file under `data/`) appended the first time a week's card is selected, preserved across online rebuilds the way roster rows are (`rebuild_database_from_entries`, `scripts/build_dip_pulse_site.py:716`), never overwritten; the week page shows "veröffentlicht als … / aktuell …" when they differ.
+
+**Why:** A1 only promises "spätere Wochen ändern frühere Karten nicht"; data corrections and metric version bumps can still change an old card, and the changed-winners report only lands in the build log. The ledger makes a posted card reproducible forever and lets the site show its own corrections. Chosen at the eng review (D11: 11A now, ledger recorded) on 2026-09-19.
+
+**Context:** Needs a preservation path through the rebuild (like `preserve_roster`) or a file outside the store, plus two-value rendering on the week page. Not worth building before a card has actually been posted.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** A1 shipped and at least one card posted
+
+### Fakt der Woche, Approach B: site-wide facts layer (full implementation)
+
+**What:** On top of A1: MP-level metrics via `mp_canonical` (a TEMP table from the in-memory `canonical_by_mp_id`, as the export does, or persisted; B decides) (first speech in the Bundestag, longest speech of the WP, lone dissent against the own Fraktion; never attendance rankings), proceeding-level metrics (see Approach C), badge hooks in the dossier and MP renderers ("in dieser Woche: knappste Abstimmung der Wahlperiode", "hielt die längste Rede der 21. Wahlperiode") that read from `facts`, and an Open Discourse-compatible export view/CSV variant (their column names for `speeches`, `contributions`, `politicians`, `factions`, `electoral_terms`) so WP20/21 slots into existing notebooks. Done when every badge on a rebuilt site resolves to a `facts` row and the compatibility CSVs load in an Open Discourse notebook unchanged.
+
+**Why:** A0/A1 prove the rule on a side page; B is the distinguishing feature on every page ("every number on this site knows how unusual it is") and the "build on my work" surface. Decided at office hours 2026-09-19: A is the test run, B is the full implementation, not discarded.
+
+**Context:** Adding a metric is a registry entry plus a test once A's shape exists. The badge hooks touch `render_vote_summary` (`scripts/features/votes.py`) and the MP page renderer; keep the fixed Fraktion order and the "kein Redebeitrag" rule from the Plenarwatch-Lücken items. Open Discourse's `contributions` parsing is the reference for the Zwischenrufe item below. feed.json/RSS stay behind the Daten pilot gate.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** A1 shipped and A0's pass criteria met
+
+### Fakt der Woche, Approach C: proceeding-trajectory metrics and a timeline page
+
+**What:** A third metric family over the joins (returns of a proceeding to the plenary, speech volume across its debates, final roll-call margin) with a `fakt/<year>-W<ww>.html` card that opens a per-proceeding timeline (debates → speakers → documents → votes). Done when the timeline renders for a proceeding with ≥3 plenary appearances and the card states "seit Beginn unserer Abdeckung (Januar 2022)" wherever a count is censored by the store's start date.
+
+**Why:** Codex's lateral at office hours 2026-09-19: the joins are the asset the corpora lack, and a card that opens a story beats a number. Deferred behind A and B because it needs a bill/timeline page that does not exist and better proceeding titles (see "Ranking row titles that skip the boilerplate" under Protokoll-Dossier).
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** Approach B; a bill/timeline page; the ranking-title item
 
 ## Design
 
