@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0.0] - 2026-09-19
+
+### Added
+
+- A deterministic, zero-credential demo now builds the official Plenarprotokoll 21/84 TOP 32 a/b acceptance case offline, validates the deployable artifact, and links all 16 speeches plus Drucksachen 21/6354 and 21/4833.
+- Publications now carry a schema-v2 data-state manifest and a reader-facing Datenstand section that distinguish unavailable, partial, genuine-empty, reused, and not-requested data.
+- Operators can inspect acquisition capabilities and resolved configuration without network access through `--list-capabilities` and `--explain-config`; development views are isolated from deployable output.
+
+### Changed
+
+- Every visitor now receives the same complete public experience—Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, and Quellen—without a gear menu, feature switches, or hidden building blocks.
+- AI summaries are the only content preference: valid summaries are expanded initially, clearly labelled as AI-generated and not editorially reviewed, globally collapsible, source-bound, citation-checked, and omitted cleanly when unavailable.
+- `--enrich` now controls only optional acquisition of votes, abgeordnetenwatch profiles, and the full MP roster; deprecated feature inputs remain translating aliases through `0.4.x` and are scheduled for removal in `0.5.0`.
+
+### Fixed
+
+- Public source links now require allowlisted HTTPS hosts, generated paths are confined to the publication root, and CI rejects developer-marked or incomplete publication artifacts.
+- The fixed public experience remains intact on the new week-radar page after integrating the latest `main` release.
+
 ## [0.3.0.0] - 2026-09-18
 
 ### Added

@@ -16,7 +16,7 @@
 
 ### Move the hidden dev-view API dump below the dossier content
 
-**What:** On `protocols/*.html` the `protocol_dev_sections` block (raw API JSON, people list; `.dev-only`, hidden unless the Dev-Ansicht Baustein is on) is emitted between the page header and `.layout`. Emit it after `<main>` (or render it into a separate file loaded on demand).
+**What:** In explicit `--include-dev-view` builds, the `protocol_dev_sections` block (raw API JSON and people list; `.dev-only`) is emitted between the page header and `.layout`. Emit it after `<main>` (or render it into a separate file loaded on demand).
 
 **Why:** Measured on plenarprotokoll 20/103: 952 KB of hidden markup precede the Aufmerksamkeitsrang aside and the first TOP card, so on a slow connection nothing above the fold can paint until ~1 MB has streamed. Found while placing the aside's toggle script adjacent to the aside (2026-09-14).
 
@@ -62,18 +62,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Guard the remaining external hrefs with `safe_href`
-
-**What:** Route every href taken from DIP or abgeordnetenwatch payloads through `safe_href()` the way v0.2.3.0 did for the PDF/XML source links: MP profile URLs (`profile["url"]`, `mp["profile_url"]`), roll-call `vote.get("detail_url")`, linked-document `doc.get("url")` and event `event.get("url")` sinks in `scripts/render_dip_pulse_html.py` and `scripts/build_dip_pulse_site.py`.
-
-**Why:** Same trust-boundary class as the links guarded in 0.2.3.0: `esc()` escapes quotes but does not stop a `javascript:` scheme, and these values come from upstream APIs. Real data is all https today, so this is defence in depth, not a live bug.
-
-**Context:** Flagged by the 0.2.3.0 adversarial review as out of that PR's scope. `safe_href()` returns None for non-http(s) values; each sink needs a plain-text fallback. One negative test per sink, mirroring `DossierSourceLinkTests` and `SourceLinkGuardTests`.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ## Puls
 
 ### Weekday-matched Wochenvergleich when sitting counts differ
@@ -110,7 +98,7 @@
 
 **Effort:** L
 **Priority:** P3
-**Depends on:** summaries Baustein; puls.html week radar shipped
+**Depends on:** summary data available; puls.html week radar shipped
 
 ### Five-reader comprehension test of the week radar
 
@@ -163,5 +151,37 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+## Publication
 
+### Add atomic/versioned publication promotion
+
+**What:** Build a complete static publication in a staging directory, validate it, and atomically promote the validated version with a documented rollback path.
+
+**Why:** The current in-place writer can leave a partial output tree after a late failure. The fixed-public release makes this safe by treating output as disposable and deployable only after exit 0 plus validation, but atomic promotion would prevent readers or deployment tooling from observing a mixed version at all.
+
+**Context:** Start from `scripts/build_dip_pulse_site.py`, which writes many HTML/JSON files directly while SQLite alone uses temporary replacement. Design this together with the real deployment target: staging location, same-filesystem rename requirements, retained versions, cleanup, concurrent-build locking, and rollback semantics. Trigger this work when a deployment pipeline is added, the output directory is served while builds run, or concurrent writers become possible.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** A concrete deployment/serving lifecycle
+
+## Community
+
+### Choose and document repository license and contribution governance
+
+**What:** Make an explicit legal/product choice for the project license, contribution process, security reporting, conduct expectations, and support channel.
+
+**Why:** A public repository without these files is difficult for outside contributors to use or redistribute confidently, even when its local developer experience is strong.
+
+**Context:** This was identified during the developer-experience review but is deliberately separate from the fixed-public-experience migration. Begin with repository ownership and intended contribution model, obtain appropriate legal guidance for the license decision, then add the chosen `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, code of conduct, and issue templates consistently. Do not infer a license from code visibility alone.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Repository owner/legal product decision
 ## Completed
+
+### Guard external payload links with shared source validation
+
+**What:** Route public hrefs from DIP, Bundestag, and abgeordnetenwatch payloads through shared scheme-and-host validation, with safe omission or plain-text fallback for rejected links.
+
+**Completed:** v0.4.0.0 (2026-09-19)
