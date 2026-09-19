@@ -2,7 +2,7 @@
   <vorspann>
     <inhaltsverzeichnis>
       <ivz-block>
-        <ivz-block-titel>TOP 1 Beratung Testgesetz <a href="https://example.test/20-123.pdf">20/123</a></ivz-block-titel>
+        <ivz-block-titel>TOP 1 Beratung Testgesetz <a href="https://dserver.bundestag.de/btd/20/001/2000123.pdf">20/123</a></ivz-block-titel>
         <xref rid="R1" pnr="101" div="A">101</xref>
         <xref rid="R2" pnr="102" div="C">102</xref>
       </ivz-block>

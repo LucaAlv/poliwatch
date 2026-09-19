@@ -278,11 +278,28 @@ def page_number(value: str | int | None) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def is_bundestag_document_url(href: str | None) -> bool:
+    """True when an anchor points at an official Bundestag document host.
+
+    Speeches quote external URLs verbatim (news sites, NGOs), and a percent-encoded
+    or dated path such as ``.../%D9%88/739016/`` or ``/2024/12/06/`` looks like a
+    Drucksache number to the regex below. Only Bundestag-hosted links can be
+    Drucksachen, and only those pass the publication allowlist later.
+    """
+    if not href:
+        return False
+    parsed = urllib.parse.urlsplit(href)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    return parsed.scheme == "https" and hostname in publication.SOURCE_HOSTS["bundestag-xml"]
+
+
 def extract_drucksachen(elem: ET.Element) -> list[dict[str, str | None]]:
     docs: list[dict[str, str | None]] = []
     seen: set[tuple[str, str | None]] = set()
     for anchor in elem.findall(".//a"):
         href = anchor.attrib.get("href")
+        if href and not is_bundestag_document_url(href):
+            continue
         text = elem_text(anchor)
         candidates = re.findall(r"\b\d{1,2}/\d{1,6}\b", text)
         for number in candidates:

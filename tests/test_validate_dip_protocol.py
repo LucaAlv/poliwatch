@@ -142,6 +142,29 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertEqual(second["page_range"]["start"], {"page": 103, "quadrant": "B"})
         self.assertEqual(second["speeches"][0]["speaker"]["last_name"], "Kontrolle")
 
+    def test_extract_drucksachen_ignores_external_urls_that_look_like_numbers(self) -> None:
+        # Protocol 20/206 quotes these verbatim in a Fragestunde question; the
+        # percent-encoded and dated paths matched the NN/NNNNNN regex and the
+        # external hosts later failed the publication allowlist.
+        syriahr = "https://www.syriahr.com/%D8%A7%D9%84%D9%85%D9%88/739016/"
+        dated = "http://www.jmwiarda.de/2024/12/06/so-soll-der-digitalpakt-2-0-aussehen/"
+        top = dip.ET.fromstring(
+            "<top>"
+            f'<p>vergleiche <a href="{syriahr}">www.syriahr.com/%D9%88/739016/</a> '
+            f'und <a href="{dated}">www.jmwiarda.de/2024/12/06/</a></p>'
+            '<p>Drucksache <a href="https://dserver.bundestag.de/btd/20/141/2014189.pdf">20/14189</a> '
+            "und <a>20/999</a></p>"
+            "</top>"
+        )
+
+        self.assertEqual(
+            dip.extract_drucksachen(top),
+            [
+                {"dokumentnummer": "20/14189", "url": "https://dserver.bundestag.de/btd/20/141/2014189.pdf"},
+                {"dokumentnummer": "20/999", "url": None},
+            ],
+        )
+
     def test_parse_roll_call_list_page(self) -> None:
         entries = dip.parse_roll_call_list_page((FIXTURES / "roll_call_list.html").read_text(encoding="utf-8"))
 
