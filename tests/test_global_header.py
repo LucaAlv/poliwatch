@@ -27,17 +27,29 @@ class GlobalHeaderTests(unittest.TestCase):
         for retired in ("database.html", "api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)
 
-    def test_dark_theme_covers_lede_rows_and_drops_retired_pulse_actions(self) -> None:
-        # The dark palette is applied through two hand-maintained selector lists,
+    def test_dark_theme_covers_the_radar_and_drops_retired_pulse_surfaces(self) -> None:
+        # The dark palette is applied through hand-maintained selector lists,
         # so a new surface is invisible in dark mode until it is added by hand.
-        # .lede-top replaced the .pulse-actions links in the puls.html hero.
+        # The radar row is deliberately NOT a panel (it is a hairline list item
+        # with no background); its links, titles, bar track and who-stack get
+        # dedicated rules, and the retired hero surfaces are gone.
         css = pulse_html.global_header_styles()
         panels = re.search(
             r':root\[data-theme="dark"\] :is\(\s*\.metric,(.*?)\)\s*\{', css, re.S
         )
         self.assertIsNotNone(panels, "dark-theme panel selector list not found")
-        self.assertIn(".lede-top", panels.group(1))
-        self.assertNotIn(".pulse-actions", css)
+        self.assertIn(".radar,", panels.group(1))
+        self.assertNotRegex(panels.group(1), r"\.radar-row\b")
+        for retired in (".lede-top", ".latest-panel", ".pulse-feature", ".feature-microgrid", ".pulse-actions"):
+            self.assertNotIn(retired, css, msg=retired)
+        self.assertIn(':root[data-theme="dark"] .radar-row a { color:var(--ink) !important; }', css)
+        backgrounds = re.search(r':root\[data-theme="dark"\] :is\(\.bar, \.stack,(.*?)\)\s*\{', css, re.S)
+        self.assertIsNotNone(backgrounds, "dark-theme bar-track selector list not found")
+        self.assertIn(".radar-bar", backgrounds.group(1))
+        self.assertIn(".who-stack", backgrounds.group(1))
+        self.assertIn(':root[data-theme="dark"] .who-stack { outline:1px solid var(--line); }', css)
+        self.assertRegex(css, r"\.radar-group-title[^{]*\)\s*\{\s*color:var\(--ink\) !important;")
+        self.assertRegex(css, r"\.radar-summary\s*\)\s*\{\s*border-color:var\(--line\) !important;")
 
     def test_dark_theme_styles_the_vorgangstyp_bubble_and_glossary_target(self) -> None:
         # The Debattenprofil hover bubble and the glossary :target highlight are

@@ -195,6 +195,8 @@ python3 scripts/build_dip_pulse_site.py --explain-config
 | `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
 | `mp-roster` | Refresh the complete MdB roster from DIP |
 
+On `puls.html` the week radar ([docs/designs/puls-wochenradar.md](docs/designs/puls-wochenradar.md)) gates three blocks this way: the "namentlich abgestimmt" badge on a radar row and the "Namentliche Abstimmungen" card in the Wochenvergleich band (`votes`), and the KI-Zusammenfassung with its receipts under a radar row (`summaries`). All of them render into every build and are hidden by the visitor's setting, so the page reads correctly either way.
+
 The ordinary offline preview needs no feature arguments:
 
 ```bash
@@ -237,6 +239,19 @@ Developer payloads are separate from presentation and enrichment. Use `--include
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. The page is the only one whose wording depends on when it was built: whether the sitting week is still running (Monday to Sunday of the week), how old it is ("Letzte Sitzungswoche vor 13 Wochen"), and the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
+
+| Input | Effect |
+|---|---|
+| `--today YYYY-MM-DD` | Build date: decides running vs. past week and is printed as "Auswertung vom" |
+| `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC (a CI build with a pinned epoch shows that UTC date) |
+| neither | The current date at build time |
+| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps with `--preserve-existing-dossiers`) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+
+```bash
+python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24
+```
+
 Stop the server before changing `PORT`, `PREVIEW_BIND`, or `DIP_PULSE_OUTPUT_DIR`. The script only checks whether *a* server is alive, not which port or directory it serves, so changing these while it runs rebuilds the files, leaves the old server in place, and prints the new URL even though nothing is listening there.
 
 ## 7. Hosting the generated site elsewhere
@@ -264,9 +279,13 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
+| `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
+| `warning: [puls] N Sitzungen ohne Datum ausgeschlossen (21/82, …)` | Those cached dossiers carry no `datum`, so they cannot be placed in a sitting week; the radar renders from the dated ones and the page header notes the count. Re-fetch the named sittings with `update --document-number …`. With no dated sitting at all the page shows only "Die erzeugten Sitzungen tragen kein Datum". |
+| Radar shows no rows (`warning: [puls] KW …: keine Reden extrahiert`) | Every agenda item of that week has zero extracted speeches, so there is nothing to rank; the page says so in one note. Usually the XML speeches were not fetched or the extraction was empty — re-run `update --document-number …` for the week's sittings and check the dossier's validation warnings. |
 
 ## 9. More documentation
 
 - [docs/project-documentation.md](docs/project-documentation.md) — full command, flag, and environment reference, pipeline internals, SQLite schema.
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
+- [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar.
 - [CHANGELOG.md](CHANGELOG.md) — release history. [TODOS.md](TODOS.md) — tracked follow-up work.

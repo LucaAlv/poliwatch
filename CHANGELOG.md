@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0.0] - 2026-09-18
+
+### Added
+
+- `puls.html` is a week radar now (`docs/designs/puls-wochenradar.md`): the page header names the newest sitting week (or `--week`) with one chip per sitting and a facts sentence that says whether the week is still running, how old it is and when the build ran ("Auswertung vom"); "Themen der Woche" ranks the week's agenda items by speech count, names them by their DIP Vorgang titles (an Antrag-only group lists every title at equal weight), shows the share of all speeches with a bar, who spoke per Fraktion, a "Fortgesetzt" trace when the procedure ran in an earlier week, the KI-Zusammenfassung with receipts (`summaries`), a "namentlich abgestimmt" badge (`votes`) and a link into the protocol on every row; question formats (Befragung, Fragestunde, Regierungsbefragung) and the remaining agenda items are listed under the rows with their counts.
+- The Wochenvergleich band gains a "Namentliche Abstimmungen" card aggregated over the week (`votes`), keeps its cards without a comparison week (Wochenpuls and Redeanteil of the current week, no deltas), and reads "n/a" on the Wochenpuls chips when the two weeks hold a different number of sittings.
+- Build diagnostics for the page on stderr: `[puls] KW 24/2026: 3 Sitzungen, 5 Themen, 1 Frageformat, 22 weitere, today=…`, plus warnings for undated sittings, a week without extracted speeches and a build date before the sitting week (README §8).
+
+### Changed
+
+- `--today`, `SOURCE_DATE_EPOCH` and `--week` now shape `puls.html`; two builds of the same cache with the same pins are byte-identical.
+
+### Removed
+
+- The old `puls.html` hero (sitting summary, fact tiles, "Quellen" row), the Themenbewegung card, the per-sitting Abstimmungsverschiebung panel and the `#bewegung` anchor. `#wochenvergleich` and `#abstimmungen` stay.
+
+## [0.2.3.0] - 2026-09-18
+
+### Added
+
+- Builds can be pinned: `--today YYYY-MM-DD` fixes the build date, `--week YYYY-WW` names the ISO sitting week for `puls.html`, and `SOURCE_DATE_EPOCH` (UTC) is honoured when `--today` is absent. Both are validated on every build now; `puls.html` starts reading them with the week radar in the next release.
+- A `--week` that the build cannot hold is refused before any file is written, and the error lists the sitting weeks that are available.
+
+### Changed
+
+- Source links taken from DIP data (PDF sources on positions, activities, the KI-Zusammenfassung receipts and the developer details, XML/PDF links on the overview and Daten pages) are emitted only for `http(s)` URLs; anything else degrades to plain text.
+- Groundwork for the `puls.html` week radar (`docs/designs/puls-wochenradar.md`): topic naming across positions and mitberaten twins, a shared occurrence index for the returning-procedures card, roll-call votes counted by id instead of by attachment, and shared receipt rendering. Nothing on the site changes yet; the page itself follows in the next release.
+
 ## [0.2.2.0] - 2026-09-14
 
 ### Fixed

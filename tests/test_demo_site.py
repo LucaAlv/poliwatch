@@ -49,7 +49,7 @@ class DemoSiteTests(unittest.TestCase):
             with self.assertRaisesRegex(publication.PublicationStateError, "development output"):
                 publication.validate_publication_directory(output)
 
-    def test_real_render_rejects_an_unsafe_protocol_source(self) -> None:
+    def test_real_render_omits_an_unsafe_protocol_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fixture = json.loads(demo.DEFAULT_FIXTURE.read_text(encoding="utf-8"))
@@ -57,8 +57,12 @@ class DemoSiteTests(unittest.TestCase):
             fixture_path = root / "unsafe.json"
             fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
 
-            with self.assertRaisesRegex(publication.PublicationStateError, "require https"):
-                demo.build_demo(root / "site", fixture_path)
+            output = root / "site"
+            demo.build_demo(output, fixture_path)
+            generated = "\n".join(
+                path.read_text(encoding="utf-8") for path in output.rglob("*.html")
+            )
+            self.assertNotIn('href="javascript:', generated)
 
     def test_interrupted_render_is_not_a_valid_publication(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

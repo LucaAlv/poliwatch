@@ -30,7 +30,7 @@
 # Which code writes which part of the website:
 #
 #   index.html           ``render_landing_page``     explanatory home page
-#   puls.html            ``render_front_page``       "Aktueller Puls" dashboard
+#   puls.html            ``render_front_page``       "Aktueller Puls": week radar + Wochenvergleich
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
@@ -64,7 +64,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -621,12 +621,19 @@ def rebuild_cached_detail_pages(
     protocols: list[dict[str, Any]],
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
+    cached_entries: list[dict[str, Any]] | None = None,
     *,
     include_dev_view: bool = False,
 ) -> list[dict[str, Any]]:
-    """Regenerate dossier HTML from cached JSON reports without API calls."""
+    """Regenerate dossier HTML from cached JSON reports without API calls.
+
+    Pass `cached_entries` when the caller already loaded them; the reports are
+    large enough that a second parse of every file is noticeable.
+    """
+    if cached_entries is None:
+        cached_entries = load_existing_detail_entries(output_dir, protocols)
     entries = []
-    for entry in load_existing_detail_entries(output_dir, protocols):
+    for entry in cached_entries:
         entries.append(
             write_report_files(
                 entry["report"],
@@ -1843,10 +1850,10 @@ def render_landing_page(
     # so the home page never links to a page this build did not write.
     areas = [
         (
-            "Lageblick",
+            "Wochenradar",
             "Aktueller Puls",
             "puls.html",
-            "Was gerade im Bundestag auffällt: Themenbewegung, Abstimmungsverschiebungen und der Wochenvergleich der neuesten Auswertung.",
+            "Worüber der Bundestag in der neuesten Sitzungswoche am meisten gesprochen hat: die Themen nach Redezahl, jede Zeile mit Beleg im Protokoll, dazu der Wochenvergleich.",
         ),
         (
             "Archiv",
@@ -2093,12 +2100,13 @@ def render_landing_page(
 
 
 # ---------------------------------------------------------------------------
-# PAGE: puls.html - "Was gerade im Bundestag laeuft"
+# PAGE: puls.html - "Was der Bundestag in KW 24/2026 verhandelt hat"
 #
-# The dashboard for the single newest dossier: two highlight panels
-# ("Themenbewegung" and "Abstimmungsverschiebung") over a ranked list of the
-# agenda items that drew the most speaking time. Everything on it is derived
-# from entries[0]; older sittings live in the catalog pages instead.
+# The week radar: one ISO sitting week (the newest dated one, or --week), its
+# agenda items ranked by speech count with the DIP Vorgang titles as names and
+# a receipt on every row, then the Wochenvergleich band against the previous
+# sitting week. Older weeks live in the catalog pages instead. Design record:
+# docs/designs/puls-wochenradar.md.
 # ---------------------------------------------------------------------------
 
 
@@ -2114,62 +2122,121 @@ def week_figure(value: float, normalised: bool) -> str:
     return pulse_html.format_int(int(round(value)))
 
 
-# One line for the Themenbewegung panel, stating the week's headline movement.
-# Falls back to an honest sentence rather than the old promise of a comparison
-# that no code was ever going to deliver.
-def week_headline(comparison: dict[str, Any] | None) -> str:
-    if not comparison:
-        return "Noch keine vergleichbare Vorwoche in den erzeugten Auswertungen."
-    current = comparison["current"]
-    previous = comparison["previous"]
-    speeches = next((m for m in comparison["metrics"] if m["key"] == "speech_count"), None)
-    suffix = " je Sitzung" if comparison["normalised"] else ""
-    if not speeches or speeches["delta_percent"] is None:
-        return (
-            f"Sitzungswoche {current['label']}: {pulse_html.format_int(current['speech_count'])} Reden "
-            f"in {pulse_html.format_int(current['top_count'])} Tagesordnungspunkten."
+# ---------------------------------------------------------------------------
+# The "Wochenvergleich" band under the radar.
+#
+# Five cards, all of them plain aggregates over the dossiers of two sitting
+# weeks: the volume pulse with a 12-week sparkline, the shift in each fraction's
+# share of speaking, the mix of business types, the procedures that came back
+# from an earlier week, and the week's roll-call votes. Every row that names a
+# sitting links to the agenda item it came from, so each number stays one click
+# from its source. Without a comparison week the band still shows the current
+# week's Wochenpuls, Redeanteil and votes, just without deltas or a sparkline.
+# ---------------------------------------------------------------------------
+def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
+    """The week's roll-call votes, counted by vote id across every sitting.
+
+    Rendered in both band states and gated client-side through
+    id="abstimmungen" stays an external deep-link target.
+    """
+    count = int(stats.get("vote_count") or 0)
+    if count:
+        sentence = (
+            f"{pulse_html.format_count(count, 'namentliche Abstimmung', 'namentliche Abstimmungen')} in "
+            f"{pulse_html.format_count(int(stats.get('vote_top_count') or 0), 'Tagesordnungspunkt', 'Tagesordnungspunkten')}"
+            " dieser Woche"
         )
-    direction = "mehr" if speeches["delta"] > 0 else "weniger" if speeches["delta"] < 0 else "genauso viele"
-    change = f"{abs(speeches['delta_percent']):.1f}".replace(".", ",")
-    if speeches["delta"] == 0:
-        movement = f"genauso viele wie in {previous['label']}"
+        rows = []
+        for label, page_path, first_index, n in stats.get("vote_sittings") or []:
+            href = f"protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(first_index)}"
+            rows.append(
+                f'<li class="vote-row"><a href="{href}">{pulse_html.esc(label)} · '
+                f"{pulse_html.format_count(n, 'Abstimmung', 'Abstimmungen')}</a></li>"
+            )
+        body = f'<p class="week-text">{pulse_html.esc(sentence)}</p><ul class="week-list">{"".join(rows)}</ul>'
     else:
-        movement = f"{change} % {direction} als in {previous['label']}"
+        body = (
+            '<p class="week-text">Keine namentlichen Abstimmungen in dieser Sitzungswoche erfasst.</p>'
+            f'<a class="feature-link" href="{newest_href}">Sitzungsbelege pr&uuml;fen</a>'
+        )
+    return f"""
+        <article class="week-card votes-card" id="abstimmungen">
+          <span class="eyebrow">Erfasst</span>
+          <h3>Namentliche Abstimmungen</h3>
+          {body}
+        </article>"""
+
+
+def _speakers_note(stats: dict[str, Any]) -> str:
+    """" Fraktionen für N von M Reden erfasst." when a week's speaker lists are cut short."""
+    if stats.get("speakers_complete", True):
+        return ""
+    recorded = sum(stats["party_counts"].values())
     return (
-        f"Sitzungswoche {current['label']}: {week_figure(speeches['current'], comparison['normalised'])} Reden{suffix} "
-        f"in {pulse_html.format_int(current['top_count'])} Tagesordnungspunkten - {movement}."
+        f" Fraktionen f&uuml;r {pulse_html.format_int(recorded)} von "
+        f"{pulse_html.format_count(stats['speech_count'], 'Rede', 'Reden')} erfasst."
     )
 
 
-# ---------------------------------------------------------------------------
-# The "Wochenvergleich" band under the feature grid.
-#
-# Four blocks, all of them plain aggregates over the dossiers of two sitting
-# weeks: the volume pulse with a 12-week sparkline, the shift in each fraction's
-# share of speaking, the mix of business types, and the procedures that came
-# back from an earlier week. Every row that names a sitting links to the agenda
-# item it came from, so each number stays one click from its source.
-# ---------------------------------------------------------------------------
 def render_week_comparison_section(
     comparison: dict[str, Any] | None,
     weeks: dict[tuple[int, int], list[dict[str, Any]]],
     current_week: tuple[int, int] | None,
+    *,
+    current_stats: dict[str, Any] | None = None,
+    features: Selection | None = None,
+    returning: list[dict[str, Any]] | None = None,
 ) -> str:
+    votes_card = ""
+    if current_stats is not None and current_week is not None and features is not None and "votes" in features:
+        newest = weeks[current_week][-1]
+        votes_card = render_votes_card(current_stats, f"protocols/{pulse_html.esc(Path(newest['page_path']).name)}")
+
     if not comparison:
         note = (
             "Für einen Wochenvergleich braucht es zwei Sitzungswochen, die höchstens "
             f"{pulse_html.MAX_WEEK_GAP} Wochen auseinanderliegen. In den erzeugten Auswertungen "
             "ist bisher nur eine solche Woche vorhanden."
         )
+        cards = ""
+        if current_stats is not None:
+            # No previous week means no deltas and no sparkline: week_comparison()
+            # returns None and week_sparkline_points() is not gap-limited, so both
+            # are built here straight from the current week's stats.
+            metric_cells = []
+            for key, label, _kind in pulse_html.WEEK_METRICS:
+                if key == "total_chars" and not current_stats["chars_complete"]:
+                    continue
+                metric_cells.append(
+                    f"""
+              <div class="week-metric">
+                <span>{pulse_html.esc(label)}</span>
+                <strong>{week_figure(current_stats[key], False)}</strong>
+                <div class="week-metric-foot">{pulse_html.render_delta(None)}</div>
+              </div>"""
+                )
+            cards = f"""
+      <div class="week-grid">
+        <article class="week-card">
+          <h3>Wochenpuls</h3>
+          <div class="week-metrics">{"".join(metric_cells)}</div>
+          <p class="week-note">Diese Sitzungswoche; ein Vergleichswert folgt mit der n&auml;chsten Sitzungswoche.</p>
+        </article>
+        <article class="week-card">
+          <h3>Redeanteil der Fraktionen</h3>
+          {pulse_html.render_share_shift(current_stats["party_counts"], None)}
+          <p class="week-note">Anteil an allen Reden der Woche.{_speakers_note(current_stats)}</p>
+        </article>{votes_card}
+      </div>"""
         return f"""
-    <section class="week-compare" id="wochenvergleich">
+    <section class="week-compare" id="wochenvergleich" aria-labelledby="wochenvergleich-h2">
       <div class="week-head">
         <div>
           <span class="eyebrow">Wochenvergleich</span>
-          <h2>Noch keine Vergleichswoche</h2>
+          <h2 id="wochenvergleich-h2">Noch keine Vergleichswoche</h2>
         </div>
       </div>
-      <p class="week-note">{pulse_html.esc(note)}</p>
+      <p class="week-note">{pulse_html.esc(note)}</p>{cards}
     </section>
 """
 
@@ -2177,7 +2244,9 @@ def render_week_comparison_section(
     previous = comparison["previous"]
     normalised = comparison["normalised"]
 
-    # Volume metrics with their deltas.
+    # Volume metrics with their deltas. With differing sitting counts the figures
+    # are per-sitting averages and a delta would mostly report the weekday mix,
+    # so the chips read n/a (Final Gate D3.1) while the figures stay.
     metric_cells = []
     for metric in comparison["metrics"]:
         label = metric["label"] + (" je Sitzung" if normalised else "")
@@ -2187,7 +2256,7 @@ def render_week_comparison_section(
                 <span>{pulse_html.esc(label)}</span>
                 <strong>{week_figure(metric["current"], normalised)}</strong>
                 <div class="week-metric-foot">
-                  {pulse_html.render_delta(metric["delta_percent"], "%")}
+                  {pulse_html.render_delta(None if normalised else metric["delta_percent"], "%")}
                   <em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"], normalised)}</em>
                 </div>
               </div>"""
@@ -2197,7 +2266,8 @@ def render_week_comparison_section(
 
     # Procedures carried over from an earlier sitting week. The list is capped for
     # display, but the note below counts every one of them.
-    returning = pulse_html.returning_vorgaenge(weeks, current_week) if current_week else []
+    if returning is None:
+        returning = pulse_html.returning_vorgaenge(weeks, current_week) if current_week else []
     shown = returning[:RETURNING_LIMIT]
     if shown:
         rows = []
@@ -2239,13 +2309,24 @@ def render_week_comparison_section(
     )
     if normalised:
         sittings_note += " Die Wochen sind unterschiedlich lang, deshalb stehen hier Werte je Sitzung."
+        share_note = (
+            f"Anteile gegen&uuml;ber {pulse_html.esc(previous['label'])} "
+            f"({pulse_html.format_count(previous['sitting_count'], 'Sitzung', 'Sitzungen')}); "
+            "bei abweichender Sitzungszahl verschiebt die Tagesmischung die Anteile."
+        )
+    else:
+        share_note = (
+            "Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten "
+            f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
+        )
+    share_note += _speakers_note(current)
 
     return f"""
-    <section class="week-compare" id="wochenvergleich">
+    <section class="week-compare" id="wochenvergleich" aria-labelledby="wochenvergleich-h2">
       <div class="week-head">
         <div>
           <span class="eyebrow">Wochenvergleich</span>
-          <h2>{pulse_html.esc(current["label"])} gegen&uuml;ber {pulse_html.esc(previous["label"])}</h2>
+          <h2 id="wochenvergleich-h2">{pulse_html.esc(current["label"])} gegen&uuml;ber {pulse_html.esc(previous["label"])}</h2>
           <p class="week-sub">{sittings_note}</p>
         </div>
         <span class="feature-state">Aus Plenarprotokollen</span>
@@ -2260,7 +2341,7 @@ def render_week_comparison_section(
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>
           {pulse_html.render_share_shift(current["party_counts"], previous["party_counts"])}
-          <p class="week-note">Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten gegen&uuml;ber {pulse_html.esc(previous["label"])}.</p>
+          <p class="week-note">{share_note}</p>
         </article>
         <article class="week-card">
           <h3>Debattenprofil</h3>
@@ -2271,21 +2352,145 @@ def render_week_comparison_section(
           <h3>Verfahren, die zur&uuml;ckkehren</h3>
           {returning_html}
           <p class="week-note">{pulse_html.esc(returning_note)}</p>
-        </article>
+        </article>{votes_card}
       </div>
     </section>
 """
 
 
-def render_front_page(
+# ---------------------------------------------------------------------------
+# Build clock and week selection for puls.html.
+#
+# puls.html is the only page whose wording depends on *when* it was rendered
+# ("Auswertung vom", "vor N Wochen", running vs. past week). The clock is
+# injectable so tests and CI builds are reproducible: --today, else the
+# SOURCE_DATE_EPOCH convention (UTC, reproducible-builds.org), else the wall
+# clock at call time. --week pins the sitting week instead of "newest".
+# ---------------------------------------------------------------------------
+
+
+def resolve_today(value: date | datetime | None = None, *, environ: dict[str, str] | None = None) -> date:
+    """The build date: an explicit value, else SOURCE_DATE_EPOCH (UTC), else today."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    env = os.environ if environ is None else environ
+    epoch = env.get("SOURCE_DATE_EPOCH")
+    if epoch:
+        try:
+            return datetime.fromtimestamp(int(epoch), tz=timezone.utc).date()
+        except (ValueError, OverflowError, OSError) as exc:
+            raise ValueError(f"SOURCE_DATE_EPOCH must be an integer Unix timestamp, got {epoch!r}") from exc
+    return date.today()
+
+
+def parse_iso_date_arg(value: str) -> date:
+    """argparse converter for --today (YYYY-MM-DD only; fromisoformat alone
+    accepts more forms from Python 3.11 on, and the grammar must not depend
+    on the interpreter)."""
+    text = value.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        raise argparse.ArgumentTypeError(f"--today expects YYYY-MM-DD, got {value!r}")
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--today expects YYYY-MM-DD, got {value!r}") from exc
+
+
+def parse_iso_week_arg(value: str) -> tuple[int, int]:
+    """argparse converter for --week (YYYY-WW, ISO week)."""
+    match = re.fullmatch(r"(\d{4})-W?(\d{1,2})", value.strip())
+    if not match:
+        raise argparse.ArgumentTypeError(f"--week expects YYYY-WW (ISO week), got {value!r}")
+    year, week = int(match.group(1)), int(match.group(2))
+    try:
+        date.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--week {value!r} is not a valid ISO week") from exc
+    return (year, week)
+
+
+def select_pulse_week(
     entries: list[dict[str, Any]],
-    database_href: str | None = "data/bundestag-pulse.sqlite",
-    features: Selection | None = None,
-) -> str:
-    features = features or publication_selection()
-    # Nothing generated yet -> a minimal page with the shared chrome only.
-    if not entries:
-        return f"""<!doctype html>
+    week: tuple[int, int] | None = None,
+) -> tuple[tuple[int, int] | None, dict[tuple[int, int], list[dict[str, Any]]]]:
+    """The sitting week puls.html shows: `week` if given, else the newest dated week.
+
+    Raises ValueError, listing the available weeks, when `week` is not in the
+    archive - callers check this before any output is written.
+    """
+    weeks = pulse_html.group_entries_by_week(entries)
+    if week is not None:
+        if week not in weeks:
+            available = ", ".join(f"{y}-{w:02d}" for y, w in sorted(weeks)) or "keine"
+            raise ValueError(f"--week {week[0]}-{week[1]:02d} ist nicht im Archiv; vorhanden: {available}")
+        return week, weeks
+    return (max(weeks) if weeks else None), weeks
+
+
+def unknown_week_error(week: tuple[int, int] | None, protocols: list[dict[str, Any]]) -> str | None:
+    """An error message when `week` is not among the protocols' sitting weeks, else None."""
+    if week is None:
+        return None
+    known = {
+        key for key in (pulse_html.iso_week_key(protocol.get("datum")) for protocol in protocols) if key is not None
+    }
+    if week in known:
+        return None
+    available = ", ".join(f"{y}-{w:02d}" for y, w in sorted(known)) or "keine"
+    return f"--week {week[0]}-{week[1]:02d} ist nicht im Archiv; vorhanden: {available}"
+
+
+def reject_unknown_week(week: tuple[int, int] | None, protocols: list[dict[str, Any]], *, note: str = "") -> bool:
+    """Print the --week error for main() and say whether to stop (exit 2)."""
+    week_error = unknown_week_error(week, protocols)
+    if not week_error:
+        return False
+    print(f"error: {week_error}{note}", file=sys.stderr)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# puls.html: the week radar.
+#
+# One sitting week, topics first, receipts on every row (design record:
+# docs/designs/puls-wochenradar.md). The data layer lives in
+# render_dip_pulse_html (week_stats, week_topic_rows, topic_identity); the
+# helpers below only turn those rows into markup. Every clause that depends on
+# the build clock takes `today` explicitly so the page is reproducible.
+# ---------------------------------------------------------------------------
+
+
+def time_html(datum: Any, text: str) -> str:
+    """`<time datetime>` around `text` when `datum` is an ISO date, else the bare text."""
+    iso = str(datum or "")[:10]
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", iso):
+        return f'<time datetime="{iso}">{pulse_html.esc(text)}</time>'
+    return pulse_html.esc(text)
+
+
+def entry_protocol(entry: dict[str, Any]) -> dict[str, Any]:
+    """The DIP protocol record inside a built dossier entry, or {}."""
+    return ((entry.get("report") or {}).get("protocol")) or {}
+
+
+def sitting_label(entry: dict[str, Any]) -> str:
+    """"21/84", or the page stem when the DIP record has no dokumentnummer."""
+    document = str(entry_protocol(entry).get("dokumentnummer") or "").strip()
+    if document:
+        return document
+    page_path = entry.get("page_path")
+    return Path(page_path).stem if page_path else ""
+
+
+def dossier_href(entry: dict[str, Any]) -> str:
+    return f"protocols/{Path(entry['page_path']).name}"
+
+
+def render_pulse_shell(features: Selection, message: str) -> str:
+    """puls.html without a week to show: the shared chrome and one sentence."""
+    return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
@@ -2327,7 +2532,7 @@ def render_front_page(
     {pulse_html.render_global_header(features=features)}
     <header class="page-header">
       <h1>Bundestag-Puls</h1>
-      <p>Es wurden noch keine Sitzungen erzeugt.</p>
+      <p>{pulse_html.esc(message)}</p>
     </header>
     <footer>
       Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.
@@ -2338,196 +2543,387 @@ def render_front_page(
 </html>
 """
 
-    # From here on: the newest dossier. item_stats() gives per-agenda-item speech
-    # counts, character counts and a party breakdown; the shares below are
-    # computed against the sitting totals.
-    entry = entries[0]
-    report = entry["report"]
-    protocol = report.get("protocol") or {}
-    summary = report.get("validation_summary") or {}
-    items = report.get("agenda_items") or []
-    stats_by_index = {item["index"]: pulse_html.item_stats(item) for item in items}
-    total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
-    ranked_items = sorted(items, key=lambda item: stats_by_index[item["index"]]["speech_count"], reverse=True)
-    # Week comparison. render_front_page receives every dossier of the build, not
-    # just the newest one, so the sitting weeks are already here - they only need
-    # bucketing. The previous week is the closest earlier week within
-    # MAX_WEEK_GAP; anything further apart is a different era, not a Wochenvergleich.
-    weeks = pulse_html.group_entries_by_week(entries)
-    current_week = pulse_html.iso_week_key(protocol.get("datum"))
-    week_comparison_data = None
-    if current_week is not None and current_week in weeks:
-        earlier = [week for week in sorted(weeks) if week < current_week]
-        if earlier and pulse_html.week_span(earlier[-1], current_week) <= pulse_html.MAX_WEEK_GAP:
-            week_comparison_data = pulse_html.week_comparison(
-                pulse_html.week_stats(current_week, weeks[current_week]),
-                pulse_html.week_stats(earlier[-1], weeks[earlier[-1]]),
-            )
-    week_compare_html = render_week_comparison_section(week_comparison_data, weeks, current_week)
-    movement_text = week_headline(week_comparison_data)
-    protocol_href = f"protocols/{pulse_html.esc(entry['page_path'].name)}"
-    report_href = f"data/{pulse_html.esc(entry['report_path'].name)}"
-    # "Quellen" row at the foot of the lede: the sitting's raw material. Only
-    # links with a real target are emitted -- cached protocols from older
-    # builds can lack xml_url/pdf_url, and an empty href would point the row
-    # back at puls.html itself. The dossier is not repeated here: the page
-    # header links it, and every lede row deep-links into it.
-    source_links = "".join(
-        f'<a href="{href}">{label}</a>'
-        for label, href in (
-            (
-                "XML-Protokoll",
-                pulse_html.esc(pulse_html.source_url(protocol.get("xml_url"), "bundestag-xml"))
-                if protocol.get("xml_url")
-                else "",
-            ),
-            (
-                "PDF-Protokoll",
-                pulse_html.esc(pulse_html.source_url(protocol.get("pdf_url"), "bundestag-xml"))
-                if protocol.get("pdf_url")
-                else "",
-            ),
-            ("Erzeugtes JSON", report_href),
-            ("SQLite-Graph", pulse_html.esc(database_href)),
-        )
-        if href
+
+def week_header_facts(
+    stats: dict[str, Any],
+    week_entries: list[dict[str, Any]],
+    week: tuple[int, int],
+    today: date,
+) -> dict[str, Any]:
+    """Eyebrow, h1 and the facts sentence of the page header.
+
+    Running iff Monday <= today <= Sunday of the sitting week: the data cannot
+    tell whether a week is over (a stale cache rebuilt offline can hold one
+    sitting of a finished week), so the build clock decides and the clock label
+    is always "Auswertung vom". A past week within one ISO week of today reads
+    "Stand: ..."; anything older leads with its age and the eyebrow becomes
+    "Letzte Sitzungswoche". Returns {"eyebrow", "h1", "facts", "running",
+    "warning"}; `facts` is HTML with every date in a <time> element.
+    """
+    label = pulse_html.week_label(week)
+    monday = date.fromisocalendar(week[0], week[1], 1)
+    sunday = monday + timedelta(days=6)
+    running = monday <= today <= sunday
+    warning = None
+    if today < monday:
+        warning = "warning: [puls] Auswertung liegt vor der Sitzungswoche"
+
+    counts = (
+        f"{pulse_html.format_count(stats['speech_count'], 'Rede', 'Reden')} in "
+        f"{pulse_html.format_count(stats['top_count'], 'Tagesordnungspunkt', 'Tagesordnungspunkten')}"
     )
-    # Identity line under the lede heading. "verteilt am" only when the DIP
-    # record carries a distribution date.
-    lede_meta_parts = [
-        f"BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}",
-        f"Sitzung vom {pulse_html.esc(protocol.get('datum'))}",
-    ]
-    if protocol.get("verteildatum"):
-        lede_meta_parts.append(f"verteilt am {pulse_html.esc(protocol.get('verteildatum'))}")
-    lede_meta = " · ".join(lede_meta_parts)
+    sittings = pulse_html.format_count(stats["sitting_count"], "Sitzung", "Sitzungen")
+    clock = time_html(today.isoformat(), pulse_html.format_date(today.isoformat()))
+
+    if running:
+        return {
+            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "h1": f"Was der Bundestag in {label} bisher verhandelt hat",
+            "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Sitzungswoche l&auml;uft",
+            "running": True,
+            "warning": warning,
+        }
+
+    # Newest protocol of the week: "verteilt am" from DIP's distribution date,
+    # else the sitting date, else the bare document number.
+    newest = week_entries[-1]
+    protocol = entry_protocol(newest)
+    latest = f"letztes Protokoll {pulse_html.esc(sitting_label(newest))}"
+    distributed = pulse_html.format_date(protocol.get("verteildatum"))
+    dated = pulse_html.format_date(protocol.get("datum"))
+    if distributed:
+        latest += f" verteilt am {time_html(protocol.get('verteildatum'), distributed)}"
+    elif dated:
+        latest += f" vom {time_html(protocol.get('datum'), dated)}"
+    clock = f"Auswertung vom {clock}"
+
+    age = pulse_html.week_span(week, pulse_html.iso_week_key(today.isoformat())) if today > sunday else 0
+    if age <= 1:
+        return {
+            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "h1": f"Was der Bundestag in {label} verhandelt hat",
+            "facts": f"{counts} · Stand: {sittings}, {latest} · {clock}",
+            "running": False,
+            "warning": warning,
+        }
+    return {
+        "eyebrow": "Letzte Sitzungswoche",
+        "h1": f"Was der Bundestag in {label} verhandelt hat",
+        "facts": f"Letzte Sitzungswoche vor {age} Wochen · {counts} · {sittings}, {latest} · {clock}",
+        "running": False,
+        "warning": warning,
+    }
+
+
+def render_sitting_chips(week_entries: list[dict[str, Any]]) -> str:
+    """One chip per sitting of the week, "Fr 12.06. · 21/84", linking its dossier."""
+    chips = []
+    for entry in week_entries:
+        datum = entry_protocol(entry).get("datum")
+        parts = [time_html(datum, pulse_html.format_sitting_date(datum)), pulse_html.esc(sitting_label(entry))]
+        chips.append(f'<a href="{pulse_html.esc(dossier_href(entry))}">{" · ".join(p for p in parts if p)}</a>')
+    return "".join(chips)
+
+
+def _neutral_types(identity: dict[str, Any], label: str) -> str:
+    """The procedure types behind a type-neutral "Vorlagen" label, for a title attribute."""
+    if "Vorlage" not in label:
+        return ""
+    return ", ".join(f"{kind} ({n})" for kind, n in identity["type_counts"].most_common())
+
+
+def _more_titles_link(rest: list[str], href: str) -> str:
+    """"und N weitere" linking the dossier TOP, the hidden titles in its title attribute."""
+    if not rest:
+        return ""
+    tooltip = ", ".join(rest[: pulse_html.RADAR_TOOLTIP_TITLES])
+    if len(rest) > pulse_html.RADAR_TOOLTIP_TITLES:
+        tooltip += " …"
+    return f'<a href="{href}" title="{pulse_html.esc(tooltip)}">und {len(rest)} weitere</a>'
+
+
+def render_radar_row(
+    row: dict[str, Any],
+    position: int,
+    *,
+    peak: int,
+    features: Selection,
+    pdf_url: Any = None,
+) -> str:
+    """One ranked debate: what it was, how much of the week it took, who spoke."""
+    esc = pulse_html.esc
+    identity = row["identity"]
+    href = f"{esc(row['dossier_href'])}#top-{esc(row['index'])}"
+    heading = " ".join(str(row.get("heading") or "").split())
+    label = pulse_html.type_label(identity)
+    types = _neutral_types(identity, label)
+    titles = identity["titles"]
+    siblings_cap = pulse_html.RADAR_SIBLINGS
+
+    if identity["equal_weight"]:
+        # Antrag-only group with several titles (Final Gate D16): the label is the
+        # link, every title at equal weight, so DIP order promotes no framing.
+        link_title = f' title="{esc(heading)}"' if heading else ""
+        span_title = f' title="{esc(types)}"' if types and not heading else ""
+        label_html = f'<span class="eyebrow"{span_title}><a href="{href}"{link_title}>{esc(label)}</a></span>'
+        items = "".join(f'<li class="radar-group-title">{esc(title)}</li>' for title in titles[:siblings_cap])
+        more = _more_titles_link(titles[siblings_cap:], href)
+        if more:
+            items += f'<li class="radar-group-more">{more}</li>'
+        title_html = f'<ul class="radar-titles">{items}</ul>'
+    else:
+        span_title = f' title="{esc(types)}"' if types else ""
+        label_html = f'<span class="eyebrow"{span_title}>{esc(label)}</span>' if label else ""
+        lead_title = identity["lead_title"] or ""
+        link_title = f' title="{esc(heading)}"' if heading and heading != lead_title else ""
+        title_html = f'<strong class="radar-title"><a href="{href}"{link_title}>{esc(lead_title)}</a></strong>'
+        siblings = [title for title in titles if title != lead_title]
+        if siblings:
+            shown = " · ".join(esc(title) for title in siblings[:siblings_cap])
+            more = _more_titles_link(siblings[siblings_cap:], href)
+            if more:
+                shown += f" · {more}"
+            title_html += f'<p class="radar-siblings">mit: {shown}</p>'
+
+    trace_html = ""
+    if row["trace"]:
+        first = row["trace"]["first"]
+        earlier = f"{first['vorgangsposition']} in {first['label']}" if first.get("vorgangsposition") else first["label"]
+        if first.get("page_path"):
+            first_href = f"protocols/{esc(Path(first['page_path']).name)}#top-{esc(first['index'])}"
+            earlier = f'<a href="{first_href}">{esc(earlier)}</a>'
+        else:
+            earlier = esc(earlier)
+        current = row["trace"]["current_position"]
+        now = f"{current} diese Woche" if current else "diese Woche"
+        trace_html = f'<p class="radar-trace">Fortgesetzt: {earlier} &rarr; {esc(now)}</p>'
+
+    summary_html = ""
+    if row["summary"]:
+        text = pulse_html.short(row["summary"].get("text"), pulse_html.RADAR_SUMMARY_CHARS)
+        receipts = pulse_html.render_receipts(
+            row["item"], row["stats"], row["summary"], dossier_href=row["dossier_href"], pdf_url=pdf_url
+        )
+        summary_html = (
+            f'<div class="radar-summary"><p>{esc(text)}</p>'
+            f'<p class="radar-receipts">{receipts}</p></div>'
+        )
+
+    badge_html = ""
+    if row["has_votes"]:
+        badge_html = '<span class="badge radar-badge">namentlich abgestimmt</span>'
+
+    foot_parts = [pulse_html.format_sitting_date(row["datum"]), f"Tagesordnungspunkt {row['index']}", "Debatte im Protokoll öffnen"]
+    foot_html = f'<p class="radar-open"><a href="{href}">{" · ".join(esc(part) for part in foot_parts if part)}</a></p>'
+
+    width = row["speech_count"] / peak * 100 if peak else 0.0
+    share_html = (
+        f'<div class="radar-share"><strong>{pulse_html.format_count(row["speech_count"], "Rede", "Reden")}</strong>'
+        f"<small>{pulse_html.format_percent(row['share'])} der Woche</small>"
+        f'<div class="radar-bar" aria-hidden="true"><span style="width:{width:.2f}%"></span></div></div>'
+    )
+
+    # Exact-width stack over the recorded speeches (item_stats falls back to the
+    # five-entry xml_speakers_first, so the total is the legend's, not the count).
+    party_counts = row["party_counts"]
+    stack = pulse_html.render_party_stack(party_counts, row["party_total"], min_width=0.0, class_name="who-stack")
+    if row["party_total"]:
+        legend = " · ".join(f"{pulse_html.PARTY_SHORT.get(party, party)} {count}" for party, count in party_counts.most_common())
+        if not row["speakers_complete"]:
+            legend += f" · Fraktionen nur für die ersten {len(row['speakers'])} Reden bekannt"
+    else:
+        legend = "Fraktionen nicht erfasst"
+    who_html = (
+        f'<div class="radar-who"><span class="eyebrow">Wer sprach</span><div aria-hidden="true">{stack}</div>'
+        f'<p class="radar-legend">{esc(legend)}</p></div>'
+    )
+
+    return f"""
+        <li class="radar-row" id="thema-{position}">
+          <div class="radar-main">{label_html}{title_html}{trace_html}{summary_html}{badge_html}{foot_html}</div>
+          {share_html}
+          {who_html}
+        </li>"""
+
+
+def render_radar_also(radar: dict[str, Any]) -> str:
+    """The "Außerdem" line: question formats, then the unranked debates per sitting."""
+    esc = pulse_html.esc
+    formats = []
+    for item in radar["formats"]:
+        where = ", ".join(p for p in (pulse_html.format_sitting_date(item["datum"]), f"TOP {item['index']}") if p)
+        formats.append(
+            f'<a href="{esc(item["href"])}">{esc(item["heading"])}</a> · '
+            f"{pulse_html.format_count(item['speech_count'], 'Wortmeldung', 'Wortmeldungen')} · "
+            f"{pulse_html.format_percent(item['share'])} ({esc(where)})"
+        )
+    remaining = ""
+    if radar["remaining"]:
+        total = sum(n for _document, _page, n in radar["remaining"])
+        sittings = " · ".join(
+            f'<a href="protocols/{esc(Path(page_path).name)}">{esc(document)}</a> ({n})'
+            for document, page_path, n in radar["remaining"]
+        )
+        count = f"Weitere {total} Tagesordnungspunkte" if total != 1 else "1 weiterer Tagesordnungspunkt"
+        remaining = f"{count}: {sittings}"
+    if formats and remaining:
+        text = f"Außerdem, nicht als Thema gerankt: {' · '.join(formats)} · {remaining}"
+    elif formats:
+        text = f"Außerdem, nicht als Thema gerankt: {' · '.join(formats)}"
+    elif remaining:
+        text = remaining
+    else:
+        return ""
+    return f'<p class="radar-also">{text}</p>'
+
+
+def render_radar_section(
+    radar: dict[str, Any],
+    stats: dict[str, Any],
+    features: Selection,
+    pdf_urls: dict[Any, Any] | None = None,
+) -> str:
+    """"Themen der Woche": the ranked rows, the method note, the Außerdem line."""
+    esc = pulse_html.esc
+    total = int(stats["speech_count"])
+    head = (
+        '<span class="eyebrow">Themen der Woche</span>'
+        '<h2 id="radar-h2">Wor&uuml;ber am meisten gesprochen wurde</h2>'
+    )
+    if not total:
+        body = '<p class="week-note">In dieser Sitzungswoche wurden keine Reden extrahiert.</p>'
+    else:
+        method = (
+            "Die Tagesordnungspunkte mit den meisten Reden der Woche. "
+            f"Anteil an allen {pulse_html.format_count(total, 'Rede', 'Reden')}"
+        )
+        if radar["formats"]:
+            biggest = max(radar["formats"], key=lambda item: item["speech_count"])
+            method += (
+                f"; Frageformate wie die {biggest['heading']} "
+                f"({pulse_html.format_count(biggest['speech_count'], 'Wortmeldung', 'Wortmeldungen')}) "
+                "zählen mit, werden aber nicht als Thema gerankt."
+            )
+        else:
+            method += "."
+        rows = radar["rows"]
+        peak = rows[0]["speech_count"] if rows else 0
+        pdf_urls = pdf_urls or {}
+        rows_html = "".join(
+            render_radar_row(row, position, peak=peak, features=features, pdf_url=pdf_urls.get(row["page_path"]))
+            for position, row in enumerate(rows, start=1)
+        )
+        body = f'<p class="week-note radar-method">{esc(method)}</p>'
+        if rows_html:
+            body += f'<ul class="radar-list">{rows_html}\n      </ul>'
+        body += render_radar_also(radar)
+    return f"""
+    <section class="radar" aria-labelledby="radar-h2">
+      <div class="radar-head">{head}</div>
+      {body}
+    </section>
+"""
+
+
+def render_front_page(
+    entries: list[dict[str, Any]],
+    database_href: str | None = "data/bundestag-pulse.sqlite",
+    features: Selection | None = None,
+    *,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
+) -> str:
+    features = features or publication_selection()
+    today = resolve_today(today)
+    selected_week, weeks = select_pulse_week(entries, week)
+    if not entries:
+        return render_pulse_shell(features, "Es wurden noch keine Sitzungen erzeugt.")
+
+    # Sittings without a usable date cannot be placed in a week. They are left
+    # out with a warning; the page only exists when at least one dated sitting
+    # remains, and the header says how many were skipped.
+    undated = [entry for entry in entries if pulse_html.iso_week_key(entry_protocol(entry).get("datum")) is None]
+    if selected_week is None:
+        print("warning: [puls] kein Wochenradar möglich: keine datierte Sitzung", file=sys.stderr)
+        return render_pulse_shell(
+            features, "Die erzeugten Sitzungen tragen kein Datum, ein Wochenradar ist nicht möglich."
+        )
+    if undated:
+        skipped = ", ".join(sitting_label(entry) for entry in undated)
+        print(f"warning: [puls] {len(undated)} Sitzungen ohne Datum ausgeschlossen ({skipped})", file=sys.stderr)
+
+    # The week's data: one denominator (week_stats' speech count) for the header
+    # sentence, the method note and every row share; one occurrence index for the
+    # row traces and the returning card.
+    week_entries = weeks[selected_week]
+    stats = pulse_html.week_stats(selected_week, week_entries)
+    occurrences = pulse_html.vorgang_occurrences(weeks, selected_week)
+    returning = pulse_html.returning_vorgaenge(weeks, selected_week, occurrences)
+    radar = pulse_html.week_topic_rows(
+        week_entries, occurrences, total=stats["speech_count"], dossier_href_for=dossier_href
+    )
+    pdf_urls = {entry.get("page_path"): entry_protocol(entry).get("pdf_url") for entry in week_entries}
+
+    # The previous week is the closest earlier week within MAX_WEEK_GAP; anything
+    # further apart is a different era, not a Wochenvergleich.
+    earlier = [key for key in sorted(weeks) if key < selected_week]
+    comparison = None
+    if earlier and pulse_html.week_span(earlier[-1], selected_week) <= pulse_html.MAX_WEEK_GAP:
+        comparison = pulse_html.week_comparison(stats, pulse_html.week_stats(earlier[-1], weeks[earlier[-1]]))
+
+    header = week_header_facts(stats, week_entries, selected_week, today)
+    if header["warning"]:
+        print(header["warning"], file=sys.stderr)
+    if not stats["speech_count"]:
+        print(
+            f"warning: [puls] {pulse_html.week_label(selected_week)}: keine Reden extrahiert "
+            "(leere Eingabe oder Extraktion), Abruf prüfen",
+            file=sys.stderr,
+        )
+    formats = len(radar["formats"])
+    remaining = sum(n for _document, _page, n in radar["remaining"])
+    log = (
+        f"[puls] {pulse_html.week_label(selected_week)}: "
+        f"{pulse_html.format_count(stats['sitting_count'], 'Sitzung', 'Sitzungen')}, "
+        f"{pulse_html.format_count(len(radar['rows']), 'Thema', 'Themen')}, "
+        f"{pulse_html.format_count(formats, 'Frageformat', 'Frageformate')}, "
+        f"{remaining} weitere, today={today.isoformat()}"
+    )
+    if undated:
+        log += f", {len(undated)} Sitzungen ohne gültiges Datum"
+    print(log, file=sys.stderr)
+
+    newest_href = pulse_html.esc(dossier_href(week_entries[-1]))
+    undated_note = ""
+    if undated:
+        undated_note = (
+            f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
+            "ohne Datum nicht ber&uuml;cksichtigt</p>"
+        )
+    radar_html = render_radar_section(radar, stats, features, pdf_urls)
+    week_compare_html = render_week_comparison_section(
+        comparison, weeks, selected_week, current_stats=stats, features=features, returning=returning
+    )
     store_note = (
         " Die SQLite-Datei enthält MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze."
         if database_href
         else ""
     )
-    total_votes = sum(
-        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
-        for item in items
-    )
-    # "Themenbewegung" panel: the agenda item with the most speeches.
-    top_focus = ranked_items[0] if ranked_items else None
-    if top_focus:
-        top_stats = stats_by_index[top_focus["index"]]
-        focus_text = (
-            f"{top_focus.get('top_id')} bündelt aktuell {top_stats['speech_count']} Reden "
-            f"und {pulse_html.format_int(top_stats['total_chars'])} Zeichen Redetext."
-        )
-        focus_href = f"{protocol_href}#top-{pulse_html.esc(top_focus.get('index'))}"
-        focus_link = f'<a class="feature-link" href="{focus_href}">Belege zum Schwerpunkt</a>'
-    else:
-        focus_text = "Noch keine Tagesordnungspunkte in der neuesten Auswertung."
-        focus_link = '<a class="feature-link" href="overview.html">Katalog prüfen</a>'
-
-    # "Zusammenfassung der aktuellsten Sitzung" lede -- the one hero card. It
-    # owns the sitting's identity line, fact row and source links (the former
-    # right-hand "Protokoll" panel duplicated them), plus the sitting-wide party
-    # speech split and the three agenda items that drew the most speeches. Both
-    # are aggregates over the same item_stats() the Themenbewegung panel uses,
-    # so every row stays one click from its dossier anchor.
-    sitting_party_counts: Counter[str] = Counter()
-    for stats in stats_by_index.values():
-        sitting_party_counts.update(stats["party_counts"])
-    sitting_party_total = sum(sitting_party_counts.values())
-    lede_party_labels = [
-        f"{party} {count}" for party, count in sitting_party_counts.most_common(5)
-    ]
-    if len(sitting_party_counts) > 5:
-        lede_party_labels.append(f"+{len(sitting_party_counts) - 5} weitere")
-    lede_top_rows = []
-    for item in ranked_items[:3]:
-        stats = stats_by_index[item["index"]]
-        share = pulse_html.percent(stats["speech_count"], total_speeches)
-        lede_top_rows.append(
-            f'<a class="lede-top" href="{protocol_href}#top-{pulse_html.esc(item.get("index"))}">'
-            f'<span>{pulse_html.esc(item.get("top_id"))}</span>'
-            f'<strong>{pulse_html.esc(pulse_html.short(item.get("heading"), 72))}</strong>'
-            f'<em>{pulse_html.format_percent(share)}</em>'
-            "</a>"
-        )
-    if lede_top_rows:
-        lede_body = f"""
-          <div class="lede-block">
-            <span class="eyebrow">Redeanteile nach Fraktion</span>
-            {pulse_html.render_party_stack(sitting_party_counts, sitting_party_total)}
-            <div class="party-labels">{pulse_html.render_badges(lede_party_labels)}</div>
-          </div>
-          <div class="lede-block">
-            <span class="eyebrow">Meiste Aufmerksamkeit</span>
-            <div class="lede-tops">{''.join(lede_top_rows)}</div>
-          </div>
-        """
-    else:
-        lede_body = (
-            '<div class="lede-block">'
-            "<p>F&uuml;r die neueste Auswertung sind noch keine Tagesordnungspunkte extrahiert.</p>"
-            "</div>"
-        )
-
-    # "Abstimmungsverschiebung" panel: roll-call votes attached to agenda items.
-    # The panel is always part of the public product and renders an honest empty state.
-    # Its id="abstimmungen" is deliberately kept with no in-page link: the hero
-    # used to link it and pointed at nothing when no vote data existed.
-    # The id stays as an external deep-link target, matching its still-linked
-    # sibling #bewegung.
-    vote_items = [
-        item
-        for item in items
-        if item.get("votes") or item.get("vote")
-    ]
-    if vote_items:
-        vote_focus = (
-            f"{total_votes} namentliche Abstimmung"
-            f"{'' if total_votes == 1 else 'en'} in {len(vote_items)} Tagesordnungspunkt"
-            f"{'' if len(vote_items) == 1 else 'en'} zugeordnet."
-        )
-        vote_href = f"{protocol_href}#top-{pulse_html.esc(vote_items[0].get('index'))}"
-        vote_link = f'<a class="feature-link" href="{vote_href}">Abstimmungen prüfen</a>'
-    else:
-        vote_focus = "Für die neueste Auswertung sind noch keine namentlichen Abstimmungen zugeordnet."
-        vote_link = f'<a class="feature-link" href="{protocol_href}">Sitzungsbelege prüfen</a>'
-    vote_feature_html = ""
-    if "votes" in features:
-        vote_feature_html = f"""
-      <article class="pulse-feature votes" id="abstimmungen">
-        <div class="feature-head">
-          <div>
-            <span class="eyebrow">Abstimmungsverschiebung</span>
-            <h2>Wo Stimmen das Bild verändern</h2>
-          </div>
-          <span class="feature-state">Namentliche Abstimmungen</span>
-        </div>
-        <div class="feature-body">
-          <p>{pulse_html.esc(vote_focus)}</p>
-          <div class="feature-microgrid">
-            <div><span>Zugeordnet</span><strong>{pulse_html.esc(total_votes)}</strong></div>
-            <div><span>TOPs mit Vote</span><strong>{pulse_html.esc(len(vote_items))}</strong></div>
-            <div><span>Quelle</span><strong>BT</strong></div>
-          </div>
-          <p>Fraktionsabweichungen und Veränderungen gegenüber vorherigen Abstimmungen werden hier zur Hauptspur, sobald genügend Vergleichsdaten vorliegen.</p>
-          {vote_link}
-        </div>
-      </article>
-        """
 
     # Page anatomy, top to bottom:
-    #   global header -> page header with in-page nav
-    #   radar-hero    -> one sitting card: identity line, fact row (TOPs, Reden,
-    #                    Drucksachen, Personen), sitting-wide fraction split +
-    #                    the three busiest TOPs, raw-source links (XML/PDF/JSON/SQLite)
-    #   feature-grid  -> the Themenbewegung and Abstimmungsverschiebung panels
-    #   week-compare  -> the Wochenvergleich section
+    #   global header -> page header: the week's identity (eyebrow, h1, one chip
+    #                    per sitting, the facts sentence, actions)
+    #   radar         -> "Themen der Woche": ranked debate rows with type label,
+    #                    Vorgang title(s), trace, summary + receipts, share bar,
+    #                    who-spoke stack; the Außerdem line for formats and the rest
+    #   week-compare  -> the Wochenvergleich band (four cards + the votes card)
+    #   footer
     return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Aktueller Lageblick</title>
+  <title>Bundestag-Puls · Aktueller Puls</title>
   {pulse_html.page_head(features)}
   <style>
     :root {{
@@ -2557,18 +2953,18 @@ def render_front_page(
     {pulse_html.global_header_styles()}
     .page-header {{
       display:grid;
-      grid-template-columns:1fr;
+      grid-template-columns:minmax(0,1fr) auto;
       gap:20px;
       align-items:start;
       padding-bottom:20px;
       border-bottom:1px solid var(--line);
     }}
-    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; }}
+    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; overflow-wrap:anywhere; }}
     h2 {{ margin:0; font-size:18px; line-height:1.25; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
-    .subtitle {{ max-width:760px; font-size:15px; }}
-    .page-actions {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
-    .page-actions a, .session-links a {{
+    .page-actions, .week-chips {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
+    .week-chips {{ margin-top:12px; }}
+    .page-actions a, .week-chips a, .session-links a {{
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -2576,99 +2972,94 @@ def render_front_page(
       padding:5px 11px;
       border:1px solid var(--line);
       border-radius:6px;
-      background:#fff;
+      background:var(--panel);
       font-weight:700;
       font-size:13px;
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
-    .radar-hero {{ display:grid; margin-top:18px; }}
-    .latest-panel, .pulse-feature {{
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:var(--panel);
-      padding:18px;
-    }}
-    .eyebrow, .metric span, .lede-top span {{
+    .week-chips a {{ color:var(--ink); }}
+    .week-facts {{ margin-top:12px; max-width:860px; font-size:15px; line-height:1.5; }}
+    .eyebrow {{
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .pulse-lede {{ display:grid; align-content:start; gap:12px; }}
-    .pulse-lede h2 {{ margin:0; font-size:27px; line-height:1.16; }}
-    .pulse-lede p {{ margin:0; max-width:760px; font-size:15px; line-height:1.5; }}
-    .pulse-lede .lede-meta {{ font-size:14px; }}
-    .pulse-lede .metric-grid {{ margin-top:0; }}
-    .lede-block {{ padding-top:12px; border-top:1px solid var(--line); }}
-    .lede-block .stack {{ margin-top:10px; }}
-    .lede-columns {{
-      display:grid;
-      grid-template-columns:repeat(2, minmax(0,1fr));
-      gap:18px;
-      padding-top:12px;
-      border-top:1px solid var(--line);
+    .eyebrow a {{ color:inherit; }}
+    .radar, .week-compare {{
+      margin-top:18px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:var(--panel);
+      padding:18px;
     }}
-    .lede-columns .lede-block {{ padding-top:0; border-top:0; }}
-    .lede-sources .session-links {{ margin-top:8px; }}
-    .lede-tops {{ display:grid; gap:8px; margin-top:10px; }}
-    .lede-top {{
+    .radar-head h2 {{ margin:5px 0 0; font-size:25px; line-height:1.15; }}
+    .radar-method {{ margin-top:8px; max-width:860px; font-size:13px; }}
+    .radar-list {{ margin:8px 0 0; padding:0; list-style:none; }}
+    .radar-row {{
       display:grid;
-      grid-template-columns:auto minmax(0,1fr) auto;
-      gap:10px;
-      align-items:baseline;
-      padding:9px 11px;
-      border:1px solid #e2e7ef;
-      border-radius:8px;
-      background:#fbfcfd;
+      grid-template-columns:minmax(0,1fr) 220px 160px;
+      gap:10px 22px;
+      align-items:start;
+      padding:14px 0;
+      border-bottom:1px solid var(--line);
+      break-inside:avoid;
+    }}
+    .radar-row:last-child {{ border-bottom:0; }}
+    .radar-main {{ display:grid; gap:6px; align-content:start; }}
+    .radar-main > .eyebrow {{ display:block; }}
+    .radar-title {{ display:block; font-size:16px; font-weight:750; line-height:1.3; overflow-wrap:anywhere; }}
+    .radar-title a {{ color:var(--ink); }}
+    .radar-titles {{ display:grid; gap:3px; margin:0; padding:0; list-style:none; }}
+    .radar-group-title {{ font-size:15px; font-weight:650; line-height:1.3; color:var(--ink); overflow-wrap:anywhere; }}
+    .radar-group-more {{ font-size:13px; }}
+    .radar-siblings {{ margin:0; font-size:13px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere; }}
+    .radar-trace {{ margin:0; font-size:12px; line-height:1.4; color:var(--muted); }}
+    .radar-summary {{
+      margin:4px 0 0;
+      padding:0 0 0 8px;
+      border-left:2px solid var(--line);
+    }}
+    .radar-summary p {{ margin:0; font-size:13px; line-height:1.5; color:var(--ink); }}
+    .radar-summary .radar-receipts {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }}
+    .radar-receipts a, .radar-receipts span {{
+      display:inline-flex;
+      align-items:center;
+      min-height:22px;
+      padding:2px 7px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:var(--paper);
+      font-size:11px;
       color:var(--ink);
     }}
-    .lede-top strong {{ font-size:14px; line-height:1.3; overflow-wrap:anywhere; }}
-    .lede-top em {{ font-style:normal; font-weight:750; font-variant-numeric:tabular-nums; }}
-    .metric-grid {{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(92px,1fr));
-      gap:10px;
-      margin-top:18px;
-    }}
-    .metric {{
-      min-height:68px;
-      border:1px solid #e2e7ef;
-      border-radius:8px;
-      background:#fbfcfd;
-      padding:10px 11px;
-    }}
-    .metric span {{ overflow-wrap:anywhere; }}
-    .metric strong {{ display:block; margin-top:5px; font-size:24px; }}
-    .session-links {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:9px;
-      margin-top:16px;
-    }}
-    .feature-grid {{
-      display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
-      gap:18px;
-      margin-top:18px;
-    }}
-    .pulse-feature {{
-      display:grid;
-      gap:14px;
-      min-height:220px;
-    }}
-    .pulse-feature.movement {{ background:var(--green-soft); border-color:#cfe7df; }}
-    .pulse-feature.votes {{ background:var(--amber-soft); border-color:#ead8ab; }}
-    .feature-head {{
+    .radar-badge {{ justify-self:start; color:var(--amber); border-color:var(--amber); }}
+    .radar-open {{ margin:2px 0 0; font-size:13px; }}
+    .radar-share {{ display:grid; gap:3px; align-content:start; padding-top:2px; }}
+    .radar-share strong {{ font-size:18px; font-weight:750; font-variant-numeric:tabular-nums; line-height:1.2; }}
+    .radar-share small {{ font-size:12px; color:var(--muted); }}
+    .radar-bar {{ height:8px; margin-top:4px; border-radius:999px; background:var(--line); overflow:hidden; }}
+    .radar-bar span {{ display:block; height:100%; border-radius:999px; background:var(--teal); }}
+    .radar-who {{ display:grid; gap:6px; align-content:start; padding-top:2px; }}
+    .who-stack {{ display:flex; overflow:hidden; height:10px; border-radius:999px; background:var(--line); }}
+    .who-stack.empty {{ outline:1px solid var(--line); }}
+    .radar-legend {{ margin:0; font-size:11px; line-height:1.4; color:var(--muted); }}
+    .radar-row a {{ text-decoration-line:underline; text-decoration-color:transparent; text-underline-offset:2px; }}
+    .radar-row a:hover {{ text-decoration-color:currentColor; }}
+    .radar-row a:visited {{ text-decoration-color:var(--muted); }}
+    .radar-row a:focus-visible {{ outline:2px solid var(--blue); outline-offset:2px; border-radius:2px; }}
+    .radar-also {{ margin:14px 0 0; font-size:13px; line-height:1.5; color:var(--ink); }}
+    .radar-also a {{ text-decoration:underline; text-underline-offset:2px; }}
+    .week-head {{
       display:flex;
       justify-content:space-between;
       gap:14px;
       align-items:start;
+      padding-bottom:14px;
+      border-bottom:1px solid var(--line);
     }}
-    .feature-head h2 {{
-      margin:5px 0 0;
-      font-size:25px;
-      line-height:1.15;
-    }}
+    .week-head h2 {{ margin:5px 0 0; font-size:25px; line-height:1.15; }}
+    .week-sub {{ margin:6px 0 0; max-width:760px; font-size:13px; line-height:1.45; }}
     .feature-state {{
       display:inline-flex;
       align-items:center;
@@ -2682,17 +3073,6 @@ def render_front_page(
       font-weight:750;
       white-space:nowrap;
     }}
-    .feature-body {{
-      display:grid;
-      gap:12px;
-      align-content:start;
-    }}
-    .feature-body p {{
-      margin:0;
-      color:#252b33;
-      font-size:16px;
-      line-height:1.45;
-    }}
     .feature-link {{
       display:inline-flex;
       justify-self:start;
@@ -2705,42 +3085,6 @@ def render_front_page(
       font-size:13px;
       font-weight:750;
     }}
-    .feature-microgrid {{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0,1fr));
-      gap:8px;
-    }}
-    .feature-microgrid div {{
-      border:1px solid rgba(23,26,31,.12);
-      border-radius:8px;
-      background:rgba(255,255,255,.65);
-      padding:9px 10px;
-    }}
-    .feature-microgrid span {{
-      display:block;
-      color:var(--muted);
-      font-size:11px;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-    }}
-    .feature-microgrid strong {{ display:block; margin-top:3px; font-size:19px; }}
-    .week-compare {{
-      margin-top:18px;
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:var(--panel);
-      padding:18px;
-    }}
-    .week-head {{
-      display:flex;
-      justify-content:space-between;
-      gap:14px;
-      align-items:start;
-      padding-bottom:14px;
-      border-bottom:1px solid var(--line);
-    }}
-    .week-head h2 {{ margin:5px 0 0; font-size:25px; line-height:1.15; }}
-    .week-sub {{ margin:6px 0 0; max-width:760px; font-size:13px; line-height:1.45; }}
     .week-grid {{
       display:grid;
       grid-template-columns:repeat(2, minmax(0,1fr));
@@ -2764,6 +3108,10 @@ def render_front_page(
       letter-spacing:.05em;
       color:var(--muted);
     }}
+    .votes-card {{ grid-column:1 / -1; }}
+    .votes-card .eyebrow {{ margin-bottom:-6px; }}
+    .week-text {{ margin:0; font-size:15px; line-height:1.45; color:var(--ink); }}
+    .vote-row {{ font-size:13px; }}
     .week-metrics {{
       display:grid;
       grid-template-columns:repeat(3, minmax(0,1fr));
@@ -2908,9 +3256,6 @@ def render_front_page(
       font-size:12px;
       line-height:1.45;
     }}
-    .stack {{ display:flex; overflow:hidden; height:13px; background:#edf0f4; border-radius:999px; }}
-    .stack span {{ min-width:3px; }}
-    .party-labels {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }}
     .badge {{
       display:inline-flex;
       align-items:center;
@@ -2923,27 +3268,31 @@ def render_front_page(
       font-size:12px;
       white-space:nowrap;
     }}
+    .session-links {{ display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }}
     footer {{ padding:24px 0 4px; color:var(--muted); font-size:12px; }}
     @media (max-width: 980px) {{
-      .page-header, .feature-grid, .week-grid, .lede-columns {{ grid-template-columns:1fr; }}
+      .page-header, .week-grid {{ grid-template-columns:1fr; }}
       .page-actions {{ justify-content:flex-start; }}
+      .radar-row {{ grid-template-columns:minmax(0,1fr) 200px; }}
+      .radar-who {{ grid-column:1 / -1; }}
     }}
     @media (max-width: 700px) {{
       .shell {{ padding:16px 14px; }}
       h1 {{ font-size:29px; }}
-      .metric-grid {{ grid-template-columns:1fr 1fr; }}
-      .feature-head {{ display:grid; }}
-      .feature-state {{ justify-self:start; white-space:normal; }}
-      .feature-microgrid {{ grid-template-columns:1fr; }}
+      .radar-row {{ grid-template-columns:1fr; gap:10px; }}
+      .radar-share {{ max-width:320px; }}
       .week-head {{ display:grid; }}
+      .feature-state {{ justify-self:start; white-space:normal; }}
       .week-metrics {{ grid-template-columns:1fr 1fr; }}
       .week-row {{ grid-template-columns:minmax(80px,1fr) minmax(0,1.6fr) auto auto; }}
     }}
     @media (max-width: 460px) {{
-      .metric-grid {{ grid-template-columns:1fr; }}
       .week-metrics {{ grid-template-columns:1fr; }}
       .week-row {{ grid-template-columns:minmax(0,1fr) auto auto; }}
       .week-row .week-bar {{ grid-column:1 / -1; order:3; }}
+    }}
+    @media print {{
+      .page-actions {{ display:none; }}
     }}
   </style>
 </head>
@@ -2952,57 +3301,17 @@ def render_front_page(
     {pulse_html.render_global_header(active="pulse", features=features)}
     <header class="page-header">
       <div>
-        <span class="eyebrow">Aktueller Lageblick</span>
-        <h1>Was gerade im Bundestag l&auml;uft</h1>
-        <p class="subtitle">Diese Seite ist der aktuelle Bundestag-Puls: Sie hebt Themenbewegung und Abstimmungsverschiebungen hervor. Das Plenarprotokoll-Dossier bleibt als Quelle verlinkt, ist aber nicht der Zweck dieser Seite.</p>
+        <span class="eyebrow">{header["eyebrow"]}</span>
+        <h1>{header["h1"]}</h1>
+        <nav class="week-chips" aria-label="Sitzungen dieser Woche">{render_sitting_chips(week_entries)}</nav>
+        <p class="week-facts">{header["facts"]}</p>{undated_note}
       </div>
       <nav class="page-actions" aria-label="Seitenaktionen">
-        <a href="#bewegung">Zum Lageblick</a>
         <a href="#wochenvergleich">Wochenvergleich</a>
-        <a href="{protocol_href}">Protokolldossier</a>
+        <a href="{newest_href}">Neuestes Protokoll</a>
       </nav>
     </header>
-
-    <section class="radar-hero">
-      <div class="latest-panel pulse-lede">
-        <span class="eyebrow">Zusammenfassung der aktuellsten Sitzung</span>
-        <h2>Redeanteile und Schwerpunkte</h2>
-        <p class="lede-meta">{lede_meta}</p>
-        <p>Bundestag-Puls liest die neueste erzeugte Auswertung als Lagebild: Welche Themen ziehen gerade Aufmerksamkeit, wo verändern Abstimmungen das Bild, und welche Tagesordnungspunkte liefern die Belege?</p>
-        <div class="metric-grid">
-          <div class="metric"><span>Tagesordnungspunkte</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-          <div class="metric"><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-          <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-          <div class="metric"><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
-        </div>
-        <div class="lede-columns">{lede_body}</div>
-        <div class="lede-block lede-sources">
-          <span class="eyebrow">Quellen</span>
-          <div class="session-links">{source_links}</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="feature-grid" id="bewegung">
-      <article class="pulse-feature movement">
-        <div class="feature-head">
-          <div>
-            <span class="eyebrow">Themenbewegung</span>
-            <h2>Was nach vorne rückt</h2>
-          </div>
-          <span class="feature-state">Aktueller Fokus</span>
-        </div>
-        <div class="feature-body">
-          <p>{pulse_html.esc(focus_text)}</p>
-          <p>{pulse_html.esc(movement_text)}</p>
-          <a class="feature-link" href="#wochenvergleich">Wochenvergleich ansehen</a>
-          {focus_link}
-        </div>
-      </article>
-      {vote_feature_html}
-    </section>
-{week_compare_html}
-
+{radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
       <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetze</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
@@ -3019,11 +3328,9 @@ def protocol_source_links(protocol: dict[str, Any]) -> str:
     fundstelle = protocol.get("fundstelle") or {}
     links = []
     for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
-        url = fundstelle.get(key)
+        url = pulse_html.safe_href(fundstelle.get(key))
         if url:
-            links.append(
-                f'<a href="{pulse_html.esc(pulse_html.source_url(url, "bundestag-xml"))}">{label}</a>'
-            )
+            links.append(f'<a href="{pulse_html.esc(url)}">{label}</a>')
     return "".join(links) or '<span class="muted">Keine Quelllinks</span>'
 
 
@@ -4630,8 +4937,8 @@ def render_overview(
             warning_html = f'<span class="warn">{pulse_html.esc(str(len(warnings)))} {warning_label}</span>'
         source_links = []
         for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
-            if protocol.get(key):
-                safe_url = pulse_html.source_url(protocol[key], "bundestag-xml")
+            safe_url = pulse_html.safe_href(protocol.get(key))
+            if safe_url:
                 source_links.append(f'<a href="{pulse_html.esc(safe_url)}">{label}</a>')
 
         generated_cards.append(
@@ -5518,8 +5825,8 @@ def render_sources_page(
         summary = report.get("validation_summary") or {}
         source_actions = []
         for label, key in (("XML", "xml_url"), ("PDF", "pdf_url")):
-            if protocol.get(key):
-                safe_url = pulse_html.source_url(protocol[key], "bundestag-xml")
+            safe_url = pulse_html.safe_href(protocol.get(key))
+            if safe_url:
                 source_actions.append(f'<a href="{pulse_html.esc(safe_url)}">{label}</a>')
         source_actions.append(
             f'<a href="data/{pulse_html.esc(entry["report_path"].name)}">JSON</a>'
@@ -5970,7 +6277,7 @@ def build_publication_manifest(
     )
     roster_records = sum(1 for mp in abg_mps if mp.get("is_mdb"))
     summary_records = sum(1 for item in agenda_items if usable_llm_summary(item.get("llm_summary")))
-    summary_eligible = sum(
+    summary_eligible = max(summary_records, sum(
         1
         for item in agenda_items
         if sum(
@@ -5979,7 +6286,7 @@ def build_publication_manifest(
             if speech.get("text") or speech.get("paragraphs")
         )
         >= 3
-    )
+    ))
 
     def optional_domain(domain: str, source: str, records: int, selected_id: str) -> publication.DomainFacts:
         requested = selected_id in selected
@@ -6238,10 +6545,12 @@ def render_site(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
     features: Selection | None = None,
-    enrichments: Selection | None = None,
+    enrichments: EnrichmentSelection | None = None,
     summary_mode: str = "reuse",
     acquisition_attempted: bool = False,
     include_dev_view: bool = False,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -6342,7 +6651,7 @@ def render_site(
         encoding="utf-8",
     )
     pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, features=features),
+        render_front_page(entries, database_href=database_href, features=features, today=today, week=week),
         encoding="utf-8",
     )
     overview_path.write_text(
@@ -6699,6 +7008,21 @@ def parse_args() -> argparse.Namespace:
         help="Validate an existing ordinary publication directory and exit without network access or writes.",
     )
     parser.add_argument(
+        "--today",
+        type=parse_iso_date_arg,
+        default=None,
+        help=(
+            "Build date for puls.html (YYYY-MM-DD). Default: SOURCE_DATE_EPOCH (UTC) when set, "
+            "else the current date. Pin it for reproducible builds."
+        ),
+    )
+    parser.add_argument(
+        "--week",
+        type=parse_iso_week_arg,
+        default=None,
+        help="Sitting week for puls.html as ISO YYYY-WW (e.g. 2026-24). Default: the newest dated week.",
+    )
+    parser.add_argument(
         "--offline",
         action="store_true",
         help=(
@@ -6876,6 +7200,15 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    # The puls.html clock is resolved once, before any file is written, so a bad
+    # SOURCE_DATE_EPOCH fails here and both render paths share one value. Tests
+    # stub parse_args with a bare namespace, hence getattr.
+    pulse_week = getattr(args, "week", None)
+    try:
+        build_today = resolve_today(getattr(args, "today", None))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     # Import addon modules only after this module and the renderer are fully loaded.
     components = {
         component.feature.id: component
@@ -6924,11 +7257,19 @@ def main() -> int:
             finally:
                 store.close()
 
+        # --week must name a week with a cached dossier (the catalog lists every
+        # protocol back to 1949; only dossiers can be rendered). Check it before
+        # any dossier page is regenerated so a typo leaves the output untouched.
+        cached_entries = load_existing_detail_entries(output_dir, protocols)
+        if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
+            return 2
+
         entries = rebuild_cached_detail_pages(
             output_dir,
             protocols,
             mp_lookup,
             features,
+            cached_entries=cached_entries,
             include_dev_view=args.include_dev_view,
         )
         # Dossier pages are regenerated from the cached JSON reports, then the
@@ -6946,6 +7287,8 @@ def main() -> int:
             summary_mode=args.summary_mode,
             acquisition_attempted=False,
             include_dev_view=args.include_dev_view,
+            today=build_today,
+            week=pulse_week,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -6989,6 +7332,14 @@ def main() -> int:
         existing_entries = (
             load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
         )
+        # --week must name a week this build will actually hold; check it against
+        # the dossier catalog (plus the preserved dossiers that stay in the
+        # archive) now, before any dossier is written.
+        if reject_unknown_week(
+            pulse_week,
+            [*detail_protocols, *(entry["report"].get("protocol") or {} for entry in existing_entries)],
+        ):
+            return 2
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         try:
@@ -7023,6 +7374,14 @@ def main() -> int:
             # a second time afterwards because mp_lookup only exists now, and it
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
+            # A dossier of the requested week can still have failed to build;
+            # say so instead of letting the renderer's ValueError escape.
+            if reject_unknown_week(
+                pulse_week,
+                [entry["report"].get("protocol") or {} for entry in entries],
+                note=" (Dossiers wurden bereits geschrieben, puls.html nicht)",
+            ):
+                return 2
             if not args.no_persist:
                 rebuild_database_from_entries(
                     database_path,
@@ -7096,6 +7455,8 @@ def main() -> int:
         summary_mode=args.summary_mode,
         acquisition_attempted=True,
         include_dev_view=args.include_dev_view,
+        today=build_today,
+        week=pulse_week,
     )
     print(index_path)
     return 0
