@@ -47,6 +47,16 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    has_datenstand = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'datenstand'"
+    ).fetchone()
+    if user_version or has_datenstand:
+        conn.close()
+        raise RuntimeError(
+            f"error: {db_path} is a distribution copy (user_version={user_version}); "
+            "it cannot be used as the build store"
+        )
     return conn
 
 

@@ -25,7 +25,10 @@
 #      ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Render every remaining page of the site -> ``render_site``.
+#   6. Export a distribution copy of the store, 16 CSVs and five executed SQL
+#      recipes for the Daten page -> ``export_distribution_data``, writing
+#      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
+#   7. Render every remaining page of the site -> ``render_site``.
 #
 # Which code writes which part of the website:
 #
@@ -34,7 +37,7 @@
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
-#   database.html        ``render_database_page``    SQLite schema/sample explorer
+#   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    per-browser Baustein toggles
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
 #   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
@@ -43,6 +46,7 @@
 #   abgeordnete/<id>.html    ``render_abgeordnete_detail``  one MP profile
 #   data/*.json          raw reports, catalog, bills.json, abgeordnete.json,
 #                        features.json
+#   data/exports/        distribution SQLite + CSVs + datenstand.json manifest
 #
 # Every page is emitted as one big f-string containing its own ``<style>`` block,
 # so a ``render_*`` function is self-contained: its Python code computes the
@@ -56,17 +60,28 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
+import csv
+import gzip
+import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
+import urllib.error
+import urllib.request
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
 # file is run directly):
@@ -97,8 +112,8 @@ from features import loader as feature_loader
 
 
 # Human-readable one-liners for every table in the SQLite store. Used only by the
-# database explorer page (database.html) to caption each table card; a table that
-# is missing here falls back to a generic sentence in read_database_snapshot().
+# Daten page (database.html) to caption each schema row; a table that is missing
+# here falls back to a generic sentence in render_daten_schema().
 DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
     "parties": "Normalisierte Parteien und Rollen wie Regierung oder fraktionslos.",
@@ -115,6 +130,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
     "vote_fractions": "Fraktionssummen je namentlicher Abstimmung.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
+    "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
+    "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
 }
 
 ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
@@ -939,237 +956,1177 @@ def write_report_and_page(
 
 
 # ---------------------------------------------------------------------------
-# PAGE: database.html - "Datenbank erkunden"
+# PAGE: database.html - "Daten"
 #
-# A read-only, statically rendered explorer for the SQLite store: one card per
-# table with its columns, a sample of rows and the CREATE TABLE statement, plus
-# a foreign-key overview and a client-side filter box. No SQL runs in the
-# browser - everything below is snapshotted at build time.
+# database.html used to be a browser-side explorer of 12 sample rows per
+# table. It is now a download page: a distribution copy of the SQLite store
+# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 16
+# CSV.gz files, and five SQL "recipes" executed at build time so a visitor can
+# copy the SQL, run it against the file they just downloaded, and get the same
+# rows. Everything the page shows - sizes, checksums, the Datenstand band, the
+# recipe rows, the schema cards - is read from one manifest (datenstand.json)
+# built by export_distribution_data(). The page itself never opens the build
+# store.
 # ---------------------------------------------------------------------------
 
 
-# Quote a table or column name for interpolation into SQL. Table names come from
-# sqlite_schema rather than user input, but the queries below are built by string
-# formatting, so they are quoted anyway.
 def sqlite_identifier(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-# "12.4 MB" for the download panel and the summary band.
-def format_file_size(path: Path) -> str:
-    size = path.stat().st_size if path.exists() else 0
+# "47,2 MB" - German decimal comma, used everywhere the manifest reports a size.
+def format_size_de(num_bytes: int) -> str:
     units = ["B", "KB", "MB", "GB"]
-    value = float(size)
+    value = float(num_bytes)
     for unit in units:
         if value < 1024 or unit == units[-1]:
-            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} {unit}"
+            if unit == "B":
+                return f"{int(value)} B"
+            return f"{value:.1f} {unit}".replace(".", ",")
         value /= 1024
-    return f"{size} B"
+    return f"{num_bytes} B"
 
 
-# Render one sample-row cell: NULL becomes a muted marker, long values are
-# truncated so a single row of speech text cannot blow up the page.
-def database_cell(value: Any, limit: int = 180) -> str:
-    if value is None:
-        return '<span class="null">NULL</span>'
-    text = str(value)
-    if len(text) > limit:
-        text = text[:limit].rstrip() + "..."
-    return pulse_html.esc(text)
-
-
-# Pick a stable ORDER BY for the sample rows: primary key first, otherwise the
-# most recent rows by timestamp/date, otherwise insertion order.
-def database_order_clause(columns: list[dict[str, Any]]) -> str:
-    for column in columns:
-        if column["pk"]:
-            return f" ORDER BY {sqlite_identifier(column['name'])}"
-    for name in ("updated_at", "created_at", "date", "id"):
-        if any(column["name"] == name for column in columns):
-            direction = "DESC" if name.endswith("_at") or name == "date" else "ASC"
-            return f" ORDER BY {sqlite_identifier(name)} {direction}"
-    return ""
-
-
-# Read everything database.html needs out of the SQLite file in one pass:
-# table list, columns, foreign keys, row counts and up to `sample_limit` example
-# rows per table. Opened read-only via a file: URI so a build can never mutate
-# the store it is describing. Returns an empty snapshot when the file is absent
-# (e.g. a --no-persist build).
-def read_database_snapshot(database_path: Path, sample_limit: int = 12) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {
-        "path": database_path,
-        "size": format_file_size(database_path),
-        "tables": [],
-        "relationships": [],
-        "total_rows": 0,
-    }
-    if not database_path.exists():
-        return snapshot
-
-    uri = f"file:{database_path.resolve()}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        table_rows = conn.execute(
-            """
-            SELECT name, sql
-            FROM sqlite_schema
-            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-            """
-        ).fetchall()
-        for table_row in table_rows:
-            table = str(table_row["name"])
-            columns = [
-                {
-                    "cid": row["cid"],
-                    "name": row["name"],
-                    "type": row["type"] or "",
-                    "notnull": bool(row["notnull"]),
-                    "default": row["dflt_value"],
-                    "pk": bool(row["pk"]),
-                }
-                for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
-            ]
-            foreign_keys = [
-                {
-                    "from": row["from"],
-                    "to_table": row["table"],
-                    "to_column": row["to"],
-                    "on_delete": row["on_delete"],
-                }
-                for row in conn.execute(f"PRAGMA foreign_key_list({sqlite_identifier(table)})")
-            ]
-            for foreign_key in foreign_keys:
-                snapshot["relationships"].append({"table": table, **foreign_key})
-
-            row_count = int(conn.execute(f"SELECT COUNT(*) AS count FROM {sqlite_identifier(table)}").fetchone()["count"])
-            snapshot["total_rows"] += row_count
-            sample_sql = (
-                f"SELECT * FROM {sqlite_identifier(table)}"
-                f"{database_order_clause(columns)}"
-                f" LIMIT {int(sample_limit)}"
-            )
-            sample_rows = [dict(row) for row in conn.execute(sample_sql).fetchall()]
-            snapshot["tables"].append(
-                {
-                    "name": table,
-                    "description": DATABASE_TABLE_DESCRIPTIONS.get(table, "Persistierte Tabelle aus dem Bundestag-Puls-Graph."),
-                    "sql": table_row["sql"] or "",
-                    "columns": columns,
-                    "foreign_keys": foreign_keys,
-                    "row_count": row_count,
-                    "sample_rows": sample_rows,
-                }
-            )
-    finally:
-        conn.close()
-    return snapshot
-
-
-# The "Spalten" table inside one table card: name, type, and the flags derived
-# from PRAGMA table_info.
-def render_database_columns(columns: list[dict[str, Any]]) -> str:
-    rows = []
-    for column in columns:
-        flags = []
-        if column["pk"]:
-            flags.append("Primärschlüssel")
-        if column["notnull"]:
-            flags.append("Pflichtfeld")
-        if column["default"] is not None:
-            flags.append(f"Default {column['default']}")
-        rows.append(
-            f"""
-            <tr>
-              <td><code>{pulse_html.esc(column['name'])}</code></td>
-              <td>{pulse_html.esc(column['type'] or 'untypisiert')}</td>
-              <td>{pulse_html.esc(', '.join(flags) or 'optional')}</td>
-            </tr>
-            """
+# One sqlite_schema walk shared by the export step (CSV + manifest columns) and
+# anything else that needs to describe every table read-only. Never used on a
+# writable connection to the live build store.
+def iter_tables(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    tables: list[dict[str, Any]] = []
+    table_rows = conn.execute(
+        """
+        SELECT name, sql
+        FROM sqlite_schema
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+        ORDER BY name
+        """
+    ).fetchall()
+    for table_row in table_rows:
+        table = str(table_row["name"])
+        columns = [
+            {
+                "cid": row["cid"],
+                "name": row["name"],
+                "type": row["type"] or "",
+                "notnull": bool(row["notnull"]),
+                "default": row["dflt_value"],
+                "pk": bool(row["pk"]),
+            }
+            for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
+        ]
+        foreign_keys = [
+            {
+                "from": row["from"],
+                "to_table": row["table"],
+                "to_column": row["to"],
+                "on_delete": row["on_delete"],
+            }
+            for row in conn.execute(f"PRAGMA foreign_key_list({sqlite_identifier(table)})")
+        ]
+        row_count = int(conn.execute(f"SELECT COUNT(*) AS n FROM {sqlite_identifier(table)}").fetchone()["n"])
+        tables.append(
+            {
+                "name": table,
+                "sql": table_row["sql"] or "",
+                "columns": columns,
+                "foreign_keys": foreign_keys,
+                "row_count": row_count,
+            }
         )
-    return "".join(rows)
+    return tables
 
 
-# The "Beispielzeilen" table inside one table card.
-def render_database_sample(table: dict[str, Any]) -> str:
-    columns = [column["name"] for column in table["columns"]]
-    if not columns:
-        return '<p class="muted">Diese Tabelle hat keine Spalten.</p>'
-    if not table["sample_rows"]:
-        return '<p class="muted">Diese Tabelle enthält in diesem Build keine Zeilen.</p>'
-    header = "".join(f"<th>{pulse_html.esc(column)}</th>" for column in columns)
-    rows = []
-    for row in table["sample_rows"]:
-        cells = "".join(f"<td>{database_cell(row.get(column))}</td>" for column in columns)
-        rows.append(f"<tr>{cells}</tr>")
+# Column provenance for the manifest's data dictionary (F3.3/X2): almost every
+# column comes from the DIP XML/API extraction. A short list of overrides marks
+# the columns that come from elsewhere, so "primary sources only" is checkable
+# per column instead of asserted for the whole page.
+_COLUMN_SOURCE_ABGEORDNETENWATCH = {("mps", "aw_politician_id"), ("mps", "profile_url")}
+_COLUMN_SOURCE_DIP_ROSTER = {
+    ("mps", "birth_year"),
+    ("mps", "gender"),
+    ("mps", "profession"),
+    ("mps", "wahlkreis"),
+    ("mps", "bundesland"),
+}
+_TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes"}
+_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"}
+
+
+def column_source(table: str, column: str) -> str:
+    if table in _TABLE_SOURCE_DERIVED:
+        return "derived"
+    if (table, column) in _COLUMN_SOURCE_ABGEORDNETENWATCH:
+        return "abgeordnetenwatch"
+    if (table, column) in _COLUMN_SOURCE_DIP_ROSTER:
+        return "dip"
+    if table in _TABLE_SOURCE_BUNDESTAG:
+        return "bundestag.de"
+    return "dip"
+
+
+EXPORT_FORMAT = 1
+DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
+
+# Which identifiers a downstream consumer can rely on across releases, and
+# which ones are only guaranteed within a single build. Manifest honesty
+# (eng addendum "stable_keys lists only external identifiers"): mps.id and
+# mps.identity_key are per-build even though identity_key looks stable, because
+# a name-party fallback key can change if a person's name is corrected upstream.
+STABLE_KEYS: dict[str, tuple[str, ...]] = {
+    "protocols": ("id", "document_number"),
+    "votes": ("id",),
+    "proceedings": ("id",),
+    "mps": ("dip_person_id", "aw_politician_id"),
+    "speeches": ("rede_id",),
+}
+PER_BUILD_KEYS: dict[str, tuple[str, ...]] = {
+    "speeches": ("id",),
+    "mps": ("id", "identity_key"),
+    "agenda_items": ("id",),
+    "documents": ("id",),
+}
+
+# The five recipes executed at build time against the distribution copy and
+# rendered next to their SQL (design doc appendix, amended per the eng
+# addendum: R1/R3 join mp_canonical and group by the canonical id, so their
+# counts equal the pooled counts on the MP profile pages).
+#
+# Every "hidden" column is selected (it is the link key) but never rendered as
+# its own cell; the "link" on a visible column says which kind of link to try
+# resolving for that row (see _resolve_recipe_link). "truncate" caps a cell's
+# visible text, keeping the full value in the HTML title attribute.
+RECIPES: tuple[dict[str, Any], ...] = (
+    {
+        "id": "r1-meiste-reden",
+        "title": "Wer hielt die meisten Reden?",
+        "sql": (
+            "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
+            "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
+            "FROM speeches s\n"
+            "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
+            "JOIN mps m ON m.id = mc.canonical_id\n"
+            "LEFT JOIN parties p ON p.id = m.party_id\n"
+            "GROUP BY mc.canonical_id\n"
+            "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "mp_id", "align": "text", "hidden": True},
+            {"name": "display_name", "align": "text", "link": "mp"},
+            {"name": "fraktion", "align": "text"},
+            {"name": "reden", "align": "num"},
+            {"name": "zeichen", "align": "num"},
+        ),
+        "depends_on": None,
+        "caveat": "Regierungsmitglieder tragen im DIP die Fraktion „Regierung“.",
+    },
+    {
+        "id": "r2-redeanteil-fraktion",
+        "title": "Redeanteil je Fraktion nach Zeichen",
+        "sql": (
+            "SELECT p.name AS fraktion, COUNT(*) AS reden,\n"
+            "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
+            "FROM speeches s\n"
+            "JOIN mps m ON m.id = s.mp_id\n"
+            "JOIN parties p ON p.id = m.party_id\n"
+            "GROUP BY p.id\n"
+            "ORDER BY reden DESC, p.name\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "fraktion", "align": "text"},
+            {"name": "reden", "align": "num"},
+            {"name": "anteil_prozent", "align": "num"},
+        ),
+        "depends_on": None,
+        "caveat": None,
+    },
+    {
+        "id": "r3-abweichler",
+        "title": "Wer stimmt am häufigsten gegen die eigene Fraktion?",
+        "sql": (
+            "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
+            "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
+            "FROM vote_members vm\n"
+            "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
+            "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
+            "JOIN mps m ON m.id = mc.canonical_id\n"
+            "JOIN parties p ON p.id = vm.party_id\n"
+            "WHERE vm.vote IN ('yes', 'no')\n"
+            "  AND vf.leading_vote IN ('yes', 'no')\n"
+            "  AND vm.vote <> vf.leading_vote\n"
+            "GROUP BY mc.canonical_id\n"
+            "ORDER BY abweichungen DESC, m.display_name\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "mp_id", "align": "text", "hidden": True},
+            {"name": "display_name", "align": "text", "link": "mp"},
+            {"name": "fraktion", "align": "text"},
+            {"name": "abweichungen", "align": "num"},
+        ),
+        "depends_on": "votes",
+        "caveat": None,
+    },
+    {
+        "id": "r4-knappste-abstimmungen",
+        "title": "Die knappsten namentlichen Abstimmungen",
+        "sql": (
+            "SELECT MIN(p.document_number) AS document_number,\n"
+            "       v.date, v.title, v.yes_count AS ja, v.no_count AS nein,\n"
+            "       ABS(v.yes_count - v.no_count) AS differenz\n"
+            "FROM votes v\n"
+            "LEFT JOIN agenda_item_votes aiv ON aiv.vote_id = v.id\n"
+            "LEFT JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
+            "LEFT JOIN protocols p ON p.id = ai.protocol_id\n"
+            "GROUP BY v.id\n"
+            "ORDER BY differenz ASC, v.date DESC, v.id\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "document_number", "align": "text", "hidden": True},
+            {"name": "date", "align": "text"},
+            {"name": "title", "align": "text", "link": "document", "truncate": 90},
+            {"name": "ja", "align": "num"},
+            {"name": "nein", "align": "num"},
+            {"name": "differenz", "align": "num"},
+        ),
+        "depends_on": "votes",
+        "caveat": None,
+    },
+    {
+        "id": "r5-vorgaenge-meiste-reden",
+        "title": "Vorgänge mit den meisten Reden",
+        "sql": (
+            "SELECT pr.id AS proceeding_id, pr.title, pr.proceeding_type AS typ,\n"
+            "       COUNT(DISTINCT s.id) AS reden, COUNT(DISTINCT ai.protocol_id) AS sitzungen,\n"
+            "       MIN(p.document_number) AS erste_drucksache\n"
+            "FROM proceedings pr\n"
+            "JOIN proceeding_positions pp ON pp.proceeding_id = pr.id\n"
+            "JOIN agenda_items ai ON ai.id = pp.agenda_item_id\n"
+            "JOIN speeches s ON s.agenda_item_id = ai.id\n"
+            "LEFT JOIN protocols p ON p.id = ai.protocol_id\n"
+            "GROUP BY pr.id\n"
+            "ORDER BY reden DESC, sitzungen DESC, pr.id\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "proceeding_id", "align": "text", "hidden": True},
+            {"name": "title", "align": "text", "link": "proceeding", "truncate": 90},
+            {"name": "typ", "align": "text"},
+            {"name": "erste_drucksache", "align": "text"},
+            {"name": "reden", "align": "num"},
+            {"name": "sitzungen", "align": "num"},
+        ),
+        "depends_on": None,
+        "caveat": None,
+    },
+)
+RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
+
+
+class DataExportUnavailable(RuntimeError):
+    """The store exists but cannot be exported (e.g. SQLite below 3.35)."""
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_json(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _recipes_hash(recipes: tuple[dict[str, Any], ...]) -> str:
+    payload = [{"id": recipe["id"], "sql": recipe["sql"]} for recipe in recipes]
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+# Everything the page renders from the manifest is part of the skip rule, so a
+# changed flag or a grown catalog re-exports instead of serving stale values
+# until --force-export. Coverage is a dict of the three Baustein states.
+def _inputs_hash(
+    *,
+    source_sha256: str,
+    recipes_hash: str,
+    export_format: int,
+    tag: str,
+    license_text: str,
+    issues_url: str | None = None,
+    catalog_count: int = 0,
+    dossier_count: int = 0,
+    readiness: dict[str, str] | None = None,
+) -> str:
+    payload = {
+        "source_sha256": source_sha256,
+        "recipes_hash": recipes_hash,
+        "export_format": export_format,
+        "tag": tag,
+        "license": license_text,
+        "issues_url": issues_url,
+        "catalog_count": catalog_count,
+        "dossier_count": dossier_count,
+        "readiness": {
+            feature_id: (readiness or {}).get(feature_id, "unavailable") for feature_id in ("votes", "aw-profiles", "mp-roster")
+        },
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+# Rehash the build store only when its (mtime, size) changed since the last
+# export (E4.1) - a 291 MB store would otherwise cost a multi-second hash on
+# every offline UI rebuild, defeating the whole point of the skip rule.
+def _source_sha256(database_path: Path, stat: os.stat_result, previous: dict[str, Any] | None) -> str:
+    if (
+        previous
+        and previous.get("source_mtime_ns") == stat.st_mtime_ns
+        and previous.get("source_bytes") == stat.st_size
+        and previous.get("source_sha256")
+    ):
+        return str(previous["source_sha256"])
+    return _hash_file(database_path)
+
+
+def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
+    manifest_path = exports_dir / "datenstand.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+# F1.1: a manifest is only reusable when it parses, matches the current
+# export format and inputs, and every file it names still exists at the
+# recorded size. Anything else re-exports rather than trusting stale bytes.
+def _manifest_reusable(manifest: dict[str, Any] | None, exports_dir: Path, *, inputs_hash: str, export_format: int) -> bool:
+    if not manifest:
+        return False
+    if manifest.get("export_format") != export_format:
+        return False
+    if manifest.get("inputs_hash") != inputs_hash:
+        return False
+    generation = manifest.get("generation")
+    if not generation:
+        return False
+    gen_dir = exports_dir / str(generation)
+    files = manifest.get("files")
+    if not isinstance(files, list) or not files:
+        return False
+    for file_info in files:
+        try:
+            file_path = gen_dir / str(file_info["name"])
+            if file_path.stat().st_size != file_info["bytes"]:
+                return False
+        except (KeyError, OSError, TypeError):
+            return False
+    return True
+
+
+def _lock_holder_alive(pid_text: str) -> bool:
+    """True unless the pid recorded in the lock is provably dead. An
+    unparseable pid or a permission error counts as alive: the conservative
+    answer keeps a live build's lock intact."""
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        return True
+    if pid <= 0:
+        return True
+    # Signal 0 is a liveness probe only on POSIX; on Windows os.kill() would
+    # terminate the process, so there the lock is always treated as held.
+    if os.name != "posix":
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+@contextlib.contextmanager
+def _export_lock(exports_dir: Path):
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = exports_dir / ".lock"
+    fd = None
+    for attempt in range(2):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            pid_text = ""
+            try:
+                pid_text = lock_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+            # A lock whose recorded process no longer exists was left by a
+            # crashed build; clear it once and retry instead of blocking
+            # every later build until someone deletes the file by hand.
+            if attempt == 0 and not _lock_holder_alive(pid_text):
+                print(f"export: clearing stale {lock_path} (pid {pid_text or '?'} is gone)", file=sys.stderr)
+                lock_path.unlink(missing_ok=True)
+                continue
+            raise RuntimeError(f"error: another build holds {lock_path} (pid {pid_text or '?'})") from None
+    assert fd is not None
+    try:
+        os.write(fd, str(os.getpid()).encode("utf-8"))
+        os.close(fd)
+        yield
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+# F2.1/F4.1: unique temp names inside exports_dir, cleaned up in `finally`;
+# a stale *.tmp or half-written generation directory from a crashed run is
+# swept before a new export starts.
+def _sweep_stale_temp(exports_dir: Path) -> None:
+    if not exports_dir.exists():
+        return
+    for path in exports_dir.glob("*.tmp"):
+        path.unlink(missing_ok=True)
+    for path in exports_dir.glob(".*-*.json"):
+        if path.name.startswith(".datenstand-"):
+            path.unlink(missing_ok=True)
+
+
+# A lone surrogate (e.g. from surrogateescape-decoded bytes upstream) cannot
+# be encoded as UTF-8; errors="replace" swaps it for U+FFFD when writing the
+# CSV, and this counts how many characters that will happen to (F2.2).
+def _surrogate_count(text: str) -> int:
+    return sum(1 for ch in text if 0xD800 <= ord(ch) <= 0xDFFF)
+
+
+# Stream one table into a gzip CSV: header row, NULL as empty string, ordered
+# by primary key (rowid when none), errors="replace" with a count of any lone
+# surrogates the source text contained (F2.2). Never fetchall()s (F7.1).
+def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any]], path: Path) -> tuple[int, int]:
+    names = [column["name"] for column in columns]
+    pk_columns = [column["name"] for column in columns if column["pk"]]
+    order_clause = (
+        f" ORDER BY {', '.join(sqlite_identifier(name) for name in pk_columns)}" if pk_columns else " ORDER BY rowid"
+    )
+    select_sql = f"SELECT {', '.join(sqlite_identifier(name) for name in names)} FROM {sqlite_identifier(table)}{order_clause}"
+
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    row_count = 0
+    replacements = 0
+    try:
+        with os.fdopen(fd, "wb") as raw:
+            gz = gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=6, mtime=0)
+            try:
+                text = io.TextIOWrapper(gz, encoding="utf-8", errors="replace", newline="")
+                writer = csv.writer(text, lineterminator="\n")
+                writer.writerow(names)
+                for row in conn.execute(select_sql):
+                    cells = []
+                    for value in row:
+                        if value is None:
+                            cells.append("")
+                            continue
+                        text_value = str(value)
+                        replacements += _surrogate_count(text_value)
+                        cells.append(text_value)
+                    writer.writerow(cells)
+                    row_count += 1
+                text.flush()
+            finally:
+                gz.close()
+        tmp_path.replace(path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return row_count, replacements
+
+
+# Build the distribution copy, the 16 CSVs and datenstand.json from the build
+# store. Called once per build, from main(), after the store and the MP
+# identity mapping are final; render_site() and the page never open the build
+# store themselves (eng addendum: "the page ... never opens the build store").
+#
+# Layout of exports_dir:
+#   .lock                    held only while an export runs
+#   datenstand.json          the manifest; written last via mkstemp+replace,
+#                            the only pointer a reader needs to follow
+#   g-<inputs_hash[:12]>/    one generation's files; a new export writes a
+#                            fresh directory and only deletes the previous one
+#                            after datenstand.json points at the new one
+#   published.json           written by the (separate) publish script; never
+#   LICENSE-DATA.md          touched by this function
+def export_distribution_data(
+    database_path: Path,
+    exports_dir: Path,
+    *,
+    recipes: tuple[dict[str, Any], ...] = RECIPES,
+    canonical_by_mp_id: dict[int, int] | None = None,
+    mp_lookup: dict[str, int] | None = None,
+    readiness: dict[str, str] | None = None,
+    catalog_count: int = 0,
+    dossier_count: int = 0,
+    tag: str = "local",
+    license_text: str = "",
+    issues_url: str | None = None,
+    commit: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    if sqlite3.sqlite_version_info < (3, 35, 0):
+        raise DataExportUnavailable(
+            f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
+            "upgrade Python or run the export on another machine"
+        )
+
+    canonical_by_mp_id = canonical_by_mp_id or {}
+    has_page_ids = set((mp_lookup or {}).values())
+    readiness = readiness or {}
+
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    with _export_lock(exports_dir):
+        # Only the lock holder may sweep: a second build sweeping before it
+        # fails on the lock would delete the first build's in-flight manifest.
+        _sweep_stale_temp(exports_dir)
+        previous = _read_previous_manifest(exports_dir)
+        stat = database_path.stat()
+        source_sha256 = _source_sha256(database_path, stat, previous)
+        recipes_hash = _recipes_hash(recipes)
+        inputs_hash = _inputs_hash(
+            source_sha256=source_sha256,
+            recipes_hash=recipes_hash,
+            export_format=EXPORT_FORMAT,
+            tag=tag,
+            license_text=license_text,
+            issues_url=issues_url,
+            catalog_count=catalog_count,
+            dossier_count=dossier_count,
+            readiness=readiness,
+        )
+
+        if not force and _manifest_reusable(previous, exports_dir, inputs_hash=inputs_hash, export_format=EXPORT_FORMAT):
+            print("export: reused data/exports (unchanged)", file=sys.stderr)
+            return previous  # type: ignore[return-value]
+
+        if previous is not None:
+            print("export: manifest invalid or stale, re-exporting", file=sys.stderr)
+
+        started = time.monotonic()
+        generation = f"g-{inputs_hash[:12]}"
+        gen_dir = exports_dir / generation
+        if gen_dir.exists():
+            shutil.rmtree(gen_dir)
+        gen_dir.mkdir(parents=True)
+
+        try:
+            manifest = _run_export(
+                database_path=database_path,
+                gen_dir=gen_dir,
+                recipes=recipes,
+                canonical_by_mp_id=canonical_by_mp_id,
+                has_page_ids=has_page_ids,
+                readiness=readiness,
+                catalog_count=catalog_count,
+                dossier_count=dossier_count,
+                tag=tag,
+                license_text=license_text,
+                issues_url=issues_url,
+                commit=commit,
+                source_sha256=source_sha256,
+                source_stat=stat,
+                recipes_hash=recipes_hash,
+                inputs_hash=inputs_hash,
+                generation=generation,
+            )
+
+            manifest_fd, manifest_tmp_name = tempfile.mkstemp(dir=exports_dir, prefix=".datenstand-", suffix=".json")
+            os.close(manifest_fd)
+            manifest_tmp_path = Path(manifest_tmp_name)
+            manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            manifest_tmp_path.replace(exports_dir / "datenstand.json")
+        except sqlite3.Error as exc:
+            # backup()/DROP COLUMN/VACUUM INTO fail with sqlite3 errors on a
+            # locked or corrupt store or a full disk; surface them through the
+            # CLI's clean "error:" path instead of a traceback.
+            shutil.rmtree(gen_dir, ignore_errors=True)
+            raise RuntimeError(f"export: distribution copy failed: {exc}") from exc
+        except Exception:
+            shutil.rmtree(gen_dir, ignore_errors=True)
+            raise
+
+        for old_dir in exports_dir.glob("g-*"):
+            if old_dir.name != generation:
+                shutil.rmtree(old_dir, ignore_errors=True)
+
+        sqlite_file = manifest["files"][0]
+        elapsed = time.monotonic() - started
+        print(
+            f"export: distribution copy {format_size_de(sqlite_file['unpacked_bytes'])} -> "
+            f"{format_size_de(sqlite_file['bytes'])} gz in {elapsed:.1f} s",
+            file=sys.stderr,
+        )
+        return manifest
+
+
+# The part of export_distribution_data that actually writes bytes, split out
+# so the lock/skip-rule/cleanup logic above stays readable.
+def _run_export(
+    *,
+    database_path: Path,
+    gen_dir: Path,
+    recipes: tuple[dict[str, Any], ...],
+    canonical_by_mp_id: dict[int, int],
+    has_page_ids: set[int],
+    readiness: dict[str, str],
+    catalog_count: int,
+    dossier_count: int,
+    tag: str,
+    license_text: str,
+    issues_url: str | None,
+    commit: str | None,
+    source_sha256: str,
+    source_stat: os.stat_result,
+    recipes_hash: str,
+    inputs_hash: str,
+    generation: str,
+) -> dict[str, Any]:
+    dist_fd, dist_name = tempfile.mkstemp(dir=gen_dir, prefix=".dist-", suffix=".sqlite")
+    os.close(dist_fd)
+    dist_path = Path(dist_name)
+    dist_path.unlink()  # backup() needs a fresh (non-existent or empty) target
+    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=gen_dir, prefix=".vacuum-", suffix=".sqlite")
+    os.close(vacuum_fd)
+    vacuum_path = Path(vacuum_name)
+    vacuum_path.unlink()  # VACUUM INTO requires the target to not exist
+
+    dist_conn = sqlite3.connect(dist_path, isolation_level=None)
+    dist_conn.row_factory = sqlite3.Row
+    source_conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    try:
+        source_conn.backup(dist_conn)
+    except sqlite3.Error:
+        dist_conn.close()
+        raise
+    finally:
+        source_conn.close()
+
+    try:
+        dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
+        dist_conn.execute(
+            "CREATE TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL, has_page INTEGER NOT NULL)"
+        )
+        mp_rows = [
+            (mp_id, canonical_id, 1 if canonical_id in has_page_ids else 0)
+            for mp_id, canonical_id in sorted(canonical_by_mp_id.items())
+        ]
+        dist_conn.executemany("INSERT INTO mp_canonical(mp_id, canonical_id, has_page) VALUES (?, ?, ?)", mp_rows)
+        # Only the CREATE statements feed the hash; iter_tables() would also
+        # COUNT(*) every table, which the final snapshot pass does once anyway.
+        create_statements = sorted(
+            str(row[0] or "")
+            for row in dist_conn.execute(
+                "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        )
+        schema_hash = hashlib.sha256("\n".join(create_statements).encode("utf-8")).hexdigest()
+        dist_conn.execute(
+            "CREATE TABLE datenstand (tag TEXT, export_format INTEGER, license TEXT, schema_hash TEXT, source_sha256 TEXT)"
+        )
+        dist_conn.execute(
+            "INSERT INTO datenstand(tag, export_format, license, schema_hash, source_sha256) VALUES (?, ?, ?, ?, ?)",
+            (tag, EXPORT_FORMAT, license_text, schema_hash, source_sha256),
+        )
+        dist_conn.execute(f"PRAGMA user_version = {int(EXPORT_FORMAT)}")
+        vacuum_target = str(vacuum_path).replace("'", "''")
+        dist_conn.execute(f"VACUUM INTO '{vacuum_target}'")
+    finally:
+        dist_conn.close()
+    dist_path.unlink()
+
+    snapshot_conn = sqlite3.connect(vacuum_path)
+    snapshot_conn.row_factory = sqlite3.Row
+    try:
+        tables_info = iter_tables(snapshot_conn)
+        snapshot_conn.create_function(
+            "REGEXP", 2, lambda pattern, value: bool(re.search(pattern, value)) if value is not None else False
+        )
+        synthetic_rede_ids = int(
+            snapshot_conn.execute(
+                "SELECT COUNT(*) FROM speeches WHERE rede_id REGEXP '^[0-9]+:[0-9]+:[0-9]+$'"
+            ).fetchone()[0]
+        )
+        conflicting_votes = int(
+            snapshot_conn.execute(
+                """
+                SELECT COUNT(*) FROM (
+                  SELECT mc.canonical_id, vm.vote_id
+                  FROM vote_members vm
+                  JOIN mp_canonical mc ON mc.mp_id = vm.mp_id
+                  GROUP BY mc.canonical_id, vm.vote_id
+                  HAVING COUNT(DISTINCT vm.vote) > 1
+                )
+                """
+            ).fetchone()[0]
+        )
+
+        unpacked_bytes = vacuum_path.stat().st_size
+        unpacked_sha256 = _hash_file(vacuum_path)
+        sqlite_name = f"bundestag-pulse-{tag}.sqlite.gz"
+        sqlite_path = gen_dir / sqlite_name
+        with vacuum_path.open("rb") as source_file, sqlite_path.open("wb") as target_file:
+            gz = gzip.GzipFile(filename="", mode="wb", fileobj=target_file, compresslevel=6, mtime=0)
+            try:
+                shutil.copyfileobj(source_file, gz)
+            finally:
+                gz.close()
+        sqlite_sha256 = _hash_file(sqlite_path)
+
+        files: list[dict[str, Any]] = [
+            {
+                "name": sqlite_name,
+                "bytes": sqlite_path.stat().st_size,
+                "unpacked_bytes": unpacked_bytes,
+                "sha256": sqlite_sha256,
+                "unpacked_sha256": unpacked_sha256,
+            }
+        ]
+        for table in tables_info:
+            if table["name"] == "schema_migrations":
+                continue
+            if not DATA_TABLE_NAME_RE.match(table["name"]):
+                print(f"export: skipped table {table['name']} (unsafe name)", file=sys.stderr)
+                continue
+            csv_name = f"{table['name']}-{tag}.csv.gz"
+            csv_path = gen_dir / csv_name
+            row_count, replacements = _write_csv(snapshot_conn, table["name"], table["columns"], csv_path)
+            if replacements:
+                print(f"export: {table['name']}: {replacements} values had unencodable characters", file=sys.stderr)
+            id_columns = [
+                column["name"]
+                for column in table["columns"]
+                if column["pk"] or column["name"] == "id" or column["name"].endswith("_id")
+            ]
+            files.append(
+                {
+                    "name": csv_name,
+                    "bytes": csv_path.stat().st_size,
+                    "rows": row_count,
+                    "sha256": _hash_file(csv_path),
+                    "id_columns": id_columns,
+                    "replacements": replacements,
+                }
+            )
+            print(f"export: {csv_name} {row_count} rows {format_size_de(csv_path.stat().st_size)}", file=sys.stderr)
+
+        manifest_tables = [
+            {
+                "name": table["name"],
+                "rows": table["row_count"],
+                "sql": table["sql"],
+                "columns": [
+                    {
+                        "name": column["name"],
+                        "type": column["type"],
+                        "pk": column["pk"],
+                        "notnull": column["notnull"],
+                        "fk": next(
+                            (
+                                f"{fk['to_table']}.{fk['to_column']}"
+                                for fk in table["foreign_keys"]
+                                if fk["from"] == column["name"]
+                            ),
+                            None,
+                        ),
+                        "source": column_source(table["name"], column["name"]),
+                    }
+                    for column in table["columns"]
+                ],
+                "foreign_keys": table["foreign_keys"],
+                "stable_keys": list(STABLE_KEYS.get(table["name"], ())),
+                "per_build_keys": list(PER_BUILD_KEYS.get(table["name"], ())),
+            }
+            for table in tables_info
+        ]
+
+        recipe_rows: list[dict[str, Any]] = []
+        for recipe in recipes:
+            try:
+                rows = [dict(row) for row in snapshot_conn.execute(recipe["sql"]).fetchall()]
+            except sqlite3.Error as exc:
+                raise RuntimeError(f"export: recipe {recipe['id']} failed: {exc}") from exc
+            empty_reason = None
+            if not rows:
+                depends_on = recipe.get("depends_on")
+                if depends_on and readiness.get(depends_on, "unavailable") == "unavailable":
+                    empty_reason = f"nicht erfasst (Baustein nicht aktiviert): baue mit --enrich {depends_on}."
+                else:
+                    empty_reason = "keine Daten in diesem Build"
+                print(f"export: recipe {recipe['id']}: 0 rows ({empty_reason})", file=sys.stderr)
+            else:
+                print(f"export: recipe {recipe['id']}: {len(rows)} rows", file=sys.stderr)
+            recipe_rows.append(
+                {
+                    "id": recipe["id"],
+                    "title": recipe["title"],
+                    "sql": recipe["sql"],
+                    "columns": [column["name"] for column in recipe["columns"]],
+                    "rows": rows,
+                    "empty_reason": empty_reason,
+                }
+            )
+
+        protocols_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0])
+        first_protocol = snapshot_conn.execute(
+            "SELECT document_number, date FROM protocols ORDER BY date ASC, document_number ASC LIMIT 1"
+        ).fetchone()
+        last_protocol = snapshot_conn.execute(
+            "SELECT document_number, date FROM protocols ORDER BY date DESC, document_number DESC LIMIT 1"
+        ).fetchone()
+        votes_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0])
+        vote_members_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM vote_members").fetchone()[0])
+        relationships_count = sum(len(table["foreign_keys"]) for table in tables_info)
+        total_rows = sum(table["row_count"] for table in tables_info)
+    finally:
+        snapshot_conn.close()
+    vacuum_path.unlink()
+
+    coverage_labels = {"ready": "erfasst", "partial": "teilweise erfasst", "unavailable": "nicht erfasst"}
+    manifest: dict[str, Any] = {
+        "export_format": EXPORT_FORMAT,
+        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+        "commit": commit,
+        "tag": tag,
+        "license": license_text,
+        "issues_url": issues_url,
+        "transformation": "speeches.paragraphs_json entfernt (Duplikat von speeches.text, SQLite >= 3.35)",
+        "source_mtime_ns": source_stat.st_mtime_ns,
+        "source_bytes": source_stat.st_size,
+        "source_sha256": source_sha256,
+        "recipes_hash": recipes_hash,
+        "inputs_hash": inputs_hash,
+        "generation": generation,
+        "schema_hash": schema_hash,
+        "csv": {
+            "encoding": "utf-8",
+            "header": True,
+            "null": "",
+            "quoting": "minimal",
+            "authoritative": "sqlite",
+        },
+        "files": files,
+        "protocols": {
+            "count": protocols_count,
+            "first": first_protocol["document_number"] if first_protocol else None,
+            "last": last_protocol["document_number"] if last_protocol else None,
+            "from": first_protocol["date"] if first_protocol else None,
+            "to": last_protocol["date"] if last_protocol else None,
+        },
+        "tables": manifest_tables,
+        "relationships": relationships_count,
+        "total_rows": total_rows,
+        "votes": {"count": votes_count, "members": vote_members_count},
+        "recipes": recipe_rows,
+        "coverage": {
+            "catalog_count": catalog_count,
+            "dossier_count": dossier_count,
+            "bausteine": {
+                feature_id: coverage_labels.get(readiness.get(feature_id, "unavailable"), "nicht erfasst")
+                for feature_id in ("votes", "aw-profiles", "mp-roster")
+            },
+            "synthetic_rede_ids": synthetic_rede_ids,
+            "conflicting_votes": conflicting_votes,
+        },
+    }
+    return manifest
+
+
+# Fetch a manifest published at a URL (--data-manifest https://...): stdlib
+# urllib, a 10 s timeout, no retries. Only ever called outside --offline. The
+# body is capped so a misbehaving host cannot turn the build into an unbounded
+# read (a real manifest is well under a megabyte).
+MAX_REMOTE_MANIFEST_BYTES = 32 * 1024 * 1024
+
+
+def load_remote_manifest(url: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 (operator-provided URL)
+            payload = response.read(MAX_REMOTE_MANIFEST_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"error: could not fetch --data-manifest {url}: {exc}") from exc
+    if len(payload) > MAX_REMOTE_MANIFEST_BYTES:
+        raise RuntimeError(
+            f"error: --data-manifest {url} exceeds {MAX_REMOTE_MANIFEST_BYTES // (1024 * 1024)} MB; refusing to parse it"
+        )
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"error: --data-manifest {url} did not return valid JSON: {exc}") from exc
+
+
+# "14.09.2026, 23:02 MESZ" plus the ISO string for <time datetime>. Falls back
+# to UTC with an explicit label when the platform has no IANA tz database.
+def format_datenstand_timestamp(generated_at: str) -> tuple[str, str]:
+    try:
+        parsed = datetime.fromisoformat(generated_at)
+    except ValueError:
+        return generated_at, generated_at
+    try:
+        localized = parsed.astimezone(ZoneInfo("Europe/Berlin"))
+        label = "MESZ" if localized.dst() else "MEZ"
+    except ZoneInfoNotFoundError:
+        localized = parsed.astimezone(timezone.utc)
+        label = "UTC"
+    display = f"{localized:%d.%m.%Y}, {localized:%H:%M} {label}"
+    return display, localized.isoformat()
+
+
+# Resolve one recipe row's link key into an href, or None when the target page
+# does not exist in this build (the row still renders, just as plain text).
+def _resolve_recipe_link(
+    link_kind: str | None,
+    value: Any,
+    *,
+    mp_lookup: dict[str, int],
+    document_numbers: set[str],
+    bill_slugs: set[str],
+) -> str | None:
+    if value is None or link_kind is None:
+        return None
+    if link_kind == "mp":
+        cid = mp_lookup.get(str(value))
+        return f"abgeordnete/{cid}.html" if cid is not None else None
+    if link_kind == "document":
+        document_number = str(value)
+        if document_number in document_numbers:
+            return f"protocols/plenarprotokoll-{slugify_document_number(document_number)}.html"
+        return None
+    if link_kind == "proceeding":
+        slug = bill_slug({"vorgang_id": value})
+        return f"bills/{slug}.html" if slug in bill_slugs else None
+    return None
+
+
+def _truncate(text: str, limit: int) -> tuple[str, str | None]:
+    if len(text) <= limit:
+        return text, None
+    return text[: limit - 1].rstrip() + "…", text
+
+
+def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_remote: bool) -> str:
+    sqlite_file = manifest["files"][0]
+    href = f"{data_base_url}{manifest['generation']}/{sqlite_file['name']}"
+    csv_files = manifest["files"][1:]
+    csv_rows = "".join(
+        f"""
+        <li class="file">
+          <a href="{pulse_html.esc(data_base_url)}{pulse_html.esc(manifest['generation'])}/{pulse_html.esc(file['name'])}">{pulse_html.esc(file['name'])}</a>
+          <span>{pulse_html.esc(format_size_de(file['bytes']))}</span>
+        </li>
+        """
+        for file in csv_files
+    )
+    license_text = manifest.get("license") or ""
+    license_line = (
+        pulse_html.esc(license_text)
+        if license_text
+        else "Lizenzhinweis: siehe Quellen und Methode"
+    )
+    state_line = f"Release {manifest.get('tag') or '?'}" if is_remote else "lokaler Build"
     return f"""
-      <div class="sample-table">
-        <table>
-          <thead><tr>{header}</tr></thead>
-          <tbody>{''.join(rows)}</tbody>
-        </table>
+      <div class="download-panel">
+        <span class="eyebrow">Rohdaten &middot; {pulse_html.esc(state_line)}</span>
+        <a class="button primary" href="{pulse_html.esc(href)}">SQLite herunterladen ({pulse_html.esc(format_size_de(sqlite_file['bytes']))})</a>
+        <p class="file-meta">{pulse_html.esc(sqlite_file['name'])} &middot; {pulse_html.esc(format_size_de(sqlite_file['bytes']))} gepackt / {pulse_html.esc(format_size_de(sqlite_file['unpacked_bytes']))} entpackt</p>
+        <p class="sha-label">sha256</p>
+        <code class="sha">{pulse_html.esc(sqlite_file['sha256'])}</code>
+        <details>
+          <summary>CSV-Tabellen ({len(csv_files)})</summary>
+          <ul class="file-list">{csv_rows}</ul>
+        </details>
+        <p class="transformation-note">{pulse_html.esc(manifest.get('transformation') or '')}</p>
+        <p class="licence-line"><a href="sources.html#lizenz">{license_line}</a></p>
       </div>
     """
 
 
-# Render the whole database.html page.
-def render_database_page(database_path: Path, database_href: str | None, features: Selection | None = None) -> str:
-    features = features or publication_selection()
-    snapshot = read_database_snapshot(database_path)
-    tables = snapshot["tables"]
-    # One <article class="table-card"> per table: heading with row count, the
-    # column table, the sample rows, and a collapsed <details> with foreign keys
-    # and raw SQL schema. The data-search attribute feeds the filter box.
-    table_cards = []
-    for table in tables:
-        fk_rows = "".join(
-            f"""
-            <li><code>{pulse_html.esc(foreign_key['from'])}</code> &rarr; <code>{pulse_html.esc(foreign_key['to_table'])}.{pulse_html.esc(foreign_key['to_column'])}</code></li>
-            """
-            for foreign_key in table["foreign_keys"]
+def render_daten_datenstand(manifest: dict[str, Any]) -> str:
+    display, iso = format_datenstand_timestamp(manifest["generated_at"])
+    protocols = manifest["protocols"]
+    range_text = "&ndash;"
+    if protocols.get("first") and protocols.get("last"):
+        range_text = (
+            f"{pulse_html.esc(protocols['first'])} bis {pulse_html.esc(protocols['last'])} &middot; "
+            f"{pulse_html.esc(protocols.get('from') or '?')} bis {pulse_html.esc(protocols.get('to') or '?')}"
         )
-        table_cards.append(
+    votes = manifest["votes"]
+    coverage = manifest["coverage"]
+    coverage_line = (
+        f"{pulse_html.format_int(coverage['dossier_count'])} von {pulse_html.format_int(coverage['catalog_count'])} "
+        "Protokollen im Katalog als Dossier erfasst"
+    )
+    bausteine_labels = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
+    bausteine_line = " &middot; ".join(
+        f"{pulse_html.esc(bausteine_labels[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
+    )
+    provenance_bits = [f"Exportformat {manifest['export_format']}"]
+    if manifest.get("commit"):
+        provenance_bits.append(f"Commit {manifest['commit']}")
+    provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
+    return f"""
+    <section class="summary-band">
+      <div><span class="eyebrow">Datenstand</span><strong><time datetime="{pulse_html.esc(iso)}">{pulse_html.esc(display)}</time></strong></div>
+      <div><span class="eyebrow">Plenarprotokolle</span><strong>{pulse_html.format_int(protocols['count'])}</strong><p class="tile-sub">{range_text}</p></div>
+      <div><span class="eyebrow">Zeilen</span><strong>{pulse_html.format_int(manifest['total_rows'])}</strong><p class="tile-sub">{pulse_html.format_int(len(manifest['tables']))} Tabellen &middot; {pulse_html.format_int(manifest['relationships'])} Beziehungen</p></div>
+      <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
+    </section>
+    <p class="coverage-line">{coverage_line}</p>
+    <p class="bausteine-line">{bausteine_line}</p>
+    <p class="provenance-line">{provenance_line}</p>
+    """
+
+
+def render_daten_recipes(
+    manifest: dict[str, Any],
+    *,
+    mp_lookup: dict[str, int],
+    document_numbers: set[str],
+    bill_slugs: set[str],
+) -> str:
+    blocks = []
+    for recipe_row in manifest["recipes"]:
+        recipe = RECIPES_BY_ID.get(recipe_row["id"], {})
+        columns = recipe.get("columns", ())
+        visible_columns = [column for column in columns if not column.get("hidden")]
+        rows = recipe_row["rows"]
+        if not rows:
+            body = f'<p class="recipe-empty">{pulse_html.esc(recipe_row["empty_reason"] or "keine Daten in diesem Build")}</p>'
+        else:
+            header = "".join(f"<th scope=\"col\">{pulse_html.esc(column['name'])}</th>" for column in visible_columns)
+            body_rows = []
+            link_column = next((column for column in columns if column.get("link")), None)
+            for row in rows:
+                link_href = None
+                if link_column:
+                    hidden_column = next((c for c in columns if c.get("hidden")), None)
+                    key_value = row.get(hidden_column["name"]) if hidden_column else None
+                    link_href = _resolve_recipe_link(
+                        link_column.get("link"),
+                        key_value,
+                        mp_lookup=mp_lookup,
+                        document_numbers=document_numbers,
+                        bill_slugs=bill_slugs,
+                    )
+                cells = []
+                for column in visible_columns:
+                    value = row.get(column["name"])
+                    if value is None:
+                        cells.append('<td><span class="null">—</span></td>' if column["align"] != "num" else '<td class="num"><span class="null">—</span></td>')
+                        continue
+                    if column["align"] == "num":
+                        if isinstance(value, float):
+                            text_value = pulse_html.esc(str(value).replace(".", ","))
+                        elif isinstance(value, int):
+                            text_value = pulse_html.format_int(value)
+                        else:
+                            text_value = pulse_html.esc(value)
+                        cells.append(f'<td class="num">{text_value}</td>')
+                        continue
+                    text_value = str(value)
+                    title_attr = ""
+                    if column.get("truncate"):
+                        truncated, full = _truncate(text_value, column["truncate"])
+                        if full is not None:
+                            title_attr = f' title="{pulse_html.esc(full)}"'
+                        text_value = truncated
+                    escaped = pulse_html.esc(text_value)
+                    if column is link_column and link_href:
+                        cells.append(f'<td><a href="{pulse_html.esc(link_href)}"{title_attr}>{escaped}</a></td>')
+                    else:
+                        cells.append(f"<td{title_attr}>{escaped}</td>")
+                body_rows.append(f"<tr>{''.join(cells)}</tr>")
+            body = f"""
+              <div class="table-scroll">
+                <table>
+                  <caption class="visually-hidden">{pulse_html.esc(recipe_row['title'])}</caption>
+                  <thead><tr>{header}</tr></thead>
+                  <tbody>{''.join(body_rows)}</tbody>
+                </table>
+              </div>
+            """
+        caveat = f'<p class="caveat">{pulse_html.esc(recipe.get("caveat"))}</p>' if recipe.get("caveat") else ""
+        title_id = f"recipe-{pulse_html.esc(recipe_row['id'])}-title"
+        blocks.append(
             f"""
-            <article class="table-card" id="table-{pulse_html.esc(table['name'])}" data-table-card data-search="{pulse_html.esc(table['name'] + ' ' + table['description'])}">
-              <div class="table-head">
+            <section class="recipe" aria-labelledby="{title_id}">
+              <div class="recipe-sql">
+                <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
+                <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+              </div>
+              <div class="recipe-result">
+                {body}
+                {caveat}
+              </div>
+            </section>
+            """
+        )
+    return "".join(blocks)
+
+
+def render_daten_schema(manifest: dict[str, Any]) -> tuple[str, str, str]:
+    chips = "".join(
+        f'<a href="#table-{pulse_html.esc(table["name"])}">{pulse_html.esc(table["name"])} <span>{pulse_html.format_int(table["rows"])}</span></a>'
+        for table in manifest["tables"]
+    )
+    table_rows = []
+    for table in manifest["tables"]:
+        column_rows = "".join(
+            f"""
+            <tr>
+              <td><code>{pulse_html.esc(column['name'])}</code></td>
+              <td>{pulse_html.esc(column['type'] or 'untypisiert')}</td>
+              <td>{pulse_html.esc(_column_hint(column))}</td>
+            </tr>
+            """
+            for column in table["columns"]
+        )
+        description = DATABASE_TABLE_DESCRIPTIONS.get(table["name"], "Persistierte Tabelle aus dem Bundestag-Puls-Graph.")
+        table_rows.append(
+            f"""
+            <div class="table-row" id="table-{pulse_html.esc(table['name'])}">
+              <div class="table-row-head">
                 <div>
-                  <span class="eyebrow">Tabelle</span>
-                  <h2>{pulse_html.esc(table['name'])}</h2>
-                  <p>{pulse_html.esc(table['description'])}</p>
+                  <span class="table-name">{pulse_html.esc(table['name'])}</span>
+                  <p>{pulse_html.esc(description)}</p>
                 </div>
-                <strong>{pulse_html.esc(table['row_count'])} Zeilen</strong>
+                <strong>{pulse_html.format_int(table['rows'])} Zeilen</strong>
               </div>
-              <div class="table-body">
-                <section>
-                  <h3>Spalten</h3>
-                  <div class="table-scroll">
-                    <table class="columns-table">
-                      <thead><tr><th>Name</th><th>Typ</th><th>Eigenschaft</th></tr></thead>
-                      <tbody>{render_database_columns(table['columns'])}</tbody>
-                    </table>
-                  </div>
-                </section>
-                <section>
-                  <h3>Beispielzeilen</h3>
-                  {render_database_sample(table)}
-                </section>
-                <details>
-                  <summary>SQL-Schema und Beziehungen</summary>
-                  {f'<ul class="fk-list">{fk_rows}</ul>' if fk_rows else '<p class="muted">Keine Fremdschlüssel aus dieser Tabelle.</p>'}
-                  <pre>{pulse_html.esc(table['sql'])}</pre>
-                </details>
-              </div>
-            </article>
+              <details>
+                <summary>Spalten ({len(table['columns'])})</summary>
+                <div class="table-scroll">
+                  <table>
+                    <thead><tr><th scope="col">Name</th><th scope="col">Typ</th><th scope="col">Hinweis</th></tr></thead>
+                    <tbody>{column_rows}</tbody>
+                  </table>
+                </div>
+              </details>
+              <details>
+                <summary>CREATE TABLE {pulse_html.esc(table['name'])}</summary>
+                <pre>{pulse_html.esc(table['sql'])}</pre>
+              </details>
+            </div>
             """
         )
 
-    # Cross-table foreign-key overview shown in the right-hand "Beziehungen"
-    # panel, with anchor links down to the two table cards involved.
-    relationships = snapshot["relationships"]
-    relationship_rows = "".join(
-        f"""
+    relationship_rows_all = [
+        {**fk, "table": table["name"]} for table in manifest["tables"] for fk in table["foreign_keys"]
+    ]
+    def render_relationship_row(item: dict[str, Any]) -> str:
+        return f"""
         <tr>
           <td><a href="#table-{pulse_html.esc(item['table'])}">{pulse_html.esc(item['table'])}</a></td>
           <td><code>{pulse_html.esc(item['from'])}</code></td>
@@ -1177,32 +2134,37 @@ def render_database_page(database_path: Path, database_href: str | None, feature
           <td>{pulse_html.esc(item['on_delete'])}</td>
         </tr>
         """
-        for item in relationships
-    )
-    download_link = (
-        f'<a class="button primary" href="{pulse_html.esc(database_href)}">SQLite herunterladen</a>'
-        if database_href
-        else ""
-    )
-    table_nav = "".join(
-        f'<a href="#table-{pulse_html.esc(table["name"])}">{pulse_html.esc(table["name"])} <span>{pulse_html.esc(table["row_count"])}</span></a>'
-        for table in tables
-    )
-    # Page anatomy, top to bottom:
-    #   global header -> page header with the SQLite download panel
-    #   summary band  -> table / row / relationship / file-size counters
-    #   explainer     -> what the view is for + table nav + foreign-key table
-    #   filter        -> search box wired to the inline script at the bottom
-    #   tables        -> the table cards built above
-    return f"""<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Datenbank</title>
-  {pulse_html.page_head(features)}
-  <style>
-    :root {{
+    visible_relationships = "".join(render_relationship_row(item) for item in relationship_rows_all[:8])
+    hidden_relationships = "".join(render_relationship_row(item) for item in relationship_rows_all[8:])
+    relationships_block = f"""
+      <div class="table-scroll">
+        <table>
+          <caption class="visually-hidden">Fremdschlüssel</caption>
+          <thead><tr><th scope="col">Tabelle</th><th scope="col">Spalte</th><th scope="col">Ziel</th><th scope="col">Löschen</th></tr></thead>
+          <tbody>{visible_relationships}</tbody>
+        </table>
+      </div>
+      {f'<details><summary>Alle {len(relationship_rows_all)} Beziehungen</summary><div class="table-scroll"><table><tbody>{hidden_relationships}</tbody></table></div></details>' if hidden_relationships else ''}
+    """
+    return chips, "".join(table_rows), relationships_block
+
+
+def _column_hint(column: dict[str, Any]) -> str:
+    flags = []
+    if column["pk"]:
+        flags.append("Primärschlüssel")
+    if column.get("fk"):
+        flags.append(f"→ {column['fk']}")
+    if column["notnull"]:
+        flags.append("Pflichtfeld")
+    if column.get("source") and column["source"] != "dip":
+        flags.append(column["source"])
+    return ", ".join(flags) or "optional"
+
+
+def _daten_page_styles() -> str:
+    return """
+    :root {
       --ink:#171a1f;
       --muted:#606a78;
       --line:#d9dee6;
@@ -1210,324 +2172,259 @@ def render_database_page(database_path: Path, database_href: str | None, feature
       --panel:#ffffff;
       --blue:#174ea6;
       --teal:#0f766e;
-      --blue-soft:#eef5ff;
-    }}
-    * {{ box-sizing:border-box; }}
-    body {{
+      --surface-2:#f4f6f9;
+      --surface-3:#e9edf2;
+      --on-blue:#ffffff;
+    }
+    * { box-sizing:border-box; }
+    body {
       margin:0;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color:var(--ink);
       background:var(--paper);
-      letter-spacing:0;
-    }}
-    a {{ color:var(--blue); text-decoration:none; }}
-    a:hover {{ text-decoration:underline; }}
-    code {{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size:.92em;
-    }}
-    .shell {{ max-width:1360px; margin:0 auto; padding:28px 22px; }}
-    {pulse_html.global_header_styles()}
-    .page-header {{
+      font-size:16px;
+      line-height:1.55;
+    }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    a:visited { color:var(--blue); }
+    .recipe a:visited, .file a:visited { color:var(--teal); }
+    a:focus-visible, summary:focus-visible, .button:focus-visible {
+      outline:2px solid var(--blue);
+      outline-offset:2px;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; }
+    .shell { max-width:1360px; margin:0 auto; padding:28px 22px; }
+    .visually-hidden {
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+      overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+    }
+    .page-header {
       display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
+      grid-template-columns:minmax(0,1fr) 340px;
       gap:24px;
-      align-items:end;
+      align-items:start;
       padding-bottom:22px;
       border-bottom:1px solid var(--line);
-    }}
-    .button {{
-      display:inline-flex;
-      align-items:center;
-      min-height:32px;
-      padding:5px 10px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font-weight:700;
-      color:var(--ink);
-    }}
-    .button.primary {{
-      min-height:40px;
-      padding:8px 14px;
-      border-color:#bdd0ea;
-      background:var(--blue);
-      color:#fff;
-    }}
-    h1 {{ margin:0; font-size:36px; line-height:1.1; }}
-    h2 {{ margin:5px 0 0; font-size:22px; line-height:1.2; }}
-    h3 {{ margin:0 0 10px; font-size:15px; }}
-    p {{ margin:7px 0 0; color:var(--muted); line-height:1.5; }}
-    .subtitle {{ max-width:780px; }}
-    .eyebrow {{
-      color:var(--muted);
-      font-size:12px;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-      font-weight:700;
-    }}
-    .download-panel {{
-      display:grid;
-      gap:8px;
-      min-width:230px;
-      padding:14px;
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:#fff;
-    }}
-    .summary-band {{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0,1fr));
-      gap:12px;
-      margin-top:18px;
-    }}
-    .summary-band div {{
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:#fff;
-      padding:13px 14px;
-    }}
-    .summary-band span {{
+    }
+    .eyebrow {
       display:block;
       color:var(--muted);
       font-size:12px;
       text-transform:uppercase;
-      letter-spacing:.04em;
-    }}
-    .summary-band strong {{ display:block; margin-top:4px; font-size:24px; }}
-    .explainer {{
-      display:grid;
-      grid-template-columns:minmax(0,1fr) minmax(260px,.45fr);
-      gap:16px;
-      align-items:start;
-      margin-top:18px;
-    }}
-    .panel, .table-card {{
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:var(--panel);
-      padding:18px;
-    }}
-    .table-nav {{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-top:12px;
-    }}
-    .table-nav a {{
+      letter-spacing:.08em;
+      font-weight:700;
+    }
+    h1 { margin:6px 0 0; font-size:30px; line-height:1.1; }
+    h2 { margin:0; font-size:20px; line-height:1.2; }
+    h3 { margin:0 0 8px; font-size:16px; font-weight:650; }
+    p { margin:8px 0 0; color:var(--muted); }
+    .lede { max-width:68ch; }
+    .button {
       display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:44px;
+      padding:8px 16px;
+      border:1px solid var(--blue);
+      border-radius:8px;
+      background:var(--blue);
+      color:var(--on-blue);
+      font-weight:700;
+    }
+    .download-panel { display:grid; gap:8px; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+    .file-meta, .sha-label { font-size:14px; margin-top:10px; }
+    .sha-label { margin-bottom:0; color:var(--muted); }
+    code.sha { display:block; overflow-wrap:anywhere; font-size:13px; background:var(--surface-2); padding:8px; border-radius:6px; }
+    .file-list { list-style:none; margin:0; padding:0; display:grid; gap:0; }
+    .file { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px dotted var(--line); font-size:14px; background:var(--surface-2); }
+    .file:last-child { border-bottom:none; }
+    .transformation-note, .licence-line { font-size:14px; }
+    main { display:block; }
+    .rule-section { border-top:1px solid var(--line); padding-top:20px; margin-top:28px; }
+    .summary-band {
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0,1fr));
+      gap:12px;
+    }
+    .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
+    .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
+    .tile-sub { font-size:12px; margin-top:2px; }
+    .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .table-nav a {
+      display:inline-flex;
+      min-height:32px;
+      align-items:center;
       gap:7px;
-      align-items:center;
-      min-height:28px;
       padding:4px 9px;
       border:1px solid var(--line);
       border-radius:999px;
-      background:#fff;
+      background:var(--panel);
       font-size:12px;
       font-weight:700;
-    }}
-    .table-nav span {{ color:var(--muted); font-weight:650; }}
-    .filter {{
+    }
+    .table-nav span { color:var(--muted); font-weight:650; }
+    .recipes { display:grid; gap:24px; margin-top:18px; }
+    .recipe {
       display:grid;
-      gap:5px;
-      margin-top:18px;
-      padding:14px;
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:#fff;
-    }}
-    .filter label {{
-      color:var(--muted);
-      font-size:12px;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-      font-weight:700;
-    }}
-    .filter input {{
-      min-height:38px;
-      padding:7px 10px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:#fff;
-      font:inherit;
-    }}
-    .tables {{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; margin-top:18px; }}
-    .table-card[hidden] {{ display:none; }}
-    .table-head {{
-      display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
-      gap:16px;
-      align-items:start;
-      padding-bottom:14px;
-      border-bottom:1px solid #edf1f5;
-    }}
-    .table-head strong {{
-      display:inline-flex;
-      align-items:center;
-      min-height:30px;
-      padding:4px 9px;
-      border-radius:999px;
-      background:var(--blue-soft);
-      color:#103a7a;
-      white-space:nowrap;
-    }}
-    .table-body {{ display:grid; grid-template-columns:minmax(0,1fr); gap:18px; margin-top:16px; }}
-    table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-    th, td {{
-      padding:9px 8px;
-      border-bottom:1px solid #edf1f5;
-      text-align:left;
-      vertical-align:top;
-    }}
-    th {{
-      color:var(--muted);
-      font-size:12px;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-      white-space:nowrap;
-    }}
-    .table-scroll {{ max-width:100%; overflow-x:auto; }}
-    .sample-table {{
-      max-width:100%;
-      overflow:auto;
-      border:1px solid #edf1f5;
-      border-radius:8px;
-      background:#fff;
-    }}
-    .sample-table table {{ min-width:760px; }}
-    .sample-table td {{
-      max-width:300px;
-      overflow-wrap:anywhere;
-      line-height:1.4;
-    }}
-    details {{
-      border:1px solid #edf1f5;
-      border-radius:8px;
-      background:#fbfcfd;
-      overflow:hidden;
-    }}
-    summary {{
-      padding:10px 12px;
-      cursor:pointer;
-      color:var(--blue);
-      font-weight:750;
-    }}
-    details pre {{
-      margin:0;
-      padding:12px;
-      border-top:1px solid #edf1f5;
-      overflow:auto;
-      white-space:pre-wrap;
-      overflow-wrap:anywhere;
-      font-size:12px;
-      line-height:1.45;
-    }}
-    .fk-list {{
-      display:grid;
-      gap:6px;
-      margin:0;
-      padding:0 12px 12px 28px;
-      color:var(--muted);
-      font-size:13px;
-    }}
-    .null, .muted {{ color:var(--muted); }}
-    .empty {{
-      margin-top:18px;
-      padding:20px;
-      border:1px dashed var(--line);
-      border-radius:8px;
-      background:#fff;
-      color:var(--muted);
-      text-align:center;
-    }}
-    footer {{ padding-top:24px; color:var(--muted); font-size:12px; }}
-    @media (max-width: 900px) {{
-      .page-header, .explainer {{ grid-template-columns:minmax(0,1fr); }}
-      .summary-band {{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); }}
-    }}
-    @media (max-width: 640px) {{
-      .shell {{ padding:18px 14px; }}
-      h1 {{ font-size:29px; }}
-      .summary-band, .table-head {{ grid-template-columns:minmax(0,1fr); }}
-    }}
+      grid-template-columns:minmax(0,2fr) minmax(0,3fr);
+      gap:20px;
+      padding-top:18px;
+      border-top:1px solid var(--line);
+    }
+    .recipe:first-child { border-top:none; padding-top:0; }
+    .recipe pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .recipe-empty { font-size:14px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { padding:8px; border-bottom:1px solid var(--surface-3); text-align:left; vertical-align:top; }
+    th { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:600; font-size:13px; color:var(--muted); white-space:nowrap; }
+    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .table-scroll { max-width:100%; overflow-x:auto; }
+    .table-scroll table { min-width:28rem; }
+    .caveat { font-size:14px; margin-top:8px; }
+    .null { color:var(--muted); }
+    .loslegen pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; font-size:13px; line-height:1.5; }
+    .table-row { border-bottom:1px solid var(--line); padding:16px 0; }
+    .table-row-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:start; }
+    .table-name { font-size:16px; font-weight:650; }
+    details { margin-top:10px; }
+    summary { cursor:pointer; color:var(--blue); font-weight:650; min-height:40px; display:flex; align-items:center; }
+    details pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.45; }
+    footer { padding-top:24px; margin-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+    @media print {
+      .site-header, .download-panel { display:none; }
+    }
+    @media screen and (max-width: 1024px) {
+      .recipe { grid-template-columns:minmax(0,1fr); }
+    }
+    @media screen and (max-width: 900px) {
+      .page-header { grid-template-columns:minmax(0,1fr); }
+      .summary-band { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    }
+    @media screen and (max-width: 480px) {
+      .summary-band { grid-template-columns:minmax(0,1fr); }
+      .table-nav a { flex:1 1 auto; }
+      .file { flex-wrap:wrap; }
+    }
+    """
+
+
+def render_database_page(
+    manifest: dict[str, Any],
+    *,
+    data_base_url: str = "data/exports/",
+    mp_lookup: dict[str, int] | None = None,
+    document_numbers: set[str] | None = None,
+    bill_slugs: set[str] | None = None,
+    is_remote: bool = False,
+    features: Selection | None = None,
+) -> str:
+    features = features or publication_selection()
+    mp_lookup = mp_lookup or {}
+    document_numbers = document_numbers or set()
+    bill_slugs = bill_slugs or set()
+
+    chips, table_rows_html, relationships_block = render_daten_schema(manifest)
+    downloads_html = render_daten_downloads(manifest, data_base_url=data_base_url, is_remote=is_remote)
+    datenstand_html = render_daten_datenstand(manifest)
+    recipes_html = render_daten_recipes(
+        manifest, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs
+    )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Daten</title>
+  {pulse_html.page_head(features)}
+  <style>
+    {_daten_page_styles()}
+    {pulse_html.global_header_styles()}
   </style>
 </head>
 <body>
   <div class="shell">
     {pulse_html.render_global_header(active="database", features=features)}
-    <header class="page-header">
-      <div>
-        <span class="eyebrow">Transparenz</span>
-        <h1>Datenbank erkunden</h1>
-        <p class="subtitle">Diese statische Ansicht macht sichtbar, welche Tabellen Bundestag-Puls erzeugt, wie sie verknüpft sind und welche Beispielzeilen im aktuellen Build enthalten sind. Die Rohdaten bleiben zusätzlich als SQLite-Datei downloadbar.</p>
-      </div>
-      <div class="download-panel">
-        <span class="eyebrow">Rohdaten</span>
-        {download_link}
-        <p>{pulse_html.esc(snapshot['size'])} · SQLite-Datei</p>
-      </div>
-    </header>
-    <section class="summary-band">
-      <div><span>Tabellen</span><strong>{pulse_html.esc(len(tables))}</strong></div>
-      <div><span>Zeilen gesamt</span><strong>{pulse_html.esc(snapshot['total_rows'])}</strong></div>
-      <div><span>Beziehungen</span><strong>{pulse_html.esc(len(relationships))}</strong></div>
-      <div><span>Dateigröße</span><strong>{pulse_html.esc(snapshot['size'])}</strong></div>
-    </section>
-    <section class="explainer">
-      <div class="panel">
-        <span class="eyebrow">Was diese Ansicht leistet</span>
-        <h2>Vom Protokoll zum Entitätengraph</h2>
-        <p>Die Website nutzt dieselben verknüpften Datensätze, die hier sichtbar sind: Plenarprotokolle werden in Tagesordnungspunkte, Reden, Dokumente, Vorgänge, Parteien, Personen und Abstimmungen zerlegt. Dadurch lässt sich prüfen, welche Primärquellen hinter den sichtbaren Ansichten stehen.</p>
-        <div class="table-nav">{table_nav}</div>
-      </div>
-      <div class="panel">
-        <span class="eyebrow">Beziehungen</span>
-        <h2>Fremdschlüssel</h2>
-        {('<div class="table-scroll"><table><thead><tr><th>Tabelle</th><th>Spalte</th><th>Ziel</th><th>Löschen</th></tr></thead><tbody>' + relationship_rows + '</tbody></table></div>') if relationship_rows else '<p class="muted">Dieses Schema enthält noch keine Fremdschlüssel.</p>'}
-      </div>
-    </section>
-    <section class="filter" aria-label="Tabellen filtern">
-      <label for="database-search">Tabellen filtern</label>
-      <input id="database-search" type="search" placeholder="z.B. speeches, votes, documents ..." autocomplete="off" data-table-search>
-    </section>
-    <section class="tables" data-table-list>
-      {''.join(table_cards) if table_cards else '<div class="empty">In dieser SQLite-Datei wurden noch keine Tabellen angelegt.</div>'}
-    </section>
-    <footer>
-      Diese Seite ist statisch aus der SQLite-Datei erzeugt. Sie führt keine SQL-Abfragen im Browser aus und verändert keine Daten. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>
-    </footer>
+    <main>
+      <header class="page-header">
+        <div>
+          <span class="eyebrow">Rohdaten</span>
+          <h1>Daten</h1>
+          <p class="lede">Alle Personen, Reden, Vorgänge und namentlichen Abstimmungen, aus denen diese Website aufgebaut ist, als SQLite-Datei und als CSV &mdash; dieselben Daten, die hinter den Ansichten dieser Website stehen.</p>
+        </div>
+        {downloads_html}
+      </header>
+      <section class="rule-section">
+        <span class="eyebrow">Datenstand</span>
+        {datenstand_html}
+      </section>
+      <section class="rule-section">
+        <span class="eyebrow">Fünf Abfragen</span>
+        <h2>Rezepte</h2>
+        <p class="lede">Diese fünf SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
+        <div class="recipes">{recipes_html}</div>
+      </section>
+      <section class="rule-section loslegen" id="loslegen">
+        <span class="eyebrow">So geht's los</span>
+        <h2>Drei Wege zu den Daten</h2>
+        <p>Shell (sqlite3):</p>
+        <pre><code>curl -LO {pulse_html.esc(data_base_url)}{pulse_html.esc(manifest['generation'])}/{pulse_html.esc(manifest['files'][0]['name'])}
+gunzip {pulse_html.esc(manifest['files'][0]['name'])}
+sqlite3 -header -column {pulse_html.esc(manifest['files'][0]['name'].removesuffix('.gz'))}</code></pre>
+        <p>Python (stdlib):</p>
+        <pre><code>import gzip, shutil, sqlite3, urllib.request
+url = "{pulse_html.esc(data_base_url)}{pulse_html.esc(manifest['generation'])}/{pulse_html.esc(manifest['files'][0]['name'])}"
+urllib.request.urlretrieve(url, "bundestag-pulse.sqlite.gz")
+with gzip.open("bundestag-pulse.sqlite.gz", "rb") as src, open("bundestag-pulse.sqlite", "wb") as dst:
+    shutil.copyfileobj(src, dst)
+conn = sqlite3.connect("bundestag-pulse.sqlite")
+print(conn.execute("SELECT COUNT(*) FROM protocols").fetchone())</code></pre>
+        <p>Pandas:</p>
+        <pre><code>import pandas as pd, sqlite3
+conn = sqlite3.connect("bundestag-pulse.sqlite")
+speeches = pd.read_sql("SELECT * FROM speeches", conn)
+# CSV alternative: pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={{"mp_id": "Int64"}})</code></pre>
+        <p>SQLite ist die maßgebliche Quelle; die CSV-Dateien sind ein verbatim Export ohne Formel-Escaping &mdash; beim Import in Tabellenkalkulationen als Text behandeln.</p>
+      </section>
+      <section class="rule-section">
+        <span class="eyebrow">Schema</span>
+        <h2>{len(manifest['tables'])} Tabellen</h2>
+        <div class="table-nav">{chips}</div>
+        {table_rows_html}
+        <h2>Beziehungen</h2>
+        {relationships_block}
+      </section>
+      <footer>
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Fragen und Fehler</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
+      </footer>
+    </main>
   </div>
-  <script>
-    const search = document.querySelector('[data-table-search]');
-    const cards = Array.from(document.querySelectorAll('[data-table-card]'));
-    if (search) {{
-      search.addEventListener('input', () => {{
-        const query = search.value.trim().toLowerCase();
-        for (const card of cards) {{
-          const text = (card.getAttribute('data-search') || '').toLowerCase();
-          card.hidden = query && !text.includes(query);
-        }}
-      }});
-    }}
-  </script>
   {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
 
 
-# Fallback for database.html when the build ran with --no-persist: same chrome,
-# but a short panel explaining that there is no SQLite file to explore.
-def render_database_unavailable_page(features: Selection) -> str:
+# Fallback for database.html when there is no manifest to render from: either
+# the build ran with --no-persist, or the store exists but export_distribution_data
+# raised DataExportUnavailable (old SQLite) - `reason` carries which.
+def render_database_unavailable_page(features: Selection, *, reason: str | None = None) -> str:
+    body = (
+        reason
+        or "Dieser Build wurde mit <code>--no-persist</code> gerendert. Ohne SQLite-Datei stehen Downloads, "
+        "Datenstand und Rezepte in dieser Vorschau nicht zur Verfügung."
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Datenbank</title>
+  <title>Bundestag-Puls · Daten</title>
   {pulse_html.page_head(features)}
   <style>
-    :root {{ --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa; --panel:#fff; --blue:#174ea6; }}
+    :root {{ --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa; --panel:#ffffff; --blue:#174ea6; }}
     * {{ box-sizing:border-box; }}
     body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:var(--ink); background:var(--paper); }}
     a {{ color:var(--blue); }}
@@ -1543,9 +2440,9 @@ def render_database_unavailable_page(features: Selection) -> str:
     {pulse_html.render_global_header(active="database", features=features)}
     <main class="panel">
       <span class="eyebrow">Kern-Baustein</span>
-      <h1>Datenbank nicht erzeugt</h1>
-      <p>Dieser Build wurde mit <code>--no-persist</code> gerendert. Ohne SQLite-Datei stehen Tabellen, Beziehungen und Beispielzeilen in dieser Vorschau nicht zur Verfügung.</p>
-      <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um den Datenbank-Explorer zu füllen.</p>
+      <h1>Daten nicht erzeugt</h1>
+      <p>{body}</p>
+      <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um diese Seite zu füllen.</p>
     </main>
   </div>
   {pulse_html.page_scripts(features)}
@@ -1565,8 +2462,8 @@ def render_database_unavailable_page(features: Selection) -> str:
 def render_landing_page(
     entries: list[dict[str, Any]],
     *,
-    database_href: str | None = None,
     database_page_href: str | None = None,
+    data_stand: str | None = None,
     protocol_count: int = 0,
     bill_count: int = 0,
     features: Selection | None = None,
@@ -1645,18 +2542,21 @@ def render_landing_page(
             "Aktueller Puls",
             "puls.html",
             "Worüber der Bundestag in der neuesten Sitzungswoche am meisten gesprochen hat: die Themen nach Redezahl, jede Zeile mit Beleg im Protokoll, dazu der Wochenvergleich.",
+            None,
         ),
         (
             "Archiv",
             "Plenarprotokoll-Katalog",
             "overview.html",
             "Der vollständige Katalog aller Plenarprotokolle aus der DIP-API mit erzeugten Dossiers je Sitzung: Tagesordnung, Rednerinnen und Redner, verknüpfte Drucksachen und Roh-API-Daten.",
+            None,
         ),
         (
             "Transparenz",
             "Quellen und Methode",
             "sources.html",
             "Welche offiziellen Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt — die Grundlage für das Neutralitätsversprechen.",
+            None,
         ),
     ]
     if "bills" in features:
@@ -1667,24 +2567,17 @@ def render_landing_page(
                 "Gesetze verfolgen",
                 "bills/index.html",
                 "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
+                None,
             ),
-        )
-    if database_href:
-        areas.append(
-            (
-                "Daten",
-                "SQLite herunterladen",
-                database_href,
-                "MPs, Parteien, Vorgänge, Reden und Abstimmungen als verknüpfte Datensätze zur eigenen Auswertung.",
-            )
         )
     if database_page_href:
         areas.append(
             (
                 "Transparenz",
-                "Datenbank erkunden",
+                "Daten",
                 database_page_href,
-                "Tabellen, Spalten, Beziehungen und Beispielzeilen des SQLite-Graphen direkt im Browser prüfen.",
+                "Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.",
+                data_stand,
             )
         )
     area_cards = "".join(
@@ -1693,10 +2586,11 @@ def render_landing_page(
           <span class="eyebrow">{tag}</span>
           <h3>{title}</h3>
           <p>{pulse_html.esc(desc)}</p>
+          {f'<p class="area-meta">{pulse_html.esc(meta)}</p>' if meta else ''}
           <span class="area-go">&Ouml;ffnen &rarr;</span>
         </a>
         """
-        for tag, title, href, desc in areas
+        for tag, title, href, desc, meta in areas
     )
 
     # Page anatomy, top to bottom:
@@ -3889,7 +4783,11 @@ def write_bill_pages(
     (bills_dir / "index.html").write_text(render_bills_index(bills, features), encoding="utf-8")
     data_path = output_dir / "data" / "bills.json"
     data_path.write_text(json.dumps(bills, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"count": len(bills), "index_path": bills_dir / "index.html", "data_path": data_path}
+    return {
+        "count": len(bills),
+        "index_path": bills_dir / "index.html",
+        "data_path": data_path,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -4083,12 +4981,17 @@ def _normalized_mp_party(party: Any) -> str:
     return "|".join(tokens) if tokens else normalized.casefold()
 
 
-def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def collect_abgeordnete(
+    conn: sqlite3.Connection,
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[int, int]]:
     """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
     pages, consolidating rows that describe the same person (the DIP roster row
     carries the bio; the protocol-speaker row carries the speeches). Returns the
-    consolidated MPs plus a lookup from every external id to the page id, so
-    speaker lists can link without dangling. One grouped query each avoids N+1."""
+    consolidated MPs, a lookup from every external id to the page id (so
+    speaker lists can link without dangling), and a map from every mps.id to
+    its canonical (page) id - the third value feeds the Daten export's
+    mp_canonical table, unconditioned by whether the person gets a page. One
+    grouped query each avoids N+1."""
     # One query per relation, then grouped in Python - three flat queries beat
     # a per-MP query (N+1) by a wide margin at roster size.
     base = conn.execute(
@@ -4211,6 +5114,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     mps: list[dict[str, Any]] = []
     lookup: dict[str, int] = {}
+    canonical_by_mp_id: dict[int, int] = {}
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
@@ -4218,6 +5122,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         # page id shared by the list and the profile.
         members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
         cid = members[0]["id"]
+        for r in members:
+            canonical_by_mp_id[r["id"]] = cid
 
         def first(field: str) -> Any:
             for r in members:
@@ -4277,9 +5183,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                     lookup[key] = cid
 
     # Stable, useful order: most speeches first, then alphabetical.
-    # Stable, useful order: most speeches first, then alphabetical.
     mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
-    return mps, lookup
+    return mps, lookup, canonical_by_mp_id
 
 
 # The MP pages reuse the bill stylesheet and add the roster table, the party
@@ -4635,7 +5540,7 @@ def render_overview(
     generated_cards = []
     sqlite_link = f'<a href="{pulse_html.esc(database_href)}">SQLite</a>' if database_href else ""
     database_page_link = (
-        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+        f'<a href="{pulse_html.esc(database_page_href)}">Daten</a>' if database_page_href else ""
     )
     database_footer_link = f" · {database_page_link}" if database_page_link else ""
     for entry in detail_entries:
@@ -5179,7 +6084,7 @@ def render_catalog_page(
     total = len(protocols)
     dossier_count = len(detail_entries)
     database_page_link = (
-        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+        f'<a href="{pulse_html.esc(database_page_href)}">Daten</a>' if database_page_href else ""
     )
     return f"""<!doctype html>
 <html lang="de">
@@ -5570,7 +6475,7 @@ def render_sources_page(
 
     latest = entries[0]["report"].get("protocol", {}) if entries else {}
     database_page_link = (
-        f'<a href="{pulse_html.esc(database_page_href)}">Datenbank</a>' if database_page_href else ""
+        f'<a href="{pulse_html.esc(database_page_href)}">Daten</a>' if database_page_href else ""
     )
     # The SQLite bullet in the method list only appears when this build actually
     # produced a database to link to.
@@ -5578,7 +6483,7 @@ def render_sources_page(
     if database_page_href or database_href:
         database_links = []
         if database_page_href:
-            database_links.append(f'<a href="{pulse_html.esc(database_page_href)}">Datenbank erkunden</a>')
+            database_links.append(f'<a href="{pulse_html.esc(database_page_href)}">Daten</a>')
         if database_href:
             database_links.append(f'<a href="{pulse_html.esc(database_href)}">SQLite herunterladen</a>')
         database_method_item = (
@@ -5587,6 +6492,12 @@ def render_sources_page(
             f"{' · '.join(database_links)}."
             "</span></li>"
         )
+    licence_method_item = (
+        '<li id="lizenz"><strong>Lizenz und Weiterverwendung</strong><span>'
+        "Lizenzhinweis: siehe Quellen und Methode. Die genaue Lizenzformulierung für die "
+        "veröffentlichten Datensätze steht noch aus."
+        "</span></li>"
+    )
     # Glossary of the DIP vorgangstyp labels shown in the Debattenprofil card on
     # puls.html; each label there links to its entry here by anchor.
     vorgangstyp_items = "".join(
@@ -5825,6 +6736,7 @@ def render_sources_page(
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
           <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
           {database_method_item}
+          {licence_method_item}
         </ul>
       </section>
       <section class="panel" id="{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">
@@ -5998,6 +6910,11 @@ def render_site(
     features: Selection | None = None,
     today: date | datetime | None = None,
     week: tuple[int, int] | None = None,
+    manifest: dict[str, Any] | None = None,
+    data_base_url: str = "data/exports/",
+    data_export_error: str | None = None,
+    is_remote_manifest: bool = False,
+    bill_slugs: set[str] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -6012,15 +6929,22 @@ def render_site(
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
 
-    # Links to the SQLite artefacts, but only when this build actually wrote
-    # them; every page takes these as optional and omits the link when None.
+    # The download link on every other page ("SQLite herunterladen") points at
+    # the distribution copy named in the manifest, never at the build store
+    # itself - the export step is the only writer of a manifest, and it never
+    # runs under --no-persist.
     database_href = None
-    if not no_persist:
-        try:
-            database_href = database_path.resolve().relative_to(output_dir.resolve()).as_posix()
-        except ValueError:
-            database_href = None
-    database_page_href = "database.html" if not no_persist and database_path.exists() else None
+    if manifest is not None:
+        sqlite_file = manifest["files"][0]
+        database_href = f"{data_base_url}{manifest['generation']}/{sqlite_file['name']}"
+    # database.html carries content exactly when a manifest exists (an export
+    # from this build, or a --data-manifest override), so that is what the
+    # in-page "Daten" links key on.
+    database_page_href = "database.html" if manifest is not None else None
+    data_stand = None
+    if manifest is not None:
+        stand_display, _ = format_datenstand_timestamp(manifest["generated_at"])
+        data_stand = f"Stand {stand_display} · {pulse_html.format_int(manifest['protocols']['count'])} Protokolle"
 
     # The raw catalog as JSON. It is also what load_cached_protocols() reads back
     # for an --offline render.
@@ -6066,8 +6990,8 @@ def render_site(
     index_path.write_text(
         render_landing_page(
             entries,
-            database_href=database_href,
             database_page_href=database_page_href,
+            data_stand=data_stand,
             protocol_count=len(protocols),
             bill_count=int(bill_output["count"]),
             features=features,
@@ -6103,10 +7027,30 @@ def render_site(
         render_sources_page(entries, database_href=database_href, database_page_href=database_page_href, features=features),
         encoding="utf-8",
     )
-    if database_page_href:
-        database_page_path.write_text(render_database_page(database_path, database_href, features), encoding="utf-8")
+    if manifest is not None:
+        document_numbers = {
+            entry["report"]["protocol"].get("dokumentnummer")
+            for entry in entries
+            if entry.get("report") and entry["report"].get("protocol")
+        }
+        document_numbers.discard(None)
+        database_page_path.write_text(
+            render_database_page(
+                manifest,
+                data_base_url=data_base_url,
+                mp_lookup=mp_lookup,
+                document_numbers=document_numbers,
+                bill_slugs=bill_slugs or set(),
+                is_remote=is_remote_manifest,
+                features=features,
+            ),
+            encoding="utf-8",
+        )
     else:
-        database_page_path.write_text(render_database_unavailable_page(features), encoding="utf-8")
+        database_page_path.write_text(
+            render_database_unavailable_page(features, reason=data_export_error),
+            encoding="utf-8",
+        )
     settings_path.write_text(render_settings_page(features, readiness), encoding="utf-8")
     return index_path
 
@@ -6317,6 +7261,105 @@ def print_feature_table(selection: Selection) -> None:
 # ---------------------------------------------------------------------------
 
 
+_ABSOLUTE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
+
+
+# --data-base-url only decides where download links point. Absolute only for
+# https://, http:// or a leading /; any other scheme:// is a build-time error
+# (F3.1) rather than a silently broken or unsafe href.
+def resolve_data_base_url(value: str) -> str:
+    if value.startswith("https://") or value.startswith("http://") or value.startswith("/"):
+        return value if value.endswith("/") else value + "/"
+    if _ABSOLUTE_SCHEME_RE.match(value):
+        raise ValueError(
+            f"--data-base-url {value!r} uses an unsupported scheme; use https://, http://, a leading / or a relative path"
+        )
+    return value if value.endswith("/") else value + "/"
+
+
+def is_url(value: str) -> bool:
+    return bool(re.match(r"^https?://", value))
+
+
+# The "Fragen und Fehler" footer link may come from a --data-manifest that
+# the operator fetched from elsewhere, so it gets the same scheme discipline
+# as --data-base-url: https://, http://, mailto: or a site-relative path.
+_ISSUES_URL_RE = re.compile(r"^(https?://|mailto:|/)")
+
+
+def safe_issues_url(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    return value if _ISSUES_URL_RE.match(value) else None
+
+
+# What the page and render_site read from a manifest. A --data-manifest
+# override is operator input, so a wrong-shaped file fails here with one
+# named error instead of a KeyError somewhere inside render_site().
+_MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
+    ("export_format", int),
+    ("generated_at", str),
+    ("generation", str),
+    ("files", list),
+    ("protocols", dict),
+    ("tables", list),
+    ("relationships", int),
+    ("total_rows", int),
+    ("votes", dict),
+    ("recipes", list),
+    ("coverage", dict),
+)
+
+
+def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        raise RuntimeError(f"error: --data-manifest {source} is not a JSON object")
+    problems = []
+    for key, expected in _MANIFEST_REQUIRED:
+        if key not in manifest:
+            problems.append(f"missing {key}")
+        elif not isinstance(manifest[key], expected) or (expected is int and isinstance(manifest[key], bool)):
+            problems.append(f"{key} is not {getattr(expected, '__name__', expected)}")
+    files = manifest.get("files")
+    if isinstance(files, list):
+        if not files:
+            problems.append("files is empty")
+        for index, entry in enumerate(files):
+            if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not isinstance(entry.get("bytes"), int):
+                problems.append(f"files[{index}] needs name and bytes")
+                break
+            if "/" in entry["name"] or "\\" in entry["name"] or entry["name"] in ("", ".", ".."):
+                problems.append(f"files[{index}].name {entry['name']!r} is not a plain file name")
+                break
+        if files and isinstance(files[0], dict) and not all(k in files[0] for k in ("unpacked_bytes", "sha256")):
+            problems.append("files[0] needs unpacked_bytes and sha256")
+    generation = manifest.get("generation")
+    if isinstance(generation, str) and not re.match(r"^g-[0-9a-f]{12}$", generation):
+        problems.append(f"generation {generation!r} is not g-<12 hex>")
+    for key in ("protocols", "votes", "coverage"):
+        value = manifest.get(key)
+        if isinstance(value, dict) and key == "protocols" and "count" not in value:
+            problems.append("protocols.count missing")
+        if isinstance(value, dict) and key == "votes" and not all(k in value for k in ("count", "members")):
+            problems.append("votes.count/members missing")
+        if isinstance(value, dict) and key == "coverage" and not all(
+            k in value for k in ("catalog_count", "dossier_count", "bausteine")
+        ):
+            problems.append("coverage.catalog_count/dossier_count/bausteine missing")
+    if isinstance(manifest.get("tables"), list) and not all(
+        isinstance(t, dict) and isinstance(t.get("name"), str) and isinstance(t.get("columns"), list) for t in manifest["tables"]
+    ):
+        problems.append("tables[] entries need name and columns")
+    if isinstance(manifest.get("recipes"), list) and not all(
+        isinstance(r, dict) and isinstance(r.get("id"), str) and isinstance(r.get("rows"), list) for r in manifest["recipes"]
+    ):
+        problems.append("recipes[] entries need id and rows")
+    if problems:
+        raise RuntimeError(f"error: --data-manifest {source} is not a usable Daten manifest: " + "; ".join(problems))
+    return manifest
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key", help="DIP API key. Prefer DIP_API_KEY for local use.")
@@ -6488,7 +7531,143 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Deprecated compatibility veto for --enrich mp-roster.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--data-base-url",
+        default=None,
+        help=(
+            "Base URL the Daten page's download links are built from. Defaults to "
+            "data/exports/ (or $BUNDESTAG_PULSE_DATA_BASE_URL); absolute only for "
+            "https://, http:// or a leading /."
+        ),
+    )
+    parser.add_argument(
+        "--data-manifest",
+        default=None,
+        help=(
+            "Path or URL of the datenstand.json the Daten page renders from. Defaults to "
+            "OUTPUT_DIR/data/exports/datenstand.json (or $BUNDESTAG_PULSE_DATA_MANIFEST). "
+            "A URL is an explicit opt-in fetch and is rejected under --offline. While an override is "
+            "given the local export is skipped unless --force-export is passed."
+        ),
+    )
+    parser.add_argument(
+        "--force-export",
+        action="store_true",
+        help="Re-run the Daten export even when its inputs are unchanged, or when --data-manifest would skip it.",
+    )
+    parser.add_argument(
+        "--data-license",
+        default=None,
+        help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE).",
+    )
+    parser.add_argument(
+        "--data-issues-url",
+        default=None,
+        help="Optional URL for a 'Fragen und Fehler' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only.",
+    )
+    args = parser.parse_args()
+    if args.force_export and args.no_persist:
+        parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
+    if args.offline and args.data_manifest and is_url(args.data_manifest):
+        parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
+    if args.no_persist and args.data_base_url:
+        print(
+            "warning: --data-base-url has no effect with --no-persist (no store, no download links)",
+            file=sys.stderr,
+        )
+    return args
+
+
+# CLI > env > default, read in the layer that actually runs the build (not in
+# parse_args itself), per the DX addendum. getattr() throughout: main() must
+# keep working against the pre-existing test stub that mocks parse_args() with
+# a bare SimpleNamespace lacking these attributes.
+def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | None, str, str | None]:
+    base_url_raw = (
+        getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
+    )
+    manifest_raw = getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+    license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
+    issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
+    issues_url = (issues_url or "").strip() or None
+    if issues_url and safe_issues_url(issues_url) is None:
+        raise ValueError(f"--data-issues-url {issues_url!r} must start with https://, http://, mailto: or /")
+    return base_url_raw, manifest_raw, license_text, issues_url
+
+
+def resolve_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+# Runs the export step (unless --no-persist, or the store does not exist) and
+# resolves which manifest the Daten page renders from: the manifest this build
+# just wrote, or an explicit --data-manifest override (local file or, outside
+# --offline, a URL). Bills are collected once here for the coverage numbers
+# and link resolution; render_site's own bills component re-collects them to
+# write the actual bill pages.
+def run_data_pipeline(
+    *,
+    args: argparse.Namespace,
+    output_dir: Path,
+    database_path: Path,
+    entries: list[dict[str, Any]],
+    protocols: list[dict[str, Any]],
+    abg_mps: list[dict[str, Any]],
+    mp_lookup: dict[str, int],
+    canonical_by_mp_id: dict[int, int],
+) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
+    base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
+    data_base_url = resolve_data_base_url(base_url_raw)
+    bills = collect_bill_pages(entries)
+    bill_slugs = {bill["slug"] for bill in bills}
+    readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
+
+    manifest: dict[str, Any] | None = None
+    data_export_error: str | None = None
+    force_export = bool(getattr(args, "force_export", False))
+    # A --data-manifest override replaces whatever this build would export, so
+    # the export only runs when its result is used or explicitly forced.
+    if manifest_raw and not force_export:
+        print("export: skipped (--data-manifest overrides the manifest; pass --force-export to export anyway)", file=sys.stderr)
+    elif not args.no_persist and database_path.exists():
+        exports_dir = output_dir / "data" / "exports"
+        try:
+            manifest = export_distribution_data(
+                database_path,
+                exports_dir,
+                canonical_by_mp_id=canonical_by_mp_id,
+                mp_lookup=mp_lookup,
+                readiness=readiness,
+                catalog_count=len(protocols),
+                dossier_count=len(entries),
+                license_text=license_text,
+                issues_url=issues_url,
+                commit=resolve_commit(),
+                force=force_export,
+            )
+        except DataExportUnavailable as exc:
+            data_export_error = str(exc)
+            print(f"error: {exc}", file=sys.stderr)
+
+    is_remote_manifest = False
+    if manifest_raw:
+        if is_url(manifest_raw):
+            manifest = validate_manifest(load_remote_manifest(manifest_raw), manifest_raw)
+            is_remote_manifest = True
+        else:
+            manifest = validate_manifest(json.loads(Path(manifest_raw).read_text(encoding="utf-8")), manifest_raw)
+    return manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest
 
 
 # Entry point: run the whole build and print the path of the generated
@@ -6552,6 +7731,7 @@ def main() -> int:
 
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
+        canonical_by_mp_id: dict[int, int] = {}
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
@@ -6566,6 +7746,7 @@ def main() -> int:
                     components["mp-pages"].after_persist(store, component_context)
                     abg_mps = component_context["abg_mps"]
                     mp_lookup = component_context["mp_lookup"]
+                    canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
             finally:
                 store.close()
 
@@ -6577,6 +7758,20 @@ def main() -> int:
             return 2
 
         entries = rebuild_cached_detail_pages(output_dir, protocols, mp_lookup, features, cached_entries=cached_entries)
+        try:
+            manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
+                args=args,
+                output_dir=output_dir,
+                database_path=database_path,
+                entries=entries,
+                protocols=protocols,
+                abg_mps=abg_mps,
+                mp_lookup=mp_lookup,
+                canonical_by_mp_id=canonical_by_mp_id,
+            )
+        except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         # Dossier pages are regenerated from the cached JSON reports, then the
         # rest of the site is rendered around them.
         index_path = render_site(
@@ -6590,6 +7785,11 @@ def main() -> int:
             features=features,
             today=build_today,
             week=pulse_week,
+            manifest=manifest,
+            data_base_url=data_base_url,
+            data_export_error=data_export_error,
+            is_remote_manifest=is_remote_manifest,
+            bill_slugs=bill_slugs,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -6643,6 +7843,7 @@ def main() -> int:
             return 2
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
+        canonical_by_mp_id: dict[int, int] = {}
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -6708,6 +7909,7 @@ def main() -> int:
                             )
                         abg_mps = component_context["abg_mps"]
                         mp_lookup = component_context["mp_lookup"]
+                        canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
                 finally:
                     store.close()
                 entries = [write_report_files(entry["report"], output_dir, mp_lookup, features) for entry in entries]
@@ -6730,7 +7932,22 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    # Step 4: render the rest of the site around the dossiers.
+    # Step 4: export the Daten distribution files, then render the rest of the
+    # site around the dossiers.
+    try:
+        manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
+            args=args,
+            output_dir=output_dir,
+            database_path=database_path,
+            entries=entries,
+            protocols=protocols,
+            abg_mps=abg_mps,
+            mp_lookup=mp_lookup,
+            canonical_by_mp_id=canonical_by_mp_id,
+        )
+    except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     index_path = render_site(
         output_dir=output_dir,
         database_path=database_path,
@@ -6742,6 +7959,11 @@ def main() -> int:
         features=features,
         today=build_today,
         week=pulse_week,
+        manifest=manifest,
+        data_base_url=data_base_url,
+        data_export_error=data_export_error,
+        is_remote_manifest=is_remote_manifest,
+        bill_slugs=bill_slugs,
     )
     print(index_path)
     return 0

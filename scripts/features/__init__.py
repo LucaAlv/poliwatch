@@ -46,7 +46,7 @@ NAV_ITEMS = (
     NavItem("catalog", "Alle API-Sitzungen", "api-sitzungen.html"),
     NavItem("bills", "Gesetze verfolgen", "bills/index.html", "bills"),
     NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html", "mp-pages"),
-    NavItem("database", "Datenbank", "database.html"),
+    NavItem("database", "Daten", "database.html"),
     NavItem("sources", "Quellen und Methode", "sources.html"),
 )
 

@@ -77,5 +77,38 @@ class PersistReportTests(unittest.TestCase):
         }
 
 
+class ConnectGuardTests(unittest.TestCase):
+    def test_connect_refuses_a_store_with_a_nonzero_user_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "distribution.sqlite"
+            conn = pulse_store.connect(db_path)
+            conn.execute("PRAGMA user_version = 1")
+            conn.close()
+
+            with self.assertRaises(RuntimeError) as ctx:
+                pulse_store.connect(db_path)
+            self.assertIn("distribution copy", str(ctx.exception))
+
+    def test_connect_refuses_a_store_with_a_datenstand_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "distribution.sqlite"
+            conn = pulse_store.connect(db_path)
+            conn.execute("CREATE TABLE datenstand (tag TEXT)")
+            conn.close()
+
+            with self.assertRaises(RuntimeError):
+                pulse_store.connect(db_path)
+
+    def test_connect_accepts_an_ordinary_build_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(db_path)
+            pulse_store.initialize(conn)
+            conn.close()
+            # Reconnecting to a normal, already-initialized store must not raise.
+            conn = pulse_store.connect(db_path)
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
