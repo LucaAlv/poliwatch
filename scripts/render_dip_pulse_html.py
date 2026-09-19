@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -12,13 +13,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import publication_state as publication
 from features import (
-    CATEGORIES,
-    FEATURES,
     NAV_ITEMS,
     Selection,
-    feature_css,
-    manifest_json,
     publication_selection,
 )
 
@@ -382,6 +380,11 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+def source_url(value: Any, source: str) -> str:
+    """Validate an external provenance URL before it reaches public HTML."""
+    return publication.validate_external_url(str(value or ""), source)
+
+
 def short(value: str | None, limit: int = 150) -> str:
     if not value:
         return ""
@@ -469,7 +472,7 @@ def global_header_styles() -> str:
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      min-height:34px;
+      min-height:44px;
       padding:5px 11px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -491,7 +494,7 @@ def global_header_styles() -> str:
       align-items:center;
       justify-content:center;
       gap:6px;
-      min-height:34px;
+      min-height:44px;
       padding:5px 10px;
       border:1px solid var(--line);
       border-radius:6px;
@@ -507,80 +510,6 @@ def global_header_styles() -> str:
       border-color:#bdd0ea;
       color:var(--blue, #174ea6);
     }
-    .settings-wrap { position:relative; }
-    .settings-toggle, .settings-close, .settings-reset, .settings-more {
-      appearance:none;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:34px;
-      padding:5px 10px;
-      border:1px solid var(--line);
-      border-radius:6px;
-      background:var(--panel);
-      color:var(--ink);
-      font:inherit;
-      font-size:13px;
-      font-weight:750;
-      cursor:pointer;
-    }
-    .settings-toggle { width:36px; padding:5px; }
-    .settings-toggle svg { width:17px; height:17px; }
-    .settings-panel[hidden] { display:none !important; }
-    .settings-panel {
-      position:absolute;
-      z-index:100;
-      top:calc(100% + 9px);
-      right:0;
-      width:min(390px, calc(100vw - 28px));
-      max-height:min(650px, calc(100vh - 90px));
-      overflow:auto;
-      padding:0;
-      border:1px solid var(--line);
-      border-radius:10px;
-      background:var(--panel);
-      color:var(--ink);
-      box-shadow:0 16px 42px rgba(23, 26, 31, .18);
-    }
-    .settings-panel-head, .settings-panel-foot {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      padding:13px 15px;
-      border-bottom:1px solid var(--line);
-    }
-    .settings-panel-head strong { font-size:15px; }
-    .settings-panel-foot { border-top:1px solid var(--line); border-bottom:0; }
-    .settings-close { min-height:28px; width:30px; padding:3px; }
-    .settings-groups { padding:8px 15px; }
-    .settings-group { padding:7px 0; background:var(--panel); }
-    .settings-group h3 { margin:0 0 4px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-    .settings-item {
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:14px;
-      padding:10px 0;
-      border-bottom:1px solid var(--line);
-    }
-    .settings-item:last-child { border-bottom:0; }
-    .settings-switch-text { min-width:0; }
-    .settings-switch-text strong { display:block; color:var(--ink); font-size:13px; }
-    .settings-switch-text span, .settings-hint, .settings-count { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.35; }
-    .settings-switch { flex:0 0 auto; margin-top:2px; accent-color:var(--blue); cursor:pointer; }
-    .settings-switch:disabled { cursor:not-allowed; }
-    .settings-badge { display:inline-flex !important; width:max-content; padding:2px 5px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2, #f4f6f9); }
-    .settings-badge.readiness-ready { border-color:#89c5ba; background:var(--green-soft, #e7f6f3); color:#0f5f59; }
-    .settings-badge.readiness-partial { border-color:#d9c48a; background:var(--amber-soft, #fbf6e7); color:#7a5a10; }
-    .settings-badge.readiness-unavailable { color:var(--muted); }
-    .settings-item.is-unavailable { opacity:.72; }
-    .settings-hint code { font-size:10px; }
-    .settings-more { text-decoration:none; }
-    .settings-card { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px; }
-    .settings-page-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
-    .settings-page-grid .settings-group { padding:18px; }
-    .settings-page-grid .settings-group h2 { margin:0 0 10px; font-size:18px; }
     .theme-toggle-icon {
       width:15px;
       font-size:14px;
@@ -588,7 +517,7 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] a { color:var(--blue) !important; }
     :root[data-theme="dark"] :is(
-      .site-nav a, .theme-toggle, .settings-toggle, .settings-close, .settings-reset, .settings-more,
+      .site-nav a, .theme-toggle,
       .button, .btn, .dev-toggle,
       .page-actions a, .session-links a,
       .feature-link, .doc-link, .top-jump
@@ -609,7 +538,6 @@ def global_header_styles() -> str:
       .feature-microgrid div, .top-card, .lede-top,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .settings-panel, .settings-card, .settings-group,
       .week-compare, .week-metric
     ) {
       background:var(--panel) !important;
@@ -629,7 +557,7 @@ def global_header_styles() -> str:
       .llm-summary > p, .summary-sources p, .speech-text,
       .speaker-row span, .position-list span, .doc-list span,
       .activity-list span, .people-list span, .feature-state,
-      .aw-profile, .table-head strong, .settings-switch-text strong, .settings-panel-head strong
+      .aw-profile, .table-head strong
     ) {
       color:var(--ink) !important;
     }
@@ -639,7 +567,7 @@ def global_header_styles() -> str:
       .principle p, .area-card p, .metric span, .feature-microgrid span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
-      .session-summary-note, .ranking-empty, .settings-switch-text span, .settings-hint, .settings-count,
+      .session-summary-note, .ranking-empty,
       .week-card h3, .week-label, .week-note, .week-sub,
       .week-metric span, .week-metric-foot em, .week-trace em
     ) {
@@ -659,7 +587,6 @@ def global_header_styles() -> str:
       .position-list li, .doc-list li, .activity-list li,
       .people-list li, .people-section, .raw-top-api,
       .dev-top-details, .speech-section, details pre,
-      .settings-item, .settings-panel-head, .settings-panel-foot,
       .week-head, .week-row.return-row
     ) {
       border-color:var(--line) !important;
@@ -691,17 +618,8 @@ def global_header_styles() -> str:
       .site-header { align-items:flex-start; }
       .site-nav { justify-content:flex-start; }
       .site-actions { width:100%; justify-content:flex-start; }
-      .settings-panel {
-        position:fixed;
-        top:70px;
-        left:14px;
-        right:14px;
-        width:auto;
-        max-height:calc(100vh - 84px);
-      }
-      .settings-page-grid { grid-template-columns:1fr; }
     }
-    """ + "\n    " + feature_css()
+    """
 
 
 def theme_bootstrap_script() -> str:
@@ -792,230 +710,62 @@ def theme_runtime_script() -> str:
 """
 
 
-def feature_bootstrap_script(selection: Selection | None = None) -> str:
-    selection = publication_selection()
-    return f"""
-  <script>
-    (() => {{
-      const key = "bundestag-pulse-features";
-      const manifest = {manifest_json(selection)};
-      window.__BUNDESTAG_PULSE_FEATURES__ = manifest;
-      let overrides = {{}};
-      try {{ overrides = JSON.parse(window.localStorage.getItem(key) || "{{}}") || {{}}; }} catch (_) {{}}
-      const states = {{}};
-      for (const [id, feature] of Object.entries(manifest)) {{
-        states[id] = feature.c || (feature.a && (
-          Object.prototype.hasOwnProperty.call(overrides, id) ? Boolean(overrides[id]) : Boolean(feature.v)
-        ));
-      }}
-      // An explicit/off dependency wins when restoring old or hand-edited state.
-      // Interactive enabling performs the inverse operation and enables its
-      // dependencies first (see feature_runtime_script).
-      let changed = true;
-      while (changed) {{
-        changed = false;
-        for (const [id, feature] of Object.entries(manifest)) {{
-          if (states[id] && (feature.r || []).some((required) => !states[required])) {{
-            states[id] = false;
-            changed = true;
-          }}
-        }}
-      }}
-      for (const [id, on] of Object.entries(states)) {{
-        document.documentElement.toggleAttribute(`data-feature-${{id}}`, on);
-      }}
-    }})();
-  </script>
-"""
-
-
-def feature_runtime_script(selection: Selection | None = None) -> str:
+def ai_summary_runtime_script() -> str:
+    """One global, fail-open preference for every AI summary on a page."""
     return """
   <script>
     (() => {
-      const key = "bundestag-pulse-features";
+      const key = "bundestag-pulse-ai-summaries-v1";
       const root = document.documentElement;
-      const manifest = window.__BUNDESTAG_PULSE_FEATURES__ || {};
-      const readOverrides = () => {
-        try { return JSON.parse(window.localStorage.getItem(key) || "{}") || {}; } catch (_) { return {}; }
-      };
-      const updateControls = () => {
-        const overrides = readOverrides();
-        document.querySelectorAll("[data-feature-toggle]").forEach((control) => {
-          const id = control.dataset.featureToggle;
-          const feature = manifest[id];
-          if (!feature) return;
-          const inherited = !Object.prototype.hasOwnProperty.call(overrides, id);
-          control.checked = root.hasAttribute(`data-feature-${id}`);
-          control.dataset.inherited = inherited ? "true" : "false";
+      const controls = Array.from(document.querySelectorAll("[data-ai-summary-toggle]"));
+      const bodies = Array.from(document.querySelectorAll("[data-ai-summary-body]"));
+      if (!controls.length || !bodies.length) return;
+      let state = "expanded";
+      try {
+        const stored = window.localStorage.getItem(key);
+        if (stored === "expanded" || stored === "collapsed") state = stored;
+      } catch (_) {}
+      const apply = (next, persist = false) => {
+        const collapsed = next === "collapsed";
+        bodies.forEach((body) => { body.hidden = collapsed; });
+        controls.forEach((control) => {
+          control.setAttribute("aria-expanded", collapsed ? "false" : "true");
+          control.textContent = collapsed
+            ? "Alle KI-Zusammenfassungen anzeigen"
+            : "Alle KI-Zusammenfassungen einklappen";
         });
-        document.querySelectorAll("[data-settings-count]").forEach((node) => {
-          const count = Object.keys(manifest).filter((id) => {
-            const feature = manifest[id];
-            return feature.a && !feature.c && feature.m !== "n" && root.hasAttribute(`data-feature-${id}`);
-          }).length;
-          node.textContent = `${count} aktiv`;
-        });
-      };
-      const setFeature = (id, on, persist = true) => {
-        const feature = manifest[id];
-        if (!feature || !feature.a || feature.c || feature.m === "n") return;
-        const overrides = readOverrides();
-        const apply = (featureId, enabled) => {
-          const target = manifest[featureId];
-          if (!target || target.c || target.m === "n") return;
-          root.toggleAttribute(`data-feature-${featureId}`, Boolean(enabled));
-          if (persist) overrides[featureId] = Boolean(enabled);
-        };
-        if (on) {
-          for (const required of feature.r || []) apply(required, true);
-          apply(id, true);
-        } else {
-          apply(id, false);
-          for (const [dependentId, dependent] of Object.entries(manifest)) {
-            if ((dependent.r || []).includes(id)) apply(dependentId, false);
-          }
-        }
+        root.dataset.aiSummaries = collapsed ? "collapsed" : "expanded";
         if (persist) {
-          try { window.localStorage.setItem(key, JSON.stringify(overrides)); } catch (_) {}
+          try { window.localStorage.setItem(key, collapsed ? "collapsed" : "expanded"); } catch (_) {}
         }
-        updateControls();
       };
-      document.querySelectorAll("[data-feature-toggle]").forEach((control) => {
-        control.addEventListener("change", () => setFeature(control.dataset.featureToggle, control.checked));
-      });
-      document.querySelectorAll("[data-settings-reset]").forEach((button) => {
-        button.addEventListener("click", () => {
-          try { window.localStorage.removeItem(key); } catch (_) {}
-          for (const [id, feature] of Object.entries(manifest)) {
-            root.toggleAttribute(`data-feature-${id}`, Boolean(feature.a && (feature.c || feature.v)));
-          }
-          updateControls();
+      controls.forEach((control) => {
+        control.addEventListener("click", () => {
+          apply(root.dataset.aiSummaries === "collapsed" ? "expanded" : "collapsed", true);
         });
       });
-      document.querySelectorAll("[data-settings-wrap]").forEach((wrap) => {
-        const button = wrap.querySelector("[data-settings-toggle]");
-        const panel = wrap.querySelector("[data-settings-panel]");
-        if (!button || !panel) return;
-        const close = (restore = false) => {
-          panel.hidden = true;
-          button.setAttribute("aria-expanded", "false");
-          if (restore) button.focus();
-        };
-        const open = () => {
-          panel.hidden = false;
-          button.setAttribute("aria-expanded", "true");
-          panel.querySelector("button, input, a")?.focus();
-        };
-        button.addEventListener("click", () => panel.hidden ? open() : close());
-        panel.querySelector("[data-settings-close]")?.addEventListener("click", () => close(true));
-        document.addEventListener("pointerdown", (event) => { if (!panel.hidden && !wrap.contains(event.target)) close(); });
-        wrap.addEventListener("focusout", (event) => { if (!panel.hidden && event.relatedTarget && !wrap.contains(event.relatedTarget)) close(); });
-        document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !panel.hidden) close(true); });
-      });
-      document.querySelectorAll(".dev-toggle").forEach((button) => {
-        const sync = () => {
-          const enabled = root.hasAttribute("data-feature-dev-view");
-          button.setAttribute("aria-pressed", enabled ? "true" : "false");
-          button.textContent = enabled ? "Dev-Ansicht aus" : "Dev-Ansicht";
-        };
-        button.addEventListener("click", () => { setFeature("dev-view", !root.hasAttribute("data-feature-dev-view")); sync(); });
-        sync();
-      });
-      updateControls();
+      apply(state, false);
+      root.dataset.aiSummaryController = "ready";
     })();
   </script>
 """
 
 
 def page_head(selection: Selection | None = None) -> str:
-    return theme_bootstrap_script() + feature_bootstrap_script(selection)
+    return theme_bootstrap_script()
 
 
 def page_scripts(selection: Selection | None = None) -> str:
-    return feature_runtime_script(selection) + theme_runtime_script()
-
-
-SETTINGS_ICON_SVG = (
-    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
-    '<path fill="currentColor" d="M19.4 13a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L15 3.3h-4L10.6 6a8 8 0 0 0-1.7 1L6.5 6l-2 3.4L6.6 11a7.8 7.8 0 0 0-.1 1 7.8 7.8 0 0 0 .1 1l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.7h4l.4-2.7a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/>'
-    '</svg>'
-)
-
-
-def render_settings_items(
-    selection: Selection,
-    category: str | None = None,
-    readiness: dict[str, str] | None = None,
-) -> str:
-    labels = {feature.id: feature.label for feature in FEATURES}
-    readiness = readiness or {}
-    readiness_labels = {
-        "ready": "Daten verfügbar",
-        "partial": "Daten teilweise verfügbar",
-        "unavailable": "Noch keine Daten verfügbar",
-    }
-    rows = []
-    for feature in FEATURES:
-        if feature.core or feature.client_mode == "none":
-            continue
-        if category and feature.category != category:
-            continue
-        checked = " checked" if feature.default_visible else ""
-        enhancement = ""
-        if feature.enhances:
-            enhancement = (
-                '<span class="settings-hint">Ergänzt: '
-                + esc(", ".join(labels[feature_id] for feature_id in feature.enhances))
-                + ".</span>"
-            )
-        state = readiness.get(feature.id)
-        status = (
-            f'<span class="settings-badge readiness-{esc(state)}">{esc(readiness_labels[state])}</span>'
-            if state in readiness_labels
-            else ""
-        )
-        rows.append(
-            f'<label class="settings-item" data-settings-item="{esc(feature.id)}">'
-            f'<span class="settings-switch-text"><strong>{esc(feature.label)}</strong>'
-            f'<span>{esc(feature.description)}</span>{enhancement}{status}</span>'
-            f'<input class="settings-switch" type="checkbox" role="switch" data-feature-toggle="{esc(feature.id)}"'
-            f'{checked}></label>'
-        )
-    return "".join(rows)
-
-
-def render_settings_panel(selection: Selection, *, depth: int = 0) -> str:
-    groups = "".join(
-        f'<section class="settings-group"><h3>{esc(category)}</h3>{items}</section>'
-        for category in CATEGORIES
-        if (items := render_settings_items(selection, category))
-    )
-    panel_id = "site-settings-panel"
-    prefix = "../" * depth
-    return (
-        '<div class="settings-wrap" data-settings-wrap>'
-        f'<button class="settings-toggle" type="button" data-settings-toggle aria-expanded="false" aria-controls="{panel_id}" aria-label="Bausteine einstellen">{SETTINGS_ICON_SVG}</button>'
-        f'<div class="settings-panel" id="{panel_id}" data-settings-panel role="region" aria-label="Bausteine" aria-modal="false" hidden>'
-        '<div class="settings-panel-head"><strong>Bausteine</strong><button class="settings-close" type="button" data-settings-close aria-label="Schließen">×</button></div>'
-        f'<div class="settings-groups">{groups}</div>'
-        '<div class="settings-panel-foot"><span class="settings-count" data-settings-count></span>'
-        f'<a class="settings-more" href="{prefix}settings.html">Alle Einstellungen</a></div>'
-        '</div></div>'
-    )
+    return ai_summary_runtime_script() + theme_runtime_script()
 
 
 def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
-    features = publication_selection()
     prefix = "../" * depth
     brand_href = f"{prefix}index.html"
     links = []
     for item in NAV_ITEMS:
-        if item.feature_id and item.feature_id not in features:
-            continue
         current = ' aria-current="page"' if active == item.key else ""
-        feature_attr = f' data-feature="{item.feature_id}"' if item.feature_id else ""
-        links.append(f'<a href="{esc(prefix + item.path)}"{current}{feature_attr}>{esc(item.label)}</a>')
+        links.append(f'<a href="{esc(prefix + item.path)}"{current}>{esc(item.label)}</a>')
     return (
         '<div class="site-header">'
         f'<a class="site-brand" href="{esc(brand_href)}">'
@@ -1029,7 +779,6 @@ def render_global_header(*, depth: int = 0, active: str | None = None, features:
         '<span class="theme-toggle-icon" data-theme-icon aria-hidden="true">☾</span>'
         '<span data-theme-label>Dunkel</span>'
         '</button>'
-        f'{render_settings_panel(features, depth=depth)}'
         '</div>'
         "</div>"
     )
@@ -1074,6 +823,7 @@ PROFILE_ICON_SVG = (
 def speaker_profile(speaker: dict[str, Any] | None) -> dict[str, Any] | None:
     profile = (speaker or {}).get("abgeordnetenwatch")
     if isinstance(profile, dict) and profile.get("url"):
+        source_url(profile["url"], "abgeordnetenwatch")
         return profile
     return None
 
@@ -1086,7 +836,7 @@ def render_profile_icon(speaker: dict[str, Any] | None) -> str:
     label = profile.get("label") or "abgeordnetenwatch.de"
     tooltip = f"Profil von {label} auf abgeordnetenwatch.de"
     return (
-        f'<a class="aw-profile-icon" data-feature="aw-profiles" href="{esc(profile["url"])}" target="_blank" '
+        f'<a class="aw-profile-icon" href="{esc(profile["url"])}" target="_blank" '
         f'rel="noopener" title="{esc(tooltip)}" aria-label="{esc(tooltip)}">'
         f"{PROFILE_ICON_SVG}</a>"
     )
@@ -1099,7 +849,7 @@ def render_profile_link(speaker: dict[str, Any] | None) -> str:
         return ""
     return (
         '<p class="aw-profile-line">'
-        f'<a class="aw-profile" data-feature="aw-profiles" href="{esc(profile["url"])}" target="_blank" rel="noopener">'
+        f'<a class="aw-profile" href="{esc(profile["url"])}" target="_blank" rel="noopener">'
         f"{PROFILE_ICON_SVG}<span>Profil auf abgeordnetenwatch.de</span>"
         '<span class="aw-ext" aria-hidden="true">↗</span></a>'
         "</p>"
@@ -1541,7 +1291,9 @@ def render_source_links(item: dict[str, Any]) -> str:
         url = doc.get("url")
         number = doc.get("dokumentnummer")
         if url:
-            links.append(f'<a class="doc-link" href="{esc(url)}">{esc(number)}</a>')
+            links.append(
+                f'<a class="doc-link" href="{esc(source_url(url, "bundestag-xml"))}">{esc(number)}</a>'
+            )
         else:
             links.append(f'<span class="doc-link muted">{esc(number)}</span>')
     if not links:
@@ -1571,7 +1323,7 @@ def render_linked_docs(item: dict[str, Any]) -> str:
         date = esc(doc.get("datum") or "")
         origin = ", ".join(doc.get("urheber") or [])
         url = doc.get("url")
-        label = f'<a href="{esc(url)}">{number}</a>' if url else number
+        label = f'<a href="{esc(source_url(url, "bundestag-dip"))}">{number}</a>' if url else number
         rows.append(
             "<li>"
             f"<strong>{label}</strong>"
@@ -1595,7 +1347,7 @@ def render_positions(item: dict[str, Any]) -> str:
         kind = esc(position.get("vorgangsposition"))
         vorgang = esc(position.get("vorgang_id"))
         if pdf:
-            title_html = f'<a href="{esc(pdf)}">{title}</a>'
+            title_html = f'<a href="{esc(source_url(pdf, "bundestag-dip"))}">{title}</a>'
         else:
             title_html = title
         mit = position.get("mitberaten") or []
@@ -1615,7 +1367,7 @@ def render_activities(item: dict[str, Any]) -> str:
         person = esc(activity.get("person_id") or "")
         page = esc(activity.get("seite") or "")
         pdf = activity.get("pdf_url")
-        label = f'<a href="{esc(pdf)}">{title}</a>' if pdf else title
+        label = f'<a href="{esc(source_url(pdf, "bundestag-dip"))}">{title}</a>' if pdf else title
         person_text = f"Person {person}" if person else "Keine Personen-ID"
         page_text = f"Seite {page}" if page else "Keine Seite"
         rows.append(
@@ -1828,17 +1580,12 @@ def render_llm_summary(
     text = summary.get("text")
     chunks = summary.get("source_chunks") or []
     if not text or not chunks:
-        return (
-            '<section class="llm-summary unavailable" data-feature="summaries">'
-            "<h3><span>Automatische Zusammenfassung</span></h3>"
-            f"<p>{esc(summary_unavailable_message(stats, summary_generation))}</p>"
-            "</section>"
-        )
+        return ""
 
     pdf_url = (protocol or {}).get("pdf_url")
+    if pdf_url:
+        pdf_url = source_url(pdf_url, "bundestag-xml")
     first_anchor = source_chunk_anchor(item, stats, chunks[0])
-    label = esc(summary.get("label") or "Automatische Zusammenfassung — zur Quelle")
-    label_html = f'<a href="#{esc(first_anchor)}">{label}</a>' if first_anchor else f"<span>{label}</span>"
     chunk_rows = []
     for chunk in chunks:
         speaker = chunk.get("speaker") or {}
@@ -1861,12 +1608,28 @@ def render_llm_summary(
             "</li>"
         )
 
+    raw_id = "|".join(
+        (
+            str((protocol or {}).get("dokumentnummer") or "protocol"),
+            "top",
+            str(item.get("top_id") or item.get("index") or "summary"),
+        )
+    )
+    body_id = f"ai-summary-top-{hashlib.sha256(raw_id.encode('utf-8')).hexdigest()[:10]}"
+    source_jump = f'<a href="#{esc(first_anchor)}">Zur ersten Belegstelle</a> · ' if first_anchor else ""
     return (
-        '<section class="llm-summary" data-feature="summaries">'
-        f'<h3>{label_html}</h3>'
+        '<section class="llm-summary" data-ai-generated="true">'
+        '<div class="ai-summary-header">'
+        '<span class="ai-summary-label">KI-generiert · nicht redaktionell geprüft</span>'
+        f'<button class="ai-summary-toggle" type="button" data-ai-summary-toggle '
+        f'aria-expanded="true" aria-controls="{esc(body_id)}">Alle KI-Zusammenfassungen einklappen</button>'
+        "</div>"
+        f'<div class="ai-summary-body" id="{esc(body_id)}" data-ai-summary-body>'
         f"<p>{esc(text)}</p>"
+        f'<p class="ai-summary-method">{source_jump}<a href="../sources.html#ki-zusammenfassungen">'
+        f'{esc(len(chunks))} Belegstellen · Methode</a></p>'
         f'<ul class="summary-sources">{"".join(chunk_rows)}</ul>'
-        "</section>"
+        "</div></section>"
     )
 
 
@@ -1902,17 +1665,7 @@ def render_session_llm_summary(
         and (item.get("llm_summary") or {}).get("source_chunks")
     ]
     if not summarized_items:
-        return (
-            '<section class="session-llm-summary unavailable" data-feature="summaries">'
-            '<div class="session-llm-header">'
-            "<div>"
-            '<span class="eyebrow">KI-Zusammenfassung</span>'
-            "<h2>Automatische Sitzungszusammenfassung</h2>"
-            f"<p>{esc(session_summary_unavailable_message(summary_generation))}</p>"
-            "</div>"
-            "</div>"
-            "</section>"
-        )
+        return ""
 
     summarized_items = sorted(
         summarized_items,
@@ -1922,6 +1675,8 @@ def render_session_llm_summary(
     visible_items = summarized_items[:5]
     total_summaries = len(summarized_items)
     pdf_url = protocol.get("pdf_url")
+    if pdf_url:
+        pdf_url = source_url(pdf_url, "bundestag-xml")
     rows = []
     for item in visible_items:
         stats = stats_by_index[item["index"]]
@@ -1956,20 +1711,23 @@ def render_session_llm_summary(
         )
 
     generated_label = f"{total_summaries} TOP-Zusammenfassung" + ("" if total_summaries == 1 else "en")
+    raw_id = f"{protocol.get('dokumentnummer') or 'protocol'}|session"
+    body_id = f"ai-summary-session-{hashlib.sha256(raw_id.encode('utf-8')).hexdigest()[:10]}"
     return (
-        '<section class="session-llm-summary" data-feature="summaries">'
-        '<div class="session-llm-header">'
-        "<div>"
-        '<span class="eyebrow">KI-Zusammenfassung</span>'
-        "<h2>Automatische Sitzungszusammenfassung</h2>"
-        "<p>Die wichtigsten automatisch zusammengefassten Tagesordnungspunkte dieser Sitzung, "
-        "sortiert nach parlamentarischer Aufmerksamkeit und jeweils mit Protokollquellen belegt.</p>"
+        '<section class="session-llm-summary" data-ai-generated="true">'
+        '<div class="ai-summary-header">'
+        '<div><span class="ai-summary-label">KI-generiert · nicht redaktionell geprüft</span>'
+        '<h2>Automatische Sitzungszusammenfassung</h2></div>'
+        f'<button class="ai-summary-toggle" type="button" data-ai-summary-toggle '
+        f'aria-expanded="true" aria-controls="{esc(body_id)}">Alle KI-Zusammenfassungen einklappen</button>'
         "</div>"
-        f'<span class="summary-count">{esc(generated_label)}</span>'
-        "</div>"
+        f'<div class="ai-summary-body" id="{esc(body_id)}" data-ai-summary-body>'
+        "<p>Die wichtigsten automatisch zusammengefassten Tagesordnungspunkte dieser Sitzung. "
+        "Die technische Prüfung der Links beweist weder sachliche Richtigkeit noch Ausgewogenheit.</p>"
+        f'<p class="ai-summary-method"><a href="../sources.html#ki-zusammenfassungen">{esc(generated_label)} · Methode</a></p>'
         f'<div class="session-summary-list">{"".join(rows)}</div>'
         f"{more_note}"
-        "</section>"
+        "</div></section>"
     )
 
 
@@ -2016,11 +1774,16 @@ def render_html(
     report: dict[str, Any],
     features: Selection | None = None,
     mp_lookup: dict[str, int] | None = None,
+    *,
+    include_dev_view: bool = False,
 ) -> str:
     features = publication_selection()
     from features.loader import load as load_components
 
-    components = {component.feature.id: component for component in load_components(features)}
+    components = {
+        component.feature.id: component
+        for component in load_components(features, include_dev_view=include_dev_view)
+    }
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
@@ -2165,12 +1928,12 @@ def render_html(
               {vote_sections}
               <section class="speaker-section">
                 <h3>Rednerinnen und Redner</h3>
-                {render_speakers(item, stats, mp_lookup if 'mp-pages' in features else None, '../abgeordnete/', 'aw-profiles' in features)}
+                {render_speakers(item, stats, mp_lookup, '../abgeordnete/', True)}
               </section>
               {dev_sections}
               <section class="speech-section">
                 <h3>Reden</h3>
-                {render_speech_details(item, stats, 'aw-profiles' in features)}
+                {render_speech_details(item, stats, True)}
               </section>
             </article>
             """
@@ -2180,13 +1943,22 @@ def render_html(
     warning_html = ""
     if warnings:
         warning_html = '<div class="notice">' + " ".join(esc(w) for w in warnings) + "</div>"
+    profile_state = str(
+        (((report.get("acquisition") or {}).get("profiles") or {}).get("acquisition_state"))
+        or "complete"
+    )
+    profile_copy = {
+        "not_requested": "Hinweis: Profilverknüpfungen wurden nicht abgerufen.",
+        "partial": "Teilweise verfügbar: Einige Profilverknüpfungen fehlen.",
+        "failed": "Nicht verfügbar: Profilverknüpfungen konnten nicht abgerufen werden.",
+    }.get(profile_state)
+    profile_notice = f'<div class="notice profile-state">{esc(profile_copy)}</div>' if profile_copy else ""
     footer_links = [
-        '<a href="../overview.html">Plenarprotokoll-Katalog</a>',
-        '<a href="../api-sitzungen.html">Alle API-Sitzungen</a>',
+        '<a href="../overview.html">Sitzungen</a>',
+        '<a href="../bills/index.html">Gesetze</a>',
+        '<a href="../abgeordnete/index.html">Abgeordnete</a>',
+        '<a href="../sources.html">Quellen</a>',
     ]
-    if "bills" in features:
-        footer_links.append('<a href="../bills/index.html" data-feature="bills">Gesetze verfolgen</a>')
-    footer_links.extend(('<a href="../sources.html">Quellen und Methode</a>', '<a href="../settings.html">Einstellungen</a>'))
     footer_nav = " · ".join(footer_links)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
     protocol_dev_sections = (
@@ -2275,6 +2047,36 @@ def render_html(
       border-radius:8px;
       background:var(--panel);
     }}
+    .ai-summary-header {{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:14px;
+    }}
+    .ai-summary-label {{
+      display:inline-flex;
+      width:max-content;
+      margin-bottom:6px;
+      color:var(--muted);
+      font-size:14px;
+      font-weight:750;
+    }}
+    .ai-summary-toggle {{
+      min-height:44px;
+      padding:8px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--blue);
+      font:inherit;
+      font-size:14px;
+      font-weight:700;
+      text-align:left;
+      cursor:pointer;
+    }}
+    .ai-summary-toggle:focus-visible {{ outline:2px solid var(--blue); outline-offset:3px; }}
+    .ai-summary-method {{ font-size:14px; color:var(--muted); }}
     .session-llm-header {{
       display:grid;
       grid-template-columns:minmax(0,1fr) auto;
@@ -2504,7 +2306,6 @@ def render_html(
     .mini-bars i {{ background:var(--teal); }}
     .mini-bars b {{ background:var(--amber); }}
     main {{ display:grid; gap:16px; }}
-    .dev-only {{ display:none !important; }}
     .notice {{
       padding:12px 14px;
       border:1px solid #e3c46a;
@@ -2572,6 +2373,7 @@ def render_html(
       border-radius:8px;
       background:#f9fafb;
     }}
+    .llm-summary .ai-summary-header {{ margin-bottom:10px; }}
     .llm-summary h3 {{
       margin:0;
       color:#3f4a59;
@@ -2994,6 +2796,8 @@ def render_html(
       .speech-text {{ padding-left:14px; }}
       .summary-sources li {{ grid-template-columns:1fr; }}
       .summary-sources strong {{ grid-row:auto; }}
+      .ai-summary-header {{ flex-direction:column; }}
+      .ai-summary-toggle {{ width:100%; }}
       .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
       footer {{ align-items:flex-start; flex-direction:column; }}
     }}
@@ -3014,17 +2818,22 @@ def render_html(
       :root[data-js] aside[data-collapsed="true"] .attention-row:nth-child(n+{ATTENTION_PREVIEW_ROWS_PHONE + 1}) {{ display:none; }}
     }}
     @media print {{
-      .attention-toggle, .back-to-rank {{ display:none; }}
+      .site-header, .attention-toggle, .back-to-rank, .ai-summary-toggle {{ display:none !important; }}
+      .page-header {{ display:block; padding-top:0; break-inside:avoid; }}
+      .page-header > div:first-child {{ margin-bottom:16px; }}
+      .meta-grid {{ grid-template-columns:repeat(4, minmax(0,1fr)); }}
+      [data-ai-summary-body][hidden] {{ display:block !important; }}
     }}
   </style>
 </head>
 <body>
   <div class="shell">
-    {render_global_header(depth=1, active="pulse", features=features)}
+    {render_global_header(depth=1, active="pulse")}
     <header class="page-header">
       <div>
-        <h1>Bundestag-Puls</h1>
-        <p class="subtitle">{esc(protocol.get('titel'))} · Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
+        <span class="eyebrow">Bundestag-Puls</span>
+        <h1>{esc(protocol.get('titel') or protocol.get('dokumentnummer') or 'Plenarsitzung')}</h1>
+        <p class="subtitle">Sitzung vom {esc(protocol.get('datum'))} · verteilt am {esc(protocol.get('verteildatum'))}</p>
       </div>
       <div class="meta-grid">
         <div class="metric"><span>Tagesordnungspunkte</span><strong>{esc(summary.get('xml_top_count'))}</strong></div>
@@ -3033,7 +2842,6 @@ def render_html(
         <div class="metric"><span>Abstimmungen</span><strong>{esc(total_votes)}</strong></div>
       </div>
     </header>
-    {protocol_dev_sections}
     {session_summary_sections}
     <div class="layout">
       <aside id="aufmerksamkeitsrang"{aside_attrs}>
@@ -3048,12 +2856,13 @@ def render_html(
       {attention_runtime_script()}
       <main>
         {warning_html}
+        {profile_notice}
         {''.join(top_sections)}
       </main>
     </div>
+    {protocol_dev_sections}
     <footer>
-      <span>Das XML-Protokoll gilt als maßgeblich; verknüpfte DIP-Daten können über die Dev-Ansicht geprüft werden.{footer_nav_html}</span>
-      {'<button class="dev-toggle" type="button" aria-pressed="false" data-feature="dev-view">Dev-Ansicht</button>' if 'dev-view' in features else ''}
+      <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
     </footer>
   </div>
   {page_scripts(features)}

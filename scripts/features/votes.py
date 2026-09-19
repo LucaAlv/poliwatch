@@ -9,16 +9,36 @@ import render_dip_pulse_html as html
 from . import BaseComponent, REGISTRY
 
 
-def render_vote_summary(item: dict[str, Any]) -> str:
+def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None = None) -> str:
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
+    status_copy = {
+        "not_requested": "Hinweis: Abstimmungsdaten wurden für diese Veröffentlichung nicht abgerufen.",
+        "partial": "Teilweise verfügbar: Abstimmungsdaten sind unvollständig. Bitte prüfen Sie die Originalquelle.",
+        "failed": "Nicht verfügbar: Abstimmungsdaten konnten nicht abgerufen werden.",
+    }
     if not votes:
+        message = status_copy.get(
+            acquisition_state,
+            "Zu diesem TOP ist keine namentliche Abstimmung verzeichnet.",
+        )
+        source_action = (
+            ' <a href="https://www.bundestag.de/parlament/plenum/abstimmung">Beim Bundestag prüfen</a>.'
+            if acquisition_state in {"partial", "failed"}
+            else ""
+        )
         return (
-            '<section class="vote-panel unavailable" data-feature="votes">'
+            f'<section class="vote-panel {html.esc(acquisition_state)}">'
             "<h3>Namentliche Abstimmungen</h3>"
-            "<p>Für diesen Tagesordnungspunkt sind in dieser Veröffentlichung keine "
-            "namentlichen Abstimmungsdaten verfügbar.</p></section>"
+            f"<p>{html.esc(message)}{source_action}</p></section>"
         )
     panels = []
+    if acquisition_state == "partial":
+        panels.append(
+            '<aside class="vote-state-note">'
+            f'<p>{html.esc(status_copy["partial"])}</p>'
+            '</aside>'
+        )
     for vote in votes:
         fraction_rows = []
         for fraction in vote.get("fractions") or []:
@@ -44,7 +64,11 @@ def render_vote_summary(item: dict[str, Any]) -> str:
                 vote_key = str(member.get("vote") or "")
                 name = html.esc(member.get("name"))
                 url = member.get("profile_url")
-                name_html = f'<a href="{html.esc(url)}">{name}</a>' if url else name
+                name_html = (
+                    f'<a href="{html.esc(html.source_url(url, "public-profile"))}">{name}</a>'
+                    if url
+                    else name
+                )
                 rows.append(
                     '<li class="member-vote-row">'
                     f"<strong>{name_html}</strong>"
@@ -60,10 +84,11 @@ def render_vote_summary(item: dict[str, Any]) -> str:
         total = vote.get("total") or {}
         docs = ", ".join(vote.get("document_numbers") or [])
         docs_text = f" · Drucksachen {html.esc(docs)}" if docs else ""
+        detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
         panels.append(
-            '<section class="vote-panel" data-feature="votes">'
+            '<section class="vote-panel">'
             '<div class="vote-head"><div><h3>Namentliche Abstimmung</h3>'
-            f'<p><a href="{html.esc(vote.get("detail_url"))}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}</p>'
+            f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
             f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
@@ -82,7 +107,8 @@ class VotesComponent(BaseComponent):
             callback(conn, report, ctx)
 
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
-        return [render_vote_summary(ctx["item"])]
+        acquisition = (report.get("acquisition") or {}).get("votes") or {}
+        return [render_vote_summary(ctx["item"], acquisition)]
 
 
 COMPONENT = VotesComponent(REGISTRY["votes"])

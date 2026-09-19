@@ -23,6 +23,7 @@ class AbgeordneteComponent(BaseComponent):
             output_dir,
             ctx.get("abg_mps") or [],
             ctx["selection"],
+            ctx.get("publication_domains"),
         )
 
 

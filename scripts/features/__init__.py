@@ -1,4 +1,4 @@
-"""Bundestag-Puls feature registry.
+"""Bundestag-Puls public components and operator enrichments.
 
 This module deliberately depends on the standard library only.  Renderers may import the
 registry, while :mod:`features.loader` performs the lazy component imports after the build
@@ -7,28 +7,23 @@ module has finished loading.
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Protocol
 
 
 @dataclass(frozen=True)
-class Feature:
+class ComponentDefinition:
+    """Internal component definition; never exposed as a visitor preference."""
+
     id: str
     label: str
     description: str
     category: str
     core: bool = False
     default_built: bool = False
-    default_visible: bool = False
     requires: tuple[str, ...] = ()
-    enhances: tuple[str, ...] = ()
-    nav_key: str | None = None
-    client_mode: str = "hide"
-    costs_network: bool = False
     rebuild_hint: str = ""
 
 
@@ -37,41 +32,78 @@ class NavItem:
     key: str
     label: str
     path: str
-    feature_id: str | None = None
 
 
 NAV_ITEMS = (
     NavItem("pulse", "Aktueller Puls", "puls.html"),
-    NavItem("overview", "Plenarprotokoll-Katalog", "overview.html"),
-    NavItem("catalog", "Alle API-Sitzungen", "api-sitzungen.html"),
-    NavItem("bills", "Gesetze verfolgen", "bills/index.html", "bills"),
-    NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html", "mp-pages"),
-    NavItem("database", "Datenbank", "database.html"),
-    NavItem("sources", "Quellen und Methode", "sources.html"),
+    NavItem("overview", "Sitzungen", "overview.html"),
+    NavItem("bills", "Gesetze", "bills/index.html"),
+    NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+    NavItem("sources", "Quellen", "sources.html"),
 )
 
 
-FEATURES = (
-    Feature("dip-fetch", "DIP-Daten", "Ruft die offiziellen DIP-Daten des Bundestags ab.", "Kern", core=True, default_built=True, default_visible=True, client_mode="none"),
-    Feature("sitting-catalog", "Sitzungskatalog", "Zeigt den Katalog der Plenarprotokolle und API-Sitzungen.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), nav_key="overview", client_mode="none"),
-    Feature("dossiers", "Protokoll-Dossiers", "Erzeugt die Detailansichten der Plenarprotokolle.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), client_mode="none"),
-    Feature("store", "Datenbank", "Speichert die verknüpften Parlamentsdaten in SQLite.", "Kern", core=True, default_built=True, default_visible=True, requires=("dip-fetch",), nav_key="database", client_mode="none"),
-    Feature("votes", "Namentliche Abstimmungen", "Ergänzt Abstimmungssummen, Fraktionen und einzelne Stimmen.", "Analyse", requires=("dip-fetch",), enhances=("mp-pages", "aw-profiles"), costs_network=True, rebuild_hint="Bundestag-Abstimmungen werden beim nächsten Build abgerufen."),
-    Feature("summaries", "KI-Zusammenfassungen", "Ergänzt KI-generierte Zusammenfassungen der Sitzung und Tagesordnungspunkte.", "Analyse", requires=("dip-fetch",), costs_network=True, rebuild_hint="Zusammenfassungen können zusätzliche API-Kosten verursachen."),
-    Feature("aw-profiles", "abgeordnetenwatch-Profile", "Verknüpft Redner und Abstimmende mit ihren öffentlichen Profilen.", "Analyse", requires=("dip-fetch",), costs_network=True, rebuild_hint="Profildaten werden beim nächsten Build abgerufen."),
-    Feature("mp-pages", "Abgeordnete", "Erzeugt Übersichts- und Profilseiten für Abgeordnete.", "Bereiche", requires=("store",), nav_key="abgeordnete"),
-    Feature("mp-roster", "Vollständiger MdB-Kader", "Erweitert die Abgeordnetenseiten um den vollständigen DIP-Kader.", "Bereiche", requires=("mp-pages",), client_mode="none", costs_network=True, rebuild_hint="Der vollständige Kader wird beim nächsten Build abgerufen."),
-    Feature("bills", "Gesetze verfolgen", "Erzeugt Übersichts- und Detailseiten für Gesetzgebungsvorgänge.", "Bereiche", requires=("dip-fetch",), nav_key="bills"),
-    Feature("bill-follow", "Gesetze merken", "Erlaubt es, Gesetze lokal im Browser zu markieren.", "Bereiche", requires=("bills",)),
-    Feature("dev-view", "Dev-Ansicht", "Zeigt Rohdaten, API-Antworten und Build-Kommandos.", "Entwicklung", default_visible=False, requires=("dossiers",), client_mode="reveal"),
+COMPONENTS = (
+    ComponentDefinition("dip-fetch", "DIP-Daten", "Ruft die offiziellen DIP-Daten des Bundestags ab.", "Kern", core=True, default_built=True),
+    ComponentDefinition("sitting-catalog", "Sitzungskatalog", "Zeigt den Katalog der Plenarprotokolle und API-Sitzungen.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
+    ComponentDefinition("dossiers", "Protokoll-Dossiers", "Erzeugt die Detailansichten der Plenarprotokolle.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
+    ComponentDefinition("store", "Datenbank", "Speichert die verknüpften Parlamentsdaten in SQLite.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
+    ComponentDefinition("votes", "Namentliche Abstimmungen", "Rendert Abstimmungssummen, Fraktionen und einzelne Stimmen.", "Analyse", requires=("dip-fetch",)),
+    ComponentDefinition("summaries", "KI-Zusammenfassungen", "Rendert validierte KI-Zusammenfassungen.", "Analyse", requires=("dip-fetch",)),
+    ComponentDefinition("aw-profiles", "abgeordnetenwatch-Profile", "Rendert validierte öffentliche Profilverknüpfungen.", "Analyse", requires=("dip-fetch",)),
+    ComponentDefinition("mp-pages", "Abgeordnete", "Erzeugt Übersichts- und Profilseiten für Abgeordnete.", "Bereiche", requires=("store",)),
+    ComponentDefinition("mp-roster", "Vollständiger MdB-Kader", "Kompatibilitäts-ID für die Kader-Anreicherung.", "Bereiche", requires=("mp-pages",)),
+    ComponentDefinition("bills", "Gesetze verfolgen", "Erzeugt Übersichts- und Detailseiten für Gesetzgebungsvorgänge.", "Bereiche", requires=("dip-fetch",)),
+    ComponentDefinition("bill-follow", "Gesetze merken", "Erlaubt es, Gesetze lokal im Browser zu markieren.", "Bereiche", requires=("bills",)),
+    ComponentDefinition("dev-view", "Dev-Ansicht", "Zeigt Rohdaten, API-Antworten und Build-Kommandos.", "Entwicklung", requires=("dossiers",)),
 )
 
-REGISTRY = {feature.id: feature for feature in FEATURES}
-CATEGORIES = tuple(dict.fromkeys(feature.category for feature in FEATURES))
+REGISTRY = {component.id: component for component in COMPONENTS}
 
 
 class FeatureError(ValueError):
     """Raised for an invalid or impossible feature selection."""
+
+
+@dataclass(frozen=True)
+class Enrichment:
+    """One optional operator-controlled acquisition job."""
+
+    id: str
+    label: str
+    module: str
+    rebuild_hint: str
+
+
+ENRICHMENTS = (
+    Enrichment("votes", "Namentliche Abstimmungen", "votes", "Ruft Bundestag-Abstimmungsdaten ab."),
+    Enrichment("aw-profiles", "abgeordnetenwatch-Profile", "aw_profiles", "Verknüpft öffentliche Profile."),
+    Enrichment("mp-roster", "Vollständiger MdB-Kader", "abgeordnete", "Ruft den vollständigen DIP-Kader ab."),
+)
+ENRICHMENT_REGISTRY = {enrichment.id: enrichment for enrichment in ENRICHMENTS}
+
+
+@dataclass(frozen=True)
+class EnrichmentSelection:
+    ids: frozenset[str]
+    provenance: tuple[tuple[str, str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        unknown = sorted(set(self.ids).difference(ENRICHMENT_REGISTRY))
+        if unknown:
+            raise FeatureError(
+                f"Unbekannte Anreicherung: {', '.join(unknown)}. "
+                f"Verfügbar: {', '.join(ENRICHMENT_REGISTRY)}, all"
+            )
+
+    def __contains__(self, enrichment_id: object) -> bool:
+        return enrichment_id in self.ids
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(sorted(self.ids))
+
+    def enabled(self, enrichment_id: str) -> bool:
+        return enrichment_id in self.ids
 
 
 @dataclass(frozen=True)
@@ -101,7 +133,7 @@ def _known(feature_ids: Iterable[str]) -> set[str]:
 
 
 def default_selection() -> Selection:
-    return resolve(base=(feature.id for feature in FEATURES if feature.default_built))
+    return resolve(base=(component.id for component in COMPONENTS if component.default_built))
 
 
 def all_selection() -> Selection:
@@ -109,11 +141,7 @@ def all_selection() -> Selection:
 
 
 def publication_selection() -> Selection:
-    """Every capability shipped in the static publication.
-
-    Build-time enrichment choices deliberately do not affect this selection.
-    Visitors decide which non-core experiences are visible in their browser.
-    """
+    """Every component in the fixed public product."""
     return all_selection()
 
 
@@ -124,14 +152,14 @@ def resolve(
     disable: Iterable[str] = (),
 ) -> Selection:
     """Resolve requirements and explicit vetoes to a stable selection."""
-    selected = _known(base if base is not None else (f.id for f in FEATURES if f.default_built))
+    selected = _known(base if base is not None else (component.id for component in COMPONENTS if component.default_built))
     enabled = _known(enable)
     vetoed = _known(disable)
     core_vetoes = sorted(feature_id for feature_id in vetoed if REGISTRY[feature_id].core)
     if core_vetoes:
         raise FeatureError(f"Kern-Bausteine können nicht deaktiviert werden: {', '.join(core_vetoes)}")
 
-    selected.update(feature.id for feature in FEATURES if feature.core)
+    selected.update(component.id for component in COMPONENTS if component.core)
     selected.update(enabled)
     selected.difference_update(vetoed)
     noted: set[tuple[str, str, str]] = set()
@@ -166,89 +194,8 @@ def resolve(
     return Selection(frozenset(selected))
 
 
-def inline_manifest(selection: Selection) -> dict[str, dict[str, Any]]:
-    modes = {"hide": "h", "reveal": "r", "none": "n"}
-    return {
-        feature.id: {
-            "a": int(feature.id in selection),
-            "v": int(feature.default_visible),
-            "c": int(feature.core),
-            "m": modes[feature.client_mode],
-            "r": [
-                required
-                for required in feature.requires
-                if REGISTRY[required].client_mode != "none"
-            ],
-        }
-        for feature in FEATURES
-    }
-
-
-def manifest_json(selection: Selection) -> str:
-    """Return the compact, safe-to-inline browser manifest."""
-    return json.dumps(inline_manifest(selection), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-
-
-def tooling_manifest(
-    selection: Selection,
-    *,
-    readiness: dict[str, str] | None = None,
-    generated_at: str | None = None,
-) -> dict[str, Any]:
-    readiness = readiness or {}
-    return {
-        "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
-        "publication": {
-            "default_view": "core",
-            "browser_storage_key": "bundestag-pulse-features",
-            "experience_ids": [
-                feature.id for feature in FEATURES if not feature.core and feature.client_mode != "none"
-            ],
-        },
-        "data_readiness": {
-            feature_id: readiness.get(feature_id, "unavailable")
-            for feature_id in ("votes", "summaries", "aw-profiles", "mp-roster")
-        },
-        "features": [
-            {
-                "id": feature.id,
-                "label": feature.label,
-                "description": feature.description,
-                "category": feature.category,
-                "available": feature.id in selection,
-                "published": feature.id in selection,
-                "readiness": readiness.get(feature.id, "ready"),
-                "visible": feature.default_visible,
-                "core": feature.core,
-                "mode": feature.client_mode,
-                "requires": list(feature.requires),
-                "enhances": list(feature.enhances),
-                "rebuild_hint": feature.rebuild_hint,
-            }
-            for feature in FEATURES
-        ],
-    }
-
-
-def feature_css() -> str:
-    rules = []
-    for feature in FEATURES:
-        if feature.client_mode == "hide":
-            rules.append(
-                f'html:not([data-feature-{feature.id}]) [data-feature="{feature.id}"] '
-                "{ display:none !important; }"
-            )
-    rules.extend(
-        (
-            ".dev-only { display:none !important; }",
-            "html[data-feature-dev-view] .dev-only { display:block !important; }",
-        )
-    )
-    return "\n    ".join(rules)
-
-
 class Component(Protocol):
-    feature: Feature
+    feature: ComponentDefinition
 
     def enrich_report(self, report: dict[str, Any], ctx: dict[str, Any]) -> None: ...
     def persist(self, conn: Any, report: dict[str, Any], ctx: dict[str, Any]) -> None: ...
@@ -261,7 +208,7 @@ class Component(Protocol):
 
 @dataclass(frozen=True)
 class BaseComponent:
-    feature: Feature
+    feature: ComponentDefinition
 
     def enrich_report(self, report: dict[str, Any], ctx: dict[str, Any]) -> None:
         return None
@@ -286,17 +233,12 @@ class BaseComponent:
 
 
 def validate_registry() -> None:
-    if len(REGISTRY) != len(FEATURES):
+    if len(REGISTRY) != len(COMPONENTS):
         raise FeatureError("Baustein-IDs müssen eindeutig sein.")
-    nav_keys = {item.key for item in NAV_ITEMS}
-    for feature in FEATURES:
-        if not re.fullmatch(r"[a-z][a-z0-9-]*", feature.id):
-            raise FeatureError(f"Ungültige Baustein-ID: {feature.id}")
-        if feature.client_mode not in {"hide", "reveal", "none"}:
-            raise FeatureError(f"Ungültiger Client-Modus für {feature.id}: {feature.client_mode}")
-        _known((*feature.requires, *feature.enhances))
-        if feature.nav_key and feature.nav_key not in nav_keys:
-            raise FeatureError(f"Unbekannter Navigationsschlüssel für {feature.id}: {feature.nav_key}")
+    for component in COMPONENTS:
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", component.id):
+            raise FeatureError(f"Ungültige Komponenten-ID: {component.id}")
+        _known(component.requires)
 
     visiting: set[str] = set()
     visited: set[str] = set()

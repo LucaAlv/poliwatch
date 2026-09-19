@@ -15,7 +15,7 @@ import _support  # noqa: F401
 import build_dip_pulse_site
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as pulse_html
-from features import all_selection, default_selection
+from features import EnrichmentSelection, all_selection, default_selection
 
 
 class DossierProgressTests(unittest.TestCase):
@@ -724,15 +724,11 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 self.assertEqual(markup.count("#abstimmungen"), 0)
                 self.assertNotIn("pulse-actions", markup)
                 self.assertNotIn("primary-link", markup)
-                # The panel itself still renders as an anchor target. Publication
-                # is deliberately independent of the build-time selection --
-                # render_site() pins publication_selection() so a reduced
-                # enrichment run never removes a visitor-facing panel -- so the
-                # id is present under either Baustein state and visitors toggle
-                # it client-side through data-feature="votes". This test guards
-                # the hero link, not whether the panel was built.
+                # The panel itself remains part of the fixed product under
+                # either enrichment selection; no browser feature attribute is
+                # allowed to hide it.
                 self.assertIn('id="abstimmungen"', markup)
-                self.assertIn('data-feature="votes"', markup)
+                self.assertNotIn('data-feature="votes"', markup)
 
     def test_pulse_page_carries_no_attention_ranking(self) -> None:
         # The per-item Aufmerksamkeitsranking cards were retired from puls.html:
@@ -933,7 +929,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
             self.assertIn('href="bills/index.html"', rendered)
-            self.assertIn('data-feature="bills"', rendered)
+            self.assertNotIn('data-feature=', rendered)
 
     def test_later_reduced_enrichment_render_keeps_addon_pages(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
@@ -963,7 +959,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
             self.assertFalse(stale_bill.exists())
             self.assertFalse(stale_mp.exists())
 
-    def test_feature_manifest_and_bootstrap_are_written_everywhere(self) -> None:
+    def test_schema_v2_manifest_and_fixed_presentation_are_written_everywhere(self) -> None:
         protocol = self._protocol("21/84", "5799", "2026-06-12")
         selection = all_selection()
         with tempfile.TemporaryDirectory() as tmp:
@@ -979,26 +975,79 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 features=selection,
             )
             manifest = json.loads((output_dir / "data" / "features.json").read_text(encoding="utf-8"))
-            available = {item["id"] for item in manifest["features"] if item["available"]}
-            self.assertEqual(available, all_selection().ids)
-            self.assertTrue(all(item["readiness"] in {"ready", "partial", "unavailable"} for item in manifest["features"]))
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["presentation"], {"mode": "fixed", "ai_summary_default": "expanded"})
+            self.assertEqual(
+                set(manifest["domains"]),
+                {"catalog", "dossiers", "votes", "profiles", "roster", "bills", "summaries"},
+            )
             for page in output_dir.rglob("*.html"):
                 markup = page.read_text(encoding="utf-8")
-                self.assertIn("bundestag-pulse-features", markup, msg=str(page))
-                self.assertIn("data-feature-", markup, msg=str(page))
-                self.assertIn("settings-toggle", markup, msg=str(page))
+                self.assertNotIn("bundestag-pulse-features", markup, msg=str(page))
+                self.assertNotIn("data-feature", markup, msg=str(page))
+                self.assertNotIn("settings-toggle", markup, msg=str(page))
 
-    def test_settings_page_only_switches_user_facing_experiences(self) -> None:
+    def test_settings_page_is_compatibility_copy_without_switches(self) -> None:
         markup = build_dip_pulse_site.render_settings_page(
             default_selection(),
             {"votes": "unavailable", "summaries": "partial"},
         )
-        self.assertNotIn("--enable votes", markup)
-        self.assertNotIn('data-feature-toggle="dip-fetch"', markup)
-        self.assertNotIn('data-feature-toggle="mp-roster"', markup)
-        self.assertRegex(markup, r'data-feature-toggle="votes"[^>]*>')
-        self.assertIn("Noch keine Daten verfügbar", markup)
+        self.assertNotIn("data-feature", markup)
+        self.assertNotIn('role="switch"', markup)
+        self.assertIn("Frühere Baustein-Einstellungen", markup)
         self.assertIn("Datenstand dieser Veröffentlichung", markup)
+        self.assertIn('href="sources.html#datenstand"', markup)
+
+    def test_mp_pages_render_separate_roster_and_profile_provenance(self) -> None:
+        markup = build_dip_pulse_site.render_abgeordnete_index(
+            [],
+            default_selection(),
+            {
+                "roster": {"acquisition_state": "not_requested"},
+                "profiles": {"acquisition_state": "failed"},
+            },
+        )
+        self.assertIn("Der vollständige Abgeordnetenkader wurde nicht abgerufen", markup)
+        self.assertIn("Profilverknüpfungen konnten nicht abgerufen werden", markup)
+
+    def test_manifest_preserves_cached_acquisition_times_and_fails_empty_requested_roster(self) -> None:
+        previous_time = "2026-08-01T10:00:00Z"
+        previous = {
+            "domains": {
+                "catalog": {"acquired_at": previous_time},
+                "dossiers": {"acquired_at": previous_time},
+                "roster": {"acquired_at": previous_time},
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            cached = build_dip_pulse_site.build_publication_manifest(
+                root=Path(tmp),
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[{"is_mdb": True}],
+                bill_count=0,
+                enrichments=EnrichmentSelection(frozenset()),
+                summary_mode="reuse",
+                acquisition_attempted=False,
+                development_output=False,
+                previous_manifest=previous,
+            )
+            self.assertEqual(cached["domains"]["catalog"]["acquired_at"], previous_time)
+            self.assertEqual(cached["domains"]["roster"]["acquired_at"], previous_time)
+
+            failed = build_dip_pulse_site.build_publication_manifest(
+                root=Path(tmp),
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[],
+                bill_count=0,
+                enrichments=EnrichmentSelection(frozenset({"mp-roster"})),
+                summary_mode="reuse",
+                acquisition_attempted=True,
+                development_output=False,
+            )
+            self.assertEqual(failed["domains"]["roster"]["acquisition_state"], "failed")
+            self.assertEqual(failed["domains"]["roster"]["failure_reasons"], ["empty_required_dataset"])
 
 
 class PeriodOrderTests(unittest.TestCase):
@@ -1063,6 +1112,54 @@ class PeriodOrderTests(unittest.TestCase):
 
 
 class FeatureArgumentCompatibilityTests(unittest.TestCase):
+    @staticmethod
+    def _config_args(**overrides: Any) -> SimpleNamespace:
+        values = {
+            "enrich": [],
+            "enable": [],
+            "disable": [],
+            "features": None,
+            "features_file": None,
+            "vote_scan_pages": None,
+            "no_roster": False,
+            "no_abgeordnetenwatch": False,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_enrichment_precedence_matrix(self) -> None:
+        scenarios = (
+            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles"}),
+            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster"}),
+            (
+                "canonical env follows legacy env",
+                {},
+                {"env": {"BUNDESTAG_PULSE_FEATURES": "votes", "BUNDESTAG_PULSE_ENRICHMENTS": "aw-profiles"}},
+                {"votes", "aw-profiles"},
+            ),
+            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster"}),
+            ("empty local replacement clears repository", {"repo": ["votes"], "local": []}, {}, set()),
+            ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
+        )
+        for label, files, inputs, expected in scenarios:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                if "repo" in files:
+                    (root / "features.json").write_text(json.dumps({"enrich": files["repo"]}), encoding="utf-8")
+                if "local" in files:
+                    (root / "features.local.json").write_text(json.dumps({"enrich": files["local"]}), encoding="utf-8")
+                args_values = dict(inputs.get("args") or {})
+                if "explicit" in files:
+                    explicit = root / "operator.json"
+                    explicit.write_text(json.dumps({"enrich": files["explicit"]}), encoding="utf-8")
+                    args_values["features_file"] = explicit
+                with mock.patch.dict("os.environ", inputs.get("env") or {}, clear=True):
+                    selection = build_dip_pulse_site.resolve_from_args(
+                        self._config_args(**args_values), root=root
+                    )
+                self.assertEqual(set(selection), expected)
+                self.assertTrue(selection.provenance or not files and not inputs)
+
     def test_legacy_flags_map_with_sparse_namespaces(self) -> None:
         args = SimpleNamespace(no_roster=True, no_abgeordnetenwatch=True, summary_mode="off")
         with tempfile.TemporaryDirectory() as tmp:
@@ -1141,9 +1238,43 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
             build_dip_pulse_site.FeatureError,
-            "Verfügbar",
+            "invalid-enrichment",
         ):
             build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+
+    def test_capability_commands_exit_before_network_access(self) -> None:
+        stdout = io.StringIO()
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py", "--list-capabilities"]), mock.patch(
+            "build_dip_pulse_site.dip.load_local_env"
+        ), mock.patch("build_dip_pulse_site.dip.ApiClient") as api_client, mock.patch(
+            "sys.stdout", stdout
+        ):
+            self.assertEqual(build_dip_pulse_site.main(), 0)
+        api_client.assert_not_called()
+        self.assertIn("Feste öffentliche Bereiche", stdout.getvalue())
+        self.assertIn("mp-roster", stdout.getvalue())
+
+        stdout = io.StringIO()
+        with mock.patch(
+            "sys.argv",
+            ["build_dip_pulse_site.py", "--enrich", "votes", "--explain-config"],
+        ), mock.patch("build_dip_pulse_site.dip.load_local_env"), mock.patch(
+            "build_dip_pulse_site.dip.ApiClient"
+        ) as api_client, mock.patch("sys.stdout", stdout):
+            self.assertEqual(build_dip_pulse_site.main(), 0)
+        api_client.assert_not_called()
+        self.assertIn("enrichment=votes", stdout.getvalue())
+        self.assertIn("source=--enrich", stdout.getvalue())
+
+    def test_developer_view_refuses_the_public_output_directory_before_writes(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch(
+            "sys.argv", ["build_dip_pulse_site.py", "--include-dev-view"]
+        ), mock.patch("build_dip_pulse_site.dip.load_local_env"), mock.patch(
+            "sys.stderr", stderr
+        ):
+            self.assertEqual(build_dip_pulse_site.main(), 2)
+        self.assertIn("unsafe-dev-output", stderr.getvalue())
 
 
 

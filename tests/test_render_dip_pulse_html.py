@@ -26,7 +26,7 @@ class DossierLayoutTests(unittest.TestCase):
 
         self.assertLess(card.index('class="top-documents"'), card.index('class="top-bars"'))
         self.assertLess(card.index('class="top-bars"'), card.index('class="speaker-section"'))
-        self.assertIn('class="doc-link" href="https://example.test/20-123.pdf"', card)
+        self.assertIn('class="doc-link" href="https://www.bundestag.de/20-123.pdf"', card)
         self.assertRegex(
             card,
             r'<section class="speaker-section">\s*<h3>Rednerinnen und Redner</h3>',
@@ -35,10 +35,9 @@ class DossierLayoutTests(unittest.TestCase):
             card,
             r'class="detail-grid"[^>]*>\s*<section>\s*<h3>Rednerinnen und Redner</h3>',
         )
-        self.assertRegex(
-            card,
-            r'<section class="dev-only dev-top-details">[\s\S]*?class="detail-grid"',
-        )
+        self.assertNotIn("dev-only", card)
+        dev_card = self._top_card(pulse_html.render_html(self.report, include_dev_view=True))
+        self.assertRegex(dev_card, r'<section class="dev-only dev-top-details">[\s\S]*?class="detail-grid"')
 
     def test_documents_metadata_is_omitted_when_top_has_no_documents(self) -> None:
         report = copy.deepcopy(self.report)
@@ -47,18 +46,19 @@ class DossierLayoutTests(unittest.TestCase):
         card = self._top_card(pulse_html.render_html(report))
 
         self.assertNotIn('class="top-documents"', card)
-        self.assertIn('<div><span>XML Drucksachen</span><span class="muted">Keine Drucksache im XML</span></div>', card)
+        self.assertNotIn("XML Drucksachen", card)
+        self.assertIn('class="speaker-section"', card)
 
     def test_documents_metadata_keeps_documents_without_a_source_url(self) -> None:
         report = copy.deepcopy(self.report)
         report["agenda_items"][0]["xml_drucksachen"] = [
-            {"dokumentnummer": "20/123", "url": "https://example.test/20-123.pdf"},
+            {"dokumentnummer": "20/123", "url": "https://www.bundestag.de/20-123.pdf"},
             {"dokumentnummer": "20/456", "url": None},
         ]
 
         card = self._top_card(pulse_html.render_html(report))
 
-        self.assertIn('class="doc-link" href="https://example.test/20-123.pdf"', card)
+        self.assertIn('class="doc-link" href="https://www.bundestag.de/20-123.pdf"', card)
         self.assertIn('<span class="doc-link muted">20/456</span>', card)
 
     def test_layout_css_wraps_document_links_and_speaker_names(self) -> None:
@@ -247,7 +247,9 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertEqual(css.count("aside { position:static; max-height:none; }"), 1)
         for block in ("@media (max-width: 1120px)", "@media (max-width: 720px)", "@media print"):
             self.assertNotIn("max-height:none", self._css_block(css, block), block)
-        self.assertIn(".attention-toggle, .back-to-rank { display:none; }", self._css_block(css, "@media print"))
+        print_block = self._css_block(css, "@media print")
+        self.assertIn(".attention-toggle, .back-to-rank, .ai-summary-toggle", print_block)
+        self.assertIn("[data-ai-summary-body][hidden] { display:block !important; }", print_block)
 
     def test_toggle_is_not_forced_to_ink_in_dark_mode(self) -> None:
         markup = self._render([self._item(1, 1)])

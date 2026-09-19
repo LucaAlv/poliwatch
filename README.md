@@ -1,6 +1,6 @@
 # Bundestag-Puls
 
-Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. Every publication contains the DIP-backed sitting catalog, protocol dossiers, SQLite explorer, and optional browser-controlled experiences for votes, summaries, profiles, MP pages, bill tracking, and developer views.
+Bundestag-Puls is a dependency-free static-site pipeline for German Bundestag primary sources. Every publication presents one fixed public product: sitting dossiers, speeches, Drucksachen, votes, laws, MP pages, and source links appear wherever validated data exists. Operators may refresh optional data sources; visitors do not have to configure the site. AI summaries are the one separate content preference and are clearly labelled, cited, and globally collapsible.
 
 There is no package manager, no framework, and no build toolchain. Two things happen:
 
@@ -16,7 +16,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 | Python 3.11+ | `python3 --version`. No third-party packages are needed. |
 | bash + git | The preview script is bash. On Windows use WSL, or call `build_dip_pulse_site.py` directly. |
 | `DIP_API_KEY` | Required for every online fetch. Not needed for offline rebuilds. |
-| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Only for generating LLM summaries (`summaries` Baustein). |
+| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Only for generating optional AI summaries. |
 
 Getting a DIP API key: the Bundestag publishes a shared public key on the [DIP API help page](https://dip.bundestag.de/%C3%BCber-dip/hilfe/api) (no registration), or you can request a personal, permanently valid key by e-mail to `parlamentsdokumentation@bundestag.de`.
 
@@ -40,13 +40,21 @@ GEMINI_API_KEY=
 
 That asymmetry has one sharp edge worth knowing before it bites you. `.env.example` ships `DIP_API_KEY=` with an empty value, so a copied-but-unedited `.env.local` will wipe a key you passed on the command line, and the preview script then aborts with `DIP_API_KEY is not set`. Either fill the key in `.env.local` or delete the empty line before passing one from the environment.
 
-A fresh clone has no cached data, so the first build **must** be an online one:
+A fresh clone can build and open a representative site immediately, without credentials or network access:
+
+```bash
+scripts/preview_dip_pulse_site.sh demo
+```
+
+The demo uses a committed extract of the official Plenarprotokoll 21/84, TOP 32 a/b, including its 16 speeches and the linked Drucksachen 21/6354 and 21/4833. It writes to `.context/dip-pulse-demo/`, validates the public output, and starts a local server. No credentials or network requests are involved, so it is the quickest way to inspect the product or verify a frontend change.
+
+To work with current Bundestag data, run an online build:
 
 ```bash
 scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 ```
 
-This fetches the 5 newest Bundestag protocols into the catalog, enriches the 2 newest into full dossiers, writes the SQLite store, and starts a background server on `http://localhost:8000/` (or `$CONDUCTOR_PORT` when that is set). On macOS it also opens the browser; elsewhere open the printed URL yourself. Budget roughly half a minute per enriched sitting for a core-only build; enabling votes, profiles, or the MdB roster makes it substantially slower.
+This fetches the 5 newest Bundestag protocols into the catalog, enriches the 2 newest into full dossiers, writes the SQLite store, and starts a background server on `http://localhost:8000/` (or `$CONDUCTOR_PORT` when that is set). On macOS it also opens the browser; elsewhere open the printed URL yourself. Budget roughly half a minute per enriched sitting; refreshing votes, profiles, or the full MdB roster makes it substantially slower.
 
 Verify the install without touching the network at all:
 
@@ -139,7 +147,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and Baustein changes land without re-fetching. It also opens and migrates the SQLite store, so a cache written by an older version keeps working after a schema change.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. It also opens and migrates the SQLite store, so a cache written by an older version keeps working after a schema change.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
@@ -168,25 +176,24 @@ rm -rf .context/dip-pulse-site
 scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 ```
 
-## 5. Bausteine (browser features and data enrichments)
+## 5. Public presentation and operator controls
 
-Every build now publishes all user-facing areas and optional section shells. The gear in every page header and `settings.html` let each visitor show or hide votes, summaries, profile links, MP pages, bill tracking, and the developer view. The choice is stored only in that browser and is applied immediately; a reload keeps it. First-time visitors see the core-only view.
+Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.3.x`; old `bundestag-pulse-features` browser data is inert.
 
-This is separate from **data enrichment**. Browser switches never access the network, expose API keys, or create LLM costs. If data has not been acquired, enabling its feature shows an honest unavailable or partial state. List the registry without network or build work with:
+AI summaries are visible when a usable, structurally validated summary exists. The exact label is `KI-generiert · nicht redaktionell geprüft`. Visitors can expand or collapse all summaries with one control; that single preference uses `bundestag-pulse-ai-summaries-v1`. Structural citation validation proves that cited targets resolve, not that every claim is factually supported or balanced.
+
+Operators control only optional acquisition work. List those controls and their effective provenance without network or build work with:
 
 ```bash
-python3 scripts/build_dip_pulse_site.py --list-features
+python3 scripts/build_dip_pulse_site.py --list-capabilities
+python3 scripts/build_dip_pulse_site.py --explain-config
 ```
 
-| Browser feature | Adds |
+| Enrichment | Network work |
 |---|---|
-| `votes` | Roll-call totals, fractions, and individual votes |
-| `summaries` | LLM summaries per sitting and agenda item |
-| `aw-profiles` | abgeordnetenwatch.de profile links |
-| `mp-pages` | MP index and detail pages |
-| `bills` | Bill index and detail pages |
-| `bill-follow` | Browser-local bill following; enabling it also enables bills |
-| `dev-view` | Raw API panels and dossier command tools |
+| `votes` | Refresh roll-call totals, fraction results, and individual votes from bundestag.de |
+| `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
+| `mp-roster` | Refresh the complete MdB roster from DIP |
 
 The ordinary offline preview needs no feature arguments:
 
@@ -211,7 +218,9 @@ For durable operator defaults, use the gitignored `features.local.json` next to 
 { "enrich": ["votes", "aw-profiles"] }
 ```
 
-`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted for one release and print a deprecation warning; they no longer remove published UI.
+`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.3.x`; they no longer remove published UI and are scheduled for removal in `0.4.0`.
+
+Developer payloads are separate from presentation and enrichment. Use `--include-dev-view` only with a dedicated output directory such as `.context/dip-pulse-site-dev`; the builder rejects attempts to mix it into the ordinary public output.
 
 ## 6. Server settings
 
@@ -251,7 +260,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `error: No cached protocols found in .context/dip-pulse-site/data.` | Offline build on an empty cache. Run one online update first (§2). |
 | Site suddenly shows only one sitting | A narrow online update rewrote the catalog. Re-run with `--preserve-existing-dossiers`. |
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
-| Optional feature shows no data | The UI is published, but its enrichment is absent. Check the readiness panel in settings and run an online update with the relevant `--enrich` option (§5). |
+| Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed; then run an online update with the relevant `--enrich` option (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |

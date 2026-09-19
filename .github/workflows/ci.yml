@@ -26,3 +26,19 @@ jobs:
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
+      - name: Build and validate zero-network demo
+        run: |
+          python scripts/build_demo_site.py --output-dir /tmp/bundestag-puls-demo
+          test -f /tmp/bundestag-puls-demo/protocols/plenarprotokoll-21-84.html
+          python scripts/build_dip_pulse_site.py --validate-publication /tmp/bundestag-puls-demo
+          python scripts/build_dip_pulse_site.py --list-capabilities > /tmp/bundestag-puls-capabilities.txt
+          python scripts/build_dip_pulse_site.py --explain-config > /tmp/bundestag-puls-config.txt
+
+      - name: Reject development-marked publication artifacts
+        run: |
+          python scripts/build_demo_site.py --output-dir /tmp/bundestag-puls-demo-dev --include-dev-view
+          if python scripts/build_dip_pulse_site.py --validate-publication /tmp/bundestag-puls-demo-dev; then
+            echo "development-marked artifact unexpectedly passed publication validation" >&2
+            exit 1
+          fi

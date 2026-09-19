@@ -5,8 +5,8 @@
     "datum": "2024-05-15",
     "titel": "Plenarprotokoll 20/999",
     "verteildatum": "2024-05-16",
-    "pdf_url": "https://example.test/pp.pdf",
-    "xml_url": "https://example.test/pp.xml",
+    "pdf_url": "https://www.bundestag.de/pp.pdf",
+    "xml_url": "https://www.bundestag.de/pp.xml",
     "xml_header": {
       "wahlperiode": "20",
       "sitzung_nr": "999"
@@ -39,7 +39,7 @@
       "xml_drucksachen": [
         {
           "dokumentnummer": "20/123",
-          "url": "https://example.test/20-123.pdf"
+          "url": "https://www.bundestag.de/20-123.pdf"
         }
       ],
       "api": {
@@ -57,8 +57,8 @@
               "seite": "101",
               "anfangsseite": "101",
               "endseite": "102",
-              "pdf_url": "https://example.test/20-123.pdf",
-              "xml_url": "https://example.test/20-123.xml"
+              "pdf_url": "https://www.bundestag.de/20-123.pdf",
+              "xml_url": "https://www.bundestag.de/20-123.xml"
             },
             "mitberaten": []
           }
@@ -66,7 +66,7 @@
         "linked_drucksachen": [
           {
             "dokumentnummer": "20/456",
-            "url": "https://example.test/20-456.pdf",
+            "url": "https://www.bundestag.de/20-456.pdf",
             "drucksachetyp": "Beschlussempfehlung",
             "datum": "2024-05-14",
             "titel": "Beschlussempfehlung zum Testgesetz",
@@ -226,4 +226,3 @@
     }
   ]
 }
-

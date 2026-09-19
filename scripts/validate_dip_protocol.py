@@ -9,6 +9,7 @@ API metadata for proceedings, activities, people, and linked Drucksachen.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -21,9 +22,12 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any, Callable
+
+import publication_state as publication
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
@@ -47,6 +51,8 @@ VOTE_KEYS = ("yes", "no", "abstain", "absent")
 SUMMARY_CHUNK_MIN = 3
 SUMMARY_CHUNK_MAX = 5
 SUMMARY_CHUNK_CHARS = 900
+SUMMARY_SCHEMA_VERSION = 1
+SUMMARY_PROMPT_VERSION = "fixed-public-v1"
 # Gemini's default models are reasoning models whose internal "thinking" tokens
 # count against maxOutputTokens. The short JSON answer needs ~150 tokens, but the
 # thinking phase alone can spend 400-600+, so a low cap truncates the response to
@@ -61,6 +67,28 @@ class DipError(RuntimeError):
 
 class SummaryError(RuntimeError):
     pass
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def summary_failure_code(error: Exception) -> str:
+    """Reduce provider/parser detail to the schema's safe public vocabulary."""
+    message = str(error).lower()
+    if str(error) in publication.FAILURE_CODES:
+        return str(error)
+    if "timeout" in message or "timed out" in message:
+        return "provider_timeout"
+    if "duplicate" in message:
+        return "duplicate_citation"
+    if "target" in message or "resolve" in message:
+        return "missing_target"
+    if "page" in message and "bound" in message:
+        return "page_out_of_bounds"
+    if "cit" in message or "chunk" in message:
+        return "invalid_citations"
+    return "invalid_payload"
 
 
 @dataclass(frozen=True)
@@ -174,7 +202,13 @@ def fetch_html(url: str) -> str:
         raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
 
 
-def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], api_name: str = "LLM API") -> Any:
+def post_json(
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    api_name: str = "LLM API",
+    timeout: float = 60,
+) -> Any:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -182,7 +216,7 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str], api_na
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as res:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
             return json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -820,6 +854,75 @@ def summary_source_chunks(top: dict[str, Any]) -> list[dict[str, Any]]:
     return chunks
 
 
+def summary_source_fingerprint(top: dict[str, Any]) -> str:
+    """Bind a cached summary to the exact ordered source passed to the model."""
+    canonical = {
+        "top_id": clean_text(str(top.get("top_id") or "")),
+        "heading": clean_text(str(top.get("heading") or "")),
+        "chunks": [
+            {
+                "id": chunk.get("id"),
+                "rede_id": chunk.get("rede_id"),
+                "source_page": chunk.get("source_page"),
+                "speaker": chunk.get("speaker"),
+                "text": clean_text(chunk.get("text") or ""),
+            }
+            for chunk in summary_source_chunks(top)
+        ],
+    }
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def validate_usable_summary(
+    summary: Any,
+    top: dict[str, Any],
+    *,
+    pdf_url: str | None = None,
+    pdf_page_count: int | None = None,
+) -> tuple[bool, str | None]:
+    if not isinstance(summary, dict) or not clean_text(summary.get("text") or ""):
+        return False, "invalid_citations"
+    if summary.get("summary_schema_version") != SUMMARY_SCHEMA_VERSION:
+        return False, "source_changed"
+    if summary.get("prompt_version") != SUMMARY_PROMPT_VERSION:
+        return False, "source_changed"
+    if summary.get("source_fingerprint") != summary_source_fingerprint(top):
+        return False, "source_changed"
+    chunks = summary.get("source_chunks")
+    if not isinstance(chunks, list) or not SUMMARY_CHUNK_MIN <= len(chunks) <= SUMMARY_CHUNK_MAX:
+        return False, "invalid_citations"
+    speech_ids = {
+        str(speech.get("rede_id"))
+        for speech in (top.get("speeches") or top.get("xml_speakers") or [])
+        if speech.get("rede_id")
+    }
+    seen_ids: set[str] = set()
+    seen_targets: set[str] = set()
+    for chunk in chunks:
+        chunk_id = clean_text(str(chunk.get("id") or ""))
+        text = clean_text(chunk.get("text") or "")
+        if not chunk_id or not text or chunk_id in seen_ids:
+            return False, "duplicate_citation" if chunk_id in seen_ids else "invalid_citations"
+        seen_ids.add(chunk_id)
+        rede_id = str(chunk.get("rede_id") or "").strip()
+        page = chunk.get("source_page")
+        page_number = page.get("page") if isinstance(page, dict) else page
+        target = None
+        if rede_id and rede_id in speech_ids:
+            target = f"speech:{rede_id}"
+        elif page_number is not None and str(page_number).isdigit() and int(page_number) > 0 and pdf_url:
+            if pdf_page_count is not None and int(page_number) > pdf_page_count:
+                return False, "page_out_of_bounds"
+            target = f"page:{int(page_number)}"
+        if target is None:
+            return False, "missing_target"
+        if target in seen_targets:
+            return False, "duplicate_citation"
+        seen_targets.add(target)
+    return True, None
+
+
 def anthropic_text_from_response(response: dict[str, Any]) -> str:
     parts = []
     for block in response.get("content") or []:
@@ -872,7 +975,7 @@ def parse_summary_response(raw_text: str, allowed_chunk_ids: set[str]) -> dict[s
     }
 
 
-def request_anthropic_summary(prompt: str, api_key: str, model: str) -> str:
+def request_anthropic_summary(prompt: str, api_key: str, model: str, timeout: float = 60) -> str:
     headers = {
         "Accept": "application/json",
         "x-api-key": api_key,
@@ -884,10 +987,10 @@ def request_anthropic_summary(prompt: str, api_key: str, model: str) -> str:
         "system": "Du fasst parlamentarische Primärquellen knapp, neutral und zitattreu zusammen.",
         "messages": [{"role": "user", "content": prompt}],
     }
-    return anthropic_text_from_response(post_json(ANTHROPIC_MESSAGES_URL, payload, headers, "Anthropic API"))
+    return anthropic_text_from_response(post_json(ANTHROPIC_MESSAGES_URL, payload, headers, "Anthropic API", timeout))
 
 
-def request_gemini_summary(prompt: str, api_key: str, model: str) -> str:
+def request_gemini_summary(prompt: str, api_key: str, model: str, timeout: float = 60) -> str:
     headers = {
         "Accept": "application/json",
         "x-goog-api-key": api_key,
@@ -903,13 +1006,13 @@ def request_gemini_summary(prompt: str, api_key: str, model: str) -> str:
         },
     }
     url = GEMINI_GENERATE_URL_TEMPLATE.format(model=gemini_model_path(model))
-    return gemini_text_from_response(post_json(url, payload, headers, "Gemini API"))
+    return gemini_text_from_response(post_json(url, payload, headers, "Gemini API", timeout))
 
 
-def request_summary_text(provider: str, prompt: str, api_key: str, model: str) -> str:
+def request_summary_text(provider: str, prompt: str, api_key: str, model: str, timeout: float = 60) -> str:
     if provider == "gemini":
-        return request_gemini_summary(prompt, api_key, model)
-    return request_anthropic_summary(prompt, api_key, model)
+        return request_gemini_summary(prompt, api_key, model, timeout)
+    return request_anthropic_summary(prompt, api_key, model, timeout)
 
 
 def generate_top_summary(
@@ -917,6 +1020,9 @@ def generate_top_summary(
     provider: str,
     api_key: str,
     models: list[str],
+    *,
+    budget: dict[str, int] | None = None,
+    timeout: float = 60,
 ) -> dict[str, Any] | None:
     chunks = summary_source_chunks(top)
     if len(chunks) < SUMMARY_CHUNK_MIN:
@@ -958,16 +1064,26 @@ Quellen:
     allowed_ids = {chunk["id"] for chunk in chunks}
     for model in models:
         try:
-            summary = parse_summary_response(request_summary_text(provider, prompt, api_key, model), allowed_ids)
+            if budget is not None:
+                if budget["used"] >= budget["limit"]:
+                    raise SummaryError("summary_budget_exhausted")
+                budget["used"] += 1
+            summary = parse_summary_response(request_summary_text(provider, prompt, api_key, model, timeout), allowed_ids)
             chunks_by_id = {chunk["id"]: chunk for chunk in chunks}
-            return {
-                "label": "Automatische Zusammenfassung — zur Quelle",
+            result = {
                 "provider": provider,
                 "model": model,
+                "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+                "prompt_version": SUMMARY_PROMPT_VERSION,
+                "source_fingerprint": summary_source_fingerprint(top),
                 "text": summary["text"],
                 "source_chunk_ids": summary["source_chunk_ids"],
                 "source_chunks": [chunks_by_id[chunk_id] for chunk_id in summary["source_chunk_ids"]],
             }
+            valid, reason = validate_usable_summary(result, top)
+            if not valid:
+                raise SummaryError(reason or "invalid_citations")
+            return result
         except SummaryError as exc:
             last_error = exc
             continue
@@ -978,8 +1094,29 @@ Quellen:
 
 def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) -> None:
     mode = getattr(args, "summary_mode", "auto")
+    eligible = sum(
+        1
+        for item in report.get("agenda_items") or []
+        if len(
+            summary_source_chunks(
+                {
+                    "top_id": item.get("top_id"),
+                    "heading": item.get("heading"),
+                    "speeches": item.get("xml_speakers") or [],
+                }
+            )
+        )
+        >= SUMMARY_CHUNK_MIN
+    )
     if mode == "off":
         report["summary_generation"] = {"enabled": False}
+        report.setdefault("acquisition", {})["summaries"] = publication.DomainFacts(
+            domain="summaries",
+            acquisition_state=publication.AcquisitionState.NOT_REQUESTED,
+            source="llm-with-bundestag-citations",
+            records=0,
+            counters={"eligible": eligible, "generated": 0, "omitted": eligible, "failed": 0, "fallbacks": 0},
+        ).as_dict()
         return
 
     provider = configured_summary_provider(args)
@@ -990,15 +1127,30 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
         report["summary_generation"] = {
             "enabled": False,
             "provider": provider,
-            "reason": f"{env_hint} not set",
+            "reason": "source_unavailable",
             "models": models,
         }
+        report.setdefault("acquisition", {})["summaries"] = publication.DomainFacts(
+            domain="summaries",
+            acquisition_state=publication.AcquisitionState.FAILED,
+            source="llm-with-bundestag-citations",
+            records=0,
+            rejected=eligible,
+            failure_reasons=("source_unavailable",),
+            counters={"eligible": eligible, "generated": 0, "omitted": 0, "failed": eligible, "fallbacks": 0},
+        ).as_dict()
         if mode == "required":
             flag_hint = "--gemini-api-key" if provider == "gemini" else "--anthropic-api-key"
-            raise DipError(f"Provide a {provider} API key via {flag_hint} or {env_hint} for summaries.")
+            article = "an" if provider[:1].lower() in "aeiou" else "a"
+            raise DipError(f"Provide {article} {provider} API key via {flag_hint} or {env_hint} for summaries.")
         return
 
-    failures: list[str] = []
+    failures: list[dict[str, str]] = []
+    budget = {
+        "used": 0,
+        "limit": max(0, int(getattr(args, "summary_max_calls", 25))),
+    }
+    timeout = max(1.0, float(getattr(args, "summary_timeout", 60)))
     for item in report.get("agenda_items") or []:
         try:
             parsed_top = {
@@ -1006,21 +1158,69 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
                 "heading": item.get("heading"),
                 "speeches": item.get("xml_speakers") or [],
             }
-            summary = generate_top_summary(parsed_top, provider, api_key, models)
+            summary = generate_top_summary(
+                parsed_top,
+                provider,
+                api_key,
+                models,
+                budget=budget,
+                timeout=timeout,
+            )
             if summary:
                 item["llm_summary"] = summary
         except SummaryError as exc:
-            failures.append(f"{item.get('top_id') or item.get('index')}: {exc}")
+            failure_code = summary_failure_code(exc)
+            failures.append(
+                {
+                    "top_id": str(item.get("top_id") or item.get("index") or "unknown"),
+                    "reason": failure_code,
+                }
+            )
+            print(
+                f"warning: summary generation failed for {item.get('top_id') or item.get('index')}: {exc}",
+                file=sys.stderr,
+            )
             if mode == "required":
                 raise DipError(f"Summary generation failed for {item.get('top_id')}: {exc}") from exc
 
+    generated = sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary"))
+    failed = len(failures)
+    omitted = max(0, eligible - generated - failed)
+    attempted_at = utc_now() if budget["used"] else None
+    failure_reasons = tuple(dict.fromkeys(failure["reason"] for failure in failures))
+    if failures:
+        acquisition_state = (
+            publication.AcquisitionState.PARTIAL if generated else publication.AcquisitionState.FAILED
+        )
+    else:
+        acquisition_state = publication.AcquisitionState.COMPLETE
     report["summary_generation"] = {
         "enabled": True,
         "provider": provider,
         "models": models,
-        "generated_top_count": sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary")),
+        "generated_top_count": generated,
+        "request_count": budget["used"],
+        "request_budget": budget["limit"],
         "failures": failures,
     }
+    report.setdefault("acquisition", {})["summaries"] = publication.DomainFacts(
+        domain="summaries",
+        acquisition_state=acquisition_state,
+        source="llm-with-bundestag-citations",
+        records=generated,
+        rejected=failed,
+        failure_reasons=failure_reasons,
+        acquired_at=attempted_at if generated else None,
+        attempted_at=attempted_at,
+        attempted=bool(attempted_at),
+        counters={
+            "eligible": eligible,
+            "generated": generated,
+            "omitted": omitted,
+            "failed": failed,
+            "fallbacks": 0,
+        },
+    ).as_dict()
 
 
 def enrich_with_api(
@@ -1214,6 +1414,44 @@ def enrich_with_api(
             f"{failed_ids}{suffix}."
         )
 
+    vote_records = len(roll_call_cache)
+    if vote_scan_pages <= 0:
+        vote_facts = publication.DomainFacts(
+            domain="votes",
+            acquisition_state=publication.AcquisitionState.NOT_REQUESTED,
+            source="bundestag-roll-call",
+            records=0,
+        )
+    else:
+        attempted_at = utc_now()
+        if roll_call_fetch.selector_warning:
+            vote_state = (
+                publication.AcquisitionState.PARTIAL
+                if vote_records
+                else publication.AcquisitionState.FAILED
+            )
+            vote_facts = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=vote_state,
+                source="bundestag-roll-call",
+                records=vote_records,
+                rejected=1,
+                failure_reasons=("source_changed",),
+                acquired_at=attempted_at if vote_records else None,
+                attempted_at=attempted_at,
+                attempted=True,
+            )
+        else:
+            vote_facts = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=publication.AcquisitionState.COMPLETE,
+                source="bundestag-roll-call",
+                records=vote_records,
+                acquired_at=attempted_at if vote_records else None,
+                attempted_at=attempted_at,
+                attempted=True,
+            )
+
     return {
         "api_totals": {
             "vorgangsposition_count": len(positions),
@@ -1241,6 +1479,7 @@ def enrich_with_api(
         },
         "agenda_items": enriched_tops,
         "warnings": warnings,
+        "acquisition": {"votes": vote_facts.as_dict()},
     }
 
 
@@ -1294,6 +1533,26 @@ def build_report(
     tops_with_xml_drucksachen = sum(1 for top in parsed_xml["agenda_items"] if top["drucksachen"])
     tops_with_api_positions = sum(1 for top in enrichment["agenda_items"] if top["api"]["positions"])
     tops_with_api_drucksachen = sum(1 for top in enrichment["agenda_items"] if top["api"]["linked_drucksachen"])
+    acquisition = enrichment.get("acquisition")
+    if not acquisition:
+        vote_records = int((enrichment.get("api_totals") or {}).get("matched_roll_call_vote_count") or 0)
+        vote_requested = int(getattr(args, "vote_scan_pages", 30)) > 0
+        attempted_at = utc_now() if vote_requested else None
+        acquisition = {
+            "votes": publication.DomainFacts(
+                domain="votes",
+                acquisition_state=(
+                    publication.AcquisitionState.COMPLETE
+                    if vote_requested
+                    else publication.AcquisitionState.NOT_REQUESTED
+                ),
+                source="bundestag-roll-call",
+                records=vote_records,
+                acquired_at=attempted_at if vote_records else None,
+                attempted_at=attempted_at,
+                attempted=vote_requested,
+            ).as_dict()
+        }
 
     report = {
         "protocol": {
@@ -1319,6 +1578,7 @@ def build_report(
         "sampled_people": enrichment["sampled_people"],
         "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
+        "acquisition": acquisition,
     }
     if getattr(args, "summary_mode", "off") != "off":
         progress("Processing LLM summaries.")
@@ -1364,6 +1624,8 @@ def parse_args() -> argparse.Namespace:
             "Defaults depend on --summary-provider."
         ),
     )
+    parser.add_argument("--summary-max-calls", type=int, default=25, help="Hard LLM request budget.")
+    parser.add_argument("--summary-timeout", type=float, default=60, help="Per-request timeout in seconds.")
     parser.add_argument(
         "--vote-scan-pages",
         type=int,
