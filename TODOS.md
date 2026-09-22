@@ -4,16 +4,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ## Daten
 
-### `parties.name` holds Python-list-repr duplicates of the same party
+### `parties.name` still holds two concatenated names and three Gruppe spellings
 
-**What:** On the real store, `parties` has both clean rows (`'AfD'`, `'CDU/CSU'`, `'BÜNDNIS 90/DIE GRÜNEN'`, `'SPD'`, `'Die Linke'`, `'fraktionslos'`) and nine duplicate rows whose `name` is a Python list repr of the same value (`"['AfD']"`, `"['CDU/CSU']"`, `"['BÜNDNIS 90/DIE GRÜNEN']"`, `"['SPD']"`, `"['DIE LINKE']"`, `"['fraktionslos']"`, `"['Die Linke (Gruppe)']"`, `"['FDP']"`, `"['BSW (Gruppe)']"`), plus two one-off rows `'SPDSPD'` and `'SPDCDU/CSU'`. Measured 2026-09-19: 909 `mps.party_id` foreign keys point at the list-repr rows (`['CDU/CSU']` 231, `['SPD']` 200, `['AfD']` 168, …); no `vote_members`/`vote_fractions` rows do.
+**What:** After the list-repr fix and migration (A1 step 1, 2026-09-22) the store has 15 `parties` rows, of which five are still not one Fraktion each: `'SPDSPD'` (1 MdB) and `'SPDCDU/CSU'` (1 MdB), and the pairs `'BSW (Gruppe)'` (10) / `'Gruppe BSW'` (10) / `'BSW'` (0) and `'Die Linke (Gruppe)'` (16) / `'Gruppe Die Linke'` (29). Decide the canonical spelling for the two Gruppen, add it to `normalize_faction` (`scripts/validate_dip_protocol.py:593`), and drop or split the two concatenated rows.
 
-**Why:** Found while building the Daten page's R1/R2/R3 recipes (`fraktion` column), which are the first place on the site to render `parties.name` verbatim rather than through a display helper. R2's "Redeanteil je Fraktion" percentages undercount a party split across a clean and a dirty row, and any future feature that trusts `parties.name` as a display string inherits the bug.
+**Why:** Same consequence as the list-repr bug the migration just fixed: anything grouping by `parties.name` — R2's "Redeanteil je Fraktion", the Fakten cards' Fraktion caption — splits one Fraktion across two rows. Left open deliberately when the migration landed, because neither residue comes from the list-repr bug and folding them in would have meant guessing.
 
-**Context:** Cause located (2026-09-19): `persist_sampled_people` in `scripts/persist_dip_pulse_store.py` (line ~517) does `clean(person.get("fraktion"))`, but DIP's `/person` records carry `fraktion` as a **list** (`["AfD"]`, visible in any cached `data/plenarprotokoll-*.json` under `sampled_people`), so `clean()` stores `str(["AfD"])`. Still in code, so the next online build re-creates the rows. `SPDSPD`/`SPDCDU/CSU` have one MP each and were created and last touched within minutes on 2026-06-22 (PR #25 development); no current code path concatenates names, so just fold them into the migration. Fix: take the first list element (or join) before `normalize_faction`, add a test with a list-valued `fraktion`, then a migration merging duplicate `parties` rows into the clean row and repointing `mps.party_id` (also `vote_fractions.party_id`/`vote_members.party_id` for safety). Note the store's max `updated_at` across all tables is 2026-06-22: no online build has written it since.
+**Context:** Causes established 2026-09-22, both different from the list-repr bug, which is why the migration does not touch them.
+- `'SPDSPD'`/`'SPDCDU/CSU'` come from the **source XML**: `21045.xml` carries `<redner id="11005217 999990074"><name><vorname>SvenjaSvenja</vorname><nachname>SchulzeSchulze</nachname><fraktion>SPDSPD</fraktion></name></redner>` in an `ivz-eintrag`, i.e. two TOC entries merged into one element by the Bundestag. Two speakers are affected, across twelve protocols: redner `11005217 999990074` ("SvenjaSvenja SchulzeSchulze", SPDSPD) in 21/18, 21/24, 21/25, 21/28, 21/44, 21/45, and redner `11005304` ("Dirk-UlrichAlexander Mende Föhr", SPDCDU/CSU) in 20/91, 20/94, 20/96, 20/103, 20/114, 20/116. The earlier note in this file ("no current code path concatenates names, so just fold them into the migration") was wrong. Fix belongs in `parse_redner` (`scripts/validate_dip_protocol.py:313`): detect a doubled `<redner id>` and either split it or drop the entry, then the parties rows disappear on the next rebuild.
+- The Gruppe spellings are two DIP surfaces disagreeing: `/person` returns `"Gruppe BSW"`/`"Gruppe Die Linke"` (via `ingest_mdb_roster`), the protocol's `sampled_people` return `"BSW (Gruppe)"`/`"Die Linke (Gruppe)"`, and `normalize_faction` has no rule for either. `'BSW'` (0 MdBs) is a third spelling with no rows behind it.
 
-**Effort:** M
-**Priority:** P1
+**Effort:** S
+**Priority:** P2
 **Depends on:** None
 
 ### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
@@ -110,7 +112,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Why:** Real TOP headings are boilerplate-first ("Beratung des Antrags der Abgeordneten Nicole Höchst, Dr. Götz Frömming, Dr. M…", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Umwe…"). At the 78-char cut most rows in the Aufmerksamkeitsrang never reach the subject, so the ranking ranks things the reader cannot tell apart. This is also the prerequisite for any denser (one-line) row design, which two independent reviewers proposed on 2026-09-13 and which was rejected only because of this.
 
-**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. Options: strip a known prefix list ("Beratung des Antrags der Abgeordneten … ", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für …", "Erste/Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes …") and show the remainder, or prefer the linked Drucksache title when one exists. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
+**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. The stripper now exists: `strip_heading_boilerplate()` / `agenda_topic()` in `scripts/render_dip_pulse_html.py`, built for the Fakten cards on 2026-09-22 (six openers, strips 2.238 of the archive's 2.727 headings). What is left here is calling it from the `attention_rows` loop and keeping the full heading in the `title` attribute. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
 
 **Effort:** M
 **Priority:** P2
@@ -252,19 +254,11 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12, D20-D22).
 
+**Progress:** A1 step 1 (the three prerequisites) landed on branch `fakt-der-woche`, 2026-09-22: `parties.name` list-repr fix + migration, `speeches.fraktion`, `_resolve_recipe_link` → `resolve_entity_link`, `agenda_topic()`. Next: T5 (engine), T10 (four new metrics), T6 (pages), T11 (monthly period).
+
 **Effort:** L
 **Priority:** P1
-**Depends on:** A0 pass (done, conditional); `parties.name` fix (Daten, P1); the boilerplate-title helper below
-
-### Fakt der Woche, topic line for the cards (`agenda_topic()`)
-
-**What:** A shared helper resolving an agenda item to a readable topic: the proceeding title first (22.910 of 35.239 speeches carry one), else `agenda_items.heading` with its boilerplate prefix stripped ("1 a) Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes über …" → the subject), else no topic clause. Used by the `laengste-rede` and `laengste-debatte` cards and by the existing ranking rows.
-
-**Why:** Feedback on the A0 sample cards (2026-09-22): the longest-speech card "feels a little bit random" without the topic. This is the existing "Ranking row titles that skip the boilerplate" item under Protokoll-Dossier, promoted to a blocker for A1.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
+**Depends on:** A0 pass (done, conditional); `parties.name` fix (done); the boilerplate-title helper (done)
 
 ### Fakt der Woche, four more weekly metrics
 
@@ -538,6 +532,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### `agenda_topic()`, the topic line for the Fakten cards
+
+**What:** `agenda_topic(proceeding_title, heading)` and `strip_heading_boilerplate()` in `scripts/render_dip_pulse_html.py`: the DIP Vorgang title first, else the XML heading with its procedural opener stripped, else nothing.
+
+**Completed:** branch `fakt-der-woche` (2026-09-22), unreleased. Spot check: 29 of the last 30 sitting weeks' longest speeches carry a topic, 27 of them from the clean Vorgang title.
+
+### `parties.name` list-repr duplicates
+
+**What:** `persist_sampled_people` unwraps DIP's list-valued `person.fraktion` (`unwrap_dip_faction`), and `initialize()` migrates existing stores: duplicate `parties` rows merged, `mps`, `vote_fractions` and `vote_members` repointed.
+
+**Completed:** branch `fakt-der-woche` (2026-09-22), unreleased. On the 2026-09-19 store: 22 party rows → 15, no list reprs, no dangling `party_id`, vote counts unchanged. Residue tracked under Daten.
 
 ### Guard external payload links with shared source validation
 

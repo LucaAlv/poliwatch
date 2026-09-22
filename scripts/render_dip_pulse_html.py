@@ -1310,6 +1310,104 @@ def _normalised_title(title: Any) -> str:
     return " ".join(str(title or "").split())
 
 
+# Agenda headings are procedure-first: "Beratung des Antrags der Abgeordneten
+# <fifteen names> und der Fraktion X <the actual subject>". Of the 2.727 headings
+# in the archive (measured 2026-09-22) 2.238 open with one of the forms below, so
+# the first visible words name a procedure and a Fraktion, never the topic. The
+# rules cut the recognised opener and leave everything else untouched.
+#
+# Known limits, both left to the caller: a heading that bundles sub-items keeps
+# the second item's opener ("… Lebensmittelspenden fördern b) Beratung des
+# Antrags der …"), and the committee tail ("Beschlussempfehlung und Bericht des
+# … Ausschusses") stays on the end. Both are length problems, and the cards and
+# ranking rows truncate anyway.
+_FRAKTION_NAME = (
+    r"(?:CDU/CSU|SPD|AfD|BÜNDNIS\s*90/DIE\s*GRÜNEN|FDP|DIE\s*LINKE|Die\s*Linke|"
+    r"BSW|Gruppe\s+(?:Die\s+Linke|BSW)|fraktionslos)"
+)
+_HEADING_ACTORS = (
+    rf"(?:{_FRAKTION_NAME}(?:\s*,\s*(?:der\s+)?{_FRAKTION_NAME})*"
+    rf"(?:\s+und\s+(?:der\s+)?{_FRAKTION_NAME})*|Bundesregierung|Bundesrates)"
+)
+_HEADING_BY = (
+    rf"(?:Fraktion(?:en)?(?:\s+der)?\s+|Abgeordneten\s+.+?\s+und\s+der\s+Fraktion(?:\s+der)?\s+|"
+    rf"Gruppe\s+)?{_HEADING_ACTORS}"
+)
+
+# "1 a) ", "a) ", "8 ", "– ": the TOP enumeration, stripped before anything else.
+_HEADING_ENUMERATION = re.compile(r"^(?:\d{1,3}\s*[a-z]?\)|\d{1,3}(?=\s)|[a-z]\)|[–—-])\s*")
+
+_HEADING_OPENERS: tuple[re.Pattern[str], ...] = (
+    # "Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines
+    # Gesetzes zur Änderung …" -> "Gesetz zur Änderung …"
+    re.compile(r"^.*?\beingebrachten\s+Entwurfs\s+(?:eines|einer)\s+(?P<rest>\S.+)$"),
+    # "Aktuelle Stunde auf Verlangen der Fraktion der CDU/CSU <Thema>"
+    re.compile(rf"^Aktuelle\s+Stunde\s+auf\s+Verlangen\s+(?:der|des)\s+{_HEADING_BY}\s+(?P<rest>\S.+)$"),
+    # "Beratung der Beschlussempfehlung … zu dem Antrag der Fraktion X <Thema>"
+    re.compile(
+        rf"^Beratung\s+der\s+Beschlussempfehlung.+?\bzu\s+dem\s+\S+\s+(?:der|des)\s+{_HEADING_BY}\s+(?P<rest>\S.+)$"
+    ),
+    # "Beratung des Antrags/der Unterrichtung … der Fraktion X <Thema>"
+    re.compile(rf"^Beratung\s+(?:des|der)\s+\S+\s+(?:der|des|durch\s+die)\s+{_HEADING_BY}\s+(?P<rest>\S.+)$"),
+    # "Beratung der Beschlussempfehlung des Ausschusses für X (1. Ausschuss) <Thema>"
+    re.compile(r"^Beratung\s+(?:der|des)\s+.+?\(\d{1,2}\.\s*Ausschuss\)\s*(?:[–—-]\s*)?(?P<rest>\S.+)$"),
+    # "Abgabe einer Regierungserklärung durch den Bundeskanzler: <Thema>"
+    re.compile(r"^Abgabe\s+einer\s+Regierungserklärung\s+durch\s+.+?:\s*(?P<rest>\S.+)$"),
+)
+
+# The Gesetzentwurf rule leaves a genitive behind ("Gesetzes zur …",
+# "Dreizehnten Gesetzes zur …", "Infrastruktur-Zukunftsgesetzes").
+_HEADING_GENITIVE = re.compile(r"^(?:(?P<ordinal>\w+en)\s+)?(?P<noun>[\w-]*[Gg]esetzes)\b")
+
+
+def _heading_nominative(match: re.Match[str]) -> str:
+    noun = match.group("noun")[:-2]
+    ordinal = match.group("ordinal")
+    return f"{ordinal[:-2]}es {noun}" if ordinal else noun
+
+
+def strip_heading_boilerplate(heading: Any) -> str:
+    """An agenda heading with its procedural opener removed.
+
+    Returns the whitespace-normalised heading unchanged when no rule matches,
+    and "" when there is no heading at all.
+    """
+    text = " ".join(str(heading or "").split())
+    if not text:
+        return ""
+    for _ in range(4):
+        shorter = _HEADING_ENUMERATION.sub("", text, count=1)
+        if shorter == text:
+            break
+        text = shorter
+    for index, rule in enumerate(_HEADING_OPENERS):
+        match = rule.match(text)
+        if not match:
+            continue
+        rest = match.group("rest").strip()
+        if index == 0:
+            rest = _HEADING_GENITIVE.sub(_heading_nominative, rest, count=1)
+        return rest or text
+    return text
+
+
+def agenda_topic(proceeding_title: Any = None, heading: Any = None) -> str | None:
+    """What an agenda item is about, in reader's words, or None.
+
+    ``proceeding_title`` is the DIP Vorgang title of the item's leading
+    proceeding (``proceeding_positions.title``; present for 22.910 of the
+    35.239 archived speeches on 2026-09-22) and wins whenever it exists,
+    because DIP already writes it subject-first. ``heading`` is the XML
+    ``agenda_items.heading`` (32.252 speeches) and is used only as the
+    fallback, boilerplate stripped. Neither present, no topic: the caller
+    omits its topic clause rather than printing a procedure.
+    """
+    title = " ".join(str(proceeding_title or "").split())
+    if title:
+        return title
+    return strip_heading_boilerplate(heading) or None
+
+
 def topic_identity(item: dict[str, Any]) -> dict[str, Any]:
     """What a radar row is named after.
 

@@ -1404,7 +1404,7 @@ PER_BUILD_KEYS: dict[str, tuple[str, ...]] = {
 #
 # Every "hidden" column is selected (it is the link key) but never rendered as
 # its own cell; the "link" on a visible column says which kind of link to try
-# resolving for that row (see _resolve_recipe_link). "truncate" caps a cell's
+# resolving for that row (see resolve_entity_link). "truncate" caps a cell's
 # visible text, keeping the full value in the HTML title attribute.
 RECIPES: tuple[dict[str, Any], ...] = (
     {
@@ -2196,9 +2196,7 @@ def format_datenstand_timestamp(generated_at: str) -> tuple[str, str]:
     return display, localized.isoformat()
 
 
-# Resolve one recipe row's link key into an href, or None when the target page
-# does not exist in this build (the row still renders, just as plain text).
-def _resolve_recipe_link(
+def resolve_entity_link(
     link_kind: str | None,
     value: Any,
     *,
@@ -2206,6 +2204,12 @@ def _resolve_recipe_link(
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str | None:
+    """Resolve an entity key into an href, or None when the target page does not
+    exist in this build (the caller still renders the row, just as plain text).
+
+    Shared by the recipe tables and the Fakten cards, which cite the same three
+    entity kinds ("mp", "document", "proceeding") from their own receipts.
+    """
     if value is None or link_kind is None:
         return None
     if link_kind == "mp":
@@ -2325,7 +2329,7 @@ def render_daten_recipes(
                 if link_column:
                     hidden_column = next((c for c in columns if c.get("hidden")), None)
                     key_value = row.get(hidden_column["name"]) if hidden_column else None
-                    link_href = _resolve_recipe_link(
+                    link_href = resolve_entity_link(
                         link_column.get("link"),
                         key_value,
                         mp_lookup=mp_lookup,

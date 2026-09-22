@@ -9,6 +9,7 @@ This file is the long-form counterpart of that string. It is copied into a futur
 - Plenary protocol structure, agenda items, speeches, and legislative procedures, extracted from official Bundestag DIP API sources (`dip.bundestag.de`).
 - Roll-call vote results and per-member votes, extracted from Bundestag roll-call publications (`bundestag.de`).
 - MdB biography fields (`birth_year`, `gender`, `profession`, `wahlkreis`, `bundesland`) from the DIP MdB roster, and `aw_politician_id`/`profile_url` from abgeordnetenwatch.de. `data/exports/datenstand.json` marks each column's source (`tables[].columns[].source`).
+- `speeches.fraktion`: the Fraktion the plenary protocol XML names for the speaker of that Rede, normalised to the same spellings as `parties.name`. It is the affiliation at the time of the speech, where `mps.party_id` is the affiliation as of the last build; `NULL` when the XML names no Fraktion (a minister speaking in role). Source `dip`, like the rest of the protocol extraction.
 - A derived `mp_canonical` table mapping every internal `mps.id` to a consolidated person id, used to make the exported "Rezepte" counts match the site's own profile pages.
 
 ## What is not yet settled
