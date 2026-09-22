@@ -246,15 +246,47 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ### Fakt der Woche, A1: engine in the build, pages, Methodik, export
 
-**What:** On top of A0 (only if A0 passes): `compute_and_store` runs on every build right before `export_distribution_data` (`scripts/build_dip_pulse_site.py` ~8443), takes the completeness map from the in-memory `entries`, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs (single transaction; `fact_metrics.sql_sha256`; `--no-persist` never writes; `CREATE TABLE IF NOT EXISTS` in the engine), prints a changed-winners report, and aborts the build when a metric's SQL raises. `speeches.fraktion` (TEXT, from the XML speaker's `fraktion` at persist) captions the card; R2 switches to it. Pages `fakt/index.html`, `fakt/<year>-W<ww>.html`, `fakt/<year>-W<ww>.svg`, `fakt/methodik.html` (rule, N, tie order, the "spätere Wochen ändern frühere Karten nicht; Datenkorrekturen können es" guarantee, the opportunity-count caveat, unbuilt metrics); `facts` component + nav "Fakten"; `_resolve_recipe_link` renamed `resolve_entity_link` and shared; `format_int`/`speaker_party` reused. Export: three new CSVs (19 total), `DATABASE_TABLE_DESCRIPTIONS`, `_TABLE_SOURCE_DERIVED`, `docs/data-license.md` line. Done when two consecutive builds on an unchanged store leave the store mtime unchanged and skip the export (regression test), cards are byte-identical under `SOURCE_DATE_EPOCH`, and one card has been rasterised with `qlmanage` and posted.
+**What:** On top of A0 (A0 passed conditionally on 2026-09-22; the conditions are D20-D28 in the plan file): `compute_and_store` runs on every build right before `export_distribution_data` (`scripts/build_dip_pulse_site.py` ~8443), takes the completeness map from the in-memory `entries`, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs (single transaction; `fact_metrics.sql_sha256`; `--no-persist` never writes; `CREATE TABLE IF NOT EXISTS` in the engine), prints a changed-winners report, and aborts the build when a metric's SQL raises. **Publication floor: only facts at percentile >= 0,50 are posted (`facts.publishable`); every publishable fact of a period is posted, ranked by percentile (`facts.rank` replaces the unique `selected` flag), so a week yields zero, one or several cards.** Facts carry a period (`period_kind` 'week' or 'month', `period_key`). `speeches.fraktion` (TEXT, from the XML speaker's `fraktion` at persist) captions the card; R2 switches to it. Pages `fakt/index.html`, `fakt/<period_key>.html`, `fakt/<period_key>-<metric_id>.svg`, `fakt/methodik.html` (rule, N, the floor, tie order, every registry caveat, the "spätere Wochen ändern frühere Karten nicht; Datenkorrekturen können es" guarantee, the opportunity-count caveat, unbuilt metrics); `facts` component + nav "Fakten"; `_resolve_recipe_link` renamed `resolve_entity_link` and shared; `format_int`/`speaker_party` reused. Export: three new CSVs (19 total), `DATABASE_TABLE_DESCRIPTIONS`, `_TABLE_SOURCE_DERIVED`, `docs/data-license.md` line. Done when two consecutive builds on an unchanged store leave the store mtime unchanged and skip the export (regression test), cards are byte-identical under `SOURCE_DATE_EPOCH`, and one card has been rasterised with `qlmanage` and posted.
 
 **Why:** The facts table is the product (design premise 2); A1 is where it becomes a store table, a download and a page. Every rule above is a decision in the plan file, not a suggestion.
 
-**Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12).
+**Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12, D20-D22).
 
 **Effort:** L
 **Priority:** P1
-**Depends on:** A0 pass; `parties.name` fix (Daten, P1)
+**Depends on:** A0 pass (done, conditional); `parties.name` fix (Daten, P1); the boilerplate-title helper below
+
+### Fakt der Woche, topic line for the cards (`agenda_topic()`)
+
+**What:** A shared helper resolving an agenda item to a readable topic: the proceeding title first (22.910 of 35.239 speeches carry one), else `agenda_items.heading` with its boilerplate prefix stripped ("1 a) Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes über …" → the subject), else no topic clause. Used by the `laengste-rede` and `laengste-debatte` cards and by the existing ranking rows.
+
+**Why:** Feedback on the A0 sample cards (2026-09-22): the longest-speech card "feels a little bit random" without the topic. This is the existing "Ranking row titles that skip the boilerplate" item under Protokoll-Dossier, promoted to a blocker for A1.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Fakt der Woche, four more weekly metrics
+
+**What:** `laengste-debatte` (max total `char_count` per agenda item, with topic), `laengste-sitzung` (max `sitzung_end - sitzung_start` from `xml_header_json`; 290 of 290 protocols carry both), `meiste-abweichler` (max members voting against their Fraktion's `leading_vote` in one vote; caveat "bei Gewissensfragen gibt es keine Fraktionslinie", Suizidhilfe = 179), `erste-reden` (MPs whose first observed speech falls in the week; caveat "in unserer Abdeckung seit Januar 2022"). Registry `tie_rank` order: knappste-abstimmung, meiste-abweichler, laengste-debatte, laengste-rede, laengste-sitzung, erste-reden.
+
+**Why:** Feedback 2026-09-22: "it actually would be nice to have some more diversity, not only longest speech per week or closest vote". Each was verified computable against the 2026-09-19 store before being written down. D23/D27 in the plan.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** A1 engine; `agenda_topic()` for laengste-debatte
+
+### Fakt der Woche, the monthly post
+
+**What:** A second period (`period_kind = 'month'`, `min_history_periods = 6`) with `aktivste-abgeordnete` (most speeches by one MP in the month; ties to most characters, then lowest `mps.id`; June 2026 = Alexander Dobrindt with 40) and `meistdiskutierter-vorgang` (most distinct speeches on one proceeding; June 2026 = 19 Reden on the Beitragssatz-Gesetz). A month is complete when every sitting week in it is complete for the metric's domain.
+
+**Why:** Feedback 2026-09-22 asked for a monthly post alongside the weekly one. "Least active politician of the month" was raised and dropped: it is the attendance ranking premise 4 rules out, and ministers, committee chairs and the Präsidium speak rarely by role (D26).
+
+**Context:** No `mps` rows share an `aw_politician_id` in the current store, so grouping speech counts by `mp_id` is safe today; re-check before shipping.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** A1 engine
 
 ### Fakt der Woche, publication ledger (`facts_published`)
 
