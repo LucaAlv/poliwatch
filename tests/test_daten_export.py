@@ -250,6 +250,39 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["generation"], second["generation"])
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
+    # T5/D1A: the Fakt der Woche engine runs on every build, right before the
+    # export. Two builds on an unchanged store must leave the store's mtime
+    # alone, or the export's (mtime, size) rehash guard trips and a 291 MB
+    # store is re-hashed and re-exported for nothing.
+    FACTS_ENTRIES = [
+        {
+            "report": {
+                "protocol": {"dokumentnummer": number},
+                "validation_summary": {"xml_speech_count": 3},
+                "acquisition": {"votes": {"acquisition_state": "complete"}},
+            }
+        }
+        for number in ("20/100", "20/101")
+    ]
+
+    def test_engine_twice_leaves_the_store_unchanged_and_the_export_reused(self) -> None:
+        first_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        self.assertTrue(first_run["written"])
+        first = self.export()
+        before = self.db_path.stat().st_mtime_ns
+        second_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        self.assertFalse(second_run["written"])
+        self.assertEqual(self.db_path.stat().st_mtime_ns, before)
+        second = self.export()
+        self.assertEqual(first["generation"], second["generation"])
+        self.assertEqual(first["inputs_hash"], second["inputs_hash"])
+
+    def test_engine_output_is_exported_with_the_other_tables(self) -> None:
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        manifest = self.export()
+        names = {table["name"] for table in manifest["tables"]}
+        self.assertLessEqual({"fact_metrics", "facts", "fact_sources"}, names)
+
     def test_skip_rule_reexports_when_store_changes(self) -> None:
         first = self.export()
         with sqlite3.connect(self.db_path) as conn:

@@ -89,11 +89,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 #   pulse_store - SQLite schema, upserts and report persistence
 #   dip         - DIP API client and the protocol -> report extraction pipeline
 #   aw          - abgeordnetenwatch.de profile lookup and caching
+#   facts       - the Fakt der Woche metric registry, rule and storage engine
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
 import publication_state as publication
+import facts
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -738,6 +740,26 @@ def rebuild_database_from_entries(
         finally:
             previous.close()
 
+    # The facts the previous store held, carried into the fresh one. The engine
+    # recomputes them right after this and overwrites them if anything moved -
+    # but without the carry-over an online build would have nothing to diff
+    # against, and the changed-winners report (D11) would never fire on the one
+    # build that actually runs in production. Read-only, so nothing is migrated
+    # in a store that is about to be replaced anyway.
+    facts_snapshot: dict[str, list[list[Any]]] | None = None
+    if database_path.exists():
+        try:
+            previous_facts = facts.open_readonly(database_path)
+            try:
+                facts_snapshot = facts.read_snapshot(previous_facts)
+            finally:
+                previous_facts.close()
+        except sqlite3.Error as exc:
+            # A store too damaged to read is about to be replaced anyway; the
+            # engine recomputes every fact right after this. Losing the
+            # carry-over costs one changed-winners report, not the build.
+            print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
+
     temp_path = database_path.with_name(f".{database_path.name}.tmp")
     if temp_path.exists():
         temp_path.unlink()
@@ -772,6 +794,8 @@ def rebuild_database_from_entries(
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
+        if facts_snapshot is not None:
+            facts.write_snapshot(store, facts_snapshot)
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -8414,6 +8438,27 @@ def resolve_commit() -> str | None:
     return result.stdout.strip() or None
 
 
+# D1A/D3A: the Fakt der Woche engine sits between the finalised store and the
+# export. It runs on every build, online and --offline, computes every fact in
+# memory and writes the three tables only when they changed - so an --offline
+# rebuild of an unchanged store leaves the store's mtime alone and the export's
+# skip rule still holds. A metric whose SQL raises a FactsError aborts the
+# build naming the metric (FactsError is a RuntimeError, which main() reports).
+def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    store = pulse_store.connect(database_path)
+    try:
+        pulse_store.initialize(store)
+        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+        return facts.compute_and_store(
+            store,
+            facts.REGISTRY,
+            facts.completeness_from_entries(entries),
+            built=built,
+        )
+    finally:
+        store.close()
+
+
 # Runs the export step (unless --no-persist, or the store does not exist) and
 # resolves which manifest the Daten page renders from: the manifest this build
 # just wrote, or an explicit --data-manifest override (local file or, outside
@@ -8436,6 +8481,11 @@ def run_data_pipeline(
     bills = collect_bill_pages(entries)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
+
+    # Before the export, so the three facts tables are part of the store the
+    # export copies and hashes.
+    if not args.no_persist and database_path.exists():
+        run_facts_engine(database_path, entries)
 
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
