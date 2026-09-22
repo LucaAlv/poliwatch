@@ -104,6 +104,18 @@ class ExportDistributionDataTests(unittest.TestCase):
         # (profile:...) must not resolve to a page.
         self.assertNotIn(vera_row["mp_id"], self.lookup)
 
+    def test_r2_groups_by_speech_time_fraktion_not_current_party(self) -> None:
+        # switcher_mp's seeded Rede carries speeches.fraktion = 'SPD' even
+        # though their mps.party_id is CDU/CSU today (D18/T8: a Fraktionswechsel
+        # must not rewrite history). Without the switch, CDU/CSU would read 4
+        # Reden and SPD 2; with it, both read 3.
+        manifest = self.export()
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        spd_row = next(row for row in r2["rows"] if row["fraktion"] == "SPD")
+        cdu_row = next(row for row in r2["rows"] if row["fraktion"] == "CDU/CSU")
+        self.assertEqual(spd_row["reden"], 3)
+        self.assertEqual(cdu_row["reden"], 3)
+
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}
@@ -195,7 +207,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         conn.row_factory = sqlite3.Row
         rows = {row["mp_id"]: (row["canonical_id"], row["has_page"]) for row in conn.execute("SELECT * FROM mp_canonical")}
         conn.close()
-        self.assertEqual(len(rows), 4)
+        self.assertEqual(len(rows), 5)
         self.assertEqual(rows[self.ids["roster_mp"]][0], rows[self.ids["speaker_mp"]][0])
         self.assertEqual(rows[self.ids["vote_only_mp"]][1], 0)
         self.assertEqual(rows[self.ids["roster_mp"]][1], 1)
@@ -208,16 +220,31 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_sixteen_csvs_named_and_headered(self) -> None:
+    def test_nineteen_csvs_named_and_headered(self) -> None:
+        # The facts tables (T5/T6) are part of the store by the time export
+        # runs in a real build; run the engine first so they are here too.
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
         manifest = self.export()
-        csv_files = [f for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 16)
+        csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
+        self.assertEqual(len(csv_files), 19)
+        for name in ("fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz"):
+            with self.subTest(name=name):
+                self.assertIn(name, csv_files)
         gen_dir = self.exports_dir / manifest["generation"]
         speeches_csv = gen_dir / "speeches-local.csv.gz"
         with gzip.open(speeches_csv, "rt", encoding="utf-8", newline="") as handle:
             header = handle.readline().strip().split(",")
         self.assertIn("mp_id", header)
         self.assertNotIn("paragraphs_json", header)
+
+    def test_facts_tables_get_real_captions_not_the_fallback(self) -> None:
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        manifest = self.export()
+        _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
+        self.assertNotIn("Persistierte Tabelle aus dem Bundestag-Puls-Graph.", table_rows_html)
+        for name in facts.FACTS_TABLES:
+            with self.subTest(table=name):
+                self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
     def test_dash_leading_text_is_exported_verbatim(self) -> None:
         manifest = self.export()

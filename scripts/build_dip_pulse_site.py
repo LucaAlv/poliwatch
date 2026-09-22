@@ -131,6 +131,9 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
+    "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
+    "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
+    "fact_sources": "Belege je Fakt: Rede, Abstimmung, Sitzung oder Drucksache, aus denen der Wert stammt.",
 }
 
 ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
@@ -1462,13 +1465,13 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT p.name AS fraktion, COUNT(*) AS reden,\n"
+            "SELECT COALESCE(NULLIF(s.fraktion, ''), p.name) AS fraktion, COUNT(*) AS reden,\n"
             "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
-            "JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY p.id\n"
-            "ORDER BY reden DESC, p.name\n"
+            "LEFT JOIN parties p ON p.id = m.party_id\n"
+            "GROUP BY COALESCE(NULLIF(s.fraktion, ''), p.name)\n"
+            "ORDER BY reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
