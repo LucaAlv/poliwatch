@@ -63,9 +63,24 @@ MIN_HISTORY_WEEKS = 8
 PUBLICATION_FLOOR = 0.50
 DEFAULT_STORE = Path(".context/dip-pulse-site/data/bundestag-pulse.sqlite")
 
-# D27: these two metrics may not be read without their caveat, so the registry
-# carries it and validate_registry() refuses to run without one.
-REQUIRED_CAVEATS = ("meiste-abweichler", "erste-reden")
+# A metric may not be read without its caveat, so the registry carries it and
+# validate_registry() refuses to run without one. D27 named the first two; the
+# two vote metrics were added on 2026-09-22 after the replay measured an
+# opportunity-count effect on both of them (see their caveat text).
+REQUIRED_CAVEATS = (
+    "knappste-abstimmung",
+    "meiste-abweichler",
+    "erste-reden",
+)
+
+# Why a period has no card for a metric, in the order the engine decides it.
+# Stored in ``facts.withheld`` (NULL when the fact is posted) so the archive
+# can say which of them applies instead of lumping everything into "kein Fakt".
+WITHHELD_NO_OBSERVATION = "no_observation"
+WITHHELD_NOT_COMPARABLE = "not_comparable"
+WITHHELD_BELOW_MIN_VALUE = "below_min_value"
+WITHHELD_NO_TOPIC = "no_topic"
+WITHHELD_BELOW_FLOOR = "below_floor"
 
 # The lead proceeding of an agenda item, by the same rule topic_identity uses:
 # a Gesetzgebung position first, then the lowest proceeding_positions.id. Shared
@@ -128,7 +143,14 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": "votes",
         "coverage": "votes",
         "receipt": "vote",
-        "caveat": None,
+        "min_value": None,
+        "requires_topic": False,
+        "caveat": (
+            "Verglichen werden nur die namentlichen Abstimmungen. Je mehr eine Woche davon "
+            "hat, desto knapper fällt die knappste im Schnitt aus (gemessen über 58 "
+            "vergleichbare Wochen), ein hoher Prozentwert sagt also auch etwas über die "
+            "Zahl der Abstimmungen."
+        ),
     },
     {
         "id": "meiste-abweichler",
@@ -167,10 +189,19 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": "votes",
         "coverage": "votes",
         "receipt": "vote",
+        # The metric is zero-inflated: 21 of the 66 observed weeks read 0, so a
+        # single Abweichlerin already beats two thirds of them. Two of the 19
+        # cards this metric would post read "1 Abgeordnete", which is an
+        # anecdote, not a fact; a floor of three drops exactly those two and
+        # keeps the other 17 (values 3 to 179).
+        "min_value": 3,
+        "requires_topic": False,
         "caveat": (
             "Bei Gewissensfragen gibt es keine Fraktionslinie. Gezählt wird, wer anders "
             "stimmt als die Mehrheit der eigenen Fraktion; Enthaltungen und Abwesenheit "
-            "zählen nicht, fraktionslose Abgeordnete bleiben außen vor."
+            "zählen nicht, fraktionslose Abgeordnete bleiben außen vor. Je mehr "
+            "namentliche Abstimmungen eine Woche hat, desto mehr Abweichungen sind zu "
+            "erwarten."
         ),
     },
     {
@@ -199,6 +230,13 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "coverage": "speeches",
         "receipt": "agenda_item",
+        "min_value": None,
+        # The topic *is* this card's subject: without it the card says only
+        # that some Tagesordnungspunkt was long, which is not a fact a reader
+        # can do anything with. 6 of the 48 cards this metric would post have
+        # no topic (2026-W37, 2025-W39, 2025-W28, 2024-W37, 2023-W36,
+        # 2022-W36); they are withheld rather than published nameless.
+        "requires_topic": True,
         "caveat": None,
     },
     {
@@ -227,6 +265,8 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "coverage": "speeches",
         "receipt": "speech",
+        "min_value": None,
+        "requires_topic": False,
         "caveat": None,
     },
     {
@@ -252,6 +292,8 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "coverage": "speeches",
         "receipt": "protocol",
+        "min_value": None,
+        "requires_topic": False,
         "caveat": None,
     },
     {
@@ -298,6 +340,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "coverage": "speeches",
         "receipt": "speeches",
+        # Every card this metric posts already reads 3 or more (3..60), so an
+        # absolute floor would be a claim with nothing behind it.
+        "min_value": None,
+        "requires_topic": False,
         "caveat": (
             "Erste Rede in unserer Abdeckung seit Januar 2022, nicht zwingend die erste "
             "Rede im Bundestag."
@@ -338,6 +384,15 @@ def validate_registry(registry: Iterable[Mapping[str, Any]] = REGISTRY) -> None:
             raise FactsError(f"facts: metric {metric_id} has no aggregation")
         if metric.get("coverage") not in ("votes", "speeches"):
             raise FactsError(f"facts: metric {metric_id} has no coverage domain")
+        if metric.get("min_value") is not None and metric["direction"] != "max":
+            raise FactsError(
+                f"facts: metric {metric_id} sets min_value on a min-direction metric, "
+                "where a floor on the value would cut off the interesting end"
+            )
+        if metric.get("requires_topic") and metric.get("receipt") not in ("agenda_item", "speech"):
+            raise FactsError(
+                f"facts: metric {metric_id} requires a topic but its receipt names no agenda item"
+            )
         if metric_id in REQUIRED_CAVEATS and not str(metric.get("caveat") or "").strip():
             raise FactsError(f"facts: metric {metric_id} must carry a caveat (D27)")
 
@@ -631,25 +686,60 @@ def baseline_label(base: Baseline, week: Week, starts: Mapping[int, tuple[int, d
     return f"seit {MONTHS_DE[day.month - 1]} {day.year}"
 
 
-def is_publishable(row: Mapping[str, Any], floor: float = PUBLICATION_FLOOR) -> bool:
-    """D20: eligible and more unusual than ``floor`` of its population."""
+def withheld_reason(
+    row: Mapping[str, Any],
+    metric: Mapping[str, Any] | None = None,
+    floor: float = PUBLICATION_FLOOR,
+) -> str | None:
+    """Why this fact is not posted, or None when it is.
+
+    The relative floor (D20) is only the last gate. A metric may also set an
+    absolute one: ``min_value``, below which the observation is an anecdote
+    rather than a fact, and ``requires_topic``, for a card whose subject *is*
+    the topic. Both were added on 2026-09-22 from the replay; both are registry
+    data, so changing either is a one-line edit, not a rule change.
+    """
+    if row.get("value") is None:
+        return WITHHELD_NO_OBSERVATION
     if not row.get("eligible") or row.get("percentile") is None:
-        return False
-    return float(row["percentile"]) >= floor
+        return WITHHELD_NOT_COMPARABLE
+    if metric is None:
+        metric = REGISTRY_BY_ID.get(str(row.get("metric_id")))
+    if metric is not None:
+        minimum = metric.get("min_value")
+        if minimum is not None and float(row["value"]) < float(minimum):
+            return WITHHELD_BELOW_MIN_VALUE
+        if metric.get("requires_topic") and not (row.get("citation") or {}).get("topic"):
+            return WITHHELD_NO_TOPIC
+    if float(row["percentile"]) < floor:
+        return WITHHELD_BELOW_FLOOR
+    return None
 
 
-def rank_period(rows: Iterable[MutableMapping[str, Any]], floor: float = PUBLICATION_FLOOR) -> list[MutableMapping[str, Any]]:
-    """Set ``publishable`` and ``rank`` on one period's rows in place (D21).
+def is_publishable(row: Mapping[str, Any], floor: float = PUBLICATION_FLOOR) -> bool:
+    return withheld_reason(row, floor=floor) is None
+
+
+def rank_period(
+    rows: Iterable[MutableMapping[str, Any]],
+    floor: float = PUBLICATION_FLOOR,
+    metrics: Mapping[str, Mapping[str, Any]] | None = None,
+) -> list[MutableMapping[str, Any]]:
+    """Set ``withheld``, ``publishable`` and ``rank`` on one period's rows in
+    place (D21).
 
     Every publishable fact is posted; ``rank`` runs 1..n over them by
-    percentile desc, then ``tie_rank`` asc. A row that stays below the floor
-    keeps ``rank`` None -- the archive says "kein Fakt: nicht ungewöhnlich
-    genug" rather than showing a card.
+    percentile desc, then ``tie_rank`` asc. A withheld row keeps ``rank`` None
+    and carries the reason, so the archive can say which gate applied instead
+    of lumping every empty week into one "kein Fakt".
     """
     period_rows = list(rows)
+    lookup = REGISTRY_BY_ID if metrics is None else metrics
     publishable: list[MutableMapping[str, Any]] = []
     for row in period_rows:
-        row["publishable"] = int(is_publishable(row, floor))
+        reason = withheld_reason(row, lookup.get(str(row.get("metric_id"))), floor)
+        row["withheld"] = reason
+        row["publishable"] = int(reason is None)
         row["rank"] = None
         if row["publishable"]:
             publishable.append(row)
@@ -873,6 +963,7 @@ def compute(
                 "baseline_label": None,
                 "percentile": None,
                 "eligible": 0,
+                "withheld": WITHHELD_NO_OBSERVATION,
                 "publishable": 0,
                 "rank": None,
                 "citation": None,
@@ -915,8 +1006,9 @@ def compute(
     by_period: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
         by_period.setdefault((row["period_kind"], row["period_key"]), []).append(row)
+    metrics_by_id = {str(metric["id"]): metric for metric in registry}
     for period_rows in by_period.values():
-        rank_period(period_rows, floor)
+        rank_period(period_rows, floor, metrics_by_id)
     rows.sort(key=lambda r: (r["period_kind"], r["iso_year"], r["iso_week"], r["tie_rank"]))
     return rows
 
@@ -978,6 +1070,7 @@ FACTS_SCHEMA: tuple[str, ...] = (
       baseline_label TEXT,
       percentile REAL,
       eligible INTEGER NOT NULL,
+      withheld TEXT,
       publishable INTEGER NOT NULL,
       "rank" INTEGER,
       UNIQUE(metric_id, period_kind, period_key)
@@ -1008,7 +1101,7 @@ _FACT_COLUMNS = (
     "metric_id", "metric_version", "period_kind", "period_key", "iso_year", "iso_week",
     "wahlperiode", "complete", "week_n", "value", "denominator", "baseline_kind",
     "baseline_count", "baseline_from", "baseline_to", "baseline_label", "percentile",
-    "eligible", "publishable", "rank",
+    "eligible", "withheld", "publishable", "rank",
 )
 _SOURCE_COLUMNS = (
     "entity_kind", "document_number", "rede_id", "page", "page_quadrant",
@@ -1021,20 +1114,48 @@ def _quoted(columns: Sequence[str]) -> str:
     return ", ".join(f'"{column}"' for column in columns)
 
 
+#: The columns each table must have for the engine to read or write it.
+_EXPECTED_COLUMNS = {
+    "fact_metrics": _METRIC_COLUMNS,
+    "facts": ("id",) + _FACT_COLUMNS,
+    "fact_sources": ("fact_id",) + _SOURCE_COLUMNS,
+}
+
+
+def _columns_of(conn: sqlite3.Connection, table: str) -> set[str] | None:
+    """The table's column names, or None when it does not exist."""
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+    ).fetchone():
+        return None
+    return {str(list(row)[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
 def ensure_tables(conn: sqlite3.Connection) -> None:
+    """Create the three tables, dropping any left over from an older schema.
+
+    The engine is the only writer and rewrites all three as one unit, so a
+    table whose columns no longer match is worth nothing: dropping it is
+    cheaper and safer than a migration, and the next write refills it. This is
+    what keeps a store built by an earlier revision of the registry from
+    failing the build with "no such column".
+    """
+    for table, expected in _EXPECTED_COLUMNS.items():
+        columns = _columns_of(conn, table)
+        if columns is not None and columns != set(expected):
+            conn.execute(f"DROP TABLE {table}")
     for statement in FACTS_SCHEMA:
         conn.execute(statement)
 
 
 def tables_exist(conn: sqlite3.Connection) -> bool:
-    found = {
-        str(row[0])
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?)",
-            FACTS_TABLES,
-        ).fetchall()
-    }
-    return found == set(FACTS_TABLES)
+    """True when all three tables exist *with the current schema*. A store
+    written by an older registry reads as empty, so the engine rewrites it
+    instead of reading columns that are no longer there."""
+    return all(
+        _columns_of(conn, table) == set(expected)
+        for table, expected in _EXPECTED_COLUMNS.items()
+    )
 
 
 def metric_row(metric: Mapping[str, Any]) -> list[Any]:
@@ -1378,11 +1499,21 @@ def card_title(row: Mapping[str, Any]) -> str:
     return f"{citation.get('display_name') or 'Unbekannt'} ({citation.get('fraktion') or 'Unbekannt'})"
 
 
+#: The archive's reason line per withheld reason. T6 owns the page copy; this
+#: is the one sentence the replay's sample cards and the week page share.
+WITHHELD_CLAUSES = {
+    WITHHELD_NO_OBSERVATION: "diese Woche nicht messbar",
+    WITHHELD_NOT_COMPARABLE: "noch nicht vergleichbar",
+    WITHHELD_BELOW_MIN_VALUE: "zu wenige, um daraus einen Fakt zu machen",
+    WITHHELD_NO_TOPIC: "Thema der Debatte nicht bestimmbar",
+    WITHHELD_BELOW_FLOOR: "nicht ungewöhnlich genug",
+}
+
+
 def comparison_clause(row: Mapping[str, Any]) -> str:
-    if row.get("percentile") is None or not row.get("eligible"):
-        return "noch nicht vergleichbar"
-    if not row.get("publishable"):
-        return "nicht ungewöhnlich genug"
+    reason = row["withheld"] if "withheld" in row else withheld_reason(row)
+    if reason is not None:
+        return WITHHELD_CLAUSES[reason]
     pct = format_percentile(float(row["percentile"]))
     comparative, population = POPULATION_PHRASES[row["metric_id"]]
     label = row.get("baseline_label") or ""
@@ -1594,7 +1725,7 @@ def gate_numbers(
             for row in week["metrics"].values()
             if row["eligible"] and row["percentile"] is not None
         ]
-        kept = [row for row in eligible_rows if float(row["percentile"]) >= floor]
+        kept = [row for row in eligible_rows if withheld_reason(row, floor=floor) is None]
         weeks_with = {(row["period_kind"], row["period_key"]) for row in kept}
         floor_table.append(
             {
@@ -1615,11 +1746,17 @@ def gate_numbers(
         eligible = [row for row in observed if row["eligible"]]
         xs = [float(row["week_n"]) for row in eligible]
         ys = [float(row["percentile"]) for row in eligible]
+        # Criterion 4 asks whether a period scores high merely because it had
+        # more chances to. For a counting metric the value *is* week_n, so the
+        # correlation is 1 by construction and says nothing; reporting a number
+        # there would read as a red flag where there is no finding.
+        counts_its_chances = metric.get("aggregation") == "count"
         entry: dict[str, Any] = {
             "weeks_observed": len(observed),
             "weeks_eligible": len(eligible),
             "weeks_posted": sum(1 for row in eligible if row["publishable"]),
-            "pearson_week_n_vs_percentile": _pearson(xs, ys),
+            "pearson_week_n_vs_percentile": None if counts_its_chances else _pearson(xs, ys),
+            "value_is_week_n": counts_its_chances,
         }
         if eligible:
             median = _median(xs)
@@ -1740,6 +1877,15 @@ def _fmt_cited(row: Mapping[str, Any]) -> str:
     return f"{document} {citation.get('rede_id')} {citation.get('display_name')} ({citation.get('fraktion')})"
 
 
+#: One character per withheld reason for the replay table's pct column.
+_WITHHELD_MARK = {
+    WITHHELD_NOT_COMPARABLE: "*",
+    WITHHELD_BELOW_FLOOR: "-",
+    WITHHELD_BELOW_MIN_VALUE: "!",
+    WITHHELD_NO_TOPIC: "?",
+}
+
+
 #: Column tags for the replay table, short enough to stay readable at six metrics.
 _SHORT_METRIC = {
     "knappste-abstimmung": "knapp",
@@ -1770,8 +1916,7 @@ def print_report(report: dict[str, Any], out=sys.stdout) -> None:
             if row["percentile"] is None:
                 pct = "-"
             else:
-                pct = format_percentile(row["percentile"])
-                pct += "" if row["publishable"] else ("*" if not row["eligible"] else "-")
+                pct = format_percentile(row["percentile"]) + _WITHHELD_MARK.get(row["withheld"], "")
             cells += [_fmt_value(row), pct]
         posted = week["posted"]
         cells += [
@@ -1787,7 +1932,10 @@ def print_report(report: dict[str, Any], out=sys.stdout) -> None:
         file=out,
     )
     print(f"unlinked votes (no agenda link, excluded): {report['unlinked_votes']}", file=out)
-    print("pct suffix: * = noch nicht vergleichbar, - = unter der Schwelle von 50 %", file=out)
+    print(
+        "pct suffix: * noch nicht vergleichbar, - unter 50 %, ! zu wenige, ? kein Thema",
+        file=out,
+    )
     print(file=out)
     gate = report["gate"]
     weeks_total = len(report["weeks"])
@@ -1811,7 +1959,10 @@ def print_report(report: dict[str, Any], out=sys.stdout) -> None:
     print("  4. posted vs week_n:", file=out)
     for metric_id, entry in gate["winners_vs_week_n"].items():
         r = entry.get("pearson_week_n_vs_percentile")
-        r_text = "n/a" if r is None else f"{r:+.2f}"
+        if entry.get("value_is_week_n"):
+            r_text = "n/a (value is week_n)"
+        else:
+            r_text = "n/a" if r is None else f"{r:+.2f}"
         contingency = ""
         if "median_week_n" in entry:
             above = entry["won_above_median"]

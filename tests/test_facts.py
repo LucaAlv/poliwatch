@@ -47,6 +47,9 @@ def week_specs(count: int, *, start_number: int = 1, wp: int = 21, year: int = 2
             "date": day.isoformat(),
             "longest": 1000 + 100 * index,
             "closest": (300 + index, 200),
+            # A named topic, the way a real agenda item has one: without it
+            # laengste-debatte withholds its card (requires_topic).
+            "items": [{"heading": "TOP 1", "proceeding_title": "Haushaltsbegleitgesetz 2027"}],
         }
         spec.update(extra)
         specs.append(spec)
@@ -549,10 +552,100 @@ class PublishableTests(StoreCase):
         self.assertEqual(facts.comparison_clause(rows[9]), "nicht ungewöhnlich genug")
 
     def test_the_floor_is_inclusive_at_fifty_percent(self) -> None:
-        self.assertTrue(facts.is_publishable({"eligible": 1, "percentile": 0.5}))
-        self.assertFalse(facts.is_publishable({"eligible": 1, "percentile": 0.499}))
-        self.assertFalse(facts.is_publishable({"eligible": 0, "percentile": 1.0}))
-        self.assertFalse(facts.is_publishable({"eligible": 1, "percentile": None}))
+        def row(**kwargs):
+            return {"metric_id": LAENGSTE, "value": 100, "eligible": 1, **kwargs}
+
+        self.assertTrue(facts.is_publishable(row(percentile=0.5)))
+        self.assertFalse(facts.is_publishable(row(percentile=0.499)))
+        self.assertFalse(facts.is_publishable(row(eligible=0, percentile=1.0)))
+        self.assertFalse(facts.is_publishable(row(percentile=None)))
+        self.assertFalse(facts.is_publishable(row(value=None, percentile=1.0)))
+
+    def test_the_withheld_reason_names_the_gate_that_applied(self) -> None:
+        def row(**kwargs):
+            return {"metric_id": LAENGSTE, "value": 100, "eligible": 1, "percentile": 1.0, **kwargs}
+
+        self.assertIsNone(facts.withheld_reason(row()))
+        self.assertEqual(facts.withheld_reason(row(value=None)), facts.WITHHELD_NO_OBSERVATION)
+        self.assertEqual(facts.withheld_reason(row(eligible=0)), facts.WITHHELD_NOT_COMPARABLE)
+        self.assertEqual(facts.withheld_reason(row(percentile=0.1)), facts.WITHHELD_BELOW_FLOOR)
+        # Every reason has a clause the archive can print.
+        self.assertEqual(set(facts.WITHHELD_CLAUSES), {
+            facts.WITHHELD_NO_OBSERVATION, facts.WITHHELD_NOT_COMPARABLE,
+            facts.WITHHELD_BELOW_MIN_VALUE, facts.WITHHELD_NO_TOPIC,
+            facts.WITHHELD_BELOW_FLOOR,
+        })
+
+    def test_a_thin_count_is_withheld_by_min_value(self) -> None:
+        # meiste-abweichler is zero-inflated, so one Abweichlerin beats two
+        # thirds of the weeks. A floor of three keeps that off a card.
+        loyal = [("Treue Sozialdemokratin", "SPD", "no")]
+        specs = []
+        for index in range(10):
+            day = facts.date.fromisocalendar(2025, 3 + index, 3)
+            members = list(loyal)
+            # The last week has one deviation, the earlier ones none.
+            if index == 9:
+                members.append(("Abweichender Sozialdemokrat", "SPD", "yes"))
+            specs.append(
+                {
+                    "document_number": f"21/{index + 1}",
+                    "date": day.isoformat(),
+                    "votes": [
+                        {
+                            "yes": 1,
+                            "no": 1,
+                            "title": f"Abstimmung {index}",
+                            "leading": {"SPD": "no"},
+                            "members": members,
+                        }
+                    ],
+                }
+            )
+        self.seed(specs)
+        last = self.rows_for(self.compute(), ABWEICHLER)[9]
+        self.assertEqual(last["value"], 1)
+        self.assertEqual(last["eligible"], 1)
+        self.assertEqual(last["percentile"], 1.0)
+        self.assertEqual(last["withheld"], facts.WITHHELD_BELOW_MIN_VALUE)
+        self.assertEqual(last["publishable"], 0)
+        self.assertEqual(
+            facts.comparison_clause(last), "zu wenige, um daraus einen Fakt zu machen"
+        )
+
+    def test_a_debate_without_a_topic_is_withheld(self) -> None:
+        # The topic is this card's subject; 6 of the 48 cards the metric would
+        # post over the real store's coverage have none.
+        specs = week_specs(9)
+        specs[8]["items"] = [{"heading": None}]
+        self.seed(specs)
+        rows = self.rows_for(self.compute(), DEBATTE)
+        self.assertEqual(rows[8]["percentile"], 1.0)
+        self.assertEqual(rows[8]["withheld"], facts.WITHHELD_NO_TOPIC)
+        self.assertEqual(rows[8]["publishable"], 0)
+        self.assertEqual(facts.comparison_clause(rows[8]), "Thema der Debatte nicht bestimmbar")
+        # The longest *speech* of the same week still posts: its subject is the
+        # speaker, not the topic.
+        self.assertEqual(self.rows_for(self.compute(), LAENGSTE)[8]["publishable"], 1)
+
+    def test_an_absolute_gate_is_registry_data_not_a_rule_change(self) -> None:
+        relaxed = tuple(
+            {**metric, "min_value": None} if metric["id"] == ABWEICHLER else metric
+            for metric in facts.REGISTRY
+        )
+        row = {"metric_id": ABWEICHLER, "value": 1, "eligible": 1, "percentile": 1.0}
+        self.assertEqual(facts.withheld_reason(row), facts.WITHHELD_BELOW_MIN_VALUE)
+        self.assertIsNone(facts.withheld_reason(row, facts.REGISTRY_BY_ID[LAENGSTE]))
+        facts.validate_registry(relaxed)
+
+    def test_min_value_on_a_min_direction_metric_is_rejected(self) -> None:
+        wrong = tuple(
+            {**metric, "min_value": 3} if metric["id"] == KNAPPSTE else metric
+            for metric in facts.REGISTRY
+        )
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.validate_registry(wrong)
+        self.assertIn(KNAPPSTE, str(ctx.exception))
 
     def test_an_ineligible_row_is_never_publishable(self) -> None:
         self.seed(week_specs(9))
@@ -580,8 +673,8 @@ class RankTests(StoreCase):
 
     def test_a_higher_percentile_outranks_a_lower_tie_rank(self) -> None:
         rows = [
-            {"metric_id": LAENGSTE, "eligible": 1, "percentile": 0.95, "tie_rank": 4},
-            {"metric_id": KNAPPSTE, "eligible": 1, "percentile": 0.9, "tie_rank": 1},
+            {"metric_id": LAENGSTE, "value": 9, "eligible": 1, "percentile": 0.95, "tie_rank": 4},
+            {"metric_id": KNAPPSTE, "value": 0.1, "eligible": 1, "percentile": 0.9, "tie_rank": 1},
         ]
         self.assertEqual([row["metric_id"] for row in facts.rank_period(rows)], [LAENGSTE, KNAPPSTE])
         self.assertEqual([row["rank"] for row in rows], [1, 2])
@@ -848,6 +941,24 @@ class EngineTests(StoreCase):
         stored = {metric["id"]: metric for metric in facts.load_metrics(conn)}
         self.assertEqual(stored[LAENGSTE]["title"], "Die allerlängste Rede der Woche")
 
+    def test_a_store_written_by_an_older_schema_is_rebuilt_not_read(self) -> None:
+        # The engine owns these tables and rewrites all three as one unit, so a
+        # leftover table from an earlier registry revision is dropped rather
+        # than migrated. Without this a build against such a store would fail
+        # with "no such column".
+        conn, _ = self.store_all()
+        with conn:
+            conn.execute("ALTER TABLE facts DROP COLUMN withheld")
+        self.assertFalse(facts.tables_exist(conn))
+        self.assertIsNone(facts.read_snapshot(conn))
+        self.assertEqual(facts.load_facts(conn), [])
+        report = facts.compute_and_store(
+            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+        )
+        self.assertTrue(report["written"])
+        self.assertTrue(facts.tables_exist(conn))
+        self.assertEqual(len(facts.load_facts(conn)), len(report["rows"]))
+
     def test_a_snapshot_round_trips_through_the_store(self) -> None:
         conn, _ = self.store_all()
         snapshot = facts.read_snapshot(conn)
@@ -908,8 +1019,9 @@ class CardTests(StoreCase):
         speech = self.rows_for(rows, LAENGSTE)[8]
         self.assertEqual(
             facts.card_sentence(speech),
-            "Die längste Rede der Woche: 1.800 Zeichen von Friedrich Merz (CDU/CSU), "
-            "länger als 100 % der wöchentlichen Spitzenreden seit Beginn der 21. Wahlperiode.",
+            "Die längste Rede der Woche: 1.800 Zeichen von Friedrich Merz (CDU/CSU) "
+            "zum Thema „Haushaltsbegleitgesetz 2027“, länger als 100 % der wöchentlichen "
+            "Spitzenreden seit Beginn der 21. Wahlperiode.",
         )
         vote = self.rows_for(rows, KNAPPSTE)[8]
         self.assertTrue(
@@ -950,7 +1062,12 @@ class CardTests(StoreCase):
         ns = {"svg": "http://www.w3.org/2000/svg"}
         caveat = root.find(".//svg:text[@class='caveat']", ns)
         self.assertIn("Gewissensfragen", "".join(caveat.itertext()))
-        self.assertIsNone(facts.card_caveat(self.one(KNAPPSTE)))
+        # laengste-rede states no caveat; the two vote metrics and erste-reden do.
+        self.assertIsNone(facts.card_caveat({"metric_id": LAENGSTE}))
+        self.assertEqual(
+            {metric["id"] for metric in facts.REGISTRY if metric["caveat"]},
+            set(facts.REQUIRED_CAVEATS),
+        )
 
     def test_one_svg_per_posted_fact_byte_identical_on_rerun(self) -> None:
         self.seed(week_specs(12))
