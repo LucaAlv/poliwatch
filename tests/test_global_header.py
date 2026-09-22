@@ -21,8 +21,8 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn('href="../abgeordnete/index.html"', markup)
         self.assertNotIn("bills/abgeordnete", markup)
         nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup).group(1)
-        self.assertEqual(nav.count("<a "), 6)
-        for label in ("Aktueller Puls", "Sitzungen", "Gesetze", "Abgeordnete", "Daten", "Quellen"):
+        self.assertEqual(nav.count("<a "), 7)
+        for label in ("Aktueller Puls", "Sitzungen", "Gesetze", "Abgeordnete", "Fakten", "Daten", "Quellen"):
             self.assertIn(label, nav)
         for retired in ("api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)

@@ -86,7 +86,7 @@ WITHHELD_BELOW_FLOOR = "below_floor"
 # a Gesetzgebung position first, then the lowest proceeding_positions.id. Shared
 # verbatim by the two metrics that name a topic; each metric's ``sql`` stays a
 # complete, runnable statement because it is what the week page shows.
-_LEAD_POSITION_CTE = (
+LEAD_POSITION_CTE = (
     "WITH ranked_positions AS (\n"
     "  SELECT pp.agenda_item_id AS agenda_item_id, pp.title AS title,\n"
     "         (CASE WHEN pp.proceeding_type = 'Gesetzgebung' THEN 0 ELSE 1 END) * 100000000000\n"
@@ -212,7 +212,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "direction": "max",
         "aggregation": "extreme",
         "sql": (
-            _LEAD_POSITION_CTE
+            LEAD_POSITION_CTE
             + "SELECT ai.id, ai.heading, ai.page_start AS page,\n"
             "       ai.page_start_quadrant AS page_quadrant,\n"
             "       SUM(s.char_count) AS value, COUNT(*) AS denominator,\n"
@@ -247,9 +247,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "direction": "max",
         "aggregation": "extreme",
         "sql": (
-            _LEAD_POSITION_CTE
+            LEAD_POSITION_CTE
             + "SELECT s.id, s.rede_id, s.page, s.page_quadrant, s.char_count AS value,\n"
-            "       NULL AS denominator, m.display_name, pa.name AS fraktion,\n"
+            "       NULL AS denominator, m.display_name,\n"
+            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
             "       ai.heading, lp.title AS proceeding_title,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
@@ -327,7 +328,8 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "  GROUP BY sp.person_key\n"
             ")\n"
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant, 1 AS value,\n"
-            "       NULL AS denominator, m.display_name, pa.name AS fraktion,\n"
+            "       NULL AS denominator, m.display_name,\n"
+            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM first_speech fs\n"
             "JOIN speeches s ON s.id = fs.speech_id\n"

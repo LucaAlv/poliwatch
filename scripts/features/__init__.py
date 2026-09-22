@@ -39,6 +39,7 @@ NAV_ITEMS = (
     NavItem("overview", "Sitzungen", "overview.html"),
     NavItem("bills", "Gesetze", "bills/index.html"),
     NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+    NavItem("fakten", "Fakten", "fakt/index.html"),
     NavItem("database", "Daten", "database.html"),
     NavItem("sources", "Quellen", "sources.html"),
 )
@@ -54,6 +55,7 @@ COMPONENTS = (
     ComponentDefinition("aw-profiles", "abgeordnetenwatch-Profile", "Rendert validierte öffentliche Profilverknüpfungen.", "Analyse", requires=("dip-fetch",)),
     ComponentDefinition("mp-pages", "Abgeordnete", "Erzeugt Übersichts- und Profilseiten für Abgeordnete.", "Bereiche", requires=("store",)),
     ComponentDefinition("mp-roster", "Vollständiger MdB-Kader", "Kompatibilitäts-ID für die Kader-Anreicherung.", "Bereiche", requires=("mp-pages",)),
+    ComponentDefinition("facts", "Fakt der Woche", "Erzeugt die wöchentlichen Fakt-Karten und ihre Seiten.", "Bereiche", requires=("store",)),
     ComponentDefinition("bills", "Gesetze verfolgen", "Erzeugt Übersichts- und Detailseiten für Gesetzgebungsvorgänge.", "Bereiche", requires=("dip-fetch",)),
     ComponentDefinition("bill-follow", "Gesetze merken", "Erlaubt es, Gesetze lokal im Browser zu markieren.", "Bereiche", requires=("bills",)),
     ComponentDefinition("dev-view", "Dev-Ansicht", "Zeigt Rohdaten, API-Antworten und Build-Kommandos.", "Entwicklung", requires=("dossiers",)),

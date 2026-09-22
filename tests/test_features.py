@@ -9,7 +9,7 @@ from features import loader
 
 
 class FixedPresentationTests(unittest.TestCase):
-    def test_navigation_is_the_fixed_six_destination_product(self) -> None:
+    def test_navigation_is_the_fixed_seven_destination_product(self) -> None:
         self.assertEqual(
             [(item.key, item.label, item.path) for item in NAV_ITEMS],
             [
@@ -17,6 +17,7 @@ class FixedPresentationTests(unittest.TestCase):
                 ("overview", "Sitzungen", "overview.html"),
                 ("bills", "Gesetze", "bills/index.html"),
                 ("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
+                ("fakten", "Fakten", "fakt/index.html"),
                 ("database", "Daten", "database.html"),
                 ("sources", "Quellen", "sources.html"),
             ],
@@ -36,7 +37,7 @@ class FixedPresentationTests(unittest.TestCase):
 
     def test_public_components_are_unconditional_and_dev_view_is_explicit(self) -> None:
         public_ids = {component.feature.id for component in loader.load()}
-        self.assertEqual(public_ids, {"votes", "summaries", "aw-profiles", "mp-pages", "bills"})
+        self.assertEqual(public_ids, {"votes", "summaries", "aw-profiles", "mp-pages", "bills", "facts"})
         self.assertNotIn("dev-view", public_ids)
         dev_ids = {component.feature.id for component in loader.load(include_dev_view=True)}
         self.assertEqual(dev_ids, public_ids | {"dev-view"})

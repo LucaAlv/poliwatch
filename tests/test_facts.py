@@ -8,6 +8,7 @@ One test per rule and per edge in the plan's "Failure modes" table
 from __future__ import annotations
 
 import io
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import _support  # noqa: F401
 import _facts_fixture
+import build_dip_pulse_site as build
 import facts
 
 
@@ -1134,6 +1136,173 @@ class ReplayTests(StoreCase):
         with tempfile.TemporaryDirectory() as cards:
             report = facts.replay(REAL_STORE, weeks=5, cards_dir=Path(cards))
         self.assertEqual(len(report["weeks"]), 5)
+
+
+# ---------------------------------------------------------------------------
+# T6: the pages (scripts/build_dip_pulse_site.py's write_facts_pages and its
+# render_facts_archive/render_facts_week/render_facts_methodik). The engine
+# (T5/T10) persists stable receipt keys, never a name (D2A/D14); these tests
+# pin that every one of the five receipt kinds resolves back to its row
+# through the join the plan measured, and that the pages built from it match
+# the plan's "Done when" list.
+# ---------------------------------------------------------------------------
+
+
+class FactStatusTextTests(unittest.TestCase):
+    """build._fact_status_text: the archive/week-page cell for one metric in
+    one period - every one of the five withheld reasons, the two states that
+    are not a withheld reason (not built this update; incomplete), and the
+    posted state."""
+
+    def test_a_metric_not_built_this_update_reads_a_dash(self) -> None:
+        self.assertEqual(build._fact_status_text(None), ("–", None, False))
+
+    def test_an_incomplete_period_reads_unvollstaendig_erfasst_not_a_withheld_reason(self) -> None:
+        row = {"metric_id": KNAPPSTE, "complete": 0, "withheld": facts.WITHHELD_NO_OBSERVATION, "publishable": 0}
+        self.assertEqual(build._fact_status_text(row), ("unvollständig erfasst", None, False))
+
+    def test_every_withheld_reason_renders_its_own_clause(self) -> None:
+        for reason, clause in facts.WITHHELD_CLAUSES.items():
+            with self.subTest(reason=reason):
+                row = {"metric_id": KNAPPSTE, "complete": 1, "withheld": reason, "publishable": 0}
+                self.assertEqual(build._fact_status_text(row), (clause, None, False))
+        self.assertEqual(set(facts.WITHHELD_CLAUSES), {
+            facts.WITHHELD_NO_OBSERVATION, facts.WITHHELD_NOT_COMPARABLE,
+            facts.WITHHELD_BELOW_MIN_VALUE, facts.WITHHELD_NO_TOPIC, facts.WITHHELD_BELOW_FLOOR,
+        })
+
+    def test_a_posted_fact_reads_its_rank_and_links_by_metric_id(self) -> None:
+        row = {"metric_id": LAENGSTE, "complete": 1, "withheld": None, "publishable": 1, "rank": 2}
+        self.assertEqual(build._fact_status_text(row), ("Platz 2", LAENGSTE, True))
+
+
+class PageHelperTests(unittest.TestCase):
+    def test_every_metric_has_an_archive_column_label(self) -> None:
+        self.assertEqual(set(build.FACTS_METRIC_LABELS), set(facts.REGISTRY_BY_ID))
+
+
+class PageTests(StoreCase):
+    def write_pages(self, weeks, output_name="site", mp_lookup=None, **kwargs):
+        seeded = self.seed(weeks, **kwargs)
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / output_name
+        output_dir.mkdir(exist_ok=True)
+        document_numbers = {spec["document_number"] for spec in weeks}
+        result = build.write_facts_pages(output_dir, self.path, False, mp_lookup or {}, document_numbers, set())
+        return output_dir, result
+
+    def test_speech_receipt_resolves_through_a_join_and_links_the_speaker_and_protocol(self) -> None:
+        people = {"Ada Lovelace": {"display_name": "Ada Lovelace", "party": "SPD", "identity_key": "xml:ada", "xml_redner_id": "ada"}}
+        output_dir, _ = self.write_pages(week_specs(9), people=people, mp_lookup={"xml:ada": 7})
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="laengste-rede"', html)
+        self.assertIn('<a href="../abgeordnete/7.html">Ada Lovelace</a>', html)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">Plenarprotokoll 21/9</a>', html)
+
+    def test_agenda_item_receipt_resolves_by_page_start_and_names_its_topic(self) -> None:
+        output_dir, _ = self.write_pages(week_specs(9))
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="laengste-debatte"', html)
+        self.assertIn("Haushaltsbegleitgesetz 2027", html)
+
+    def test_protocol_receipt_resolves_by_document_number(self) -> None:
+        specs = week_specs(9, sitzung=("09:00", "14:00"))
+        specs[8]["sitzung"] = ("09:00", "20:00")
+        output_dir, _ = self.write_pages(specs)
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="laengste-sitzung"', html)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">Plenarprotokoll 21/9</a>', html)
+
+    def test_vote_receipt_resolves_by_detail_url_not_a_store_id(self) -> None:
+        specs = week_specs(9)
+        specs[8]["closest"] = (250, 249)
+        output_dir, _ = self.write_pages(specs)
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="knappste-abstimmung"', html)
+        self.assertIn("knapper als", html)
+        self.assertIn(facts.REGISTRY_BY_ID[KNAPPSTE]["caveat"], html)
+
+    def test_speeches_receipt_cites_every_debutant_as_its_own_source(self) -> None:
+        # Eight weeks of one debutant each build the baseline; the ninth week's
+        # three debutants then beat every prior week and get posted.
+        specs = week_specs(9)
+        for index in range(8):
+            specs[index]["speeches"] = [(500, f"Basis{index}", f"b{index}")]
+        specs[8]["speeches"] = [
+            (500, "Neu Eins", "n1"), (400, "Neu Zwei", "n2"), (300, "Neu Drei", "n3"),
+        ]
+        output_dir, _ = self.write_pages(specs)
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        section = re.search(r'<section id="erste-reden".*?</section>', html, re.S).group(0)
+        for name in ("Neu Eins", "Neu Zwei", "Neu Drei"):
+            self.assertIn(name, section)
+        self.assertEqual(section.count("Plenarprotokoll 21/9"), 3)
+
+    def test_a_longest_title_and_longest_name_still_wrap_once_written_to_disk(self) -> None:
+        specs = week_specs(9, speaker="A" * 45 + " von Sehr Langer Nachname")
+        specs[8]["votes"] = [(250, 249, CardTests.LONG_TITLE)]
+        output_dir, _ = self.write_pages(specs)
+        svg = (output_dir / "fakt" / "2025-W11-knappste-abstimmung.svg").read_bytes().decode("utf-8")
+        root = ET.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        title_spans = root.find(".//svg:text[@class='title']", ns).findall("svg:tspan", ns)
+        self.assertLessEqual(len(title_spans), 3)
+        rede_svg = (output_dir / "fakt" / "2025-W11-laengste-rede.svg").read_bytes().decode("utf-8")
+        rede_title_spans = ET.fromstring(rede_svg).find(".//svg:text[@class='title']", ns).findall("svg:tspan", ns)
+        self.assertLessEqual(len(rede_title_spans), 3)
+
+    def test_rendering_twice_against_one_store_is_byte_identical(self) -> None:
+        specs = week_specs(9)
+        output_dir, _ = self.write_pages(specs)
+        first = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
+        document_numbers = {spec["document_number"] for spec in specs}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        second = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
+        self.assertEqual(first, second)
+
+    def test_a_period_with_no_posted_fact_still_gets_a_page_and_a_greyed_archive_row(self) -> None:
+        # Week 1 (index 0) has fewer than 8 prior weeks for every metric: every
+        # cell reads "noch nicht vergleichbar" and nothing is posted.
+        output_dir, _ = self.write_pages(week_specs(1))
+        self.assertTrue((output_dir / "fakt" / "2025-W03.html").exists())
+        archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('class="archive-row greyed"', archive)
+        self.assertIn("noch nicht vergleichbar", archive)
+        week_page = (output_dir / "fakt" / "2025-W03.html").read_text(encoding="utf-8")
+        self.assertIn("keinen Fakt über die Veröffentlichungsschwelle", week_page)
+
+    def test_no_persist_on_a_store_without_the_tables_renders_an_empty_archive(self) -> None:
+        self.seed(week_specs(3))
+        output_dir = Path(self.tmp.name) / "no-persist-site"
+        output_dir.mkdir()
+        result = build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
+        self.assertEqual(result["periods"], 0)
+        self.assertEqual(result["posted"], 0)
+        archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Noch keine Fakten veröffentlicht", archive)
+        self.assertTrue((output_dir / "fakt" / "methodik.html").is_file())
+
+    def test_a_missing_store_renders_an_empty_archive_without_crashing(self) -> None:
+        output_dir = Path(self.tmp.name) / "missing-store-site"
+        output_dir.mkdir()
+        missing = Path(self.tmp.name) / "does-not-exist.sqlite"
+        result = build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        self.assertEqual(result["periods"], 0)
+        self.assertTrue((output_dir / "fakt" / "index.html").is_file())
+
+    def test_methodik_states_the_floor_both_absolute_gates_and_every_caveat(self) -> None:
+        html = build.render_facts_methodik()
+        self.assertIn("50", html)
+        self.assertIn(str(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"]), html)
+        self.assertIn("Thema bestimmen lässt", html)
+        for metric in facts.REGISTRY:
+            self.assertIn(metric["title"], html)
+            if metric["caveat"]:
+                self.assertIn(metric["caveat"], html)
+        self.assertIn("Spätere Sitzungswochen ändern frühere Karten nicht", html)
+        self.assertIn("Monatliche Fakten", html)
 
 
 if __name__ == "__main__":

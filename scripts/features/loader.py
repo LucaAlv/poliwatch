@@ -17,6 +17,7 @@ PUBLIC_MODULES = {
     "aw-profiles": "aw_profiles",
     "mp-pages": "abgeordnete",
     "bills": "bills",
+    "facts": "facts",
 }
 
 
