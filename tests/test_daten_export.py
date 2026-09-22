@@ -15,6 +15,7 @@ from unittest import mock
 import _support  # noqa: F401
 import _daten_fixture
 import build_dip_pulse_site as b
+import facts
 import persist_dip_pulse_store as pulse_store
 
 
@@ -277,11 +278,18 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["generation"], second["generation"])
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
-    def test_engine_output_is_exported_with_the_other_tables(self) -> None:
+    def test_engine_output_is_exported_as_derived_data(self) -> None:
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
         manifest = self.export()
-        names = {table["name"] for table in manifest["tables"]}
-        self.assertLessEqual({"fact_metrics", "facts", "fact_sources"}, names)
+        tables = {table["name"]: table for table in manifest["tables"]}
+        self.assertLessEqual(set(facts.FACTS_TABLES), set(tables))
+        # scripts/facts.py computes these from the rest of the store; the
+        # fallback would claim DIP as their source.
+        for name in facts.FACTS_TABLES:
+            with self.subTest(table=name):
+                self.assertEqual(
+                    {column["source"] for column in tables[name]["columns"]}, {"derived"}
+                )
 
     def test_skip_rule_reexports_when_store_changes(self) -> None:
         first = self.export()

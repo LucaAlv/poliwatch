@@ -1383,7 +1383,10 @@ _COLUMN_SOURCE_DIP_ROSTER = {
     ("mps", "bundesland"),
 }
 _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes"}
-_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"}
+# The facts tables are computed by scripts/facts.py from the rest of the store,
+# so every one of their columns is "derived" - the fallback below would claim
+# DIP wrote them. Their captions for the Daten page are T7's.
+_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 
 def column_source(table: str, column: str) -> str:
