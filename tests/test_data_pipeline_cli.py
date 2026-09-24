@@ -254,7 +254,7 @@ class RunDataPipelineTests(unittest.TestCase):
             self.assertTrue(facts.tables_exist(conn))
             self.assertEqual(
                 [metric["id"] for metric in facts.load_metrics(conn)],
-                [metric["id"] for metric in facts.REGISTRY],
+                [metric["id"] for metric in facts.ALL_REGISTRY],
             )
             self.assertTrue(facts.load_facts(conn))
         finally:

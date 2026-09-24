@@ -57,6 +57,11 @@ class FactsError(RuntimeError):
 
 
 MIN_HISTORY_WEEKS = 8
+# D24A/T11: the two monthly metrics' history floor. Registry entries for a
+# monthly metric hold this under the same "min_history_weeks" key a weekly
+# metric does -- compute()/baseline() read the key generically off whichever
+# metric they are given, so a second key would only rename the same number.
+MIN_HISTORY_MONTHS = 6
 # D20: a fact is posted only when it is more unusual than half its comparison
 # population. Measured on the A0 replay (30 weeks): 50 keeps 20 weeks, 25 keeps
 # 25, 75 keeps 12. The human rejected the two 0 % cards outright.
@@ -96,6 +101,27 @@ LEAD_POSITION_CTE = (
     "),\n"
     "lead_position AS (\n"
     "  SELECT agenda_item_id, title, MIN(ord) AS ord FROM ranked_positions GROUP BY agenda_item_id\n"
+    ")\n"
+)
+
+# The same lead-position rule, but keeping the Vorgang (proceedings.id) the
+# title belongs to rather than just the title text -- meistdiskutierter-vorgang
+# groups an agenda item's speeches by that id, across every protocol occurrence
+# in the month, not by the agenda item alone. A separate constant from
+# LEAD_POSITION_CTE (not an added column on it) because it filters out
+# proceeding_positions rows with no proceeding_id at all, which the two
+# metrics reusing LEAD_POSITION_CTE for a topic string must not lose.
+LEAD_PROCEEDING_CTE = (
+    "WITH ranked_positions AS (\n"
+    "  SELECT pp.agenda_item_id AS agenda_item_id, pp.title AS title, pp.proceeding_id AS proceeding_id,\n"
+    "         (CASE WHEN pp.proceeding_type = 'Gesetzgebung' THEN 0 ELSE 1 END) * 100000000000\n"
+    "           + CAST(pp.id AS INTEGER) AS ord\n"
+    "  FROM proceeding_positions pp\n"
+    "  WHERE pp.agenda_item_id IS NOT NULL AND TRIM(COALESCE(pp.title, '')) <> ''\n"
+    "    AND pp.proceeding_id IS NOT NULL\n"
+    "),\n"
+    "lead_position AS (\n"
+    "  SELECT agenda_item_id, title, proceeding_id, MIN(ord) AS ord FROM ranked_positions GROUP BY agenda_item_id\n"
     ")\n"
 )
 
@@ -352,12 +378,118 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         ),
     },
 )
-REGISTRY_BY_ID = {metric["id"]: metric for metric in REGISTRY}
+
+# D24A/D25A/T11: the two monthly metrics. A separate tuple from REGISTRY, not
+# appended to it, because REGISTRY is also what replay()/gate_numbers() and the
+# CLI --replay walk as "the weekly report" -- _week_reports() keys periods by
+# (iso_year, iso_week), which a monthly row carries as None/None, so mixing a
+# monthly row into that machinery would collapse every month into one bucket.
+# compute_and_store's production call site takes ALL_REGISTRY instead, so
+# validate_registry's tie_rank/id uniqueness check still spans every metric.
+MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
+    {
+        "id": "aktivste-abgeordnete",
+        "version": 1,
+        "title": "Die aktivste Abgeordnete des Monats",
+        "unit": "Reden",
+        "direction": "max",
+        "aggregation": "grouped_extreme",
+        "period_kind": "month",
+        # One row per speech, not per MP: aggregation "grouped_extreme" sums
+        # "value" (1 per speech) per "group_id" across every protocol in the
+        # month, so candidate_rows() stays a single, unmodified query keyed by
+        # protocol_id. group_id is xml_redner_id, not mps.id -- T10 found the
+        # live store splits one person across an "aw:" and an "xml:" mps row
+        # sharing xml_redner_id (314 display names), the same fix erste-reden
+        # needed. tie_value (char_count, summed the same way) breaks a speech
+        # -count tie by who spoke longer, tie_id (mps.id) by the lowest of
+        # those (D25A: "ties to most characters, then lowest mps.id").
+        "sql": (
+            "SELECT s.id, s.rede_id, s.page, s.page_quadrant,\n"
+            "       COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS group_id,\n"
+            "       m.id AS tie_id, 1 AS value, s.char_count AS tie_value,\n"
+            "       NULL AS denominator, m.display_name,\n"
+            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
+            "FROM speeches s\n"
+            "JOIN mps m ON m.id = s.mp_id\n"
+            "LEFT JOIN parties pa ON pa.id = m.party_id\n"
+            "JOIN protocols p ON p.id = s.protocol_id\n"
+            "WHERE s.mp_id IS NOT NULL"
+        ),
+        "min_history_weeks": MIN_HISTORY_MONTHS,
+        "tie_rank": 7,
+        "depends_on": None,
+        "coverage": "speeches",
+        # Cite every counted speech, exactly like erste-reden.
+        "receipt": "speeches",
+        "min_value": None,
+        "requires_topic": False,
+        "caveat": None,
+    },
+    {
+        "id": "meistdiskutierter-vorgang",
+        "version": 1,
+        "title": "Der meistdiskutierte Vorgang des Monats",
+        "unit": "Reden",
+        "direction": "max",
+        "aggregation": "grouped_extreme",
+        "period_kind": "month",
+        # One row per (Vorgang, protocol) occurrence: COUNT(DISTINCT speech)
+        # on that proceeding within that one protocol. "grouped_extreme" sums
+        # those partial counts per proceeding_id across the whole month. No
+        # tie_value/tie_id: D25A names no tie rule for this metric, so a tie
+        # falls to the lowest proceedings.id, the same default every other
+        # metric's row-level tie uses.
+        "sql": (
+            LEAD_PROCEEDING_CTE
+            + "SELECT lp.proceeding_id AS id, lp.proceeding_id AS group_id,\n"
+            "       COUNT(DISTINCT s.id) AS value,\n"
+            "       pr.title, pr.proceeding_type,\n"
+            "       ai.page_start AS page, ai.page_start_quadrant AS page_quadrant,\n"
+            "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
+            "FROM lead_position lp\n"
+            "JOIN agenda_items ai ON ai.id = lp.agenda_item_id\n"
+            "JOIN speeches s ON s.agenda_item_id = ai.id\n"
+            "JOIN protocols p ON p.id = ai.protocol_id\n"
+            "JOIN proceedings pr ON pr.id = lp.proceeding_id\n"
+            "GROUP BY lp.proceeding_id, p.id"
+        ),
+        "min_history_weeks": MIN_HISTORY_MONTHS,
+        "tie_rank": 8,
+        "depends_on": None,
+        "coverage": "speeches",
+        # No existing receipt kind cites a Vorgang: "proceeding" mirrors the
+        # "vote" shape (position 0 the lead occurrence, 1..n the proceeding's
+        # other protocol occurrences that month as supporting receipts), using
+        # entity_kind "agenda_item" so the page's generic protocol-link
+        # rendering (not the Drucksache one) applies to every position.
+        "receipt": "proceeding",
+        "min_value": None,
+        "requires_topic": False,
+        "caveat": None,
+    },
+)
+
+ALL_REGISTRY: tuple[dict[str, Any], ...] = REGISTRY + MONTHLY_REGISTRY
+# Every lookup that resolves a *row* back to its metric definition (card
+# rendering, withheld_reason, the page's citation resolvers) must see monthly
+# metrics too, so this indexes ALL_REGISTRY -- REGISTRY itself stays the
+# weekly six for replay()/gate_numbers().
+REGISTRY_BY_ID = {metric["id"]: metric for metric in ALL_REGISTRY}
+MONTHLY_REGISTRY_BY_ID = {metric["id"]: metric for metric in MONTHLY_REGISTRY}
 
 MONTHS_DE = (
     "Januar", "Februar", "März", "April", "Mai", "Juni",
     "Juli", "August", "September", "Oktober", "November", "Dezember",
 )
+
+
+def month_display(period_key: str) -> str:
+    """"2026-06" -> "Juni 2026" (D24A's monthly period_key, MONTHS_DE reused
+    from baseline_label rather than a second month-name table)."""
+    year, _, month = period_key.partition("-")
+    return f"{MONTHS_DE[int(month) - 1]} {year}"
 
 
 def sql_sha256(metric: Mapping[str, Any]) -> str:
@@ -382,7 +514,7 @@ def validate_registry(registry: Iterable[Mapping[str, Any]] = REGISTRY) -> None:
         seen_ranks.add(rank)
         if metric.get("direction") not in ("max", "min"):
             raise FactsError(f"facts: metric {metric_id} has no direction")
-        if metric.get("aggregation") not in ("extreme", "count"):
+        if metric.get("aggregation") not in ("extreme", "count", "grouped_extreme"):
             raise FactsError(f"facts: metric {metric_id} has no aggregation")
         if metric.get("coverage") not in ("votes", "speeches"):
             raise FactsError(f"facts: metric {metric_id} has no coverage domain")
@@ -477,6 +609,70 @@ def sitting_weeks(protocols: Iterable[Mapping[str, Any]]) -> list[Week]:
             raise FactsError(f"facts: sitting week {week_label(key)} spans Wahlperioden {sorted(wps)}")
         weeks.append(Week(key=key, wahlperiode=wps.pop(), protocols=tuple(rows)))
     return weeks
+
+
+@dataclass(frozen=True)
+class Month:
+    key: tuple[int, int]  # (year, month)
+    wahlperiode: int
+    protocols: tuple[dict[str, Any], ...]
+
+    period_kind = "month"
+
+    @property
+    def period_key(self) -> str:
+        return f"{self.key[0]:04d}-{self.key[1]:02d}"
+
+    @property
+    def label(self) -> str:
+        return self.period_key
+
+    @property
+    def protocol_ids(self) -> tuple[str, ...]:
+        return tuple(str(p["id"]) for p in self.protocols)
+
+    @property
+    def first_date(self) -> date:
+        return date.fromisoformat(str(self.protocols[0]["date"])[:10])
+
+
+def sitting_months(protocols: Iterable[Mapping[str, Any]]) -> list[Month]:
+    """Group protocols into calendar months, oldest first.
+
+    A month is built straight from each protocol's own date, never from
+    sitting_weeks(): a real sitting week can span a month boundary (four of
+    the 2026-09-19 store's 97 do, e.g. 2022-W22 covers both 2022-05 and
+    2022-06), so grouping months by week would either split a week or merge
+    two months. Grouping directly by protocol keeps every protocol in exactly
+    one month regardless of which week it falls in.
+
+    Unlike a sitting week, a month *can* span two Wahlperioden (2025-03 does
+    on the same store: 20/213, 20/214, then 21/1, the new Bundestag's
+    constituting sitting) -- an election falls mid-month but never, on this
+    store, mid-week. Rather than raise (which would make every March 2025
+    build fail), the month takes the Wahlperiode most of its protocols belong
+    to, tie-broken by the latest protocol's Wahlperiode.
+    """
+    grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for protocol in protocols:
+        number = protocol.get("document_number")
+        wp = wahlperiode(number)
+        date_text = str(protocol.get("date") or "")
+        if len(date_text) < 7 or date_text[4] != "-":
+            raise FactsError(f"facts: protocol {number} has no usable date ({protocol.get('date')!r})")
+        key = (int(date_text[:4]), int(date_text[5:7]))
+        entry = dict(protocol)
+        entry["wahlperiode"] = wp
+        grouped.setdefault(key, []).append(entry)
+    months: list[Month] = []
+    for key in sorted(grouped):
+        rows = sorted(grouped[key], key=lambda p: (str(p["date"]), protocol_number(p["document_number"])))
+        counts = Counter(p["wahlperiode"] for p in rows)
+        top_count = max(counts.values())
+        tied = {wp for wp, count in counts.items() if count == top_count}
+        wp = tied.pop() if len(tied) == 1 else max(rows, key=lambda p: str(p["date"]))["wahlperiode"]
+        months.append(Month(key=key, wahlperiode=wp, protocols=tuple(rows)))
+    return months
 
 
 # ---------------------------------------------------------------------------
@@ -580,13 +776,16 @@ def observe(metric: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> Obs
 
     ``aggregation`` "extreme" takes the max or min row and a row-level tie
     cites the lowest id; "count" takes how many rows the period has and cites
-    every one of them.
+    every one of them; "grouped_extreme" (T11) sums each row's ``value`` by
+    its ``group_id`` across the whole period first, then takes the max/min
+    *group* -- see ``_observe_grouped_extreme``.
     """
     candidates = [dict(row) for row in rows if row.get("value") is not None]
     if not candidates:
         return None
     ordered = sorted(candidates, key=lambda row: _id_sort_key(row["id"]))
-    if metric.get("aggregation") == "count":
+    aggregation = metric.get("aggregation")
+    if aggregation == "count":
         return Observation(
             value=float(len(ordered)),
             denominator=None,
@@ -594,6 +793,8 @@ def observe(metric: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> Obs
             week_n=len(ordered),
             rows=tuple(ordered),
         )
+    if aggregation == "grouped_extreme":
+        return _observe_grouped_extreme(metric, ordered)
     sign = -1 if metric["direction"] == "max" else 1
     best = min(ordered, key=lambda row: (sign * float(row["value"]), _id_sort_key(row["id"])))
     denominator = best.get("denominator")
@@ -603,6 +804,52 @@ def observe(metric: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> Obs
         row=best,
         week_n=len(candidates),
         rows=(best,),
+    )
+
+
+def _observe_grouped_extreme(metric: Mapping[str, Any], ordered: list[dict[str, Any]]) -> Observation:
+    """D25A's two monthly metrics group the period's candidate rows by an
+    identity (an MP, a proceeding) and sum ``value`` across every row that
+    shares it before comparing groups -- unlike "extreme", which compares
+    single rows directly. Verified against the real store (D25A/T11): June
+    2026 sums to Alexander Dobrindt at 40 Reden and the
+    GKV-Beitragssatzstabilisierungsgesetz at 19.
+
+    A tie between groups' summed ``value`` goes to the higher summed
+    ``tie_value`` (present only on a metric that declares one; every group
+    ties at 0 and falls through when it doesn't), then to the lowest
+    ``tie_id`` any of its rows names (a row's own ``group_id`` when it names
+    no ``tie_id``), reusing ``_id_sort_key`` exactly as a row-level "extreme"
+    tie does.
+    """
+    sums: dict[str, float] = {}
+    tie_sums: dict[str, float] = {}
+    members: dict[str, list[dict[str, Any]]] = {}
+    for row in ordered:
+        gid = str(row["group_id"])
+        sums[gid] = sums.get(gid, 0.0) + float(row["value"])
+        tie_sums[gid] = tie_sums.get(gid, 0.0) + float(row.get("tie_value") or 0.0)
+        members.setdefault(gid, []).append(row)
+    sign = -1 if metric["direction"] == "max" else 1
+
+    def group_key(gid: str) -> tuple[Any, ...]:
+        tie_id = min((row.get("tie_id", gid) for row in members[gid]), key=_id_sort_key)
+        return (sign * sums[gid], sign * tie_sums[gid], _id_sort_key(tie_id))
+
+    best_gid = min(sums, key=group_key)
+    # Within the winning group, the row with the largest individual value
+    # leads -- position 0 for receipts() (a vote's Drucksachen pattern). A
+    # counting metric's rows (aktivste-abgeordnete: value 1 each) all tie, so
+    # this keeps their natural ascending-id order.
+    group_rows = sorted(
+        members[best_gid], key=lambda row: (-float(row["value"]), _id_sort_key(row["id"]))
+    )
+    return Observation(
+        value=sums[best_gid],
+        denominator=None,
+        row=group_rows[0],
+        week_n=len(sums),
+        rows=tuple(group_rows),
     )
 
 
@@ -824,6 +1071,24 @@ def receipts(
         ]
     if kind == "protocol":
         return [_receipt("protocol", row, position=0, official_url=row.get("pdf_url"))]
+    if kind == "proceeding":
+        # observation.rows is already lead-first (_observe_grouped_extreme
+        # sorts each group by value desc): position 0 is the protocol
+        # occurrence with the most speeches on this Vorgang, 1..n its other
+        # occurrences that month -- a vote's Drucksachen pattern, entity_kind
+        # "agenda_item" throughout so the page's generic protocol-link
+        # rendering applies to every position.
+        return [
+            _receipt(
+                "agenda_item",
+                occurrence,
+                position=position,
+                page=occurrence.get("page"),
+                page_quadrant=occurrence.get("page_quadrant"),
+                official_url=occurrence.get("pdf_url"),
+            )
+            for position, occurrence in enumerate(observation.rows)
+        ]
     if kind != "vote":
         raise FactsError(f"facts: metric {metric['id']} has unknown receipt kind {kind!r}")
     result = [_receipt("vote", row, position=0, official_url=row.get("detail_url"))]
@@ -901,6 +1166,14 @@ def _citation(metric: Mapping[str, Any], observation: Observation) -> dict[str, 
                 "sitzung_end": row.get("sitzung_end"),
             }
         )
+    elif kind == "proceeding":
+        citation.update(
+            {
+                "title": row.get("title"),
+                "proceeding_type": row.get("proceeding_type"),
+                "occurrences": len(observation.rows),
+            }
+        )
     else:
         citation.update(
             {
@@ -925,6 +1198,11 @@ def compute(
 ) -> list[dict[str, Any]]:
     """All fact rows, oldest period first, metrics in tie_rank order.
 
+    Each metric iterates the period list matching its own ``period_kind``
+    (weeks for the six weekly metrics, months for T11's two, default "week"
+    when a metric names none): the loop below reads "week"/"period"
+    interchangeably, since Week and Month share every attribute it touches.
+
     ``force_all`` replays the rule with the all-coverage baseline everywhere
     (the A0 wp-vs-all comparison) and ``floor`` moves the publication floor;
     neither applies in a real build.
@@ -932,28 +1210,32 @@ def compute(
     registry = tuple(registry)
     validate_registry(registry)
     built_set = set(built)
-    weeks = sitting_weeks(load_protocols(conn))
+    protocols = load_protocols(conn)
+    weeks = sitting_weeks(protocols)
+    months = sitting_months(protocols)
     starts = coverage_starts(weeks)
+    periods_by_kind: dict[str, list[Any]] = {"week": weeks, "month": months}
 
     rows: list[dict[str, Any]] = []
     for metric in sorted(registry, key=lambda m: int(m["tie_rank"])):
         if metric.get("depends_on") and metric["depends_on"] not in built_set:
             continue
+        periods = periods_by_kind[metric.get("period_kind", "week")]
         candidates = candidate_rows(conn, metric)
-        history: list[tuple[Week, float]] = []
-        for week in weeks:
-            complete = week_is_complete(week, completeness, metric["coverage"])
+        history: list[tuple[Any, float]] = []
+        for period in periods:
+            complete = week_is_complete(period, completeness, metric["coverage"])
             row: dict[str, Any] = {
                 "metric_id": metric["id"],
                 "metric_version": metric["version"],
                 "tie_rank": metric["tie_rank"],
                 "direction": metric["direction"],
-                "period_kind": week.period_kind,
-                "period_key": week.period_key,
-                "iso_year": week.key[0],
-                "iso_week": week.key[1],
-                "week": week.label,
-                "wahlperiode": week.wahlperiode,
+                "period_kind": period.period_kind,
+                "period_key": period.period_key,
+                "iso_year": period.key[0] if period.period_kind == "week" else None,
+                "iso_week": period.key[1] if period.period_kind == "week" else None,
+                "week": period.label,
+                "wahlperiode": period.wahlperiode,
                 "complete": int(complete),
                 "week_n": None,
                 "value": None,
@@ -972,15 +1254,15 @@ def compute(
                 "receipts": [],
             }
             if complete:
-                week_rows = [r for pid in week.protocol_ids for r in candidates.get(pid, [])]
-                observation = observe(metric, week_rows)
+                period_rows_raw = [r for pid in period.protocol_ids for r in candidates.get(pid, [])]
+                observation = observe(metric, period_rows_raw)
                 # D12: how many observations the period's value was chosen
                 # from. A candidate row whose value is NULL (a vote with no
                 # member rows, a protocol whose XML names no sitting times)
                 # is not an observation and does not count.
                 row["week_n"] = observation.week_n if observation is not None else 0
                 if observation is not None:
-                    base = baseline(history, week, int(metric["min_history_weeks"]), force_all=force_all)
+                    base = baseline(history, period, int(metric["min_history_weeks"]), force_all=force_all)
                     pct = percentile(observation.value, base.values, metric["direction"])
                     row.update(
                         {
@@ -990,7 +1272,7 @@ def compute(
                             "baseline_count": base.count,
                             "baseline_from": base.from_week.label if base.from_week else None,
                             "baseline_to": base.to_week.label if base.to_week else None,
-                            "baseline_label": baseline_label(base, week, starts),
+                            "baseline_label": baseline_label(base, period, starts),
                             "percentile": pct,
                             "eligible": int(base.count >= int(metric["min_history_weeks"])),
                             "citation": _citation(metric, observation),
@@ -1002,7 +1284,7 @@ def compute(
                         else ()
                     )
                     row["receipts"] = receipts(metric, observation, documents)
-                    history.append((week, observation.value))
+                    history.append((period, observation.value))
             rows.append(row)
 
     by_period: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -1011,7 +1293,11 @@ def compute(
     metrics_by_id = {str(metric["id"]): metric for metric in registry}
     for period_rows in by_period.values():
         rank_period(period_rows, floor, metrics_by_id)
-    rows.sort(key=lambda r: (r["period_kind"], r["iso_year"], r["iso_week"], r["tie_rank"]))
+    # period_key sorts chronologically within a period_kind for both weeks
+    # ("2026-W37") and months ("2026-06"); iso_year/iso_week are None for a
+    # month row, which tuple comparison would choke on if it ever had to
+    # order two unequal None-bearing rows against each other.
+    rows.sort(key=lambda r: (r["period_kind"], r["period_key"], r["tie_rank"]))
     return rows
 
 
@@ -1461,6 +1747,8 @@ POPULATION_PHRASES = {
     "laengste-rede": ("länger als", "der wöchentlichen Spitzenreden"),
     "laengste-sitzung": ("länger als", "der wöchentlich längsten Sitzungen"),
     "erste-reden": ("mehr als in", "der Sitzungswochen"),
+    "aktivste-abgeordnete": ("mehr als", "der monatlich aktivsten Abgeordneten"),
+    "meistdiskutierter-vorgang": ("mehr als bei", "der monatlich meistdiskutierten Vorgänge"),
 }
 
 
@@ -1482,6 +1770,8 @@ def headline(row: Mapping[str, Any]) -> str:
         return f"{minutes // 60} h {minutes % 60:02d} min"
     if metric_id == "erste-reden":
         return f"{format_int(int(row['value']))} erste Reden"
+    if metric_id in ("aktivste-abgeordnete", "meistdiskutierter-vorgang"):
+        return f"{format_int(int(row['value']))} Reden"
     return f"{format_int(int(row['value']))} Zeichen"
 
 
@@ -1498,6 +1788,9 @@ def card_title(row: Mapping[str, Any]) -> str:
         speakers = citation.get("speakers") or []
         head = ", ".join(speakers[:3])
         return f"{head} und weitere" if len(speakers) > 3 else (head or "Unbekannt")
+    if metric_id == "meistdiskutierter-vorgang":
+        return citation.get("title") or f"Vorgang in {citation.get('document_number')}"
+    # Fallback: laengste-rede and aktivste-abgeordnete both cite a speaker.
     return f"{citation.get('display_name') or 'Unbekannt'} ({citation.get('fraktion') or 'Unbekannt'})"
 
 
@@ -1549,6 +1842,11 @@ def card_lead(row: Mapping[str, Any]) -> str:
             f"{title}: {format_int(int(row['value']))} Abgeordnete hielten ihre erste Rede "
             f"({card_title(row)})"
         )
+    if metric_id == "aktivste-abgeordnete":
+        return f"{title}: {format_int(int(row['value']))} Reden von {card_title(row)}"
+    if metric_id == "meistdiskutierter-vorgang":
+        kind_clause = f" ({citation.get('proceeding_type')})" if citation.get("proceeding_type") else ""
+        return f"{title}: {format_int(int(row['value']))} Reden zu {card_title(row)}{kind_clause}"
     return (
         f"{title}: {format_int(int(row['value']))} Zeichen von {card_title(row)}"
         f"{_topic_clause(citation)}"
@@ -1608,11 +1906,16 @@ def render_card(row: Mapping[str, Any]) -> str:
     reruns (no timestamps)."""
     metric = REGISTRY_BY_ID[row["metric_id"]]
     x = CARD_MARGIN
-    eyebrow = f"FAKT DER WOCHE · KW {row['iso_week']}/{row['iso_year']}"
+    if row["period_kind"] == "month":
+        eyebrow = f"FAKT DES MONATS · {month_display(row['period_key'])}"
+        period_noun = "Monate"
+    else:
+        eyebrow = f"FAKT DER WOCHE · KW {row['iso_week']}/{row['iso_year']}"
+        period_noun = "Sitzungswochen"
     title_lines = wrap_lines(card_title(row), width=36, max_lines=3)
     comparison_lines = wrap_lines(comparison_clause(row), width=44, max_lines=3)
     count = row.get("baseline_count") or 0
-    footer = f"Vergleich: {format_int(count)} Sitzungswochen"
+    footer = f"Vergleich: {format_int(count)} {period_noun}"
     if row.get("baseline_from") and row.get("baseline_to"):
         footer += f" ({row['baseline_from']} bis {row['baseline_to']})"
     caveat_lines = wrap_lines(card_caveat(row) or "", width=76, max_lines=2)

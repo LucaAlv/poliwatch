@@ -5951,6 +5951,18 @@ FACTS_METRIC_LABELS = {
     "laengste-rede": "Rede",
     "laengste-sitzung": "Sitzung",
     "erste-reden": "Erste Reden",
+    "aktivste-abgeordnete": "Aktivste Abgeordnete",
+    "meistdiskutierter-vorgang": "Meistdiskutierter Vorgang",
+}
+
+#: (plural noun, "this <period>" demonstrative phrase) per period_kind, for
+#: wording that must not assume every fact is a weekly one (T11). The
+#: demonstrative is its own phrase, not "diese/dieser" + noun, because German
+#: grammatical gender differs between "diese Sitzungswoche" (feminine) and
+#: "dieser Monat" (masculine).
+_PERIOD_NOUN = {
+    "week": ("Sitzungswochen", "Diese Sitzungswoche"),
+    "month": ("Monate", "Dieser Monat"),
 }
 
 
@@ -6064,6 +6076,26 @@ def _fact_agenda_item_citation(
     return dict(row) if row else None
 
 
+def _fact_proceeding_citation(
+    conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
+) -> dict[str, Any] | None:
+    """(document_number, page, page_quadrant) against the agenda item's
+    page_start, resolved through its lead position to the Vorgang
+    (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
+    row = conn.execute(
+        facts.LEAD_PROCEEDING_CTE + """
+        SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
+        FROM agenda_items ai
+        JOIN protocols p ON p.id = ai.protocol_id
+        JOIN lead_position lp ON lp.agenda_item_id = ai.id
+        JOIN proceedings pr ON pr.id = lp.proceeding_id
+        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant = ?
+        """,
+        (str(document_number), page, page_quadrant),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> dict[str, Any] | None:
     """document_number, unique."""
     row = conn.execute(
@@ -6159,6 +6191,23 @@ def resolve_fact_citation(
             "sitzung_start": resolved["sitzung_start"],
             "sitzung_end": resolved["sitzung_end"],
         }
+    if kind == "proceeding":
+        resolved_occurrences = [
+            row
+            for r in receipts
+            if (row := _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant")))
+            is not None
+        ]
+        if not resolved_occurrences:
+            return None
+        lead = resolved_occurrences[0]
+        return {
+            "id": lead["proceeding_id"],
+            "document_number": lead["document_number"],
+            "title": lead["title"],
+            "proceeding_type": lead["proceeding_type"],
+            "occurrences": len(resolved_occurrences),
+        }
     if kind == "vote":
         resolved = _fact_vote_citation(conn, subject.get("official_url"))
         if resolved is None:
@@ -6205,7 +6254,8 @@ def _fact_status_text(row: dict[str, Any] | None) -> tuple[str, str | None, bool
 
 def _fact_baseline_line(row: dict[str, Any]) -> str:
     count = row.get("baseline_count") or 0
-    text = f"Vergleich: {pulse_html.format_int(count)} Sitzungswochen"
+    plural, _ = _PERIOD_NOUN.get(row.get("period_kind"), _PERIOD_NOUN["week"])
+    text = f"Vergleich: {pulse_html.format_int(count)} {plural}"
     if row.get("baseline_from") and row.get("baseline_to"):
         text += f" ({row['baseline_from']} bis {row['baseline_to']})"
     return text
@@ -6336,25 +6386,28 @@ def _render_fact_section(
     """
 
 
-def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | None = None) -> str:
-    features = features or publication_selection()
-    by_period: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+def _render_facts_archive_table(
+    all_facts: list[dict[str, Any]], registry: tuple[dict[str, Any], ...], period_kind: str, period_header: str
+) -> str:
+    by_period: dict[str, dict[str, dict[str, Any]]] = {}
     for row in all_facts:
-        if row["period_kind"] != "week":
+        if row["period_kind"] != period_kind:
             continue
         by_period.setdefault(row["period_key"], {})[row["metric_id"]] = row
+    if not by_period:
+        return ""
     rows_html = []
     for period_key in sorted(by_period, reverse=True):
         period_rows = by_period[period_key]
         sample = next(iter(period_rows.values()))
-        week_text = (
+        period_text = (
             pulse_html.week_label((sample["iso_year"], sample["iso_week"]))
             if sample.get("iso_year") and sample.get("iso_week")
             else period_key
         )
         cells = []
         any_posted = False
-        for metric in facts.REGISTRY:
+        for metric in registry:
             text, anchor, posted = _fact_status_text(period_rows.get(metric["id"]))
             any_posted = any_posted or posted
             if posted:
@@ -6363,16 +6416,27 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
                 cells.append(f'<td class="muted">{pulse_html.esc(text)}</td>')
         row_class = "archive-row" if any_posted else "archive-row greyed"
         rows_html.append(
-            f'<tr class="{row_class}"><td><a href="{pulse_html.esc(period_key)}.html">{pulse_html.esc(week_text)}</a></td>'
+            f'<tr class="{row_class}"><td><a href="{pulse_html.esc(period_key)}.html">{pulse_html.esc(period_text)}</a></td>'
             f'<td class="num">{pulse_html.esc(sample.get("wahlperiode"))}</td>{"".join(cells)}</tr>'
         )
-    header_cells = "".join(f"<th>{pulse_html.esc(FACTS_METRIC_LABELS[metric['id']])}</th>" for metric in facts.REGISTRY)
-    body = (
-        f'<div class="table-scroll"><table class="facts-archive"><thead><tr><th>Woche</th><th class="num">WP</th>{header_cells}</tr></thead>'
+    header_cells = "".join(f"<th>{pulse_html.esc(FACTS_METRIC_LABELS[metric['id']])}</th>" for metric in registry)
+    return (
+        f'<div class="table-scroll"><table class="facts-archive"><thead><tr><th>{pulse_html.esc(period_header)}</th>'
+        f'<th class="num">WP</th>{header_cells}</tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody></table></div>'
-        if rows_html
-        else '<p class="lead">Noch keine Fakten veröffentlicht.</p>'
     )
+
+
+def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    weekly_table = _render_facts_archive_table(all_facts, facts.REGISTRY, "week", "Woche")
+    monthly_table = _render_facts_archive_table(all_facts, facts.MONTHLY_REGISTRY, "month", "Monat")
+    sections = []
+    if weekly_table:
+        sections.append(f"<section><h2>Wöchentlich</h2>{weekly_table}</section>")
+    if monthly_table:
+        sections.append(f"<section><h2>Monatlich</h2>{monthly_table}</section>")
+    body = "".join(sections) if sections else '<p class="lead">Noch keine Fakten veröffentlicht.</p>'
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -6387,9 +6451,9 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
     {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
     <header>
       <h1>Fakt der Woche</h1>
-      <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Sitzungswoche - aus den
-      Primärdaten dieser Seite, nicht redaktionell ausgewählt. <a href="methodik.html">Wie das
-      funktioniert</a>.</p>
+      <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Sitzungswoche und je Monat
+      - aus den Primärdaten dieser Seite, nicht redaktionell ausgewählt. <a href="methodik.html">Wie
+      das funktioniert</a>.</p>
     </header>
     {body}
     <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a></footer>
@@ -6413,11 +6477,17 @@ def render_facts_week(
 ) -> str:
     features = features or publication_selection()
     sample = period_rows[0]
-    week_text = (
-        pulse_html.week_label((sample["iso_year"], sample["iso_week"]))
-        if sample.get("iso_year") and sample.get("iso_week")
-        else period_key
-    )
+    period_kind = sample["period_kind"]
+    plural, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
+    if period_kind == "month":
+        period_text = facts.month_display(period_key)
+    else:
+        period_text = (
+            pulse_html.week_label((sample["iso_year"], sample["iso_week"]))
+            if sample.get("iso_year") and sample.get("iso_week")
+            else period_key
+        )
+    period_registry = facts.MONTHLY_REGISTRY if period_kind == "month" else facts.REGISTRY
     by_metric_id = {row["metric_id"]: row for row in period_rows}
     posted = sorted((row for row in period_rows if row["publishable"]), key=lambda row: int(row["rank"]))
     if posted:
@@ -6440,12 +6510,12 @@ def render_facts_week(
     else:
         floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
         items = []
-        for metric in facts.REGISTRY:
+        for metric in period_registry:
             text, _, _ = _fact_status_text(by_metric_id.get(metric["id"]))
             items.append(f"<li><strong>{pulse_html.esc(metric['title'])}</strong><span>{pulse_html.esc(text)}</span></li>")
         content = (
-            f'<p class="lead">Diese Sitzungswoche hat keinen Fakt über die Veröffentlichungsschwelle '
-            f"({pulse_html.esc(floor_pct)} %) gebracht.</p>"
+            f'<p class="lead">{pulse_html.esc(demonstrative)} hat keinen Fakt über die '
+            f"Veröffentlichungsschwelle ({pulse_html.esc(floor_pct)} %) gebracht.</p>"
             f'<ul class="method-list">{"".join(items)}</ul>'
         )
     return f"""<!doctype html>
@@ -6453,7 +6523,7 @@ def render_facts_week(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Fakt der Woche {pulse_html.esc(week_text)}</title>
+  <title>Bundestag-Puls · Fakt der Woche {pulse_html.esc(period_text)}</title>
   {pulse_html.page_head(features)}
   <style>{_facts_page_style()}</style>
 </head>
@@ -6462,11 +6532,11 @@ def render_facts_week(
     {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
-      <h1>{pulse_html.esc(week_text)}</h1>
+      <h1>{pulse_html.esc(period_text)}</h1>
     </header>
     {content}
     <footer>
-      Spätere Sitzungswochen ändern diese Karten nicht; nur eine Korrektur an den Rohdaten kann es.
+      Spätere {pulse_html.esc(plural)} ändern diese Karten nicht; nur eine Korrektur an den Rohdaten kann es.
       <a href="methodik.html">Methodik</a>
     </footer>
   </div>
@@ -6476,22 +6546,29 @@ def render_facts_week(
 """
 
 
-def render_facts_methodik(features: Selection | None = None) -> str:
-    features = features or publication_selection()
-    metric_items = []
-    for metric in facts.REGISTRY:
-        gates = [f"mindestens {metric['min_history_weeks']} vergleichbare Wochen"]
+def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_plural: str) -> str:
+    items = []
+    for metric in registry:
+        gates = [f"mindestens {metric['min_history_weeks']} vergleichbare {period_plural}"]
         if metric.get("min_value") is not None:
             gates.append(f"Wert mindestens {pulse_html.format_int(int(metric['min_value']))}")
         if metric.get("requires_topic"):
             gates.append("Thema muss bestimmbar sein")
         caveat = f'<p class="caveat">{pulse_html.esc(metric["caveat"])}</p>' if metric.get("caveat") else ""
         direction_text = "größter" if metric["direction"] == "max" else "kleinster"
-        metric_items.append(
+        per_period = "je Sitzungswoche" if period_plural == "Wochen" else "je Monat"
+        items.append(
             f'<li id="metrik-{pulse_html.esc(metric["id"])}"><strong>{pulse_html.esc(metric["title"])}</strong>'
-            f'<span>{pulse_html.esc(metric["unit"])} · {direction_text} Wert je Sitzungswoche · '
+            f'<span>{pulse_html.esc(metric["unit"])} · {direction_text} Wert {per_period} · '
             f'Vergleichbarkeit: {pulse_html.esc(", ".join(gates))}</span>{caveat}</li>'
         )
+    return "".join(items)
+
+
+def render_facts_methodik(features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen")
+    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate")
     floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
     min_abweichler = int(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"])
     return f"""<!doctype html>
@@ -6509,28 +6586,29 @@ def render_facts_methodik(features: Selection | None = None) -> str:
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>Wie „Fakt der Woche“ berechnet wird</h1>
-      <p class="lead">Jede Sitzungswoche liefert für sechs Kennzahlen höchstens einen Wert.
-      Veröffentlicht wird eine Kennzahl nur, wenn sie ungewöhnlicher ist als {pulse_html.esc(floor_pct)} %
-      der vergleichbaren Wochen seit Beginn der Erfassung - und, bei zwei Kennzahlen, eine
-      zusätzliche absolute Schwelle erreicht.</p>
+      <p class="lead">Jede Sitzungswoche liefert für sechs Kennzahlen, jeder Monat für zwei weitere,
+      höchstens einen Wert. Veröffentlicht wird eine Kennzahl nur, wenn sie ungewöhnlicher ist als
+      {pulse_html.esc(floor_pct)} % der vergleichbaren Perioden seit Beginn der Erfassung - und, bei
+      einigen Kennzahlen, eine zusätzliche absolute Schwelle erreicht.</p>
     </header>
     <section>
       <h2>Die Regel</h2>
       <ol class="method-list">
-        <li><strong>Beobachtung</strong><span>Je Sitzungswoche und Kennzahl der größte oder
-        kleinste Wert unter den Kandidatenzeilen dieser Woche, oder - bei „Die meisten ersten
-        Reden der Woche“ - ihre Anzahl. Eine Woche ohne passende Zeile liefert keine
-        Beobachtung.</span></li>
+        <li><strong>Beobachtung</strong><span>Je Periode (Sitzungswoche oder Monat) und Kennzahl
+        der größte oder kleinste Wert unter den Kandidatenzeilen dieser Periode, ihre Anzahl - bei
+        „Die meisten ersten Reden der Woche“ - oder, bei den beiden monatlichen Kennzahlen, die
+        größte Summe über alle Kandidatenzeilen einer Abgeordneten oder eines Vorgangs im Monat.
+        Eine Periode ohne passende Zeile liefert keine Beobachtung.</span></li>
         <li><strong>Vergleichbarkeit</strong><span>Der Anteil der vorherigen Beobachtungen, den
         der Wert in der Richtung der Kennzahl schlägt (mehr beim Maximum, weniger beim Minimum).
-        Verglichen wird zuerst mit der laufenden Wahlperiode, sobald die mindestens
-        {facts.MIN_HISTORY_WEEKS} Wochen zählt, sonst mit der gesamten Erfassung; unter
-        {facts.MIN_HISTORY_WEEKS} Wochen insgesamt gilt die Woche als „noch nicht
-        vergleichbar“.</span></li>
+        Verglichen wird zuerst mit der laufenden Wahlperiode, sobald sie genug frühere Perioden
+        zählt (mindestens {facts.MIN_HISTORY_WEEKS} Sitzungswochen bzw. mindestens
+        {facts.MIN_HISTORY_MONTHS} Monate), sonst mit der gesamten Erfassung; darunter gilt die
+        Periode als „noch nicht vergleichbar“.</span></li>
         <li><strong>Veröffentlichungsschwelle</strong><span>Ab {pulse_html.esc(floor_pct)} % wird
-        eine Kennzahl veröffentlicht - ungewöhnlicher als die Hälfte der Vergleichswochen. Jede
-        Kennzahl, die die Schwelle erreicht, bekommt eine Karte; eine Sitzungswoche kann also
-        mehrere Fakten tragen oder keinen.</span></li>
+        eine Kennzahl veröffentlicht - ungewöhnlicher als die Hälfte der Vergleichsperioden. Jede
+        Kennzahl, die die Schwelle erreicht, bekommt eine Karte; eine Periode kann also mehrere
+        Fakten tragen oder keinen.</span></li>
         <li><strong>Zusätzliche Schwellen</strong><span>„Die meisten Abweichler der Woche“
         erscheint erst ab {pulse_html.format_int(min_abweichler)} Abweichlern, sonst ist der Wert
         eine Anekdote, kein Fakt. „Die längste Debatte der Woche“ erscheint nur, wenn sich ihr
@@ -6539,16 +6617,22 @@ def render_facts_methodik(features: Selection | None = None) -> str:
       </ol>
     </section>
     <section>
-      <h2>Die sechs Kennzahlen</h2>
-      <ul class="method-list">{"".join(metric_items)}</ul>
+      <h2>Die sechs wöchentlichen Kennzahlen</h2>
+      <ul class="method-list">{weekly_items}</ul>
+    </section>
+    <section>
+      <h2>Die zwei monatlichen Kennzahlen</h2>
+      <p class="lead">Dieselbe Regel, mit Monaten statt Sitzungswochen als Perioden: die Beobachtung
+      summiert dafür die Kandidatenzeilen einer Abgeordneten oder eines Vorgangs über alle Sitzungen
+      des Monats, statt die einzelne größte Zeile zu nehmen.</p>
+      <ul class="method-list">{monthly_items}</ul>
     </section>
     <section>
       <h2>Was sich nicht ändert</h2>
-      <p>Spätere Sitzungswochen ändern frühere Karten nicht. Nur eine Korrektur an den zugrunde
-      liegenden Daten kann eine veröffentlichte Karte im Nachhinein verändern; das Build-Log
-      verzeichnet jede solche Änderung.</p>
-      <p>Monatliche Fakten (etwa die aktivste Abgeordnete oder der meistdiskutierte Vorgang des
-      Monats) sind vorgesehen, aber noch nicht gebaut.</p>
+      <p>Spätere Sitzungswochen ändern frühere Karten nicht, und spätere Monate ändern ihre
+      Monatskarten ebenso wenig. Nur eine Korrektur an den zugrunde liegenden Daten kann eine
+      veröffentlichte Karte im Nachhinein verändern; das Build-Log verzeichnet jede solche
+      Änderung.</p>
     </section>
     <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
@@ -6600,8 +6684,6 @@ def write_facts_pages(
             by_period = _facts_group_by_period(all_facts)
             by_metric = _facts_group_by_metric(all_facts)
             for (period_kind, period_key), period_rows in by_period.items():
-                if period_kind != "week":
-                    continue
                 page_name = f"{period_key}.html"
                 expected.add(page_name)
                 (facts_dir / page_name).write_text(
@@ -9187,7 +9269,7 @@ def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict
         built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
         return facts.compute_and_store(
             store,
-            facts.REGISTRY,
+            facts.ALL_REGISTRY,
             facts.completeness_from_entries(entries),
             built=built,
         )

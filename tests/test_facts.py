@@ -34,6 +34,8 @@ DEBATTE = "laengste-debatte"
 LAENGSTE = "laengste-rede"
 SITZUNG = "laengste-sitzung"
 ERSTE = "erste-reden"
+AKTIVSTE = "aktivste-abgeordnete"
+VORGANG = "meistdiskutierter-vorgang"
 
 
 def week_specs(count: int, *, start_number: int = 1, wp: int = 21, year: int = 2025, **extra):
@@ -55,6 +57,34 @@ def week_specs(count: int, *, start_number: int = 1, wp: int = 21, year: int = 2
         }
         spec.update(extra)
         specs.append(spec)
+    return specs
+
+
+def month_specs(count: int, *, start_number: int = 1, wp: int = 21, year: int = 2025, month: int = 1, **extra):
+    """count consecutive calendar months in ``wp``, one protocol each (the
+    15th, off any month-boundary edge). Each month has a distinguished
+    "Fleissig<n>" speaker with 3+n speeches (one more than the month before,
+    so every month beats every prior one) on its own Vorgang "Vorgang <n>",
+    plus a one-speech "Sockel" row so aktivste-abgeordnete's winner is a
+    choice, not the only candidate. meistdiskutierter-vorgang's value (every
+    speech on the month's one agenda item, 4+n) grows the same way."""
+    specs = []
+    for index in range(count):
+        leader = f"Fleissig{index}"
+        speeches = [(100, leader, f"L{index}-{n}") for n in range(3 + index)]
+        speeches.append((100, "Sockel", f"S{index}"))
+        spec = {
+            "document_number": f"{wp}/{start_number + index}",
+            "date": facts.date(year, month, 15).isoformat(),
+            "speeches": speeches,
+            "items": [{"heading": "TOP 1", "proceeding_title": f"Vorgang {index}"}],
+        }
+        spec.update(extra)
+        specs.append(spec)
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
     return specs
 
 
@@ -122,6 +152,26 @@ class RegistryTests(unittest.TestCase):
         changed = {**metric, "sql": metric["sql"] + "\nORDER BY s.id"}
         self.assertNotEqual(facts.sql_sha256(metric), facts.sql_sha256(changed))
 
+    def test_the_two_monthly_metrics_are_registered_after_the_six_weekly_ones(self) -> None:
+        self.assertEqual([metric["id"] for metric in facts.MONTHLY_REGISTRY], [AKTIVSTE, VORGANG])
+        self.assertEqual([metric["tie_rank"] for metric in facts.MONTHLY_REGISTRY], [7, 8])
+        for metric in facts.MONTHLY_REGISTRY:
+            self.assertEqual(metric["period_kind"], "month")
+            self.assertEqual(metric["aggregation"], "grouped_extreme")
+            self.assertEqual(metric["min_history_weeks"], facts.MIN_HISTORY_MONTHS)
+        self.assertEqual(facts.ALL_REGISTRY, facts.REGISTRY + facts.MONTHLY_REGISTRY)
+        # REGISTRY_BY_ID resolves any row back to its metric - card rendering
+        # and the page's citation resolvers need a monthly row's metric too.
+        self.assertEqual(set(facts.REGISTRY_BY_ID), {m["id"] for m in facts.ALL_REGISTRY})
+        facts.validate_registry(facts.ALL_REGISTRY)
+
+    def test_tie_rank_and_id_uniqueness_spans_both_registries(self) -> None:
+        # D24A: validate_registry's uniqueness check spans every metric, not
+        # just the weekly six, once the two registries are combined the way
+        # compute_and_store's production call site does.
+        with self.assertRaises(facts.FactsError):
+            facts.validate_registry(facts.REGISTRY + facts.MONTHLY_REGISTRY + ({**facts.MONTHLY_REGISTRY[0]},))
+
 
 class SittingWeekTests(StoreCase):
     def test_wahlperiode_from_document_number(self) -> None:
@@ -153,6 +203,76 @@ class SittingWeekTests(StoreCase):
         for row in self.compute():
             self.assertEqual(row["period_kind"], "week")
             self.assertEqual(row["period_key"], f"{row['iso_year']}-W{row['iso_week']:02d}")
+
+
+class SittingMonthTests(StoreCase):
+    def test_two_protocols_in_one_month_form_one_month(self) -> None:
+        self.seed(
+            [
+                {"document_number": "21/91", "date": "2026-06-08", "longest": 500},
+                {"document_number": "21/92", "date": "2026-06-22", "longest": 900},
+            ]
+        )
+        months = facts.sitting_months(facts.load_protocols(self.conn))
+        self.assertEqual(len(months), 1)
+        self.assertEqual(months[0].key, (2026, 6))
+        self.assertEqual(months[0].wahlperiode, 21)
+        self.assertEqual(months[0].period_kind, "month")
+        self.assertEqual(months[0].period_key, "2026-06")
+        self.assertEqual([p["document_number"] for p in months[0].protocols], ["21/91", "21/92"])
+
+    def test_a_sitting_week_spanning_two_months_lands_each_protocol_in_its_own(self) -> None:
+        # 2022-W22 on the real store spans 2022-05/2022-06 (2022-05-30 Monday
+        # to 2022-06-05 Sunday): a month is built from each protocol's own
+        # date, never from sitting_weeks(), so the split never merges or
+        # drops a protocol.
+        self.seed(
+            [
+                {"document_number": "21/1", "date": "2022-05-30", "longest": 500},
+                {"document_number": "21/2", "date": "2022-06-01", "longest": 500},
+            ]
+        )
+        weeks = facts.sitting_weeks(facts.load_protocols(self.conn))
+        self.assertEqual(len(weeks), 1)
+        months = facts.sitting_months(facts.load_protocols(self.conn))
+        self.assertEqual({m.key for m in months}, {(2022, 5), (2022, 6)})
+
+    def test_a_month_spanning_two_wahlperioden_takes_the_majority(self) -> None:
+        # The real store's own case: WP20's last two sittings and WP21's
+        # constituting sitting all fall in March 2025.
+        self.seed(
+            [
+                {"document_number": "20/213", "date": "2025-03-13", "longest": 500},
+                {"document_number": "20/214", "date": "2025-03-18", "longest": 500},
+                {"document_number": "21/1", "date": "2025-03-25", "longest": 500},
+            ]
+        )
+        months = facts.sitting_months(facts.load_protocols(self.conn))
+        self.assertEqual(len(months), 1)
+        self.assertEqual(months[0].wahlperiode, 20)
+
+    def test_a_tied_month_takes_the_latest_protocols_wahlperiode(self) -> None:
+        self.seed(
+            [
+                {"document_number": "20/213", "date": "2025-03-13", "longest": 500},
+                {"document_number": "21/1", "date": "2025-03-25", "longest": 500},
+            ]
+        )
+        months = facts.sitting_months(facts.load_protocols(self.conn))
+        self.assertEqual(months[0].wahlperiode, 21)
+
+    def test_malformed_date_names_the_protocol(self) -> None:
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.sitting_months([{"id": "p1", "document_number": "21/1", "date": None}])
+        self.assertIn("21/1", str(ctx.exception))
+
+    def test_every_monthly_row_carries_its_period_with_no_iso_week(self) -> None:
+        self.seed(month_specs(7))
+        for row in self.compute(registry=facts.MONTHLY_REGISTRY):
+            self.assertEqual(row["period_kind"], "month")
+            self.assertIsNone(row["iso_year"])
+            self.assertIsNone(row["iso_week"])
+            self.assertRegex(row["period_key"], r"^\d{4}-\d{2}$")
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +573,182 @@ class ErsteRedenTests(StoreCase):
         self.assertEqual(split, 2)
 
 
+# ---------------------------------------------------------------------------
+# T11: the two monthly metrics ("grouped_extreme": sum a candidate row's
+# value by an identity across every protocol in the month, then take the
+# max/min group).
+# ---------------------------------------------------------------------------
+
+
+class AktivsteAbgeordneteTests(StoreCase):
+    PEOPLE = {
+        "wiese-aw": {
+            "display_name": "Dirk Wiese", "party": "SPD",
+            "identity_key": "aw:78913", "xml_redner_id": "11004444",
+        },
+        "wiese-xml": {
+            "display_name": "Dirk Wiese", "party": "SPD",
+            "identity_key": "xml:11004444", "xml_redner_id": "11004444",
+        },
+    }
+
+    def test_observation_sums_speeches_across_the_months_protocols_and_cites_every_one(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "speeches": [(200, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                },
+                {
+                    "document_number": "21/2",
+                    "date": "2025-06-17",
+                    "speeches": [(150, "Ada Lovelace", "IDA2")],
+                },
+            ]
+        )
+        row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
+        # Ada Lovelace: 2 speeches summed across both protocols; Karl Marx 1.
+        self.assertEqual(row["value"], 2)
+        self.assertEqual(row["citation"]["display_name"], "Ada Lovelace")
+        self.assertEqual(row["citation"]["speakers"], ["Ada Lovelace", "Ada Lovelace"])
+        self.assertEqual(
+            [(r["entity_kind"], r["document_number"], r["rede_id"], r["position"]) for r in row["receipts"]],
+            [("speech", "21/1", "IDA1", 0), ("speech", "21/2", "IDA2", 1)],
+        )
+
+    def test_grouping_by_xml_redner_id_sums_the_split_persons_speeches(self) -> None:
+        # T10's erste-reden fix reused: the live store splits one person
+        # across an "aw:" and an "xml:" mps row sharing xml_redner_id, and
+        # grouping by mps.id would undercount them as two people. Also
+        # exercises the tie-break: both speakers reach 2 speeches, but
+        # Wiese's total characters (350) beat Marx's (200).
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "speeches": [(200, "wiese-aw", "IDW1"), (100, "Karl Marx", "IDK1")],
+                },
+                {
+                    "document_number": "21/2",
+                    "date": "2025-06-17",
+                    "speeches": [(150, "wiese-xml", "IDW2"), (100, "Karl Marx", "IDK2")],
+                },
+            ],
+            people=self.PEOPLE,
+        )
+        row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 2)
+        self.assertEqual(row["citation"]["display_name"], "Dirk Wiese")
+
+    def test_a_full_tie_falls_to_the_lowest_mps_id(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "speeches": [(100, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                }
+            ]
+        )
+        row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
+        # One speech each, 100 characters each: the tie falls to whichever
+        # was seeded (and so got the lower mps.id) first, Ada Lovelace.
+        self.assertEqual(row["citation"]["display_name"], "Ada Lovelace")
+
+    def test_null_mp_id_speech_is_excluded(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "speeches": [(9000, None, "IDNULL"), (100, "Ada Lovelace", "IDA")],
+                }
+            ]
+        )
+        row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 1)
+        self.assertEqual(row["citation"]["display_name"], "Ada Lovelace")
+
+
+class MeistdiskutierterVorgangTests(StoreCase):
+    def test_observation_sums_distinct_speeches_on_one_proceeding_across_protocols(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{
+                        "heading": "TOP 1", "proceeding_title": "Haushaltsgesetz",
+                        "proceeding_id": "V1", "proceeding_type": "Gesetzgebung",
+                    }],
+                    "speeches": [(200, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                },
+                {
+                    "document_number": "21/2",
+                    "date": "2025-06-17",
+                    "items": [{
+                        "heading": "TOP 1", "proceeding_title": "Haushaltsgesetz",
+                        "proceeding_id": "V1", "proceeding_type": "Gesetzgebung",
+                    }],
+                    "speeches": [(150, "Ada Lovelace", "IDA2")],
+                },
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        # 2 distinct speeches on the Vorgang in 21/1, 1 in 21/2: 3 total.
+        self.assertEqual(row["value"], 3)
+        self.assertEqual(row["citation"]["title"], "Haushaltsgesetz")
+        self.assertEqual(row["citation"]["proceeding_type"], "Gesetzgebung")
+        self.assertEqual(row["citation"]["occurrences"], 2)
+        # Position 0 is the occurrence with the most speeches on the Vorgang
+        # (21/1), position 1 its other occurrence that month - a vote's
+        # Drucksachen pattern.
+        self.assertEqual(
+            [(r["entity_kind"], r["document_number"], r["position"]) for r in row["receipts"]],
+            [("agenda_item", "21/1", 0), ("agenda_item", "21/2", 1)],
+        )
+
+    def test_a_different_proceeding_each_protocol_is_not_merged(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Gesetz A"}],
+                    "speeches": [(200, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                },
+                {
+                    "document_number": "21/2",
+                    "date": "2025-06-17",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Gesetz B"}],
+                    "speeches": [(150, "Ada Lovelace", "IDA2")],
+                },
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        # Two distinct, unshared proceedings (default proceeding_id is
+        # per-item): the winner is whichever has more speeches on its own.
+        self.assertEqual(row["value"], 2)
+        self.assertEqual(row["citation"]["title"], "Gesetz A")
+
+    def test_an_agenda_item_without_a_proceeding_yields_no_candidate(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "Nur eine Überschrift, kein Vorgang"}],
+                    "speeches": [(100, "Ada Lovelace", "IDA1")],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertIsNone(row["value"])
+        self.assertEqual(row["week_n"], 0)
+
+
 class ObserveTests(StoreCase):
     def test_depends_on_skips_an_unbuilt_metric(self) -> None:
         self.seed(week_specs(2))
@@ -552,6 +848,19 @@ class PublishableTests(StoreCase):
         self.assertEqual(rows[9]["publishable"], 0)
         self.assertIsNone(rows[9]["rank"])
         self.assertEqual(facts.comparison_clause(rows[9]), "nicht ungewöhnlich genug")
+
+    def test_a_month_below_min_history_periods_is_not_comparable(self) -> None:
+        # D24A: min_history_periods 6 for the two monthly metrics -- the 6th
+        # month (index 5) has only 5 prior months, "noch nicht vergleichbar";
+        # the 7th (index 6) has 6 and is eligible and, growing every month,
+        # unusual enough to post.
+        self.seed(month_specs(7, year=2020))
+        rows = self.rows_for(self.compute(registry=facts.MONTHLY_REGISTRY), AKTIVSTE)
+        self.assertEqual(rows[5]["eligible"], 0)
+        self.assertEqual(rows[5]["withheld"], facts.WITHHELD_NOT_COMPARABLE)
+        self.assertEqual(facts.comparison_clause(rows[5]), "noch nicht vergleichbar")
+        self.assertEqual(rows[6]["eligible"], 1)
+        self.assertEqual(rows[6]["publishable"], 1)
 
     def test_the_floor_is_inclusive_at_fifty_percent(self) -> None:
         def row(**kwargs):
@@ -799,6 +1108,26 @@ class EngineTests(StoreCase):
         for row in posted:
             self.assertGreaterEqual(row["rank"], 1)
             self.assertTrue(row["receipts"])
+
+    def test_the_engine_writes_both_weekly_and_monthly_facts(self) -> None:
+        # T11: compute_and_store's production call site (run_facts_engine)
+        # passes facts.ALL_REGISTRY, not facts.REGISTRY -- both period kinds
+        # must land in the same three tables from one call.
+        specs = week_specs(12) + month_specs(7, start_number=101, year=2020)
+        self.seed(specs)
+        conn = self.writable()
+        report = facts.compute_and_store(conn, facts.ALL_REGISTRY, self.seeded["completeness"], out=quiet())
+        self.assertTrue(report["written"])
+        metrics = facts.load_metrics(conn)
+        self.assertEqual([m["id"] for m in metrics], [m["id"] for m in facts.ALL_REGISTRY])
+        stored = facts.load_facts(conn)
+        self.assertEqual({row["period_kind"] for row in stored}, {"week", "month"})
+        monthly_posted = [row for row in stored if row["period_kind"] == "month" and row["publishable"]]
+        self.assertTrue(monthly_posted)
+        for row in monthly_posted:
+            self.assertGreaterEqual(row["rank"], 1)
+            self.assertTrue(row["receipts"])
+        self.assertEqual(facts.read_snapshot(conn), facts.snapshot_from_rows(facts.ALL_REGISTRY, report["rows"]))
 
     def test_receipts_round_trip_with_their_fact(self) -> None:
         conn, _ = self.store_all()
@@ -1091,6 +1420,20 @@ class CardTests(StoreCase):
             ),
         )
 
+    def test_a_monthly_card_reads_fakt_des_monats_not_kw(self) -> None:
+        self.seed(month_specs(7, year=2020))
+        row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY, index=-1)
+        self.assertTrue(row["publishable"])
+        svg = facts.render_card(row)
+        self.assertIn("FAKT DES MONATS", svg)
+        self.assertIn(facts.month_display(row["period_key"]), svg)
+        self.assertNotIn("KW ", svg)
+        root = ET.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        footer = root.find(".//svg:text[@class='footer']", ns)
+        self.assertIn("Monate", "".join(footer.itertext()))
+        self.assertNotIn("Sitzungswochen", "".join(footer.itertext()))
+
 
 class ReplayTests(StoreCase):
     def test_replay_is_read_only_and_reports_the_gate_and_floor_numbers(self) -> None:
@@ -1136,6 +1479,24 @@ class ReplayTests(StoreCase):
         with tempfile.TemporaryDirectory() as cards:
             report = facts.replay(REAL_STORE, weeks=5, cards_dir=Path(cards))
         self.assertEqual(len(report["weeks"]), 5)
+
+    @unittest.skipUnless(REAL_STORE.exists(), "real store not present")
+    def test_real_store_monthly_metrics_reproduce_d25a(self) -> None:
+        # D25A/T11: June 2026 on the real store sums to Alexander Dobrindt at
+        # 40 Reden and the GKV-Beitragssatzstabilisierungsgesetz at 19.
+        conn = facts.open_readonly(REAL_STORE)
+        try:
+            completeness = facts.load_completeness(REAL_STORE.parent)
+            rows = facts.compute(conn, facts.MONTHLY_REGISTRY, completeness, built={"votes"})
+        finally:
+            conn.close()
+        june = {row["metric_id"]: row for row in rows if row["period_key"] == "2026-06"}
+        self.assertTrue(june[AKTIVSTE]["complete"])
+        self.assertEqual(june[AKTIVSTE]["value"], 40)
+        self.assertEqual(june[AKTIVSTE]["citation"]["display_name"], "Alexander Dobrindt")
+        self.assertTrue(june[VORGANG]["complete"])
+        self.assertEqual(june[VORGANG]["value"], 19)
+        self.assertIn("Beitragssatz", june[VORGANG]["citation"]["title"])
 
 
 # ---------------------------------------------------------------------------
@@ -1284,6 +1645,41 @@ class PageTests(StoreCase):
         self.assertIn("Noch keine Fakten veröffentlicht", archive)
         self.assertTrue((output_dir / "fakt" / "methodik.html").is_file())
 
+    def write_monthly_pages(self, months, output_name="monthly-site", mp_lookup=None, **kwargs):
+        seeded = self.seed(months, **kwargs)
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.ALL_REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / output_name
+        output_dir.mkdir(exist_ok=True)
+        document_numbers = {spec["document_number"] for spec in months}
+        result = build.write_facts_pages(output_dir, self.path, False, mp_lookup or {}, document_numbers, set())
+        return output_dir, result
+
+    def test_a_monthly_page_and_svg_cards_are_written_with_speeches_and_proceeding_receipts(self) -> None:
+        people = {"Fleissig6": {"display_name": "Fleissig6", "party": "SPD", "identity_key": "xml:f6", "xml_redner_id": "f6"}}
+        output_dir, result = self.write_monthly_pages(month_specs(7, year=2020), people=people)
+        month_page = output_dir / "fakt" / "2020-07.html"
+        self.assertTrue(month_page.exists())
+        html = month_page.read_text(encoding="utf-8")
+        self.assertIn(f'<section id="{AKTIVSTE}"', html)
+        self.assertIn(f'<section id="{VORGANG}"', html)
+        self.assertIn("Fleissig6", html)
+        self.assertIn("Vorgang 6", html)
+        svgs = {path.name for path in (output_dir / "fakt").glob("2020-07-*.svg")}
+        self.assertEqual(svgs, {f"2020-07-{AKTIVSTE}.svg", f"2020-07-{VORGANG}.svg"})
+        archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("<h2>Monatlich</h2>", archive)
+        self.assertIn(">2020-07<", archive)
+
+    def test_rendering_a_monthly_page_twice_against_one_store_is_byte_identical(self) -> None:
+        output_dir, _ = self.write_monthly_pages(month_specs(7, year=2020))
+        first = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
+        document_numbers = {spec["document_number"] for spec in month_specs(7, year=2020)}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        second = {path.name: path.read_bytes() for path in (output_dir / "fakt").glob("*")}
+        self.assertEqual(first, second)
+
     def test_a_missing_store_renders_an_empty_archive_without_crashing(self) -> None:
         output_dir = Path(self.tmp.name) / "missing-store-site"
         output_dir.mkdir()
@@ -1297,12 +1693,16 @@ class PageTests(StoreCase):
         self.assertIn("50", html)
         self.assertIn(str(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"]), html)
         self.assertIn("Thema bestimmen lässt", html)
-        for metric in facts.REGISTRY:
+        for metric in facts.ALL_REGISTRY:
             self.assertIn(metric["title"], html)
             if metric["caveat"]:
                 self.assertIn(metric["caveat"], html)
         self.assertIn("Spätere Sitzungswochen ändern frühere Karten nicht", html)
-        self.assertIn("Monatliche Fakten", html)
+        # T11: the stub sentence is gone, replaced by the real monthly rule.
+        self.assertNotIn("noch nicht gebaut", html)
+        self.assertIn("vergleichbare Monate", html)
+        self.assertIn(str(facts.MIN_HISTORY_MONTHS), html)
+        self.assertIn("Die zwei monatlichen Kennzahlen", html)
 
 
 if __name__ == "__main__":

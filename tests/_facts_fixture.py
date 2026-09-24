@@ -11,10 +11,14 @@ Each spec is a dict:
                    seeded so the max is a choice, not the only row
   speaker          display name of the longest speech's MP (default
                    "Ada Lovelace"); party via ``party`` (default "SPD")
-  items            optional list of {"heading":..., "proceeding_title":...},
-                   one agenda item each (default a single item with neither, so
-                   a card carries no topic clause unless the spec asks for one);
-                   a speech or vote names its item by index
+  items            optional list of {"heading":..., "proceeding_title":...,
+                   "proceeding_id":..., "proceeding_type":...}, one agenda
+                   item each (default a single item with neither, so a card
+                   carries no topic clause unless the spec asks for one); a
+                   speech or vote names its item by index. proceeding_id lets
+                   two items (even in different protocols/months) name the
+                   same Vorgang, default unique per item; proceeding_type
+                   defaults to "Gesetzgebung"
   speeches         optional explicit list replacing the two default speeches.
                    An entry is (char_count, speaker_or_None, rede_id_or_None)
                    or a dict with those keys plus "item"; a None speaker seeds
@@ -176,22 +180,29 @@ def seed_weeks(
                     agenda_item_id = cursor.lastrowid
                     agenda_item_ids.append(agenda_item_id)
                     if item.get("proceeding_title"):
-                        proceeding_id = f"{protocol_id}-v{item_index}"
+                        # "proceeding_id" lets two items in different protocols
+                        # (even different months) name the same Vorgang, the
+                        # way meistdiskutierter-vorgang sums a proceeding's
+                        # speeches across every protocol it recurs in that
+                        # month; the default is unique per item, as before.
+                        proceeding_id = item.get("proceeding_id") or f"{protocol_id}-v{item_index}"
+                        proceeding_type = item.get("proceeding_type", "Gesetzgebung")
                         conn.execute(
-                            "INSERT INTO proceedings(id, title, proceeding_type, created_at, updated_at) "
+                            "INSERT OR IGNORE INTO proceedings(id, title, proceeding_type, created_at, updated_at) "
                             "VALUES (?, ?, ?, ?, ?)",
-                            (proceeding_id, item["proceeding_title"], "Gesetzgebung", now, now),
+                            (proceeding_id, item["proceeding_title"], proceeding_type, now, now),
                         )
                         conn.execute(
                             """
                             INSERT INTO proceeding_positions(id, proceeding_id, agenda_item_id,
                                                              proceeding_type, title, created_at, updated_at)
-                            VALUES (?, ?, ?, 'Gesetzgebung', ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 str(900000 + index * 100 + item_index),
                                 proceeding_id,
                                 agenda_item_id,
+                                proceeding_type,
                                 item["proceeding_title"],
                                 now,
                                 now,
