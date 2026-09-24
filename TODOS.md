@@ -26,6 +26,8 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Context:** Needs a stable state vocabulary per component (`complete`, `partial`, `failed`, `not_requested` already exist for votes in `scripts/features/votes.py`). Natural B / Daten-pilot item.
 
+**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Still P3/deferred per the original D10 call - flagging the repro here in case it changes the priority math.
+
 **Effort:** M
 **Priority:** P3
 **Depends on:** None (A1 works without it)
@@ -232,55 +234,27 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 ## Fakten
 
-Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; the items below are the full implementation that A is the test for. They are deliberately not discarded.
+Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
 
-### Fakt der Woche, A0: read-only replay and sample cards (the test run)
+### Fakt der Woche, rasterize and post one card
 
-**What:** `scripts/facts.py` with the metric registry (`laengste-rede`, `knappste-abstimmung`; `depends_on`, `tie_rank`, `min_history_weeks = 8`), the rule as pure functions (sitting weeks with Wahlperiode from `protocols.document_number`, one observation per metric per complete week, percentile = strictly-beaten prior weekly observations in the metric's direction, same-WP baseline with all-coverage fallback, `tie_rank` on metric ties), receipts keyed by `(document_number, rede_id)` or the page anchor for synthetic ids, and a `--replay N --cards DIR` entry point that opens the store read-only, derives per-week completeness from the cached `data/plenarprotokoll-*.json`, prints the 30-week table with `week_n` and the pass metrics, and writes sample SVG cards (textwrap, ≤3 lines, system font stack). No writes, no pages, no export. Done when the replay runs on the real store and the five pass criteria are filled in the design doc addendum: no speaker on > 5 of 30 cards; each eligible metric wins ≥ 6 of 30; ≤ ⅓ of winners change between `wp` and `all` baselines; winners-vs-`week_n` reported; ≥ 6 of the 10 most recent sample cards rated "would post".
+**What:** Open a published Fakt der Woche card, rasterise it with `qlmanage` (or equivalent), and post it. The one A1 "done when" criterion that isn't code - split out on its own so it doesn't keep a fully-shipped engineering item sitting open.
 
-**Why:** Office hours (2026-09-19) chose the surprise rule; the eng review's outside voice showed the original acceptance test was vacuous and that building persistence and pages before the experiment contradicts "replay first". A0 answers "are these cards worth posting?" for a day of work. Plan: `~/.gstack/projects/LucaAlv-poliwatch/fakt-der-woche-plan.md` (decisions D1–D19).
+**Why:** A1's design doc lists this as part of proving the cards are postable; intentionally not gated on the v0.6.0.0 ship (2026-09-24 ship decision D1: manual/promotional action, unrelated to code correctness).
 
-**Context:** Store measured 2026-09-19: 97 ISO sitting weeks, WP20 from protocol 20/14 (2022-01-27), WP21 from 21/1 (2025-03-25); closest vote 348:344 on 2025-01-29; longest speech 42,341 chars (2025-05-14). Card copy must name the population it was computed on ("… der wöchentlich knappsten Abstimmungen seit …") and say "seit Januar 2022" for the WP20 baseline, never "seit Beginn der 20. Wahlperiode". `mp_canonical` is NOT needed (MP links resolve via `mp_lookup` like recipes). Tests: `tests/_facts_fixture.py:seed_weeks()` parametric generator; `tests/test_facts.py`; real-store test `skipUnless` the `.context` store exists.
+**Effort:** S
+**Priority:** P3
+**Depends on:** A1 shipped (done)
 
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
+### Fakt der Woche, `changed_winners()` should detect same-value corrections
 
-### Fakt der Woche, A1: engine in the build, pages, Methodik, export
+**What:** `changed_winners()`/`_posted()` (facts.py) compare only `(rank, metric_id, value)` between builds to decide whether to print a "changed winner" line. A data correction that reattributes the winning speech/vote to a different source (a speech's `mp_id` fixed, a misjoined citation corrected) without changing the numeric value or rank is applied correctly - the whole snapshot is diffed and rewritten as one unit - but never appears in the build log. Extend the comparison key to include the position-0 receipt's stable identity (`entity_kind`, `document_number`, `rede_id` or `page`/`page_quadrant`), not just `(rank, metric_id, value)`.
 
-**What:** On top of A0 (A0 passed conditionally on 2026-09-22; the conditions are D20-D28 in the plan file): `compute_and_store` runs on every build right before `export_distribution_data` (`scripts/build_dip_pulse_site.py` ~8443), takes the completeness map from the in-memory `entries`, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs (single transaction; `fact_metrics.sql_sha256`; `--no-persist` never writes; `CREATE TABLE IF NOT EXISTS` in the engine), prints a changed-winners report, and aborts the build when a metric's SQL raises. **Publication floor: only facts at percentile >= 0,50 are posted (`facts.publishable`); every publishable fact of a period is posted, ranked by percentile (`facts.rank` replaces the unique `selected` flag), so a week yields zero, one or several cards.** Facts carry a period (`period_kind` 'week' or 'month', `period_key`). `speeches.fraktion` (TEXT, from the XML speaker's `fraktion` at persist) captions the card; R2 switches to it. Pages `fakt/index.html`, `fakt/<period_key>.html`, `fakt/<period_key>-<metric_id>.svg`, `fakt/methodik.html` (rule, N, the floor, tie order, every registry caveat, the "spätere Wochen ändern frühere Karten nicht; Datenkorrekturen können es" guarantee, the opportunity-count caveat, unbuilt metrics); `facts` component + nav "Fakten"; `_resolve_recipe_link` renamed `resolve_entity_link` and shared; `format_int`/`speaker_party` reused. Export: three new CSVs (19 total), `DATABASE_TABLE_DESCRIPTIONS`, `_TABLE_SOURCE_DERIVED`, `docs/data-license.md` line. Done when two consecutive builds on an unchanged store leave the store mtime unchanged and skip the export (regression test), cards are byte-identical under `SOURCE_DATE_EPOCH`, and one card has been rasterised with `qlmanage` and posted.
+**Why:** The Methodik page's guarantee ("Datenkorrekturen können [frühere Karten] ändern") implicitly promises this is visible in the build log; right now that class of correction is silent. Not a data-correctness bug - the site always shows current, correct data - only an observability gap. Found by the Step 11 adversarial review during the v0.6.0.0 ship (2026-09-24); deferred there as lower-severity than the other three findings from that pass (all fixed).
 
-**Why:** The facts table is the product (design premise 2); A1 is where it becomes a store table, a download and a page. Every rule above is a decision in the plan file, not a suggestion.
-
-**Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12, D20-D22).
-
-**Progress:** A1 step 1 (the three prerequisites) landed on branch `fakt-der-woche`, 2026-09-22: `parties.name` list-repr fix + migration, `speeches.fraktion`, `_resolve_recipe_link` → `resolve_entity_link`, `agenda_topic()`. Next: T5 (engine), T10 (four new metrics), T6 (pages), T11 (monthly period).
-
-**Effort:** L
-**Priority:** P1
-**Depends on:** A0 pass (done, conditional); `parties.name` fix (done); the boilerplate-title helper (done)
-
-### Fakt der Woche, four more weekly metrics
-
-**What:** `laengste-debatte` (max total `char_count` per agenda item, with topic), `laengste-sitzung` (max `sitzung_end - sitzung_start` from `xml_header_json`; 290 of 290 protocols carry both), `meiste-abweichler` (max members voting against their Fraktion's `leading_vote` in one vote; caveat "bei Gewissensfragen gibt es keine Fraktionslinie", Suizidhilfe = 179), `erste-reden` (MPs whose first observed speech falls in the week; caveat "in unserer Abdeckung seit Januar 2022"). Registry `tie_rank` order: knappste-abstimmung, meiste-abweichler, laengste-debatte, laengste-rede, laengste-sitzung, erste-reden.
-
-**Why:** Feedback 2026-09-22: "it actually would be nice to have some more diversity, not only longest speech per week or closest vote". Each was verified computable against the 2026-09-19 store before being written down. D23/D27 in the plan.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** A1 engine; `agenda_topic()` for laengste-debatte
-
-### Fakt der Woche, the monthly post
-
-**What:** A second period (`period_kind = 'month'`, `min_history_periods = 6`) with `aktivste-abgeordnete` (most speeches by one MP in the month; ties to most characters, then lowest `mps.id`; June 2026 = Alexander Dobrindt with 40) and `meistdiskutierter-vorgang` (most distinct speeches on one proceeding; June 2026 = 19 Reden on the Beitragssatz-Gesetz). A month is complete when every sitting week in it is complete for the metric's domain.
-
-**Why:** Feedback 2026-09-22 asked for a monthly post alongside the weekly one. "Least active politician of the month" was raised and dropped: it is the attendance ranking premise 4 rules out, and ministers, committee chairs and the Präsidium speak rarely by role (D26).
-
-**Context:** No `mps` rows share an `aw_politician_id` in the current store, so grouping speech counts by `mp_id` is safe today; re-check before shipping.
-
-**Effort:** M
+**Effort:** S
 **Priority:** P2
-**Depends on:** A1 engine
+**Depends on:** A1 shipped (done)
 
 ### Fakt der Woche, publication ledger (`facts_published`)
 
@@ -537,13 +511,37 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **What:** `agenda_topic(proceeding_title, heading)` and `strip_heading_boilerplate()` in `scripts/render_dip_pulse_html.py`: the DIP Vorgang title first, else the XML heading with its procedural opener stripped, else nothing.
 
-**Completed:** branch `fakt-der-woche` (2026-09-22), unreleased. Spot check: 29 of the last 30 sitting weeks' longest speeches carry a topic, 27 of them from the clean Vorgang title.
+**Completed:** v0.6.0.0 (2026-09-24). Spot check: 29 of the last 30 sitting weeks' longest speeches carry a topic, 27 of them from the clean Vorgang title.
 
 ### `parties.name` list-repr duplicates
 
 **What:** `persist_sampled_people` unwraps DIP's list-valued `person.fraktion` (`unwrap_dip_faction`), and `initialize()` migrates existing stores: duplicate `parties` rows merged, `mps`, `vote_fractions` and `vote_members` repointed.
 
-**Completed:** branch `fakt-der-woche` (2026-09-22), unreleased. On the 2026-09-19 store: 22 party rows → 15, no list reprs, no dangling `party_id`, vote counts unchanged. Residue tracked under Daten.
+**Completed:** v0.6.0.0 (2026-09-24). On the 2026-09-19 store: 22 party rows → 15, no list reprs, no dangling `party_id`, vote counts unchanged. Residue tracked under Daten.
+
+### Fakt der Woche, A0: read-only replay and sample cards (the test run)
+
+**What:** `scripts/facts.py` with the metric registry, the rule as pure functions, receipts, and a `--replay N --cards DIR` entry point. No writes, no pages, no export.
+
+**Completed:** v0.6.0.0 (2026-09-24), commit `7603e71`. Passed the five pass criteria in the design doc addendum (2026-09-20 result: Merz 6/30 failed criterion 1 on the first run, the rest passed; amendments folded into A1).
+
+### Fakt der Woche, A1: engine in the build, pages, Methodik, export
+
+**What:** `compute_and_store` runs on every build, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs, the publication floor gates which facts post, `fakt/index.html`/`<period_key>.html`/`<period_key>-<metric_id>.svg`/`methodik.html`, the `facts` component and nav entry, the Daten export's three new CSVs and derived-data documentation.
+
+**Completed:** v0.6.0.0 (2026-09-24), commits `decb17b`..`6449bcd`. Two of the three "done when" criteria verified (unchanged-store skip, byte-identical cards under rerun); the third (rasterise + post a card) split out below - not code, not gated on this ship.
+
+### Fakt der Woche, four more weekly metrics
+
+**What:** `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden` - the remaining four of the six weekly metrics.
+
+**Completed:** v0.6.0.0 (2026-09-24), commits `6aa9363`, `87cd883`.
+
+### Fakt der Woche, the monthly post
+
+**What:** A second period (`period_kind = 'month'`) with `aktivste-abgeordnete` and `meistdiskutierter-vorgang`.
+
+**Completed:** v0.6.0.0 (2026-09-24), commit `6449bcd`. Verified against the real store: June 2026 = Alexander Dobrindt (40 Reden), GKV-Beitragssatzstabilisierungsgesetz (19 Reden).
 
 ### Guard external payload links with shared source validation
 
