@@ -4,16 +4,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ## Daten
 
-### `parties.name` holds Python-list-repr duplicates of the same party
+### `parties.name` still holds two concatenated names and three Gruppe spellings
 
-**What:** On the real store, `parties` has both clean rows (`'AfD'`, `'CDU/CSU'`, `'BÜNDNIS 90/DIE GRÜNEN'`, `'SPD'`, `'Die Linke'`, `'fraktionslos'`) and nine duplicate rows whose `name` is a Python list repr of the same value (`"['AfD']"`, `"['CDU/CSU']"`, `"['BÜNDNIS 90/DIE GRÜNEN']"`, `"['SPD']"`, `"['DIE LINKE']"`, `"['fraktionslos']"`, `"['Die Linke (Gruppe)']"`, `"['FDP']"`, `"['BSW (Gruppe)']"`), plus two one-off rows `'SPDSPD'` and `'SPDCDU/CSU'`. Measured 2026-09-19: 909 `mps.party_id` foreign keys point at the list-repr rows (`['CDU/CSU']` 231, `['SPD']` 200, `['AfD']` 168, …); no `vote_members`/`vote_fractions` rows do.
+**What:** After the list-repr fix and migration (A1 step 1, 2026-09-22) the store has 15 `parties` rows, of which five are still not one Fraktion each: `'SPDSPD'` (1 MdB) and `'SPDCDU/CSU'` (1 MdB), and the pairs `'BSW (Gruppe)'` (10) / `'Gruppe BSW'` (10) / `'BSW'` (0) and `'Die Linke (Gruppe)'` (16) / `'Gruppe Die Linke'` (29). Decide the canonical spelling for the two Gruppen, add it to `normalize_faction` (`scripts/validate_dip_protocol.py:593`), and drop or split the two concatenated rows.
 
-**Why:** Found while building the Daten page's R1/R2/R3 recipes (`fraktion` column), which are the first place on the site to render `parties.name` verbatim rather than through a display helper. R2's "Redeanteil je Fraktion" percentages undercount a party split across a clean and a dirty row, and any future feature that trusts `parties.name` as a display string inherits the bug.
+**Why:** Same consequence as the list-repr bug the migration just fixed: anything grouping by `parties.name` — R2's "Redeanteil je Fraktion", the Fakten cards' Fraktion caption — splits one Fraktion across two rows. Left open deliberately when the migration landed, because neither residue comes from the list-repr bug and folding them in would have meant guessing.
 
-**Context:** Cause located (2026-09-19): `persist_sampled_people` in `scripts/persist_dip_pulse_store.py` (line ~517) does `clean(person.get("fraktion"))`, but DIP's `/person` records carry `fraktion` as a **list** (`["AfD"]`, visible in any cached `data/plenarprotokoll-*.json` under `sampled_people`), so `clean()` stores `str(["AfD"])`. Still in code, so the next online build re-creates the rows. `SPDSPD`/`SPDCDU/CSU` have one MP each and were created and last touched within minutes on 2026-06-22 (PR #25 development); no current code path concatenates names, so just fold them into the migration. Fix: take the first list element (or join) before `normalize_faction`, add a test with a list-valued `fraktion`, then a migration merging duplicate `parties` rows into the clean row and repointing `mps.party_id` (also `vote_fractions.party_id`/`vote_members.party_id` for safety). Note the store's max `updated_at` across all tables is 2026-06-22: no online build has written it since.
+**Context:** Causes established 2026-09-22, both different from the list-repr bug, which is why the migration does not touch them.
+- `'SPDSPD'`/`'SPDCDU/CSU'` come from the **source XML**: `21045.xml` carries `<redner id="11005217 999990074"><name><vorname>SvenjaSvenja</vorname><nachname>SchulzeSchulze</nachname><fraktion>SPDSPD</fraktion></name></redner>` in an `ivz-eintrag`, i.e. two TOC entries merged into one element by the Bundestag. Two speakers are affected, across twelve protocols: redner `11005217 999990074` ("SvenjaSvenja SchulzeSchulze", SPDSPD) in 21/18, 21/24, 21/25, 21/28, 21/44, 21/45, and redner `11005304` ("Dirk-UlrichAlexander Mende Föhr", SPDCDU/CSU) in 20/91, 20/94, 20/96, 20/103, 20/114, 20/116. The earlier note in this file ("no current code path concatenates names, so just fold them into the migration") was wrong. Fix belongs in `parse_redner` (`scripts/validate_dip_protocol.py:313`): detect a doubled `<redner id>` and either split it or drop the entry, then the parties rows disappear on the next rebuild.
+- The Gruppe spellings are two DIP surfaces disagreeing: `/person` returns `"Gruppe BSW"`/`"Gruppe Die Linke"` (via `ingest_mdb_roster`), the protocol's `sampled_people` return `"BSW (Gruppe)"`/`"Die Linke (Gruppe)"`, and `normalize_faction` has no rule for either. `'BSW'` (0 MdBs) is a third spelling with no rows behind it.
 
-**Effort:** M
-**Priority:** P1
+**Effort:** S
+**Priority:** P2
 **Depends on:** None
 
 ### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
@@ -23,6 +25,8 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Why:** The store cannot tell "no roll-call vote happened" from "votes were not fetched"; the state lives only in the report JSON. The facts engine (A1) gates week completeness from the in-memory `entries` and A0's replay re-derives the same map from the cached JSON, so two derivations of "complete" exist and can drift, and the download keeps a silent gap. Chosen at the eng review 2026-09-19 (D10: gate from entries now, schema later; D17: record).
 
 **Context:** Needs a stable state vocabulary per component (`complete`, `partial`, `failed`, `not_requested` already exist for votes in `scripts/features/votes.py`). Natural B / Daten-pilot item.
+
+**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Still P3/deferred per the original D10 call - flagging the repro here in case it changes the priority math.
 
 **Effort:** M
 **Priority:** P3
@@ -110,7 +114,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Why:** Real TOP headings are boilerplate-first ("Beratung des Antrags der Abgeordneten Nicole Höchst, Dr. Götz Frömming, Dr. M…", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Umwe…"). At the 78-char cut most rows in the Aufmerksamkeitsrang never reach the subject, so the ranking ranks things the reader cannot tell apart. This is also the prerequisite for any denser (one-line) row design, which two independent reviewers proposed on 2026-09-13 and which was rejected only because of this.
 
-**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. Options: strip a known prefix list ("Beratung des Antrags der Abgeordneten … ", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für …", "Erste/Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes …") and show the remainder, or prefer the linked Drucksache title when one exists. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
+**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. The stripper now exists: `strip_heading_boilerplate()` / `agenda_topic()` in `scripts/render_dip_pulse_html.py`, built for the Fakten cards on 2026-09-22 (six openers, strips 2.238 of the archive's 2.727 headings). What is left here is calling it from the `attention_rows` loop and keeping the full heading in the `title` attribute. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
 
 **Effort:** M
 **Priority:** P2
@@ -230,31 +234,17 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 ## Fakten
 
-Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; the items below are the full implementation that A is the test for. They are deliberately not discarded.
+Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
 
-### Fakt der Woche, A0: read-only replay and sample cards (the test run)
+### Fakt der Woche, rasterize and post one card
 
-**What:** `scripts/facts.py` with the metric registry (`laengste-rede`, `knappste-abstimmung`; `depends_on`, `tie_rank`, `min_history_weeks = 8`), the rule as pure functions (sitting weeks with Wahlperiode from `protocols.document_number`, one observation per metric per complete week, percentile = strictly-beaten prior weekly observations in the metric's direction, same-WP baseline with all-coverage fallback, `tie_rank` on metric ties), receipts keyed by `(document_number, rede_id)` or the page anchor for synthetic ids, and a `--replay N --cards DIR` entry point that opens the store read-only, derives per-week completeness from the cached `data/plenarprotokoll-*.json`, prints the 30-week table with `week_n` and the pass metrics, and writes sample SVG cards (textwrap, ≤3 lines, system font stack). No writes, no pages, no export. Done when the replay runs on the real store and the five pass criteria are filled in the design doc addendum: no speaker on > 5 of 30 cards; each eligible metric wins ≥ 6 of 30; ≤ ⅓ of winners change between `wp` and `all` baselines; winners-vs-`week_n` reported; ≥ 6 of the 10 most recent sample cards rated "would post".
+**What:** Open a published Fakt der Woche card, rasterise it with `qlmanage` (or equivalent), and post it. The one A1 "done when" criterion that isn't code - split out on its own so it doesn't keep a fully-shipped engineering item sitting open.
 
-**Why:** Office hours (2026-09-19) chose the surprise rule; the eng review's outside voice showed the original acceptance test was vacuous and that building persistence and pages before the experiment contradicts "replay first". A0 answers "are these cards worth posting?" for a day of work. Plan: `~/.gstack/projects/LucaAlv-poliwatch/fakt-der-woche-plan.md` (decisions D1–D19).
+**Why:** A1's design doc lists this as part of proving the cards are postable; intentionally not gated on the v0.6.0.0 ship (2026-09-24 ship decision D1: manual/promotional action, unrelated to code correctness).
 
-**Context:** Store measured 2026-09-19: 97 ISO sitting weeks, WP20 from protocol 20/14 (2022-01-27), WP21 from 21/1 (2025-03-25); closest vote 348:344 on 2025-01-29; longest speech 42,341 chars (2025-05-14). Card copy must name the population it was computed on ("… der wöchentlich knappsten Abstimmungen seit …") and say "seit Januar 2022" for the WP20 baseline, never "seit Beginn der 20. Wahlperiode". `mp_canonical` is NOT needed (MP links resolve via `mp_lookup` like recipes). Tests: `tests/_facts_fixture.py:seed_weeks()` parametric generator; `tests/test_facts.py`; real-store test `skipUnless` the `.context` store exists.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
-
-### Fakt der Woche, A1: engine in the build, pages, Methodik, export
-
-**What:** On top of A0 (only if A0 passes): `compute_and_store` runs on every build right before `export_distribution_data` (`scripts/build_dip_pulse_site.py` ~8443), takes the completeness map from the in-memory `entries`, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs (single transaction; `fact_metrics.sql_sha256`; `--no-persist` never writes; `CREATE TABLE IF NOT EXISTS` in the engine), prints a changed-winners report, and aborts the build when a metric's SQL raises. `speeches.fraktion` (TEXT, from the XML speaker's `fraktion` at persist) captions the card; R2 switches to it. Pages `fakt/index.html`, `fakt/<year>-W<ww>.html`, `fakt/<year>-W<ww>.svg`, `fakt/methodik.html` (rule, N, tie order, the "spätere Wochen ändern frühere Karten nicht; Datenkorrekturen können es" guarantee, the opportunity-count caveat, unbuilt metrics); `facts` component + nav "Fakten"; `_resolve_recipe_link` renamed `resolve_entity_link` and shared; `format_int`/`speaker_party` reused. Export: three new CSVs (19 total), `DATABASE_TABLE_DESCRIPTIONS`, `_TABLE_SOURCE_DERIVED`, `docs/data-license.md` line. Done when two consecutive builds on an unchanged store leave the store mtime unchanged and skip the export (regression test), cards are byte-identical under `SOURCE_DATE_EPOCH`, and one card has been rasterised with `qlmanage` and posted.
-
-**Why:** The facts table is the product (design premise 2); A1 is where it becomes a store table, a download and a page. Every rule above is a decision in the plan file, not a suggestion.
-
-**Context:** Online builds rebuild the store from scratch (`rebuild_database_from_entries` :716), so facts are recomputed then; the no-write rule matters for `--offline` UI rebuilds (E4.1 skip rule, `_source_sha256` ~1594). Store has no `wahlperiode` column: derive from `document_number`. Votes: week via `agenda_item_votes → agenda_items → protocols` (R4's join). Card layout rules and the honest-copy templates are in the plan (D7, D12).
-
-**Effort:** L
-**Priority:** P1
-**Depends on:** A0 pass; `parties.name` fix (Daten, P1)
+**Effort:** S
+**Priority:** P3
+**Depends on:** A1 shipped (done)
 
 ### Fakt der Woche, publication ledger (`facts_published`)
 
@@ -506,6 +496,42 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### `agenda_topic()`, the topic line for the Fakten cards
+
+**What:** `agenda_topic(proceeding_title, heading)` and `strip_heading_boilerplate()` in `scripts/render_dip_pulse_html.py`: the DIP Vorgang title first, else the XML heading with its procedural opener stripped, else nothing.
+
+**Completed:** v0.6.0.0 (2026-09-24). Spot check: 29 of the last 30 sitting weeks' longest speeches carry a topic, 27 of them from the clean Vorgang title.
+
+### `parties.name` list-repr duplicates
+
+**What:** `persist_sampled_people` unwraps DIP's list-valued `person.fraktion` (`unwrap_dip_faction`), and `initialize()` migrates existing stores: duplicate `parties` rows merged, `mps`, `vote_fractions` and `vote_members` repointed.
+
+**Completed:** v0.6.0.0 (2026-09-24). On the 2026-09-19 store: 22 party rows → 15, no list reprs, no dangling `party_id`, vote counts unchanged. Residue tracked under Daten.
+
+### Fakt der Woche, A0: read-only replay and sample cards (the test run)
+
+**What:** `scripts/facts.py` with the metric registry, the rule as pure functions, receipts, and a `--replay N --cards DIR` entry point. No writes, no pages, no export.
+
+**Completed:** v0.6.0.0 (2026-09-24), commit `7603e71`. Passed the five pass criteria in the design doc addendum (2026-09-20 result: Merz 6/30 failed criterion 1 on the first run, the rest passed; amendments folded into A1).
+
+### Fakt der Woche, A1: engine in the build, pages, Methodik, export
+
+**What:** `compute_and_store` runs on every build, snapshots `(fact_metrics, facts, fact_sources)` and writes only when the triple differs, the publication floor gates which facts post, `fakt/index.html`/`<period_key>.html`/`<period_key>-<metric_id>.svg`/`methodik.html`, the `facts` component and nav entry, the Daten export's three new CSVs and derived-data documentation.
+
+**Completed:** v0.6.0.0 (2026-09-24), commits `decb17b`..`6449bcd`. Two of the three "done when" criteria verified (unchanged-store skip, byte-identical cards under rerun); the third (rasterise + post a card) split out below - not code, not gated on this ship.
+
+### Fakt der Woche, four more weekly metrics
+
+**What:** `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden` - the remaining four of the six weekly metrics.
+
+**Completed:** v0.6.0.0 (2026-09-24), commits `6aa9363`, `87cd883`.
+
+### Fakt der Woche, the monthly post
+
+**What:** A second period (`period_kind = 'month'`) with `aktivste-abgeordnete` and `meistdiskutierter-vorgang`.
+
+**Completed:** v0.6.0.0 (2026-09-24), commit `6449bcd`. Verified against the real store: June 2026 = Alexander Dobrindt (40 Reden), GKV-Beitragssatzstabilisierungsgesetz (19 Reden).
 
 ### Guard external payload links with shared source validation
 

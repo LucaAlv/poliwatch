@@ -28,6 +28,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- validate_dip_protocol.py
     |-- render_dip_pulse_html.py
     |-- persist_dip_pulse_store.py
+    |-- facts.py
     |-- abgeordnetenwatch.py
     `-- features/
         |-- __init__.py
@@ -130,6 +131,7 @@ It creates these directories under the output directory:
 |   `-- exports/            # distribution SQLite + CSVs + datenstand.json, unless --no-persist
 |-- protocols/
 |-- bills/                  # always published; honest empty state without matching data
+|-- fakt/                   # "Fakt der Woche": index.html, methodik.html, <period_key>.html, <period_key>-<metric_id>.svg
 `-- abgeordnete/            # always published; observed MPs remain available without a full roster
 ```
 
@@ -149,9 +151,13 @@ Important generated files:
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
+| `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
+| `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
+| `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
+| `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 16 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 19 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -179,7 +185,7 @@ Shared schema-v2 trust boundary for acquisition facts, presentation-state deriva
 
 ## Fixed public presentation and enrichments
 
-Every ordinary static publication has six stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
+Every ordinary static publication has seven stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Fakten, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
 
 Votes, profile links, and the full roster have explicit acquisition states: `not_requested`, `complete`, `partial`, or `failed`. Renderers derive contextual public copy from those facts. A successful lookup with zero matching votes is therefore different from a build that never requested vote data. `data/features.json` aggregates those facts and `sources.html#datenstand` explains them.
 
@@ -247,6 +253,19 @@ python3 scripts/persist_dip_pulse_store.py .context/report.json \
 
 `build_dip_pulse_site.py` normally handles this automatically unless `--no-persist` is passed.
 
+### `scripts/facts.py`
+
+"Fakt der Woche": the metric registry (`laengste-rede`, `knappste-abstimmung`, `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden` per sitting week, plus `aktivste-abgeordnete` and `meistdiskutierter-vorgang` per month), the surprise rule as pure functions (percentile against a same-Wahlperiode baseline, falling back to all coverage below `min_history_weeks`), and the persistence engine. `compute_and_store()` runs on every build right before the Daten export, snapshots three tables — `fact_metrics`, `facts`, `fact_sources` — and writes only when they differ from what is already stored (`--no-persist` never writes). `build_dip_pulse_site.py` calls it, then `write_facts_pages()` renders `fakt/index.html`, `fakt/methodik.html`, and one `fakt/<period_key>.html` page plus one `fakt/<period_key>-<metric_id>.svg` card per publishable fact.
+
+It also has a standalone read-only replay for evaluating the rule against a live store without writing to it, publishing pages, or touching the export:
+
+```bash
+python3 scripts/facts.py --replay 30 --cards /tmp/fakt-cards \
+  --store .context/dip-pulse-site/data/bundestag-pulse.sqlite
+```
+
+`--replay N` prints the last N sitting weeks with `week_n` and the pass metrics; `--cards DIR` additionally writes sample SVG cards there.
+
 ### `scripts/abgeordnetenwatch.py`
 
 Profile resolver for linking Bundestag speakers and roll-call vote members to abgeordnetenwatch.de politician profiles. It first tries the exact Bundestagsverwaltung speaker id (`ext_id_bundestagsverwaltung`) when available, then falls back to name plus party disambiguation.
@@ -270,7 +289,7 @@ Product/design rationale. It explains the original thesis: a primary-source, rec
 
 ### `docs/designs/`
 
-Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe.
+Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe. `fakt-der-woche.md` records the Fakt der Woche pages the same way: the approaches considered, the A0 replay result against the real store, and the feedback that became the A1 spec.
 
 ### `.env.example` and `.env.local`
 
@@ -405,7 +424,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 16 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 19 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -583,8 +602,11 @@ When persistence is enabled, the build rewrites `data/bundestag-pulse.sqlite` fr
 - `vote_documents`
 - `vote_fractions`
 - `vote_members`
+- `fact_metrics`
+- `facts`
+- `fact_sources`
 
-The database is a graph-shaped local cache for connected views: protocols link to agenda items, agenda items link to speeches/documents/votes, votes link to fractions and individual MPs.
+The database is a graph-shaped local cache for connected views: protocols link to agenda items, agenda items link to speeches/documents/votes, votes link to fractions and individual MPs. The three `fact_*` tables are the exception: they are derived by `scripts/facts.py` from the tables above rather than persisted from a DIP/Bundestag/abgeordnetenwatch source (see `docs/data-license.md`).
 
 ## Common Troubleshooting
 

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0.0] - 2026-09-24
+
+### Added
+
+- A new "Fakt der Woche" page series shows one standout, statistically unusual fact per sitting week (and, monthly, per calendar month): the closest vote, the most rebel votes against a Fraktion's line, the longest debate and longest single speech, the longest sitting, the most first-time speeches, the most active MP of the month and the month's most-discussed legislative matter. Every card names its comparison population and links straight back to the protocol, speech, vote or bill it cites; a Methodik page explains the rule and why some weeks post no fact at all (the numbers only qualify once they're unusual enough, not merely "the most" of a slow week). A new "Fakten" entry joins the site's main navigation.
+- Each fact ships as a downloadable, shareable image card alongside its page — the longest-speech card now also names the debate's topic, not just who spoke.
+- The Daten export documents the three new fact tables and the speech-time Fraktion column as derived/DIP-sourced data respectively, so a downloaded copy of the database is self-explanatory about where every column comes from.
+
+### Changed
+
+- The "Redeanteil nach Fraktion" export recipe now groups speeches by the Fraktion the speaker belonged to at the time of the speech, not their current party — a member who has since switched or left a Fraktion no longer retroactively changes an earlier week's speech-share numbers.
+- Building the Fakt der Woche pages resolves each fact's source citation once per build instead of twice, and stops re-scanning the whole debate-topic table once per citation — the archive keeps rebuilding at the same speed as it grows week over week.
+
+### Fixed
+
+- Merging a duplicate party record (the historical "list-repr" party-name bug) now recomputes which side of a vote was the majority from the merged tallies, instead of leaving a stale majority that could misclassify who voted with or against their Fraktion.
+- A citation whose page reference has no quadrant marker — a normal, common case in the protocol XML — now resolves correctly instead of being wrongly treated as an unrecoverable source.
+- A sitting week with genuinely zero first-time speeches now counts correctly toward the "most first-time speeches" metric's history, instead of being silently dropped and skewing how surprising later weeks' counts look.
+- Building the site with `--no-persist`, or before the Fakt der Woche data has ever been generated, no longer deletes a previous real build's published fact pages and cards, or overwrites the fact archive with a false "nothing published yet" message.
+
 ## [0.5.0.0] - 2026-09-19
 
 ### Added

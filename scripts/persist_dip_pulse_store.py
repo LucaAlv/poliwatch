@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import normalize_faction
+from validate_dip_protocol import leading_vote, normalize_faction
 
 
 SCHEMA_VERSION = 1
@@ -190,6 +191,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           text TEXT,
           paragraphs_json TEXT NOT NULL DEFAULT '[]',
           snippet TEXT,
+          fraktion TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(protocol_id, rede_id),
@@ -249,9 +251,12 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_positions_proceeding ON proceeding_positions(proceeding_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_mp ON vote_members(mp_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
+        CREATE INDEX IF NOT EXISTS idx_votes_detail_url ON votes(detail_url);
         """
     )
     _migrate_mps_columns(conn)
+    _migrate_speeches_columns(conn)
+    _migrate_party_names(conn)
     now = utc_now()
     conn.execute(
         """
@@ -277,11 +282,125 @@ _MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(mps)")}
-    for name, decl in _MPS_ADDED_COLUMNS:
+# The Fraktion the XML names for the speaker of this Rede, added with the Fakten
+# cards (plan D13): it is the affiliation at the time of the speech, where
+# mps.party_id is the affiliation as of the last build.
+_SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("fraktion", "TEXT"),
+)
+
+
+def _migrate_added_columns(
+    conn: sqlite3.Connection, table: str, columns: tuple[tuple[str, str], ...]
+) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in columns:
         if name not in existing:
-            conn.execute(f"ALTER TABLE mps ADD COLUMN {name} {decl}")
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
+    _migrate_added_columns(conn, "mps", _MPS_ADDED_COLUMNS)
+
+
+def _migrate_speeches_columns(conn: sqlite3.Connection) -> None:
+    _migrate_added_columns(conn, "speeches", _SPEECHES_ADDED_COLUMNS)
+
+
+# Before the list-repr fix below, persist_sampled_people wrote DIP's list-valued
+# person.fraktion through str(), so the live store grew a second parties row per
+# Fraktion ("['CDU/CSU']" beside "CDU/CSU", 913 mps.party_id rows pointing at the
+# nine repr rows on the 2026-09-19 store). The names are merged back here rather
+# than at read time, because every consumer joins on parties.id.
+def _migrate_party_names(conn: sqlite3.Connection) -> None:
+    rows = [dict(row) for row in conn.execute("SELECT id, name FROM parties ORDER BY id")]
+    by_name = {row["name"]: row["id"] for row in rows}
+    plan = [
+        (row["id"], row["name"], clean_name)
+        for row in rows
+        for clean_name in [normalize_faction(unwrap_dip_faction(row["name"]))]
+        if clean_name and clean_name != row["name"]
+    ]
+    if not plan:
+        # The normal case on every build after the first: read only, no commit,
+        # so initialize() never disturbs a caller's own transaction.
+        return
+    for party_id, name, clean_name in plan:
+        keeper = by_name.get(clean_name)
+        if keeper is None or keeper == party_id:
+            conn.execute("UPDATE parties SET name = ? WHERE id = ?", (clean_name, party_id))
+            by_name.pop(name, None)
+            by_name[clean_name] = party_id
+            continue
+        _repoint_party(conn, party_id, keeper)
+        conn.execute("DELETE FROM parties WHERE id = ?", (party_id,))
+        by_name.pop(name, None)
+    conn.commit()
+
+
+def _repoint_party(conn: sqlite3.Connection, old_id: int, new_id: int) -> None:
+    """Move every reference off ``old_id`` so the duplicate row can be deleted."""
+    conn.execute("UPDATE mps SET party_id = ? WHERE party_id = ?", (new_id, old_id))
+    conn.execute("UPDATE vote_members SET party_id = ? WHERE party_id = ?", (new_id, old_id))
+    # vote_fractions is keyed (vote_id, party_id): a vote that already counted the
+    # clean Fraktion absorbs the duplicate's counts instead of colliding with it.
+    counts = ("yes_count", "no_count", "abstain_count", "absent_count", "total_count")
+    for duplicate in [
+        dict(row)
+        for row in conn.execute("SELECT * FROM vote_fractions WHERE party_id = ?", (old_id,))
+    ]:
+        existing = conn.execute(
+            "SELECT * FROM vote_fractions WHERE vote_id = ? AND party_id = ?",
+            (duplicate["vote_id"], new_id),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                "UPDATE vote_fractions SET party_id = ? WHERE vote_id = ? AND party_id = ?",
+                (new_id, duplicate["vote_id"], old_id),
+            )
+            continue
+        merged = [int(existing[name] or 0) + int(duplicate[name] or 0) for name in counts]
+        merged_by_name = dict(zip(counts, merged))
+        # The merge changes yes/no/abstain totals, so the majority direction
+        # must be recomputed from them - leaving the keeper row's old
+        # leading_vote would let a merge silently reverse which side of a
+        # vote counts as "with the Fraktion" for meiste-abweichler.
+        new_leading = leading_vote(
+            {
+                "yes": merged_by_name["yes_count"],
+                "no": merged_by_name["no_count"],
+                "abstain": merged_by_name["abstain_count"],
+            }
+        )
+        assignments = ", ".join(f"{name} = ?" for name in counts) + ", leading_vote = ?"
+        conn.execute(
+            f"UPDATE vote_fractions SET {assignments} WHERE vote_id = ? AND party_id = ?",
+            (*merged, new_leading, duplicate["vote_id"], new_id),
+        )
+        conn.execute(
+            "DELETE FROM vote_fractions WHERE vote_id = ? AND party_id = ?",
+            (duplicate["vote_id"], old_id),
+        )
+
+
+def unwrap_dip_faction(value: Any) -> str | None:
+    """DIP's person.fraktion is a list; take its first entry.
+
+    Accepts the live list (``["CDU/CSU"]``) and the repr an earlier build wrote
+    into the store (``"['CDU/CSU']"``). Anything else comes back unchanged.
+    """
+    if isinstance(value, (list, tuple)):
+        return next((clean(item) for item in value if clean(item)), None)
+    text = clean(value)
+    if not text or not (text.startswith("[") and text.endswith("]")):
+        return text
+    try:
+        parsed = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        return text
+    if isinstance(parsed, (list, tuple)):
+        return next((clean(item) for item in parsed if clean(item)), None) or text
+    return text
 
 
 def utc_now() -> str:
@@ -514,7 +633,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
     for person in report.get("sampled_people") or []:
-        fraktion = clean(person.get("fraktion"))
+        fraktion = unwrap_dip_faction(person.get("fraktion"))
         party_id = upsert_party(conn, normalize_faction(fraktion) if fraktion else None, now)
         display_name = clean(person.get("titel")) or clean(person.get("id")) or "Unbekannt"
         upsert_mp(
@@ -703,6 +822,17 @@ def persist_positions(
         )
 
 
+#: The separator between a synthetic rede_id's protocol_id and the rest.
+#: facts.is_synthetic_rede_id() checks for "<protocol_id>SYNTHETIC_REDE_ID_SEPARATOR"
+#: to recognize a row this module filled, so the two must stay in sync.
+SYNTHETIC_REDE_ID_SEPARATOR = ":"
+
+
+def synthetic_rede_id(protocol_id: Any, agenda_item_id: Any, sequence: Any) -> str:
+    """The rede_id persist_speeches fills when the XML carries no rede id."""
+    return f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}{agenda_item_id}:{sequence}"
+
+
 def persist_speeches(
     conn: sqlite3.Connection,
     protocol_id: str,
@@ -715,6 +845,11 @@ def persist_speeches(
         profile = speaker.get("abgeordnetenwatch") or {}
         party_name = speaker_party_name(speaker)
         party_id = upsert_party(conn, party_name, now)
+        # The Fraktion as the protocol states it for this Rede, normalised the same
+        # way parties.name is. NULL when the XML names none (a minister speaking in
+        # role); the reader then falls back to the MP's party.
+        raw_fraktion = clean(speaker.get("fraktion"))
+        speech_fraktion = normalize_faction(raw_fraktion) if raw_fraktion else None
         display_name = clean(speaker.get("display_name")) or "Unbekannt"
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         mp_id = upsert_mp(
@@ -737,14 +872,15 @@ def persist_speeches(
             """
             INSERT INTO speeches(
               protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
-              paragraph_count, char_count, text, paragraphs_json, snippet, created_at, updated_at
+              paragraph_count, char_count, text, paragraphs_json, snippet, fraktion,
+              created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 protocol_id,
                 agenda_item_id,
-                clean(speech.get("rede_id")) or f"{protocol_id}:{agenda_item_id}:{sequence}",
+                clean(speech.get("rede_id")) or synthetic_rede_id(protocol_id, agenda_item_id, sequence),
                 sequence,
                 mp_id,
                 page,
@@ -754,6 +890,7 @@ def persist_speeches(
                 clean(speech.get("text")),
                 dumps(speech.get("paragraphs") or []),
                 clean(speech.get("snippet")),
+                speech_fraktion,
                 now,
                 now,
             ),

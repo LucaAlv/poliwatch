@@ -27,6 +27,7 @@ from unittest import mock
 import _support  # noqa: F401
 import _daten_fixture
 import build_dip_pulse_site as b
+import facts
 import persist_dip_pulse_store as pulse_store
 
 
@@ -243,6 +244,41 @@ class RunDataPipelineTests(unittest.TestCase):
         self.assertEqual(data_base_url, "data/exports/")
         self.assertFalse(is_remote)
         self.assertTrue((self.output_dir / "data" / "exports" / "datenstand.json").exists())
+
+    def test_the_facts_engine_runs_before_the_export(self) -> None:
+        # D1A/D3A: the engine sits between the finalised store and the export,
+        # so the three tables are part of what the export copies and hashes.
+        self._run()
+        conn = pulse_store.connect(self.database_path)
+        try:
+            self.assertTrue(facts.tables_exist(conn))
+            self.assertEqual(
+                [metric["id"] for metric in facts.load_metrics(conn)],
+                [metric["id"] for metric in facts.ALL_REGISTRY],
+            )
+            self.assertTrue(facts.load_facts(conn))
+        finally:
+            conn.close()
+
+    def test_no_persist_leaves_the_store_without_facts_tables(self) -> None:
+        # D3A: --no-persist writes nothing; the pages render whatever the store
+        # already holds, which here is nothing.
+        b.run_data_pipeline(
+            args=_pipeline_args(no_persist=True),
+            output_dir=self.output_dir,
+            database_path=self.database_path,
+            entries=[],
+            protocols=[],
+            abg_mps=self.mps,
+            mp_lookup=self.lookup,
+            canonical_by_mp_id=self.canonical_by_mp_id,
+        )
+        conn = pulse_store.connect(self.database_path)
+        try:
+            self.assertFalse(facts.tables_exist(conn))
+            self.assertEqual(facts.load_facts(conn), [])
+        finally:
+            conn.close()
 
     def test_skips_export_when_no_persist_or_the_database_is_missing(self) -> None:
         missing_db = self.output_dir / "data" / "does-not-exist.sqlite"

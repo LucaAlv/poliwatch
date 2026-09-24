@@ -89,11 +89,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 #   pulse_store - SQLite schema, upserts and report persistence
 #   dip         - DIP API client and the protocol -> report extraction pipeline
 #   aw          - abgeordnetenwatch.de profile lookup and caching
+#   facts       - the Fakt der Woche metric registry, rule and storage engine
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
 import publication_state as publication
+import facts
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -129,6 +131,9 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
+    "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
+    "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
+    "fact_sources": "Belege je Fakt: Rede, Abstimmung, Sitzung oder Drucksache, aus denen der Wert stammt.",
 }
 
 ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
@@ -738,6 +743,26 @@ def rebuild_database_from_entries(
         finally:
             previous.close()
 
+    # The facts the previous store held, carried into the fresh one. The engine
+    # recomputes them right after this and overwrites them if anything moved -
+    # but without the carry-over an online build would have nothing to diff
+    # against, and the changed-winners report (D11) would never fire on the one
+    # build that actually runs in production. Read-only, so nothing is migrated
+    # in a store that is about to be replaced anyway.
+    facts_snapshot: dict[str, list[list[Any]]] | None = None
+    if database_path.exists():
+        try:
+            previous_facts = facts.open_readonly(database_path)
+            try:
+                facts_snapshot = facts.read_snapshot(previous_facts)
+            finally:
+                previous_facts.close()
+        except sqlite3.Error as exc:
+            # A store too damaged to read is about to be replaced anyway; the
+            # engine recomputes every fact right after this. Losing the
+            # carry-over costs one changed-winners report, not the build.
+            print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
+
     temp_path = database_path.with_name(f".{database_path.name}.tmp")
     if temp_path.exists():
         temp_path.unlink()
@@ -772,6 +797,8 @@ def rebuild_database_from_entries(
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
+        if facts_snapshot is not None:
+            facts.write_snapshot(store, facts_snapshot)
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -1359,7 +1386,10 @@ _COLUMN_SOURCE_DIP_ROSTER = {
     ("mps", "bundesland"),
 }
 _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_documents", "agenda_item_votes"}
-_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"}
+# The facts tables are computed by scripts/facts.py from the rest of the store,
+# so every one of their columns is "derived" - the fallback below would claim
+# DIP wrote them. Their captions for the Daten page are T7's.
+_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 
 def column_source(table: str, column: str) -> str:
@@ -1404,7 +1434,7 @@ PER_BUILD_KEYS: dict[str, tuple[str, ...]] = {
 #
 # Every "hidden" column is selected (it is the link key) but never rendered as
 # its own cell; the "link" on a visible column says which kind of link to try
-# resolving for that row (see _resolve_recipe_link). "truncate" caps a cell's
+# resolving for that row (see resolve_entity_link). "truncate" caps a cell's
 # visible text, keeping the full value in the HTML title attribute.
 RECIPES: tuple[dict[str, Any], ...] = (
     {
@@ -1435,13 +1465,13 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT p.name AS fraktion, COUNT(*) AS reden,\n"
+            "SELECT COALESCE(NULLIF(s.fraktion, ''), p.name) AS fraktion, COUNT(*) AS reden,\n"
             "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
-            "JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY p.id\n"
-            "ORDER BY reden DESC, p.name\n"
+            "LEFT JOIN parties p ON p.id = m.party_id\n"
+            "GROUP BY COALESCE(NULLIF(s.fraktion, ''), p.name)\n"
+            "ORDER BY reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
@@ -2196,9 +2226,7 @@ def format_datenstand_timestamp(generated_at: str) -> tuple[str, str]:
     return display, localized.isoformat()
 
 
-# Resolve one recipe row's link key into an href, or None when the target page
-# does not exist in this build (the row still renders, just as plain text).
-def _resolve_recipe_link(
+def resolve_entity_link(
     link_kind: str | None,
     value: Any,
     *,
@@ -2206,6 +2234,12 @@ def _resolve_recipe_link(
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str | None:
+    """Resolve an entity key into an href, or None when the target page does not
+    exist in this build (the caller still renders the row, just as plain text).
+
+    Shared by the recipe tables and the Fakten cards, which cite the same three
+    entity kinds ("mp", "document", "proceeding") from their own receipts.
+    """
     if value is None or link_kind is None:
         return None
     if link_kind == "mp":
@@ -2325,7 +2359,7 @@ def render_daten_recipes(
                 if link_column:
                     hidden_column = next((c for c in columns if c.get("hidden")), None)
                     key_value = row.get(hidden_column["name"]) if hidden_column else None
-                    link_href = _resolve_recipe_link(
+                    link_href = resolve_entity_link(
                         link_column.get("link"),
                         key_value,
                         mp_lookup=mp_lookup,
@@ -5895,6 +5929,872 @@ def write_abgeordnete_pages(
 
 
 # ---------------------------------------------------------------------------
+# PAGES: fakt/index.html, fakt/<period_key>.html, fakt/<period_key>-<metric>.svg,
+# fakt/methodik.html - "Fakt der Woche" (T6).
+#
+# scripts/facts.py computes and persists the rule (T5/T10) but keeps only
+# stable receipt keys, never a name (D2A/D14): a rebuilt store must not carry
+# a stale display name. This module reads the three tables back and resolves
+# every receipt to its row through a direct join - the join key the plan
+# measured for each of the five receipt kinds - then hands the rebuilt row to
+# the same card helpers (facts.card_title, facts.card_sentence, ...) the A0
+# replay already uses, so a published card and a sample card render
+# identically. The outbound page link (to an MP profile or a protocol page)
+# is a second, separate resolution: resolve_entity_link, shared with the
+# recipe tables (D6A).
+# ---------------------------------------------------------------------------
+
+FACTS_METRIC_LABELS = {
+    "knappste-abstimmung": "Abstimmung",
+    "meiste-abweichler": "Abweichler",
+    "laengste-debatte": "Debatte",
+    "laengste-rede": "Rede",
+    "laengste-sitzung": "Sitzung",
+    "erste-reden": "Erste Reden",
+    "aktivste-abgeordnete": "Aktivste Abgeordnete",
+    "meistdiskutierter-vorgang": "Meistdiskutierter Vorgang",
+}
+
+#: (plural noun, "this <period>" demonstrative phrase) per period_kind, for
+#: wording that must not assume every fact is a weekly one (T11). The
+#: demonstrative is its own phrase, not "diese/dieser" + noun, because German
+#: grammatical gender differs between "diese Sitzungswoche" (feminine) and
+#: "dieser Monat" (masculine).
+_PERIOD_NOUN = {
+    "week": ("Sitzungswochen", "Diese Sitzungswoche"),
+    "month": ("Monate", "Dieser Monat"),
+}
+
+
+def _facts_page_style() -> str:
+    return f"""
+    :root {{
+      --ink:#171a1f;
+      --muted:#606a78;
+      --line:#d9dee6;
+      --paper:#f7f8fa;
+      --panel:#ffffff;
+      --blue:#174ea6;
+      --blue-soft:#eef5ff;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--ink);
+      background:var(--paper);
+    }}
+    a {{ color:var(--blue); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+    .shell {{ max-width:1000px; margin:0 auto; padding:28px 22px; }}
+    {pulse_html.global_header_styles()}
+    h1 {{ margin:0 0 8px; font-size:32px; line-height:1.15; }}
+    h2 {{ font-size:20px; margin:34px 0 10px; }}
+    p.lead {{ color:var(--muted); max-width:72ch; }}
+    .eyebrow {{
+      display:block; font-size:12px; font-weight:700; letter-spacing:.04em;
+      text-transform:uppercase; color:var(--muted); margin-bottom:6px;
+    }}
+    .table-scroll {{ overflow-x:auto; margin-top:20px; }}
+    table.facts-archive {{ border-collapse:collapse; width:100%; font-size:14px; }}
+    table.facts-archive th, table.facts-archive td {{
+      padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap;
+    }}
+    table.facts-archive td.num, table.facts-archive th.num {{ text-align:right; }}
+    tr.archive-row.greyed td {{ color:var(--muted); }}
+    td.muted {{ color:var(--muted); }}
+    .fact-block {{ padding:22px 0; border-bottom:1px solid var(--line); }}
+    .fact-card {{ display:block; max-width:320px; height:auto; margin:0 0 14px; border:1px solid var(--line); border-radius:8px; }}
+    .fact-sentence {{ font-size:18px; max-width:60ch; }}
+    .caveat {{ color:var(--muted); font-size:13px; max-width:60ch; }}
+    .baseline {{ color:var(--muted); font-size:13px; }}
+    .sources ul, .series ol {{ margin:4px 0 0; padding-left:18px; font-size:13px; }}
+    .sources li, .series li {{ margin-bottom:2px; }}
+    .series li.current {{ font-weight:700; color:var(--ink); }}
+    details.recipe-sql {{ margin-top:10px; }}
+    details.recipe-sql pre {{
+      overflow-x:auto; background:var(--panel); border:1px solid var(--line);
+      border-radius:6px; padding:10px; font-size:12px;
+    }}
+    ul.method-list, ol.method-list {{ list-style:none; margin:0; padding:0; }}
+    ul.method-list li, ol.method-list li {{ padding:10px 0; border-bottom:1px solid var(--line); }}
+    ul.method-list strong, ol.method-list strong {{ display:block; margin-bottom:2px; }}
+    ul.method-list span, ol.method-list span {{ color:var(--muted); font-size:13px; }}
+    footer {{ margin-top:28px; color:var(--muted); font-size:12px; }}
+    """
+
+
+def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
+    """Materialize LEAD_POSITION_CTE/LEAD_PROCEEDING_CTE once per connection.
+
+    _fact_speech_citation/_fact_agenda_item_citation/_fact_proceeding_citation
+    are each called once per receipt (a monthly grouped_extreme fact can cite
+    dozens), and every call used to re-run the full proceeding_positions
+    scan+GROUP BY these compute, even though the result is the same for every
+    receipt in the build. ``CREATE TEMP TABLE IF NOT EXISTS`` makes repeat
+    calls on the same connection a no-op, so callers can call this freely.
+    """
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_topic AS\n"
+        + facts.LEAD_POSITION_CTE
+        + "SELECT agenda_item_id, title FROM lead_position"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lead_position_topic ON _lead_position_topic(agenda_item_id)"
+    )
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_proceeding AS\n"
+        + facts.LEAD_PROCEEDING_CTE
+        + "SELECT agenda_item_id, proceeding_id FROM lead_position"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lead_position_proceeding ON _lead_position_proceeding(agenda_item_id)"
+    )
+
+
+def _fact_speech_citation(
+    conn: sqlite3.Connection,
+    document_number: Any,
+    rede_id: Any,
+    page: Any,
+    page_quadrant: Any,
+) -> dict[str, Any] | None:
+    """Resolve a speech receipt to its row (D14: (document_number, rede_id), or
+    the page anchor (document_number, page, page_quadrant) for a synthetic id;
+    0 duplicates on either key, measured 2026-09-22)."""
+    if rede_id:
+        where, params = "p.document_number = ? AND s.rede_id = ?", (str(document_number), str(rede_id))
+    else:
+        # IS, not =: page_quadrant is NULL whenever the XML page reference
+        # carries neither a div nor a seitenbereich attribute (a legitimate,
+        # common case - validate_dip_protocol.py's quadrant extraction), and
+        # SQL "NULL = NULL" is never true, so "=" silently failed to resolve
+        # every citation with no quadrant.
+        where = "p.document_number = ? AND s.page = ? AND s.page_quadrant IS ?"
+        params = (str(document_number), page, page_quadrant)
+    row = conn.execute(
+        f"""
+        SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
+               COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,
+               m.xml_redner_id, m.aw_politician_id, m.dip_person_id,
+               ai.heading, lp.title AS proceeding_title, p.document_number
+        FROM speeches s
+        JOIN mps m ON m.id = s.mp_id
+        LEFT JOIN parties pa ON pa.id = m.party_id
+        JOIN protocols p ON p.id = s.protocol_id
+        LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+        LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = s.agenda_item_id
+        WHERE {where}
+        """,
+        params,
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fact_agenda_item_citation(
+    conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
+) -> dict[str, Any] | None:
+    """(document_number, page, page_quadrant) against page_start/page_start_quadrant
+    (0 duplicates, measured 2026-09-22)."""
+    row = conn.execute(
+        """
+        SELECT ai.id, ai.heading, lp.title AS proceeding_title, p.document_number
+        FROM agenda_items ai
+        JOIN protocols p ON p.id = ai.protocol_id
+        LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = ai.id
+        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
+        """,
+        (str(document_number), page, page_quadrant),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fact_proceeding_citation(
+    conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
+) -> dict[str, Any] | None:
+    """(document_number, page, page_quadrant) against the agenda item's
+    page_start, resolved through its lead position to the Vorgang
+    (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
+    row = conn.execute(
+        """
+        SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
+        FROM agenda_items ai
+        JOIN protocols p ON p.id = ai.protocol_id
+        JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
+        JOIN proceedings pr ON pr.id = lp.proceeding_id
+        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
+        """,
+        (str(document_number), page, page_quadrant),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fact_protocol_citation(conn: sqlite3.Connection, document_number: Any) -> dict[str, Any] | None:
+    """document_number, unique."""
+    row = conn.execute(
+        """
+        SELECT p.id, p.document_number, p.date,
+               json_extract(p.xml_header_json, '$.sitzung_start') AS sitzung_start,
+               json_extract(p.xml_header_json, '$.sitzung_end') AS sitzung_end
+        FROM protocols p WHERE p.document_number = ?
+        """,
+        (str(document_number),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fact_vote_citation(conn: sqlite3.Connection, official_url: Any) -> dict[str, Any] | None:
+    """official_url holds votes.detail_url: unique across every vote, never
+    empty. The receipt carries no vote id; detail_url is the join."""
+    if not official_url:
+        return None
+    row = conn.execute(
+        "SELECT v.id, v.title, v.date, v.yes_count, v.no_count FROM votes v WHERE v.detail_url = ?",
+        (str(official_url),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def resolve_fact_citation(
+    conn: sqlite3.Connection, metric: dict[str, Any], fact_row: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Rebuild the in-memory ``citation`` shape facts._citation() produces -
+    never persisted (D2A/D14) - from the fact's own receipts. None when a
+    receipt no longer resolves (a rebuilt store dropped the row), so the
+    caller renders an honest placeholder instead of crashing the build."""
+    receipts = sorted(fact_row.get("receipts") or [], key=lambda r: int(r["position"]))
+    subject = next((r for r in receipts if int(r["position"]) == 0), None)
+    if subject is None:
+        return None
+    kind = metric["receipt"]
+    if kind == "speech":
+        resolved = _fact_speech_citation(
+            conn, subject["document_number"], subject.get("rede_id"), subject.get("page"), subject.get("page_quadrant")
+        )
+        if resolved is None:
+            return None
+        return {
+            "id": resolved["id"],
+            "document_number": resolved["document_number"],
+            "rede_id": resolved["rede_id"],
+            "display_name": resolved["display_name"],
+            "fraktion": pulse_html.speaker_party({"fraktion": resolved["fraktion"]}),
+            "topic": pulse_html.agenda_topic(resolved["proceeding_title"], resolved["heading"]),
+            "speaker_mps": [resolved],
+        }
+    if kind == "speeches":
+        resolved_rows = [
+            row
+            for r in receipts
+            if (row := _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant")))
+            is not None
+        ]
+        if not resolved_rows:
+            return None
+        first = resolved_rows[0]
+        return {
+            "id": first["id"],
+            "document_number": first["document_number"],
+            "rede_id": first["rede_id"],
+            "display_name": first["display_name"],
+            "fraktion": pulse_html.speaker_party({"fraktion": first["fraktion"]}),
+            "topic": pulse_html.agenda_topic(first["proceeding_title"], first["heading"]),
+            "speakers": [str(row.get("display_name") or "Unbekannt") for row in resolved_rows],
+            "speaker_mps": resolved_rows,
+        }
+    if kind == "agenda_item":
+        resolved = _fact_agenda_item_citation(conn, subject["document_number"], subject.get("page"), subject.get("page_quadrant"))
+        if resolved is None:
+            return None
+        return {
+            "id": resolved["id"],
+            "document_number": resolved["document_number"],
+            "topic": pulse_html.agenda_topic(resolved["proceeding_title"], resolved["heading"]),
+            "heading": resolved["heading"],
+            "speech_count": int(fact_row.get("denominator") or 0),
+        }
+    if kind == "protocol":
+        resolved = _fact_protocol_citation(conn, subject["document_number"])
+        if resolved is None:
+            return None
+        return {
+            "id": resolved["id"],
+            "document_number": resolved["document_number"],
+            "date": resolved["date"],
+            "sitzung_start": resolved["sitzung_start"],
+            "sitzung_end": resolved["sitzung_end"],
+        }
+    if kind == "proceeding":
+        resolved_occurrences = [
+            row
+            for r in receipts
+            if (row := _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant")))
+            is not None
+        ]
+        if not resolved_occurrences:
+            return None
+        lead = resolved_occurrences[0]
+        return {
+            "id": lead["proceeding_id"],
+            "document_number": lead["document_number"],
+            "title": lead["title"],
+            "proceeding_type": lead["proceeding_type"],
+            "occurrences": len(resolved_occurrences),
+        }
+    if kind == "vote":
+        resolved = _fact_vote_citation(conn, subject.get("official_url"))
+        if resolved is None:
+            return None
+        return {
+            "id": resolved["id"],
+            "document_number": subject["document_number"],
+            "title": resolved["title"],
+            "date": resolved["date"],
+            "yes_count": int(resolved["yes_count"] or 0),
+            "no_count": int(resolved["no_count"] or 0),
+            "denominator": int(fact_row["denominator"]) if fact_row.get("denominator") is not None else None,
+        }
+    return None
+
+
+def _renderable_fact(conn: sqlite3.Connection, fact_row: dict[str, Any]) -> dict[str, Any] | None:
+    """A persisted ``facts`` row plus its resolved ``citation``, ready for
+    facts.headline/card_title/card_lead/render_card - or None when the
+    citation no longer resolves."""
+    metric = facts.REGISTRY_BY_ID.get(fact_row["metric_id"])
+    if metric is None:
+        return None
+    citation = resolve_fact_citation(conn, metric, fact_row)
+    if citation is None:
+        return None
+    row = dict(fact_row)
+    row["citation"] = citation
+    return row
+
+
+def _fact_status_text(row: dict[str, Any] | None) -> tuple[str, str | None, bool]:
+    """(cell text, in-page anchor or None, whether it is posted) for one
+    metric's cell in a period. None row: the metric was not built this
+    update (e.g. --enrich without votes)."""
+    if row is None:
+        return "–", None, False
+    if not row.get("complete"):
+        return "unvollständig erfasst", None, False
+    if row.get("publishable"):
+        return f"Platz {row['rank']}", row["metric_id"], True
+    return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
+
+
+def _series_value_text(metric: dict[str, Any], row: dict[str, Any]) -> str:
+    if not row.get("complete"):
+        return "unvollständig erfasst"
+    if row.get("value") is None:
+        return "–"
+    if metric["id"] == "knappste-abstimmung":
+        return f"{row['value'] * 100:.1f} %".replace(".", ",")
+    if metric["id"] == "laengste-sitzung":
+        minutes = int(row["value"])
+        return f"{minutes // 60} h {minutes % 60:02d} min"
+    return pulse_html.format_int(int(row["value"]))
+
+
+def _render_fact_series(
+    metric: dict[str, Any],
+    period_key: str,
+    series: list[dict[str, Any]],
+    series_index: dict[str, int],
+) -> str:
+    """The metric's own last periods, this one marked - every period already
+    has a row (publishable or not), so no extra query beyond what
+    write_facts_pages already loaded once for the whole build.
+
+    ``series_index`` is ``series``'s own ``{period_key: position}`` map,
+    built once per metric by ``_facts_group_by_metric`` - this renders once
+    per posted row per period, so re-scanning ``series`` here would cost
+    O(periods) per call instead of the O(1) lookup this uses.
+    """
+    cursor = series_index.get(period_key)
+    if cursor is None:
+        return ""
+    recent = series[max(0, cursor - 7) : cursor + 1]
+    items = []
+    for entry in recent:
+        current = ' class="current"' if entry["period_key"] == period_key else ""
+        items.append(
+            f"<li{current}>{pulse_html.esc(entry['period_key'])}: {pulse_html.esc(_series_value_text(metric, entry))}</li>"
+        )
+    return f'<div class="series"><span class="eyebrow">Verlauf</span><ol>{"".join(items)}</ol></div>'
+
+
+def _render_fact_sources(
+    row: dict[str, Any],
+    *,
+    mp_lookup: dict[str, int],
+    document_numbers: set[str],
+    bill_slugs: set[str],
+) -> str:
+    """The receipts as a linked list: the protocol they belong to
+    (resolve_entity_link, shared with the recipe tables - D6A), the speaker's
+    MP profile when the receipt names one, and any supporting Drucksache with
+    its own DIP link. Never the raw store id (D14)."""
+    citation = row["citation"]
+    speaker_mps = citation.get("speaker_mps") or []
+    receipts = sorted(row.get("receipts") or [], key=lambda r: int(r["position"]))
+    items: list[str] = []
+    for index, receipt in enumerate(receipts):
+        document_number = receipt.get("document_number")
+        if receipt["entity_kind"] == "document":
+            url = pulse_html.safe_href(receipt.get("official_url"))
+            label = f"Drucksache {document_number}"
+            items.append(
+                f'<li><a href="{pulse_html.esc(url)}">{pulse_html.esc(label)}</a></li>'
+                if url else f"<li>{pulse_html.esc(label)}</li>"
+            )
+            continue
+        href = resolve_entity_link(
+            "document", document_number, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs
+        )
+        protocol_text = f"Plenarprotokoll {document_number}"
+        bits = [
+            f'<a href="../{pulse_html.esc(href)}">{pulse_html.esc(protocol_text)}</a>' if href else pulse_html.esc(protocol_text)
+        ]
+        if receipt.get("page"):
+            bits.append(f"Seite {pulse_html.esc(receipt['page'])}{pulse_html.esc(receipt.get('page_quadrant') or '')}")
+        if receipt["entity_kind"] == "speech" and index < len(speaker_mps):
+            mp = speaker_mps[index]
+            mp_href = pulse_html.mp_page_href(
+                {
+                    "abgeordnetenwatch": {"id": mp.get("aw_politician_id")} if mp.get("aw_politician_id") else {},
+                    "xml_redner_id": mp.get("xml_redner_id"),
+                    "dip_person_id": mp.get("dip_person_id"),
+                },
+                mp_lookup,
+                prefix="../abgeordnete/",
+            )
+            name = mp.get("display_name") or "Unbekannt"
+            name_html = f'<a href="{pulse_html.esc(mp_href)}">{pulse_html.esc(name)}</a>' if mp_href else pulse_html.esc(name)
+            bits.insert(0, name_html)
+        if receipt["entity_kind"] == "vote":
+            vote_url = pulse_html.safe_href(receipt.get("official_url"))
+            if vote_url:
+                bits.append(f'<a href="{pulse_html.esc(vote_url)}">Abstimmungsdetails ↗</a>')
+        items.append(f"<li>{' · '.join(bits)}</li>")
+    if not items:
+        return ""
+    return f'<div class="sources"><span class="eyebrow">Quellen</span><ul>{"".join(items)}</ul></div>'
+
+
+def _render_fact_section(
+    row: dict[str, Any],
+    metric: dict[str, Any],
+    resolved: bool,
+    series: list[dict[str, Any]],
+    series_index: dict[str, int],
+    *,
+    mp_lookup: dict[str, int],
+    document_numbers: set[str],
+    bill_slugs: set[str],
+) -> str:
+    metric_id = metric["id"]
+    eyebrow = f"Platz {row['rank']} · {metric['title']}"
+    if not resolved:
+        return (
+            f'<section id="{pulse_html.esc(metric_id)}" class="fact-block">'
+            f'<span class="eyebrow">{pulse_html.esc(eyebrow)}</span>'
+            "<p>Die zitierte Quelle ist in diesem Build nicht mehr auffindbar.</p>"
+            "</section>"
+        )
+    caveat = facts.card_caveat(row)
+    caveat_html = f'<p class="caveat">{pulse_html.esc(caveat)}</p>' if caveat else ""
+    return f"""
+    <section id="{pulse_html.esc(metric_id)}" class="fact-block">
+      <span class="eyebrow">{pulse_html.esc(eyebrow)}</span>
+      <img class="fact-card" src="{pulse_html.esc(facts.card_filename(row))}" width="320" height="320"
+           alt="{pulse_html.esc(facts.card_title(row))}" loading="lazy">
+      <p class="fact-sentence">{pulse_html.esc(facts.card_sentence(row))}</p>
+      {caveat_html}
+      <p class="baseline">{pulse_html.esc(facts.baseline_comparison_line(row))}</p>
+      {_render_fact_sources(row, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs)}
+      {_render_fact_series(metric, row["period_key"], series, series_index)}
+      <details class="recipe-sql"><summary>SQL</summary><pre><code>{pulse_html.esc(metric["sql"])}</code></pre></details>
+    </section>
+    """
+
+
+def _render_facts_archive_table(
+    all_facts: list[dict[str, Any]], registry: tuple[dict[str, Any], ...], period_kind: str, period_header: str
+) -> str:
+    by_period: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in all_facts:
+        if row["period_kind"] != period_kind:
+            continue
+        by_period.setdefault(row["period_key"], {})[row["metric_id"]] = row
+    if not by_period:
+        return ""
+    rows_html = []
+    for period_key in sorted(by_period, reverse=True):
+        period_rows = by_period[period_key]
+        sample = next(iter(period_rows.values()))
+        period_text = (
+            pulse_html.week_label((sample["iso_year"], sample["iso_week"]))
+            if sample.get("iso_year") and sample.get("iso_week")
+            else period_key
+        )
+        cells = []
+        any_posted = False
+        for metric in registry:
+            text, anchor, posted = _fact_status_text(period_rows.get(metric["id"]))
+            any_posted = any_posted or posted
+            if posted:
+                cells.append(f'<td><a href="{pulse_html.esc(period_key)}.html#{pulse_html.esc(anchor)}">{pulse_html.esc(text)}</a></td>')
+            else:
+                cells.append(f'<td class="muted">{pulse_html.esc(text)}</td>')
+        row_class = "archive-row" if any_posted else "archive-row greyed"
+        rows_html.append(
+            f'<tr class="{row_class}"><td><a href="{pulse_html.esc(period_key)}.html">{pulse_html.esc(period_text)}</a></td>'
+            f'<td class="num">{pulse_html.esc(sample.get("wahlperiode"))}</td>{"".join(cells)}</tr>'
+        )
+    header_cells = "".join(f"<th>{pulse_html.esc(FACTS_METRIC_LABELS[metric['id']])}</th>" for metric in registry)
+    return (
+        f'<div class="table-scroll"><table class="facts-archive"><thead><tr><th>{pulse_html.esc(period_header)}</th>'
+        f'<th class="num">WP</th>{header_cells}</tr></thead>'
+        f'<tbody>{"".join(rows_html)}</tbody></table></div>'
+    )
+
+
+def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    weekly_table = _render_facts_archive_table(all_facts, facts.REGISTRY, "week", "Woche")
+    monthly_table = _render_facts_archive_table(all_facts, facts.MONTHLY_REGISTRY, "month", "Monat")
+    sections = []
+    if weekly_table:
+        sections.append(f"<section><h2>Wöchentlich</h2>{weekly_table}</section>")
+    if monthly_table:
+        sections.append(f"<section><h2>Monatlich</h2>{monthly_table}</section>")
+    body = "".join(sections) if sections else '<p class="lead">Noch keine Fakten veröffentlicht.</p>'
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Fakt der Woche</title>
+  {pulse_html.page_head(features)}
+  <style>{_facts_page_style()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    <header>
+      <h1>Fakt der Woche</h1>
+      <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Sitzungswoche und je Monat
+      - aus den Primärdaten dieser Seite, nicht redaktionell ausgewählt. <a href="methodik.html">Wie
+      das funktioniert</a>.</p>
+    </header>
+    {body}
+    <footer>Primärquellen: Bundestag-DIP und die XML-Plenarprotokolle. <a href="methodik.html">Methodik</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def render_facts_week(
+    period_key: str,
+    period_rows: list[dict[str, Any]],
+    metric_series: dict[str, list[dict[str, Any]]],
+    metric_series_index: dict[str, dict[str, int]],
+    resolved_by_id: dict[Any, dict[str, Any] | None],
+    *,
+    mp_lookup: dict[str, int],
+    document_numbers: set[str],
+    bill_slugs: set[str],
+    features: Selection | None = None,
+) -> str:
+    features = features or publication_selection()
+    sample = period_rows[0]
+    period_kind = sample["period_kind"]
+    plural, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
+    if period_kind == "month":
+        period_text = facts.month_display(period_key)
+    else:
+        period_text = (
+            pulse_html.week_label((sample["iso_year"], sample["iso_week"]))
+            if sample.get("iso_year") and sample.get("iso_week")
+            else period_key
+        )
+    period_registry = facts.MONTHLY_REGISTRY if period_kind == "month" else facts.REGISTRY
+    by_metric_id = {row["metric_id"]: row for row in period_rows}
+    posted = sorted((row for row in period_rows if row["publishable"]), key=lambda row: int(row["rank"]))
+    if posted:
+        sections = []
+        for row in posted:
+            metric = facts.REGISTRY_BY_ID[row["metric_id"]]
+            resolved = resolved_by_id.get(row["id"])
+            sections.append(
+                _render_fact_section(
+                    resolved or row,
+                    metric,
+                    resolved is not None,
+                    metric_series.get(row["metric_id"], []),
+                    metric_series_index.get(row["metric_id"], {}),
+                    mp_lookup=mp_lookup,
+                    document_numbers=document_numbers,
+                    bill_slugs=bill_slugs,
+                )
+            )
+        content = "".join(sections)
+    else:
+        floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
+        items = []
+        for metric in period_registry:
+            text, _, _ = _fact_status_text(by_metric_id.get(metric["id"]))
+            items.append(f"<li><strong>{pulse_html.esc(metric['title'])}</strong><span>{pulse_html.esc(text)}</span></li>")
+        content = (
+            f'<p class="lead">{pulse_html.esc(demonstrative)} hat keinen Fakt über die '
+            f"Veröffentlichungsschwelle ({pulse_html.esc(floor_pct)} %) gebracht.</p>"
+            f'<ul class="method-list">{"".join(items)}</ul>'
+        )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Fakt der Woche {pulse_html.esc(period_text)}</title>
+  {pulse_html.page_head(features)}
+  <style>{_facts_page_style()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    <header>
+      <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
+      <h1>{pulse_html.esc(period_text)}</h1>
+    </header>
+    {content}
+    <footer>
+      Spätere {pulse_html.esc(plural)} ändern diese Karten nicht; nur eine Korrektur an den Rohdaten kann es.
+      <a href="methodik.html">Methodik</a>
+    </footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_plural: str) -> str:
+    items = []
+    for metric in registry:
+        gates = [f"mindestens {metric['min_history_weeks']} vergleichbare {period_plural}"]
+        if metric.get("min_value") is not None:
+            gates.append(f"Wert mindestens {pulse_html.format_int(int(metric['min_value']))}")
+        if metric.get("requires_topic"):
+            gates.append("Thema muss bestimmbar sein")
+        caveat = f'<p class="caveat">{pulse_html.esc(metric["caveat"])}</p>' if metric.get("caveat") else ""
+        direction_text = "größter" if metric["direction"] == "max" else "kleinster"
+        per_period = "je Sitzungswoche" if period_plural == "Wochen" else "je Monat"
+        items.append(
+            f'<li id="metrik-{pulse_html.esc(metric["id"])}"><strong>{pulse_html.esc(metric["title"])}</strong>'
+            f'<span>{pulse_html.esc(metric["unit"])} · {direction_text} Wert {per_period} · '
+            f'Vergleichbarkeit: {pulse_html.esc(", ".join(gates))}</span>{caveat}</li>'
+        )
+    return "".join(items)
+
+
+def render_facts_methodik(features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen")
+    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate")
+    floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
+    min_abweichler = int(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"])
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Fakt der Woche: Methodik</title>
+  {pulse_html.page_head(features)}
+  <style>{_facts_page_style()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    <header>
+      <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
+      <h1>Wie „Fakt der Woche“ berechnet wird</h1>
+      <p class="lead">Jede Sitzungswoche liefert für sechs Kennzahlen, jeder Monat für zwei weitere,
+      höchstens einen Wert. Veröffentlicht wird eine Kennzahl nur, wenn sie ungewöhnlicher ist als
+      {pulse_html.esc(floor_pct)} % der vergleichbaren Perioden seit Beginn der Erfassung - und, bei
+      einigen Kennzahlen, eine zusätzliche absolute Schwelle erreicht.</p>
+    </header>
+    <section>
+      <h2>Die Regel</h2>
+      <ol class="method-list">
+        <li><strong>Beobachtung</strong><span>Je Periode (Sitzungswoche oder Monat) und Kennzahl
+        der größte oder kleinste Wert unter den Kandidatenzeilen dieser Periode, ihre Anzahl - bei
+        „Die meisten ersten Reden der Woche“ - oder, bei den beiden monatlichen Kennzahlen, die
+        größte Summe über alle Kandidatenzeilen einer Abgeordneten oder eines Vorgangs im Monat.
+        Eine Periode ohne passende Zeile liefert keine Beobachtung.</span></li>
+        <li><strong>Vergleichbarkeit</strong><span>Der Anteil der vorherigen Beobachtungen, den
+        der Wert in der Richtung der Kennzahl schlägt (mehr beim Maximum, weniger beim Minimum).
+        Verglichen wird zuerst mit der laufenden Wahlperiode, sobald sie genug frühere Perioden
+        zählt (mindestens {facts.MIN_HISTORY_WEEKS} Sitzungswochen bzw. mindestens
+        {facts.MIN_HISTORY_MONTHS} Monate), sonst mit der gesamten Erfassung; darunter gilt die
+        Periode als „noch nicht vergleichbar“.</span></li>
+        <li><strong>Veröffentlichungsschwelle</strong><span>Ab {pulse_html.esc(floor_pct)} % wird
+        eine Kennzahl veröffentlicht - ungewöhnlicher als die Hälfte der Vergleichsperioden. Jede
+        Kennzahl, die die Schwelle erreicht, bekommt eine Karte; eine Periode kann also mehrere
+        Fakten tragen oder keinen.</span></li>
+        <li><strong>Zusätzliche Schwellen</strong><span>„Die meisten Abweichler der Woche“
+        erscheint erst ab {pulse_html.format_int(min_abweichler)} Abweichlern, sonst ist der Wert
+        eine Anekdote, kein Fakt. „Die längste Debatte der Woche“ erscheint nur, wenn sich ihr
+        Thema bestimmen lässt - sonst würde die Karte nur sagen, dass irgendein
+        Tagesordnungspunkt lang war.</span></li>
+      </ol>
+    </section>
+    <section>
+      <h2>Die sechs wöchentlichen Kennzahlen</h2>
+      <ul class="method-list">{weekly_items}</ul>
+    </section>
+    <section>
+      <h2>Die zwei monatlichen Kennzahlen</h2>
+      <p class="lead">Dieselbe Regel, mit Monaten statt Sitzungswochen als Perioden: die Beobachtung
+      summiert dafür die Kandidatenzeilen einer Abgeordneten oder eines Vorgangs über alle Sitzungen
+      des Monats, statt die einzelne größte Zeile zu nehmen.</p>
+      <ul class="method-list">{monthly_items}</ul>
+    </section>
+    <section>
+      <h2>Was sich nicht ändert</h2>
+      <p>Spätere Sitzungswochen ändern frühere Karten nicht, und spätere Monate ändern ihre
+      Monatskarten ebenso wenig. Nur eine Korrektur an den zugrunde liegenden Daten kann eine
+      veröffentlichte Karte im Nachhinein verändern; das Build-Log verzeichnet jede solche
+      Änderung.</p>
+    </section>
+    <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def _facts_group_by_period(all_facts: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in all_facts:
+        grouped.setdefault((row["period_kind"], row["period_key"]), []).append(row)
+    return grouped
+
+
+def _facts_group_by_metric(
+    all_facts: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, int]]]:
+    """Each metric's own rows, oldest first, plus each row's position in that
+    list - built once per build so ``_render_fact_series`` (called once per
+    posted row per period) looks its period up instead of scanning."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in all_facts:
+        grouped.setdefault(row["metric_id"], []).append(row)
+    index = {
+        metric_id: {row["period_key"]: position for position, row in enumerate(rows)}
+        for metric_id, rows in grouped.items()
+    }
+    return grouped, index
+
+
+def write_facts_pages(
+    output_dir: Path,
+    database_path: Path,
+    no_persist: bool,
+    mp_lookup: dict[str, int] | None,
+    document_numbers: set[str],
+    bill_slugs: set[str],
+    features: Selection | None = None,
+) -> dict[str, Any]:
+    """fakt/index.html, fakt/<period_key>.html, fakt/<period_key>-<metric>.svg
+    and fakt/methodik.html. Reads the three tables scripts/facts.py persisted;
+    []/no rows when the store or its tables are missing (a fresh
+    --no-persist render - D3A), since facts.load_facts already returns []
+    rather than raising."""
+    features = features or publication_selection()
+    facts_dir = output_dir / "fakt"
+    facts_dir.mkdir(parents=True, exist_ok=True)
+    mp_lookup = mp_lookup or {}
+
+    all_facts: list[dict[str, Any]] = []
+    expected = {"index.html", "methodik.html"}
+    read_store = not no_persist and database_path.exists()
+    if read_store:
+        conn = facts.open_readonly(database_path)
+        try:
+            all_facts = facts.load_facts(conn)
+            by_period = _facts_group_by_period(all_facts)
+            by_metric, by_metric_index = _facts_group_by_metric(all_facts)
+            _ensure_lead_position_tables(conn)
+            # Resolved once here and reused for both the page's HTML section
+            # and its SVG card below - each was independently re-resolving
+            # the same citation (a full join per receipt) until this shared.
+            resolved_by_id = {
+                row["id"]: _renderable_fact(conn, row) for row in all_facts if row["publishable"]
+            }
+            for (period_kind, period_key), period_rows in by_period.items():
+                page_name = f"{period_key}.html"
+                expected.add(page_name)
+                (facts_dir / page_name).write_text(
+                    render_facts_week(
+                        period_key,
+                        period_rows,
+                        by_metric,
+                        by_metric_index,
+                        resolved_by_id,
+                        mp_lookup=mp_lookup,
+                        document_numbers=document_numbers,
+                        bill_slugs=bill_slugs,
+                        features=features,
+                    ),
+                    encoding="utf-8",
+                )
+                for row in period_rows:
+                    if not row["publishable"]:
+                        continue
+                    resolved = resolved_by_id.get(row["id"])
+                    if resolved is None:
+                        print(
+                            f"facts: {row['period_key']}-{row['metric_id']} Quelle nicht mehr auffindbar, Karte ausgelassen",
+                            file=sys.stderr,
+                        )
+                        continue
+                    svg_name = facts.card_filename(resolved)
+                    expected.add(svg_name)
+                    (facts_dir / svg_name).write_bytes(facts.render_card(resolved).encode("utf-8"))
+        finally:
+            conn.close()
+
+    # Only prune stale files when the store was actually read: `expected`
+    # otherwise never grows past the two static names, and this loop would
+    # delete every previously published page/card left over from a real
+    # build (a --no-persist dev render, or a build before the store exists,
+    # must never touch what an earlier build already published).
+    if read_store:
+        for stale in facts_dir.glob("*"):
+            if stale.name not in expected:
+                stale.unlink()
+
+    # Same reasoning as the stale-file guard above: a run that didn't read
+    # the store has nothing accurate to say about what's published, so it
+    # must not overwrite an already-accurate archive from a prior real
+    # build with a false "nothing published yet" - unless there is no prior
+    # archive to preserve (a fresh site's first page still needs one).
+    archive_path = facts_dir / "index.html"
+    if read_store or not archive_path.exists():
+        archive_path.write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
+    (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features), encoding="utf-8")
+    periods = {(row["period_kind"], row["period_key"]) for row in all_facts}
+    posted = sum(1 for row in all_facts if row["publishable"])
+    return {"periods": len(periods), "posted": posted, "index_path": facts_dir / "index.html"}
+
+
+# ---------------------------------------------------------------------------
 # PAGE: overview.html - "Plenarprotokoll-Katalog"
 #
 # The archive landing page: rich cards for the sittings that actually got a
@@ -7623,6 +8523,16 @@ def render_site(
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
 
+    # Every protocol document number this build actually produced a dossier
+    # for - the join key resolve_entity_link and the Fakt der Woche pages use
+    # to decide whether a "document" citation gets a link at all.
+    document_numbers = {
+        entry["report"]["protocol"].get("dokumentnummer")
+        for entry in entries
+        if entry.get("report") and entry["report"].get("protocol")
+    }
+    document_numbers.discard(None)
+
     previous_manifest = None
     previous_manifest_path = output_dir / "data" / "features.json"
     if previous_manifest_path.is_file():
@@ -7668,6 +8578,11 @@ def render_site(
         "collect_bill_pages": collect_bill_pages,
         "write_bill_pages": write_bill_pages,
         "write_abgeordnete_pages": write_abgeordnete_pages,
+        "write_facts_pages": write_facts_pages,
+        "database_path": database_path,
+        "no_persist": no_persist,
+        "document_numbers": document_numbers,
+        "bill_slugs": bill_slugs or set(),
     }
     # Visitor-facing areas are always present. They render honest empty states
     # when the corresponding enrichment data has not been acquired yet.
@@ -7689,6 +8604,11 @@ def render_site(
     print(
         f"abgeordnete: {abg_output['count']} gelistet, "
         f"{abg_output['detail_count']} Profilseiten",
+        file=sys.stderr,
+    )
+    facts_output = components["facts"].write_pages(output_dir, component_context)
+    print(
+        f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Sitzungswochen",
         file=sys.stderr,
     )
     # The core pages. Each render_* call below owns exactly one output file.
@@ -7751,12 +8671,6 @@ def render_site(
         encoding="utf-8",
     )
     if manifest is not None:
-        document_numbers = {
-            entry["report"]["protocol"].get("dokumentnummer")
-            for entry in entries
-            if entry.get("report") and entry["report"].get("protocol")
-        }
-        document_numbers.discard(None)
         database_page_path.write_text(
             render_database_page(
                 manifest,
@@ -8410,6 +9324,27 @@ def resolve_commit() -> str | None:
     return result.stdout.strip() or None
 
 
+# D1A/D3A: the Fakt der Woche engine sits between the finalised store and the
+# export. It runs on every build, online and --offline, computes every fact in
+# memory and writes the three tables only when they changed - so an --offline
+# rebuild of an unchanged store leaves the store's mtime alone and the export's
+# skip rule still holds. A metric whose SQL raises a FactsError aborts the
+# build naming the metric (FactsError is a RuntimeError, which main() reports).
+def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    store = pulse_store.connect(database_path)
+    try:
+        pulse_store.initialize(store)
+        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+        return facts.compute_and_store(
+            store,
+            facts.ALL_REGISTRY,
+            facts.completeness_from_entries(entries),
+            built=built,
+        )
+    finally:
+        store.close()
+
+
 # Runs the export step (unless --no-persist, or the store does not exist) and
 # resolves which manifest the Daten page renders from: the manifest this build
 # just wrote, or an explicit --data-manifest override (local file or, outside
@@ -8432,6 +9367,11 @@ def run_data_pipeline(
     bills = collect_bill_pages(entries)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
+
+    # Before the export, so the three facts tables are part of the store the
+    # export copies and hashes.
+    if not args.no_persist and database_path.exists():
+        run_facts_engine(database_path, entries)
 
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
@@ -8543,6 +9483,8 @@ def main() -> int:
         (output_dir / "bills").mkdir(parents=True, exist_ok=True)
     if "mp-pages" in features:
         (output_dir / "abgeordnete").mkdir(parents=True, exist_ok=True)
+    if "facts" in features:
+        (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
     # --- offline render ----------------------------------------------------

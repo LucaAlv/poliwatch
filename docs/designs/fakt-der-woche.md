@@ -323,15 +323,47 @@ differ, the plan wins. What changed, in one line each:
   eligible metric wins ≥ 6 of 30; ≤ ⅓ of winners change between `wp` and `all`; winners vs
   `week_n` reported; ≥ 6 of the 10 most recent sample cards rated "would post".
 
-### A0 result (fill in after the replay)
+### A0 result (replayed 2026-09-20, rated 2026-09-22)
+
+Replayed 2026-09-20 on the store built 2026-09-19 (protocols 20/14 to 21/94, 97 sitting
+weeks, 217 roll-call votes to 2026-06-12) with
+`python3 scripts/facts.py --replay 30 --cards /tmp/fakt-cards`; the 30 weeks are 2025-W13 to
+2026-W37 (all WP21). 2026-W28 and 2026-W37 are incomplete for votes (cached reports say
+`not_requested`), so only `laengste-rede` could win there.
 
 | Criterion | Value | Pass |
 |---|---|---|
-| max cards per speaker (≤ 5) | | |
-| wins per metric (≥ 6 each) | | |
-| winners changed wp→all (≤ ⅓) | | |
-| winners vs week_n (report) | | |
-| sample cards "would post" (≥ 6/10) | | |
+| max cards per speaker (≤ 5) | 6 (Friedrich Merz; next Lars Klingbeil 3, Stephan Brandner 2, Bernd Baumann 2, eight others 1) | fail (by one) |
+| wins per metric (≥ 6 each) | laengste-rede 21, knappste-abstimmung 9, no fact 0 | pass |
+| winners changed wp→all (≤ ⅓) | 1 of 30 (3 %) | pass |
+| winners vs week_n (report) | knappste-abstimmung: 19 weeks observed, Pearson(week_n, percentile) = +0.40, median week_n 2, won 5/9 above vs 4/10 at or below; laengste-rede: 30 weeks, Pearson = +0.35, median week_n 397, won 11/15 above vs 10/15 at or below | reported (busier weeks win somewhat more often) |
+| sample cards "would post" (≥ 6/10) | conditional pass, 2026-09-22: the cards are worth posting once three things change (no 0 % cards, the speech card names its topic, more than one fact per week). Not a numeric rating; the feedback is the A1 spec below. | pass (conditional) |
+
+### A0 feedback and what it changes (2026-09-22)
+
+The human read the 30-week replay and the sample cards. Five things came out of it; all are
+decided and written up as D20-D28 in the plan file, which A1 implements.
+
+1. **No more 0 % cards.** "I'd rather have no card than a confusing card like this"
+   (2025-W13, "länger als 0 % der wöchentlichen Spitzenreden"). A fact is now posted only at
+   percentile >= 0,50. Measured on the replay: that floor keeps 20 of 30 weeks, 25 % keeps 25,
+   75 % keeps 12.
+2. **The speech card names the topic.** The longest speech "feels a little bit random" without
+   it. Topic comes from the agenda item's proceeding title (22.910 of 35.239 speeches), else
+   the agenda heading with its boilerplate prefix stripped (32.252). The existing TODOS item
+   about boilerplate titles becomes a blocker for A1.
+3. **More than one fact per post, no cap.** Every fact above the floor is posted, ranked by
+   percentile; a quiet week posts nothing, a busy one posts several. `facts.rank` replaces the
+   unique `selected` flag.
+4. **Four more weekly metrics**, all verified computable on the 2026-09-19 store:
+   `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden`. Plus a monthly
+   period with `aktivste-abgeordnete` and `meistdiskutierter-vorgang`.
+5. **"Least active MP of the month" was raised and dropped**, because it is the attendance
+   ranking premise 4 rules out, and because ministers, committee chairs and the Präsidium speak
+   rarely by role. The monthly post carries the positive fact only.
+
+Criterion 1 (max cards per speaker) is waived: "I don't mind that there were too many facts
+about Friedrich Merz." The per-speaker cooldown stays unbuilt.
 
 ## What I noticed about how you think
 

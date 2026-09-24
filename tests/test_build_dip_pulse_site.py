@@ -17,6 +17,7 @@ from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site
+import facts
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as pulse_html
 from features import EnrichmentSelection, all_selection, default_selection
@@ -117,6 +118,94 @@ class CollectAbgeordneteTests(unittest.TestCase):
             conn = pulse_store.connect(database_path)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE is_mdb = 1").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_database_rebuild_carries_the_facts_tables_into_the_fresh_store(self) -> None:
+        # An online build replaces the store file (rebuild_database_from_entries
+        # writes a temp store and renames it over the old one). Without the
+        # carry-over the engine would have nothing to diff against on the one
+        # build that actually runs in production, and the changed-winners
+        # report (D11) would never fire. The engine overwrites these rows right
+        # afterwards if anything moved.
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                pulse_store.initialize(conn)
+                facts.write_snapshot(
+                    conn,
+                    {
+                        "fact_metrics": [facts.metric_row(facts.REGISTRY[0])],
+                        "facts": [
+                            facts._fact_values(
+                                {
+                                    "metric_id": facts.REGISTRY[0]["id"],
+                                    "metric_version": 1,
+                                    "period_kind": "week",
+                                    "period_key": "2026-W37",
+                                    "iso_year": 2026,
+                                    "iso_week": 37,
+                                    "wahlperiode": 21,
+                                    "complete": 1,
+                                    "week_n": 2,
+                                    "value": 0.01,
+                                    "eligible": 1,
+                                    "publishable": 1,
+                                    "rank": 1,
+                                }
+                            )
+                        ],
+                        "fact_sources": [
+                            ["week", "2026-W37", facts.REGISTRY[0]["id"],
+                             "vote", "21/94", None, None, None, "https://example.test/v", 0]
+                        ],
+                    },
+                )
+                before = facts.read_snapshot(conn)
+            finally:
+                conn.close()
+
+            build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertEqual(facts.read_snapshot(conn), before)
+                stored = facts.load_facts(conn)
+                self.assertEqual(len(stored), 1)
+                self.assertEqual(stored[0]["period_key"], "2026-W37")
+                self.assertEqual(
+                    [r["document_number"] for r in stored[0]["receipts"]], ["21/94"]
+                )
+            finally:
+                conn.close()
+
+    def test_rebuild_warns_and_continues_when_the_previous_stores_facts_are_unreadable(self) -> None:
+        # The except sqlite3.Error branch around the carry-over read (D1A):
+        # a store too damaged to read there is about to be replaced anyway,
+        # so the rebuild must still succeed, just without the carry-over
+        # (facts_snapshot stays None, nothing written for facts.* yet -- the
+        # engine that runs right after this recomputes them from scratch).
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                pulse_store.initialize(conn)
+            finally:
+                conn.close()
+
+            stderr = io.StringIO()
+            with mock.patch.object(
+                build_dip_pulse_site.facts,
+                "read_snapshot",
+                side_effect=build_dip_pulse_site.sqlite3.OperationalError("disk I/O error"),
+            ), mock.patch("sys.stderr", stderr):
+                build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+
+            self.assertIn("previous facts unreadable", stderr.getvalue())
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertFalse(facts.tables_exist(conn))
             finally:
                 conn.close()
 

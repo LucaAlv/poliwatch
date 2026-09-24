@@ -851,5 +851,107 @@ class DossierSourceLinkTests(unittest.TestCase):
         self.assertEqual(without, pulse_html.render_llm_summary(item, stats, {"enabled": True}, {}))
 
 
+class AgendaTopicTests(unittest.TestCase):
+    """agenda_topic() resolves an agenda item to a readable topic (plan D22)."""
+
+    # The four shapes an agenda item can have. Real rows from the store built
+    # 2026-09-19; the Haushaltsgesetz heading and its Vorgang title are the
+    # same item.
+    HAUSHALT_HEADING = (
+        "1 a) Erste Beratung des von der Bundesregierung eingebrachten Entwurfs "
+        "eines Gesetzes über die Feststellung des Bundeshaushaltsplans für das "
+        "Haushaltsjahr 2027 (Haushaltsgesetz 2027 - HG 2027)"
+    )
+
+    def test_a_proceeding_title_wins_over_the_heading(self) -> None:
+        self.assertEqual(
+            pulse_html.agenda_topic("Haushaltsgesetz 2027", self.HAUSHALT_HEADING),
+            "Haushaltsgesetz 2027",
+        )
+
+    def test_a_boilerplate_heading_loses_its_procedural_opener(self) -> None:
+        self.assertEqual(
+            pulse_html.agenda_topic(None, self.HAUSHALT_HEADING),
+            "Gesetz über die Feststellung des Bundeshaushaltsplans für das "
+            "Haushaltsjahr 2027 (Haushaltsgesetz 2027 - HG 2027)",
+        )
+        self.assertEqual(
+            pulse_html.agenda_topic(
+                "",
+                "Beratung des Antrags der Abgeordneten Schahina Gambir, Dr. Ophelia Nick, "
+                "weiterer Abgeordneter und der Fraktion BÜNDNIS 90/DIE GRÜNEN "
+                "Ernährungssouveränität herstellen",
+            ),
+            "Ernährungssouveränität herstellen",
+        )
+        self.assertEqual(
+            pulse_html.agenda_topic(
+                None,
+                "Aktuelle Stunde auf Verlangen der Fraktionen der CDU/CSU und SPD "
+                "Ungarn nach der Wahl – Neue Chance für Europa",
+            ),
+            "Ungarn nach der Wahl – Neue Chance für Europa",
+        )
+
+    def test_a_plain_heading_is_returned_unchanged(self) -> None:
+        self.assertEqual(pulse_html.agenda_topic(None, "Fragestunde"), "Fragestunde")
+        self.assertEqual(
+            pulse_html.agenda_topic(None, "  Befragung der\n Bundesregierung "),
+            "Befragung der Bundesregierung",
+        )
+
+    def test_neither_a_title_nor_a_heading_yields_no_topic(self) -> None:
+        self.assertIsNone(pulse_html.agenda_topic(None, None))
+        self.assertIsNone(pulse_html.agenda_topic("", "   "))
+
+    def test_the_gesetzentwurf_rule_restores_the_nominative(self) -> None:
+        cases = {
+            "Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines "
+            "Infrastruktur-Zukunftsgesetzes": "Infrastruktur-Zukunftsgesetz",
+            "14 a) – Zweite und dritte Beratung des von den Fraktionen SPD, "
+            "BÜNDNIS 90/DIE GRÜNEN und FDP eingebrachten Entwurfs eines "
+            "Steuerentlastungsgesetzes 2022": "Steuerentlastungsgesetz 2022",
+            "a) – Zweite und dritte Beratung des von der Bundesregierung eingebrachten "
+            "Entwurfs eines Dreizehnten Gesetzes zur Änderung des Zweiten Buches "
+            "Sozialgesetzbuch": "Dreizehntes Gesetz zur Änderung des Zweiten Buches Sozialgesetzbuch",
+        }
+        for heading, expected in cases.items():
+            with self.subTest(heading=heading[:40]):
+                self.assertEqual(pulse_html.strip_heading_boilerplate(heading), expected)
+
+    def test_committee_and_regierungserklaerung_openers_are_stripped(self) -> None:
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "Beratung der Beschlussempfehlung des Ausschusses für Wahlprüfung, Immunität "
+                "und Geschäftsordnung (1. Ausschuss) Antrag auf Genehmigung zur Durchführung "
+                "eines Strafverfahrens"
+            ),
+            "Antrag auf Genehmigung zur Durchführung eines Strafverfahrens",
+        )
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "Abgabe einer Regierungserklärung durch den Bundeskanzler: Zur Lage in der Ukraine"
+            ),
+            "Zur Lage in der Ukraine",
+        )
+
+    def test_the_beschlussempfehlung_zu_dem_antrag_opener_is_stripped(self) -> None:
+        # Distinct from the "(N. Ausschuss)" variant above: no parenthetical
+        # committee marker, the opener instead runs through "... zu dem
+        # Antrag der Fraktion X <Thema>".
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "Beratung der Beschlussempfehlung und des Berichts des Haushaltsausschusses "
+                "zu dem Antrag der Fraktion der AfD Rente mit 63 sofort abschaffen"
+            ),
+            "Rente mit 63 sofort abschaffen",
+        )
+
+    def test_an_unrecognised_opener_leaves_the_heading_intact(self) -> None:
+        heading = "hier: Einzelplan 30 Bundesministerium für Bildung und Forschung"
+        self.assertEqual(pulse_html.strip_heading_boilerplate(heading), heading)
+        self.assertEqual(pulse_html.strip_heading_boilerplate(""), "")
+
+
 if __name__ == "__main__":
     unittest.main()

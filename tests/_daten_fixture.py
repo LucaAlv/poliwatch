@@ -75,6 +75,19 @@ def seed_store(path: Path) -> dict[str, Any]:
                 profile_url="https://example.test/vera",
                 is_mdb=False,
             )
+            # A Fraktionswechsel: currently CDU/CSU (mps.party_id), but their
+            # seeded speech carries speeches.fraktion = 'SPD', the Fraktion the
+            # XML named for them at the time of that Rede. R2 must group the
+            # Rede under the speech-time value, not the current party (D18/T8).
+            switcher_mp = pulse_store.upsert_mp(
+                conn,
+                now=now,
+                display_name="Petra Wechsel, MdB, CDU/CSU",
+                party_id=party_cdu,
+                identity_key=pulse_store.mp_identity(dip_person_id="petra"),
+                dip_person_id="petra",
+                is_mdb=True,
+            )
 
             conn.execute(
                 """
@@ -111,29 +124,31 @@ def seed_store(path: Path) -> dict[str, Any]:
                 "SELECT id FROM agenda_items WHERE protocol_id = '5802'"
             ).fetchone()["id"]
 
-            # Six speeches: speaker_mp (2, one with a synthetic rede_id and a
-            # dash-leading snippet), other_mp (2), a NULL mp_id row, and one
-            # more on other_mp on the second sitting (for R5's sitzungen>1).
+            # Seven speeches: speaker_mp (2, one with a synthetic rede_id and a
+            # dash-leading snippet), other_mp (3, one more on the second
+            # sitting for R5's sitzungen>1), a NULL mp_id row, and switcher_mp
+            # (whose speeches.fraktion is 'SPD', not their current CDU/CSU).
             speech_rows = [
-                ("5801", agenda_item_1, "R1", 1, speaker_mp, 240, "Redetext eins"),
-                ("5801", agenda_item_1, None, 2, other_mp, 100, "-beginnt mit Bindestrich"),
-                ("5801", agenda_item_1, "R3", 3, None, 80, "Rede ohne Redner"),
-                ("5801", agenda_item_1, "R4", 4, other_mp, 150, "Redetext vier"),
-                ("5802", agenda_item_2, "R5", 1, speaker_mp, 90, "Redetext fünf"),
-                ("5802", agenda_item_2, "R6", 2, other_mp, 60, "Redetext sechs"),
+                ("5801", agenda_item_1, "R1", 1, speaker_mp, 240, "Redetext eins", None),
+                ("5801", agenda_item_1, None, 2, other_mp, 100, "-beginnt mit Bindestrich", None),
+                ("5801", agenda_item_1, "R3", 3, None, 80, "Rede ohne Redner", None),
+                ("5801", agenda_item_1, "R4", 4, other_mp, 150, "Redetext vier", None),
+                ("5802", agenda_item_2, "R5", 1, speaker_mp, 90, "Redetext fünf", None),
+                ("5802", agenda_item_2, "R6", 2, other_mp, 60, "Redetext sechs", None),
+                ("5802", agenda_item_2, "R7", 3, switcher_mp, 70, "Redetext sieben", "SPD"),
             ]
-            for index, (protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, snippet) in enumerate(
+            for index, (protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, snippet, fraktion) in enumerate(
                 speech_rows
             ):
-                resolved_rede_id = rede_id or f"{protocol_id}:{agenda_item_id}:{sequence}"
+                resolved_rede_id = rede_id or pulse_store.synthetic_rede_id(protocol_id, agenda_item_id, sequence)
                 conn.execute(
                     """
                     INSERT INTO speeches(
                       protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
-                      paragraph_count, char_count, text, paragraphs_json, snippet,
+                      paragraph_count, char_count, text, paragraphs_json, snippet, fraktion,
                       created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, '[]', ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, '[]', ?, ?, ?, ?)
                     """,
                     (
                         protocol_id,
@@ -145,6 +160,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                         char_count,
                         snippet,
                         snippet,
+                        fraktion,
                         now,
                         now,
                     ),
@@ -244,6 +260,7 @@ def seed_store(path: Path) -> dict[str, Any]:
         "speaker_mp": speaker_mp,
         "other_mp": other_mp,
         "vote_only_mp": vote_only_mp,
+        "switcher_mp": switcher_mp,
         "protocols": ["20/100", "20/101"],
         "proceeding_id": "vg-1",
         "vote_ids": ["v1", "v2"],
