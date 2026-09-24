@@ -406,6 +406,11 @@ def format_percent(value: float) -> str:
 
 def global_header_styles() -> str:
     return """
+    a:visited { color:var(--teal, #0f766e); }
+    a:focus-visible {
+      outline:2px solid var(--blue);
+      outline-offset:2px;
+    }
     :root[data-theme="dark"] {
       color-scheme:dark;
       --ink:#e6edf3;

@@ -8,6 +8,11 @@ import render_dip_pulse_html as pulse_html
 
 
 class GlobalHeaderTests(unittest.TestCase):
+    def test_shared_link_states_use_teal_and_visible_focus(self) -> None:
+        css = pulse_html.global_header_styles()
+        self.assertRegex(css, r"a:visited\s*\{\s*color:var\(--teal, #0f766e\);")
+        self.assertRegex(css, r"a:focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
+
     def test_depth_prefixes_every_href(self) -> None:
         root = pulse_html.render_global_header(active="pulse")
         nested = pulse_html.render_global_header(depth=1, active="bills")

@@ -2534,9 +2534,7 @@ def _daten_page_styles() -> str:
     }
     a { color:var(--blue); text-decoration:none; }
     a:hover { text-decoration:underline; }
-    a:visited { color:var(--blue); }
-    .recipe a:visited, .file a:visited { color:var(--teal); }
-    a:focus-visible, summary:focus-visible, .button:focus-visible {
+    summary:focus-visible, .button:focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
     }
