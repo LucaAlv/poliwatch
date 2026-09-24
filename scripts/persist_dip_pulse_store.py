@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import normalize_faction
+from validate_dip_protocol import leading_vote, normalize_faction
 
 
 SCHEMA_VERSION = 1
@@ -360,10 +360,22 @@ def _repoint_party(conn: sqlite3.Connection, old_id: int, new_id: int) -> None:
             )
             continue
         merged = [int(existing[name] or 0) + int(duplicate[name] or 0) for name in counts]
-        assignments = ", ".join(f"{name} = ?" for name in counts)
+        merged_by_name = dict(zip(counts, merged))
+        # The merge changes yes/no/abstain totals, so the majority direction
+        # must be recomputed from them - leaving the keeper row's old
+        # leading_vote would let a merge silently reverse which side of a
+        # vote counts as "with the Fraktion" for meiste-abweichler.
+        new_leading = leading_vote(
+            {
+                "yes": merged_by_name["yes_count"],
+                "no": merged_by_name["no_count"],
+                "abstain": merged_by_name["abstain_count"],
+            }
+        )
+        assignments = ", ".join(f"{name} = ?" for name in counts) + ", leading_vote = ?"
         conn.execute(
             f"UPDATE vote_fractions SET {assignments} WHERE vote_id = ? AND party_id = ?",
-            (*merged, duplicate["vote_id"], new_id),
+            (*merged, new_leading, duplicate["vote_id"], new_id),
         )
         conn.execute(
             "DELETE FROM vote_fractions WHERE vote_id = ? AND party_id = ?",

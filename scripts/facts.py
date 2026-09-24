@@ -782,10 +782,18 @@ def observe(metric: Mapping[str, Any], rows: Iterable[Mapping[str, Any]]) -> Obs
     *group* -- see ``_observe_grouped_extreme``.
     """
     candidates = [dict(row) for row in rows if row.get("value") is not None]
-    if not candidates:
-        return None
-    ordered = sorted(candidates, key=lambda row: _id_sort_key(row["id"]))
     aggregation = metric.get("aggregation")
+    if not candidates:
+        # A "count" metric's zero is a real observation (this period was
+        # fully queried and genuinely had none), not "unmeasured" - the
+        # caller's completeness check already gates whether the period's
+        # data was actually acquired. Every other aggregation has no
+        # meaningful zero (there is no candidate to be the extreme/group),
+        # so None ("unmeasured") is still correct there.
+        if aggregation != "count":
+            return None
+        return Observation(value=0.0, denominator=None, row={}, week_n=0, rows=())
+    ordered = sorted(candidates, key=lambda row: _id_sort_key(row["id"]))
     if aggregation == "count":
         return Observation(
             value=float(len(ordered)),
@@ -1140,8 +1148,8 @@ def _citation(metric: Mapping[str, Any], observation: Observation) -> dict[str, 
     """
     row = observation.row
     citation: dict[str, Any] = {
-        "id": row["id"],
-        "document_number": row["document_number"],
+        "id": row.get("id"),
+        "document_number": row.get("document_number"),
     }
     kind = metric["receipt"]
     if kind in ("speech", "speeches"):

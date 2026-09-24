@@ -639,9 +639,58 @@ class ErsteRedenTests(StoreCase):
             [("speech", "21/1", "IDW1", 0), ("speech", "21/1", "IDK1", 1)],
         )
         self.assertEqual(seeded["speech_ids"]["21/1"][0], first["citation"]["id"])
-        # Week 2 has no debutant: the second mps row is the same person.
-        self.assertIsNone(second["value"])
+        # Week 2 has no debutant: the second mps row is the same person. A
+        # fully-measured zero is a real observation (0 Erste Reden), not
+        # "unmeasured" - it must count toward the metric's history/baseline
+        # like any other week, or every later week's percentile is computed
+        # against a population missing its quiet weeks.
+        self.assertEqual(second["value"], 0.0)
         self.assertEqual(second["week_n"], 0)
+        # Not "no observation" (WITHHELD_NO_OBSERVATION) - it was measured,
+        # there just isn't 8 weeks of history yet to compare it against.
+        self.assertEqual(second["withheld"], facts.WITHHELD_NOT_COMPARABLE)
+        self.assertEqual(second["citation"]["speakers"], [])
+
+    def test_a_zero_debut_week_still_counts_toward_a_later_weeks_baseline(self) -> None:
+        # The adversarial-review repro: eight complete weeks with debutants,
+        # then a genuinely quiet week, then a ninth debut week. The quiet
+        # week must be present in history so baseline_count reaches 9 (not
+        # 8), and the ninth week's percentile is computed against a
+        # population that includes the zero.
+        weeks = [
+            {
+                "document_number": f"21/{i + 1}",
+                "date": facts.date.fromisocalendar(2025, 3 + i, 3).isoformat(),
+                "speeches": [(500, f"Debut{i}", f"ID{i}")],
+            }
+            for i in range(8)
+        ]
+        weeks.append(
+            {
+                "document_number": "21/9",
+                "date": facts.date.fromisocalendar(2025, 11, 3).isoformat(),
+                "speeches": [(500, "Debut0", "IDrepeat")],  # same speaker as week 0: no debut
+            }
+        )
+        weeks.append(
+            {
+                "document_number": "21/10",
+                "date": facts.date.fromisocalendar(2025, 12, 3).isoformat(),
+                "speeches": [(500, "DebutLast", "IDlast")],
+            }
+        )
+        self.seed(weeks)
+        rows = self.rows_for(self.compute(), ERSTE)
+        quiet, last = rows[8], rows[9]
+        self.assertEqual(quiet["value"], 0.0)
+        self.assertEqual(last["baseline_count"], 9)
+        self.assertEqual(last["value"], 1.0)
+        # 1 debut beats exactly 1 of the 9 priors (the quiet week's 0; the
+        # other eight are also 1, so not "beaten" on a strict >) -> 1/9. If
+        # the quiet week had been dropped from history instead (the bug),
+        # baseline_count would be 8 and percentile 0/8 = 0.0: a different,
+        # wrong number, not just a missing one.
+        self.assertEqual(last["percentile"], 1 / 9)
 
     def test_grouping_by_mps_id_would_double_count_the_split_person(self) -> None:
         self.seed_two_weeks()
@@ -1695,6 +1744,30 @@ class PageTests(StoreCase):
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn('<section id="laengste-debatte"', html)
         self.assertIn("Haushaltsbegleitgesetz 2027", html)
+
+    def test_a_receipt_with_no_page_quadrant_still_resolves(self) -> None:
+        # page_start_quadrant/page_quadrant is NULL whenever the XML page
+        # reference carries neither a div nor a seitenbereich attribute (a
+        # real, common case) - "= ?" against a NULL parameter is never true
+        # in SQL, so this receipt must not silently fail to resolve.
+        weeks = week_specs(9)
+        self.seed(weeks)
+        conn = self.writable()
+        conn.execute("UPDATE agenda_items SET page_start_quadrant = NULL")
+        conn.execute("UPDATE speeches SET page_quadrant = NULL")
+        conn.commit()
+        facts.compute_and_store(conn, facts.REGISTRY, self.seeded["completeness"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / "null-quadrant-site"
+        output_dir.mkdir()
+        document_numbers = {spec["document_number"] for spec in weeks}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="laengste-debatte"', html)
+        self.assertIn("Haushaltsbegleitgesetz 2027", html)
+        self.assertNotIn("nicht mehr auffindbar", html)
+        svgs = {path.name for path in (output_dir / "fakt").glob("2025-W11-*.svg")}
+        self.assertTrue(svgs, "expected at least one SVG card for the resolved facts")
 
     def test_protocol_receipt_resolves_by_document_number(self) -> None:
         specs = week_specs(9, sitzung=("09:00", "14:00"))

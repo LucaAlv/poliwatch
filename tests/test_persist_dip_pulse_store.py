@@ -228,6 +228,51 @@ class PartyMigrationTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_a_merge_that_flips_the_majority_recomputes_leading_vote(self) -> None:
+        # meiste-abweichler counts a member as a dissenter via
+        # vm.vote <> vf.leading_vote, so a merge that changes the majority
+        # without updating leading_vote would silently swap who counts as
+        # loyal vs. dissenting for every vote_member row already keyed to
+        # the surviving party.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                conn.execute(
+                    "INSERT INTO parties(name, created_at, updated_at) VALUES ('CDU/CSU', ?, ?)",
+                    (now, now),
+                )
+                canonical_id = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+                conn.execute(
+                    "INSERT INTO parties(name, created_at, updated_at) VALUES (\"['CDU/CSU']\", ?, ?)",
+                    (now, now),
+                )
+                duplicate_id = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+                conn.execute("INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now))
+                # Canonical row: a lone "yes" (leading_vote "yes"). Duplicate:
+                # ten "no" votes (leading_vote "no"). Merged majority is "no".
+                conn.execute(
+                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote) "
+                    "VALUES ('v1', ?, 1, 0, 1, 'yes')",
+                    (canonical_id,),
+                )
+                conn.execute(
+                    "INSERT INTO vote_fractions(vote_id, party_id, yes_count, no_count, total_count, leading_vote) "
+                    "VALUES ('v1', ?, 0, 10, 10, 'no')",
+                    (duplicate_id,),
+                )
+                conn.commit()
+
+                pulse_store.initialize(conn)
+
+                row = conn.execute(
+                    "SELECT yes_count, no_count, total_count, leading_vote FROM vote_fractions WHERE vote_id = 'v1'"
+                ).fetchone()
+                self.assertEqual(dict(row), {"yes_count": 1, "no_count": 10, "total_count": 11, "leading_vote": "no"})
+            finally:
+                conn.close()
+
 
 class SpeechFraktionTests(unittest.TestCase):
     def test_speeches_carry_the_fraktion_the_protocol_names(self) -> None:

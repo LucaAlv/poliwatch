@@ -6065,7 +6065,12 @@ def _fact_speech_citation(
     if rede_id:
         where, params = "p.document_number = ? AND s.rede_id = ?", (str(document_number), str(rede_id))
     else:
-        where = "p.document_number = ? AND s.page = ? AND s.page_quadrant = ?"
+        # IS, not =: page_quadrant is NULL whenever the XML page reference
+        # carries neither a div nor a seitenbereich attribute (a legitimate,
+        # common case - validate_dip_protocol.py's quadrant extraction), and
+        # SQL "NULL = NULL" is never true, so "=" silently failed to resolve
+        # every citation with no quadrant.
+        where = "p.document_number = ? AND s.page = ? AND s.page_quadrant IS ?"
         params = (str(document_number), page, page_quadrant)
     row = conn.execute(
         f"""
@@ -6097,7 +6102,7 @@ def _fact_agenda_item_citation(
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
         LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = ai.id
-        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant = ?
+        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,
         (str(document_number), page, page_quadrant),
     ).fetchone()
@@ -6117,7 +6122,7 @@ def _fact_proceeding_citation(
         JOIN protocols p ON p.id = ai.protocol_id
         JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
         JOIN proceedings pr ON pr.id = lp.proceeding_id
-        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant = ?
+        WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,
         (str(document_number), page, page_quadrant),
     ).fetchone()
