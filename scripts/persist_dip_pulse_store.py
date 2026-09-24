@@ -251,6 +251,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_positions_proceeding ON proceeding_positions(proceeding_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_mp ON vote_members(mp_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
+        CREATE INDEX IF NOT EXISTS idx_votes_detail_url ON votes(detail_url);
         """
     )
     _migrate_mps_columns(conn)
@@ -809,6 +810,17 @@ def persist_positions(
         )
 
 
+#: The separator between a synthetic rede_id's protocol_id and the rest.
+#: facts.is_synthetic_rede_id() checks for "<protocol_id>SYNTHETIC_REDE_ID_SEPARATOR"
+#: to recognize a row this module filled, so the two must stay in sync.
+SYNTHETIC_REDE_ID_SEPARATOR = ":"
+
+
+def synthetic_rede_id(protocol_id: Any, agenda_item_id: Any, sequence: Any) -> str:
+    """The rede_id persist_speeches fills when the XML carries no rede id."""
+    return f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}{agenda_item_id}:{sequence}"
+
+
 def persist_speeches(
     conn: sqlite3.Connection,
     protocol_id: str,
@@ -856,7 +868,7 @@ def persist_speeches(
             (
                 protocol_id,
                 agenda_item_id,
-                clean(speech.get("rede_id")) or f"{protocol_id}:{agenda_item_id}:{sequence}",
+                clean(speech.get("rede_id")) or synthetic_rede_id(protocol_id, agenda_item_id, sequence),
                 sequence,
                 mp_id,
                 page,

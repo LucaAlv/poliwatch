@@ -935,6 +935,18 @@ class AgendaTopicTests(unittest.TestCase):
             "Zur Lage in der Ukraine",
         )
 
+    def test_the_beschlussempfehlung_zu_dem_antrag_opener_is_stripped(self) -> None:
+        # Distinct from the "(N. Ausschuss)" variant above: no parenthetical
+        # committee marker, the opener instead runs through "... zu dem
+        # Antrag der Fraktion X <Thema>".
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "Beratung der Beschlussempfehlung und des Berichts des Haushaltsausschusses "
+                "zu dem Antrag der Fraktion der AfD Rente mit 63 sofort abschaffen"
+            ),
+            "Rente mit 63 sofort abschaffen",
+        )
+
     def test_an_unrecognised_opener_leaves_the_heading_intact(self) -> None:
         heading = "hier: Einzelplan 30 Bundesministerium für Bildung und Forschung"
         self.assertEqual(pulse_html.strip_heading_boilerplate(heading), heading)

@@ -12,6 +12,7 @@ import re
 import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -172,6 +173,52 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(facts.FactsError):
             facts.validate_registry(facts.REGISTRY + facts.MONTHLY_REGISTRY + ({**facts.MONTHLY_REGISTRY[0]},))
 
+    def test_a_metric_with_no_direction_is_rejected(self) -> None:
+        broken = tuple(
+            {**metric, "direction": "sideways"} if metric["id"] == LAENGSTE else metric
+            for metric in facts.REGISTRY
+        )
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.validate_registry(broken)
+        self.assertIn(LAENGSTE, str(ctx.exception))
+
+    def test_a_metric_with_no_aggregation_is_rejected(self) -> None:
+        broken = tuple(
+            {**metric, "aggregation": "median"} if metric["id"] == LAENGSTE else metric
+            for metric in facts.REGISTRY
+        )
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.validate_registry(broken)
+        self.assertIn(LAENGSTE, str(ctx.exception))
+
+    def test_a_metric_with_no_coverage_domain_is_rejected(self) -> None:
+        broken = tuple(
+            {**metric, "coverage": "debates"} if metric["id"] == LAENGSTE else metric
+            for metric in facts.REGISTRY
+        )
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.validate_registry(broken)
+        self.assertIn(LAENGSTE, str(ctx.exception))
+
+    def test_a_topic_requiring_metric_whose_receipt_names_no_agenda_item_is_rejected(self) -> None:
+        broken = tuple(
+            {**metric, "requires_topic": True, "receipt": "vote"} if metric["id"] == LAENGSTE else metric
+            for metric in facts.REGISTRY
+        )
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.validate_registry(broken)
+        self.assertIn(LAENGSTE, str(ctx.exception))
+
+
+class ReceiptsTests(unittest.TestCase):
+    def test_an_unknown_receipt_kind_is_rejected(self) -> None:
+        metric = {**facts.REGISTRY_BY_ID[LAENGSTE], "receipt": "bogus"}
+        observation = facts.Observation(value=1.0, denominator=None, row={"id": "1"}, week_n=1)
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.receipts(metric, observation)
+        self.assertIn(LAENGSTE, str(ctx.exception))
+        self.assertIn("bogus", str(ctx.exception))
+
 
 class SittingWeekTests(StoreCase):
     def test_wahlperiode_from_document_number(self) -> None:
@@ -317,6 +364,37 @@ class KnappsteAbstimmungTests(StoreCase):
         row = self.one(KNAPPSTE)
         self.assertEqual(row["week_n"], 1)
         self.assertAlmostEqual(row["value"], 100 / 500)
+
+    def test_receipts_cite_the_votes_documents_after_the_vote_itself_lowest_id_first(self) -> None:
+        # receipts() (kind "vote") appends every vote_documents row after the
+        # vote at position 0, ordered by documents.id -- never seeded by
+        # week_specs/_facts_fixture, so this is the only test that exercises
+        # facts.vote_documents() and the "document" branch of receipts() at all.
+        seeded = self.seed(
+            [{"document_number": "21/1", "date": "2025-03-25", "votes": [(251, 249, "knapp")]}]
+        )
+        vote_id = seeded["vote_ids"]["21/1"][0]
+        conn = self.writable()
+        conn.execute(
+            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
+            "VALUES (2, '21/500', 'https://www.bundestag.de/drucksache/500', 't', 't')"
+        )
+        conn.execute(
+            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
+            "VALUES (1, '21/499', 'https://www.bundestag.de/drucksache/499', 't', 't')"
+        )
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
+        conn.commit()
+        row = self.one(KNAPPSTE)
+        self.assertEqual(
+            [(r["entity_kind"], r["document_number"], r["official_url"], r["position"]) for r in row["receipts"]],
+            [
+                ("vote", "21/1", f"https://example.test/abstimmung/{vote_id}", 0),
+                ("document", "21/499", "https://www.bundestag.de/drucksache/499", 1),
+                ("document", "21/500", "https://www.bundestag.de/drucksache/500", 2),
+            ],
+        )
 
 
 class MeisteAbweichlerTests(StoreCase):
@@ -1303,6 +1381,35 @@ class EngineTests(StoreCase):
 # ---------------------------------------------------------------------------
 
 
+class UnknownMetricRejectionTests(unittest.TestCase):
+    """headline/card_title/card_lead each dispatch on metric_id with an
+    explicit branch per registered metric; a metric the registry knows but
+    none of the three has a branch for must fail loudly, not silently
+    fall through to a wrong-shaped string (M3)."""
+
+    def _row(self, **overrides):
+        row = {"metric_id": "nova-metric", "value": 7, "citation": {}}
+        row.update(overrides)
+        return row
+
+    def test_headline_rejects_an_unhandled_metric(self) -> None:
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.headline(self._row())
+        self.assertIn("nova-metric", str(ctx.exception))
+
+    def test_card_title_rejects_an_unhandled_metric(self) -> None:
+        with self.assertRaises(facts.FactsError) as ctx:
+            facts.card_title(self._row())
+        self.assertIn("nova-metric", str(ctx.exception))
+
+    def test_card_lead_rejects_a_registered_but_unhandled_metric(self) -> None:
+        nova = {**facts.REGISTRY_BY_ID[LAENGSTE], "id": "nova-metric", "title": "Nova"}
+        with unittest.mock.patch.dict(facts.REGISTRY_BY_ID, {"nova-metric": nova}):
+            with self.assertRaises(facts.FactsError) as ctx:
+                facts.card_lead(self._row())
+        self.assertIn("nova-metric", str(ctx.exception))
+
+
 class CardTests(StoreCase):
     LONG_TITLE = (
         "Entschließungsantrag der Fraktionen SPD, CDU/CSU und BÜNDNIS 90/DIE GRÜNEN zu der "
@@ -1499,6 +1606,27 @@ class ReplayTests(StoreCase):
         self.assertIn("Beitragssatz", june[VORGANG]["citation"]["title"])
 
 
+class MainTests(StoreCase):
+    def test_a_missing_store_exits_2_without_raising(self) -> None:
+        missing = self.path.parent / "does-not-exist.sqlite"
+        err = io.StringIO()
+        with unittest.mock.patch("sys.stderr", err):
+            code = facts.main(["--replay", "1", "--store", str(missing)])
+        self.assertEqual(code, 2)
+        self.assertIn("store not found", err.getvalue())
+
+    def test_a_factserror_from_replay_exits_1_without_raising(self) -> None:
+        self.seed(week_specs(1))
+        self.conn.close()
+        err = io.StringIO()
+        with unittest.mock.patch("sys.stderr", err), unittest.mock.patch.object(
+            facts, "replay", side_effect=facts.FactsError("facts: boom")
+        ):
+            code = facts.main(["--replay", "1", "--store", str(self.path)])
+        self.assertEqual(code, 1)
+        self.assertIn("boom", err.getvalue())
+
+
 # ---------------------------------------------------------------------------
 # T6: the pages (scripts/build_dip_pulse_site.py's write_facts_pages and its
 # render_facts_archive/render_facts_week/render_facts_methodik). The engine
@@ -1584,6 +1712,98 @@ class PageTests(StoreCase):
         self.assertIn('<section id="knappste-abstimmung"', html)
         self.assertIn("knapper als", html)
         self.assertIn(facts.REGISTRY_BY_ID[KNAPPSTE]["caveat"], html)
+
+    def test_a_leftover_file_from_an_earlier_build_is_removed(self) -> None:
+        # A card or page an earlier build wrote that this build no longer
+        # expects (a metric whose winner changed, a period that fell off the
+        # kept window) must not linger on disk forever.
+        weeks = week_specs(9)
+        seeded = self.seed(weeks)
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / "stale-site"
+        (output_dir / "fakt").mkdir(parents=True)
+        stale = output_dir / "fakt" / "2020-W01-knappste-abstimmung.svg"
+        stale.write_bytes(b"<svg/>")
+        document_numbers = {spec["document_number"] for spec in weeks}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        self.assertFalse(stale.exists())
+        self.assertTrue((output_dir / "fakt" / "index.html").exists())
+
+    def test_a_votes_supporting_drucksachen_render_linked_or_as_plain_text(self) -> None:
+        # _render_fact_sources' "document" branch (a vote's supporting
+        # Drucksachen, receipts position 1..n) -- never seeded by week_specs,
+        # so no other page test exercises it. One Drucksache on an allowlisted
+        # host renders as a link; one on a host safe_href refuses stays plain
+        # text, never a broken or unsafe href.
+        specs = week_specs(9)
+        specs[8]["closest"] = (250, 249)
+        seeded = self.seed(specs)
+        vote_id = seeded["vote_ids"]["21/9"][0]
+        conn = self.writable()
+        conn.execute(
+            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
+            "VALUES (1, '21/500', 'https://www.bundestag.de/drucksache/500', 't', 't')"
+        )
+        conn.execute(
+            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
+            "VALUES (2, '21/501', 'https://not-allowlisted.example/drucksache/501', 't', 't')"
+        )
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
+        conn.commit()
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / "drucksache-site"
+        output_dir.mkdir()
+        document_numbers = {spec["document_number"] for spec in specs}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn(
+            '<li><a href="https://www.bundestag.de/drucksache/500">Drucksache 21/500</a></li>', html
+        )
+        self.assertIn("<li>Drucksache 21/501</li>", html)
+        self.assertNotIn("not-allowlisted.example", html)
+
+    def test_a_fact_whose_citation_no_longer_resolves_renders_the_placeholder_and_skips_its_card(self) -> None:
+        # resolve_fact_citation returns None when a receipt no longer joins to
+        # a row -- the shape a rebuilt store's dropped row takes (D14 keeps
+        # only stable keys, never a name). The page must render an honest
+        # placeholder instead of crashing, and skip writing that one SVG.
+        seeded = self.seed(week_specs(9))
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        conn.execute("UPDATE speeches SET rede_id = 'GONE' WHERE protocol_id = 'p9' AND rede_id = 'ID900100'")
+        conn.commit()
+        conn.close()
+        output_dir = Path(self.tmp.name) / "stale-site"
+        output_dir.mkdir()
+        document_numbers = {spec["document_number"] for spec in week_specs(9)}
+        build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<section id="laengste-rede"', html)
+        self.assertIn("Die zitierte Quelle ist in diesem Build nicht mehr auffindbar.", html)
+        self.assertFalse((output_dir / "fakt" / "2025-W11-laengste-rede.svg").exists())
+        # A different metric's card on the same week still resolves fine.
+        self.assertTrue((output_dir / "fakt" / "2025-W11-laengste-debatte.svg").exists())
+
+    def test_the_series_shows_the_metrics_recent_periods_with_the_current_one_marked(self) -> None:
+        output_dir, _ = self.write_pages(week_specs(9))
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        section = re.search(r'<section id="laengste-rede".*?</section>', html, re.S).group(0)
+        series = re.search(r'<div class="series">.*?</div>', section, re.S).group(0)
+        self.assertIn('<span class="eyebrow">Verlauf</span>', series)
+        self.assertIn('<li class="current">2025-W11: ', series)
+        self.assertIn("2025-W04:", series)
+        # The window caps at 8 entries (max(0, cursor-7):cursor+1); the first
+        # week falls outside it.
+        self.assertNotIn("2025-W03", series)
+
+    def test_the_archive_links_a_posted_cell_to_its_week_page_anchor(self) -> None:
+        output_dir, _ = self.write_pages(week_specs(9))
+        archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<a href="2025-W11.html#laengste-rede">Platz', archive)
 
     def test_speeches_receipt_cites_every_debutant_as_its_own_source(self) -> None:
         # Eight weeks of one debutant each build the baseline; the ninth week's

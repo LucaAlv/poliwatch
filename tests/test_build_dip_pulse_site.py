@@ -180,6 +180,35 @@ class CollectAbgeordneteTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_rebuild_warns_and_continues_when_the_previous_stores_facts_are_unreadable(self) -> None:
+        # The except sqlite3.Error branch around the carry-over read (D1A):
+        # a store too damaged to read there is about to be replaced anyway,
+        # so the rebuild must still succeed, just without the carry-over
+        # (facts_snapshot stays None, nothing written for facts.* yet -- the
+        # engine that runs right after this recomputes them from scratch).
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                pulse_store.initialize(conn)
+            finally:
+                conn.close()
+
+            stderr = io.StringIO()
+            with mock.patch.object(
+                build_dip_pulse_site.facts,
+                "read_snapshot",
+                side_effect=build_dip_pulse_site.sqlite3.OperationalError("disk I/O error"),
+            ), mock.patch("sys.stderr", stderr):
+                build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+
+            self.assertIn("previous facts unreadable", stderr.getvalue())
+            conn = pulse_store.connect(database_path)
+            try:
+                self.assertFalse(facts.tables_exist(conn))
+            finally:
+                conn.close()
+
     def test_cached_votes_and_profiles_survive_non_enriching_update(self) -> None:
         cached_profile = {"id": 42, "url": "https://example.test/ada"}
         previous = {

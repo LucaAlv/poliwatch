@@ -6024,6 +6024,34 @@ def _facts_page_style() -> str:
     """
 
 
+def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
+    """Materialize LEAD_POSITION_CTE/LEAD_PROCEEDING_CTE once per connection.
+
+    _fact_speech_citation/_fact_agenda_item_citation/_fact_proceeding_citation
+    are each called once per receipt (a monthly grouped_extreme fact can cite
+    dozens), and every call used to re-run the full proceeding_positions
+    scan+GROUP BY these compute, even though the result is the same for every
+    receipt in the build. ``CREATE TEMP TABLE IF NOT EXISTS`` makes repeat
+    calls on the same connection a no-op, so callers can call this freely.
+    """
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_topic AS\n"
+        + facts.LEAD_POSITION_CTE
+        + "SELECT agenda_item_id, title FROM lead_position"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lead_position_topic ON _lead_position_topic(agenda_item_id)"
+    )
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_proceeding AS\n"
+        + facts.LEAD_PROCEEDING_CTE
+        + "SELECT agenda_item_id, proceeding_id FROM lead_position"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lead_position_proceeding ON _lead_position_proceeding(agenda_item_id)"
+    )
+
+
 def _fact_speech_citation(
     conn: sqlite3.Connection,
     document_number: Any,
@@ -6040,7 +6068,7 @@ def _fact_speech_citation(
         where = "p.document_number = ? AND s.page = ? AND s.page_quadrant = ?"
         params = (str(document_number), page, page_quadrant)
     row = conn.execute(
-        facts.LEAD_POSITION_CTE + f"""
+        f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
                COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,
                m.xml_redner_id, m.aw_politician_id, m.dip_person_id,
@@ -6050,7 +6078,7 @@ def _fact_speech_citation(
         LEFT JOIN parties pa ON pa.id = m.party_id
         JOIN protocols p ON p.id = s.protocol_id
         LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
-        LEFT JOIN lead_position lp ON lp.agenda_item_id = s.agenda_item_id
+        LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = s.agenda_item_id
         WHERE {where}
         """,
         params,
@@ -6064,11 +6092,11 @@ def _fact_agenda_item_citation(
     """(document_number, page, page_quadrant) against page_start/page_start_quadrant
     (0 duplicates, measured 2026-09-22)."""
     row = conn.execute(
-        facts.LEAD_POSITION_CTE + """
+        """
         SELECT ai.id, ai.heading, lp.title AS proceeding_title, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
-        LEFT JOIN lead_position lp ON lp.agenda_item_id = ai.id
+        LEFT JOIN _lead_position_topic lp ON lp.agenda_item_id = ai.id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant = ?
         """,
         (str(document_number), page, page_quadrant),
@@ -6083,11 +6111,11 @@ def _fact_proceeding_citation(
     page_start, resolved through its lead position to the Vorgang
     (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
     row = conn.execute(
-        facts.LEAD_PROCEEDING_CTE + """
+        """
         SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
-        JOIN lead_position lp ON lp.agenda_item_id = ai.id
+        JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
         JOIN proceedings pr ON pr.id = lp.proceeding_id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant = ?
         """,
@@ -6252,15 +6280,6 @@ def _fact_status_text(row: dict[str, Any] | None) -> tuple[str, str | None, bool
     return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
 
 
-def _fact_baseline_line(row: dict[str, Any]) -> str:
-    count = row.get("baseline_count") or 0
-    plural, _ = _PERIOD_NOUN.get(row.get("period_kind"), _PERIOD_NOUN["week"])
-    text = f"Vergleich: {pulse_html.format_int(count)} {plural}"
-    if row.get("baseline_from") and row.get("baseline_to"):
-        text += f" ({row['baseline_from']} bis {row['baseline_to']})"
-    return text
-
-
 def _series_value_text(metric: dict[str, Any], row: dict[str, Any]) -> str:
     if not row.get("complete"):
         return "unvollständig erfasst"
@@ -6274,13 +6293,23 @@ def _series_value_text(metric: dict[str, Any], row: dict[str, Any]) -> str:
     return pulse_html.format_int(int(row["value"]))
 
 
-def _render_fact_series(metric: dict[str, Any], period_key: str, series: list[dict[str, Any]]) -> str:
+def _render_fact_series(
+    metric: dict[str, Any],
+    period_key: str,
+    series: list[dict[str, Any]],
+    series_index: dict[str, int],
+) -> str:
     """The metric's own last periods, this one marked - every period already
     has a row (publishable or not), so no extra query beyond what
-    write_facts_pages already loaded once for the whole build."""
-    try:
-        cursor = next(index for index, row in enumerate(series) if row["period_key"] == period_key)
-    except StopIteration:
+    write_facts_pages already loaded once for the whole build.
+
+    ``series_index`` is ``series``'s own ``{period_key: position}`` map,
+    built once per metric by ``_facts_group_by_metric`` - this renders once
+    per posted row per period, so re-scanning ``series`` here would cost
+    O(periods) per call instead of the O(1) lookup this uses.
+    """
+    cursor = series_index.get(period_key)
+    if cursor is None:
         return ""
     recent = series[max(0, cursor - 7) : cursor + 1]
     items = []
@@ -6355,6 +6384,7 @@ def _render_fact_section(
     metric: dict[str, Any],
     resolved: bool,
     series: list[dict[str, Any]],
+    series_index: dict[str, int],
     *,
     mp_lookup: dict[str, int],
     document_numbers: set[str],
@@ -6378,9 +6408,9 @@ def _render_fact_section(
            alt="{pulse_html.esc(facts.card_title(row))}" loading="lazy">
       <p class="fact-sentence">{pulse_html.esc(facts.card_sentence(row))}</p>
       {caveat_html}
-      <p class="baseline">{pulse_html.esc(_fact_baseline_line(row))}</p>
+      <p class="baseline">{pulse_html.esc(facts.baseline_comparison_line(row))}</p>
       {_render_fact_sources(row, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs)}
-      {_render_fact_series(metric, row["period_key"], series)}
+      {_render_fact_series(metric, row["period_key"], series, series_index)}
       <details class="recipe-sql"><summary>SQL</summary><pre><code>{pulse_html.esc(metric["sql"])}</code></pre></details>
     </section>
     """
@@ -6465,10 +6495,11 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
 
 
 def render_facts_week(
-    conn: sqlite3.Connection,
     period_key: str,
     period_rows: list[dict[str, Any]],
     metric_series: dict[str, list[dict[str, Any]]],
+    metric_series_index: dict[str, dict[str, int]],
+    resolved_by_id: dict[Any, dict[str, Any] | None],
     *,
     mp_lookup: dict[str, int],
     document_numbers: set[str],
@@ -6494,13 +6525,14 @@ def render_facts_week(
         sections = []
         for row in posted:
             metric = facts.REGISTRY_BY_ID[row["metric_id"]]
-            resolved = _renderable_fact(conn, row)
+            resolved = resolved_by_id.get(row["id"])
             sections.append(
                 _render_fact_section(
                     resolved or row,
                     metric,
                     resolved is not None,
                     metric_series.get(row["metric_id"], []),
+                    metric_series_index.get(row["metric_id"], {}),
                     mp_lookup=mp_lookup,
                     document_numbers=document_numbers,
                     bill_slugs=bill_slugs,
@@ -6649,11 +6681,20 @@ def _facts_group_by_period(all_facts: list[dict[str, Any]]) -> dict[tuple[str, s
     return grouped
 
 
-def _facts_group_by_metric(all_facts: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def _facts_group_by_metric(
+    all_facts: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, int]]]:
+    """Each metric's own rows, oldest first, plus each row's position in that
+    list - built once per build so ``_render_fact_series`` (called once per
+    posted row per period) looks its period up instead of scanning."""
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in all_facts:
         grouped.setdefault(row["metric_id"], []).append(row)
-    return grouped
+    index = {
+        metric_id: {row["period_key"]: position for position, row in enumerate(rows)}
+        for metric_id, rows in grouped.items()
+    }
+    return grouped, index
 
 
 def write_facts_pages(
@@ -6682,16 +6723,24 @@ def write_facts_pages(
         try:
             all_facts = facts.load_facts(conn)
             by_period = _facts_group_by_period(all_facts)
-            by_metric = _facts_group_by_metric(all_facts)
+            by_metric, by_metric_index = _facts_group_by_metric(all_facts)
+            _ensure_lead_position_tables(conn)
+            # Resolved once here and reused for both the page's HTML section
+            # and its SVG card below - each was independently re-resolving
+            # the same citation (a full join per receipt) until this shared.
+            resolved_by_id = {
+                row["id"]: _renderable_fact(conn, row) for row in all_facts if row["publishable"]
+            }
             for (period_kind, period_key), period_rows in by_period.items():
                 page_name = f"{period_key}.html"
                 expected.add(page_name)
                 (facts_dir / page_name).write_text(
                     render_facts_week(
-                        conn,
                         period_key,
                         period_rows,
                         by_metric,
+                        by_metric_index,
+                        resolved_by_id,
                         mp_lookup=mp_lookup,
                         document_numbers=document_numbers,
                         bill_slugs=bill_slugs,
@@ -6702,7 +6751,7 @@ def write_facts_pages(
                 for row in period_rows:
                     if not row["publishable"]:
                         continue
-                    resolved = _renderable_fact(conn, row)
+                    resolved = resolved_by_id.get(row["id"])
                     if resolved is None:
                         print(
                             f"facts: {row['period_key']}-{row['metric_id']} Quelle nicht mehr auffindbar, Karte ausgelassen",

@@ -40,6 +40,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import statistics
 import sys
 import textwrap
 from collections import Counter
@@ -49,6 +50,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
+from persist_dip_pulse_store import SYNTHETIC_REDE_ID_SEPARATOR
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
 
@@ -477,7 +479,6 @@ ALL_REGISTRY: tuple[dict[str, Any], ...] = REGISTRY + MONTHLY_REGISTRY
 # metrics too, so this indexes ALL_REGISTRY -- REGISTRY itself stays the
 # weekly six for replay()/gate_numbers().
 REGISTRY_BY_ID = {metric["id"]: metric for metric in ALL_REGISTRY}
-MONTHLY_REGISTRY_BY_ID = {metric["id"]: metric for metric in MONTHLY_REGISTRY}
 
 MONTHS_DE = (
     "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -899,8 +900,14 @@ def baseline(
     *,
     force_all: bool = False,
 ) -> Baseline:
-    """Prior observations of the same Wahlperiode, else all coverage (D5)."""
-    prior = [(w, value) for w, value in history if w.key < week.key]
+    """Prior observations of the same Wahlperiode, else all coverage (D5).
+
+    ``history`` must already hold only periods strictly before ``week`` --
+    the one caller (``compute``'s per-period loop) appends chronologically
+    and calls this before appending the current period, so that invariant
+    always holds by construction.
+    """
+    prior = list(history)
     same = [(w, value) for w, value in prior if w.wahlperiode == week.wahlperiode]
     if not force_all and len(same) >= min_history:
         return Baseline(kind="wp", entries=tuple(same))
@@ -999,9 +1006,9 @@ def rank_period(
 
 
 def is_synthetic_rede_id(rede_id: Any, protocol_id: Any) -> bool:
-    """persist_dip_pulse_store fills "<protocol_id>:<agenda_item_id>:<sequence>"
-    when the XML carries no rede id."""
-    return not rede_id or str(rede_id).startswith(f"{protocol_id}:")
+    """persist_dip_pulse_store.synthetic_rede_id() fills the rede_id when the
+    XML carries no rede id; recognized here by its shared prefix format."""
+    return not rede_id or str(rede_id).startswith(f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}")
 
 
 def _receipt(
@@ -1772,7 +1779,9 @@ def headline(row: Mapping[str, Any]) -> str:
         return f"{format_int(int(row['value']))} erste Reden"
     if metric_id in ("aktivste-abgeordnete", "meistdiskutierter-vorgang"):
         return f"{format_int(int(row['value']))} Reden"
-    return f"{format_int(int(row['value']))} Zeichen"
+    if metric_id in ("laengste-debatte", "laengste-rede"):
+        return f"{format_int(int(row['value']))} Zeichen"
+    raise FactsError(f"facts: headline() has no rule for metric {metric_id!r}")
 
 
 def card_title(row: Mapping[str, Any]) -> str:
@@ -1790,8 +1799,10 @@ def card_title(row: Mapping[str, Any]) -> str:
         return f"{head} und weitere" if len(speakers) > 3 else (head or "Unbekannt")
     if metric_id == "meistdiskutierter-vorgang":
         return citation.get("title") or f"Vorgang in {citation.get('document_number')}"
-    # Fallback: laengste-rede and aktivste-abgeordnete both cite a speaker.
-    return f"{citation.get('display_name') or 'Unbekannt'} ({citation.get('fraktion') or 'Unbekannt'})"
+    if metric_id in ("laengste-rede", "aktivste-abgeordnete"):
+        # Both cite a speaker.
+        return f"{citation.get('display_name') or 'Unbekannt'} ({citation.get('fraktion') or 'Unbekannt'})"
+    raise FactsError(f"facts: card_title() has no rule for metric {metric_id!r}")
 
 
 #: The archive's reason line per withheld reason. T6 owns the page copy; this
@@ -1847,10 +1858,12 @@ def card_lead(row: Mapping[str, Any]) -> str:
     if metric_id == "meistdiskutierter-vorgang":
         kind_clause = f" ({citation.get('proceeding_type')})" if citation.get("proceeding_type") else ""
         return f"{title}: {format_int(int(row['value']))} Reden zu {card_title(row)}{kind_clause}"
-    return (
-        f"{title}: {format_int(int(row['value']))} Zeichen von {card_title(row)}"
-        f"{_topic_clause(citation)}"
-    )
+    if metric_id == "laengste-rede":
+        return (
+            f"{title}: {format_int(int(row['value']))} Zeichen von {card_title(row)}"
+            f"{_topic_clause(citation)}"
+        )
+    raise FactsError(f"facts: card_lead() has no rule for metric {metric_id!r}")
 
 
 def card_sentence(row: Mapping[str, Any]) -> str:
@@ -1899,6 +1912,18 @@ def _text_block(
     )
 
 
+def baseline_comparison_line(row: Mapping[str, Any]) -> str:
+    """"Vergleich: N <Sitzungswochen|Monate> (from bis to)" - shared by the
+    SVG card's footer and the page's baseline paragraph, so the two never
+    drift (D12)."""
+    count = row.get("baseline_count") or 0
+    period_noun = "Monate" if row.get("period_kind") == "month" else "Sitzungswochen"
+    text = f"Vergleich: {format_int(count)} {period_noun}"
+    if row.get("baseline_from") and row.get("baseline_to"):
+        text += f" ({row['baseline_from']} bis {row['baseline_to']})"
+    return text
+
+
 def render_card(row: Mapping[str, Any]) -> str:
     """1080x1080 SVG: eyebrow, metric label, headline number in its own
     element, title (<=3 lines), comparison clause (<=3 lines), footer.
@@ -1908,16 +1933,11 @@ def render_card(row: Mapping[str, Any]) -> str:
     x = CARD_MARGIN
     if row["period_kind"] == "month":
         eyebrow = f"FAKT DES MONATS · {month_display(row['period_key'])}"
-        period_noun = "Monate"
     else:
         eyebrow = f"FAKT DER WOCHE · KW {row['iso_week']}/{row['iso_year']}"
-        period_noun = "Sitzungswochen"
     title_lines = wrap_lines(card_title(row), width=36, max_lines=3)
     comparison_lines = wrap_lines(comparison_clause(row), width=44, max_lines=3)
-    count = row.get("baseline_count") or 0
-    footer = f"Vergleich: {format_int(count)} {period_noun}"
-    if row.get("baseline_from") and row.get("baseline_to"):
-        footer += f" ({row['baseline_from']} bis {row['baseline_to']})"
+    footer = baseline_comparison_line(row)
     caveat_lines = wrap_lines(card_caveat(row) or "", width=76, max_lines=2)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_SIZE}" height="{CARD_SIZE}" '
@@ -1978,14 +1998,6 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
     if var_x == 0 or var_y == 0:
         return None
     return cov / math.sqrt(var_x * var_y)
-
-
-def _median(values: list[float]) -> float:
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / 2
 
 
 def gate_numbers(
@@ -2064,7 +2076,7 @@ def gate_numbers(
             "value_is_week_n": counts_its_chances,
         }
         if eligible:
-            median = _median(xs)
+            median = statistics.median(xs)
             above = [row for row in eligible if row["week_n"] > median]
             below = [row for row in eligible if row["week_n"] <= median]
             entry["median_week_n"] = median
