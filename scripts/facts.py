@@ -1566,7 +1566,14 @@ def write_snapshot(conn: sqlite3.Connection, snapshot: Mapping[str, list[list[An
 
     The tables are created first, outside the transaction, because SQLite's
     Python driver does not enrol DDL in the implicit one; every row the site
-    reads is written inside it, so a crash leaves the previous rows intact.
+    reads is written inside it, so a crash leaves the previous rows intact --
+    except in the one case ensure_tables() itself already documents: a
+    registry schema change makes it DROP and recreate a table (its own
+    autocommitting DDL, ahead of this transaction), and a crash in that
+    narrow window leaves that table empty rather than reverted. The next
+    build's read_snapshot() sees the now-matching-but-empty tables, diffs
+    them against a full recompute, and rewrites everything -- self-healing,
+    at the cost of one build's archive rendering empty.
     """
     ensure_tables(conn)
     metric_sql = (
