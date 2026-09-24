@@ -1496,6 +1496,37 @@ class CardTests(StoreCase):
         self.assertNotIn("<filter", svg)
         self.assertNotIn("Gradient", svg)
 
+    def test_the_longest_speech_card_names_its_topic(self) -> None:
+        # A0 feedback (docs/designs/fakt-der-woche.md): without the topic
+        # the card "feels a little random" - card_title() for laengste-rede
+        # names only the speaker, so the SVG needs its own topic line
+        # (the HTML page already gets it via card_lead()'s _topic_clause).
+        self.seed(week_specs(9))
+        winner = next(
+            row for row in self.compute() if row["publishable"] and row["metric_id"] == LAENGSTE
+        )
+        self.assertEqual(winner["citation"]["topic"], "Haushaltsbegleitgesetz 2027")
+        svg = facts.render_card(winner)
+        root = ET.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        topic = root.find(".//svg:text[@class='topic']", ns)
+        self.assertIsNotNone(topic)
+        self.assertEqual("".join(topic.itertext()).strip(), "Thema: Haushaltsbegleitgesetz 2027")
+
+    def test_a_card_for_a_metric_other_than_the_longest_speech_has_no_topic_line(self) -> None:
+        # laengste-debatte's own title already IS the topic (card_title()
+        # returns citation["topic"] directly) - it must not get a second,
+        # redundant topic line the way laengste-rede does.
+        self.seed(week_specs(9))
+        winner = next(
+            row for row in self.compute() if row["publishable"] and row["metric_id"] == DEBATTE
+        )
+        svg = facts.render_card(winner)
+        root = ET.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        topic = root.find(".//svg:text[@class='topic']", ns)
+        self.assertEqual(list(topic.findall("svg:tspan", ns)), [])
+
     def test_every_metric_renders_a_sentence_naming_its_population(self) -> None:
         specs = week_specs(9, speaker="Friedrich Merz", party="CDU/CSU")
         # Week 9's vote has to be the closest so far, or the min-direction

@@ -1941,9 +1941,9 @@ def baseline_comparison_line(row: Mapping[str, Any]) -> str:
 
 def render_card(row: Mapping[str, Any]) -> str:
     """1080x1080 SVG: eyebrow, metric label, headline number in its own
-    element, title (<=3 lines), comparison clause (<=3 lines), footer.
-    Plain fills, no filters or gradients; deterministic for byte-identical
-    reruns (no timestamps)."""
+    element, title (<=3 lines), topic (laengste-rede only, 1 line),
+    comparison clause (<=3 lines), footer. Plain fills, no filters or
+    gradients; deterministic for byte-identical reruns (no timestamps)."""
     metric = REGISTRY_BY_ID[row["metric_id"]]
     x = CARD_MARGIN
     if row["period_kind"] == "month":
@@ -1951,6 +1951,12 @@ def render_card(row: Mapping[str, Any]) -> str:
     else:
         eyebrow = f"FAKT DER WOCHE · KW {row['iso_week']}/{row['iso_year']}"
     title_lines = wrap_lines(card_title(row), width=36, max_lines=3)
+    # A0 feedback: "the [longest speech] feels a little random" without its
+    # topic. card_title() for laengste-rede names the speaker, not the
+    # debate, so the card needs its own line - the other metrics whose
+    # title already IS the topic (laengste-debatte) don't need one.
+    topic = (row.get("citation") or {}).get("topic") if row["metric_id"] == "laengste-rede" else None
+    topic_lines = wrap_lines(f"Thema: {topic}", width=58, max_lines=1) if topic else []
     comparison_lines = wrap_lines(comparison_clause(row), width=44, max_lines=3)
     footer = baseline_comparison_line(row)
     caveat_lines = wrap_lines(card_caveat(row) or "", width=76, max_lines=2)
@@ -1963,6 +1969,7 @@ def render_card(row: Mapping[str, Any]) -> str:
         _text_block([metric["title"]], x=x, y=215, size=40, line_height=0, fill=CARD_INK, css_class="label"),
         _text_block([headline(row)], x=x, y=380, size=110, line_height=0, fill=CARD_BLUE, css_class="headline", weight="bold"),
         _text_block(title_lines, x=x, y=470, size=46, line_height=58, fill=CARD_INK, css_class="title"),
+        _text_block(topic_lines, x=x, y=650, size=28, line_height=0, fill=CARD_MUTED, css_class="topic"),
         _text_block(comparison_lines, x=x, y=700, size=40, line_height=52, fill=CARD_INK, css_class="comparison"),
         _text_block(caveat_lines, x=x, y=870, size=24, line_height=32, fill=CARD_MUTED, css_class="caveat"),
         _text_block([footer], x=x, y=960, size=26, line_height=0, fill=CARD_MUTED, css_class="footer"),
