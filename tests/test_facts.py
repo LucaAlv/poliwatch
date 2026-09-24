@@ -1927,6 +1927,24 @@ class PageTests(StoreCase):
         after_missing_store = {path.name for path in (output_dir / "fakt").glob("*")}
         self.assertEqual(after_missing_store, published)
 
+    def test_a_no_persist_rerun_does_not_overwrite_the_archive_with_a_false_empty_state(self) -> None:
+        # The index would otherwise say "nothing published" right above a
+        # set of period pages and cards that are still there and still
+        # linkable - preserving the files but not the index that lists them
+        # would just move the inconsistency, not fix it.
+        output_dir, _ = self.write_pages(week_specs(9))
+        archive_path = output_dir / "fakt" / "index.html"
+        published_archive = archive_path.read_text(encoding="utf-8")
+        self.assertIn("2025-W11", published_archive)
+        self.assertNotIn("Noch keine Fakten veröffentlicht", published_archive)
+
+        build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
+        self.assertEqual(archive_path.read_text(encoding="utf-8"), published_archive)
+
+        missing = Path(self.tmp.name) / "does-not-exist.sqlite"
+        build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        self.assertEqual(archive_path.read_text(encoding="utf-8"), published_archive)
+
     def test_methodik_states_the_floor_both_absolute_gates_and_every_caveat(self) -> None:
         html = build.render_facts_methodik()
         self.assertIn("50", html)

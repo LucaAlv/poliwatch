@@ -6775,7 +6775,14 @@ def write_facts_pages(
             if stale.name not in expected:
                 stale.unlink()
 
-    (facts_dir / "index.html").write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
+    # Same reasoning as the stale-file guard above: a run that didn't read
+    # the store has nothing accurate to say about what's published, so it
+    # must not overwrite an already-accurate archive from a prior real
+    # build with a false "nothing published yet" - unless there is no prior
+    # archive to preserve (a fresh site's first page still needs one).
+    archive_path = facts_dir / "index.html"
+    if read_store or not archive_path.exists():
+        archive_path.write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
     (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features), encoding="utf-8")
     periods = {(row["period_kind"], row["period_key"]) for row in all_facts}
     posted = sum(1 for row in all_facts if row["publishable"])
