@@ -140,7 +140,7 @@ def seed_store(path: Path) -> dict[str, Any]:
             for index, (protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, snippet, fraktion) in enumerate(
                 speech_rows
             ):
-                resolved_rede_id = rede_id or f"{protocol_id}:{agenda_item_id}:{sequence}"
+                resolved_rede_id = rede_id or pulse_store.synthetic_rede_id(protocol_id, agenda_item_id, sequence)
                 conn.execute(
                     """
                     INSERT INTO speeches(

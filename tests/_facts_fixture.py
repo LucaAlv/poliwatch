@@ -225,7 +225,9 @@ def seed_weeks(
                     agenda_item_id = agenda_item_ids[speech["item"]]
                     sequence = sequence_by_item.get(agenda_item_id, 0) + 1
                     sequence_by_item[agenda_item_id] = sequence
-                    resolved_rede_id = speech["rede_id"] or f"{protocol_id}:{agenda_item_id}:{sequence}"
+                    resolved_rede_id = speech["rede_id"] or pulse_store.synthetic_rede_id(
+                        protocol_id, agenda_item_id, sequence
+                    )
                     cursor = conn.execute(
                         """
                         INSERT INTO speeches(
