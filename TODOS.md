@@ -156,17 +156,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None
 
-### Escape the pre-existing `index` interpolation in the dossier renderer
-
-**What:** Wrap `item["index"]` with `esc()` at the remaining pre-existing site in `scripts/render_dip_pulse_html.py` (the `top-card` `id="top-{item['index']}"` in `render_html`; still unescaped 2026-09-19).
-
-**Why:** Hygiene. `index` is an int from the XML validator today, so there is no exploit; the `attention_rows` href and the `top-jump` link already escape it, and the last site should match.
-
-**Context:** Pure consistency change; add nothing else. One test asserting anchors still resolve covers it.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ## Puls
 
@@ -496,6 +485,16 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Escape the pre-existing `index` interpolation in the dossier renderer
+
+**What:** Wrap `item["index"]` with `esc()` at the remaining pre-existing site in `scripts/render_dip_pulse_html.py` (the `top-card` `id="top-{item['index']}"` in `render_html`; still unescaped 2026-09-19).
+
+**Why:** Hygiene. `index` is an int from the XML validator today, so there is no exploit; the `attention_rows` href and the `top-jump` link already escape it, and the last site should match.
+
+**Context:** Pure consistency change; add nothing else. One test asserting anchors still resolve covers it.
+
+**Completed:** 2026-09-25. Escaped TOP card IDs; ranking anchors resolve for numeric and HTML-sensitive indices.
 
 ### `agenda_topic()`, the topic line for the Fakten cards
 

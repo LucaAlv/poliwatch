@@ -2433,7 +2433,7 @@ def render_html(
         )
         top_sections.append(
             f"""
-            <article class="top-card" id="top-{item['index']}">
+            <article class="top-card" id="top-{esc(item['index'])}">
               <div class="top-head">
                 <div>
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>
