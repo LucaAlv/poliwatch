@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -189,7 +190,6 @@ def initialize(conn: sqlite3.Connection) -> None:
           paragraph_count INTEGER NOT NULL DEFAULT 0,
           char_count INTEGER NOT NULL DEFAULT 0,
           text TEXT,
-          paragraphs_json TEXT NOT NULL DEFAULT '[]',
           snippet TEXT,
           fraktion TEXT,
           created_at TEXT NOT NULL,
@@ -256,6 +256,7 @@ def initialize(conn: sqlite3.Connection) -> None:
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
+    _migrate_speech_paragraphs(conn)
     _migrate_party_names(conn)
     now = utc_now()
     conn.execute(
@@ -297,6 +298,19 @@ def _migrate_added_columns(
     for name, decl in columns:
         if name not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def _migrate_speech_paragraphs(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(speeches)")}
+    if "paragraphs_json" not in columns:
+        return
+    if tuple(int(part) for part in sqlite3.sqlite_version.split(".")) < (3, 35, 0):
+        logging.getLogger(__name__).warning(
+            "Keeping legacy speeches.paragraphs_json: SQLite %s needs an upgrade to >= 3.35 to drop it",
+            sqlite3.sqlite_version,
+        )
+        return
+    conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
 
 
 def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
@@ -872,10 +886,10 @@ def persist_speeches(
             """
             INSERT INTO speeches(
               protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
-              paragraph_count, char_count, text, paragraphs_json, snippet, fraktion,
+              paragraph_count, char_count, text, snippet, fraktion,
               created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 protocol_id,
@@ -888,7 +902,6 @@ def persist_speeches(
                 int(speech.get("paragraph_count") or 0),
                 int(speech.get("char_count") or 0),
                 clean(speech.get("text")),
-                dumps(speech.get("paragraphs") or []),
                 clean(speech.get("snippet")),
                 speech_fraktion,
                 now,

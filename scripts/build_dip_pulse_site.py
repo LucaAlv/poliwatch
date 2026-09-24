@@ -1957,7 +1957,9 @@ def _run_export(
         source_conn.close()
 
     try:
-        dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
+        # Direct exports and older SQLite stores may not have been migrated.
+        if "paragraphs_json" in {row["name"] for row in dist_conn.execute("PRAGMA table_info(speeches)")}:
+            dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
         dist_conn.execute(
             "CREATE TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL, has_page INTEGER NOT NULL)"
         )

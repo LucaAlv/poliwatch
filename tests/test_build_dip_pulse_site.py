@@ -513,10 +513,10 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         """
                         INSERT INTO speeches(
                           protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
-                          paragraph_count, char_count, text, paragraphs_json, snippet,
+                          paragraph_count, char_count, text, snippet,
                           created_at, updated_at
                         )
-                        VALUES ('pp-test', ?, 'R1', 1, ?, 101, 1, 24, 'Rede text', '[]', 'Rede text', ?, ?)
+                        VALUES ('pp-test', ?, 'R1', 1, ?, 101, 1, 24, 'Rede text', 'Rede text', ?, ?)
                         """,
                         (agenda_item_id, speaker_mp_id, now, now),
                     )
