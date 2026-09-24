@@ -6718,7 +6718,8 @@ def write_facts_pages(
 
     all_facts: list[dict[str, Any]] = []
     expected = {"index.html", "methodik.html"}
-    if not no_persist and database_path.exists():
+    read_store = not no_persist and database_path.exists()
+    if read_store:
         conn = facts.open_readonly(database_path)
         try:
             all_facts = facts.load_facts(conn)
@@ -6764,9 +6765,15 @@ def write_facts_pages(
         finally:
             conn.close()
 
-    for stale in facts_dir.glob("*"):
-        if stale.name not in expected:
-            stale.unlink()
+    # Only prune stale files when the store was actually read: `expected`
+    # otherwise never grows past the two static names, and this loop would
+    # delete every previously published page/card left over from a real
+    # build (a --no-persist dev render, or a build before the store exists,
+    # must never touch what an earlier build already published).
+    if read_store:
+        for stale in facts_dir.glob("*"):
+            if stale.name not in expected:
+                stale.unlink()
 
     (facts_dir / "index.html").write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
     (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features), encoding="utf-8")

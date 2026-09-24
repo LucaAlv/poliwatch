@@ -1908,6 +1908,25 @@ class PageTests(StoreCase):
         self.assertEqual(result["periods"], 0)
         self.assertTrue((output_dir / "fakt" / "index.html").is_file())
 
+    def test_a_no_persist_rerun_never_deletes_a_prior_builds_published_pages(self) -> None:
+        # A --no-persist dev render, or a build that runs before the store
+        # exists, must not touch what an earlier real build already
+        # published to the same output_dir: expected only lists what THIS
+        # run looked at, and a run that skipped the store looked at nothing.
+        output_dir, _ = self.write_pages(week_specs(9))
+        published = {path.name for path in (output_dir / "fakt").glob("*")}
+        self.assertIn("2025-W11.html", published)
+        self.assertTrue(any(name.endswith(".svg") for name in published))
+
+        build.write_facts_pages(output_dir, self.path, True, {}, set(), set())
+        after_no_persist = {path.name for path in (output_dir / "fakt").glob("*")}
+        self.assertEqual(after_no_persist, published)
+
+        missing = Path(self.tmp.name) / "does-not-exist.sqlite"
+        build.write_facts_pages(output_dir, missing, False, {}, set(), set())
+        after_missing_store = {path.name for path in (output_dir / "fakt").glob("*")}
+        self.assertEqual(after_missing_store, published)
+
     def test_methodik_states_the_floor_both_absolute_gates_and_every_caveat(self) -> None:
         html = build.render_facts_methodik()
         self.assertIn("50", html)
