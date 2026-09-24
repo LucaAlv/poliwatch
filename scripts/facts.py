@@ -1210,6 +1210,7 @@ def compute(
     built: Iterable[str] = ("votes",),
     force_all: bool = False,
     floor: float = PUBLICATION_FLOOR,
+    today: date | None = None,
 ) -> list[dict[str, Any]]:
     """All fact rows, oldest period first, metrics in tie_rank order.
 
@@ -1220,11 +1221,15 @@ def compute(
 
     ``force_all`` replays the rule with the all-coverage baseline everywhere
     (the A0 wp-vs-all comparison) and ``floor`` moves the publication floor;
-    neither applies in a real build.
+    neither applies in a real build. ``today`` (defaults to the real date)
+    gates month completeness: the still-running calendar month never counts
+    as complete no matter how complete its sittings-so-far are, since a
+    sitting later in the same month can still change its winner.
     """
     registry = tuple(registry)
     validate_registry(registry)
     built_set = set(built)
+    today = today or date.today()
     protocols = load_protocols(conn)
     weeks = sitting_weeks(protocols)
     months = sitting_months(protocols)
@@ -1240,6 +1245,8 @@ def compute(
         history: list[tuple[Any, float]] = []
         for period in periods:
             complete = week_is_complete(period, completeness, metric["coverage"])
+            if period.period_kind == "month" and period.key >= (today.year, today.month):
+                complete = False
             row: dict[str, Any] = {
                 "metric_id": metric["id"],
                 "metric_version": metric["version"],
@@ -1656,19 +1663,56 @@ def load_metrics(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+#: Columns identifying a fact_sources row: the fact's natural key (period_kind,
+#: period_key, metric_id) followed by the receipt columns proper.
+_SOURCE_KEY_COLUMNS = ("period_kind", "period_key", "metric_id") + _SOURCE_COLUMNS
+
+
+def _leads(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str, str], tuple[Any, ...]]:
+    """(period_kind, period_key, metric_id) -> the position-0 receipt's stable
+    identity. A data correction can reattribute a published fact to a
+    different speech or vote without changing its rank or value (a fixed
+    mp_id, a corrected citation join); comparing this alongside them is what
+    makes that class of correction show up as a changed winner."""
+    index = {column: position for position, column in enumerate(_SOURCE_KEY_COLUMNS)}
+    leads: dict[tuple[str, str, str], tuple[Any, ...]] = {}
+    for values in snapshot["fact_sources"]:
+        if int(values[index["position"]]) != 0:
+            continue
+        key = (
+            str(values[index["period_kind"]]),
+            str(values[index["period_key"]]),
+            str(values[index["metric_id"]]),
+        )
+        leads[key] = tuple(
+            values[index[column]]
+            for column in ("entity_kind", "document_number", "rede_id", "page", "page_quadrant")
+        )
+    return leads
+
+
 def _posted(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str], list[tuple[Any, ...]]]:
-    """period -> its posted facts as (metric_id, rank, value), rank order."""
+    """period -> its posted facts as (rank, metric_id, value, lead receipt
+    identity), rank order."""
     index = {column: position for position, column in enumerate(_FACT_COLUMNS)}
+    leads = _leads(snapshot)
     posted: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
     for values in snapshot["facts"]:
         if not values[index["publishable"]]:
             continue
-        key = (str(values[index["period_kind"]]), str(values[index["period_key"]]))
-        posted.setdefault(key, []).append(
-            (values[index["rank"]], str(values[index["metric_id"]]), values[index["value"]])
+        period_kind = str(values[index["period_kind"]])
+        period_key = str(values[index["period_key"]])
+        metric_id = str(values[index["metric_id"]])
+        posted.setdefault((period_kind, period_key), []).append(
+            (
+                values[index["rank"]],
+                metric_id,
+                values[index["value"]],
+                leads.get((period_kind, period_key, metric_id), ()),
+            )
         )
     for entries in posted.values():
-        entries.sort()
+        entries.sort(key=lambda entry: (entry[0], entry[1]))
     return posted
 
 
@@ -1700,7 +1744,7 @@ def changed_winners(
 def _posted_text(entries: Sequence[tuple[Any, ...]]) -> str:
     if not entries:
         return "kein Fakt"
-    return ", ".join(f"{metric_id} ({value:g})" for _, metric_id, value in entries)
+    return ", ".join(f"{metric_id} ({value:g})" for _, metric_id, value, _lead in entries)
 
 
 def compute_and_store(
@@ -1711,6 +1755,7 @@ def compute_and_store(
     built: Iterable[str] = ("votes",),
     no_persist: bool = False,
     out=sys.stderr,
+    today: date | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
@@ -1720,7 +1765,9 @@ def compute_and_store(
     metric, via FactsError.
     """
     registry = tuple(registry)
-    rows = compute(conn, registry, completeness if completeness is not None else {}, built=built)
+    rows = compute(
+        conn, registry, completeness if completeness is not None else {}, built=built, today=today
+    )
     snapshot = snapshot_from_rows(registry, rows)
     posted = sum(1 for row in rows if row["publishable"])
     periods = {(row["period_kind"], row["period_key"]) for row in rows}

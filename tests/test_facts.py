@@ -1204,6 +1204,22 @@ class CompletenessTests(StoreCase):
     def test_an_entry_without_a_report_is_skipped(self) -> None:
         self.assertEqual(facts.completeness_from_entries([{"report": None}, {}]), {})
 
+    def test_the_ongoing_month_is_never_complete_however_complete_its_sittings_are(self) -> None:
+        # Every sitting recorded so far in 2020-07 has a complete report, but
+        # "today" falls inside that same calendar month: a later sitting
+        # could still occur and change its winner, so it must not publish yet.
+        self.seed(month_specs(7, year=2020))
+        rows = self.rows_for(
+            self.compute(registry=facts.MONTHLY_REGISTRY, today=facts.date(2020, 7, 20)),
+            AKTIVSTE,
+        )
+        self.assertEqual(rows[-1]["period_key"], "2020-07")
+        self.assertEqual(rows[-1]["complete"], 0)
+        self.assertIsNone(rows[-1]["value"])
+        # A month that has actually closed by "today" is unaffected.
+        self.assertEqual(rows[-2]["period_key"], "2020-06")
+        self.assertEqual(rows[-2]["complete"], 1)
+
 
 # ---------------------------------------------------------------------------
 # T5: the engine in the build.
@@ -1327,6 +1343,42 @@ class EngineTests(StoreCase):
             conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
         )
         self.assertTrue(report["written"])
+        self.assertEqual(len(report["changed_winners"]), 1)
+        line = report["changed_winners"][0]
+        self.assertTrue(line.startswith("2025-W14: "))
+        self.assertIn(LAENGSTE, line)
+
+    def test_a_reattributed_lead_receipt_is_reported_even_when_rank_and_value_hold(self) -> None:
+        conn, _ = self.store_all()
+        before = {
+            (row["period_key"], row["metric_id"]): row["receipts"][0]["rede_id"]
+            for row in facts.load_facts(conn)
+            if row["publishable"]
+        }
+        # Swap the two speeches' lengths on the last week: the winning
+        # char_count (2100) is unchanged, but a different rede_id now carries
+        # it -- a correction that reattributes the fact without moving its
+        # rank or value.
+        with conn:
+            conn.execute(
+                "UPDATE speeches SET char_count = 1050 WHERE protocol_id = 'p12' AND rede_id = 'ID1200100'"
+            )
+            conn.execute(
+                "UPDATE speeches SET char_count = 2100 WHERE protocol_id = 'p12' AND rede_id = 'ID1200200'"
+            )
+        report = facts.compute_and_store(
+            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+        )
+        self.assertTrue(report["written"])
+        after = {
+            (row["period_key"], row["metric_id"]): row["receipts"][0]["rede_id"]
+            for row in facts.load_facts(conn)
+            if row["publishable"]
+        }
+        self.assertEqual(before[("2025-W14", LAENGSTE)], "ID1200100")
+        self.assertEqual(after[("2025-W14", LAENGSTE)], "ID1200200")
+        # The rank/value pair alone would look unchanged; only the receipt
+        # identity moved, and that must still surface as a changed winner.
         self.assertEqual(len(report["changed_winners"]), 1)
         line = report["changed_winners"][0]
         self.assertTrue(line.startswith("2025-W14: "))

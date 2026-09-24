@@ -246,16 +246,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped (done)
 
-### Fakt der Woche, `changed_winners()` should detect same-value corrections
-
-**What:** `changed_winners()`/`_posted()` (facts.py) compare only `(rank, metric_id, value)` between builds to decide whether to print a "changed winner" line. A data correction that reattributes the winning speech/vote to a different source (a speech's `mp_id` fixed, a misjoined citation corrected) without changing the numeric value or rank is applied correctly - the whole snapshot is diffed and rewritten as one unit - but never appears in the build log. Extend the comparison key to include the position-0 receipt's stable identity (`entity_kind`, `document_number`, `rede_id` or `page`/`page_quadrant`), not just `(rank, metric_id, value)`.
-
-**Why:** The Methodik page's guarantee ("Datenkorrekturen können [frühere Karten] ändern") implicitly promises this is visible in the build log; right now that class of correction is silent. Not a data-correctness bug - the site always shows current, correct data - only an observability gap. Found by the Step 11 adversarial review during the v0.6.0.0 ship (2026-09-24); deferred there as lower-severity than the other three findings from that pass (all fixed).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** A1 shipped (done)
-
 ### Fakt der Woche, publication ledger (`facts_published`)
 
 **What:** A `facts_published` table (or a JSON file under `data/`) appended the first time a week's card is selected, preserved across online rebuilds the way roster rows are (`rebuild_database_from_entries`, `scripts/build_dip_pulse_site.py:716`), never overwritten; the week page shows "veröffentlicht als … / aktuell …" when they differ.
