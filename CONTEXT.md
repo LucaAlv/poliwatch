@@ -77,7 +77,7 @@ An address to the Bundestag by an invited guest, such as a foreign head of state
 _Avoid_: Gastrede, counting it as a Rede
 
 **Sitzungswoche**:
-A week the Ältestenrat schedules for plenary work in the Bundestag's Sitzungskalender. It is a plan, not a record: a Sondersitzung can fall outside any Sitzungswoche.
+A week the Ältestenrat schedules for plenary work in the Bundestag's Sitzungskalender. It is a plan, not a record: a Sondersitzung can fall outside any Sitzungswoche. A week with only a Sondersitzung is sitzungsfrei in the Sitzungskalender, yet a Kalenderwoche this project reports on.
 _Avoid_: Plenarwoche, Tagungswoche; using it for a week this project reports on
 
 **Kalenderwoche**:
@@ -173,5 +173,59 @@ Whether one Sitzung's data can be trusted for a given Completeness basis, derive
 _Avoid_: "complete" alone, treating this as a status parallel to (rather than derived from) Acquisition state
 
 **Period completeness**:
-Whether every Sitzung the store holds for a period — a Kalenderwoche or a calendar month — has Sitzung completeness for a metric's Completeness basis; the current or a later calendar month is additionally never complete, however complete its sittings so far, and no such running-period rule applies to weeks. A period needs this to be observed and enter a baseline, but it alone does not guarantee publication. A Sitzung missing from the store entirely — such as one whose dossier fetch failed — is invisible to this check rather than counted against it, a known gap tracked in TODOS.md.
+Whether every Sitzung the store holds for a period — a Kalenderwoche or a calendar month — has Sitzung completeness for a metric's Completeness basis; the current or a later calendar month is additionally never complete, however complete its sittings so far, and no such running-period rule applies to weeks. A period needs this to be observed and enter a Vergleichsbasis, but it alone does not guarantee publication. A Sitzung missing from the store entirely — such as one whose dossier fetch failed — is invisible to this check rather than counted against it, a known gap tracked in TODOS.md.
 _Avoid_: week completeness (calendar months use the same rule), "complete" alone, treating this as sufficient for publication
+
+### Fakt der Woche
+
+**Kennzahl**:
+One registered measure the Fakt der Woche rule runs on, such as the closest namentliche Abstimmung of a period. Each Kennzahl has a direction (a higher or a lower value is more unusual) and a period, a Kalenderwoche or a calendar month.
+_Avoid_: metric in public text
+
+**Beobachtung**:
+One Kennzahl's value in one period: its most extreme case, or for some Kennzahlen a count or the largest total per Abgeordnete or Vorgang. A period without Period completeness has no Beobachtung, and neither does a complete period with nothing to measure, such as a week without a namentliche Abstimmung. Whether a Beobachtung is published is a separate question: most are not.
+_Avoid_: calling every Beobachtung a Fakt
+
+**Vergleichsbasis**:
+The earlier Beobachtungen of the same Kennzahl that a Beobachtung is compared with: those of its own Wahlperiode once they reach the Mindesthistorie, otherwise every earlier one in the archive. Only periods before the observed one count, so a later period never changes an earlier comparison.
+_Avoid_: baseline in public text, "the current Wahlperiode" (a 2023 week is compared within WP 20), comparing with later periods
+
+**Perzentil**:
+The share of its Vergleichsbasis that a Beobachtung beats in its Kennzahl's direction. A tie does not count as beaten. Readers see it as a percentage, never under this name.
+_Avoid_: rank, reading it as the share of all periods ever
+
+**Mindesthistorie**:
+The number of earlier Beobachtungen a Vergleichsbasis needs: eight Kalenderwochen or six calendar months. The fallback to the whole archive needs it too; a Beobachtung with too few earlier ones either way is "noch nicht vergleichbar".
+_Avoid_: floor (names three different thresholds in this codebase); in public text, Vergleichbarkeit
+
+**Veröffentlichungsschwelle**:
+The Perzentil a Beobachtung must reach to be published, the same for every Kennzahl.
+_Avoid_: floor, threshold (unqualified)
+
+**Mindestwert**:
+An absolute value some Kennzahlen require before a Beobachtung can be published, however unusual it is, such as a minimum number of Abweichler.
+_Avoid_: floor, min value in public text
+
+**Fakt**:
+A Beobachtung that is published: comparable, at or above the Veröffentlichungsschwelle and any Mindestwert, and with a Thema where its Kennzahl needs one. A period can have several Fakten or none. Fakten of the monthly Kennzahlen appear as Fakt des Monats, under the same Fakt der Woche rubric.
+_Avoid_: "Fakt" for a withheld Beobachtung, one Fakt per period
+
+**Rang**:
+The order of a period's Fakten: the higher Perzentil first, a fixed order of Kennzahlen breaking ties. Shown to readers as Platz.
+_Avoid_: using Perzentil and Rang interchangeably
+
+**zurückgehalten**:
+The state of a Kennzahl in a period with Period completeness that yields no Fakt, shown to readers by one reason: nicht messbar, noch nicht vergleichbar, zu wenige, um daraus einen Fakt zu machen, Thema nicht bestimmbar, or nicht ungewöhnlich genug. A period without Period completeness is not zurückgehalten but unvollständig erfasst.
+_Avoid_: rejected, hidden, suppressed; "zurückgehalten" in public text (readers see only the reason)
+
+**Hinweis**:
+A fixed caution some Kennzahlen must carry wherever their Fakt is shown, such as that more namentliche Abstimmungen in a week make a close one likelier.
+_Avoid_: footnote, disclaimer
+
+**Karte**:
+The shareable image of exactly one Fakt, naming its subject and its Perzentil against its Vergleichsbasis; its Belege are on the Fakt's page, not on the Karte. Later periods never change a Karte; a correction to the data or a change to the rule can.
+_Avoid_: card in public text, one Karte per period
+
+**Beleg**:
+One record a Fakt rests on: a Rede, Abstimmung, Tagesordnungspunkt, Plenarprotokoll or Drucksache. A Fakt about one record has it as its first Beleg, which Drucksachen may support; a Fakt that counts Reden or Tagesordnungspunkte rests on all of them equally.
+_Avoid_: Quelle (names this site's data sources), receipt in public text

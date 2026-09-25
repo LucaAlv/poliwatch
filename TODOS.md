@@ -220,6 +220,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 All five items below were gated on "puls.html week radar shipped"; that landed in 0.3.0.0 (#58, 2026-09-18), so none of them is blocked any more. None has been started (checked 2026-09-19).
 
+### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
+
+**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
+
+**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
+
+**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Weekday-matched Wochenvergleich when sitting counts differ
 
 **What:** Compare the current sitting week with the previous one weekday by weekday when the two weeks have different sitting counts, instead of dividing totals by sitting count.
@@ -305,6 +317,16 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Effort:** M
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
+
+### Fakt der Woche, copy fixes from the glossary review
+
+**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
+
+**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; (3) interacts with the publication ledger item
 
 ### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
 
