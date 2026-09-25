@@ -44,7 +44,7 @@ SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Fo
 
 | Requirement | Notes |
 |---|---|
-| Python 3.11+ | `python3 --version`. No third-party packages are needed. |
+| Python 3.11+ | `python3 --version`. Entry-point scripts reject older versions. No third-party packages are needed. |
 | bash + git | The preview script is bash. On Windows use WSL, or call `build_dip_pulse_site.py` directly. |
 | `DIP_API_KEY` | Required for every online fetch. Not needed for offline rebuilds. |
 | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Only for generating optional AI summaries. |
@@ -94,7 +94,7 @@ python3 -m py_compile scripts/*.py
 python3 -m unittest discover -s tests
 ```
 
-The tests run from committed fixtures under `tests/fixtures/` and need no network, no `.context/`, and no API keys. CI runs the same two checks on Python 3.11, 3.12, and 3.13.
+The tests run from committed fixtures under `tests/fixtures/` and need no network, no `.context/`, and no API keys. The supported floor is Python 3.11; CI runs the same two checks on Python 3.11, 3.12, and 3.13.
 
 Run every command from the repository root. The preview script `cd`s there itself; the Python scripts resolve `.context/dip-pulse-site` relative to the current directory.
 

@@ -7,6 +7,11 @@ https://dserver.bundestag.de/btp/21/21084.xml, then pass its local path here.
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from python_version_guard import require_supported_python
+
+    require_supported_python()
+
 import argparse
 import json
 from pathlib import Path
