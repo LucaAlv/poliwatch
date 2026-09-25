@@ -8,6 +8,11 @@ API metadata for proceedings, activities, people, and linked Drucksachen.
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from python_version_guard import require_supported_python
+
+    require_supported_python()
+
 import argparse
 import hashlib
 import json

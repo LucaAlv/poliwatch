@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4.0] - 2026-09-25
+
+### Changed
+
+- The architecture diagram now traces Fakten, the Daten export and generation manifest through to the Daten page. A short contributor guide links the test, offline rebuild and online update commands.
+
+### Fixed
+
+- Command-line scripts now reject Python versions below the documented 3.11 floor with a clear English and German error.
+
 ## [0.6.3.0] - 2026-09-25
 
 ### Fixed
@@ -83,7 +93,7 @@ All notable changes to this project will be documented in this file.
 
 ### Known stale docs
 
-- `docs/bundestag-puls-architecture.html`/`.json` still shows `database.html` as a sample-row explorer with no export step; not regenerated in this change (tracked in TODOS.md).
+- `docs/bundestag-puls-architecture.html`/`.json` omitted the Daten export step and the Daten page; regenerated in 0.6.4.0.
 
 ## [0.3.0.0] - 2026-09-18
 

@@ -1,6 +1,6 @@
 # TODOS
 
-Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline. The Daten section was re-checked against the code and the 2026-09-19 store on 2026-09-24 (database state review): five new items, `protocol_acquisition` raised to P2.
+Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline. The Daten section was re-checked against the code and the 2026-09-19 store on 2026-09-24 (database state review): five findings, four new open items and a Python version floor now completed; `protocol_acquisition` raised to P2.
 
 ## Daten
 
@@ -78,19 +78,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
-
-### Regenerate the architecture diagram for the Daten export step
-
-**What:** `docs/bundestag-puls-architecture.html`/`.json` (2026-09-06) is a seven-node runtime diagram (DIP API → Fetch & Extract → SQLite Store → `render_html()` → "Static Site Output · pages + data/ cache" → Preview Server) with no export step and no Daten page. Regenerate it so it shows `export_distribution_data()` between the store and `render_site`, the `data/exports/g-<hash>/` + `datenstand.json` generation switch, and the `--data-manifest` override path.
-
-**Why:** Deferred from the fix-datenbank plan at the ship gate (2026-09-19) to keep the 0.4.0.0 PR focused; the CHANGELOG's "Known stale docs" entry discloses the gap. Deferred from plan: `~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md` (CEO task T22).
-
-**Context:** Correction (2026-09-19): the diagram never described `database.html` as a "12-row sample explorer" as the CHANGELOG entry and the earlier version of this TODO claimed; it simply has no node for the export or the page. Fix the CHANGELOG wording when the diagram lands. The pipeline comment block at the top of `scripts/build_dip_pulse_site.py` (steps 1-7 and the file table) is already updated and is the source for the diagram text.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
-
 
 ### Site hosting plan for the 2.5 GB generated site
 
@@ -271,30 +258,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections).
 
 **Effort:** M
-**Priority:** P3
-**Depends on:** None
-
-## Repo
-
-### CONTRIBUTING.md
-
-**What:** A short contributor guide with the three commands (tests, offline rebuild, update) and the `.env.local` sharp edge.
-
-**Why:** A contributor today reads a nine-section README to find them; the `.env.local` empty-key behaviour (README §3) bites before the first fetch.
-
-**Context:** README §2, §3, §4, §6 already hold the content; CONTRIBUTING.md is the index. Add issue templates only if outside contributions appear.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Enforce or correct the Python version floor
-
-**What:** Decide the real minimum Python version and make the repo say it in one place: either lower README §1 ("Python 3.11+", `README.md:47`) and add the floor to the CI matrix (`.github/workflows/ci.yml:13`, currently 3.11–3.13), or keep 3.11 and add a startup version check to the build scripts.
-
-**Why:** The code runs on 3.9 (verified in the 2026-08-18 audit, `docs/audit-remediation-plan.md` Task 6), but nothing enforces any floor: no `pyproject.toml`, no `python_requires`, no runtime check. The README says one thing, CI tests another, and a 3.10+-only construct could land unnoticed while macOS system Python is 3.9. Re-confirmed 2026-09-24; never moved here from the audit plan.
-
-**Effort:** S
 **Priority:** P3
 **Depends on:** None
 
@@ -487,6 +450,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Enforce the Python version floor
+
+**Completed:** v0.6.4.0 (2026-09-25). Added a Python 3.11 startup check to the build scripts and documented the supported version in the README.
+
+### CONTRIBUTING.md
+
+**Completed:** v0.6.4.0 (2026-09-25). Added a concise command index with README links and the `.env.local` empty-key warning.
+
+### Regenerate the architecture diagram for the Daten export step
+
+**Completed:** v0.6.4.0 (2026-09-25). Updated the diagram to include the Fakten engine, Daten export, generated data paths, manifest override, and Daten page.
 
 ### Move the hidden dev-view API dump below the dossier content
 

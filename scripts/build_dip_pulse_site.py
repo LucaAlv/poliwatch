@@ -59,6 +59,11 @@
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from python_version_guard import require_supported_python
+
+    require_supported_python()
+
 import argparse
 import contextlib
 import copy
@@ -6185,9 +6190,11 @@ def resolve_fact_citation(
     if kind == "speeches":
         resolved_rows = [
             row
-            for r in receipts
-            if (row := _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant")))
-            is not None
+            for row in (
+                _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant"))
+                for r in receipts
+            )
+            if row is not None
         ]
         if not resolved_rows:
             return None
@@ -6227,9 +6234,11 @@ def resolve_fact_citation(
     if kind == "proceeding":
         resolved_occurrences = [
             row
-            for r in receipts
-            if (row := _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant")))
-            is not None
+            for row in (
+                _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant"))
+                for r in receipts
+            )
+            if row is not None
         ]
         if not resolved_occurrences:
             return None
