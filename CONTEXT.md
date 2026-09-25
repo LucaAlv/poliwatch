@@ -127,3 +127,17 @@ _Avoid_: Zurechnungsregel, counting ministers for "Regierung" as if it were a Fr
 **Anrechnung**:
 The Bundestag's own bookkeeping rule, agreed by the Ältestenrat each Wahlperiode: speaking time used by members of the Bundesregierung or the Bundesrat is charged to the Fraktion of their Partei, except in the Aktuelle Stunde. It concerns speaking time, not the speech itself, and a metric that follows it must say so.
 _Avoid_: Zurechnung, attribution (for the official rule)
+
+### Acquisition and publication
+
+**Publication domain**:
+One of the seven named areas of data a build publishes — catalog, dossiers, votes, profiles, roster, bills, summaries — each carrying its own Acquisition state and Presentation state.
+_Avoid_: domain (unqualified; conflicts with the bounded-context sense of "domain")
+
+**Acquisition state**:
+Whether one attempt to fetch a Publication domain's data got everything it went looking for: not_requested, complete, partial or failed. Recorded once per Publication domain per build, and additionally per Sitzung for its votes.
+_Avoid_: "complete" alone — the word also names unrelated things elsewhere in this codebase (see TODOS.md); fetch status, download state
+
+**Presentation state**:
+The public-facing state shown for a Publication domain — ready, domain_empty, partial, unavailable or omitted — derived from its Acquisition state and record count, never set directly.
+_Avoid_: acquisition state (Presentation state is what the public sees; Acquisition state is the pipeline's own record of what happened)
