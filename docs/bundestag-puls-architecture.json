@@ -55,7 +55,7 @@
           "server",
           "browser"
         ],
-        "note": "The Daten page reads a generated or overridden manifest; the preview serves static output."
+        "note": "The build selects a generated or overridden manifest and renders it into the Daten page; the preview serves the resulting static output."
       }
     ]
   },
@@ -236,7 +236,7 @@
       "type": "cloud",
       "label": "Static Site Output",
       "sublabel": ".context/dip-pulse-site/",
-      "tag": "pages + data/exports/",
+      "tag": "pages + data/ cache",
       "pos": [
         555,
         445
@@ -616,7 +616,7 @@
       "items": [
         "Keys stay in gitignored .env.local; the preview binds 127.0.0.1 by default.",
         "datenstand.json selects g-<hash>/; --data-manifest can select a local file or URL.",
-        "The published site includes data/exports/; the browser reads static pages."
+        "data/ ships with the pages, including the cached DIP JSON and SQLite store — hosting the output makes the whole cache public."
       ]
     }
   ]
