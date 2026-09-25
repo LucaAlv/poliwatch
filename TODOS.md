@@ -32,19 +32,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None (A1 works without it)
 
-### Regenerate the architecture diagram for the Daten export step
-
-**What:** `docs/bundestag-puls-architecture.html`/`.json` (2026-09-06) is a seven-node runtime diagram (DIP API → Fetch & Extract → SQLite Store → `render_html()` → "Static Site Output · pages + data/ cache" → Preview Server) with no export step and no Daten page. Regenerate it so it shows `export_distribution_data()` between the store and `render_site`, the `data/exports/g-<hash>/` + `datenstand.json` generation switch, and the `--data-manifest` override path.
-
-**Why:** Deferred from the fix-datenbank plan at the ship gate (2026-09-19) to keep the 0.4.0.0 PR focused; the CHANGELOG's "Known stale docs" entry discloses the gap. Deferred from plan: `~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md` (CEO task T22).
-
-**Context:** Correction (2026-09-19): the diagram never described `database.html` as a "12-row sample explorer" as the CHANGELOG entry and the earlier version of this TODO claimed; it simply has no node for the export or the page. Fix the CHANGELOG wording when the diagram lands. The pipeline comment block at the top of `scripts/build_dip_pulse_site.py` (steps 1-7 and the file table) is already updated and is the source for the diagram text.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
-
-
 ### Site hosting plan for the 2.5 GB generated site
 
 **What:** Make the HTML deployable under a capped static host (e.g. GitHub Pages' 1 GB limit). Measured 2026-09-19: 2.5 GB total; `data/` 1.4 GB (`plenarprotokoll-*.json` 607 MB, `bills.json` 386 MB, `exports/` 91 MB); `protocols/` 584 MB for 285 dossiers. **Without `data/` the site is still 1.11 GB**, so a deploy profile that only excludes `data/` does not fit; the dossiers have to shrink too. Pieces: (a) extend `--data-base-url`-style externalisation to the `data/plenarprotokoll-*.json` links on `puls.html`/dossiers and to `bills.json` (the base-URL pattern exists for the two export files); (b) shrink dossiers — see "Move the hidden dev-view API dump" below: ~952 KB of hidden markup per dossier × 285 ≈ 270 MB, so rendering it into a separate on-demand file roughly halves `protocols/`; (c) or pick a host without the cap.
@@ -429,6 +416,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Regenerate the architecture diagram for the Daten export step
+
+**Completed:** 2026-09-25. Updated the diagram to include the Fakten engine, Daten export, generated data paths, manifest override, and Daten page.
 
 ### Move the hidden dev-view API dump below the dossier content
 
