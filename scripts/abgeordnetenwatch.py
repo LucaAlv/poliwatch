@@ -17,6 +17,11 @@ continues, simply without profile links.
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from python_version_guard import require_supported_python
+
+    require_supported_python()
+
 import json
 import re
 import time
