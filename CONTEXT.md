@@ -68,13 +68,29 @@ _Avoid_: calling every Personenseite an Abgeordnetenprofil, "Abgeordnete" as the
 
 ### Sittings and their records
 
+**Wahlperiode**:
+The term of one elected Bundestag, from its constituent Sitzung to the constituent Sitzung of the next (Art. 39 GG), numbered consecutively (WP 21). Sitzungen, Drucksachen and Zusammenschlüsse are all numbered or recognised within one Wahlperiode.
+_Avoid_: legislature, Legislaturperiode (colloquial), session
+
 **Sitzung**:
 One plenary meeting of the Bundestag, numbered within its Wahlperiode (the 94th Sitzung of WP 21). A Sitzung exists from the moment it is held, whether or not its record has been published yet.
 _Avoid_: session, sitting day, "protocol" for the meeting
 
+**Sondersitzung**:
+A Sitzung convened outside the scheduled Sitzungswochen, for example because a third of the members, the Bundespräsident or the Bundeskanzler demands it (Art. 39 (3) GG). It is numbered in the same sequence as every other Sitzung and counts like any other.
+_Avoid_: treating it as a separate kind of record or leaving it out of counts
+
 **Plenarprotokoll**:
 The official verbatim record of exactly one Sitzung, numbered Wahlperiode/Sitzungsnummer (21/94). A later Berichtigung amends the same Plenarprotokoll rather than creating a new one.
 _Avoid_: "protocol" on its own, Stenografischer Bericht (only as its formal title)
+
+**Dossier**:
+This project's assembled account of one Sitzung: its Tagesordnungspunkte, Reden, Drucksachen and Abstimmungen, built from its Plenarprotokoll together with DIP data, and shown as one page. A Dossier can exist only once the Plenarprotokoll is published, and a build may make Dossiers for only some of the Sitzungen it knows of.
+_Avoid_: report, entry, Sitzungsseite, Protokoll-Dossier, using it for the Plenarprotokoll itself
+
+**Sitzung mit Dossier**:
+A Sitzung this project has a Dossier for. Every count this project publishes — Redeanteil, Abweichung, Fakten and the like — ranges over Sitzungen mit Dossier only; a Sitzung without a Dossier is not counted as zero, it is absent.
+_Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
 One contribution for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it.
@@ -83,6 +99,10 @@ _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redne
 **Zwischenfrage**:
 A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner.
 _Avoid_: counting it as part of the Rede
+
+**Zwischenruf**:
+A remark called out from the floor during a Rede without being given the floor or asking the Redner's consent; the Plenarprotokoll records it in parentheses, with its author and Zusammenschluss where known. It is neither a Rede nor a Zwischenfrage, and it belongs to whoever called it out.
+_Avoid_: Zwischenfrage, counting it as part of the Rede, Kommentar
 
 **Sitzungsleitung**:
 What the presiding Präsident or Vizepräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede; a Präsident who speaks from the lectern gives a Rede like any other Redner.
@@ -223,7 +243,7 @@ Whether one Sitzung's data can be trusted for a given Completeness basis, derive
 _Avoid_: "complete" alone, treating this as a status parallel to (rather than derived from) Acquisition state
 
 **Period completeness**:
-Whether every Sitzung the store holds for a period — a Kalenderwoche or a calendar month — has Sitzung completeness for a metric's Completeness basis; the current or a later calendar month is additionally never complete, however complete its sittings so far, and no such running-period rule applies to weeks. A period needs this to be observed and enter a Vergleichsbasis, but it alone does not guarantee publication. A Sitzung missing from the store entirely — such as one whose dossier fetch failed — is invisible to this check rather than counted against it, a known gap tracked in TODOS.md.
+Whether every Sitzung the store holds for a period — a Kalenderwoche or a calendar month — has Sitzung completeness for a metric's Completeness basis; the current or a later calendar month is additionally never complete, however complete its sittings so far, and no such running-period rule applies to weeks. A period needs this to be observed and enter a Vergleichsbasis, but it alone does not guarantee publication. A Sitzung without a Dossier — such as one whose Dossier could not be built — is invisible to this check rather than counted against it, a known gap tracked in TODOS.md.
 _Avoid_: week completeness (calendar months use the same rule), "complete" alone, treating this as sufficient for publication
 
 ### Fakt der Woche

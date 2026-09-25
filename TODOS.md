@@ -238,6 +238,16 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None
 
+### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
+
+**What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
+
+**Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Puls
 
 All five items below were gated on "puls.html week radar shipped"; that landed in 0.3.0.0 (#58, 2026-09-18), so none of them is blocked any more. None has been started (checked 2026-09-19).
