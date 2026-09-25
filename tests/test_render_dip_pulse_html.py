@@ -46,6 +46,14 @@ class DossierLayoutTests(unittest.TestCase):
                 self.assertTrue(set(anchors.links) <= anchors.targets)
                 self.assertIn(f"top-{index}", anchors.targets)
 
+    def test_protocol_dev_dump_follows_content_and_is_opt_in(self) -> None:
+        normal = pulse_html.render_html(self.report)
+        self.assertNotIn('class="api-overview dev-only"', normal)
+        dev = pulse_html.render_html(self.report, include_dev_view=True)
+        self.assertGreater(dev.index('class="api-overview dev-only"'), dev.index('</main>'))
+        self.assertLess(dev.index('class="dev-only dev-top-details"'), dev.index('</main>'))
+        self.assertIn('class="api-overview dev-only"', dev)
+
     def test_documents_are_metadata_before_metrics_and_speakers_are_full_width(self) -> None:
         card = self._top_card(pulse_html.render_html(self.report))
 
