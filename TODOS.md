@@ -18,6 +18,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** None
 
+### Credit a Rede's text only to its Redner (Sitzungsleitung and Zwischenfragen leak in)
+
+**What:** `speech_text_and_paragraphs()` (`scripts/validate_dip_protocol.py:365`) joins every direct `<p>` of a `<rede>` except the `klasse="redner"` marker lines, so the words of the Sitzungsleitung (after a `<name>` element) and of Zwischenfragen by other MdBs (after a `<p klasse="redner">` with a different `redner id`) are stored as the main Redner's text. Split the `<rede>` by current speaker, keep only the paragraphs spoken while the current speaker is the Rede's first `redner id`, and store the others separately or drop them. Also decide how to detect Gastansprachen (CONTEXT.md: shown with the Sitzung, never counted as a Rede) and keep them out of speech counts.
+
+**Why:** `speeches.text`, `char_count` and `paragraph_count` feed `laengste-rede` and every length metric. The inflation is uneven: a Rede with several Zwischenfragen grows, one without doesn't, so length rankings partly reward exchanges instead of long speeches. Measured on 21/84 (2026-09-25): 89 of 99 Reden contain text not by their Redner; counted text is 348,218 chars against 332,742 by the Redner, i.e. Sitzungsleitung +3.2% and other speakers +1.4%. The measurement is approximate: text after a `<name>` that the Redner resumes without a new `redner` marker was counted as Sitzungsleitung.
+
+**Context:** Found while settling Rede/Zwischenfrage/Sitzungsleitung in CONTEXT.md; the XML structure definition (bundestag.de/services/opendata, `dbtplenarprotokoll_kommentiert.pdf`) says a `<rede>` may end with words of the Präsident. A Zwischenfrage should eventually be credited to the MdB who asked it. Fixing this changes stored speech text, so past Fakten on `laengste-rede` may change winner on the next rebuild.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
 
 **What:** A `protocol_acquisition(protocol_id, component, state, fetched_at)` table written at persist time from each report's acquisition states (votes: `acquisition_state` as consumed by `render_vote_summary`; XML parsed or not; AI summaries), exported with the Daten CSVs; the facts engine and the Daten page read it instead of re-deriving it.
