@@ -2339,16 +2339,20 @@ def render_html(
         stats = stats_by_index[item["index"]]
         speech_share = percent(stats["speech_count"], total_speeches)
         text_share = percent(stats["total_chars"], total_chars)
+        normalized_heading = " ".join(str(item.get("heading") or "").split())
+        heading_topic = strip_heading_boilerplate(normalized_heading)
+        heading_title = f' title="{esc(normalized_heading)}"' if normalized_heading else ""
         attention_rows.append(
-            '<a class="attention-row" href="#top-{index}">'
+            '<a class="attention-row" href="#top-{index}"{heading_title}>'
             '<span class="row-top">{top}</span>'
             '<span class="row-title">{title}</span>'
             '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
             '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
                 index=esc(item["index"]),
+                heading_title=heading_title,
                 top=esc(item.get("top_id")),
-                title=esc(short(item.get("heading"), 78)),
+                title=esc(short(heading_topic, 78)),
                 speech_share=speech_share,
                 text_share=text_share,
                 speech_share_label=format_percent(speech_share),
