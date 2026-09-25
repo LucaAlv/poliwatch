@@ -352,8 +352,8 @@ one reaches the top 5); Approach C's per-row `<details>` trajectory.
 - The Befragung shows in the Außerdem line with 116 / 28,4%; the top row shows 19 /
   4,6%; the header sentence shows 409. The Wochenpuls compares whole-week totals when
   sitting counts match, shared weekdays when they differ, and shows no deltas when the
-  weeks share no sitting weekday; "Weitere 22". All shares agree on the week's
-  denominator.
+  weeks share no sitting weekday; "Weitere 22". Radar shares use the full-week
+  denominator; the Redeanteil card uses only the compared weekdays when counts differ.
 - The week-wide Fraktion split appears exactly once on the page.
 - Page reads correctly with the votes and summaries blocks hidden (the visitor default),
   in dark mode, at 980/700/460px and 400px, and in print.
