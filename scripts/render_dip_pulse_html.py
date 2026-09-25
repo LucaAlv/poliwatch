@@ -1056,7 +1056,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
                 if first_vote_index is None:
                     first_vote_index = item.get("index")
                 for vote in votes:
-                    sitting_vote_ids.add(_vote_key(vote))
+                    sitting_vote_ids.add(vote_key(vote))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
@@ -1087,8 +1087,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
     }
 
 
-def _vote_key(vote: dict[str, Any]) -> str:
-    """Identity of a roll-call vote: its id, or (title, date) for legacy records."""
+def vote_key(vote: dict[str, Any]) -> str:
+    """Identity of a roll-call vote: its id, or (title, date) for legacy records.
+
+    Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
+    a vote can attach to two agenda items, so both dedupe on this key rather
+    than on attachment.
+    """
     if vote.get("id"):
         return str(vote["id"])
     return f"{vote.get('title') or ''}|{vote.get('date') or ''}"
@@ -2996,6 +3001,19 @@ def render_html(
     }}
     .vote-head h3 {{ margin-bottom:5px; color:#0f5f59; }}
     .vote-head p {{ margin:0; font-size:13px; }}
+    .vote-result {{
+      display:inline-flex;
+      align-items:center;
+      margin-left:8px;
+      padding:2px 8px;
+      border-radius:999px;
+      color:white;
+      font-size:12px;
+      font-weight:680;
+      vertical-align:middle;
+    }}
+    .vote-result-accepted {{ background:#0f766e; }}
+    .vote-result-rejected {{ background:#b91c1c; }}
     .vote-total {{ display:grid; gap:8px; }}
     .vote-stack {{
       display:flex;

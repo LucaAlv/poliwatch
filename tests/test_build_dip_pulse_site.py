@@ -1899,9 +1899,89 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
         unnumbered["page_path"] = Path("plenarprotokoll-21-99.html")
         stats = pulse_html.week_stats((2026, 24), [unnumbered])
         self.assertEqual(stats["vote_sittings"], [("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2, 1)])
-        self.assertEqual(pulse_html._vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
-        self.assertEqual(pulse_html._vote_key({}), "|")
-        self.assertEqual(pulse_html._vote_key({"id": 42, "title": "x"}), "42")
+        self.assertEqual(pulse_html.vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
+        self.assertEqual(pulse_html.vote_key({}), "|")
+        self.assertEqual(pulse_html.vote_key({"id": 42, "title": "x"}), "42")
+
+
+class VotesArchiveTests(unittest.TestCase):
+    def _entry(self, datum: str, document_number: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        slug = document_number.replace("/", "-")
+        return {
+            "report": {
+                "protocol": {"datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                "agenda_items": items,
+            },
+            "page_path": Path(f"plenarprotokoll-{slug}.html"),
+        }
+
+    def _item(self, index: int, votes: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"index": index, "votes": votes, "xml_drucksachen": [], "api": {}}
+
+    def test_collect_deduplicates_a_vote_attached_to_two_agenda_items(self) -> None:
+        shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [shared]), self._item(2, [shared])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual(len(rows), 1)
+
+    def test_rows_sort_reverse_chronological(self) -> None:
+        older = self._entry(
+            "2026-06-01", "21/80", [self._item(1, [{"id": "v-old", "date": "2026-06-01", "title": "Alt"}])]
+        )
+        newer = self._entry(
+            "2026-06-10", "21/82", [self._item(1, [{"id": "v-new", "date": "2026-06-10", "title": "Neu"}])]
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([older, newer])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["v-new", "v-old"])
+
+    def test_procedure_type_comes_from_the_matching_linked_drucksache(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        item = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
+
+    def test_row_count_matches_the_persisted_store(self) -> None:
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        entry = {"report": report, "page_path": Path("plenarprotokoll-x.html")}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                store_count = conn.execute("SELECT count(*) FROM votes").fetchone()[0]
+            finally:
+                conn.close()
+        self.assertEqual(len(rows), store_count)
+
+    def test_write_page_is_skipped_when_the_votes_feature_is_off(self) -> None:
+        from features import Selection
+
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        ctx = {
+            "selection": Selection(frozenset({"bills"})),
+            "entries": [entry],
+            "collect_votes_archive": build_dip_pulse_site.collect_votes_archive,
+            "write_votes_archive_page": build_dip_pulse_site.write_votes_archive_page,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            result = build_dip_pulse_site.votes_feature.COMPONENT.write_pages(output_dir, ctx)
+            self.assertEqual(result, {})
+            self.assertFalse((output_dir / "votes" / "index.html").exists())
+
+        # Sanity: the same rows produce a page when the feature is enabled.
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            output = build_dip_pulse_site.write_votes_archive_page(output_dir, rows)
+            self.assertEqual(output["count"], 1)
+            self.assertTrue((output_dir / "votes" / "index.html").exists())
 
 
 class BuildClockAndWeekTests(unittest.TestCase):

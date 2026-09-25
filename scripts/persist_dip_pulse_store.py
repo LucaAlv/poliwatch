@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import leading_vote, normalize_faction
+from validate_dip_protocol import leading_vote, normalize_faction, vote_result
 
 
 SCHEMA_VERSION = 1
@@ -261,8 +261,10 @@ def initialize(conn: sqlite3.Connection) -> None:
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
+    _migrate_votes_columns(conn)
     _migrate_speech_paragraphs(conn)
     _migrate_party_names(conn)
+    _migrate_vote_results(conn)
     now = utc_now()
     conn.execute(
         """
@@ -296,6 +298,17 @@ _SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
+# The outcome badge and its two source links (vote-badge-archive item):
+# result_raw/result_source follow validate_dip_protocol.vote_result; xlsx_url
+# is bundestag.de's Namensliste export, found only by scraping (never derived)
+# and left NULL when fetch_roll_call_vote_detail could not find one.
+_VOTES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("result_raw", "TEXT"),
+    ("result_source", "TEXT"),
+    ("xlsx_url", "TEXT"),
+)
+
+
 def _migrate_added_columns(
     conn: sqlite3.Connection, table: str, columns: tuple[tuple[str, str], ...]
 ) -> None:
@@ -324,6 +337,38 @@ def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
 
 def _migrate_speeches_columns(conn: sqlite3.Connection) -> None:
     _migrate_added_columns(conn, "speeches", _SPEECHES_ADDED_COLUMNS)
+
+
+def _migrate_votes_columns(conn: sqlite3.Connection) -> None:
+    _migrate_added_columns(conn, "votes", _VOTES_ADDED_COLUMNS)
+
+
+# Rows persisted before result_raw/result_source existed have no way to recover
+# an official bundestag.de result (that requires re-fetching the page), so they
+# are backfilled with the derived rule only. A vote this build newly persists
+# is unaffected: persist_votes() runs after initialize() and always writes
+# whatever fetch_roll_call_vote_detail computed, official or derived.
+def _migrate_vote_results(conn: sqlite3.Connection) -> None:
+    rows = [
+        dict(row)
+        for row in conn.execute("SELECT id, yes_count, no_count FROM votes WHERE result_source IS NULL")
+    ]
+    changed = False
+    for row in rows:
+        result_raw, result_source = vote_result(
+            official=None, yes_count=int(row["yes_count"] or 0), no_count=int(row["no_count"] or 0)
+        )
+        if result_source is None:
+            continue
+        conn.execute(
+            "UPDATE votes SET result_raw = ?, result_source = ? WHERE id = ?",
+            (result_raw, result_source, row["id"]),
+        )
+        changed = True
+    if changed:
+        # Same reasoning as _migrate_party_names: initialize() runs outside the
+        # caller's own transaction, so a backfill has to commit itself.
+        conn.commit()
 
 
 # Before the list-repr fix below, persist_sampled_people wrote DIP's list-valued
@@ -930,9 +975,10 @@ def persist_votes(
             """
             INSERT INTO votes(
               id, date, topic, title, description, detail_url, yes_count, no_count,
-              abstain_count, absent_count, created_at, updated_at
+              abstain_count, absent_count, result_raw, result_source, xlsx_url,
+              created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               date = excluded.date,
               topic = excluded.topic,
@@ -943,6 +989,9 @@ def persist_votes(
               no_count = excluded.no_count,
               abstain_count = excluded.abstain_count,
               absent_count = excluded.absent_count,
+              result_raw = excluded.result_raw,
+              result_source = excluded.result_source,
+              xlsx_url = excluded.xlsx_url,
               updated_at = excluded.updated_at
             """,
             (
@@ -956,6 +1005,9 @@ def persist_votes(
                 int(total.get("no") or 0),
                 int(total.get("abstain") or 0),
                 int(total.get("absent") or 0),
+                clean(vote.get("result_raw")),
+                clean(vote.get("result_source")),
+                clean(vote.get("xlsx_url")),
                 now,
                 now,
             ),

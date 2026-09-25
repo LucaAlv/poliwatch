@@ -246,18 +246,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, München; 169 posts for WP 21 as of 2026-09-19). Their counting rules live on [/methodik/](https://plenarwatch.de/methodik/); read it before touching any item below rather than re-deriving the rule here. Coverage audit of our code on 2026-09-19: their vote tallies, per-sitting summaries, MP pages and bill tracking we already have (`scripts/features/votes.py`, `summaries.py`, `mp-pages`, `bills`); everything else in their nav (Feed, Zwischenrufe, Präsenz, Muster, Bundestag, Methodik) is a gap or partial. Excluded on purpose: Telegram/YouTube/Instagram and the "Unterstützen" page (distribution, not product).
 
-### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
-
-**What:** Each roll-call panel shows the whole-vote result ("Angenommen" / "Abgelehnt", derived from `yes_count` vs `no_count`), every entry of `document_numbers` as a link to its DIP Drucksache, and a second source link to the bundestag.de XLSX export next to the existing detail-page link. Done when all three render on every vote in an offline rebuild and a test covers a tie/abstention-heavy vote.
-
-**Why:** `render_vote_summary` (`scripts/features/votes.py:12`) renders per-fraction tallies and a per-fraction `leading_vote` pill but never says whether the motion passed; Drucksache numbers are plain text (`votes.py:61-62`); `detail_url` is the HTML page (`roll_call_vote_url`, `scripts/validate_dip_protocol.py:584`), and `grep -rn xlsx` is empty. Plenarwatch leads every post with the badge and closes with the XLSX, and their Präsenz/Muster pages are built from that XLSX, so the link is also the receipt for items further down.
-
-**Context:** Outcome logic is one function over `votes` columns; keep it in `validate_dip_protocol.py` next to `leading_vote` (line 564) so the store carries it. The XLSX URL pattern is visible on any bundestag.de Abstimmung page (the same page `fetch_roll_call_vote_detail`, line 711, already scrapes). Inversion of the badge for Beschlussempfehlungen is the next item, so name the column `result_raw`, never "passed".
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
-
 ### Inverted-vote reading for Beschlussempfehlungen ("Ja = Antrag ablehnen")
 
 **What:** When the voted document is a committee recommendation to reject a motion, the panel states the reversal in one procedural sentence, prints the legend `Ja = Antrag ablehnen · Nein = Antrag annehmen`, and derives each fraction's position ("für den Antrag" / "gegen den Antrag" / "geteilt") from its `leading_vote`; raw counts stay untouched. Done when the Übergewinnsteuer-style case (plenarwatch post `ablehnung-eines-antrags-zur-uebergewinnsteuer-2026-04-24`) renders the derived positions and a test pins the inversion.
@@ -268,18 +256,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Effort:** M
 **Priority:** P1
-**Depends on:** Vote outcome badge
-
-### Votes archive across sittings (`votes/index.html`)
-
-**What:** One page listing every roll-call vote in the store, reverse-chronological and grouped by month, each row with date, title, outcome badge, Drucksache and the procedure type; filter chips for Fraktion (majority position) and, once tags exist, Politikfeld. Done when the page is in `NAV_ITEMS` (`scripts/features/__init__.py:43-51`), gated by the `votes` feature, and lists the same count as `SELECT count(*) FROM votes`.
-
-**Why:** Our votes are only reachable inside the sitting dossier or one MP's page; `render_votes_card` (`scripts/build_dip_pulse_site.py:2821`) aggregates the current week only. Plenarwatch's `/archiv/` (169 items, topic × Fraktion × procedure filters) is the page a reader lands on from search.
-
-**Context:** Rows are a query over `votes` joined to `vote_fractions`; the dossier already renders the row body, so this is a second renderer over the same data, like the RSS item under Puls. Filters are client-side `data-*` attributes, no JS framework.
-
-**Effort:** M
-**Priority:** P2
 **Depends on:** Vote outcome badge
 
 ### Politikfeld tags on Tagesordnungspunkte and votes
@@ -403,6 +379,14 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
+
+**Completed:** 2026-09-26. Badge ("Angenommen"/"Abgelehnt") from `result_raw`/`result_source` (official bundestag.de wording when scrapable, otherwise derived with a tie counting as rejected), every `document_numbers` entry linked to its Drucksache via the XML/DIP objects that already matched the vote, and a scraped XLSX link (bundestag.de publishes it on a separate Namenslisten page, matched by date and title — never a derived URL). Real-store numbers below.
+
+### Votes archive across sittings (`votes/index.html`)
+
+**Completed:** 2026-09-26. Reverse-chronological, grouped by month, with client-side Fraktion chips (majority "yes" position); gated by the `votes` feature and added to `NAV_ITEMS`. Row count verified equal to `SELECT count(*) FROM votes`.
 
 ### CONTRIBUTING.md
 

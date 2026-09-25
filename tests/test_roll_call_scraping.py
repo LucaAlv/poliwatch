@@ -132,5 +132,119 @@ class RollCallScrapingTests(unittest.TestCase):
             self.assertEqual(build_site.parse_args().roll_call_list_id, "222222-222222")
 
 
+FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
+
+
+class VoteResultTests(unittest.TestCase):
+    def test_official_result_wins_over_counts(self) -> None:
+        self.assertEqual(
+            dip.vote_result(official="accepted", yes_count=1, no_count=99), ("accepted", "official")
+        )
+        self.assertEqual(
+            dip.vote_result(official="rejected", yes_count=99, no_count=1), ("rejected", "official")
+        )
+
+    def test_derived_yes_greater_than_no_is_accepted(self) -> None:
+        self.assertEqual(dip.vote_result(official=None, yes_count=300, no_count=200), ("accepted", "derived"))
+
+    def test_derived_tie_is_rejected(self) -> None:
+        # GOBT Section 48 Abs. 2: at a tie the question is answered no.
+        self.assertEqual(dip.vote_result(official=None, yes_count=200, no_count=200), ("rejected", "derived"))
+
+    def test_derived_no_greater_than_yes_is_rejected(self) -> None:
+        self.assertEqual(dip.vote_result(official=None, yes_count=100, no_count=300), ("rejected", "derived"))
+
+    def test_missing_counts_are_unknown(self) -> None:
+        self.assertEqual(dip.vote_result(official=None, yes_count=0, no_count=0), (None, None))
+
+
+class ScrapeOfficialVoteResultTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
+
+    def test_finds_accepted_result_by_its_own_counts(self) -> None:
+        self.assertEqual(dip.scrape_official_vote_result(self.html, 434, 128), "accepted")
+
+    def test_finds_rejected_result_for_a_different_vote_in_the_same_text(self) -> None:
+        self.assertEqual(dip.scrape_official_vote_result(self.html, 127, 418), "rejected")
+
+    def test_no_matching_counts_returns_none(self) -> None:
+        self.assertIsNone(dip.scrape_official_vote_result(self.html, 1, 2))
+
+    def test_missing_beschluss_section_returns_none(self) -> None:
+        self.assertIsNone(dip.scrape_official_vote_result("<html><body>no beschluss here</body></html>", 434, 128))
+
+
+class NamenslistenMatchingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")
+        self.entries = dip.parse_namenslisten_page(html)
+
+    def test_parses_every_row(self) -> None:
+        self.assertEqual(len(self.entries), 3)
+        self.assertEqual(
+            {entry["date"] for entry in self.entries}, {"2026-06-12", "2026-06-11"}
+        )
+
+    def test_exact_title_matches(self) -> None:
+        url = dip.find_roll_call_xlsx_url("2026-06-11", "Bundeswehreinsatz in Kosovo (KFOR)", self.entries)
+        self.assertEqual(url, "https://www.bundestag.de/resource/blob/1184016/20260611_3_xls.xlsx")
+
+    def test_hyphenation_difference_still_matches(self) -> None:
+        # bundestag.de hyphenates "Jahresemissionsgesamtmengen-Verordnung"
+        # differently on this page than on the roll-call candidate list.
+        url = dip.find_roll_call_xlsx_url(
+            "2026-06-11", "Jahresemissionsgesamtmengen-Verordnung 2031-2040", self.entries
+        )
+        self.assertEqual(url, "https://www.bundestag.de/resource/blob/1184018/20260611_4_xls.xlsx")
+
+    def test_no_match_returns_none_never_a_guess(self) -> None:
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "Something else entirely", self.entries))
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-01-01", "Bundeswehreinsatz in Kosovo (KFOR)", self.entries))
+
+
+class FetchRollCallVoteDetailTests(unittest.TestCase):
+    def test_wires_official_result_and_xlsx_url_onto_the_vote(self) -> None:
+        beschluss_html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
+        namenslisten_html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")
+
+        def fake_fetch_html(url: str) -> str:
+            if "namenslisten" in url or "/liste/" in url:
+                return namenslisten_html
+            if "namensliste.form" in url:
+                return ""
+            return beschluss_html
+
+        vote = {
+            "id": "1007",
+            "date": "2026-06-11",
+            "title": "Bundeswehreinsatz in Kosovo (KFOR)",
+            "total": {"yes": 434, "no": 128, "abstain": 0, "absent": 68},
+        }
+        with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+
+        self.assertEqual(enriched["result_raw"], "accepted")
+        self.assertEqual(enriched["result_source"], "official")
+        self.assertEqual(enriched["xlsx_url"], "https://www.bundestag.de/resource/blob/1184016/20260611_3_xls.xlsx")
+
+    def test_falls_back_to_derived_result_and_no_xlsx_when_nothing_matches(self) -> None:
+        def fake_fetch_html(url: str) -> str:
+            return ""
+
+        vote = {
+            "id": "9999",
+            "date": "2026-01-01",
+            "title": "Unmatched vote",
+            "total": {"yes": 100, "no": 300, "abstain": 0, "absent": 0},
+        }
+        with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+
+        self.assertEqual(enriched["result_raw"], "rejected")
+        self.assertEqual(enriched["result_source"], "derived")
+        self.assertIsNone(enriched["xlsx_url"])
+
+
 if __name__ == "__main__":
     unittest.main()

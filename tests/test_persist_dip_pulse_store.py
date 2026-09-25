@@ -374,6 +374,83 @@ class SpeechFraktionTests(unittest.TestCase):
                 conn.close()
 
 
+class VoteResultColumnsTests(unittest.TestCase):
+    def test_initialize_adds_result_and_xlsx_columns(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        with conn:
+            pulse_store.initialize(conn)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(votes)")}
+        self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
+        conn.close()
+
+    def test_persist_votes_writes_result_and_xlsx_url_and_updates_on_conflict(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        vote["result_raw"] = "accepted"
+        vote["result_source"] = "official"
+        vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                row = conn.execute(
+                    "SELECT result_raw, result_source, xlsx_url FROM votes WHERE id = ?", (vote["id"],)
+                ).fetchone()
+                self.assertEqual(tuple(row), ("accepted", "official", vote["xlsx_url"]))
+
+                # A rebuild that later resolves a different (or no) result overwrites the row.
+                vote["result_raw"] = "rejected"
+                vote["result_source"] = "derived"
+                vote["xlsx_url"] = None
+                pulse_store.persist_report(conn, report)
+                row = conn.execute(
+                    "SELECT result_raw, result_source, xlsx_url FROM votes WHERE id = ?", (vote["id"],)
+                ).fetchone()
+                self.assertEqual(tuple(row), ("rejected", "derived", None))
+            finally:
+                conn.close()
+
+    def test_backfill_derives_a_result_for_rows_that_predate_the_column_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    # A pre-migration row (never resolved) and one already
+                    # resolved as "official" - the backfill must leave the
+                    # latter alone rather than downgrade it to derived.
+                    conn.execute(
+                        """
+                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
+                        VALUES ('legacy-1', 300, 200, ?, ?)
+                        """,
+                        (now, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO votes(
+                          id, yes_count, no_count, result_raw, result_source, created_at, updated_at
+                        )
+                        VALUES ('official-1', 1, 99, 'accepted', 'official', ?, ?)
+                        """,
+                        (now, now),
+                    )
+
+                pulse_store.initialize(conn)
+
+                rows = {
+                    row["id"]: (row["result_raw"], row["result_source"])
+                    for row in conn.execute("SELECT id, result_raw, result_source FROM votes")
+                }
+                self.assertEqual(rows["legacy-1"], ("accepted", "derived"))
+                self.assertEqual(rows["official-1"], ("accepted", "official"))
+            finally:
+                conn.close()
+
+
 class ConnectGuardTests(unittest.TestCase):
     def test_connect_refuses_a_store_with_a_nonzero_user_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

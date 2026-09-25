@@ -113,6 +113,7 @@ from features import (
     resolve,
 )
 from features import loader as feature_loader
+from features import votes as votes_feature
 
 
 # Human-readable one-liners for every table in the SQLite store. Used only by the
@@ -3200,6 +3201,263 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
           <h3>Namentliche Abstimmungen</h3>
           {body}
         </article>"""
+
+
+# ---------------------------------------------------------------------------
+# PAGE: votes/index.html - every roll-call vote across every sitting
+#
+# Reverse-chronological, grouped by month, with client-side Fraktion chips.
+# Row rendering (badge, linked Drucksachen) reuses features.votes rather than
+# forking the dossier panel's markup.
+# ---------------------------------------------------------------------------
+
+
+def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
+    numbers = {str(number) for number in vote.get("document_numbers") or []}
+    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+        if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
+            return str(doc["drucksachetyp"])
+    return "–"
+
+
+def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every roll-call vote across every dossier, one row per unique vote id.
+
+    A vote can attach to two agenda items (pulse_html.vote_key handles the
+    dedupe, same rule week_stats uses for the Wochenvergleich vote count).
+    """
+    rows: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        report = entry.get("report") or {}
+        page_path = entry.get("page_path")
+        for item in report.get("agenda_items") or []:
+            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+            for vote in votes:
+                key = pulse_html.vote_key(vote)
+                if key in rows:
+                    continue
+                fraction_positions = {
+                    str(fraction["name"]): fraction.get("leading_vote")
+                    for fraction in vote.get("fractions") or []
+                    if fraction.get("name")
+                }
+                rows[key] = {
+                    "vote": vote,
+                    "document_links": votes_feature.document_source_links(item),
+                    "fraction_positions": fraction_positions,
+                    "procedure_type": _vote_procedure_type(vote, item),
+                    "href": (
+                        f"protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                        if page_path
+                        else None
+                    ),
+                }
+    return sorted(
+        rows.values(),
+        key=lambda row: (row["vote"].get("date") or "", str(row["vote"].get("id") or "")),
+        reverse=True,
+    )
+
+
+_GERMAN_MONTHS = (
+    "Januar", "Februar", "März", "April", "Mai", "Juni",
+    "Juli", "August", "September", "Oktober", "November", "Dezember",
+)
+
+
+def _month_label(date_iso: str | None) -> str:
+    match = re.match(r"(\d{4})-(\d{2})", date_iso or "")
+    if not match:
+        return "Unbekanntes Datum"
+    year, month = match.groups()
+    return f"{_GERMAN_MONTHS[int(month) - 1]} {year}"
+
+
+def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    fraktion_names = sorted(
+        {name for row in rows for name in row["fraction_positions"]},
+        key=lambda value: (value == "fraktionslos", value),
+    )
+    chips = "".join(
+        f'<button type="button" class="chip" data-fraktion-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
+        for name in fraktion_names
+    )
+
+    current_month = None
+    items = []
+    for row in rows:
+        vote = row["vote"]
+        month = _month_label(vote.get("date"))
+        if month != current_month:
+            items.append(f'<h2 class="archive-month">{pulse_html.esc(month)}</h2>')
+            current_month = month
+        badge_label = votes_feature.result_badge_label(vote.get("result_raw"))
+        badge_html = (
+            f'<span class="vote-result vote-result-{pulse_html.esc(vote.get("result_raw"))}">{pulse_html.esc(badge_label)}</span>'
+            if badge_label
+            else ""
+        )
+        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"])
+        title = vote.get("title") or vote.get("topic") or "Ohne Titel"
+        title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
+        positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
+        items.append(
+            '<article class="archive-row" data-row'
+            f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\'>'
+            f'<time>{pulse_html.esc(vote.get("date"))}</time>'
+            f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p></div>'
+            "</article>"
+        )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls &middot; Abstimmungen</title>
+  {pulse_html.page_head(features)}
+  <style>{votes_archive_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(depth=1, active="votes", features=features)}
+    <header class="page-header">
+      <div>
+        <h1>Abstimmungen</h1>
+        <p>Jede namentliche Abstimmung aus den erzeugten Plenarprotokoll-Dossiers, neueste zuerst.</p>
+      </div>
+    </header>
+    <section class="summary-grid">
+      <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(len(rows))}</strong></div>
+    </section>
+    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><div class="chip-row">' + chips + '</div></section>' if chips else ''}
+    <section class="archive-list" data-archive>
+      {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
+      <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Fraktion.</p>
+    </section>
+    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a></footer>
+  </div>
+  {render_votes_archive_script()}
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def votes_archive_styles() -> str:
+    return """
+    .archive-filters { margin-top:20px; }
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .chip {
+      padding:5px 12px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fbfcfd;
+      font-size:13px;
+      cursor:pointer;
+    }
+    .chip.is-active { background:#0f5f59; border-color:#0f5f59; color:white; }
+    .archive-list { margin-top:20px; display:grid; gap:10px; }
+    .archive-month { margin:18px 0 4px; font-size:15px; color:var(--muted); }
+    .archive-row {
+      display:grid;
+      grid-template-columns:110px minmax(0,1fr);
+      gap:14px;
+      padding:12px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+    }
+    .archive-row time { color:var(--muted); font-size:13px; }
+    .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
+    .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
+    .archive-empty { margin-top:16px; color:var(--muted); }
+    .vote-result {
+      display:inline-flex;
+      align-items:center;
+      margin-left:8px;
+      padding:2px 8px;
+      border-radius:999px;
+      color:white;
+      font-size:12px;
+      font-weight:680;
+      vertical-align:middle;
+    }
+    .vote-result-accepted { background:#0f766e; }
+    .vote-result-rejected { background:#b91c1c; }
+    .doc-link {
+      display:inline-block;
+      margin:0 4px 4px 0;
+      padding:2px 6px;
+      border:1px solid #cfd7e3;
+      border-radius:6px;
+      background:white;
+      font-weight:650;
+      font-size:12px;
+    }
+"""
+
+
+# Inline script for votes/index.html: toggles Fraktion chips (multi-select)
+# and shows a row when any active Fraktion's leading vote on it was "yes" -
+# same interaction plenarwatch's own "Nach Fraktion:" archive filter offers.
+def render_votes_archive_script() -> str:
+    return """
+  <script>
+    (() => {
+      const container = document.querySelector('[data-archive]');
+      if (!container) return;
+      const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
+      const noResults = document.querySelector('[data-no-results]');
+      const active = new Set();
+      const apply = () => {
+        let visible = 0;
+        rows.forEach((row) => {
+          let positions = {};
+          try {
+            positions = JSON.parse(row.dataset.fraktionPositions || '{}');
+          } catch (err) {
+            positions = {};
+          }
+          const show = active.size === 0 || Array.from(active).some((name) => positions[name] === 'yes');
+          row.hidden = !show;
+          if (show) visible += 1;
+        });
+        if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
+        chips.forEach((chip) => {
+          chip.classList.toggle('is-active', active.has(chip.dataset.fraktionChip));
+        });
+      };
+      chips.forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const value = chip.dataset.fraktionChip;
+          if (active.has(value)) {
+            active.delete(value);
+          } else {
+            active.add(value);
+          }
+          apply();
+        });
+      });
+      apply();
+    })();
+  </script>
+"""
+
+
+def write_votes_archive_page(
+    output_dir: Path,
+    rows: list[dict[str, Any]],
+    features: Selection | None = None,
+) -> dict[str, Any]:
+    features = features or publication_selection()
+    votes_dir = output_dir / "votes"
+    votes_dir.mkdir(parents=True, exist_ok=True)
+    (votes_dir / "index.html").write_text(render_votes_archive_index(rows, features), encoding="utf-8")
+    return {"count": len(rows), "index_path": votes_dir / "index.html"}
 
 
 def _speakers_note(stats: dict[str, Any]) -> str:
@@ -8586,6 +8844,8 @@ def render_site(
         "mp_lookup": mp_lookup,
         "collect_bill_pages": collect_bill_pages,
         "write_bill_pages": write_bill_pages,
+        "collect_votes_archive": collect_votes_archive,
+        "write_votes_archive_page": write_votes_archive_page,
         "write_abgeordnete_pages": write_abgeordnete_pages,
         "write_facts_pages": write_facts_pages,
         "database_path": database_path,
@@ -8620,6 +8880,9 @@ def render_site(
         f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Sitzungswochen",
         file=sys.stderr,
     )
+    votes_output = components["votes"].write_pages(output_dir, component_context)
+    if votes_output:
+        print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
