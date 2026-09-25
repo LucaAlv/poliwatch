@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1.0] - 2026-09-25
+
+### Fixed
+
+- Aufmerksamkeitsrang rows now begin with the agenda topic instead of procedural wording, while the complete normalized heading remains available on hover.
+
 ## [0.6.0.0] - 2026-09-24
 
 ### Added
