@@ -81,7 +81,7 @@ A week the Ältestenrat schedules for plenary work in the Bundestag's Sitzungska
 _Avoid_: Plenarwoche, Tagungswoche; using it for a week this project reports on
 
 **Kalenderwoche**:
-The ISO calendar week, and the period this project reports by. A Kalenderwoche counts only if at least one Sitzung was held in it, whether or not it was a Sitzungswoche.
+The ISO calendar week, and this project's primary reporting period; a few metrics report by calendar month instead. A Kalenderwoche counts only if at least one Sitzung was held in it, whether or not it was a Sitzungswoche.
 _Avoid_: sitting week, Plenarwoche, "Sitzungswoche" for this period
 
 ### Votes
@@ -141,3 +141,15 @@ _Avoid_: "complete" alone — the word also names unrelated things elsewhere in 
 **Presentation state**:
 The public-facing state shown for a Publication domain — ready, domain_empty, partial, unavailable or omitted — derived from its Acquisition state and record count, never set directly.
 _Avoid_: acquisition state (Presentation state is what the public sees; Acquisition state is the pipeline's own record of what happened)
+
+**Completeness basis**:
+The per-Sitzung signal a metric's period must be complete for: votes (that Sitzung's votes Acquisition state) or speeches (that Sitzung's Plenarprotokoll XML was parsed, including agenda-item times, not only its Reden). Declared per metric.
+_Avoid_: coverage (also names the archive span behind the "all" baseline, and the same word other code uses for unrelated week/radar display flags), coverage domain, domain
+
+**Sitzung completeness**:
+Whether one Sitzung's data can be trusted for a given Completeness basis, derived from Acquisition state: for votes, that Sitzung's votes Acquisition state is exactly complete, or it carries no votes acquisition record at all; for speeches, a parsed Plenarprotokoll report exists for it. A Sitzung with no report is never complete.
+_Avoid_: "complete" alone, treating this as a status parallel to (rather than derived from) Acquisition state
+
+**Period completeness**:
+Whether every Sitzung the store holds for a period — a Kalenderwoche or a calendar month — has Sitzung completeness for a metric's Completeness basis; the current or a later calendar month is additionally never complete, however complete its sittings so far, and no such running-period rule applies to weeks. A period needs this to be observed and enter a baseline, but it alone does not guarantee publication. A Sitzung missing from the store entirely — such as one whose dossier fetch failed — is invisible to this check rather than counted against it, a known gap tracked in TODOS.md.
+_Avoid_: week completeness (calendar months use the same rule), "complete" alone, treating this as sufficient for publication
