@@ -214,19 +214,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
-## Repo
-
-### CONTRIBUTING.md
-
-**What:** A short contributor guide with the three commands (tests, offline rebuild, update) and the `.env.local` sharp edge.
-
-**Why:** A contributor today reads a nine-section README to find them; the `.env.local` empty-key behaviour (README §3) bites before the first fetch.
-
-**Context:** README §2, §3, §4, §6 already hold the content; CONTRIBUTING.md is the index. Add issue templates only if outside contributions appear.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 ## Publication
 
 ### Add atomic/versioned publication promotion
@@ -416,6 +403,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### CONTRIBUTING.md
+
+**Completed:** 2026-09-25. Added a concise command index with README links and the `.env.local` empty-key warning.
 
 ### Regenerate the architecture diagram for the Daten export step
 
