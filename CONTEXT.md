@@ -150,6 +150,32 @@ _Avoid_: Zurechnungsregel, counting ministers for "Regierung" as if it were a Fr
 The Bundestag's own bookkeeping rule, agreed by the Ältestenrat each Wahlperiode: speaking time used by members of the Bundesregierung or the Bundesrat is charged to the Fraktion of their Partei, except in the Aktuelle Stunde. It concerns speaking time, not the speech itself, and a metric that follows it must say so.
 _Avoid_: Zurechnung, attribution (for the official rule)
 
+### Puls
+
+**Redeanteil**:
+A share of Reden by number, always within a stated scope: a Tagesordnungspunkt's Redeanteil an der Sitzung, a Zusammenschluss's Redeanteil an der Woche. It says nothing about how long anyone spoke.
+_Avoid_: Redeanteil for a share of characters, Redeanteil without its scope, Redezeitanteil (speaking time is not measured)
+
+**Textanteil**:
+A share of the characters of Rede text within a stated scope. Characters are not speaking time.
+_Avoid_: Redeanteil, Redezeit, "nach Zeichen" under a Redeanteil heading
+
+**Redeanteil je Zusammenschluss**:
+The Redeanteil of each Zusammenschluss under Zählung nach Sprechrolle. Reden in the Sprechrolle of the Bundesregierung and of the Bundesrat are two separate rows outside the Zusammenschlüsse, and Reden by fraktionslose MdBs a row of their own.
+_Avoid_: Redeanteil der Fraktionen (Gruppen are not Fraktionen), "Regierung" as a Fraktion row, one row for Bundesregierung and Bundesrat together
+
+**Rangfolge nach Reden**:
+Tagesordnungspunkte ordered by their number of Reden, within one Sitzung or one Kalenderwoche. It shows where the most Reden were given, which mostly follows the debate length agreed in advance, not how much attention a subject drew.
+_Avoid_: Aufmerksamkeitsrang, Aufmerksamkeitsranking, ranking by Zeichen
+
+**Wochenradar**:
+The top of the Rangfolge nach Reden of one Kalenderwoche across all its Sitzungen, each row a Tagesordnungspunkt named by its Thema. Question formats such as the Fragestunde and the Befragung der Bundesregierung are listed apart but still count toward the week's Reden. A Vorgang dealt with under two Tagesordnungspunkte in one week appears as two rows.
+_Avoid_: "Themen" as the unit counted, merging rows by Vorgang, copying the Sitzung ranking of a dossier
+
+**Wochenvergleich**:
+The comparison of one Kalenderwoche with the nearest earlier Kalenderwoche that had a Sitzung, at most twelve weeks back; if the nearest one is further back, there is no Wochenvergleich. When the two hold different numbers of Sitzungen, every figure is compared per Sitzung.
+_Avoid_: Vorwoche (the compared week can be weeks earlier), comparing raw totals of weeks with different numbers of Sitzungen
+
 ### Acquisition and publication
 
 **Publication domain**:

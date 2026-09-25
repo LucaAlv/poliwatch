@@ -180,6 +180,16 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2 (P1 if the hosting TODO is picked up)
 **Depends on:** None
 
+### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
+
+**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
+
+**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Current-TOP highlight in the ranking sidebar
 
 **What:** Mark the TOP currently in view in the desktop sidebar (`IntersectionObserver` on `.top-card`, `aria-current="true"` on the matching `.attention-row`), optionally scrolling the row into view inside `.attention-list`.
@@ -230,6 +240,18 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 **Effort:** S
 **Priority:** P3
+**Depends on:** None
+
+### Redeanteil je Zusammenschluss per ADR 0001 (puls.html and Daten recipes)
+
+**What:** puls.html's "Redeanteil der Fraktionen" card (`scripts/build_dip_pulse_site.py`, fed by `speaker_party()` in `scripts/render_dip_pulse_html.py`) puts every member of the Bundesregierung and the Bundesrat into one "Regierung" row among the Fraktionen, and heads Gruppen as "Fraktionen". Show Bundesregierung and Bundesrat as two separate rows outside the Zusammenschlüsse, fraktionslose MdBs as their own row, and head the card "Redeanteil der Fraktionen und Gruppen". Same rule for the Daten recipes r1 and r2 (`COALESCE(NULLIF(s.fraktion, ''), p.name)` falls back to a Partei name). Rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil and sort it by characters, not by Reden. Done when no public row is labelled "Regierung" and no share by characters is called Redeanteil.
+
+**Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25) and ADR 0001's consequence "never as a pseudo-Fraktion 'Regierung'", which the ADR itself records as not yet followed.
+
+**Context:** Needs the Sprechrolle to tell Bundesregierung from Bundesrat per Rede (the XML `<rolle>`); check what the store keeps. Related: `parties.name` item under Daten, Rede text attribution item.
+
+**Effort:** M
+**Priority:** P2
 **Depends on:** None
 
 ### Weekday-matched Wochenvergleich when sitting counts differ
