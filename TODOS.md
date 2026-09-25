@@ -1,6 +1,6 @@
 # TODOS
 
-Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline.
+Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline. The Daten section was re-checked against the code and the 2026-09-19 store on 2026-09-24 (database state review): five findings, four new open items and a Python version floor now completed; `protocol_acquisition` raised to P2.
 
 ## Daten
 
@@ -13,6 +13,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Context:** Causes established 2026-09-22, both different from the list-repr bug, which is why the migration does not touch them.
 - `'SPDSPD'`/`'SPDCDU/CSU'` come from the **source XML**: `21045.xml` carries `<redner id="11005217 999990074"><name><vorname>SvenjaSvenja</vorname><nachname>SchulzeSchulze</nachname><fraktion>SPDSPD</fraktion></name></redner>` in an `ivz-eintrag`, i.e. two TOC entries merged into one element by the Bundestag. Two speakers are affected, across twelve protocols: redner `11005217 999990074` ("SvenjaSvenja SchulzeSchulze", SPDSPD) in 21/18, 21/24, 21/25, 21/28, 21/44, 21/45, and redner `11005304` ("Dirk-UlrichAlexander Mende Föhr", SPDCDU/CSU) in 20/91, 20/94, 20/96, 20/103, 20/114, 20/116. The earlier note in this file ("no current code path concatenates names, so just fold them into the migration") was wrong. Fix belongs in `parse_redner` (`scripts/validate_dip_protocol.py:313`): detect a doubled `<redner id>` and either split it or drop the entry, then the parties rows disappear on the next rebuild.
 - The Gruppe spellings are two DIP surfaces disagreeing: `/person` returns `"Gruppe BSW"`/`"Gruppe Die Linke"` (via `ingest_mdb_roster`), the protocol's `sampled_people` return `"BSW (Gruppe)"`/`"Die Linke (Gruppe)"`, and `normalize_faction` has no rule for either. `'BSW'` (0 MdBs) is a third spelling with no rows behind it.
+- Added 2026-09-24: this also affects MP identity, not only aggregates. On the 2026-09-19 store no `mps` row is referenced by both `speeches` and `vote_members` (0 overlap), so every speech↔vote link for a person is made by `collect_abgeordnete`'s pass 2 (normalized name + party, `scripts/build_dip_pulse_site.py` ~5446-5470). A person whose speaker row says `BSW (Gruppe)` and whose vote/roster row says `Gruppe BSW` won't merge unless `_normalized_mp_party` happens to fold them. After the fix, check that on a rebuilt store.
 
 **Effort:** S
 **Priority:** P2
@@ -26,11 +27,57 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Context:** Needs a stable state vocabulary per component (`complete`, `partial`, `failed`, `not_requested` already exist for votes in `scripts/features/votes.py`). Natural B / Daten-pilot item.
 
-**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Still P3/deferred per the original D10 call - flagging the repro here in case it changes the priority math.
+**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Flagging the repro here in case it changes the priority math — see the database state review update below, which raises this to P2.
+
+**Update 2026-09-24 (database state review):** raised to P2. Since A1 shipped, the facts engine publishes on every build, so this is now a live path to a wrong published card, not a hypothetical. A cheaper first slice than the full table: have `build_dossiers_with_progress` record the protocol ids it skipped on `dip.DipError`, and make `week_is_complete()` fail any week containing one.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None (A1 works without it)
+
+### Check that roll-call votes are still being acquired after June 2026
+
+**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12. If it did, find why the vote scan missed them (`fetch_roll_call_vote_candidates`, `--vote-scan-pages`, `match_roll_call_votes` in `scripts/validate_dip_protocol.py`) and fix it.
+
+**Why:** On the 2026-09-19 store the latest vote is 2026-06-12 (217 votes in total), but sittings continue to 2026-09-11 (3 more in June, 1 in July, 4 in September). This may just be the summer break with no roll calls. If it isn't, the Fakten vote metrics and every MP's vote count are quietly stale. The store can't tell "no vote" from "not fetched" (see the `protocol_acquisition` item), so check against the source.
+
+**Context:** Found in the 2026-09-24 database state review. Start by comparing the bundestag.de Abstimmungen list page for June–September 2026 with `SELECT id, date FROM votes WHERE date >= '2026-06-01'` on a freshly updated store.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** A fresh online `update` of the store
+
+### Roll-call member rows link to external profiles, never to our own MP pages
+
+**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup`/`canonical_by_mp_id` resolves them. Fall back to the external `profile_url` only when no page exists.
+
+**Why:** Today the member name always links to `member["profile_url"]` (bundestag.de or abgeordnetenwatch), even though `upsert_mp` resolves every vote member to an internal `mp_id` at persist time. A reader on a vote panel can't reach the site's own MP page, which is the page that pools that person's speeches and votes.
+
+**Context:** Speaker names in dossiers already link internally via `mp_lookup` (rerun of `write_report_files` after the roster step in `main()`), so reuse that path. Found in the 2026-09-24 database state review. Not previously tracked.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None (better after the `parties.name` item, which improves how many vote members merge)
+
+### Document `--protocol-wahlperiode` in the README
+
+**What:** Add `--protocol-wahlperiode` to the README's update/backfill section. Say plainly that when `--limit N > 0` is set, the catalog fetch is limited to WP 21 unless `--protocol-wahlperiode 0` is passed.
+
+**Why:** The flag's help text says so (`scripts/build_dip_pulse_site.py:9235`, applied in `fetch_protocols` at :309), but the README never mentions it (`grep -c wahlperiode README.md` = 0). Someone doing a bounded backfill of WP 20 by following the README gets WP 21 only, with no warning. Originally noted as Task 2 of `docs/audit-remediation-plan.md` (2026-08-18) and never moved here.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Line-by-line audit of the ingestion modules
+
+**What:** Review `scripts/validate_dip_protocol.py` (XML parsing, roll-call scraping, DIP enrichment) and `scripts/abgeordnetenwatch.py` line by line, adding fixture tests for every parse branch that has none. Include the roll-call `fetch_html` path, which has a 60 s timeout but no retry/backoff, unlike `ApiClient.get_json`.
+
+**Why:** `docs/audit-remediation-plan.md` (2026-08-18, "fog of war", Task 8) named these two modules, then at 56% and 40% coverage, as never audited, and they do all the acquisition and identity work. The `SPDSPD` doubled-`<redner>` bug under `parties.name` is the kind of source quirk such an audit finds. No evidence it was done, and it was never mirrored here.
 
 **Effort:** M
 **Priority:** P3
-**Depends on:** None (A1 works without it)
+**Depends on:** None
 
 ### Site hosting plan for the 2.5 GB generated site
 
@@ -403,6 +450,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Enforce the Python version floor
+
+**Completed:** v0.6.4.0 (2026-09-25). Added a Python 3.11 startup check to the build scripts and documented the supported version in the README.
 
 ### CONTRIBUTING.md
 
