@@ -156,6 +156,14 @@ _Avoid_: abwesend (for anyone not listed), inferring presence from a Stimme
 The Stimme most MdBs of one Zusammenschluss gave in a namentliche Abstimmung, among Ja, Nein and Enthaltung. There is none when two of them tie or when no MdB of the Zusammenschluss voted.
 _Avoid_: Fraktionslinie, Fraktionsdisziplin, "Votum der Fraktion" (implies a group decision we cannot see)
 
+**Abweichung**:
+A Stimme of Ja where the Mehrheitsvotum of the MdB's Zusammenschluss is Nein, or of Nein where it is Ja. An Enthaltung or a Stimme nicht abgegeben is never an Abweichung, and where the Mehrheitsvotum is Enthaltung or there is none, no Stimme is. A fraktionslos MdB has no Zusammenschluss and so cannot make one.
+_Avoid_: Enthaltung as a vote against the group, "Abweichung" for a fraktionslos MdB voting unlike other fraktionslose, "gegen die Linie" or "gegen die eigene Fraktion" (implies a group decision we cannot see, and leaves out Gruppen)
+
+**Abweichler**:
+An MdB who makes an Abweichung in a namentliche Abstimmung. In public text this is said as "stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe".
+_Avoid_: Dissident, Rebell; Fraktionslinie in public text
+
 ### Counting speeches per Zusammenschluss
 
 **Zählung nach Sprechrolle**:

@@ -42,6 +42,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** None
 
+### One Abweichung rule: exclude fraktionslose MdBs from `r3-abweichler`, drop "Linie" from the wording
+
+**What:** Two fixes to match CONTEXT.md (Abweichung, Abweichler). (1) The Daten recipe `r3-abweichler` (`scripts/build_dip_pulse_site.py:1486`) counts fraktionslose MdBs against the pseudo-Zusammenschluss "fraktionslos"; add the `parties.name <> 'fraktionslos'` exclusion that `meiste-abweichler` (`scripts/facts.py:184`) already has. (2) Replace "gegen die Linie ihrer Fraktion" (`scripts/facts.py:187` unit, `scripts/facts.py:1903` caption) and "gegen die eigene Fraktion" (`scripts/build_dip_pulse_site.py:1487` recipe title) with "anders als die Mehrheit der eigenen Fraktion oder Gruppe" or a short form of it.
+
+**Why:** Fraktionslose MdBs do not coordinate, so a "fraktionslos" majority is an artefact of the bucket, and the recipe ranks them as Abweichler for voting unlike unrelated colleagues (151 such Stimmen per the `facts.py` comment). The Daten and Fakten pages should not mean two things by one word. "Linie" claims a group decision the data cannot show (Gewissensfragen have none) and "Fraktion" leaves out the Gruppen the rule counts.
+
+**Context:** Settled in /domain-modeling 2026-09-26. The Enthaltung rule (an Enthaltung is never an Abweichung) is unchanged; the code already follows it. Changing the `meiste-abweichler` unit or caption text does not change its values, so no metric version bump is needed; check whether published Karten embed the old unit string. Once `leading_vote()` returns NULL for ties (item above), both queries already skip those votes via `leading_vote IN ('yes', 'no')`.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
 **What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
