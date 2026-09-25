@@ -236,7 +236,7 @@ python3 scripts/render_dip_pulse_html.py .context/report.json .context/report.ht
 
 The renderer owns the detailed dossier page HTML, shared site header styles, party colors, vote labels, source links, speaker/profile links, and summary presentation.
 
-The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is sticky and its rows scroll inside the panel; at 1120px and below it renders collapsed to `ATTENTION_PREVIEW_ROWS` rows (`ATTENTION_PREVIEW_ROWS_PHONE` at 720px and below) behind an expand button, protocols without agenda items or extracted speeches get a plain notice instead of a ranking, and print output shows every row without controls. Both row counts are module constants near the top of the file.
+The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is sticky and its rows scroll inside the panel; at 1120px and below it renders collapsed to `ATTENTION_PREVIEW_ROWS` rows (`ATTENTION_PREVIEW_ROWS_PHONE` at 720px and below) behind an expand button, protocols without agenda items or extracted speeches get a plain notice instead of a ranking, and print output shows every row without controls. Ranking row labels strip recognized procedural boilerplate from the start of the agenda heading and keep the full normalized heading in the link's `title` tooltip. Both row counts are module constants near the top of the file.
 
 ### `scripts/persist_dip_pulse_store.py`
 
