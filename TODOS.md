@@ -406,11 +406,11 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### CONTRIBUTING.md
 
-**Completed:** 2026-09-25. Added a concise command index with README links and the `.env.local` empty-key warning.
+**Completed:** v0.6.4.0 (2026-09-25). Added a concise command index with README links and the `.env.local` empty-key warning.
 
 ### Regenerate the architecture diagram for the Daten export step
 
-**Completed:** 2026-09-25. Updated the diagram to include the Fakten engine, Daten export, generated data paths, manifest override, and Daten page.
+**Completed:** v0.6.4.0 (2026-09-25). Updated the diagram to include the Fakten engine, Daten export, generated data paths, manifest override, and Daten page.
 
 ### Move the hidden dev-view API dump below the dossier content
 
