@@ -8,6 +8,29 @@ import render_dip_pulse_html as pulse_html
 
 
 class GlobalHeaderTests(unittest.TestCase):
+    def test_shared_link_states_use_teal_and_visible_focus(self) -> None:
+        css = pulse_html.global_header_styles()
+        self.assertRegex(css, r"a:visited\s*\{\s*color:var\(--teal, #0f766e\);")
+        self.assertRegex(css, r"a:focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
+        # The dark theme repaints every link blue with !important, which would
+        # otherwise swamp the shared visited color; dark mode needs its own
+        # higher-precedence visited rule so visited links stay teal there too.
+        dark_all_links = css.index(':root[data-theme="dark"] a {')
+        dark_visited = re.search(r':root\[data-theme="dark"\] a:visited\s*\{\s*color:var\(--teal\) !important;', css)
+        self.assertIsNotNone(dark_visited, "dark-theme visited-link override not found")
+        self.assertGreater(dark_visited.start(), dark_all_links)
+
+    def test_dossier_heading_names_session_with_product_eyebrow(self) -> None:
+        for protocol, title in (
+            ({"titel": "Sitzung & Beratung", "dokumentnummer": "20/103"}, "Sitzung &amp; Beratung"),
+            ({"dokumentnummer": "20/103"}, "20/103"),
+            ({}, "Plenarsitzung"),
+        ):
+            with self.subTest(protocol=protocol):
+                markup = pulse_html.render_html({"protocol": protocol, "agenda_items": []})
+                self.assertRegex(markup, r'<span class="eyebrow">Bundestag-Puls</span>\s*<h1>' + re.escape(title) + r'</h1>')
+                self.assertEqual(len(re.findall(r"<h1>", markup)), 1)
+
     def test_depth_prefixes_every_href(self) -> None:
         root = pulse_html.render_global_header(active="pulse")
         nested = pulse_html.render_global_header(depth=1, active="bills")

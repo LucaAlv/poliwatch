@@ -406,6 +406,11 @@ def format_percent(value: float) -> str:
 
 def global_header_styles() -> str:
     return """
+    a:visited { color:var(--teal, #0f766e); }
+    a:focus-visible {
+      outline:2px solid var(--blue);
+      outline-offset:2px;
+    }
     :root[data-theme="dark"] {
       color-scheme:dark;
       --ink:#e6edf3;
@@ -516,6 +521,7 @@ def global_header_styles() -> str:
       line-height:1;
     }
     :root[data-theme="dark"] a { color:var(--blue) !important; }
+    :root[data-theme="dark"] a:visited { color:var(--teal) !important; }
     :root[data-theme="dark"] :is(
       .site-nav a, .theme-toggle,
       .button, .btn, .dev-toggle,
@@ -2446,7 +2452,7 @@ def render_html(
         )
         top_sections.append(
             f"""
-            <article class="top-card" id="top-{item['index']}">
+            <article class="top-card" id="top-{esc(item['index'])}">
               <div class="top-head">
                 <div>
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>

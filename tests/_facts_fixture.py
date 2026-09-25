@@ -232,9 +232,9 @@ def seed_weeks(
                         """
                         INSERT INTO speeches(
                           protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
-                          paragraph_count, char_count, text, paragraphs_json, snippet, created_at, updated_at
+                          paragraph_count, char_count, text, snippet, created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, '[]', ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                         """,
                         (
                             protocol_id,
