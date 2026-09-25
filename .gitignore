@@ -10,3 +10,6 @@ __pycache__/
 .DS_Store
 features.local.json
 .gstack/
+
+# ideas
+IDEAS.md
