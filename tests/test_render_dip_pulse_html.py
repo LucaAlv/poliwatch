@@ -994,6 +994,21 @@ class AgendaTopicTests(unittest.TestCase):
         self.assertEqual(pulse_html.strip_heading_boilerplate(heading), heading)
         self.assertEqual(pulse_html.strip_heading_boilerplate(""), "")
 
+    def test_a_bundled_heading_keeps_the_first_sub_items_topic(self) -> None:
+        # A joint agenda item files an Antrag under a) and a Gesetzentwurf
+        # under b). The Gesetzentwurf rule's opener has no fixed starting
+        # phrase, so matched against the whole heading it can skip past a)
+        # entirely and surface b)'s topic instead, hiding a)'s.
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "a) Beratung des Antrags der Fraktion der AfD Rente mit 63 "
+                "sofort abschaffen b) Erste Beratung des von der "
+                "Bundesregierung eingebrachten Entwurfs eines Gesetzes zur "
+                "Änderung des Rentenrechts"
+            ),
+            "Rente mit 63 sofort abschaffen",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

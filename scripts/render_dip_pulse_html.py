@@ -1337,6 +1337,13 @@ _HEADING_BY = (
 # "1 a) ", "a) ", "8 ", "– ": the TOP enumeration, stripped before anything else.
 _HEADING_ENUMERATION = re.compile(r"^(?:\d{1,3}\s*[a-z]?\)|\d{1,3}(?=\s)|[a-z]\)|[–—-])\s*")
 
+# " b) ", " c) ": a second sub-item starting inside a bundled heading (e.g. an
+# Antrag under a) followed by a Gesetzentwurf under b)). Matching openers
+# against the whole heading lets an unanchored rule (the Gesetzentwurf rule
+# below) skip past the first sub-item and pick up the second one's topic
+# instead, silently dropping the first. Bound matching to what precedes this.
+_HEADING_SUB_ITEM = re.compile(r"\s[a-z]\)\s")
+
 _HEADING_OPENERS: tuple[re.Pattern[str], ...] = (
     # "Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines
     # Gesetzes zur Änderung …" -> "Gesetz zur Änderung …"
@@ -1380,8 +1387,10 @@ def strip_heading_boilerplate(heading: Any) -> str:
         if shorter == text:
             break
         text = shorter
+    boundary = _HEADING_SUB_ITEM.search(text)
+    first_item = text[: boundary.start()] if boundary else text
     for index, rule in enumerate(_HEADING_OPENERS):
-        match = rule.match(text)
+        match = rule.match(first_item)
         if not match:
             continue
         rest = match.group("rest").strip()
