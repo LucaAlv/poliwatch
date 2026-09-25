@@ -84,6 +84,28 @@ _Avoid_: Plenarwoche, Tagungswoche; using it for a week this project reports on
 The ISO calendar week, and this project's primary reporting period; a few metrics report by calendar month instead. A Kalenderwoche counts only if at least one Sitzung was held in it, whether or not it was a Sitzungswoche.
 _Avoid_: sitting week, Plenarwoche, "Sitzungswoche" for this period
 
+### Parliamentary business
+
+**Tagesordnungspunkt**:
+One item on the Tagesordnung of one Sitzung, including a Zusatzpunkt added to it. Every Rede is given under exactly one Tagesordnungspunkt, and that Tagesordnungspunkt is what the Rede addresses. One Tagesordnungspunkt can deal with several Vorgänge at once (verbundene Beratung).
+_Avoid_: agenda item in public text, "Thema" for the item itself, Debatte (a Tagesordnungspunkt can pass without any Rede)
+
+**Vorgang**:
+One parliamentary procedure as DIP records it, such as a Gesetzgebung or an Antrag, from its first Drucksache to its conclusion. A Vorgang can be dealt with under several Tagesordnungspunkte in several Sitzungen (erste Beratung, then zweite und dritte Beratung). A Rede is never attributed to a Vorgang: it addresses its Tagesordnungspunkt, whichever Vorgänge that Tagesordnungspunkt deals with.
+_Avoid_: bill (only Gesetzgebung is legislation), proceeding in public text, crediting a bundled Tagesordnungspunkt's Reden to one of its Vorgänge
+
+**Vorgangsposition**:
+One step in a Vorgang as DIP records it, such as a Beratung in a Sitzung or a Beschlussempfehlung, citing the Drucksache or Plenarprotokoll pages it rests on. A Vorgangsposition is how a Tagesordnungspunkt is linked to a Vorgang.
+_Avoid_: position (unqualified), treating it as a Vorgang
+
+**Drucksache**:
+An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
+_Avoid_: document (unqualified), confusing it with a Plenarprotokoll
+
+**Thema**:
+What a Tagesordnungspunkt is about, in readers' words: the title of the Vorgang it chiefly deals with, preferring a Gesetzgebung, else its heading in the Plenarprotokoll without procedural boilerplate. Where it deals with several Vorgänge of equal weight, all their titles name it alike. Thema only names a Tagesordnungspunkt; it never decides which Vorgang a Rede counts for.
+_Avoid_: topic as a counting unit, "lead Vorgang" as an attribution rule
+
 ### Votes
 
 **Abstimmung**:
