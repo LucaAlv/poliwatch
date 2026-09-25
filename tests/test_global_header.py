@@ -13,6 +13,17 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertRegex(css, r"a:visited\s*\{\s*color:var\(--teal, #0f766e\);")
         self.assertRegex(css, r"a:focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
 
+    def test_dossier_heading_names_session_with_product_eyebrow(self) -> None:
+        for protocol, title in (
+            ({"titel": "Sitzung & Beratung", "dokumentnummer": "20/103"}, "Sitzung &amp; Beratung"),
+            ({"dokumentnummer": "20/103"}, "20/103"),
+            ({}, "Plenarsitzung"),
+        ):
+            with self.subTest(protocol=protocol):
+                markup = pulse_html.render_html({"protocol": protocol, "agenda_items": []})
+                self.assertRegex(markup, r'<span class="eyebrow">Bundestag-Puls</span>\s*<h1>' + re.escape(title) + r'</h1>')
+                self.assertEqual(len(re.findall(r"<h1>", markup)), 1)
+
     def test_depth_prefixes_every_href(self) -> None:
         root = pulse_html.render_global_header(active="pulse")
         nested = pulse_html.render_global_header(depth=1, active="bills")

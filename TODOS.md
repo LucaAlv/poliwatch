@@ -124,18 +124,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None
 
-### Dossier h1 shows the session, "Bundestag-Puls" moves to the eyebrow
-
-**What:** On `protocols/*.html` make the session title the `h1` and demote the product name to an eyebrow/kicker.
-
-**Why:** Every one of the 285 dossiers has the identical `h1 "Bundestag-Puls"`; the page's actual subject is a muted 15px subtitle. Hierarchy should serve the page, not the brand (flagged in the 2026-09-13 design review).
-
-**Context:** the `<h1>Bundestag-Puls</h1>` block in `render_html`'s page template (`scripts/render_dip_pulse_html.py`). puls.html already made this exact move in 0.3.0.0 (`header["h1"]` = "Was der Bundestag in KW … verhandelt hat" with an eyebrow; `render_front_page` in `scripts/build_dip_pulse_site.py`), so copy that pattern. Check `test_global_header.py` expectations before changing the `h1`.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 
 ## Puls
 
@@ -465,6 +453,16 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Dossier h1 shows the session, "Bundestag-Puls" moves to the eyebrow
+
+**What:** On `protocols/*.html` make the session title the `h1` and demote the product name to an eyebrow/kicker.
+
+**Why:** Every one of the 285 dossiers has the identical `h1 "Bundestag-Puls"`; the page's actual subject is a muted 15px subtitle. Hierarchy should serve the page, not the brand (flagged in the 2026-09-13 design review).
+
+**Context:** the `<h1>Bundestag-Puls</h1>` block in `render_html`'s page template (`scripts/render_dip_pulse_html.py`). puls.html already made this exact move in 0.3.0.0 (`header["h1"]` = "Was der Bundestag in KW … verhandelt hat" with an eyebrow; `render_front_page` in `scripts/build_dip_pulse_site.py`), so copy that pattern. Check `test_global_header.py` expectations before changing the `h1`.
+
+**Completed:** 2026-09-25. Verified the existing session h1/product eyebrow and added explicit title, escaping and fallback regression coverage.
 
 ### Site-wide `:visited` and `:focus-visible` rules in `global_header_styles`
 
