@@ -3350,14 +3350,17 @@ def render_week_comparison_section(
             "Anteil an allen Reden der verglichenen Sitzungstage, Ver&auml;nderung in Prozentpunkten "
             f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
         )
+        spark_note = "Verlauf aller Sitzungstage: Reden je Sitzungswoche"
     elif basis is None:
         sittings_note += " Kein gemeinsamer Sitzungstag; kein Wochenpuls- oder Redeanteil-Vergleich."
         share_note = "Anteil an allen Reden dieser Woche; kein gemeinsamer Sitzungstag f&uuml;r einen Vergleich."
+        spark_note = "Reden je Sitzungswoche"
     else:
         share_note = (
             "Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten "
             f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
         )
+        spark_note = "Reden je Sitzungswoche"
     share_note += _speakers_note(compared_current)
 
     return f"""
@@ -3375,7 +3378,7 @@ def render_week_comparison_section(
           <h3>Wochenpuls</h3>
           <div class="week-metrics">{"".join(metric_cells)}</div>
           {pulse_html.render_sparkline(points)}
-          <p class="week-note">Reden je Sitzungswoche, letzte {len(points)} Sitzungswochen bis {pulse_html.esc(current["label"])}.</p>
+          <p class="week-note">{pulse_html.esc(spark_note)}, letzte {len(points)} Sitzungswochen bis {pulse_html.esc(current["label"])}.</p>
         </article>
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>

@@ -2808,6 +2808,7 @@ class WeekRadarPageTests(unittest.TestCase):
         entries.append(self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)] * 2)]))
         band = self._section(self._render(entries), "week-compare")
         self.assertIn("Für Wochenpuls und Redeanteil verglichen: Do–Fr beider Wochen.", band)
+        self.assertIn("Verlauf aller Sitzungstage: Reden je Sitzungswoche", band)
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<div class="week-spark', band, re.S).group(1)
         self.assertNotIn("n/a", metrics)
         self.assertIn("Anteil an allen Reden der verglichenen Sitzungstage", band)
