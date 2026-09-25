@@ -1343,6 +1343,13 @@ _HEADING_BY = (
 # "1 a) ", "a) ", "8 ", "– ": the TOP enumeration, stripped before anything else.
 _HEADING_ENUMERATION = re.compile(r"^(?:\d{1,3}\s*[a-z]?\)|\d{1,3}(?=\s)|[a-z]\)|[–—-])\s*")
 
+# " b) ", " c) ": a second sub-item starting inside a bundled heading (e.g. an
+# Antrag under a) followed by a Gesetzentwurf under b)). Matching openers
+# against the whole heading lets an unanchored rule (the Gesetzentwurf rule
+# below) skip past the first sub-item and pick up the second one's topic
+# instead, silently dropping the first. Bound matching to what precedes this.
+_HEADING_SUB_ITEM = re.compile(r"\s[a-z]\)\s")
+
 _HEADING_OPENERS: tuple[re.Pattern[str], ...] = (
     # "Erste Beratung des von der Bundesregierung eingebrachten Entwurfs eines
     # Gesetzes zur Änderung …" -> "Gesetz zur Änderung …"
@@ -1386,8 +1393,10 @@ def strip_heading_boilerplate(heading: Any) -> str:
         if shorter == text:
             break
         text = shorter
+    boundary = _HEADING_SUB_ITEM.search(text)
+    first_item = text[: boundary.start()] if boundary else text
     for index, rule in enumerate(_HEADING_OPENERS):
-        match = rule.match(text)
+        match = rule.match(first_item)
         if not match:
             continue
         rest = match.group("rest").strip()
@@ -2345,16 +2354,20 @@ def render_html(
         stats = stats_by_index[item["index"]]
         speech_share = percent(stats["speech_count"], total_speeches)
         text_share = percent(stats["total_chars"], total_chars)
+        normalized_heading = " ".join(str(item.get("heading") or "").split())
+        heading_topic = strip_heading_boilerplate(normalized_heading)
+        heading_title = f' title="{esc(normalized_heading)}"' if normalized_heading else ""
         attention_rows.append(
-            '<a class="attention-row" href="#top-{index}">'
+            '<a class="attention-row" href="#top-{index}"{heading_title}>'
             '<span class="row-top">{top}</span>'
             '<span class="row-title">{title}</span>'
             '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
             '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
                 index=esc(item["index"]),
+                heading_title=heading_title,
                 top=esc(item.get("top_id")),
-                title=esc(short(item.get("heading"), 78)),
+                title=esc(short(heading_topic, 78)),
                 speech_share=speech_share,
                 text_share=text_share,
                 speech_share_label=format_percent(speech_share),

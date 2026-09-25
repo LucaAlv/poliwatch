@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3.0] - 2026-09-25
+
+### Fixed
+
+- Aufmerksamkeitsrang rows now begin with the agenda topic instead of procedural wording, keeping the first sub-item's topic on a bundled heading (an Antrag under a) followed by a Gesetzentwurf under b)); the complete normalized heading remains available on hover.
+
 ## [0.6.2.0] - 2026-09-25
 
 ### Fixed

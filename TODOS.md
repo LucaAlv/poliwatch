@@ -88,19 +88,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ## Protokoll-Dossier
 
-### Ranking row titles that skip the "Beratung des Antrags der Abgeordneten …" boilerplate
-
-**What:** Shorten `.attention-row` titles (and the KI-summary/lede rows that reuse `short(heading, 78)`) so the first visible words identify the topic, not the procedural prefix.
-
-**Why:** Real TOP headings are boilerplate-first ("Beratung des Antrags der Abgeordneten Nicole Höchst, Dr. Götz Frömming, Dr. M…", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Umwe…"). At the 78-char cut most rows in the Aufmerksamkeitsrang never reach the subject, so the ranking ranks things the reader cannot tell apart. This is also the prerequisite for any denser (one-line) row design, which two independent reviewers proposed on 2026-09-13 and which was rejected only because of this.
-
-**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. The stripper now exists: `strip_heading_boilerplate()` / `agenda_topic()` in `scripts/render_dip_pulse_html.py`, built for the Fakten cards on 2026-09-22 (six openers, strips 2.238 of the archive's 2.727 headings). What is left here is calling it from the `attention_rows` loop and keeping the full heading in the `title` attribute. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None (see the LLM topic label item)
-
-
 ### Current-TOP highlight in the ranking sidebar
 
 **What:** Mark the TOP currently in view in the desktop sidebar (`IntersectionObserver` on `.top-card`, `aria-current="true"` on the matching `.attention-row`), optionally scrolling the row into view inside `.attention-list`.
@@ -144,11 +131,11 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 ### LLM five-word topic label per Tagesordnungspunkt
 
-**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title (see the "Ranking row titles" item under Protokoll-Dossier, which this would supersede).
+**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title, replacing the deterministic boilerplate-stripped fallback now used there.
 
 **Why:** The DIP Vorgang title is up to 200 characters and, for Antrag-only groups, the lead title is one Fraktion's slogan chosen by DIP ordering. A generated neutral label reads in five seconds and sidesteps the lead-title problem; the Vorgang title stays as the deterministic fallback.
 
-**Context:** The summaries pipeline (`--summary-mode`) already calls an LLM per TOP with receipts; add one more field to its output. Supersedes the earlier idea of a boilerplate stripper for untitled XML headings (of 459 ranked top-5 rows in the cache, the 61 untitled ones are Einzelpläne, Regierungserklärungen and "Zur Geschäftsordnung", all already subject-first).
+**Context:** The summaries pipeline (`--summary-mode`) already calls an LLM per TOP with receipts; add one more field to its output. Dossier ranking rows now strip boilerplate when they use an XML heading; radar rows still prefer the DIP Vorgang title and otherwise truncate the raw XML heading. The generated label would replace both display paths. Of 459 ranked top-5 rows in the cache, the 61 without a DIP title are Einzelpläne, Regierungserklärungen and "Zur Geschäftsordnung", all already subject-first.
 
 **Effort:** L
 **Priority:** P3
@@ -220,11 +207,11 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **What:** A third metric family over the joins (returns of a proceeding to the plenary, speech volume across its debates, final roll-call margin) with a `fakt/<year>-W<ww>.html` card that opens a per-proceeding timeline (debates → speakers → documents → votes). Done when the timeline renders for a proceeding with ≥3 plenary appearances and the card states "seit Beginn unserer Abdeckung (Januar 2022)" wherever a count is censored by the store's start date.
 
-**Why:** Codex's lateral at office hours 2026-09-19: the joins are the asset the corpora lack, and a card that opens a story beats a number. Deferred behind A and B because it needs a bill/timeline page that does not exist and better proceeding titles (see "Ranking row titles that skip the boilerplate" under Protokoll-Dossier).
+**Why:** Codex's lateral at office hours 2026-09-19: the joins are the asset the corpora lack, and a card that opens a story beats a number. Deferred behind A and B because it needs a bill/timeline page that does not exist and better proceeding titles (see "LLM five-word topic label per Tagesordnungspunkt" under Puls).
 
 **Effort:** L
 **Priority:** P3
-**Depends on:** Approach B; a bill/timeline page; the ranking-title item
+**Depends on:** Approach B; a bill/timeline page; the LLM topic-label item
 
 ## Design
 
