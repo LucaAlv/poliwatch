@@ -12,6 +12,13 @@ class GlobalHeaderTests(unittest.TestCase):
         css = pulse_html.global_header_styles()
         self.assertRegex(css, r"a:visited\s*\{\s*color:var\(--teal, #0f766e\);")
         self.assertRegex(css, r"a:focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
+        # The dark theme repaints every link blue with !important, which would
+        # otherwise swamp the shared visited color; dark mode needs its own
+        # higher-precedence visited rule so visited links stay teal there too.
+        dark_all_links = css.index(':root[data-theme="dark"] a {')
+        dark_visited = re.search(r':root\[data-theme="dark"\] a:visited\s*\{\s*color:var\(--teal\) !important;', css)
+        self.assertIsNotNone(dark_visited, "dark-theme visited-link override not found")
+        self.assertGreater(dark_visited.start(), dark_all_links)
 
     def test_dossier_heading_names_session_with_product_eyebrow(self) -> None:
         for protocol, title in (

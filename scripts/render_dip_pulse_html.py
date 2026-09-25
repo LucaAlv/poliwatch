@@ -521,6 +521,7 @@ def global_header_styles() -> str:
       line-height:1;
     }
     :root[data-theme="dark"] a { color:var(--blue) !important; }
+    :root[data-theme="dark"] a:visited { color:var(--teal) !important; }
     :root[data-theme="dark"] :is(
       .site-nav a, .theme-toggle,
       .button, .btn, .dev-toggle,
