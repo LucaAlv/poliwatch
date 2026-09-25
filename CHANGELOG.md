@@ -83,7 +83,7 @@ All notable changes to this project will be documented in this file.
 
 ### Known stale docs
 
-- `docs/bundestag-puls-architecture.html`/`.json` still shows `database.html` as a sample-row explorer with no export step; not regenerated in this change (tracked in TODOS.md).
+- `docs/bundestag-puls-architecture.html`/`.json` omitted the Daten export step and the Daten page; regenerated in 0.6.4.0.
 
 ## [0.3.0.0] - 2026-09-18
 
