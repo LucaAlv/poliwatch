@@ -154,8 +154,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             ai = conn.execute("SELECT id FROM agenda_items").fetchone()["id"]
             conn.execute(
                 """INSERT INTO speeches(protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
-                   paragraph_count, char_count, text, paragraphs_json, snippet, created_at, updated_at)
-                   VALUES ('5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', '[]', 'x', ?, ?)""",
+                   paragraph_count, char_count, text, snippet, created_at, updated_at)
+                   VALUES ('5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                 (ai, mp_id, now, now),
             )
         conn.close()
@@ -178,7 +178,14 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("--enrich votes", r3["empty_reason"])
         self.assertGreaterEqual(len(r1["rows"]), 1)
 
-    def test_distribution_copy_drops_paragraphs_json_and_keeps_row_counts(self) -> None:
+    def test_unmigrated_store_exports_without_paragraphs_json(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("ALTER TABLE speeches ADD COLUMN paragraphs_json TEXT NOT NULL DEFAULT '[]'")
+        self.test_distribution_copy_has_no_paragraphs_json_and_keeps_row_counts()
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertIn("paragraphs_json", {row[1] for row in conn.execute("PRAGMA table_info(speeches)")})
+
+    def test_distribution_copy_has_no_paragraphs_json_and_keeps_row_counts(self) -> None:
         manifest = self.export()
         conn = sqlite3.connect(self.exports_dir / manifest["generation"] / manifest["files"][0]["name"])
         # The file on disk is gzipped; unpack it to a temp file to inspect.

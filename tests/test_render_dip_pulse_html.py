@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from html.parser import HTMLParser
 import json
 import re
 import unittest
@@ -20,6 +21,38 @@ class DossierLayoutTests(unittest.TestCase):
         if match is None:
             raise AssertionError("Rendered dossier has no first TOP card")
         return match.group(1)
+
+    def test_ranking_anchors_resolve_to_top_cards(self) -> None:
+        class Anchors(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.targets = set()
+                self.links = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if attrs.get("class") == "top-card":
+                    self.targets.add(attrs["id"])
+                if attrs.get("class") == "attention-row":
+                    self.links.append(attrs["href"][1:])
+
+        for index in (1, '1"&<>'):
+            with self.subTest(index=index):
+                report = copy.deepcopy(self.report)
+                report["agenda_items"][0]["index"] = index
+                anchors = Anchors()
+                anchors.feed(pulse_html.render_html(report))
+                self.assertTrue(anchors.links)
+                self.assertTrue(set(anchors.links) <= anchors.targets)
+                self.assertIn(f"top-{index}", anchors.targets)
+
+    def test_protocol_dev_dump_follows_content_and_is_opt_in(self) -> None:
+        normal = pulse_html.render_html(self.report)
+        self.assertNotIn('class="api-overview dev-only"', normal)
+        dev = pulse_html.render_html(self.report, include_dev_view=True)
+        self.assertGreater(dev.index('class="api-overview dev-only"'), dev.index('</main>'))
+        self.assertLess(dev.index('class="dev-only dev-top-details"'), dev.index('</main>'))
+        self.assertIn('class="api-overview dev-only"', dev)
 
     def test_documents_are_metadata_before_metrics_and_speakers_are_full_width(self) -> None:
         card = self._top_card(pulse_html.render_html(self.report))

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2.0] - 2026-09-25
+
+### Fixed
+
+- Ranking links retain matching TOP anchors when an index contains HTML-sensitive characters.
+- Links share teal visited states and visible keyboard focus outlines, including pages without their own teal palette variable.
+
+### Removed
+
+- New stores and speech writes no longer duplicate speech text in `paragraphs_json`. Existing stores drop the column on SQLite 3.35+; older versions log a warning and retain it. Distribution downloads keep the same schema and row counts.
+
+### Verified
+
+- Dossiers already show the session title above the content and place the protocol developer dump after it. Regression coverage preserves both; explicit developer builds retain their existing visible raw data without a toggle, while normal builds omit it.
+
 ## [0.6.0.0] - 2026-09-24
 
 ### Added
