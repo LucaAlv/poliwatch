@@ -112,6 +112,17 @@ class DossierLayoutTests(unittest.TestCase):
             markup,
         )
 
+    def test_footer_links_to_the_daten_page_between_abgeordnete_and_quellen(self) -> None:
+        # Same relative-path depth as its neighbours (dossiers live one level
+        # down, under protocols/) and the same position render_overview uses
+        # for this link: right before Quellen.
+        markup = pulse_html.render_html(self.report)
+        footer = re.search(r"<footer>.*?</footer>", markup, re.S).group(0)
+
+        self.assertIn('<a href="../database.html">Daten</a>', footer)
+        self.assertLess(footer.index("../abgeordnete/index.html"), footer.index("../database.html"))
+        self.assertLess(footer.index("../database.html"), footer.index("../sources.html"))
+
 
 class AttentionRankingTests(unittest.TestCase):
     """The Aufmerksamkeitsrang aside on the dossier page.
@@ -528,6 +539,88 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertNotIn("data-more", css)
         self.assertNotIn("dataset.more", pulse_html.attention_runtime_script())
         self.assertIn(".ranking-head .legend { font-size:12px; color:var(--muted); }", css)
+
+
+class CurrentTopHighlightTests(unittest.TestCase):
+    """The IntersectionObserver that marks the current .attention-row."""
+
+    @staticmethod
+    def _item(index: int, speech_count: int = 1) -> dict:
+        return {
+            "index": index,
+            "top_id": f"TOP {index}",
+            "heading": f"Beratung des Antrags {index}",
+            "xml_speech_count": speech_count,
+            "xml_speakers": [{"speaker": {"fraktion": "SPD"}, "char_count": 1000}],
+        }
+
+    @classmethod
+    def _render(cls, count: int = 3) -> str:
+        return pulse_html.render_html(
+            {
+                "protocol": {"dokumentnummer": "21/1", "titel": "Protokoll 21/1"},
+                "validation_summary": {},
+                "agenda_items": [cls._item(i) for i in range(1, count + 1)],
+            }
+        )
+
+    def test_script_is_guarded_when_intersection_observer_or_list_are_missing(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        guard = 'if (!list || typeof IntersectionObserver !== "function") return;'
+        self.assertIn(guard, script)
+        self.assertLess(script.index(guard), script.index("new IntersectionObserver"))
+
+    def test_current_row_styling_is_keyed_on_aria_current(self) -> None:
+        css = AttentionRankingTests._page_css(self._render())
+        rule = AttentionRankingTests._css_block(css, '.attention-row[aria-current="true"]')
+        self.assertIn("background:var(--blue-soft, #eef5ff);", rule)
+        self.assertIn("box-shadow:inset 3px 0 0 var(--blue);", rule)
+
+    def test_off_at_the_same_breakpoint_the_static_aside_css_uses(self) -> None:
+        # The CSS uncaps the aside (position:static) at this exact query (plus
+        # print, irrelevant to matchMedia while reading on screen); the script
+        # must stop observing at the same width/height so it never marks a row
+        # "current" in a layout with no sticky rail to show it on.
+        script = pulse_html.attention_runtime_script()
+        self.assertIn('window.matchMedia("(max-width: 1120px), (max-height: 480px)")', script)
+
+    def test_reveal_scrolls_only_the_list_never_the_page(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        observer_part = script.split('document.getElementById("attention-list")', 1)[1]
+        self.assertIn("list.scrollBy({", script)
+        self.assertNotIn(".scrollIntoView(", observer_part)
+        self.assertIn('reducedMotion.matches ? "auto" : "smooth"', script)
+
+    def test_root_margin_is_left_at_the_full_viewport(self) -> None:
+        # A shrunk top-band root margin (the usual scrollspy trick) leaves a
+        # dead zone above the band that the page header sits in, so nothing
+        # would be "current" until the first card scrolled up into it. Caught
+        # live in a browser check; the fix is to observe the full viewport
+        # (no rootMargin option at all) and let pickCurrent's own rule decide
+        # "nearest the top" from live geometry instead.
+        script = pulse_html.attention_runtime_script()
+        self.assertIn("new IntersectionObserver(onIntersect);", script)
+        self.assertNotIn("rootMargin:", script)
+
+    def test_pick_current_prefers_a_reached_card_over_one_still_descending(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        for identifier in (
+            "if (!reached || top > reached.top) reached = { card, top };",
+            "} else if (!pending || top < pending.top) {",
+            "const winner = reached || pending;",
+        ):
+            with self.subTest(identifier=identifier):
+                self.assertIn(identifier, script)
+
+    def test_runtime_script_is_still_emitted_once_after_the_aside(self) -> None:
+        # Both jobs (toggle + observer) share the one <script> tag placed
+        # right after the aside; this must stay a single tag, not a second
+        # one elsewhere in the page.
+        markup = self._render()
+        self.assertEqual(markup.count("<script>"), markup.count("</script>"))
+        self.assertEqual(markup.count('document.getElementById("attention-list")'), 1)
+        self.assertLess(markup.index("</aside>"), markup.index('document.getElementById("attention-list")'))
+        self.assertLess(markup.index('document.getElementById("attention-list")'), markup.index('<article class="top-card"'))
 
 
 class WeekRadarHelperTests(unittest.TestCase):

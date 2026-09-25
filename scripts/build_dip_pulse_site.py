@@ -2418,6 +2418,7 @@ def render_daten_recipes(
               <div class="recipe-sql">
                 <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
                 <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+                <button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>
               </div>
               <div class="recipe-result">
                 {body}
@@ -2427,6 +2428,64 @@ def render_daten_recipes(
             """
         )
     return "".join(blocks)
+
+
+# Rendered without JS as hidden ("no dead button shows without JS") and
+# revealed once this script has wired up a click handler for it. One script
+# tag for all five recipe buttons, next to the markup it controls rather than
+# folded into page_scripts (shared by every page, most of which have none).
+def recipe_copy_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const buttons = document.querySelectorAll(".recipe-copy");
+      if (!buttons.length) return;
+      const clipboardAvailable = !!(navigator.clipboard && window.isSecureContext);
+
+      buttons.forEach((button) => {
+        const sqlBlock = button.closest(".recipe-sql");
+        const code = sqlBlock && sqlBlock.querySelector("pre code");
+        if (!code) return;
+        const defaultLabel = button.textContent;
+        let resetTimer = null;
+
+        const flash = (label) => {
+          if (resetTimer) window.clearTimeout(resetTimer);
+          button.textContent = label;
+          resetTimer = window.setTimeout(() => {
+            button.textContent = defaultLabel;
+            resetTimer = null;
+          }, 2000);
+        };
+
+        // Non-secure contexts (e.g. a page opened straight off disk, no
+        // server) have no navigator.clipboard at all; select the SQL text
+        // instead so Cmd/Ctrl+C still works, and never fall back to the
+        // deprecated document.execCommand.
+        const selectFallback = () => {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          flash("Markiert – mit ⌘C/Strg+C kopieren");
+        };
+
+        button.addEventListener("click", () => {
+          if (!clipboardAvailable) {
+            selectFallback();
+            return;
+          }
+          navigator.clipboard.writeText(code.textContent).then(() => flash("Kopiert"), selectFallback);
+        });
+
+        button.hidden = false;
+      });
+    })();
+  </script>
+"""
 
 
 def render_daten_schema(manifest: dict[str, Any]) -> tuple[str, str, str]:
@@ -2625,6 +2684,25 @@ def _daten_page_styles() -> str:
     }
     .recipe:first-child { border-top:none; padding-top:0; }
     .recipe pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .recipe-copy {
+      appearance:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      margin-top:8px;
+      padding:6px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--blue);
+      font:inherit;
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }
+    .recipe-copy:hover { border-color:var(--blue); }
+    .recipe-copy:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
     .recipe-empty { font-size:14px; }
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { padding:8px; border-bottom:1px solid var(--surface-3); text-align:left; vertical-align:top; }
@@ -2643,7 +2721,7 @@ def _daten_page_styles() -> str:
     details pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.45; }
     footer { padding-top:24px; margin-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
     @media print {
-      .site-header, .download-panel { display:none; }
+      .site-header, .download-panel, .recipe-copy { display:none; }
     }
     @media screen and (max-width: 1024px) {
       .recipe { grid-template-columns:minmax(0,1fr); }
@@ -2752,6 +2830,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
     </main>
   </div>
   {pulse_html.page_scripts(features)}
+  {recipe_copy_runtime_script()}
 </body>
 </html>
 """

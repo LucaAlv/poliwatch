@@ -142,6 +142,28 @@ class DatenPageTests(unittest.TestCase):
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn(recipe["sql"].split("\n")[0][:20], self.html)
 
+    def test_recipe_copy_button_present_once_per_recipe(self) -> None:
+        # Rendered hidden without JS - no dead button when the script did not
+        # run - and revealed by recipe_copy_runtime_script().
+        button = '<button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>'
+        self.assertEqual(self.html.count(button), len(b.RECIPES))
+        recipe_sql = re.search(r'<div class="recipe-sql">(.*?)</div>', self.html, re.S).group(1)
+        self.assertLess(recipe_sql.index("</pre>"), recipe_sql.index(button))
+
+    def test_recipe_copy_script_writes_clipboard_with_selection_fallback(self) -> None:
+        script = b.recipe_copy_runtime_script()
+        self.assertIn('navigator.clipboard.writeText(code.textContent).then(() => flash("Kopiert"), selectFallback);', script)
+        self.assertIn("range.selectNodeContents(code);", script)
+        self.assertIn('flash("Markiert – mit ⌘C/Strg+C kopieren");', script)
+        self.assertNotIn("document.execCommand(", script)
+        self.assertIn("button.hidden = false;", script)
+        self.assertIn("!!(navigator.clipboard && window.isSecureContext)", script)
+
+    def test_recipe_copy_script_is_emitted_once_after_page_scripts(self) -> None:
+        self.assertEqual(self.html.count('document.querySelectorAll(".recipe-copy")'), 1)
+        self.assertLess(self.html.index("bundestag-pulse-ai-summaries-v1"), self.html.rindex("recipe-copy"))
+        self.assertNotIn("file://", self.html)
+
     def test_footer_issues_link_only_for_allowed_schemes(self) -> None:
         for url, expected in (
             ("https://example.org/issues", True),

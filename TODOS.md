@@ -62,11 +62,11 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
-### Recipe SQL copy buttons, recipe result CSVs / DATA.md / dossier "Daten" footer link
+### Recipe result CSVs and `DATA.md`
 
-**What:** (a) A "Kopieren" clipboard button on each recipe's SQL block. (b) Per-recipe result CSVs, a `DATA.md` in the release, and a "Daten" link in dossier footers (`footer_links` in `render_html`, `scripts/render_dip_pulse_html.py`, currently Katalog · API-Sitzungen · Gesetze · Quellen · Einstellungen).
+**What:** Per-recipe result CSVs and a `DATA.md` in the release.
 
-**Why:** Both were scoped out of PR #59 (no new script per the design doc; b is an Approach-C follow-up once the data path has real usage). Checked 2026-09-19: no clipboard code, no `DATA.md`, no Daten footer link exist. The former item (b), externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+**Why:** Scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped 2026-09-25 (`dossier-daten-ui` branch), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
 
 **Effort:** S–M
 **Priority:** P3
@@ -74,18 +74,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 
 ## Protokoll-Dossier
-
-### Current-TOP highlight in the ranking sidebar
-
-**What:** Mark the TOP currently in view in the desktop sidebar (`IntersectionObserver` on `.top-card`, `aria-current="true"` on the matching `.attention-row`), optionally scrolling the row into view inside `.attention-list`.
-
-**Why:** On 2–3 MB dossier pages the reader loses their place; the sidebar is the page map, but today it does not say "you are here".
-
-**Context:** Hooks exist since the sidebar fix (#56, v0.2.2.0): `#attention-list` wraps the rows, `#top-{index}` ids on cards, `attention_runtime_script()` owns the toggle behaviour. No `IntersectionObserver` exists anywhere yet. Respect `prefers-reduced-motion` for any scrolling; keep the highlight off on ≤1120px where the aside is static.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
 
 
 ## Puls
@@ -403,6 +391,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Current-TOP highlight in the ranking sidebar
+
+**Completed:** 2026-09-25 (`dossier-daten-ui` branch). `IntersectionObserver` on `.top-card` sets `aria-current="true"` on the matching `.attention-row`, styled through `[aria-current]`; off at ≤1120px where the aside is static, no smooth scroll under `prefers-reduced-motion: reduce`, and the row-reveal scrolls only `.attention-list` itself, never the page. Ships alongside the copy-button half of the recipe TODO below.
 
 ### CONTRIBUTING.md
 
