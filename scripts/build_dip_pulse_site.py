@@ -3149,11 +3149,8 @@ def render_landing_page(
 RETURNING_LIMIT = 5
 
 
-# Format one week figure: whole numbers normally, one decimal once the figures
-# have been divided by a differing sitting count.
-def week_figure(value: float, normalised: bool) -> str:
-    if normalised:
-        return f"{value:,.1f}".replace(",", "#").replace(".", ",").replace("#", ".")
+# The comparison uses sums, either for whole weeks or shared weekdays.
+def week_figure(value: float) -> str:
     return pulse_html.format_int(int(round(value)))
 
 
@@ -3246,7 +3243,7 @@ def render_week_comparison_section(
                     f"""
               <div class="week-metric">
                 <span>{pulse_html.esc(label)}</span>
-                <strong>{week_figure(current_stats[key], False)}</strong>
+                <strong>{week_figure(current_stats[key])}</strong>
                 <div class="week-metric-foot">{pulse_html.render_delta(None)}</div>
               </div>"""
                 )
@@ -3277,22 +3274,21 @@ def render_week_comparison_section(
 
     current = comparison["current"]
     previous = comparison["previous"]
-    normalised = comparison["normalised"]
+    basis = comparison["basis"]
+    compared_current = comparison["compared_current"]
+    compared_previous = comparison["compared_previous"]
 
-    # Volume metrics with their deltas. With differing sitting counts the figures
-    # are per-sitting averages and a delta would mostly report the weekday mix,
-    # so the chips read n/a (Final Gate D3.1) while the figures stay.
+    # Volume metrics and deltas use the same comparison basis as the shares.
     metric_cells = []
     for metric in comparison["metrics"]:
-        label = metric["label"] + (" je Sitzung" if normalised else "")
         metric_cells.append(
             f"""
               <div class="week-metric">
-                <span>{pulse_html.esc(label)}</span>
-                <strong>{week_figure(metric["current"], normalised)}</strong>
+                <span>{pulse_html.esc(metric["label"])}</span>
+                <strong>{week_figure(metric["current"])}</strong>
                 <div class="week-metric-foot">
-                  {pulse_html.render_delta(None if normalised else metric["delta_percent"], "%")}
-                  <em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"], normalised)}</em>
+                  {pulse_html.render_delta(metric["delta_percent"], "%")}
+                  <em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"])}</em>
                 </div>
               </div>"""
         )
@@ -3340,21 +3336,29 @@ def render_week_comparison_section(
     sittings_note = (
         f"{current['sitting_count']} Sitzung{'' if current['sitting_count'] == 1 else 'en'} "
         f"({pulse_html.esc(', '.join(d for d in current['documents'] if d))}) gegenüber "
-        f"{previous['sitting_count']} Sitzung{'' if previous['sitting_count'] == 1 else 'en'} in {previous['label']}."
+        f"{previous['sitting_count']} Sitzung{'' if previous['sitting_count'] == 1 else 'en'} in {pulse_html.esc(previous['label'])}."
     )
-    if normalised:
-        sittings_note += " Die Wochen sind unterschiedlich lang, deshalb stehen hier Werte je Sitzung."
-        share_note = (
-            f"Anteile gegen&uuml;ber {pulse_html.esc(previous['label'])} "
-            f"({pulse_html.format_count(previous['sitting_count'], 'Sitzung', 'Sitzungen')}); "
-            "bei abweichender Sitzungszahl verschiebt die Tagesmischung die Anteile."
+    if basis == "weekdays":
+        days = comparison["weekdays"]
+        day_label = (
+            f"{pulse_html.WEEKDAY_SHORT[days[0]]}–{pulse_html.WEEKDAY_SHORT[days[-1]]}"
+            if len(days) > 1 and days == list(range(days[0], days[-1] + 1))
+            else ", ".join(pulse_html.WEEKDAY_SHORT[day] for day in days)
         )
+        sittings_note += f" Für Wochenpuls und Redeanteil verglichen: {pulse_html.esc(day_label)} beider Wochen."
+        share_note = (
+            "Anteil an allen Reden der verglichenen Sitzungstage, Ver&auml;nderung in Prozentpunkten "
+            f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
+        )
+    elif basis is None:
+        sittings_note += " Kein gemeinsamer Sitzungstag; kein Wochenpuls- oder Redeanteil-Vergleich."
+        share_note = "Anteil an allen Reden dieser Woche; kein gemeinsamer Sitzungstag f&uuml;r einen Vergleich."
     else:
         share_note = (
             "Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten "
             f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
         )
-    share_note += _speakers_note(current)
+    share_note += _speakers_note(compared_current)
 
     return f"""
     <section class="week-compare" id="wochenvergleich" aria-labelledby="wochenvergleich-h2">
@@ -3375,7 +3379,7 @@ def render_week_comparison_section(
         </article>
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>
-          {pulse_html.render_share_shift(current["party_counts"], previous["party_counts"])}
+          {pulse_html.render_share_shift(compared_current["party_counts"], compared_previous["party_counts"] if basis else None)}
           <p class="week-note">{share_note}</p>
         </article>
         <article class="week-card">
