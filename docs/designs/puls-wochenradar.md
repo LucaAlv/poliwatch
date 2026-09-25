@@ -249,8 +249,10 @@ Page anatomy, top to bottom (wireframe: docs/designs/puls-wochenradar-sketch.png
    not gap-limited, render ~1341, and would leak a gap-guarded week, test 1366); the
    Redeanteil card via `render_share_shift(current, None)` (handled at ~1404); the votes
    card; and the existing note. So a single-week archive still shows the Fraktion split
-   and the week totals. When the sitting counts differ, the Wochenpuls shows per-sitting
-   figures (`week_comparison` normalises); the header sentence always shows raw totals.
+   and the week totals. When the sitting counts differ, the Wochenpuls metrics and
+   Redeanteil compare all sittings on weekdays present in both weeks. If there is no
+   shared weekday, the cards show the week totals without comparison deltas. The header
+   sentence always shows raw totals.
 5. **Footer** unchanged.
 
 Anchors: `#bewegung` (linked as "Zum Lageblick") is retired with the card; `#wochenvergleich`
@@ -348,8 +350,9 @@ one reaches the top 5); Approach C's per-row `<details>` trajectory.
   the GEG-Änderung and the Wohngeld Anträge, and not one "Erste Beratung des…".
 - Each row links to the right dossier TOP (three different dossiers in KW 24).
 - The Befragung shows in the Außerdem line with 116 / 28,4%; the top row shows 19 /
-  4,6%; the header sentence shows 409 (the Wochenpuls shows 409 only while KW 21 also
-  has 3 sittings, otherwise per-sitting figures); "Weitere 22". All agree on the
+  4,6%; the header sentence shows 409. The Wochenpuls compares whole-week totals when
+  sitting counts match, shared weekdays when they differ, and shows no deltas when the
+  weeks share no sitting weekday; "Weitere 22". All shares agree on the week's
   denominator.
 - The week-wide Fraktion split appears exactly once on the page.
 - Page reads correctly with the votes and summaries blocks hidden (the visitor default),
