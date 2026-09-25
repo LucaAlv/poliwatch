@@ -84,6 +84,40 @@ _Avoid_: Plenarwoche, Tagungswoche; using it for a week this project reports on
 The ISO calendar week, and the period this project reports by. A Kalenderwoche counts only if at least one Sitzung was held in it, whether or not it was a Sitzungswoche.
 _Avoid_: sitting week, Plenarwoche, "Sitzungswoche" for this period
 
+### Votes
+
+**Abstimmung**:
+A decision the Bundestag takes by voting in a Sitzung, by any method: Handzeichen, Aufstehen oder Sitzenbleiben, Hammelsprung or namentlich.
+_Avoid_: "vote" on its own
+
+**Namentliche Abstimmung**:
+An Abstimmung in which each MdB's Stimme is recorded by name. It is the only kind with a per-MdB record and the only kind this project holds.
+_Avoid_: roll-call vote, "vote" for this specifically
+
+**Wahl**:
+An election held by the Bundestag, such as the Kanzlerwahl, usually secret and sometimes with Namensaufruf. It is not a namentliche Abstimmung and records no Stimme per MdB.
+_Avoid_: calling it an Abstimmung
+
+**Abstimmungsgegenstand**:
+The exact text a namentliche Abstimmung decides on. Every Stimme answers it: when it is a Beschlussempfehlung that recommends rejecting an Antrag, Ja means rejecting the Antrag.
+_Avoid_: reading Ja as support for the Antrag behind a Beschlussempfehlung
+
+**Stimme**:
+One MdB's recorded result in one namentliche Abstimmung: Ja, Nein, Enthaltung, ungültig or nicht abgegeben.
+_Avoid_: vote (for the single entry)
+
+**nicht abgegeben**:
+The Stimme recorded for an MdB who cast no voting card. It says nothing about whether the MdB was in the room.
+_Avoid_: abwesend, absent, "hat nicht teilgenommen" as a claim about presence
+
+**entschuldigt**:
+An MdB the Plenarprotokoll lists among the Entschuldigte Abgeordnete of a Sitzung. It is the only published statement about an MdB's absence; the Anwesenheitsliste itself is not published.
+_Avoid_: abwesend (for anyone not listed), inferring presence from a Stimme
+
+**Mehrheitsvotum**:
+The Stimme most MdBs of one Zusammenschluss gave in a namentliche Abstimmung, among Ja, Nein and Enthaltung. There is none when two of them tie or when no MdB of the Zusammenschluss voted.
+_Avoid_: Fraktionslinie, Fraktionsdisziplin, "Votum der Fraktion" (implies a group decision we cannot see)
+
 ### Counting speeches per Zusammenschluss
 
 **Zählung nach Sprechrolle**:

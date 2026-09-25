@@ -30,6 +30,42 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** None
 
+### Say "nicht abgegeben", never "Abwesend", and stop inventing a Mehrheitsvotum
+
+**What:** Two small fixes to match CONTEXT.md (Stimme, nicht abgegeben, Mehrheitsvotum). (1) The Abgeordnete page labels an uncast Stimme "Abwesend" (`scripts/build_dip_pulse_site.py:5819`) while the vote panel says "nicht abg." (`scripts/render_dip_pulse_html.py:40`); use "nicht abgegeben" in both. (2) `leading_vote()` (`scripts/validate_dip_protocol.py:615`) returns `max()` over Ja/Nein/Enthaltung, so a tie yields "yes", and returns "absent" when nobody in the Zusammenschluss voted; both cases should yield no Mehrheitsvotum (NULL), and `scripts/features/votes.py:47` should stop falling back to "absent".
+
+**Why:** "Abwesend" claims an MdB was not in the room, which no published source supports (the Anwesenheitsliste under § 14 AbgG is not published). A tie reported as Ja invents a group position, and "absent" as a group position reads like a collective boycott.
+
+**Context:** Settled in /domain-modeling 2026-09-25. `vote_fractions.leading_vote` is persisted, so a rebuild is needed to clear stored values; anything reading it (vote panels, Fakten) must handle NULL.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
+
+**What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
+
+**Why:** Ungültig is an official Stimme value we cannot represent; if it ever occurs, the chart numbers either hide it or shift it into another category, silently. Bemerkung gives the stated reason for some uncast Stimmen (30 most recent votes, 2026-09-25: "gesetzlicher Mutterschutz" 42×, "Geburt eines Kindes" 1×), which the site could show next to "nicht abgegeben". The XLSX also carries Sitzungnr/Abstimmnr, a sturdier join to the Sitzung than matching by date.
+
+**Context:** Sample of 30 XLSX files (18,895 Stimmen) had zero ungültig, so today's counts are not wrong in practice; this is about not being able to tell. HTML scraping of the filterlist also breaks whenever bundestag.de changes its markup.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Parse the "Entschuldigte Abgeordnete" appendix of each Plenarprotokoll
+
+**What:** Every Plenarprotokoll XML has an `<anlage>` headed "Entschuldigte Abgeordnete" (confirmed in 21/84) listing the MdBs excused for that Sitzung. Parse it into a per-Sitzung, per-MdB table and show "entschuldigt" next to a Stimme "nicht abgegeben" where it applies.
+
+**Why:** It is the only published statement about an MdB's absence (CONTEXT.md: entschuldigt). Without it the site can only say "nicht abgegeben", which readers may still read as skipping the vote.
+
+**Context:** Needs the Person identity merge to map listed names to MdBs (the appendix gives names and Zusammenschluss, check whether it carries redner ids). Never derive "anwesend" from it: not being excused does not mean present.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
 ### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
 
 **What:** A `protocol_acquisition(protocol_id, component, state, fetched_at)` table written at persist time from each report's acquisition states (votes: `acquisition_state` as consumed by `render_vote_summary`; XML parsed or not; AI summaries), exported with the Daten CSVs; the facts engine and the Daten page read it instead of re-deriving it.
