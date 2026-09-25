@@ -50,6 +50,22 @@ _Avoid_: MP, member (unqualified), "Abgeordnete" for anyone who speaks
 A Person giving a Rede in a Sitzung: an MdB or a member of the Bundesregierung or the Bundesrat. Being a Redner implies no Mandat.
 _Avoid_: MP, MdB for every speaker
 
+**Personenkennung**:
+An identifier a source assigns to exactly one Person and keeps for them, such as the Bundestag's Redner-ID in the Plenarprotokoll or DIP's Person-ID. Two records sharing a Personenkennung describe the same Person. An identifier that was itself found by searching for a name is not a Personenkennung but the result of a Namensabgleich.
+_Avoid_: treating a name, a Zusammenschluss or a profile link as proof of identity
+
+**Namensabgleich**:
+Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. It may join records only when exactly one record on each side matches and no Personenkennung contradicts it.
+_Avoid_: name match as identity, merging every record in a group of namesakes
+
+**Zusammenführung**:
+Joining records from different sources into one Person: by a shared Personenkennung, otherwise by Namensabgleich. A Person whose records could not be joined appears split, which is preferable to two Persons shown as one.
+_Avoid_: deduplication (the records are not copies), merging on a guess to fill a page
+
+**Personenseite**:
+The page for one Person who holds a current Mandat or has given at least one Rede. Only a Person with a current Mandat is shown as an Abgeordnete or Abgeordneter; everyone else is shown as a Redner, with the Sprechrolle they spoke in.
+_Avoid_: calling every Personenseite an Abgeordnetenprofil, "Abgeordnete" as the heading for all Redner
+
 ### Sittings and their records
 
 **Sitzung**:

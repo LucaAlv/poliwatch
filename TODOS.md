@@ -384,6 +384,30 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** Approach B; a bill/timeline page; the ranking-title item
 
+## Abgeordnete
+
+### Make the Namensabgleich unique, and stop treating name-found ids as proof
+
+**What:** `collect_abgeordnete` (`scripts/build_dip_pulse_site.py`) pass 2 merges every record of a name+party bucket whose ids of the same kind don't contradict each other. Require exactly one candidate on each side, and leave a bucket of namesakes split. Two records with ids of different kinds (one DIP-Person-ID only, one Redner-ID only) currently merge with nothing to contradict them. Also record whether an `aw_politician_id` came from the exact `ext_id_bundestagsverwaltung` lookup or from the resolver's name-search fallback (`scripts/abgeordnetenwatch.py`); the latter must not act as a Personenkennung in pass 1. Normalise titles ("Dr.") consistently on both sides, since roster and speaker names may differ there (check). Done when no Personenseite joins two namesakes and every join by name is unique.
+
+**Why:** CONTEXT.md (Personenkennung, Namensabgleich, Zusammenführung, 2026-09-25): a split Person is preferable to two Persons shown as one.
+
+**Context:** Worth checking the Bundestag's MdB-Stammdaten as an official bridge. As far as known, they carry the same ID as the Plenarprotokoll's Redner-ID, plus name and Fraktion histories, and could replace most name matching between the DIP roster and the Reden. Related: `parties.name` spellings under Daten, which break name+party buckets.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Call only current MdBs "Abgeordnete" on the Personenseiten
+
+**What:** Every Person with a Mandat or at least one Rede gets a page under `abgeordnete/`, including members of the Bundesrat and the Bundesregierung without a Mandat. On the list and each page, show only Persons with a current Mandat as Abgeordnete; show everyone else as a Redner with the Sprechrolle they spoke in (and a former Mandat where one exists). Decide whether the list keeps them in one filterable list or a separate group. The URL path can stay.
+
+**Why:** CONTEXT.md (MdB, Personenseite, 2026-09-25): "Abgeordnete" for anyone who speaks is on the MdB entry's avoid list.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Design
 
 ### DESIGN.md, tokens and a typeface decision via /design-consultation
