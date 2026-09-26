@@ -667,6 +667,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Completed:** 2026-09-25. Shared teal visited links and focus outlines; removed redundant Daten link rules, retaining control and radar/week-specific styles.
 
+### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden
+
+**What:** Every `<rede>` in the Plenarprotokoll XML becomes a row in `speeches` and counts as a Rede, including Kurzinterventionen and Erwiderungen (e.g. `ID216605400`, 481 characters, and its Erwiderung `ID216605500` in Sitzung 21/50). Give each speech a kind (Rede, Kurzintervention, Erwiderung). Two candidate signals: the Sitzungsleitung's wording before it ("zu einer Kurzintervention", "zur Erwiderung"), and DIP's `aktivitaetsart` matched by DIP-Person-ID and page. Check them against each other before trusting either. The DIP Aktivitäten matched to TOPs cover only part of the Reden (6,849 "Rede" Aktivitäten against 10,422 XML Reden in WP 21), so DIP alone cannot be the source. Then exclude non-Reden from Redeanteil, Rangfolge nach Reden, Reden counts on the Personenseiten, the Daten recipes, and the Fakt der Woche metrics that count Reden (`aktivste-abgeordnete`, `erste-reden`). Decide whether their characters still count toward a Tagesordnungspunkt's length (`laengste-debatte`) and Textanteil. Where useful, show Kurzinterventionen as their own count. Done when no count of Reden includes a Kurzintervention or Erwiderung.
+
+**Why:** ADR 0002 and CONTEXT.md (Rede, Kurzintervention, Erwiderung, 2026-09-26).
+
+**Context:** On WP 21 DIP data: 305 Kurzinterventionen (AfD 144, Grüne 65, Linke 51, SPD 22, CDU/CSU 14) and 304 Erwiderungen (CDU/CSU 133, SPD 72). Shares per Zusammenschluss move by at most about half a point, but counts per Person move a lot. Fakt der Woche history and baselines change, so re-run the facts tables and note the method change on the Methodik page.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### Stop persisting `speeches.paragraphs_json`
 
 **What:** A migration dropping the column from the live schema (duplicate of `speeches.text`, no reader in site code — the only references are the INSERT in `persist_dip_pulse_store.py` and the export-time `DROP COLUMN` in `export_distribution_data`); then remove that export-time `DROP COLUMN` since it would no longer be needed.

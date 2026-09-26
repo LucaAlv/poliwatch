@@ -93,16 +93,28 @@ A Sitzung this project has a Dossier for. Every count this project publishes —
 _Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
-One contribution for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it.
-_Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text
+One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, although the Plenarprotokoll records each like one.
+_Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
 
 **Zwischenfrage**:
 A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner.
 _Avoid_: counting it as part of the Rede
 
+**Kurzintervention**:
+A remark of at most two minutes that an MdB is given the floor for right after another Redner's Rede (§ 27a Abs. 2 GO-BT). It is not a Rede and counts toward no Redeanteil or Rangfolge nach Reden; where shown, it is counted on its own.
+_Avoid_: Zwischenfrage (that is asked during the Rede, with the Redner's consent), counting it as a Rede
+
+**Erwiderung**:
+The brief reply of the Redner whose Rede a Kurzintervention referred to. Like the Kurzintervention, it is not a Rede and is counted on its own.
+_Avoid_: counting it as a second Rede of the same Redner
+
 **Zwischenruf**:
 A remark called out from the floor during a Rede without being given the floor or asking the Redner's consent; the Plenarprotokoll records it in parentheses, with its author and Zusammenschluss where known. It is neither a Rede nor a Zwischenfrage, and it belongs to whoever called it out.
 _Avoid_: Zwischenfrage, counting it as part of the Rede, Kommentar
+
+**Aktivität**:
+DIP's record of one Person's contribution in a Plenarprotokoll or Drucksache, typed by DIP (Rede, Kurzintervention, Erwiderung, Frage, Zwischenfrage and more) and located by page. It is a source record, not a unit the site counts: Reden are counted from the Plenarprotokoll.
+_Avoid_: Aktivität as a synonym for Rede, counting Aktivitäten as Reden
 
 **Sitzungsleitung**:
 What the presiding Präsident or Vizepräsident says while chairing a Sitzung: giving the floor, Ordnungsrufe, procedural remarks. It is never a Rede; a Präsident who speaks from the lectern gives a Rede like any other Redner.
@@ -141,6 +153,10 @@ _Avoid_: inventing own categories, deriving the kind from a title
 **mitberatener Vorgang**:
 A Vorgang that is deliberated together with another in the same Vorgangsposition, as with identical Gesetzentwürfe brought in by the Bundesregierung and by the coalition Fraktionen. They stay two Vorgänge, each with its own Drucksachen and page. A list may show such a pair as one row, but counts never merge them into one Vorgang.
 _Avoid_: treating the pair as one Gesetzgebung, listing the same debate twice side by side
+
+**Plenarstelle**:
+One Tagesordnungspunkt, in one Sitzung, at which a Vorgang was dealt with, pointing into that Sitzung's Dossier. A Vorgang has one Plenarstelle per Tagesordnungspunkt, however many of its Vorgangspositionen that Tagesordnungspunkt carries.
+_Avoid_: Fundstelle (DIP's page reference in a Drucksache or Plenarprotokoll), Debatte
 
 **Drucksache**:
 An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
