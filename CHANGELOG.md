@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.5.0] - 2026-09-25
+
+### Changed
+
+- When sitting counts differ, the Wochenvergleich now compares speeches, agenda items, speech text, and Fraktion speaking shares across weekdays present in both weeks. The page names those weekdays and keeps `n/a` when none overlap.
+
+### Fixed
+
+- The Wochenpuls sparkline now identifies its full-week trend when the figures above it use matched weekdays.
+
 ## [0.6.4.0] - 2026-09-25
 
 ### Changed

@@ -1352,16 +1352,15 @@ class SittingWeekComparisonTests(unittest.TestCase):
         )
         comparison = pulse_html.week_comparison(current, previous)
 
-        self.assertFalse(comparison["normalised"])
+        self.assertEqual(comparison["basis"], "totals")
+        self.assertEqual(comparison["weekdays"], [])
         speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
         self.assertEqual(speeches["current"], 3.0)
         self.assertEqual(speeches["previous"], 2.0)
         self.assertEqual(speeches["delta"], 1.0)
         self.assertAlmostEqual(speeches["delta_percent"], 50.0)
 
-    def test_unequal_sitting_counts_switch_to_per_sitting_figures(self) -> None:
-        # A week caught mid-flight - one sitting of the usual two - must not read
-        # as a collapse just for being unfinished.
+    def test_unequal_sitting_counts_compare_shared_weekdays(self) -> None:
         current = pulse_html.week_stats(
             (2026, 24),
             [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])])],
@@ -1375,11 +1374,106 @@ class SittingWeekComparisonTests(unittest.TestCase):
         )
         comparison = pulse_html.week_comparison(current, previous)
 
-        self.assertTrue(comparison["normalised"])
+        self.assertEqual(comparison["basis"], "weekdays")
+        self.assertEqual(comparison["weekdays"], [2])
         speeches = next(m for m in comparison["metrics"] if m["key"] == "speech_count")
         self.assertEqual(speeches["current"], 2.0)
         self.assertEqual(speeches["previous"], 2.0)
         self.assertEqual(speeches["delta"], 0.0)
+        self.assertEqual(speeches["delta_percent"], 0.0)
+
+    def test_weekday_pairing_includes_every_sitting_on_shared_days(self) -> None:
+        current = [{"datum": "2026-06-10"}, {"datum": "2026-06-10"}, {"datum": "2026-06-11"}]
+        previous = [{"datum": "2026-05-20"}, {"datum": "2026-05-21"}, {"datum": "2026-05-22"}]
+        now, before, weekdays = pulse_html.match_sittings_by_weekday(current, previous)
+        self.assertEqual(weekdays, [2, 3])
+        self.assertEqual(now, current)
+        self.assertEqual(before, previous[:2])
+        self.assertEqual(len(current), 3)  # The pure helper does not alter its inputs.
+
+    def test_weekday_pairing_handles_running_week_and_no_overlap(self) -> None:
+        current = [{"datum": "2026-06-10"}]
+        previous = [{"datum": "2026-05-20"}, {"datum": "2026-05-21"}, {"datum": "2026-05-22"}]
+        self.assertEqual(pulse_html.match_sittings_by_weekday(current, previous), (current, previous[:1], [2]))
+        self.assertEqual(pulse_html.match_sittings_by_weekday(current, previous[1:]), ([], [], []))
+
+    def test_weekday_pairing_keeps_both_whole_sets_when_weekdays_match(self) -> None:
+        current = [{"datum": "2026-06-10"}, {"datum": "2026-06-11"}]
+        previous = [{"datum": "2026-05-20"}, {"datum": "2026-05-21"}]
+        self.assertEqual(pulse_html.match_sittings_by_weekday(current, previous), (current, previous, [2, 3]))
+
+    def test_no_shared_weekday_has_no_comparable_deltas(self) -> None:
+        current = pulse_html.week_stats(
+            (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])]
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21), [
+                self._entry("2026-05-21", "21/80", [self._item(1, [("AfD", 100)])]),
+                self._entry("2026-05-22", "21/81", [self._item(1, [("AfD", 100)])]),
+            ]
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+        self.assertIsNone(comparison["basis"])
+        self.assertTrue(all(m["delta_percent"] is None for m in comparison["metrics"]))
+
+    def test_no_shared_weekday_keeps_complete_current_text_without_incomplete_previous_text(self) -> None:
+        current_entry = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 200)])])
+        truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
+        item = truncated["report"]["agenda_items"][0]
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+        previous_entry = self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])])
+        current = pulse_html.week_stats((2026, 24), [current_entry])
+        previous = pulse_html.week_stats((2026, 21), [truncated, previous_entry])
+
+        comparison = pulse_html.week_comparison(current, previous)
+        self.assertIsNone(comparison["basis"])
+        chars = next(m for m in comparison["metrics"] if m["key"] == "total_chars")
+        self.assertEqual(chars["current"], 200.0)
+        self.assertIsNone(chars["previous"])
+        self.assertIsNone(chars["delta_percent"])
+
+        band = re.search(r'<section class="week-compare".*?</section>', self._render([current_entry, truncated, previous_entry]), re.S).group()
+        text_metric = re.search(r'<div class="week-metric">\s*<span>Redetext \(Zeichen\)</span>(.*?)</div>', band, re.S).group(1)
+        self.assertIn("<strong>200</strong>", text_metric)
+        self.assertIn('<span class="week-delta flat">n/a</span>', text_metric)
+        self.assertNotIn("KW 21/2026:", text_metric)
+
+    def test_matched_redeanteil_recomputes_shares_from_selected_sittings(self) -> None:
+        current = pulse_html.week_stats(
+            (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])]
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21), [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
+                self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)] * 8)]),
+            ]
+        )
+        comparison = pulse_html.week_comparison(current, previous)
+        self.assertEqual(comparison["compared_previous"]["party_counts"], {"SPD": 1, "AfD": 1})
+        self.assertEqual(comparison["compared_current"]["party_counts"], {"SPD": 1})
+        markup = pulse_html.render_share_shift(
+            comparison["compared_current"]["party_counts"],
+            comparison["compared_previous"]["party_counts"],
+        )
+        self.assertIn("+50,0&nbsp;pp", markup)
+
+    def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
+        truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
+        item = truncated["report"]["agenda_items"][0]
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+        current = pulse_html.week_stats(
+            (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 200)])])]
+        )
+        previous = pulse_html.week_stats(
+            (2026, 21), [
+                self._entry("2026-05-20", "21/79", [self._item(1, [("SPD", 100)])]),
+                truncated,
+            ]
+        )
+        self.assertFalse(previous["chars_complete"])
+        comparison = pulse_html.week_comparison(current, previous)
+        chars = next(m for m in comparison["metrics"] if m["key"] == "total_chars")
+        self.assertEqual((chars["current"], chars["previous"]), (200.0, 100.0))
 
     def test_truncated_dossier_drops_the_text_metric(self) -> None:
         # item_stats() falls back to xml_speakers_first, which carries no text, so
@@ -1505,7 +1599,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         )
         self.assertIn("Noch keine Vergleichswoche", markup)
 
-    def test_running_week_is_labelled_per_sitting(self) -> None:
+    def test_running_week_shows_no_delta_without_shared_weekday(self) -> None:
         entries = [
             self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100), ("AfD", 100)])]),
             self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])]),
@@ -1513,8 +1607,9 @@ class SittingWeekComparisonTests(unittest.TestCase):
         ]
         markup = self._render(entries)
 
-        self.assertIn("Werte je Sitzung", markup)
-        self.assertIn("je Sitzung", markup)
+        self.assertIn("Kein gemeinsamer Sitzungstag", markup)
+        band = re.search(r'<section class="week-compare".*?</section>', markup, re.S).group()
+        self.assertEqual(band.count('<span class="week-delta flat">n/a</span>'), 5)
 
     # -- Debattenprofil glossary ------------------------------------------
 
@@ -2730,17 +2825,16 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
         self.assertIn('<li class="week-row">', band)
 
-    def test_normalised_comparison_uses_na_chips_and_the_caveat_note(self) -> None:
-        # E16 middle path: differing sitting counts keep the per-sitting figures
-        # and the Redeanteil pp column, but the Wochenpuls chips read n/a.
+    def test_weekday_comparison_shows_deltas_and_subset_note(self) -> None:
         entries = self._week()
         entries.append(self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)] * 2)]))
         band = self._section(self._render(entries), "week-compare")
-        self.assertIn("Werte je Sitzung", band)
+        self.assertIn("Für Wochenpuls und Redeanteil verglichen: Do–Fr beider Wochen.", band)
+        self.assertIn("Verlauf aller Sitzungstage: Reden je Sitzungswoche", band)
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<div class="week-spark', band, re.S).group(1)
-        self.assertEqual(metrics.count('<span class="week-delta flat">n/a</span>'), 3)
-        self.assertIn("Anteile gegen&uuml;ber KW 21/2026 (2 Sitzungen); bei abweichender Sitzungszahl verschiebt die Tagesmischung die Anteile.", band)
-        self.assertIn("Fraktionen f&uuml;r 28 von 29 Reden erfasst.", band)
+        self.assertNotIn("n/a", metrics)
+        self.assertIn("Anteil an allen Reden der verglichenen Sitzungstage", band)
+        self.assertNotIn("Tagesmischung", band)
         shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertRegex(shares, r'<span class="week-delta (up|down|flat)">')
 
