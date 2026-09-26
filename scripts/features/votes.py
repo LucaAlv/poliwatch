@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import render_dip_pulse_html as html
+from validate_dip_protocol import stored_vote_result
 
 from . import BaseComponent, REGISTRY
 
@@ -15,6 +16,17 @@ RESULT_BADGE_LABELS = {"accepted": "Angenommen", "rejected": "Abgelehnt"}
 
 def result_badge_label(result_raw: Any) -> str | None:
     return RESULT_BADGE_LABELS.get(str(result_raw or ""))
+
+
+def render_result_badge(vote: dict[str, Any]) -> str:
+    """The Angenommen/Abgelehnt pill for the dossier panel and the votes
+    archive; votes cached before the badge shipped fall back to the derived rule.
+    """
+    result_raw, _source = stored_vote_result(vote)
+    label = result_badge_label(result_raw)
+    if not label:
+        return ""
+    return f'<span class="vote-result vote-result-{html.esc(result_raw)}">{html.esc(label)}</span>'
 
 
 def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
@@ -135,12 +147,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             else ""
         )
         detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
-        badge_label = result_badge_label(vote.get("result_raw"))
-        result_badge = (
-            f'<span class="vote-result vote-result-{html.esc(vote.get("result_raw"))}">{html.esc(badge_label)}</span>'
-            if badge_label
-            else ""
-        )
+        result_badge = render_result_badge(vote)
         panels.append(
             '<section class="vote-panel">'
             f'<div class="vote-head"><div><h3>Namentliche Abstimmung{result_badge}</h3>'
@@ -170,12 +177,8 @@ class VotesComponent(BaseComponent):
         selection = ctx.get("selection")
         if selection is not None and not selection.enabled("votes"):
             return {}
-        collect = ctx.get("collect_votes_archive")
-        write = ctx.get("write_votes_archive_page")
-        if collect is None or write is None:
-            return {}
-        rows = collect(ctx["entries"])
-        return write(output_dir, rows, selection)
+        rows = ctx["collect_votes_archive"](ctx["entries"])
+        return ctx["write_votes_archive_page"](output_dir, rows, selection)
 
 
 COMPONENT = VotesComponent(REGISTRY["votes"])

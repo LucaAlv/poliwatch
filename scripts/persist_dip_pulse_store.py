@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import leading_vote, normalize_faction, vote_result
+from validate_dip_protocol import leading_vote, normalize_faction, stored_vote_result, vote_result
 
 
 SCHEMA_VERSION = 1
@@ -971,6 +971,9 @@ def persist_votes(
         if not vote_id:
             continue
         total = vote.get("total") or {}
+        # Pre-badge dossier JSON carries no result: derive it rather than
+        # overwrite _migrate_vote_results' backfill with NULL.
+        result_raw, result_source = stored_vote_result(vote)
         conn.execute(
             """
             INSERT INTO votes(
@@ -1005,8 +1008,8 @@ def persist_votes(
                 int(total.get("no") or 0),
                 int(total.get("abstain") or 0),
                 int(total.get("absent") or 0),
-                clean(vote.get("result_raw")),
-                clean(vote.get("result_source")),
+                clean(result_raw),
+                clean(result_source),
                 clean(vote.get("xlsx_url")),
                 now,
                 now,

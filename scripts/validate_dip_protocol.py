@@ -640,6 +640,17 @@ def vote_result(*, official: str | None, yes_count: int, no_count: int) -> tuple
     return ("accepted" if yes_count > no_count else "rejected"), "derived"
 
 
+def stored_vote_result(vote: dict[str, Any]) -> tuple[str | None, str | None]:
+    """A vote's outcome as recorded, or the derived rule when the record
+    predates ``result_raw`` (dossier JSON cached before the badge shipped).
+    Keeps persist and render agreeing with the store's migration backfill.
+    """
+    if vote.get("result_raw") or vote.get("result_source"):
+        return vote.get("result_raw"), vote.get("result_source")
+    total = vote.get("total") or {}
+    return vote_result(official=None, yes_count=int(total.get("yes") or 0), no_count=int(total.get("no") or 0))
+
+
 _BESCHLUSS_SECTION_RE = re.compile(
     r'<h2 class="bt-artikel__aside-section-title">Beschluss</h2>(.*?)</div>\s*<div class="bt-artikel__aside-section">',
     re.S,
@@ -712,6 +723,21 @@ def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
             }
         )
     return entries
+
+
+# The Namenslisten list is the same page for every vote, so one build process
+# fetches it once. A failed fetch is not memoized: the next vote retries.
+_namenslisten_entries: list[dict[str, str]] | None = None
+
+
+def namenslisten_entries() -> list[dict[str, str]]:
+    global _namenslisten_entries
+    if _namenslisten_entries is None:
+        try:
+            _namenslisten_entries = parse_namenslisten_page(fetch_html(namenslisten_list_url()))
+        except DipError:
+            return []
+    return _namenslisten_entries
 
 
 def _title_match_key(value: str | None) -> str:
@@ -891,10 +917,10 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     enriched_vote["result_raw"] = result_raw
     enriched_vote["result_source"] = result_source
 
-    namenslisten_html = fetch_html(namenslisten_list_url())
-    enriched_vote["xlsx_url"] = find_roll_call_xlsx_url(
-        vote.get("date"), vote.get("title"), parse_namenslisten_page(namenslisten_html)
-    )
+    # The XLSX link is optional provenance from a second page: a failed fetch
+    # leaves it unknown rather than discarding the fractions/members/result
+    # already fetched for this vote.
+    enriched_vote["xlsx_url"] = find_roll_call_xlsx_url(vote.get("date"), vote.get("title"), namenslisten_entries())
     return enriched_vote
 
 

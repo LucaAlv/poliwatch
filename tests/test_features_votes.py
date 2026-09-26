@@ -58,6 +58,7 @@ class RenderDocumentLinksTests(unittest.TestCase):
         links = {"21/6561": ("https://dserver.bundestag.de/btd/21/065/2106561.pdf", "bundestag-xml")}
         html = render_document_links(["21/6561"], links)
         self.assertIn("<a class=\"doc-link\"", html)
+        self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', html)
         self.assertIn("21/6561", html)
 
     def test_unlinked_number_never_guesses_a_url(self) -> None:
@@ -87,9 +88,16 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         self.assertIn('vote-result-accepted">Angenommen</span>', markup)
 
     def test_unknown_result_renders_no_badge(self) -> None:
-        vote = _vote(result_raw=None)
+        vote = _vote(result_raw=None, total={"yes": 0, "no": 0, "abstain": 0, "absent": 0})
         markup = render_vote_summary({"votes": [vote]})
         self.assertNotIn("vote-result", markup)
+
+    def test_pre_badge_vote_derives_its_badge_from_the_counts(self) -> None:
+        # Cached dossier JSON from before the badge: no result keys at all. The
+        # tie must come out rejected through vote_result, not a preset value.
+        vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
+        markup = render_vote_summary({"votes": [vote]})
+        self.assertIn('vote-result-rejected">Abgelehnt</span>', markup)
 
     def test_drucksache_renders_as_a_link_when_a_source_url_is_known(self) -> None:
         item = {
@@ -98,6 +106,7 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         }
         markup = render_vote_summary(item)
         self.assertIn('<a class="doc-link"', markup)
+        self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
         self.assertIn("21/6561", markup)
 
     def test_drucksache_without_a_known_url_renders_unlinked(self) -> None:

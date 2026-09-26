@@ -174,6 +174,18 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
     def test_missing_beschluss_section_returns_none(self) -> None:
         self.assertIsNone(dip.scrape_official_vote_result("<html><body>no beschluss here</body></html>", 434, 128))
 
+    def test_matching_counts_without_an_outcome_word_returns_none(self) -> None:
+        # The Beschluss section can narrate a vote's counts without ever using
+        # "angenommen"/"abgelehnt" nearby (e.g. it was withdrawn or adjourned
+        # right after the tally) - the caller must derive rather than guess.
+        html = """
+        <h2 class="bt-artikel__aside-section-title">Beschluss</h2>
+        <p>Gesamt: 500 Ja:300 Nein:200 Enthaltungen -- Ergebnis wird nachgereicht</p>
+        </div>
+        <div class="bt-artikel__aside-section">
+        """
+        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+
 
 class NamenslistenMatchingTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -185,6 +197,32 @@ class NamenslistenMatchingTests(unittest.TestCase):
         self.assertEqual(
             {entry["date"] for entry in self.entries}, {"2026-06-12", "2026-06-11"}
         )
+
+    def test_row_missing_the_xlsx_link_is_skipped(self) -> None:
+        html = """
+        <div class="e-linkListItem">
+        <a class="e-linkListItem__anchor"><span>10.06.2026: Ohne XLSX </span></a>
+        </div>
+        <div class="e-linkListItem">
+        <a class="e-linkListItem__anchor"><span>11.06.2026: Mit XLSX </span></a>
+        <a class="e-linkListItem__anchor" href="https://www.bundestag.de/resource/blob/1/x.xlsx">XLSX</a>
+        </div>
+        """
+        entries = dip.parse_namenslisten_page(html)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["title"], "Mit XLSX")
+
+    def test_row_with_an_unparsable_date_is_skipped(self) -> None:
+        html = """
+        <div class="e-linkListItem">
+        <a class="e-linkListItem__anchor"><span>not-a-date: Kaputt </span></a>
+        <a class="e-linkListItem__anchor" href="https://www.bundestag.de/resource/blob/1/x.xlsx">XLSX</a>
+        </div>
+        """
+        # The row regex itself requires DD.MM.YYYY, so a malformed date simply
+        # never matches - this documents that the row is dropped, not kept
+        # with a bad date.
+        self.assertEqual(dip.parse_namenslisten_page(html), [])
 
     def test_exact_title_matches(self) -> None:
         url = dip.find_roll_call_xlsx_url("2026-06-11", "Bundeswehreinsatz in Kosovo (KFOR)", self.entries)
@@ -202,8 +240,30 @@ class NamenslistenMatchingTests(unittest.TestCase):
         self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "Something else entirely", self.entries))
         self.assertIsNone(dip.find_roll_call_xlsx_url("2026-01-01", "Bundeswehreinsatz in Kosovo (KFOR)", self.entries))
 
+    def test_missing_date_or_title_returns_none_before_matching(self) -> None:
+        self.assertIsNone(dip.find_roll_call_xlsx_url(None, "Bundeswehreinsatz in Kosovo (KFOR)", self.entries))
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", None, self.entries))
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "", self.entries))
+
+    def test_umlaut_title_matches_after_entity_decoding(self) -> None:
+        url = dip.find_roll_call_xlsx_url(
+            "2026-06-12", "Gesetzentwurf zur Verhinderung missbräuchlicher Anerkennungen der Vaterschaft", self.entries
+        )
+        self.assertEqual(url, "https://www.bundestag.de/resource/blob/1184528/20260612_1_xls.xlsx")
+
+    def test_ambiguous_match_with_two_distinct_xlsx_urls_returns_none(self) -> None:
+        # Same (date, normalized title) key, two different XLSX exports - never
+        # guess which one is right.
+        entries = self.entries + [{"date": "2026-06-11", "title": "Bundeswehreinsatz in Kosovo (KFOR)", "xlsx_url": "https://www.bundestag.de/resource/blob/9/other.xlsx"}]
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "Bundeswehreinsatz in Kosovo (KFOR)", entries))
+
 
 class FetchRollCallVoteDetailTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # namenslisten_entries() memoizes per process; each test brings its own page.
+        dip._namenslisten_entries = None
+        self.addCleanup(setattr, dip, "_namenslisten_entries", None)
+
     def test_wires_official_result_and_xlsx_url_onto_the_vote(self) -> None:
         beschluss_html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
         namenslisten_html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")
@@ -243,6 +303,49 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
 
         self.assertEqual(enriched["result_raw"], "rejected")
         self.assertEqual(enriched["result_source"], "derived")
+        self.assertIsNone(enriched["xlsx_url"])
+
+    def test_namenslisten_list_is_fetched_once_for_several_votes(self) -> None:
+        namenslisten_html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")
+        list_fetches = []
+
+        def fake_fetch_html(url: str) -> str:
+            if "/liste/" in url:
+                list_fetches.append(url)
+                return namenslisten_html
+            return ""
+
+        votes = [
+            {"id": "1007", "date": "2026-06-11", "title": "Bundeswehreinsatz in Kosovo (KFOR)", "total": {}},
+            {"id": "1008", "date": "2026-06-11", "title": "Jahresemissionsgesamtmengen-Verordnung 2031-2040", "total": {}},
+        ]
+        with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):
+            enriched = [dip.fetch_roll_call_vote_detail(vote) for vote in votes]
+
+        self.assertEqual(len(list_fetches), 1)
+        self.assertTrue(all(vote["xlsx_url"] for vote in enriched))
+
+    def test_namenslisten_fetch_failure_keeps_the_rest_of_the_vote(self) -> None:
+        beschluss_html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
+
+        def fake_fetch_html(url: str) -> str:
+            if "/liste/" in url:
+                raise dip.DipError("Failed to fetch HTML: timed out")
+            if "namensliste.form" in url:
+                return ""
+            return beschluss_html
+
+        vote = {
+            "id": "1007",
+            "date": "2026-06-11",
+            "title": "Bundeswehreinsatz in Kosovo (KFOR)",
+            "total": {"yes": 434, "no": 128, "abstain": 0, "absent": 68},
+        }
+        with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+
+        self.assertEqual(enriched["result_raw"], "accepted")
+        self.assertEqual(enriched["result_source"], "official")
         self.assertIsNone(enriched["xlsx_url"])
 
 

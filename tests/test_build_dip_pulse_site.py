@@ -911,6 +911,11 @@ class CurrentPulseOrderTests(unittest.TestCase):
             )
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            # render_site() pins publication_selection() regardless of the
+            # features argument passed in (see the comment at its top), so the
+            # votes archive - like bills and abgeordnete - is always written,
+            # not gated by the reduced default_selection() passed here.
+            self.assertTrue((output_dir / "votes" / "index.html").exists())
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
             self.assertIn('href="bills/index.html"', rendered)
@@ -1982,6 +1987,170 @@ class VotesArchiveTests(unittest.TestCase):
             output = build_dip_pulse_site.write_votes_archive_page(output_dir, rows)
             self.assertEqual(output["count"], 1)
             self.assertTrue((output_dir / "votes" / "index.html").exists())
+
+    def test_procedure_type_falls_back_to_em_dash_when_no_drucksache_matches(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/9999"]}
+        item = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(rows[0]["procedure_type"], "–")
+
+    def test_collect_handles_the_legacy_singular_vote_key(self) -> None:
+        vote = {"id": "v-legacy", "date": "2026-06-10", "title": "Legacy"}
+        item = {"index": 1, "vote": vote, "xml_drucksachen": [], "api": {}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["vote"]["id"], "v-legacy")
+
+    def test_collect_ignores_entries_with_no_report(self) -> None:
+        rows = build_dip_pulse_site.collect_votes_archive([{"page_path": Path("x.html")}, {"report": None}])
+        self.assertEqual(rows, [])
+
+    def test_collect_leaves_href_none_when_page_path_is_missing(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
+        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertIsNone(rows[0]["href"])
+
+    def test_collect_sorts_same_date_ties_by_id_descending(self) -> None:
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "10", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "9", "date": "2026-06-10", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["10", "9"])
+
+    def test_render_index_shows_empty_state_message_when_there_are_no_rows(self) -> None:
+        markup = build_dip_pulse_site.render_votes_archive_index([])
+        self.assertIn("keine namentlichen Abstimmungen erkannt", markup)
+        self.assertNotIn('class="archive-row"', markup)
+
+    def test_render_index_groups_multiple_months_under_separate_headers(self) -> None:
+        june = self._entry(
+            "2026-06-10", "21/82", [self._item(1, [{"id": "v-june", "date": "2026-06-10", "title": "Juni"}])]
+        )
+        may = self._entry(
+            "2026-05-01", "21/80", [self._item(1, [{"id": "v-may", "date": "2026-05-01", "title": "Mai"}])]
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([may, june])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertEqual(markup.count('class="archive-month"'), 2)
+        self.assertIn("Juni 2026", markup)
+        self.assertIn("Mai 2026", markup)
+        # Reverse-chronological: June's header must appear before May's.
+        self.assertLess(markup.index("Juni 2026"), markup.index("Mai 2026"))
+
+    def test_render_index_shows_one_header_for_several_votes_in_the_same_month(self) -> None:
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "v1", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "v2", "date": "2026-06-05", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertEqual(markup.count('class="archive-month"'), 1)
+        self.assertEqual(markup.count('class="archive-row"'), 2)
+
+    def test_render_index_shows_fraktion_chips_and_positions_json_for_filtering(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [{"name": "SPD", "leading_vote": "yes"}, {"name": "CDU/CSU", "leading_vote": "no"}],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-fraktion-chip="SPD"', markup)
+        self.assertIn('data-fraktion-chip="CDU/CSU"', markup)
+        positions_match = re.search(r"data-fraktion-positions='([^']*)'", markup)
+        self.assertIsNotNone(positions_match)
+        import html as html_lib
+
+        positions = json.loads(html_lib.unescape(positions_match.group(1)))
+        self.assertEqual(positions["SPD"], "yes")
+        self.assertEqual(positions["CDU/CSU"], "no")
+
+    def test_render_index_omits_chip_section_when_no_fraction_positions_exist(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertNotIn('class="archive-filters"', markup)
+        # A concrete chip button has data-fraktion-chip="<name>"; the embedded
+        # filter script also mentions the bare attribute selector, so match on
+        # the quote to tell an actual chip apart from that script text.
+        self.assertNotIn('data-fraktion-chip="', markup)
+
+    def test_render_index_badge_and_docs_render_and_title_links_when_href_is_present(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "result_raw": "accepted",
+            "document_numbers": ["21/6561"],
+        }
+        item = {
+            "index": 3,
+            "votes": [vote],
+            "xml_drucksachen": [
+                {"dokumentnummer": "21/6561", "url": "https://dserver.bundestag.de/btd/21/065/2106561.pdf"}
+            ],
+            "api": {},
+        }
+        entry = self._entry("2026-06-10", "21/82", [item])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('vote-result-accepted">Angenommen</span>', markup)
+        self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
+        # votes/index.html sits one level down, so the dossier link climbs out.
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#top-3">T</a>', markup)
+
+    def test_render_index_carries_the_site_foundation_and_a_working_hidden_rule(self) -> None:
+        markup = build_dip_pulse_site.render_votes_archive_index([])
+        # Same base stylesheet as bills/abgeordnete: tokens, shell width, header.
+        self.assertIn("--ink:#171a1f", markup)
+        self.assertIn(".shell { max-width:1280px", markup)
+        # display:grid on .archive-row would otherwise beat the UA [hidden] rule
+        # and the Fraktion filter would hide nothing.
+        self.assertIn(".archive-row[hidden], .archive-month[hidden] { display:none; }", markup)
+
+    def test_render_index_chips_expose_pressed_state_and_months_are_filterable(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [{"name": "SPD", "leading_vote": "yes"}],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        markup = build_dip_pulse_site.render_votes_archive_index(build_dip_pulse_site.collect_votes_archive([entry]))
+        self.assertIn('aria-pressed="false" data-fraktion-chip="SPD"', markup)
+        self.assertIn('<h2 class="archive-month" data-month="Juni 2026">', markup)
+        self.assertIn('<article class="archive-row" data-row data-month="Juni 2026"', markup)
+
+    def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
+        self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")
+        self.assertEqual(build_dip_pulse_site._month_label("2026-13-10"), "Unbekanntes Datum")
+        self.assertEqual(build_dip_pulse_site._month_label("2026-12-10"), "Dezember 2026")
+
+    def test_render_index_title_is_plain_text_when_href_is_missing(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "Ohne Link"}
+        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn("Ohne Link", markup)
+        self.assertNotRegex(markup, r'<a href="[^"]*">Ohne Link</a>')
 
 
 class BuildClockAndWeekTests(unittest.TestCase):

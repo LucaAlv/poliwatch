@@ -412,6 +412,27 @@ class VoteResultColumnsTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_persist_votes_derives_a_result_for_pre_badge_vote_records(self) -> None:
+        # Dossier JSON cached before the badge shipped has no result keys; the
+        # row must keep a derived result, not overwrite the backfill with NULL.
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        for key in ("result_raw", "result_source", "xlsx_url"):
+            vote.pop(key, None)
+        total = vote.get("total") or {}
+        expected = "accepted" if int(total.get("yes") or 0) > int(total.get("no") or 0) else "rejected"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                row = conn.execute(
+                    "SELECT result_raw, result_source FROM votes WHERE id = ?", (vote["id"],)
+                ).fetchone()
+                self.assertEqual(tuple(row), (expected, "derived"))
+            finally:
+                conn.close()
+
     def test_backfill_derives_a_result_for_rows_that_predate_the_column_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
@@ -447,6 +468,34 @@ class VoteResultColumnsTests(unittest.TestCase):
                 }
                 self.assertEqual(rows["legacy-1"], ("accepted", "derived"))
                 self.assertEqual(rows["official-1"], ("accepted", "official"))
+            finally:
+                conn.close()
+
+    def test_backfill_leaves_a_zero_zero_row_unresolved(self) -> None:
+        # vote_result(yes_count=0, no_count=0) is (None, None) - "never guess" -
+        # so a legacy row with no counts at all must stay untouched, not get
+        # coerced into a rejected/derived result.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
+                        VALUES ('no-counts-1', 0, 0, ?, ?)
+                        """,
+                        (now, now),
+                    )
+
+                pulse_store.initialize(conn)
+
+                row = conn.execute(
+                    "SELECT result_raw, result_source FROM votes WHERE id = 'no-counts-1'"
+                ).fetchone()
+                self.assertIsNone(row["result_raw"])
+                self.assertIsNone(row["result_source"])
             finally:
                 conn.close()
 

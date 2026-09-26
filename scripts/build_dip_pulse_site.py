@@ -3220,6 +3220,13 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
     return "–"
 
 
+def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
+    # bundestag.de roll-call ids are integers of varying width; compare them
+    # numerically so "10" sorts after "9" on the same date.
+    text = str(vote_id or "")
+    return (int(text), "") if text.isdigit() else (-1, text)
+
+
 def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Every roll-call vote across every dossier, one row per unique vote id.
 
@@ -3247,22 +3254,16 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "fraction_positions": fraction_positions,
                     "procedure_type": _vote_procedure_type(vote, item),
                     "href": (
-                        f"protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                        f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
                         if page_path
                         else None
                     ),
                 }
     return sorted(
         rows.values(),
-        key=lambda row: (row["vote"].get("date") or "", str(row["vote"].get("id") or "")),
+        key=lambda row: (row["vote"].get("date") or "", _vote_id_sort_key(row["vote"].get("id"))),
         reverse=True,
     )
-
-
-_GERMAN_MONTHS = (
-    "Januar", "Februar", "März", "April", "Mai", "Juni",
-    "Juli", "August", "September", "Oktober", "November", "Dezember",
-)
 
 
 def _month_label(date_iso: str | None) -> str:
@@ -3270,7 +3271,9 @@ def _month_label(date_iso: str | None) -> str:
     if not match:
         return "Unbekanntes Datum"
     year, month = match.groups()
-    return f"{_GERMAN_MONTHS[int(month) - 1]} {year}"
+    if not 1 <= int(month) <= 12:
+        return "Unbekanntes Datum"
+    return facts.month_display(f"{year}-{month}")
 
 
 def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection | None = None) -> str:
@@ -3280,7 +3283,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         key=lambda value: (value == "fraktionslos", value),
     )
     chips = "".join(
-        f'<button type="button" class="chip" data-fraktion-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
+        f'<button type="button" class="chip" aria-pressed="false" data-fraktion-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
         for name in fraktion_names
     )
 
@@ -3290,20 +3293,15 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         vote = row["vote"]
         month = _month_label(vote.get("date"))
         if month != current_month:
-            items.append(f'<h2 class="archive-month">{pulse_html.esc(month)}</h2>')
+            items.append(f'<h2 class="archive-month" data-month="{pulse_html.esc(month)}">{pulse_html.esc(month)}</h2>')
             current_month = month
-        badge_label = votes_feature.result_badge_label(vote.get("result_raw"))
-        badge_html = (
-            f'<span class="vote-result vote-result-{pulse_html.esc(vote.get("result_raw"))}">{pulse_html.esc(badge_label)}</span>'
-            if badge_label
-            else ""
-        )
+        badge_html = votes_feature.render_result_badge(vote)
         docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"])
         title = vote.get("title") or vote.get("topic") or "Ohne Titel"
         title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
         items.append(
-            '<article class="archive-row" data-row'
+            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
             f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\'>'
             f'<time>{pulse_html.esc(vote.get("date"))}</time>'
             f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
@@ -3347,18 +3345,22 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
 
 
 def votes_archive_styles() -> str:
-    return """
+    return bill_styles() + """
     .archive-filters { margin-top:20px; }
     .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
     .chip {
-      padding:5px 12px;
+      min-height:30px;
+      padding:4px 11px;
       border:1px solid var(--line);
       border-radius:999px;
-      background:#fbfcfd;
+      background:var(--panel);
+      color:#333a45;
+      font:inherit;
       font-size:13px;
+      font-weight:650;
       cursor:pointer;
     }
-    .chip.is-active { background:#0f5f59; border-color:#0f5f59; color:white; }
+    .chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .archive-list { margin-top:20px; display:grid; gap:10px; }
     .archive-month { margin:18px 0 4px; font-size:15px; color:var(--muted); }
     .archive-row {
@@ -3368,8 +3370,9 @@ def votes_archive_styles() -> str:
       padding:12px;
       border:1px solid var(--line);
       border-radius:8px;
-      background:#fff;
+      background:var(--panel);
     }
+    .archive-row[hidden], .archive-month[hidden] { display:none; }
     .archive-row time { color:var(--muted); font-size:13px; }
     .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
@@ -3389,13 +3392,15 @@ def votes_archive_styles() -> str:
     .vote-result-rejected { background:#b91c1c; }
     .doc-link {
       display:inline-block;
-      margin:0 4px 4px 0;
-      padding:2px 6px;
+      margin:0 6px 6px 0;
+      padding:3px 7px;
       border:1px solid #cfd7e3;
       border-radius:6px;
       background:white;
       font-weight:650;
-      font-size:12px;
+    }
+    @media (max-width: 640px) {
+      .archive-row { grid-template-columns:1fr; gap:4px; }
     }
 """
 
@@ -3410,6 +3415,7 @@ def render_votes_archive_script() -> str:
       const container = document.querySelector('[data-archive]');
       if (!container) return;
       const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const headings = Array.from(container.querySelectorAll('h2[data-month]'));
       const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
       const noResults = document.querySelector('[data-no-results]');
       const active = new Set();
@@ -3426,9 +3432,14 @@ def render_votes_archive_script() -> str:
           row.hidden = !show;
           if (show) visible += 1;
         });
+        headings.forEach((heading) => {
+          heading.hidden = !rows.some((row) => !row.hidden && row.dataset.month === heading.dataset.month);
+        });
         if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
         chips.forEach((chip) => {
-          chip.classList.toggle('is-active', active.has(chip.dataset.fraktionChip));
+          const on = active.has(chip.dataset.fraktionChip);
+          chip.classList.toggle('is-active', on);
+          chip.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
       };
       chips.forEach((chip) => {
