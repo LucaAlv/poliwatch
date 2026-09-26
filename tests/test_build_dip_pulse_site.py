@@ -2125,6 +2125,8 @@ class VotesArchiveTests(unittest.TestCase):
         # display:grid on .archive-row would otherwise beat the UA [hidden] rule
         # and the Fraktion filter would hide nothing.
         self.assertIn(".archive-row[hidden], .archive-month[hidden] { display:none; }", markup)
+        # Chip colors are hardcoded for light mode; dark mode needs themed ones.
+        self.assertIn(':root[data-theme="dark"] .chip.is-active { background:var(--surface-2)', markup)
 
     def test_render_index_chips_expose_pressed_state_and_months_are_filterable(self) -> None:
         vote = {
@@ -2138,6 +2140,11 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('aria-pressed="false" data-fraktion-chip="SPD"', markup)
         self.assertIn('<h2 class="archive-month" data-month="Juni 2026">', markup)
         self.assertIn('<article class="archive-row" data-row data-month="Juni 2026"', markup)
+
+    def test_outcome_columns_are_labelled_derived_in_the_data_dictionary(self) -> None:
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "result_raw"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "result_source"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "xlsx_url"), "bundestag.de")
 
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")

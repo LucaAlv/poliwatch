@@ -212,6 +212,23 @@ class NamenslistenMatchingTests(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["title"], "Mit XLSX")
 
+    def test_row_with_an_off_host_xlsx_link_is_skipped(self) -> None:
+        html = (
+            '<div class="e-linkListItem">'
+            '<a href="https://example.com/x.xlsx" class="e-linkListItem__anchor">'
+            "<span>11.06.2026: Bundeswehreinsatz in Kosovo (KFOR)</span></a></div>"
+        )
+        self.assertEqual(dip.parse_namenslisten_page(html), [])
+
+    def test_relative_xlsx_link_is_made_absolute(self) -> None:
+        html = (
+            '<div class="e-linkListItem">'
+            '<a href="/resource/blob/1/x_xls.xlsx" class="e-linkListItem__anchor">'
+            "<span>11.06.2026: Bundeswehreinsatz in Kosovo (KFOR)</span></a></div>"
+        )
+        entries = dip.parse_namenslisten_page(html)
+        self.assertEqual(entries[0]["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+
     def test_row_with_an_unparsable_date_is_skipped(self) -> None:
         html = """
         <div class="e-linkListItem">
@@ -304,6 +321,18 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
         self.assertEqual(enriched["result_raw"], "rejected")
         self.assertEqual(enriched["result_source"], "derived")
         self.assertIsNone(enriched["xlsx_url"])
+
+    def test_namenslisten_list_id_env_override_changes_requested_url(self) -> None:
+        with patch.dict(os.environ, {"BT_NAMENSLISTEN_LIST_ID": "999999-999999"}):
+            self.assertIn("/liste/999999-999999?", dip.namenslisten_list_url())
+        self.assertIn(f"/liste/{dip.DEFAULT_NAMENSLISTEN_LIST_ID}?", dip.namenslisten_list_url())
+
+    def test_namenslisten_timeout_is_a_fetch_failure_not_a_crash(self) -> None:
+        def fake_urlopen(*args: object, **kwargs: object) -> object:
+            raise TimeoutError("read timed out")
+
+        with patch.object(dip.urllib.request, "urlopen", side_effect=fake_urlopen):
+            self.assertEqual(dip.namenslisten_entries(), [])
 
     def test_namenslisten_list_is_fetched_once_for_several_votes(self) -> None:
         namenslisten_html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")

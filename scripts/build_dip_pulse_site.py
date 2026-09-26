@@ -1398,8 +1398,13 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 
+# The outcome is mostly computed here from the counts (vote_result); only a
+# minority is read off bundestag.de's Beschluss text, so the column is derived.
+_COLUMN_SOURCE_DERIVED = {("votes", "result_raw"), ("votes", "result_source")}
+
+
 def column_source(table: str, column: str) -> str:
-    if table in _TABLE_SOURCE_DERIVED:
+    if table in _TABLE_SOURCE_DERIVED or (table, column) in _COLUMN_SOURCE_DERIVED:
         return "derived"
     if (table, column) in _COLUMN_SOURCE_ABGEORDNETENWATCH:
         return "abgeordnetenwatch"
@@ -3361,6 +3366,9 @@ def votes_archive_styles() -> str:
       cursor:pointer;
     }
     .chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    .chip:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    :root[data-theme="dark"] .chip { color:var(--ink); }
+    :root[data-theme="dark"] .chip.is-active { background:var(--surface-2); color:var(--blue); }
     .archive-list { margin-top:20px; display:grid; gap:10px; }
     .archive-month { margin:18px 0 4px; font-size:15px; color:var(--muted); }
     .archive-row {
@@ -3377,19 +3385,7 @@ def votes_archive_styles() -> str:
     .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
-    .vote-result {
-      display:inline-flex;
-      align-items:center;
-      margin-left:8px;
-      padding:2px 8px;
-      border-radius:999px;
-      color:white;
-      font-size:12px;
-      font-weight:680;
-      vertical-align:middle;
-    }
-    .vote-result-accepted { background:#0f766e; }
-    .vote-result-rejected { background:#b91c1c; }
+""" + pulse_html.VOTE_RESULT_BADGE_CSS + """
     .doc-link {
       display:inline-block;
       margin:0 6px 6px 0;

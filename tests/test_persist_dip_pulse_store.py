@@ -400,7 +400,8 @@ class VoteResultColumnsTests(unittest.TestCase):
                 ).fetchone()
                 self.assertEqual(tuple(row), ("accepted", "official", vote["xlsx_url"]))
 
-                # A rebuild that later resolves a different (or no) result overwrites the row.
+                # A rebuild that resolves a different result overwrites it, but a
+                # run that found no XLSX link keeps the stored one.
                 vote["result_raw"] = "rejected"
                 vote["result_source"] = "derived"
                 vote["xlsx_url"] = None
@@ -408,7 +409,13 @@ class VoteResultColumnsTests(unittest.TestCase):
                 row = conn.execute(
                     "SELECT result_raw, result_source, xlsx_url FROM votes WHERE id = ?", (vote["id"],)
                 ).fetchone()
-                self.assertEqual(tuple(row), ("rejected", "derived", None))
+                self.assertEqual(tuple(row), ("rejected", "derived", "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"))
+
+                # A newly found link still replaces the stored one.
+                vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/2/vote_xls.xlsx"
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertEqual(row[0], vote["xlsx_url"])
             finally:
                 conn.close()
 

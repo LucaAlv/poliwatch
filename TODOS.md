@@ -305,6 +305,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P1
 **Depends on:** Vote outcome badge
 
+### Majority rule for derived vote outcomes (Art. 79(2), 67, 68 GG)
+
+**What:** `validate_dip_protocol.vote_result` derives "Angenommen"/"Abgelehnt" from a plain yes>no majority of votes cast. A Grundgesetz amendment needs two thirds of the members (Art. 79(2) GG); Kanzlerwahl, konstruktives Misstrauensvotum and Vertrauensfrage need an absolute majority of the members (Art. 63, 67, 68 GG). Thread the applicable threshold (from the Vorgang/Drucksache type) into `vote_result`, or return unknown for those vote types when no official result was scraped. Done when a test pins a GG amendment with yes>no but below two thirds of members as "Abgelehnt".
+
+**Why:** Found by the /ship red-team review of the badge (2026-09-26). Latent: every Grundgesetz vote in the real store is labelled correctly today, but a high-absence sitting would mislabel one silently.
+
+**Context:** The official-result scrape already wins when bundestag.de states the outcome; the gap is only in the derived fallback.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Vote outcome badge
+
 ### Politikfeld tags on Tagesordnungspunkte and votes
 
 **What:** A fixed, closed list of 13 Politikfelder (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie); one to three tags per TOP and vote, stored in the SQLite store and exported in the Daten CSVs; tag chips on the dossier, the votes archive and the week radar act as filters. Done when every vote in the store has ≥1 tag or an explicit `untagged` row, and the list is enforced by a test that rejects any other label.

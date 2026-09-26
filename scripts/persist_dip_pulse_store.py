@@ -994,7 +994,9 @@ def persist_votes(
               absent_count = excluded.absent_count,
               result_raw = excluded.result_raw,
               result_source = excluded.result_source,
-              xlsx_url = excluded.xlsx_url,
+              -- A run that found no XLSX link (list page down, vote aged out of
+              -- the 200-row window, pre-badge cached JSON) keeps the stored one.
+              xlsx_url = COALESCE(excluded.xlsx_url, votes.xlsx_url),
               updated_at = excluded.updated_at
             """,
             (

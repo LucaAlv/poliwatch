@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -194,7 +195,7 @@ def fetch_text(url: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=60) as res:
             return res.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
         raise DipError(f"Failed to fetch XML {url}: {exc}") from exc
 
 
@@ -203,7 +204,7 @@ def fetch_html(url: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=60) as res:
             return res.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
         raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
 
 
@@ -687,11 +688,18 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
 # shares - only a "DD.MM.YYYY: <title>" link label. Matching is therefore by
 # (date, normalized title), never a derived URL pattern (blob ids are opaque
 # and the "_xls"/"-xls" filename suffix is inconsistent across sittings).
-NAMENSLISTEN_LIST_PATH = "/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112"
+DEFAULT_NAMENSLISTEN_LIST_ID = "462112-462112"
+NAMENSLISTEN_LIST_ID_ENV = "BT_NAMENSLISTEN_LIST_ID"
+NAMENSLISTEN_PAGE_LIMIT = 200
 
 
-def namenslisten_list_url() -> str:
-    return f"{BT_BASE_URL}{NAMENSLISTEN_LIST_PATH}?offset=0&limit=200"
+def namenslisten_list_url(list_id: str | None = None) -> str:
+    # Like the roll-call list id, the catalog id can change per Wahlperiode.
+    list_id = list_id or os.environ.get(NAMENSLISTEN_LIST_ID_ENV) or DEFAULT_NAMENSLISTEN_LIST_ID
+    return (
+        f"{BT_BASE_URL}/ajax/filterlist/de/parlament/plenum/abstimmung/liste/{list_id}"
+        f"?offset=0&limit={NAMENSLISTEN_PAGE_LIMIT}"
+    )
 
 
 _NAMENSLISTEN_ROW_RE = re.compile(
@@ -699,6 +707,17 @@ _NAMENSLISTEN_ROW_RE = re.compile(
     re.S,
 )
 _NAMENSLISTEN_XLSX_RE = re.compile(r'href="([^"]+\.xlsx)"')
+
+
+def _is_publishable_xlsx_url(url: str) -> bool:
+    # Checked at scrape time with the same allowlist render uses: an off-host
+    # or non-https href would otherwise be cached in the dossier JSON and fail
+    # every later (offline) render.
+    try:
+        publication.validate_external_url(url, "bundestag-roll-call")
+    except publication.PublicationStateError:
+        return False
+    return True
 
 
 def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
@@ -713,13 +732,15 @@ def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
         if not row_match or not xlsx_match:
             continue
         date = iso_date(row_match.group(1))
-        if not date:
+        xlsx_href = unescape(xlsx_match.group(1))
+        xlsx_url = xlsx_href if xlsx_href.startswith("http") else f"{BT_BASE_URL}{xlsx_href}"
+        if not date or not _is_publishable_xlsx_url(xlsx_url):
             continue
         entries.append(
             {
                 "date": date,
                 "title": strip_tags(row_match.group(2)),
-                "xlsx_url": unescape(xlsx_match.group(1)),
+                "xlsx_url": xlsx_url,
             }
         )
     return entries
@@ -737,6 +758,12 @@ def namenslisten_entries() -> list[dict[str, str]]:
             _namenslisten_entries = parse_namenslisten_page(fetch_html(namenslisten_list_url()))
         except DipError:
             return []
+        if len(_namenslisten_entries) >= NAMENSLISTEN_PAGE_LIMIT:
+            print(
+                f"warning: Namenslisten page returned {len(_namenslisten_entries)} rows (the request limit); "
+                "votes older than the last row get no XLSX link",
+                file=sys.stderr,
+            )
     return _namenslisten_entries
 
 

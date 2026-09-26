@@ -385,6 +385,24 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+# The Angenommen/Abgelehnt pill, shared by the dossier panel and votes/index.html.
+VOTE_RESULT_BADGE_CSS = """
+    .vote-result {
+      display:inline-flex;
+      align-items:center;
+      margin-left:8px;
+      padding:2px 8px;
+      border-radius:999px;
+      color:white;
+      font-size:12px;
+      font-weight:680;
+      vertical-align:middle;
+    }
+    .vote-result-accepted { background:#0f766e; }
+    .vote-result-rejected { background:#b91c1c; }
+"""
+
+
 def source_url(value: Any, source: str) -> str:
     """Validate an external provenance URL before it reaches public HTML."""
     return publication.validate_external_url(str(value or ""), source)
@@ -3001,19 +3019,7 @@ def render_html(
     }}
     .vote-head h3 {{ margin-bottom:5px; color:#0f5f59; }}
     .vote-head p {{ margin:0; font-size:13px; }}
-    .vote-result {{
-      display:inline-flex;
-      align-items:center;
-      margin-left:8px;
-      padding:2px 8px;
-      border-radius:999px;
-      color:white;
-      font-size:12px;
-      font-weight:680;
-      vertical-align:middle;
-    }}
-    .vote-result-accepted {{ background:#0f766e; }}
-    .vote-result-rejected {{ background:#b91c1c; }}
+{VOTE_RESULT_BADGE_CSS}
     .vote-total {{ display:grid; gap:8px; }}
     .vote-stack {{
       display:flex;
