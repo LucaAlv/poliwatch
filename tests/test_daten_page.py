@@ -153,7 +153,7 @@ class DatenPageTests(unittest.TestCase):
     def test_recipe_copy_script_writes_clipboard_with_selection_fallback(self) -> None:
         script = b.recipe_copy_runtime_script()
         self.assertIn("navigator.clipboard.writeText(code.textContent).then(", script)
-        self.assertIn('() => flash("Kopiert"),', script)
+        self.assertIn('if (copy === latestCopy) flash("Kopiert");', script)
         self.assertIn("range.selectNodeContents(code);", script)
         self.assertIn('flash("Markiert – mit ⌘C/Strg+C kopieren");', script)
         self.assertNotIn("document.execCommand(", script)
@@ -212,10 +212,13 @@ class DatenPageTests(unittest.TestCase):
         click = script[script.index('button.addEventListener("click"'):script.index("button.hidden = false;")]
         self.assertLess(click.index("const copy = ++latestCopy;"), click.index("if (!clipboardAvailable)"))
         self.assertIn('const selectionAtClick = String(window.getSelection() || "");', click)
-        rejected = click[click.index('() => flash("Kopiert"),'):]
+        rejected = click[click.index('flash("Kopiert");'):]
+        self.assertIn("if (copy !== latestCopy) return;", rejected)
         self.assertIn(
-            'const untouched = copy === latestCopy && String(window.getSelection() || "") === selectionAtClick;', rejected
+            'const untouched = String(window.getSelection() || "") === selectionAtClick;', rejected
         )
+        self.assertLess(rejected.index("if (copy !== latestCopy) return;"), rejected.index("const untouched ="))
+        self.assertLess(rejected.index("const untouched ="), rejected.index("if (untouched) selectFallback();"))
         self.assertLess(rejected.index("if (untouched) selectFallback();"), rejected.index('else flash("Nicht kopiert");'))
 
     def test_recipe_copy_click_falls_back_before_touching_the_clipboard(self) -> None:

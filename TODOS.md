@@ -131,9 +131,9 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** None
 
-### Recipe copy: ignore every stale clipboard completion
+### Recipe copy: compare the selection by range, not by text
 
-**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) guards a late `writeText` rejection with a page-wide `latestCopy` token plus "selected text unchanged since the click". Two gaps remain, both needing a write that stays pending (a permission prompt): selecting *identical* text in another recipe passes the text comparison, so the rejection still replaces that selection; and a stale rejection can flip a newer success's "Kopiert" to "Nicht kopiert" (the success handler is unguarded too). Ignore any completion whose `copy !== latestCopy` for both label and selection, and compare the selection's range endpoints instead of its text. Done when both sequences, driven with deferred promises in a browser, leave the newer state alone.
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
 
 **Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
 
