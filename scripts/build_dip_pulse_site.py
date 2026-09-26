@@ -2701,6 +2701,7 @@ def _daten_page_styles() -> str:
       font-weight:650;
       cursor:pointer;
     }
+    .recipe-copy[hidden] { display:none; }
     .recipe-copy:hover { border-color:var(--blue); }
     .recipe-copy:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
     .recipe-empty { font-size:14px; }

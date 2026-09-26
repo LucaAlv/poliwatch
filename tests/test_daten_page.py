@@ -164,6 +164,65 @@ class DatenPageTests(unittest.TestCase):
         self.assertLess(self.html.index("bundestag-pulse-ai-summaries-v1"), self.html.rindex("recipe-copy"))
         self.assertNotIn("file://", self.html)
 
+    def test_recipe_copy_button_follows_pre_in_every_recipe_block(self) -> None:
+        # The single-recipe check above only proves the first block; every
+        # recipe's button must sit after its own </pre>, not just the first.
+        button = '<button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>'
+        for block in re.findall(r'<div class="recipe-sql">(.*?)</div>', self.html, re.S):
+            with self.subTest(block=block[:40]):
+                self.assertLess(block.index("</pre>"), block.index(button))
+
+    def test_recipe_copy_button_hidden_without_js_by_author_css(self) -> None:
+        # [hidden] alone is not display:none once any author rule sets
+        # display on the element (.recipe-copy sets display:inline-flex);
+        # this rule is what actually keeps the button invisible until the
+        # runtime script clears the attribute.
+        self.assertIn(".recipe-copy[hidden] { display:none; }", b._daten_page_styles())
+
+    def test_recipe_copy_hidden_in_print_alongside_site_chrome(self) -> None:
+        css = b._daten_page_styles()
+        print_block_start = css.index("@media print")
+        print_block = css[print_block_start:css.index("}", print_block_start) + 1]
+        self.assertIn(".recipe-copy", print_block)
+
+    def test_recipe_copy_script_guards_before_reading_clipboard_state(self) -> None:
+        script = b.recipe_copy_runtime_script()
+        guard = "if (!buttons.length) return;"
+        self.assertIn(guard, script)
+        self.assertLess(script.index(guard), script.index("clipboardAvailable"))
+
+    def test_recipe_copy_per_button_guard_precedes_wiring_and_reveal(self) -> None:
+        # A recipe row with no <code> block (markup drifted) must skip that
+        # button rather than wire a handler onto a null reference, and the
+        # click handler must be attached before the button is ever revealed.
+        script = b.recipe_copy_runtime_script()
+        code_guard = script.index("if (!code) return;")
+        wire = script.index('button.addEventListener("click", () => {')
+        reveal = script.index("button.hidden = false;")
+        self.assertLess(code_guard, wire)
+        self.assertLess(wire, reveal)
+
+    def test_recipe_copy_click_falls_back_before_touching_the_clipboard(self) -> None:
+        # Without a secure context, selectFallback runs directly and returns
+        # -- writeText is never reached from that branch.
+        script = b.recipe_copy_runtime_script()
+        branch = script.index("if (!clipboardAvailable) {")
+        direct_call = script.index("selectFallback();")
+        write = script.index("navigator.clipboard.writeText(")
+        self.assertLess(branch, direct_call)
+        self.assertLess(direct_call, write)
+        self.assertIn("if (selection) {", script)
+
+    def test_recipe_copy_flash_clears_pending_timer_before_rescheduling(self) -> None:
+        # Covers the rapid-double-click case: a second click while the first
+        # "Kopiert" flash is still showing must cancel the first timer, not
+        # stack a second one that later stomps the label back too early.
+        script = b.recipe_copy_runtime_script()
+        clear = script.index("if (resetTimer) window.clearTimeout(resetTimer);")
+        schedule = script.index("window.setTimeout(() => {")
+        self.assertLess(clear, schedule)
+        self.assertIn("button.textContent = defaultLabel;", script)
+
     def test_footer_issues_link_only_for_allowed_schemes(self) -> None:
         for url, expected in (
             ("https://example.org/issues", True),
