@@ -695,17 +695,21 @@ class CurrentTopHighlightTests(unittest.TestCase):
 
     def test_scroll_and_resize_recheck_is_frame_throttled_and_torn_down(self) -> None:
         script = pulse_html.attention_runtime_script()
-        handler = script[script.index("const onViewportChange = () => {"):script.index("const onIntersect")]
+        handler = script[script.index("const onViewportChange = () => {"):script.index("const onResize")]
         self.assertIn("if (scrollFrame) return;", handler)
         self.assertIn("window.requestAnimationFrame(", handler)
-        # A resize can push the unchanged current row out of the list's view.
-        self.assertLess(handler.index("pickCurrent();"), handler.index("if (row) revealRow(row);"))
+        # Only a resize re-reveals an unchanged current row: on scroll the
+        # list must not snap back while the reader browses it.
+        self.assertLess(handler.index("pickCurrent();"), handler.index("if (!revealOnFrame) return;"))
+        self.assertLess(handler.index("if (!revealOnFrame) return;"), handler.index("if (row) revealRow(row);"))
+        on_resize = script[script.index("const onResize = () => {"):script.index("const onIntersect")]
+        self.assertLess(on_resize.index("revealOnFrame = true;"), on_resize.index("onViewportChange();"))
         start_body = script[script.index("const start = () => {"):script.index("const stop = () => {")]
         self.assertIn('window.addEventListener("scroll", onViewportChange, { passive: true });', start_body)
-        self.assertIn('window.addEventListener("resize", onViewportChange);', start_body)
+        self.assertIn('window.addEventListener("resize", onResize);', start_body)
         stop_body = script[script.index("const stop = () => {"):script.index("const sync")]
         self.assertIn('window.removeEventListener("scroll", onViewportChange);', stop_body)
-        self.assertIn('window.removeEventListener("resize", onViewportChange);', stop_body)
+        self.assertIn('window.removeEventListener("resize", onResize);', stop_body)
         self.assertIn("window.cancelAnimationFrame(scrollFrame);", stop_body)
 
     def test_sync_switches_on_static_layout_with_a_legacy_listener_fallback(self) -> None:

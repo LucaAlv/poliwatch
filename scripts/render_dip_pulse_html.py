@@ -800,17 +800,26 @@ def attention_runtime_script() -> str:
       // Intersection events only fire when a card enters or leaves the
       // viewport, not when one crosses reachedLine, the page hits its end or
       // a resize (inside the sticky layout) reshuffles both - so re-pick on
-      // scroll and resize too, at most once per frame, and re-reveal the
-      // current row, which a shorter list can push out of view unchanged.
+      // scroll and resize too, at most once per frame. Only a resize also
+      // re-reveals an unchanged current row (a shorter list can push it out
+      // of view); on scroll the list moves only when the current row
+      // changes, so a reader browsing the list is not snapped back.
       let scrollFrame = 0;
+      let revealOnFrame = false;
       const onViewportChange = () => {
         if (scrollFrame) return;
         scrollFrame = window.requestAnimationFrame(() => {
           scrollFrame = 0;
           pickCurrent();
+          if (!revealOnFrame) return;
+          revealOnFrame = false;
           const row = current && rows.get(current);
           if (row) revealRow(row);
         });
+      };
+      const onResize = () => {
+        revealOnFrame = true;
+        onViewportChange();
       };
 
       const onIntersect = (entries) => {
@@ -836,7 +845,7 @@ def attention_runtime_script() -> str:
         observer = new IntersectionObserver(onIntersect);
         cards.forEach((card) => observer.observe(card));
         window.addEventListener("scroll", onViewportChange, { passive: true });
-        window.addEventListener("resize", onViewportChange);
+        window.addEventListener("resize", onResize);
       };
 
       const stop = () => {
@@ -844,7 +853,8 @@ def attention_runtime_script() -> str:
         observer.disconnect();
         observer = null;
         window.removeEventListener("scroll", onViewportChange);
-        window.removeEventListener("resize", onViewportChange);
+        window.removeEventListener("resize", onResize);
+        revealOnFrame = false;
         if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
         scrollFrame = 0;
         inView.clear();
