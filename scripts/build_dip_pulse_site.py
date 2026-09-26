@@ -2491,9 +2491,12 @@ def recipe_copy_runtime_script() -> str:
           }
           const selectionAtClick = String(window.getSelection() || "");
           navigator.clipboard.writeText(code.textContent).then(
-            () => flash("Kopiert"),
             () => {
-              const untouched = copy === latestCopy && String(window.getSelection() || "") === selectionAtClick;
+              if (copy === latestCopy) flash("Kopiert");
+            },
+            () => {
+              if (copy !== latestCopy) return;
+              const untouched = String(window.getSelection() || "") === selectionAtClick;
               if (untouched) selectFallback();
               else flash("Nicht kopiert");
             },
