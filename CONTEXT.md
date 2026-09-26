@@ -138,6 +138,18 @@ _Avoid_: position (unqualified), treating it as a Vorgang
 An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
 _Avoid_: document (unqualified), confusing it with a Plenarprotokoll
 
+**Gesetzgebung**:
+A Vorgang whose DIP Vorgangstyp is Gesetzgebung: the procedure on one Gesetzentwurf, whether it ends in a Gesetz, is rejected, is withdrawn or lapses at the end of the Wahlperiode. Only a Gesetzgebung is legislation. An Entschließungsantrag or Antrag that accompanies it is a separate Vorgang, and a Rechtsverordnung is not a Gesetzgebung even when the Bundestag must consent to it. In public text a Gesetzgebung is called a Gesetzesvorhaben.
+_Avoid_: Gesetz for a Gesetzgebung, bill, deciding by whether "Gesetz" appears in a title (Anträge, Aktuelle Stunden and Wahlen that cite the Grundgesetz are not legislation)
+
+**Gesetzentwurf**:
+The Drucksache that proposes a Gesetz and opens a Gesetzgebung. Its title usually reads "Entwurf eines Gesetzes …" or names the Gesetz it would become.
+_Avoid_: Gesetz for the proposal
+
+**Gesetz**:
+What a Gesetzgebung produces once the Gesetzentwurf has passed the Bundestag and the Bundesrat stage and has been verkündet. Most Gesetzgebungen shown on the site are not Gesetze yet, and some never will be.
+_Avoid_: Gesetz for a Gesetzgebung still underway or failed
+
 **Thema**:
 What a Tagesordnungspunkt is about, in readers' words: the title of the Vorgang it chiefly deals with, preferring a Gesetzgebung, else its heading in the Plenarprotokoll without procedural boilerplate. Where it deals with several Vorgänge of equal weight, all their titles name it alike. Thema only names a Tagesordnungspunkt; it never decides which Vorgang a Rede counts for.
 _Avoid_: topic as a counting unit, "lead Vorgang" as an attribution rule

@@ -406,6 +406,20 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** Approach B; a bill/timeline page; the ranking-title item
 
+## Gesetzesvorhaben
+
+### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
+
+**What:** `bill_like` (`scripts/build_dip_pulse_site.py`) keeps any Vorgangsposition whose Vorgangstyp, title or linked Drucksachen contain the substring "gesetz". Replace that test with "the Vorgang's DIP Vorgangstyp is Gesetzgebung". On the real store (285 Dossiers) `collect_bill_pages` currently yields 839 pages, of which only 551 are Gesetzgebungen. The other 288 are 193 Entschließungsanträge, 76 Anträge, 5 Rechtsverordnungen and a tail that matches only through "Grundgesetz" or "gesetzliche Krankenversicherung": Wahl des Bundeskanzlers (Art. 63 GG), Scholz's Vertrauensfrage (Art. 68 GG), Aktuelle Stunden, Große Anfragen, Geschäftsordnungsänderungen. An accompanying Entschließungsantrag may still be listed as a related item on its Gesetzgebung's page, but it gets no page of its own. Rename the public labels "Gesetze verfolgen", "Alle Gesetze", "Aktuelle Gesetze", "Verfolgte Gesetze" and the "Gesetze" nav entry to use Gesetzesvorhaben (also update `tests/test_features.py`, `tests/test_global_header.py`). The `bills/` URL path can stay. Done when every page under `bills/` is a Gesetzgebung and no public label calls one a Gesetz.
+
+**Why:** CONTEXT.md (Gesetzgebung, Gesetzentwurf, Gesetz, 2026-09-26): only a Gesetzgebung is legislation, and a Gesetzgebung is not a Gesetz until it has been verkündet.
+
+**Context:** The "Verfolgte Gesetze" count also feeds `derive_feature_readiness` (`bill_count`) and the start page. It will drop by about a third. Stored bill slugs linked from elsewhere (`bill_slugs` in `run_data_pipeline`) will then stop resolving for non-Gesetzgebung Vorgänge. Check that those links fall back cleanly.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Abgeordnete
 
 ### Make the Namensabgleich unique, and stop treating name-found ids as proof
