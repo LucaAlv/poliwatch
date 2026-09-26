@@ -137,19 +137,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ## Puls
 
-All five items below were gated on "puls.html week radar shipped"; that landed in 0.3.0.0 (#58, 2026-09-18), so none of them is blocked any more. None has been started (checked 2026-09-19).
-
-### Weekday-matched Wochenvergleich when sitting counts differ
-
-**What:** Compare the current sitting week with the previous one weekday by weekday when the two weeks have different sitting counts, instead of dividing totals by sitting count.
-
-**Why:** Which weekday it is explains roughly 60% of how big a sitting looks (Wednesday median 163 speeches vs Friday 80). A Wednesday-only running week divided by one sitting is still compared against a Wed-Fri average, so the deltas read as movement that is really weekday mix.
-
-**Context:** `week_comparison()` in `scripts/render_dip_pulse_html.py` normalises per sitting when counts differ. The week radar renders the Wochenpuls delta chips as "n/a" on normalised weeks and keeps the Redeanteil pp column with a caveat. Start: pair sittings by weekday (`datum` → weekday), compare the intersection, fall back to n/a when no weekday overlaps. Rewrite `test_running_week_is_labelled_per_sitting` (`tests/test_build_dip_pulse_site.py`) accordingly.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
+The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
 
 ### "Nächste Sitzungswoche" in the puls.html header
 
@@ -450,6 +438,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Weekday-matched Wochenvergleich when sitting counts differ
+
+**Completed:** 2026-09-25 (v0.6.5.0). Compared shared weekdays by summed counts and recomputed Redeanteil from the matched sittings, with a visible basis note and n/a when no weekday overlaps.
 
 ### Enforce the Python version floor
 

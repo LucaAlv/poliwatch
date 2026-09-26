@@ -1025,6 +1025,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
     vote_sittings: list[tuple[str, Any, int, int]] = []
     truncated_items = 0
     speakers_incomplete = 0
+    sittings: list[dict[str, Any]] = []
 
     for entry in entries:
         report = entry.get("report") or {}
@@ -1033,12 +1034,19 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
         documents.append(document)
         items = report.get("agenda_items") or []
         top_count += len(items)
+        sitting_parties: Counter[str] = Counter()
+        sitting_speeches = 0
+        sitting_chars = 0
+        sitting_chars_complete = True
+        sitting_speakers_complete = True
         sitting_vote_ids: set[str] = set()
         first_vote_index = None
         for item in items:
             stats = item_stats(item)
             speech_count += stats["speech_count"]
             party_counts.update(stats["party_counts"])
+            sitting_speeches += stats["speech_count"]
+            sitting_parties.update(stats["party_counts"])
             # item_stats() falls back to xml_speakers_first - five speakers with
             # no text - when xml_speakers is empty. Speech counts stay right in
             # that case but character totals would silently under-report, so a
@@ -1046,10 +1054,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             # An item with speeches but no speaker array at all is incomplete too.
             if item.get("xml_speakers"):
                 total_chars += stats["total_chars"]
+                sitting_chars += stats["total_chars"]
             elif stats["speech_count"]:
                 truncated_items += 1
+                sitting_chars_complete = False
             if stats["speech_count"] and sum(stats["party_counts"].values()) < stats["speech_count"]:
                 speakers_incomplete += 1
+                sitting_speakers_complete = False
             votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
             if votes:
                 vote_top_count += 1
@@ -1067,6 +1078,15 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             label = document or (Path(page_path).stem if page_path else "")
             vote_sittings.append((label, page_path, first_vote_index, len(sitting_vote_ids)))
         vote_ids.update(sitting_vote_ids)
+        sittings.append({
+            "datum": protocol.get("datum"),
+            "speech_count": sitting_speeches,
+            "top_count": len(items),
+            "total_chars": sitting_chars,
+            "chars_complete": sitting_chars_complete,
+            "speakers_complete": sitting_speakers_complete,
+            "party_counts": sitting_parties,
+        })
 
     return {
         "week": week,
@@ -1084,6 +1104,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
         "vote_count": len(vote_ids),
         "vote_top_count": vote_top_count,
         "vote_sittings": vote_sittings,
+        "sittings": sittings,
     }
 
 
@@ -1101,48 +1122,81 @@ WEEK_METRICS = (
 )
 
 
-def week_comparison(current: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Compare two week_stats dicts, or None when there is nothing to compare against.
+def match_sittings_by_weekday(
+    current: list[dict[str, Any]], previous: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[int]]:
+    """Keep every sitting on a weekday present in both weeks, including duplicates."""
+    current_dated = [(date.fromisoformat(str(s["datum"])[:10]).weekday(), s) for s in current]
+    previous_dated = [(date.fromisoformat(str(s["datum"])[:10]).weekday(), s) for s in previous]
+    shared = sorted({day for day, _ in current_dated} & {day for day, _ in previous_dated})
+    return (
+        [s for day, s in current_dated if day in shared],
+        [s for day, s in previous_dated if day in shared],
+        shared,
+    )
 
-    When the two weeks hold a different number of sittings every figure switches
-    to a per-sitting average. A week caught mid-flight - one sitting done of the
-    usual three - would otherwise read as a two-thirds collapse purely for being
-    unfinished. Sitting counts are always present in the data, whereas "is this
-    week over" is not knowable offline, which is why this is the normalisation
-    rule rather than hiding the running week.
-    """
+
+def _sum_sittings(sittings: list[dict[str, Any]]) -> dict[str, Any]:
+    parties: Counter[str] = Counter()
+    for sitting in sittings:
+        parties.update(sitting["party_counts"])
+    return {
+        "speech_count": sum(s["speech_count"] for s in sittings),
+        "top_count": sum(s["top_count"] for s in sittings),
+        "total_chars": sum(s["total_chars"] for s in sittings),
+        "chars_complete": all(s["chars_complete"] for s in sittings),
+        "speakers_complete": all(s["speakers_complete"] for s in sittings),
+        "party_counts": parties,
+    }
+
+
+def week_comparison(current: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Compare whole weeks, or their common weekdays when sitting counts differ."""
     if not previous or not current:
         return None
-    normalised = current["sitting_count"] != previous["sitting_count"]
-
-    def figure(stats: dict[str, Any], key: str) -> float:
-        raw = float(stats[key])
-        if normalised and stats["sitting_count"]:
-            return raw / stats["sitting_count"]
-        return raw
+    basis = "totals"
+    weekdays: list[int] = []
+    now_stats = current
+    before_stats = previous
+    if current["sitting_count"] != previous["sitting_count"]:
+        now_sittings, before_sittings, weekdays = match_sittings_by_weekday(
+            current["sittings"], previous["sittings"]
+        )
+        if weekdays:
+            basis = "weekdays"
+            now_stats = _sum_sittings(now_sittings)
+            before_stats = _sum_sittings(before_sittings)
+        else:
+            basis = None
 
     metrics = []
     for key, label, _kind in WEEK_METRICS:
-        # Drop the text metric entirely rather than print a number we know is short.
-        if key == "total_chars" and not (current["chars_complete"] and previous["chars_complete"]):
+        # A comparison needs complete text on both sides. Without a comparison,
+        # the current week's complete text can still be shown on its own.
+        if key == "total_chars" and (
+            not now_stats["chars_complete"] or (basis and not before_stats["chars_complete"])
+        ):
             continue
-        now = figure(current, key)
-        before = figure(previous, key)
+        now = float(now_stats[key])
+        before = float(before_stats[key]) if key != "total_chars" or before_stats["chars_complete"] else None
         metrics.append(
             {
                 "key": key,
                 "label": label,
                 "current": now,
                 "previous": before,
-                "delta": now - before,
-                "delta_percent": ((now - before) / before * 100) if before else None,
+                "delta": now - before if basis and before is not None else None,
+                "delta_percent": ((now - before) / before * 100) if basis and before else None,
             }
         )
 
     return {
         "current": current,
         "previous": previous,
-        "normalised": normalised,
+        "basis": basis,
+        "weekdays": weekdays,
+        "compared_current": now_stats,
+        "compared_previous": before_stats,
         "gap": week_span(previous["week"], current["week"]),
         "metrics": metrics,
     }
