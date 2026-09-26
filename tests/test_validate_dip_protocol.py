@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import unittest
 from argparse import Namespace
 from unittest import mock
@@ -174,6 +175,37 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertEqual(vote["date"], "2024-05-15")
         self.assertEqual(vote["document_numbers"], ["20/123", "20/456"])
         self.assertEqual(vote["total"], {"yes": 10, "no": 5, "abstain": 2, "absent": 1})
+
+    def test_fetch_html_wraps_a_malformed_response_body_as_dip_error(self) -> None:
+        # A response that is not valid utf-8 used to crash the build with a raw
+        # UnicodeDecodeError; fetch_html's except clause now widened to also
+        # catch this and convert it into the same DipError callers expect.
+        class FakeResponse:
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"\xff\xfe not valid utf-8"
+
+        with mock.patch.object(dip.urllib.request, "urlopen", return_value=FakeResponse()):
+            with self.assertRaises(dip.DipError) as ctx:
+                dip.fetch_html("https://example.test/page.html")
+        self.assertIn("Failed to fetch HTML", str(ctx.exception))
+
+    def test_fetch_text_wraps_an_http_client_exception_as_dip_error(self) -> None:
+        # http.client exceptions (e.g. a truncated chunked response) are not
+        # OSError/URLError subclasses; fetch_text's except clause now widened
+        # to also catch these rather than letting them propagate raw.
+        def fake_urlopen(*args: object, **kwargs: object) -> object:
+            raise http.client.IncompleteRead(b"")
+
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(dip.DipError) as ctx:
+                dip.fetch_text("https://example.test/protocol.xml")
+        self.assertIn("Failed to fetch XML", str(ctx.exception))
 
     def test_parse_member_votes_maps_vote_keys(self) -> None:
         members = dip.parse_member_votes((FIXTURES / "member_votes.html").read_text(encoding="utf-8"))

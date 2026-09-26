@@ -158,6 +158,25 @@ class VoteResultTests(unittest.TestCase):
         self.assertEqual(dip.vote_result(official=None, yes_count=0, no_count=0), (None, None))
 
 
+class StoredVoteResultTests(unittest.TestCase):
+    def test_pre_badge_record_derives_from_the_stored_counts(self) -> None:
+        vote = {"total": {"yes": 300, "no": 200}}
+        self.assertEqual(dip.stored_vote_result(vote), ("accepted", "derived"))
+
+    def test_already_recorded_result_is_returned_as_is(self) -> None:
+        vote = {"result_raw": "rejected", "result_source": "official", "total": {"yes": 999, "no": 0}}
+        # The recorded result wins even though the counts would derive
+        # differently: persist/render must agree with what was actually stored.
+        self.assertEqual(dip.stored_vote_result(vote), ("rejected", "official"))
+
+    def test_result_source_present_without_result_raw_is_returned_verbatim(self) -> None:
+        # An inconsistent stored row (result_source set, result_raw missing)
+        # still short-circuits on "or" rather than falling through to derive -
+        # this pins that behavior rather than a preference either way.
+        vote = {"result_source": "official", "total": {"yes": 300, "no": 200}}
+        self.assertEqual(dip.stored_vote_result(vote), (None, "official"))
+
+
 class ScrapeOfficialVoteResultTests(unittest.TestCase):
     def setUp(self) -> None:
         self.html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
@@ -186,6 +205,17 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         """
         self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
 
+    def test_boundary_stops_before_the_next_votes_outcome_word(self) -> None:
+        # This vote's own count match is unique, but its sentence has no outcome
+        # word before the next "Gesamt" marker; the next vote's "abgelehnt" must
+        # not leak backwards and get attributed to this one.
+        html = """
+        <h2 class="bt-artikel__aside-section-title">Beschluss</h2>
+        <p>Gesamt: 500 Ja:300 Nein:200 vertagt. Gesamt: 400 Ja:100 Nein:300 abgelehnt.</p>
+        </div>
+        <div class="bt-artikel__aside-section">
+        """
+        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
 
     def test_duplicate_tallies_in_one_section_are_not_attributed(self) -> None:
         # A Gesetzentwurf and its Entschließungsantrag voted along the same lines
@@ -369,6 +399,15 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
 
         with patch.object(dip.urllib.request, "urlopen", side_effect=fake_urlopen):
             self.assertEqual(dip.namenslisten_entries(), [])
+
+    def test_namenslisten_fetch_error_is_not_cached_the_next_vote_retries(self) -> None:
+        # A failed fetch must not memoize "no entries" for the rest of the
+        # build (comment above _namenslisten_entries): the very next call
+        # should hit the network again and can succeed.
+        with patch.object(dip, "fetch_html", side_effect=dip.DipError("Failed to fetch HTML: timed out")):
+            self.assertEqual(dip.namenslisten_entries(), [])
+        with patch.object(dip, "fetch_html", return_value=self._namenslisten_row(1)):
+            self.assertEqual(len(dip.namenslisten_entries()), 1)
 
     def test_namenslisten_list_is_fetched_once_for_several_votes(self) -> None:
         namenslisten_html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")

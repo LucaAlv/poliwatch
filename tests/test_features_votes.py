@@ -61,6 +61,16 @@ class RenderDocumentLinksTests(unittest.TestCase):
         self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', html)
         self.assertIn("21/6561", html)
 
+    def test_dip_sourced_link_also_passes_the_publication_allowlist(self) -> None:
+        # document_source_links can hand back a "bundestag-dip" tuple (DIP API's
+        # own pdf_url) rather than "bundestag-xml"; only the xml source was
+        # exercised through render_document_links's html.source_url() call
+        # elsewhere, so this pins the other allowed source too.
+        links = {"21/8157": ("https://dip.bundestag.de/x", "bundestag-dip")}
+        html = render_document_links(["21/8157"], links)
+        self.assertIn('href="https://dip.bundestag.de/x"', html)
+        self.assertIn("21/8157", html)
+
     def test_unlinked_number_never_guesses_a_url(self) -> None:
         html = render_document_links(["21/9999"], {})
         self.assertNotIn("<a ", html)

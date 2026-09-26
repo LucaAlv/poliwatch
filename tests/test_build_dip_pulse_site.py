@@ -275,6 +275,44 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "derived"))
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/2/new_xls.xlsx")
 
+    def test_carry_forward_keeps_a_freshly_scraped_official_result_over_a_stale_one(self) -> None:
+        # The guard is "vote.get('result_source') != 'official'": when this
+        # build's own scrape already found an official result, a *different*
+        # previous official value must never overwrite it, even with matching
+        # counts.
+        total = {"yes": 300, "no": 200}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "rejected", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "official"))
+
+    def test_carry_forward_with_no_existing_report_is_a_safe_no_op(self) -> None:
+        report = {"agenda_items": [{"votes": [{"id": "1007", "total": {"yes": 1, "no": 0}}]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, None)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertNotIn("xlsx_url", vote)
+        self.assertEqual(vote["total"], {"yes": 1, "no": 0})
+
+    def test_carry_forward_matches_id_less_legacy_votes_by_title_and_date(self) -> None:
+        # pulse_html.vote_key falls back to "title|date" when a vote has no id
+        # (legacy records predating the roll-call id field); carry-forward must
+        # still find the match through that composite key.
+        previous = {"agenda_items": [{"votes": [{
+            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
