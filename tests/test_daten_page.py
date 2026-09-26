@@ -152,7 +152,8 @@ class DatenPageTests(unittest.TestCase):
 
     def test_recipe_copy_script_writes_clipboard_with_selection_fallback(self) -> None:
         script = b.recipe_copy_runtime_script()
-        self.assertIn('navigator.clipboard.writeText(code.textContent).then(() => flash("Kopiert"), selectFallback);', script)
+        self.assertIn("navigator.clipboard.writeText(code.textContent).then(", script)
+        self.assertIn('() => flash("Kopiert"),', script)
         self.assertIn("range.selectNodeContents(code);", script)
         self.assertIn('flash("Markiert – mit ⌘C/Strg+C kopieren");', script)
         self.assertNotIn("document.execCommand(", script)
@@ -201,6 +202,21 @@ class DatenPageTests(unittest.TestCase):
         reveal = script.index("button.hidden = false;")
         self.assertLess(code_guard, wire)
         self.assertLess(wire, reveal)
+
+    def test_late_clipboard_failure_never_overrides_a_newer_click_or_selection(self) -> None:
+        # A rejection that settles after another copy click, or after the
+        # reader selected something else, must not re-select its own SQL.
+        script = b.recipe_copy_runtime_script()
+        self.assertIn("let latestCopy = 0;", script)
+        self.assertLess(script.index("let latestCopy = 0;"), script.index("buttons.forEach("))
+        click = script[script.index('button.addEventListener("click"'):script.index("button.hidden = false;")]
+        self.assertLess(click.index("const copy = ++latestCopy;"), click.index("if (!clipboardAvailable)"))
+        self.assertIn('const selectionAtClick = String(window.getSelection() || "");', click)
+        rejected = click[click.index('() => flash("Kopiert"),'):]
+        self.assertIn(
+            'const untouched = copy === latestCopy && String(window.getSelection() || "") === selectionAtClick;', rejected
+        )
+        self.assertLess(rejected.index("if (untouched) selectFallback();"), rejected.index('else flash("Nicht kopiert");'))
 
     def test_recipe_copy_click_falls_back_before_touching_the_clipboard(self) -> None:
         # Without a secure context, selectFallback runs directly and returns

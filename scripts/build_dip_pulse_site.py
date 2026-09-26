@@ -2447,6 +2447,10 @@ def recipe_copy_runtime_script() -> str:
       const buttons = document.querySelectorAll(".recipe-copy");
       if (!buttons.length) return;
       const clipboardAvailable = !!(navigator.clipboard && window.isSecureContext);
+      // Page-wide, bumped on every copy click: a clipboard write that fails
+      // late (e.g. behind a permission prompt) must not select its SQL over
+      // a newer click or a selection the reader made in the meantime.
+      let latestCopy = 0;
 
       buttons.forEach((button) => {
         const sqlBlock = button.closest(".recipe-sql");
@@ -2480,11 +2484,20 @@ def recipe_copy_runtime_script() -> str:
         };
 
         button.addEventListener("click", () => {
+          const copy = ++latestCopy;
           if (!clipboardAvailable) {
             selectFallback();
             return;
           }
-          navigator.clipboard.writeText(code.textContent).then(() => flash("Kopiert"), selectFallback);
+          const selectionAtClick = String(window.getSelection() || "");
+          navigator.clipboard.writeText(code.textContent).then(
+            () => flash("Kopiert"),
+            () => {
+              const untouched = copy === latestCopy && String(window.getSelection() || "") === selectionAtClick;
+              if (untouched) selectFallback();
+              else flash("Nicht kopiert");
+            },
+          );
         });
 
         button.hidden = false;
