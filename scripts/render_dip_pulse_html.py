@@ -772,20 +772,38 @@ def attention_runtime_script() -> str:
       // literal 0: a sidebar click (or #top-N on load) parks the target card
       // that far below the edge, and it must count as reached there rather
       // than depend on the grid gap pushing the previous card out of view.
+      // At the very end of the page the lowest visible card wins instead: a
+      // final card shorter than the viewport can never scroll up to the line,
+      // so the rule above would leave the card before it current for good.
       const pickCurrent = () => {
         let reached = null;
         let pending = null;
+        let lowest = null;
         cards.forEach((card) => {
           if (!inView.has(card.id)) return;
           const top = card.getBoundingClientRect().top;
+          if (!lowest || top > lowest.top) lowest = { card, top };
           if (top <= reachedLine) {
             if (!reached || top > reached.top) reached = { card, top };
           } else if (!pending || top < pending.top) {
             pending = { card, top };
           }
         });
-        const winner = reached || pending;
+        const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1;
+        const winner = (atBottom && lowest) || reached || pending;
         if (winner) setCurrent(winner.card.id);
+      };
+
+      // Intersection events only fire when a card enters or leaves the
+      // viewport, not when one crosses reachedLine or the page hits its end,
+      // so re-pick on scroll too - at most once per frame, passive.
+      let scrollFrame = 0;
+      const onScroll = () => {
+        if (scrollFrame) return;
+        scrollFrame = window.requestAnimationFrame(() => {
+          scrollFrame = 0;
+          pickCurrent();
+        });
       };
 
       const onIntersect = (entries) => {
@@ -810,12 +828,16 @@ def attention_runtime_script() -> str:
         // it is on screen.
         observer = new IntersectionObserver(onIntersect);
         cards.forEach((card) => observer.observe(card));
+        window.addEventListener("scroll", onScroll, { passive: true });
       };
 
       const stop = () => {
         if (!observer) return;
         observer.disconnect();
         observer = null;
+        window.removeEventListener("scroll", onScroll);
+        if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
+        scrollFrame = 0;
         inView.clear();
         setCurrent(null);
       };

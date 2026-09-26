@@ -633,7 +633,7 @@ class CurrentTopHighlightTests(unittest.TestCase):
         for identifier in (
             "if (!reached || top > reached.top) reached = { card, top };",
             "} else if (!pending || top < pending.top) {",
-            "const winner = reached || pending;",
+            "const winner = (atBottom && lowest) || reached || pending;",
         ):
             with self.subTest(identifier=identifier):
                 self.assertIn(identifier, script)
@@ -678,6 +678,28 @@ class CurrentTopHighlightTests(unittest.TestCase):
                 self.assertIn(identifier, stop_body)
         start_body = script[script.index("const start = () => {"):script.index("const stop = () => {")]
         self.assertIn("if (observer) return;", start_body)
+
+    def test_end_of_page_lets_the_lowest_visible_card_win(self) -> None:
+        # A final card shorter than the viewport never reaches reachedLine,
+        # so at the page end the lowest visible card must beat "reached".
+        script = pulse_html.attention_runtime_script()
+        body = script[script.index("const pickCurrent = () => {"):script.index("const onScroll")]
+        self.assertIn("if (!lowest || top > lowest.top) lowest = { card, top };", body)
+        self.assertIn(
+            "const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1;", body
+        )
+        self.assertLess(body.index("const atBottom"), body.index("const winner = (atBottom && lowest) || reached || pending;"))
+
+    def test_scroll_recheck_is_passive_frame_throttled_and_torn_down(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        on_scroll = script[script.index("const onScroll = () => {"):script.index("const onIntersect")]
+        self.assertIn("if (scrollFrame) return;", on_scroll)
+        self.assertIn("window.requestAnimationFrame(", on_scroll)
+        start_body = script[script.index("const start = () => {"):script.index("const stop = () => {")]
+        self.assertIn('window.addEventListener("scroll", onScroll, { passive: true });', start_body)
+        stop_body = script[script.index("const stop = () => {"):script.index("const sync")]
+        self.assertIn('window.removeEventListener("scroll", onScroll);', stop_body)
+        self.assertIn("window.cancelAnimationFrame(scrollFrame);", stop_body)
 
     def test_sync_switches_on_static_layout_with_a_legacy_listener_fallback(self) -> None:
         # matchMedia's modern addEventListener is not on every engine this
