@@ -3281,6 +3281,10 @@ def render_week_comparison_section(
     # Volume metrics and deltas use the same comparison basis as the shares.
     metric_cells = []
     for metric in comparison["metrics"]:
+        previous_figure = (
+            f'<em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"])}</em>'
+            if metric["previous"] is not None else ""
+        )
         metric_cells.append(
             f"""
               <div class="week-metric">
@@ -3288,7 +3292,7 @@ def render_week_comparison_section(
                 <strong>{week_figure(metric["current"])}</strong>
                 <div class="week-metric-foot">
                   {pulse_html.render_delta(metric["delta_percent"], "%")}
-                  <em>{pulse_html.esc(previous["label"])}: {week_figure(metric["previous"])}</em>
+                  {previous_figure}
                 </div>
               </div>"""
         )

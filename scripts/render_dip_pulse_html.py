@@ -1171,18 +1171,21 @@ def week_comparison(current: dict[str, Any], previous: dict[str, Any] | None) ->
 
     metrics = []
     for key, label, _kind in WEEK_METRICS:
-        # Drop the text metric entirely rather than print a number we know is short.
-        if key == "total_chars" and not (now_stats["chars_complete"] and before_stats["chars_complete"]):
+        # A comparison needs complete text on both sides. Without a comparison,
+        # the current week's complete text can still be shown on its own.
+        if key == "total_chars" and (
+            not now_stats["chars_complete"] or (basis and not before_stats["chars_complete"])
+        ):
             continue
         now = float(now_stats[key])
-        before = float(before_stats[key])
+        before = float(before_stats[key]) if key != "total_chars" or before_stats["chars_complete"] else None
         metrics.append(
             {
                 "key": key,
                 "label": label,
                 "current": now,
                 "previous": before,
-                "delta": now - before if basis else None,
+                "delta": now - before if basis and before is not None else None,
                 "delta_percent": ((now - before) / before * 100) if basis and before else None,
             }
         )

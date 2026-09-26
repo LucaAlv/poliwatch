@@ -1416,6 +1416,28 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIsNone(comparison["basis"])
         self.assertTrue(all(m["delta_percent"] is None for m in comparison["metrics"]))
 
+    def test_no_shared_weekday_keeps_complete_current_text_without_incomplete_previous_text(self) -> None:
+        current_entry = self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 200)])])
+        truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
+        item = truncated["report"]["agenda_items"][0]
+        item["xml_speakers_first"] = item.pop("xml_speakers")
+        previous_entry = self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)])])
+        current = pulse_html.week_stats((2026, 24), [current_entry])
+        previous = pulse_html.week_stats((2026, 21), [truncated, previous_entry])
+
+        comparison = pulse_html.week_comparison(current, previous)
+        self.assertIsNone(comparison["basis"])
+        chars = next(m for m in comparison["metrics"] if m["key"] == "total_chars")
+        self.assertEqual(chars["current"], 200.0)
+        self.assertIsNone(chars["previous"])
+        self.assertIsNone(chars["delta_percent"])
+
+        band = re.search(r'<section class="week-compare".*?</section>', self._render([current_entry, truncated, previous_entry]), re.S).group()
+        text_metric = re.search(r'<div class="week-metric">\s*<span>Redetext \(Zeichen\)</span>(.*?)</div>', band, re.S).group(1)
+        self.assertIn("<strong>200</strong>", text_metric)
+        self.assertIn('<span class="week-delta flat">n/a</span>', text_metric)
+        self.assertNotIn("KW 21/2026:", text_metric)
+
     def test_matched_redeanteil_recomputes_shares_from_selected_sittings(self) -> None:
         current = pulse_html.week_stats(
             (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])]
