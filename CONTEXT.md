@@ -55,7 +55,7 @@ A Person during one of their Mandate (Mitglied des Bundestages, Abgeordnete/Abge
 _Avoid_: MP, member (unqualified), "Abgeordnete" for anyone who speaks
 
 **Redner**:
-A Person giving a Rede in a Sitzung: an MdB or a member of the Bundesregierung or the Bundesrat. Being a Redner implies no Mandat.
+A Person giving a Rede in a Sitzung: an MdB, or someone speaking for the Bundesregierung, for the Bundesrat or in a weitere Sprechrolle. Being a Redner implies no Mandat.
 _Avoid_: MP, MdB for every speaker
 
 **Personenkennung**:
@@ -117,8 +117,8 @@ The brief reply of the Redner whose Rede a Kurzintervention referred to. Like th
 _Avoid_: counting it as a second Rede of the same Redner
 
 **Befragung der Bundesregierung**:
-A Tagesordnungspunkt in which a member of the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede; each Frage and each Antwort after it is not, and is counted on its own.
-_Avoid_: Regierungsbefragung (colloquial), counting each Frage and Antwort as a Rede
+A Tagesordnungspunkt in which someone speaking for the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede; each Frage and each Antwort after it is not, and is counted on its own.
+_Avoid_: Regierungsbefragung (short form), counting each Frage and Antwort as a Rede
 
 **Fragestunde**:
 A Tagesordnungspunkt in which the Bundesregierung answers Fragen that MdBs submitted in advance, with Zusatzfragen from the floor. It holds no Rede: every Frage, Zusatzfrage and Antwort is counted on its own.

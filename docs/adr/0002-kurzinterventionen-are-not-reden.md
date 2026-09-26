@@ -10,11 +10,11 @@ Counting them would barely move shares per Zusammenschluss, because the coalitio
 
 ## Amendment 2026-09-26: Fragestunde and Befragung der Bundesregierung
 
-The same rule applies to the question formats. The XML records every Frage, Zusatzfrage and Antwort in the Fragestunde and the Befragung der Bundesregierung as a `<rede>` of its own. None of them is a Rede; only the opening report of a member of the Bundesregierung that starts a Befragung is. The Datenhandbuch's count leaves out "Zusatzfragen in der Fragestunde und entsprechend alle Antworten von Regierungsmitgliedern oder Parlamentarischen Staatssekretären während der Fragestunde und der Regierungsbefragung".
+The same rule applies to the question formats. The XML records every Frage, Zusatzfrage and Antwort in the Fragestunde and the Befragung der Bundesregierung as a `<rede>` of its own. None of them is a Rede; only the opening report that starts a Befragung is. The reason is the definition of Rede itself: neither format has an Aussprache, so a Frage or an Antwort is not a contribution to a debate, while the opening report is a statement given the floor on its own. The Datenhandbuch supports this in part. Its count leaves out "Zusatzfragen in der Fragestunde und entsprechend alle Antworten von Regierungsmitgliedern oder Parlamentarischen Staatssekretären während der Fragestunde und der Regierungsbefragung". It does not mention MdBs' Fragen in the Befragung or the opening report.
 
 This one matters far more than Kurzinterventionen. In the store on 2026-09-26, 7,611 of 34,771 recorded `<rede>` elements (22 %) sit in 76 Befragungen, about 100 each. One minister was credited with 40 Reden in a single Befragung. Because most Antworten come from the Bundesregierung, today's shares per Zusammenschluss overstate the government side.
 
-- **Leave the whole Befragung out, including the opening report (rejected).** It is easier to detect, by the TOP heading alone, but it drops a real statement of several minutes that the Datenhandbuch counts.
+- **Leave the whole Befragung out, including the opening report (rejected).** It is easier to detect, by the TOP heading alone, but it drops a real statement of several minutes that is given the floor like any Rede.
 - **Keep counting every Frage and Antwort (rejected).** This contradicts the Datenhandbuch and the definition of Rede, and makes ministers the most frequent Redner.
 
 ## Considered Options
