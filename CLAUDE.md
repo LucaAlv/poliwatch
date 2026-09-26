@@ -1,3 +1,7 @@
+## Project stage: pre-release
+
+Nothing is published. No reader, citation, or downstream user depends on any current figure, ranking, URL, export format, or schema. Judge every decision on accuracy and quality alone: a change that shifts figures, renames fields, or reworks a whole feature costs only the work itself. Change things in place and drop the old shape rather than carrying compatibility shims or migration paths. When a fix moves a number, report the old and new values and why the new one is more correct.
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
