@@ -134,6 +134,14 @@ _Avoid_: bill (only Gesetzgebung is legislation), proceeding in public text, cre
 One step in a Vorgang as DIP records it, such as a Beratung in a Sitzung or a Beschlussempfehlung, citing the Drucksache or Plenarprotokoll pages it rests on. A Vorgangsposition is how a Tagesordnungspunkt is linked to a Vorgang.
 _Avoid_: position (unqualified), treating it as a Vorgang
 
+**Vorgangstyp**:
+The kind of a Vorgang in DIP's classification, such as Gesetzgebung, Antrag, Petition or Aktuelle Stunde. A Vorgang has one Vorgangstyp (a few DIP records carry none), and the site uses DIP's labels unchanged.
+_Avoid_: inventing own categories, deriving the kind from a title
+
+**mitberatener Vorgang**:
+A Vorgang that is deliberated together with another in the same Vorgangsposition, as with identical Gesetzentwürfe brought in by the Bundesregierung and by the coalition Fraktionen. They stay two Vorgänge, each with its own Drucksachen and page. A list may show such a pair as one row, but counts never merge them into one Vorgang.
+_Avoid_: treating the pair as one Gesetzgebung, listing the same debate twice side by side
+
 **Drucksache**:
 An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
 _Avoid_: document (unqualified), confusing it with a Plenarprotokoll
@@ -231,6 +239,14 @@ _Avoid_: "Themen" as the unit counted, merging rows by Vorgang, copying the Sitz
 **Wochenvergleich**:
 The comparison of one Kalenderwoche with the nearest earlier Kalenderwoche that had a Sitzung, at most twelve weeks back; if the nearest one is further back, there is no Wochenvergleich. When the two hold different numbers of Sitzungen, every figure is compared per Sitzung.
 _Avoid_: Vorwoche (the compared week can be weeks earlier), comparing raw totals of weeks with different numbers of Sitzungen
+
+**Debattenprofil**:
+The Tagesordnungspunkte of a Kalenderwoche counted by the Vorgangstyp of the Vorgänge they deal with. A Tagesordnungspunkt counts once for every Vorgangstyp among its Vorgänge, however many Vorgänge of that type it bundles: 26 Petitionen under one Tagesordnungspunkt count as one.
+_Avoid_: counting Vorgangspositionen (bundled Petitionen and Sammelübersichten outweigh a long debate), counting Reden per Vorgangstyp (a Rede is never attributed to a Vorgang)
+
+**wiederkehrender Vorgang**:
+A Vorgang dealt with under a Tagesordnungspunkt in the current Kalenderwoche and in at least one earlier Kalenderwoche, for example erste Beratung in one week and zweite und dritte Beratung in another. Appearing only as a mitberatener Vorgang does not count. Its public heading is "Wieder auf der Tagesordnung".
+_Avoid_: Verfahren (as a synonym for Vorgang), "zurückkehren" in public text
 
 ### Acquisition and publication
 
