@@ -1206,9 +1206,9 @@ def write_report_and_page(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
     include_dev_view: bool = False,
-    database_page_href: str | None = None,
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the

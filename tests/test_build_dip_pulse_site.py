@@ -2122,6 +2122,8 @@ class BuildClockAndWeekTests(unittest.TestCase):
             rebuild.assert_called_once()
             # The dossiers loaded for the --week check are handed on, not parsed twice.
             self.assertEqual(rebuild.call_args.kwargs["cached_entries"], [entry])
+            # --no-persist: no export will run, so the dossier footers get no Daten link.
+            self.assertIsNone(rebuild.call_args.kwargs["database_page_href"])
             self.assertEqual(render_site.call_args.kwargs["today"], date(2026, 9, 15))
             self.assertEqual(render_site.call_args.kwargs["week"], (2026, 24))
             self.assertIs(render_site.call_args.kwargs["entries"][0], entry)
