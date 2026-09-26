@@ -182,6 +182,8 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
 
+### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+
 ## Protokoll-Dossier
 
 ### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
@@ -235,11 +237,11 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 ### Redeanteil je Zusammenschluss per ADR 0001 (puls.html and Daten recipes)
 
-**What:** puls.html's "Redeanteil der Fraktionen" card (`scripts/build_dip_pulse_site.py`, fed by `speaker_party()` in `scripts/render_dip_pulse_html.py`) puts every member of the Bundesregierung and the Bundesrat into one "Regierung" row among the Fraktionen, and heads Gruppen as "Fraktionen". Show Bundesregierung and Bundesrat as two separate rows outside the Zusammenschlüsse, fraktionslose MdBs as their own row, and head the card "Redeanteil der Fraktionen und Gruppen". Same rule for the Daten recipes r1 and r2 (`COALESCE(NULLIF(s.fraktion, ''), p.name)` falls back to a Partei name). Rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil and sort it by characters, not by Reden. Done when no public row is labelled "Regierung" and no share by characters is called Redeanteil.
+**What:** puls.html's "Redeanteil der Fraktionen" card (`scripts/build_dip_pulse_site.py`, fed by `speaker_party()` in `scripts/render_dip_pulse_html.py`) puts every speaker with a `<rolle>` into one "Regierung" row among the Fraktionen, including Bundesrat members and the Wehrbeauftragte, and heads Gruppen as "Fraktionen". Show Bundesregierung, Bundesrat and weitere Sprechrolle as three separate rows outside the Zusammenschlüsse, fraktionslose MdBs as their own row, and head the card "Redeanteil der Fraktionen und Gruppen". Same rule for the Daten recipes r1 and r2 (`COALESCE(NULLIF(s.fraktion, ''), p.name)` falls back to a Partei name). Rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil and sort it by characters, not by Reden. Done when no public row is labelled "Regierung" and no share by characters is called Redeanteil.
 
 **Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25) and ADR 0001's consequence "never as a pseudo-Fraktion 'Regierung'", which the ADR itself records as not yet followed.
 
-**Context:** Needs the Sprechrolle to tell Bundesregierung from Bundesrat per Rede (the XML `<rolle>`); check what the store keeps. Related: `parties.name` item under Daten, Rede text attribution item.
+**Context:** Needs the Sprechrolle to tell the three sides apart per Rede (the XML `<rolle>`); check what the store keeps. Rule (ADR 0001 amendment, 2026-09-26): Bundeskanzler, Bundesminister, Parl. Staatssekretäre, Staatsminister (Bund), Beauftragte and Koordinatoren der Bundesregierung → Bundesregierung. Land ministers, "Staatsminister (Hessen)" and the like → Bundesrat. Anything else (Wehrbeauftragte) → weitere Sprechrolle. `speaker_party_name` and `speaker_party` both need it. Related: `parties.name` item under Daten, Rede text attribution item.
 
 **Effort:** M
 **Priority:** P2

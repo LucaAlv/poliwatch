@@ -34,6 +34,14 @@ _Avoid_: using "Partei" for a Fraktion
 The capacity in which a speaker gives one speech, e.g. Bundesminister, Staatsministerin, Bundesratsmitglied. It belongs to the speech, never to the person, and does not change the speaker's parliamentary membership.
 _Avoid_: "Regierung" as a Fraktion or Partei, role as a person attribute
 
+**Bundesregierung** (as a side):
+Everyone who speaks for the government in a Sitzung: the Bundeskanzler and the Bundesminister, who alone are its members under Art. 62 GG, and the Parlamentarische Staatssekretäre, Staatsminister, Beauftragte and Koordinatoren der Bundesregierung, who speak on its behalf. A Rede in any of these Sprechrollen counts for the Bundesregierung, even when the Redner is an MdB.
+_Avoid_: "Regierung" as a Fraktion row, crediting a Parlamentarischer Staatssekretär's Rede to their Fraktion
+
+**weitere Sprechrolle**:
+A Sprechrolle that belongs neither to the Bundesregierung nor to the Bundesrat, such as the Wehrbeauftragte des Deutschen Bundestages. A Rede in it counts for no Zusammenschluss, no Bundesregierung and no Bundesrat.
+_Avoid_: counting the Wehrbeauftragte as Regierung, lumping every Sprechrolle into one government side
+
 **Person**:
 One human being, the same across Wahlperioden, offices and data sources. Every MdB and every Redner is a Person.
 _Avoid_: speaker or MP as the identity, one record per Wahlperiode
@@ -93,7 +101,7 @@ A Sitzung this project has a Dossier for. Every count this project publishes —
 _Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
-One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, although the Plenarprotokoll records each like one.
+One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung, although the Plenarprotokoll records each like one.
 _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
 
 **Zwischenfrage**:
@@ -107,6 +115,14 @@ _Avoid_: Zwischenfrage (that is asked during the Rede, with the Redner's consent
 **Erwiderung**:
 The brief reply of the Redner whose Rede a Kurzintervention referred to. Like the Kurzintervention, it is not a Rede and is counted on its own.
 _Avoid_: counting it as a second Rede of the same Redner
+
+**Befragung der Bundesregierung**:
+A Tagesordnungspunkt in which a member of the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede; each Frage and each Antwort after it is not, and is counted on its own.
+_Avoid_: Regierungsbefragung (colloquial), counting each Frage and Antwort as a Rede
+
+**Fragestunde**:
+A Tagesordnungspunkt in which the Bundesregierung answers Fragen that MdBs submitted in advance, with Zusatzfragen from the floor. It holds no Rede: every Frage, Zusatzfrage and Antwort is counted on its own.
+_Avoid_: Zwischenfrage (asked during a Rede), counting its contributions as Reden
 
 **Zwischenruf**:
 A remark called out from the floor during a Rede without being given the floor or asking the Redner's consent; the Plenarprotokoll records it in parentheses, with its author and Zusammenschluss where known. It is neither a Rede nor a Zwischenfrage, and it belongs to whoever called it out.
@@ -223,7 +239,7 @@ _Avoid_: Dissident, Rebell; Fraktionslinie in public text
 ### Counting speeches per Zusammenschluss
 
 **Zählung nach Sprechrolle**:
-The default way this project counts speeches per Zusammenschluss: a speech given in a Sprechrolle (Bundesregierung, Bundesrat) counts for that side and toward no Zusammenschluss; every other speech counts for the Zusammenschluss the Plenarprotokoll names beside the speaker, or, where it names none, for the speaker's Zugehörigkeit on the date of the Sitzung.
+The default way this project counts speeches per Zusammenschluss: a speech given in a Sprechrolle counts for its side (Bundesregierung, Bundesrat, or weitere Sprechrolle) and toward no Zusammenschluss; every other speech counts for the Zusammenschluss the Plenarprotokoll names beside the speaker, or, where it names none, for the speaker's Zugehörigkeit on the date of the Sitzung.
 _Avoid_: Zurechnungsregel, counting ministers for "Regierung" as if it were a Fraktion
 
 **Anrechnung**:
@@ -241,7 +257,7 @@ A share of the characters of Rede text within a stated scope. Characters are not
 _Avoid_: Redeanteil, Redezeit, "nach Zeichen" under a Redeanteil heading
 
 **Redeanteil je Zusammenschluss**:
-The Redeanteil of each Zusammenschluss under Zählung nach Sprechrolle. Reden in the Sprechrolle of the Bundesregierung and of the Bundesrat are two separate rows outside the Zusammenschlüsse, and Reden by fraktionslose MdBs a row of their own.
+The Redeanteil of each Zusammenschluss under Zählung nach Sprechrolle. Reden for the Bundesregierung, for the Bundesrat and in a weitere Sprechrolle are three separate rows outside the Zusammenschlüsse, and Reden by fraktionslose MdBs a row of their own.
 _Avoid_: Redeanteil der Fraktionen (Gruppen are not Fraktionen), "Regierung" as a Fraktion row, one row for Bundesregierung and Bundesrat together
 
 **Rangfolge nach Reden**:
@@ -249,7 +265,7 @@ Tagesordnungspunkte ordered by their number of Reden, within one Sitzung or one 
 _Avoid_: Aufmerksamkeitsrang, Aufmerksamkeitsranking, ranking by Zeichen
 
 **Wochenradar**:
-The top of the Rangfolge nach Reden of one Kalenderwoche across all its Sitzungen, each row a Tagesordnungspunkt named by its Thema. Question formats such as the Fragestunde and the Befragung der Bundesregierung are listed apart but still count toward the week's Reden. A Vorgang dealt with under two Tagesordnungspunkte in one week appears as two rows.
+The top of the Rangfolge nach Reden of one Kalenderwoche across all its Sitzungen, each row a Tagesordnungspunkt named by its Thema. The Fragestunde and the Befragung der Bundesregierung are listed apart and never ranked; only the opening report of a Befragung counts toward the week's Reden. A Vorgang dealt with under two Tagesordnungspunkte in one week appears as two rows.
 _Avoid_: "Themen" as the unit counted, merging rows by Vorgang, copying the Sitzung ranking of a dossier
 
 **Wochenvergleich**:
