@@ -2793,5 +2793,50 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertEqual(pulse_html.format_percent(100.0), "100,0%")
 
 
+class DossierDatenLinkTests(unittest.TestCase):
+    """Dossiers are written before the manifest exists, so their footer
+    predicts it from the export's own condition."""
+
+    def _href(self, *, no_persist: bool, store: bool, data_manifest: str | None = None, env: str | None = None):
+        args = SimpleNamespace(no_persist=no_persist, data_manifest=data_manifest)
+        environ = {"BUNDESTAG_PULSE_DATA_MANIFEST": env} if env else {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, environ, clear=False):
+            if not env:
+                os.environ.pop("BUNDESTAG_PULSE_DATA_MANIFEST", None)
+            database_path = Path(tmp) / "bundestag-pulse.sqlite"
+            if store:
+                database_path.write_bytes(b"")
+            return build_dip_pulse_site.dossier_database_page_href(args, database_path)
+
+    def test_persisted_store_links_daten(self) -> None:
+        self.assertEqual(self._href(no_persist=False, store=True), "../database.html")
+
+    def test_no_persist_or_missing_store_omits_daten(self) -> None:
+        self.assertIsNone(self._href(no_persist=True, store=True))
+        self.assertIsNone(self._href(no_persist=False, store=False))
+
+    def test_manifest_override_links_daten_even_without_a_store(self) -> None:
+        self.assertEqual(self._href(no_persist=True, store=False, data_manifest="m.json"), "../database.html")
+        self.assertEqual(self._href(no_persist=True, store=False, env="https://example.org/m.json"), "../database.html")
+
+    def test_written_dossier_carries_the_link_only_when_given(self) -> None:
+        report = {
+            "protocol": {"dokumentnummer": "21/1", "titel": "Protokoll 21/1"},
+            "validation_summary": {},
+            "agenda_items": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "data").mkdir()
+            (output_dir / "protocols").mkdir()
+            footer = lambda entry: re.search(r"<footer>.*?</footer>", entry["page_path"].read_text(encoding="utf-8"), re.S).group(0)
+            with_link = build_dip_pulse_site.write_report_files(report, output_dir, database_page_href="../database.html")
+            self.assertIn('<a href="../database.html">Daten</a>', footer(with_link))
+            # The site-wide header links Daten on every page regardless; only
+            # the footer link follows the build's data state.
+            without = build_dip_pulse_site.write_report_files(report, output_dir)
+            self.assertNotIn("database.html", footer(without))
+
+
 if __name__ == "__main__":
     unittest.main()

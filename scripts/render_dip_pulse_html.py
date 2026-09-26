@@ -2467,6 +2467,7 @@ def render_html(
     mp_lookup: dict[str, int] | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> str:
     features = publication_selection()
     from features.loader import load as load_components
@@ -2652,10 +2653,12 @@ def render_html(
         '<a href="../overview.html">Sitzungen</a>',
         '<a href="../bills/index.html">Gesetze</a>',
         '<a href="../abgeordnete/index.html">Abgeordnete</a>',
-        '<a href="../database.html">Daten</a>',
+        # Only when the build has Daten, like every other page's Daten link;
+        # the caller predicts that (see dossier_database_page_href).
+        f'<a href="{esc(database_page_href)}">Daten</a>' if database_page_href else "",
         '<a href="../sources.html">Quellen</a>',
     ]
-    footer_nav = " · ".join(footer_links)
+    footer_nav = " · ".join(link for link in footer_links if link)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
     protocol_dev_sections = (
         "".join(components["dev-view"].dossier_sections(report, {"scope": "protocol"}))

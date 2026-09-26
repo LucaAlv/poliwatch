@@ -116,12 +116,22 @@ class DossierLayoutTests(unittest.TestCase):
         # Same relative-path depth as its neighbours (dossiers live one level
         # down, under protocols/) and the same position render_overview uses
         # for this link: right before Quellen.
-        markup = pulse_html.render_html(self.report)
+        markup = pulse_html.render_html(self.report, database_page_href="../database.html")
         footer = re.search(r"<footer>.*?</footer>", markup, re.S).group(0)
 
         self.assertIn('<a href="../database.html">Daten</a>', footer)
         self.assertLess(footer.index("../abgeordnete/index.html"), footer.index("../database.html"))
         self.assertLess(footer.index("../database.html"), footer.index("../sources.html"))
+
+    def test_footer_omits_daten_when_the_build_has_no_data(self) -> None:
+        # Like every other page's Daten link: no href, no link, and no doubled
+        # separator where it would have been.
+        markup = pulse_html.render_html(self.report)
+        footer = re.search(r"<footer>.*?</footer>", markup, re.S).group(0)
+
+        self.assertNotIn("database.html", footer)
+        self.assertNotIn("·  ·", footer)
+        self.assertIn('<a href="../abgeordnete/index.html">Abgeordnete</a> · <a href="../sources.html">Quellen</a>', footer)
 
 
 class AttentionRankingTests(unittest.TestCase):

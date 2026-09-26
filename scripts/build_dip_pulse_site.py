@@ -534,6 +534,7 @@ def write_report_files(
     features: Selection | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     protocol = report.get("protocol") or {}
@@ -546,6 +547,7 @@ def write_report_files(
             features=features,
             mp_lookup=mp_lookup,
             include_dev_view=include_dev_view,
+            database_page_href=database_page_href,
         ),
         encoding="utf-8",
     )
@@ -664,6 +666,7 @@ def rebuild_cached_detail_pages(
     cached_entries: list[dict[str, Any]] | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls.
 
@@ -681,6 +684,7 @@ def rebuild_cached_detail_pages(
                 mp_lookup,
                 features,
                 include_dev_view=include_dev_view,
+                database_page_href=database_page_href,
             )
         )
     return entries
@@ -1202,6 +1206,7 @@ def write_report_and_page(
     mp_lookup: dict[str, int] | None = None,
     features: Selection | None = None,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
 ) -> dict[str, Any]:
@@ -1295,6 +1300,7 @@ def write_report_and_page(
         mp_lookup,
         features,
         include_dev_view=include_dev_view,
+        database_page_href=database_page_href,
     )
 
 
@@ -9381,6 +9387,21 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def data_manifest_source(args: argparse.Namespace) -> str | None:
+    return getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+
+
+# Dossiers are written before run_data_pipeline produces the manifest that every
+# other page's "Daten" link keys on, so their footer predicts it from the
+# export's own condition: a manifest override, or a persisted store to export.
+# The one miss is an export that raises DataExportUnavailable (old SQLite);
+# database.html is then the fallback page, which says exactly that.
+def dossier_database_page_href(args: argparse.Namespace, database_path: Path) -> str | None:
+    if data_manifest_source(args) or (not args.no_persist and database_path.exists()):
+        return "../database.html"
+    return None
+
+
 # CLI > env > default, read in the layer that actually runs the build (not in
 # parse_args itself), per the DX addendum. getattr() throughout: main() must
 # keep working against the pre-existing test stub that mocks parse_args() with
@@ -9389,7 +9410,7 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     base_url_raw = (
         getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
     )
-    manifest_raw = getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+    manifest_raw = data_manifest_source(args)
     license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
     issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
     issues_url = (issues_url or "").strip() or None
@@ -9624,6 +9645,7 @@ def main() -> int:
             features,
             cached_entries=cached_entries,
             include_dev_view=args.include_dev_view,
+            database_page_href=dossier_database_page_href(args, database_path),
         )
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
@@ -9740,6 +9762,7 @@ def main() -> int:
                     profile_resolver=profile_resolver,
                     features=features,
                     include_dev_view=args.include_dev_view,
+                    database_page_href=dossier_database_page_href(args, database_path),
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -9786,6 +9809,7 @@ def main() -> int:
                         canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
                 finally:
                     store.close()
+                database_page_href = dossier_database_page_href(args, database_path)
                 entries = [
                     write_report_files(
                         entry["report"],
@@ -9793,6 +9817,7 @@ def main() -> int:
                         mp_lookup,
                         features,
                         include_dev_view=args.include_dev_view,
+                        database_page_href=database_page_href,
                     )
                     for entry in entries
                 ]
