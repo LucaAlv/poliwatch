@@ -980,6 +980,37 @@ def reconcile_generated_and_cached_summaries(
     ).as_dict()
 
 
+def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    """Keep a vote's XLSX link and official result when a rescan found weaker data.
+
+    The SQLite store is rebuilt from these reports every run, so the report is
+    the only place a previously found link or official result survives. A vote
+    ages out of the Namenslisten page's 200-row window, or one Beschluss scrape
+    misses: without this the next build reverts it to no link / derived.
+    An official result is only carried while the counts are unchanged.
+    """
+    previous_votes: dict[str, dict[str, Any]] = {}
+    for item in (existing_report or {}).get("agenda_items") or []:
+        for vote in _iter_report_votes(item):
+            previous_votes.setdefault(pulse_html.vote_key(vote), vote)
+    if not previous_votes:
+        return
+    for item in report.get("agenda_items") or []:
+        for vote in _iter_report_votes(item):
+            previous = previous_votes.get(pulse_html.vote_key(vote))
+            if not previous:
+                continue
+            if not vote.get("xlsx_url") and previous.get("xlsx_url"):
+                vote["xlsx_url"] = previous["xlsx_url"]
+            if (
+                vote.get("result_source") != "official"
+                and previous.get("result_source") == "official"
+                and (vote.get("total") or {}) == (previous.get("total") or {})
+            ):
+                vote["result_raw"] = previous.get("result_raw")
+                vote["result_source"] = "official"
+
+
 def reuse_existing_dossier_enrichments(
     report: dict[str, Any],
     existing_report: dict[str, Any] | None,
@@ -988,6 +1019,7 @@ def reuse_existing_dossier_enrichments(
     profiles: bool,
 ) -> None:
     """Carry cached optional data forward when this update does not refresh it."""
+    carry_forward_vote_provenance(report, existing_report)
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
         for key in agenda_item_reuse_keys(item):

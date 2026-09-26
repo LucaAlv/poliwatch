@@ -671,9 +671,12 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
     if not section_match:
         return None
     section = section_match.group(1)
-    count_match = re.search(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b", section)
-    if not count_match:
+    # Two votes in one section with identical tallies would be indistinguishable:
+    # only a unique match is confident enough to call official.
+    count_matches = list(re.finditer(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b", section))
+    if len(count_matches) != 1:
         return None
+    count_match = count_matches[0]
     window = section[count_match.end() :]
     boundary = window.find("Gesamt")
     outcome_match = _VOTE_OUTCOME_WORD_RE.search(window[:boundary] if boundary != -1 else window)
@@ -720,13 +723,17 @@ def _is_publishable_xlsx_url(url: str) -> bool:
     return True
 
 
+def namenslisten_blocks(html_text: str) -> list[str]:
+    return re.split(r'(?=<div class="e-linkListItem">)', html_text)[1:]
+
+
 def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
     """Each row on the Namenslisten page names one vote and links its XLSX
     export next to its PDF; there is no id shared with the roll-call vote
     pages, so every row is identified only by its "DD.MM.YYYY: <title>" text.
     """
     entries: list[dict[str, str]] = []
-    for block in re.split(r'(?=<div class="e-linkListItem">)', html_text)[1:]:
+    for block in namenslisten_blocks(html_text):
         row_match = _NAMENSLISTEN_ROW_RE.search(block)
         xlsx_match = _NAMENSLISTEN_XLSX_RE.search(block)
         if not row_match or not xlsx_match:
@@ -755,15 +762,23 @@ def namenslisten_entries() -> list[dict[str, str]]:
     global _namenslisten_entries
     if _namenslisten_entries is None:
         try:
-            _namenslisten_entries = parse_namenslisten_page(fetch_html(namenslisten_list_url()))
+            html_text = fetch_html(namenslisten_list_url())
         except DipError:
             return []
-        if len(_namenslisten_entries) >= NAMENSLISTEN_PAGE_LIMIT:
+        entries = parse_namenslisten_page(html_text)
+        raw_rows = len(namenslisten_blocks(html_text))
+        if not entries:
+            # A placeholder page or drifted markup: warn, and let the next vote
+            # retry rather than caching "no links" for the whole build.
+            print("warning: Namenslisten page parsed to 0 rows; no XLSX links this time", file=sys.stderr)
+            return []
+        if raw_rows >= NAMENSLISTEN_PAGE_LIMIT:
             print(
-                f"warning: Namenslisten page returned {len(_namenslisten_entries)} rows (the request limit); "
+                f"warning: Namenslisten page returned {raw_rows} rows (the request limit); "
                 "votes older than the last row get no XLSX link",
                 file=sys.stderr,
             )
+        _namenslisten_entries = entries
     return _namenslisten_entries
 
 

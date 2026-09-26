@@ -994,8 +994,10 @@ def persist_votes(
               absent_count = excluded.absent_count,
               result_raw = excluded.result_raw,
               result_source = excluded.result_source,
-              -- A run that found no XLSX link (list page down, vote aged out of
-              -- the 200-row window, pre-badge cached JSON) keeps the stored one.
+              -- A copy of the vote without a link (e.g. the same vote attached to
+              -- a second agenda item) never erases one already stored. Across
+              -- builds the store is rebuilt, so carry-forward happens in the
+              -- report (build_dip_pulse_site.carry_forward_vote_provenance).
               xlsx_url = COALESCE(excluded.xlsx_url, votes.xlsx_url),
               updated_at = excluded.updated_at
             """,

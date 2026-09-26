@@ -248,6 +248,33 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual(item["xml_speakers"][0]["speaker"]["abgeordnetenwatch"], cached_profile)
         self.assertIsNot(item["votes"], previous["agenda_items"][0]["votes"])
 
+    def test_rescan_keeps_a_previously_found_xlsx_link_and_official_result(self) -> None:
+        total = {"yes": 434, "no": 128, "abstain": 0, "absent": 68}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "derived", "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "official"))
+
+    def test_rescan_does_not_carry_an_official_result_over_changed_counts(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": {"yes": 1, "no": 2}, "result_raw": "rejected", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": {"yes": 3, "no": 2}, "result_raw": "accepted", "result_source": "derived",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/2/new_xls.xlsx",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "derived"))
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/2/new_xls.xlsx")
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"

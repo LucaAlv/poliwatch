@@ -187,6 +187,18 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
 
 
+    def test_duplicate_tallies_in_one_section_are_not_attributed(self) -> None:
+        # A Gesetzentwurf and its Entschließungsantrag voted along the same lines
+        # can share Ja/Nein counts; the first match is not confidently this vote.
+        html = """
+        <h2 class="bt-artikel__aside-section-title">Beschluss</h2>
+        <p>Gesamt: 500 Ja:300 Nein:200 angenommen. Gesamt: 500 Ja:300 Nein:200 abgelehnt.</p>
+        </div>
+        <div class="bt-artikel__aside-section">
+        """
+        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+
+
 class NamenslistenMatchingTests(unittest.TestCase):
     def setUp(self) -> None:
         html = (FIXTURES_DIR / "namenslisten_list.html").read_text(encoding="utf-8")
@@ -321,6 +333,30 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
         self.assertEqual(enriched["result_raw"], "rejected")
         self.assertEqual(enriched["result_source"], "derived")
         self.assertIsNone(enriched["xlsx_url"])
+
+    def _namenslisten_row(self, index: int, xlsx: bool = True) -> str:
+        link = f'<a href="https://www.bundestag.de/resource/blob/{index}/x_xls.xlsx">XLSX</a>' if xlsx else ""
+        return (
+            '<div class="e-linkListItem">'
+            f'<a href="#" class="e-linkListItem__anchor"><span>11.06.2026: Abstimmung {index}</span></a>{link}</div>'
+        )
+
+    def test_full_page_warning_counts_raw_rows_not_filtered_entries(self) -> None:
+        # 200 rows on the page, one without an XLSX link: still a full page.
+        html = "".join(self._namenslisten_row(i, xlsx=i != 0) for i in range(dip.NAMENSLISTEN_PAGE_LIMIT))
+        stderr = StringIO()
+        with patch.object(dip, "fetch_html", return_value=html), patch("sys.stderr", stderr):
+            entries = dip.namenslisten_entries()
+        self.assertEqual(len(entries), dip.NAMENSLISTEN_PAGE_LIMIT - 1)
+        self.assertIn(f"returned {dip.NAMENSLISTEN_PAGE_LIMIT} rows", stderr.getvalue())
+
+    def test_zero_row_page_warns_and_is_not_cached(self) -> None:
+        stderr = StringIO()
+        with patch.object(dip, "fetch_html", return_value="<html>maintenance</html>"), patch("sys.stderr", stderr):
+            self.assertEqual(dip.namenslisten_entries(), [])
+        self.assertIn("parsed to 0 rows", stderr.getvalue())
+        with patch.object(dip, "fetch_html", return_value=self._namenslisten_row(1)):
+            self.assertEqual(len(dip.namenslisten_entries()), 1)
 
     def test_namenslisten_list_id_env_override_changes_requested_url(self) -> None:
         with patch.dict(os.environ, {"BT_NAMENSLISTEN_LIST_ID": "999999-999999"}):
