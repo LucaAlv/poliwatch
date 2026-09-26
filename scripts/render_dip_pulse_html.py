@@ -404,8 +404,9 @@ VOTE_RESULT_BADGE_CSS = """
     .vote-result-derived.vote-result-accepted { color:#0f766e; }
     .vote-result-derived.vote-result-rejected { color:#b91c1c; }
     .vote-result-note { margin-left:4px; font-weight:500; }
-    :root[data-theme="dark"] .vote-result-derived.vote-result-accepted { color:#5eead4; }
-    :root[data-theme="dark"] .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+    /* Only the archive row turns dark; the dossier .vote-panel stays light. */
+    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
+    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
 """
 
 

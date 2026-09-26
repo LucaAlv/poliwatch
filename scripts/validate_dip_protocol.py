@@ -644,7 +644,7 @@ def vote_result(*, official: str | None, yes_count: int, no_count: int) -> tuple
 def stored_vote_result(vote: dict[str, Any]) -> tuple[str | None, str | None]:
     """A vote's outcome as recorded, or the derived rule when the record
     predates ``result_raw`` (dossier JSON cached before the badge shipped).
-    Keeps persist and render agreeing with the store's migration backfill.
+    Persist and every renderer read old records through this one rule.
     """
     if vote.get("result_raw") or vote.get("result_source"):
         return vote.get("result_raw"), vote.get("result_source")

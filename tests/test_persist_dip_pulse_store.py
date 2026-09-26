@@ -384,6 +384,28 @@ class VoteResultColumnsTests(unittest.TestCase):
         self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
         conn.close()
 
+    def test_initialize_alters_a_votes_table_that_predates_the_columns(self) -> None:
+        # The standalone persist CLI can target a store built before the badge;
+        # CREATE TABLE IF NOT EXISTS leaves that table alone, so the ALTER must.
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        # The votes table exactly as main created it before the badge.
+        conn.execute(
+            """
+            CREATE TABLE votes (
+              id TEXT PRIMARY KEY, date TEXT, topic TEXT, title TEXT, description TEXT,
+              detail_url TEXT, yes_count INTEGER NOT NULL DEFAULT 0,
+              no_count INTEGER NOT NULL DEFAULT 0, abstain_count INTEGER NOT NULL DEFAULT 0,
+              absent_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+            """
+        )
+        with conn:
+            pulse_store.initialize(conn)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(votes)")}
+        self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
+        conn.close()
+
     def test_persist_votes_writes_result_and_xlsx_url_and_updates_on_conflict(self) -> None:
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
         vote = report["agenda_items"][0]["votes"][0]
