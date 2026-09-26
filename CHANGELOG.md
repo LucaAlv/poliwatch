@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.6.0] - 2026-09-26
+
+### Added
+
+- The dossier sidebar now marks the TOP you are reading. The highlight follows scrolling, sidebar clicks, resizes and the end of the page, keeps the marked row in view inside the ranking list, and turns off where the sidebar sits above the text (narrow or short windows) and in print.
+- Each SQL recipe on the Daten page has a "Kopieren" button. Where the browser cannot write to the clipboard, the button selects the SQL for ⌘C/Strg+C instead; a copy that fails late never overrides a newer click or your own selection. Without JavaScript the button stays hidden.
+- Dossier footers link to the Daten page when the build has data to show, like the other pages' Daten links.
+
 ## [0.6.4.0] - 2026-09-25
 
 ### Changed

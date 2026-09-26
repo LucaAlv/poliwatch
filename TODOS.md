@@ -113,9 +113,31 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **What:** Per-recipe result CSVs and a `DATA.md` in the release.
 
-**Why:** Scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped 2026-09-25 (`dossier-daten-ui` branch), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+**Why:** Scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
 
 **Effort:** S–M
+**Priority:** P3
+**Depends on:** None
+
+### Validate remote-manifest recipes before showing their SQL
+
+**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
+
+**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
+
+**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Recipe copy: ignore every stale clipboard completion
+
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) guards a late `writeText` rejection with a page-wide `latestCopy` token plus "selected text unchanged since the click". Two gaps remain, both needing a write that stays pending (a permission prompt): selecting *identical* text in another recipe passes the text comparison, so the rejection still replaces that selection; and a stale rejection can flip a newer success's "Kopiert" to "Nicht kopiert" (the success handler is unguarded too). Ignore any completion whose `copy !== latestCopy` for both label and selection, and compare the selection's range endpoints instead of its text. Done when both sequences, driven with deferred promises in a browser, leave the newer state alone.
+
+**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
+
+**Effort:** S
 **Priority:** P3
 **Depends on:** None
 
@@ -441,7 +463,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### Current-TOP highlight in the ranking sidebar
 
-**Completed:** 2026-09-25 (`dossier-daten-ui` branch). `IntersectionObserver` on `.top-card` sets `aria-current="true"` on the matching `.attention-row`, styled through `[aria-current]`; off at ≤1120px where the aside is static, no smooth scroll under `prefers-reduced-motion: reduce`, and the row-reveal scrolls only `.attention-list` itself, never the page. Ships alongside the copy-button half of the recipe TODO below.
+**Completed:** v0.6.6.0 (2026-09-26). `IntersectionObserver` on `.top-card` plus a frame-throttled scroll/resize re-pick sets `aria-current="true"` on the matching `.attention-row`, styled through `[aria-current]` (screen only); off wherever the aside is static (`ATTENTION_STATIC_LAYOUT_QUERY`). "Reached" is measured against the cards' scroll-margin-top, the lowest visible card wins at the end of a scrolling page, and the row-reveal scrolls only `.attention-list`, instantly (a running smooth list scroll made Chrome drop row-click jumps). Ships alongside the copy-button half of the recipe TODO above.
 
 ### Enforce the Python version floor
 
