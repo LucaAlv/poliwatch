@@ -576,20 +576,36 @@ class CurrentTopHighlightTests(unittest.TestCase):
         self.assertIn("background:var(--blue-soft, #eef5ff);", rule)
         self.assertIn("box-shadow:inset 3px 0 0 var(--blue);", rule)
 
+    def test_current_row_highlight_is_screen_only(self) -> None:
+        # Printing never stops the observer, so the highlight must not reach
+        # paper: every aria-current rule sits inside @media screen.
+        css = AttentionRankingTests._page_css(self._render())
+        screen = AttentionRankingTests._css_block(css, "@media screen")
+        self.assertEqual(css.count('.attention-row[aria-current="true"]'), 2)
+        self.assertEqual(screen.count('.attention-row[aria-current="true"]'), 2)
+
     def test_off_at_the_same_breakpoint_the_static_aside_css_uses(self) -> None:
         # The CSS uncaps the aside (position:static) at this exact query (plus
         # print, irrelevant to matchMedia while reading on screen); the script
         # must stop observing at the same width/height so it never marks a row
         # "current" in a layout with no sticky rail to show it on.
         script = pulse_html.attention_runtime_script()
-        self.assertIn('window.matchMedia("(max-width: 1120px), (max-height: 480px)")', script)
+        css = AttentionRankingTests._page_css(self._render())
+        query = pulse_html.ATTENTION_STATIC_LAYOUT_QUERY
+        self.assertEqual(query, "(max-width: 1120px), (max-height: 480px)")
+        self.assertIn(f'window.matchMedia("{query}")', script)
+        self.assertNotIn("__STATIC_LAYOUT_QUERY__", script)
+        uncap = AttentionRankingTests._css_block(css, f"@media {query}, print")
+        self.assertIn("aside { position:static; max-height:none; }", uncap)
 
     def test_reveal_scrolls_only_the_list_never_the_page(self) -> None:
         script = pulse_html.attention_runtime_script()
         observer_part = script.split('document.getElementById("attention-list")', 1)[1]
         self.assertIn("list.scrollBy({", script)
         self.assertNotIn(".scrollIntoView(", observer_part)
-        self.assertIn('reducedMotion.matches ? "auto" : "smooth"', script)
+        self.assertIn("list.scrollBy({ top: delta });", script)
+        # A running smooth list scroll cancels the page jump of a row click.
+        self.assertNotIn('"smooth"', script)
 
     def test_root_margin_is_left_at_the_full_viewport(self) -> None:
         # A shrunk top-band root margin (the usual scrollspy trick) leaves a
@@ -621,6 +637,96 @@ class CurrentTopHighlightTests(unittest.TestCase):
         self.assertEqual(markup.count('document.getElementById("attention-list")'), 1)
         self.assertLess(markup.index("</aside>"), markup.index('document.getElementById("attention-list")'))
         self.assertLess(markup.index('document.getElementById("attention-list")'), markup.index('<article class="top-card"'))
+
+    def test_observer_half_is_deferred_to_dom_content_loaded(self) -> None:
+        # The script tag is emitted right after the aside, before <main> -
+        # the .top-card elements this half queries do not exist yet at that
+        # point in parsing, so this half must wait for DOMContentLoaded.
+        script = pulse_html.attention_runtime_script()
+        deferred = script.index('document.addEventListener("DOMContentLoaded", () => {')
+        list_lookup = script.index('document.getElementById("attention-list")')
+        self.assertLess(deferred, list_lookup)
+
+    def test_cards_guard_precedes_media_query_setup(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        guard = script.index("if (!cards.length) return;")
+        media = script.index("window.matchMedia(")
+        self.assertLess(guard, media)
+
+    def test_set_current_toggles_the_same_attribute_the_css_keys_on(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        self.assertIn('row.setAttribute("aria-current", "true");', script)
+        self.assertIn('previous.removeAttribute("aria-current");', script)
+        css = AttentionRankingTests._page_css(self._render())
+        self.assertIn('.attention-row[aria-current="true"]', css)
+
+    def test_stop_disconnects_and_clears_current_and_start_is_idempotent(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        stop_body = script[script.index("const stop = () => {"):script.index("const sync")]
+        for identifier in ("observer.disconnect();", "observer = null;", "inView.clear();", "setCurrent(null);"):
+            with self.subTest(identifier=identifier):
+                self.assertIn(identifier, stop_body)
+        start_body = script[script.index("const start = () => {"):script.index("const stop = () => {")]
+        self.assertIn("if (observer) return;", start_body)
+
+    def test_sync_switches_on_static_layout_with_a_legacy_listener_fallback(self) -> None:
+        # matchMedia's modern addEventListener is not on every engine this
+        # markup might reach; addListener is the deprecated but still-needed
+        # fallback for the same "change" notification.
+        script = pulse_html.attention_runtime_script()
+        self.assertIn("const sync = () => { if (staticLayout.matches) stop(); else start(); };", script)
+        self.assertIn('staticLayout.addEventListener("change", sync);', script)
+        self.assertIn("staticLayout.addListener(sync);", script)
+
+    def test_pick_current_reads_live_geometry_not_the_cached_intersection_entry(self) -> None:
+        # A tall card can sit in `inView` across many scroll frames with no
+        # new intersection event, so pickCurrent must re-measure live rather
+        # than trust entry.boundingClientRect from whenever it last fired.
+        script = pulse_html.attention_runtime_script()
+        self.assertIn("card.getBoundingClientRect().top;", script)
+        self.assertNotIn("entry.boundingClientRect", script)
+
+    def test_reached_is_measured_against_the_cards_scroll_margin_not_zero(self) -> None:
+        # A sidebar click parks the target card scroll-margin-top below the
+        # viewport edge; with a literal 0 it only counted as "reached" because
+        # the grid gap (16px) happened to exceed that margin (14px).
+        script = pulse_html.attention_runtime_script()
+        self.assertIn("reachedLine = parseFloat(window.getComputedStyle(cards[0]).scrollMarginTop) || 0;", script)
+        self.assertIn("if (top <= reachedLine) {", script)
+        self.assertNotIn("top <= 0", script)
+        css = AttentionRankingTests._page_css(self._render())
+        self.assertIn("scroll-margin-top:var(--aside-gap);", AttentionRankingTests._css_block(css, ".top-card"))
+
+    def test_every_ranking_row_targets_a_rendered_card_id(self) -> None:
+        # The observer pairs rows and cards by href "#top-N" <-> id "top-N"
+        # and drops cards without a row; pin both halves of that pairing.
+        markup = self._render(4)
+        hrefs = re.findall(r'<a class="attention-row" href="#([^"]+)"', markup)
+        card_ids = re.findall(r'<article class="top-card" id="([^"]+)"', markup)
+        self.assertEqual(len(hrefs), 4)
+        self.assertEqual(sorted(hrefs), sorted(card_ids))
+        script = pulse_html.attention_runtime_script()
+        self.assertIn('const id = (row.getAttribute("href") || "").slice(1);', script)
+        self.assertIn("if (id) rows.set(id, row);", script)
+        self.assertIn('.filter((card) => rows.has(card.id));', script)
+
+    def test_set_current_is_a_no_op_for_the_row_already_current(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        body = script.split("const setCurrent = (id) => {", 1)[1]
+        self.assertLess(body.index("if (id === current) return;"), body.index('removeAttribute("aria-current")'))
+
+    def test_intersections_update_the_visible_set_before_picking(self) -> None:
+        script = pulse_html.attention_runtime_script()
+        body = script.split("const onIntersect = (entries) => {", 1)[1]
+        added = body.index("if (entry.isIntersecting) inView.add(entry.target.id);")
+        removed = body.index("else inView.delete(entry.target.id);")
+        self.assertLess(added, removed)
+        self.assertLess(removed, body.index("pickCurrent();"))
+
+    def test_current_row_title_takes_the_accent_colour(self) -> None:
+        css = AttentionRankingTests._page_css(self._render())
+        rule = AttentionRankingTests._css_block(css, '.attention-row[aria-current="true"] .row-title')
+        self.assertIn("color:var(--blue);", rule)
 
 
 class WeekRadarHelperTests(unittest.TestCase):
