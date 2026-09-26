@@ -313,6 +313,22 @@ class CollectAbgeordneteTests(unittest.TestCase):
         vote = report["agenda_items"][0]["votes"][0]
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
 
+    def test_reuse_existing_dossier_enrichments_carries_vote_provenance_forward(self) -> None:
+        # The rescan path (votes=False) is where carry-forward matters; pin the
+        # wiring, not just the standalone function.
+        total = {"yes": 300, "no": 200}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "derived", "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.reuse_existing_dossier_enrichments(report, previous, votes=False, profiles=False)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+        self.assertEqual(vote["result_source"], "official")
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
@@ -2089,6 +2105,21 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         self.assertEqual(len(rows), 1)
 
+    def test_collect_skips_an_id_less_vote_like_the_store_does(self) -> None:
+        # persist_votes drops a vote without an id; the archive must agree so
+        # its row count stays equal to SELECT count(*) FROM votes.
+        legacy = {"date": "2026-06-10", "title": "Ohne Id", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [legacy])])
+        self.assertEqual(build_dip_pulse_site.collect_votes_archive([entry]), [])
+
+    def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-archive-count data-total="1" aria-live="polite"><strong>1</strong> Abstimmungen</p>', markup)
+        self.assertNotIn('class="summary-grid"', markup)
+        self.assertIn("von ${total} Abstimmungen", markup)
+
     def test_rows_sort_reverse_chronological(self) -> None:
         older = self._entry(
             "2026-06-01", "21/80", [self._item(1, [{"id": "v-old", "date": "2026-06-01", "title": "Alt"}])]
@@ -2272,7 +2303,8 @@ class VotesArchiveTests(unittest.TestCase):
         entry = self._entry("2026-06-10", "21/82", [item])
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
-        self.assertIn('vote-result-accepted">Angenommen</span>', markup)
+        self.assertIn('vote-result-accepted vote-result-derived"', markup)
+        self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
         self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
         # votes/index.html sits one level down, so the dossier link climbs out.
         self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#top-3">T</a>', markup)

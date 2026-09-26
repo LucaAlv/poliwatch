@@ -3274,6 +3274,10 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         for item in report.get("agenda_items") or []:
             votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
             for vote in votes:
+                # persist_votes skips a vote without an id, so the archive does
+                # too: the row count must equal SELECT count(*) FROM votes.
+                if not vote.get("id"):
+                    continue
                 key = pulse_html.vote_key(vote)
                 if key in rows:
                     continue
@@ -3361,9 +3365,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         <p>Jede namentliche Abstimmung aus den erzeugten Plenarprotokoll-Dossiers, neueste zuerst.</p>
       </div>
     </header>
-    <section class="summary-grid">
-      <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(len(rows))}</strong></div>
-    </section>
+    <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
     {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
@@ -3380,6 +3382,8 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
 
 def votes_archive_styles() -> str:
     return bill_styles() + """
+    .archive-count { margin:16px 0 0; color:var(--muted); font-size:14px; }
+    .archive-count strong { color:var(--ink); font-size:18px; }
     .archive-filters { margin-top:20px; }
     .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
     .chip {
@@ -3414,16 +3418,7 @@ def votes_archive_styles() -> str:
     .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
-""" + pulse_html.VOTE_RESULT_BADGE_CSS + """
-    .doc-link {
-      display:inline-block;
-      margin:0 6px 6px 0;
-      padding:3px 7px;
-      border:1px solid #cfd7e3;
-      border-radius:6px;
-      background:white;
-      font-weight:650;
-    }
+""" + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + """
     @media (max-width: 640px) {
       .archive-row { grid-template-columns:1fr; gap:4px; }
     }
@@ -3443,6 +3438,7 @@ def render_votes_archive_script() -> str:
       const headings = Array.from(container.querySelectorAll('h2[data-month]'));
       const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
       const noResults = document.querySelector('[data-no-results]');
+      const count = document.querySelector('[data-archive-count]');
       const active = new Set();
       const apply = () => {
         let visible = 0;
@@ -3461,6 +3457,12 @@ def render_votes_archive_script() -> str:
           heading.hidden = !rows.some((row) => !row.hidden && row.dataset.month === heading.dataset.month);
         });
         if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
+        if (count) {
+          const total = count.dataset.total;
+          count.innerHTML = active.size === 0
+            ? `<strong>${total}</strong> Abstimmungen`
+            : `<strong>${visible}</strong> von ${total} Abstimmungen`;
+        }
         chips.forEach((chip) => {
           const on = active.has(chip.dataset.fraktionChip);
           chip.classList.toggle('is-active', on);

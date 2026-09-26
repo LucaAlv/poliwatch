@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import leading_vote, normalize_faction, stored_vote_result, vote_result
+from validate_dip_protocol import leading_vote, normalize_faction, stored_vote_result
 
 
 SCHEMA_VERSION = 1
@@ -214,6 +214,9 @@ def initialize(conn: sqlite3.Connection) -> None:
           no_count INTEGER NOT NULL DEFAULT 0,
           abstain_count INTEGER NOT NULL DEFAULT 0,
           absent_count INTEGER NOT NULL DEFAULT 0,
+          result_raw TEXT,
+          result_source TEXT,
+          xlsx_url TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -264,7 +267,6 @@ def initialize(conn: sqlite3.Connection) -> None:
     _migrate_votes_columns(conn)
     _migrate_speech_paragraphs(conn)
     _migrate_party_names(conn)
-    _migrate_vote_results(conn)
     now = utc_now()
     conn.execute(
         """
@@ -341,34 +343,6 @@ def _migrate_speeches_columns(conn: sqlite3.Connection) -> None:
 
 def _migrate_votes_columns(conn: sqlite3.Connection) -> None:
     _migrate_added_columns(conn, "votes", _VOTES_ADDED_COLUMNS)
-
-
-# Rows persisted before result_raw/result_source existed have no way to recover
-# an official bundestag.de result (that requires re-fetching the page), so they
-# are backfilled with the derived rule only. A vote this build newly persists
-# is unaffected: persist_votes() runs after initialize() and always writes
-# whatever fetch_roll_call_vote_detail computed, official or derived.
-def _migrate_vote_results(conn: sqlite3.Connection) -> None:
-    rows = [
-        dict(row)
-        for row in conn.execute("SELECT id, yes_count, no_count FROM votes WHERE result_source IS NULL")
-    ]
-    changed = False
-    for row in rows:
-        result_raw, result_source = vote_result(
-            official=None, yes_count=int(row["yes_count"] or 0), no_count=int(row["no_count"] or 0)
-        )
-        if result_source is None:
-            continue
-        conn.execute(
-            "UPDATE votes SET result_raw = ?, result_source = ? WHERE id = ?",
-            (result_raw, result_source, row["id"]),
-        )
-        changed = True
-    if changed:
-        # Same reasoning as _migrate_party_names: initialize() runs outside the
-        # caller's own transaction, so a backfill has to commit itself.
-        conn.commit()
 
 
 # Before the list-repr fix below, persist_sampled_people wrote DIP's list-valued
@@ -971,8 +945,7 @@ def persist_votes(
         if not vote_id:
             continue
         total = vote.get("total") or {}
-        # Pre-badge dossier JSON carries no result: derive it rather than
-        # overwrite _migrate_vote_results' backfill with NULL.
+        # Pre-badge dossier JSON carries no result: derive it from the counts.
         result_raw, result_source = stored_vote_result(vote)
         conn.execute(
             """

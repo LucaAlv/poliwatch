@@ -656,7 +656,8 @@ _BESCHLUSS_SECTION_RE = re.compile(
     r'<h2 class="bt-artikel__aside-section-title">Beschluss</h2>(.*?)</div>\s*<div class="bt-artikel__aside-section">',
     re.S,
 )
-_VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
+# "nicht angenommen" is captured so it can be refused, never read as "angenommen".
+_VOTE_OUTCOME_WORD_RE = re.compile(r"\b(nicht\s+)?(angenommen|abgelehnt)\b")
 
 
 def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int) -> str | None:
@@ -680,9 +681,9 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
     window = section[count_match.end() :]
     boundary = window.find("Gesamt")
     outcome_match = _VOTE_OUTCOME_WORD_RE.search(window[:boundary] if boundary != -1 else window)
-    if not outcome_match:
+    if not outcome_match or outcome_match.group(1):
         return None
-    return "accepted" if outcome_match.group(1) == "angenommen" else "rejected"
+    return "accepted" if outcome_match.group(2) == "angenommen" else "rejected"
 
 
 # bundestag.de publishes each roll-call vote's PDF/XLSX Namensliste on a page

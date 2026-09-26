@@ -12,6 +12,13 @@ from . import BaseComponent, REGISTRY
 
 
 RESULT_BADGE_LABELS = {"accepted": "Angenommen", "rejected": "Abgelehnt"}
+# Only bundestag.de's own Beschluss wording is official; anything else is our
+# yes>no rule, which misreads Beschlussempfehlungen and qualified-majority votes,
+# so the reader sees which one a badge is.
+RESULT_SOURCE_NOTES = {
+    "official": "Laut Beschluss auf bundestag.de",
+    "derived": "Aus den Stimmenzahlen berechnet (Ja gegen Nein), kein amtliches Ergebnis gefunden",
+}
 
 
 def result_badge_label(result_raw: Any) -> str | None:
@@ -22,11 +29,20 @@ def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
     archive; votes cached before the badge shipped fall back to the derived rule.
     """
-    result_raw, _source = stored_vote_result(vote)
+    result_raw, result_source = stored_vote_result(vote)
     label = result_badge_label(result_raw)
     if not label:
         return ""
-    return f'<span class="vote-result vote-result-{html.esc(result_raw)}">{html.esc(label)}</span>'
+    if result_source == "official":
+        return (
+            f'<span class="vote-result vote-result-{html.esc(result_raw)}"'
+            f' title="{html.esc(RESULT_SOURCE_NOTES["official"])}">{html.esc(label)}</span>'
+        )
+    return (
+        f'<span class="vote-result vote-result-{html.esc(result_raw)} vote-result-derived"'
+        f' title="{html.esc(RESULT_SOURCE_NOTES["derived"])}">{html.esc(label)}'
+        ' <span class="vote-result-note">(berechnet)</span></span>'
+    )
 
 
 def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
@@ -61,7 +77,10 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
             )
         else:
             parts.append(f'<span class="doc-link muted">{html.esc(number)}</span>')
-    return ", ".join(parts)
+    if not parts:
+        return ""
+    return f'<span class="doc-link-list">{"".join(parts)}</span>'
+
 
 
 def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None = None) -> str:

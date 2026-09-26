@@ -400,6 +400,30 @@ VOTE_RESULT_BADGE_CSS = """
     }
     .vote-result-accepted { background:#0f766e; }
     .vote-result-rejected { background:#b91c1c; }
+    .vote-result-derived { background:transparent; border:1px solid currentColor; padding:1px 7px; }
+    .vote-result-derived.vote-result-accepted { color:#0f766e; }
+    .vote-result-derived.vote-result-rejected { color:#b91c1c; }
+    .vote-result-note { margin-left:4px; font-weight:500; }
+    :root[data-theme="dark"] .vote-result-derived.vote-result-accepted { color:#5eead4; }
+    :root[data-theme="dark"] .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+"""
+
+
+# Drucksache pills, shared by the dossier (TOP documents, vote panel) and
+# votes/index.html. A number with no known URL is a dashed, non-link pill.
+DOC_LINK_CSS = """
+    .doc-link {
+      display:inline-block;
+      margin:0 6px 6px 0;
+      padding:3px 7px;
+      border:1px solid #cfd7e3;
+      border-radius:6px;
+      background:white;
+      font-weight:650;
+    }
+    span.doc-link.muted { border-style:dashed; background:transparent; }
+    .doc-link-list { display:inline-flex; flex-wrap:wrap; gap:6px; vertical-align:baseline; }
+    .doc-link-list .doc-link { margin:0; }
 """
 
 
@@ -3182,15 +3206,7 @@ def render_html(
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .doc-link {{
-      display:inline-block;
-      margin:0 6px 6px 0;
-      padding:3px 7px;
-      border:1px solid #cfd7e3;
-      border-radius:6px;
-      background:white;
-      font-weight:650;
-    }}
+{DOC_LINK_CSS}
     .top-documents {{
       display:flex;
       align-items:baseline;

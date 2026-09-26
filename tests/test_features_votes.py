@@ -71,6 +71,12 @@ class RenderDocumentLinksTests(unittest.TestCase):
         self.assertIn('href="https://dip.bundestag.de/x"', html)
         self.assertIn("21/8157", html)
 
+    def test_several_drucksachen_render_as_one_pill_list_without_commas(self) -> None:
+        html = render_document_links(["21/1", "21/2"], {})
+        self.assertTrue(html.startswith('<span class="doc-link-list">'))
+        self.assertNotIn(", ", html)
+        self.assertEqual(render_document_links([], {}), "")
+
     def test_unlinked_number_never_guesses_a_url(self) -> None:
         html = render_document_links(["21/9999"], {})
         self.assertNotIn("<a ", html)
@@ -82,20 +88,32 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
     def test_accepted_vote_shows_angenommen_badge(self) -> None:
         item = {"votes": [_vote(result_raw="accepted")]}
         markup = render_vote_summary(item)
-        self.assertIn('vote-result-accepted">Angenommen</span>', markup)
+        self.assertIn('vote-result-accepted vote-result-derived"', markup)
+        self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
 
     def test_tied_vote_is_rejected_not_a_guess(self) -> None:
         # GOBT Section 48 Abs. 2: a tie is answered no.
         vote = _vote(result_raw="rejected", total={"yes": 100, "no": 100, "abstain": 0, "absent": 0})
         markup = render_vote_summary({"votes": [vote]})
-        self.assertIn('vote-result-rejected">Abgelehnt</span>', markup)
+        self.assertIn('vote-result-rejected vote-result-derived"', markup)
+        self.assertIn('>Abgelehnt <span class="vote-result-note">(berechnet)</span></span>', markup)
 
     def test_abstention_heavy_vote_still_reads_off_yes_no_only(self) -> None:
         # abstain (200) outnumbers both yes (60) and no (40); the outcome still
         # follows yes>no, never the largest bucket.
         vote = _vote(result_raw="accepted", total={"yes": 60, "no": 40, "abstain": 200, "absent": 0})
         markup = render_vote_summary({"votes": [vote]})
-        self.assertIn('vote-result-accepted">Angenommen</span>', markup)
+        self.assertIn('vote-result-accepted vote-result-derived"', markup)
+        self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
+
+    def test_official_result_is_solid_and_derived_one_says_berechnet(self) -> None:
+        official = render_vote_summary({"votes": [_vote(result_raw="accepted", result_source="official")]})
+        self.assertIn('class="vote-result vote-result-accepted" title="Laut Beschluss auf bundestag.de">Angenommen</span>', official)
+        self.assertNotIn("berechnet", official)
+        derived = render_vote_summary({"votes": [_vote(result_raw="accepted", result_source="derived")]})
+        self.assertIn("vote-result-derived", derived)
+        self.assertIn('title="Aus den Stimmenzahlen berechnet', derived)
+        self.assertIn("(berechnet)", derived)
 
     def test_unknown_result_renders_no_badge(self) -> None:
         vote = _vote(result_raw=None, total={"yes": 0, "no": 0, "abstain": 0, "absent": 0})
@@ -107,7 +125,8 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         # tie must come out rejected through vote_result, not a preset value.
         vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
         markup = render_vote_summary({"votes": [vote]})
-        self.assertIn('vote-result-rejected">Abgelehnt</span>', markup)
+        self.assertIn('vote-result-rejected vote-result-derived"', markup)
+        self.assertIn('>Abgelehnt <span class="vote-result-note">(berechnet)</span></span>', markup)
 
     def test_drucksache_renders_as_a_link_when_a_source_url_is_known(self) -> None:
         item = {

@@ -205,6 +205,17 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         """
         self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
 
+    def test_negated_outcome_is_not_read_as_official(self) -> None:
+        # "nicht angenommen" (e.g. a qualified majority missed) must never be
+        # stamped official "accepted"; the caller derives instead.
+        html = """
+        <h2 class="bt-artikel__aside-section-title">Beschluss</h2>
+        <p>Gesamt: 500 Ja:300 Nein:200 Der Gesetzentwurf ist nicht angenommen.</p>
+        </div>
+        <div class="bt-artikel__aside-section">
+        """
+        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+
     def test_boundary_stops_before_the_next_votes_outcome_word(self) -> None:
         # This vote's own count match is unique, but its sentence has no outcome
         # word before the next "Gesamt" marker; the next vote's "abgelehnt" must
