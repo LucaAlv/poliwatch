@@ -17,7 +17,7 @@ Counting them would barely move shares per Zusammenschluss, because the coalitio
 
 - The XML does not type a `<rede>`, so Kurzinterventionen and Erwiderungen must be detected, from the Sitzungsleitung's wording or from DIP's Aktivität type. A detection error now changes counts, not just a label.
 - Published counts change, including Fakt der Woche history and Vergleichsbasis baselines built from past weeks.
-- The code does not follow this rule yet (see TODOS.md).
+- The code does not follow this rule yet (GitHub issue #68).
 
 ## Sources
 
