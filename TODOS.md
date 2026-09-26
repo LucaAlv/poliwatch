@@ -1,6 +1,6 @@
 # TODOS
 
-Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline.
+Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline. The Daten section was re-checked against the code and the 2026-09-19 store on 2026-09-24 (database state review): five findings, four new open items and a Python version floor now completed; `protocol_acquisition` raised to P2.
 
 ## Daten
 
@@ -13,6 +13,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Context:** Causes established 2026-09-22, both different from the list-repr bug, which is why the migration does not touch them.
 - `'SPDSPD'`/`'SPDCDU/CSU'` come from the **source XML**: `21045.xml` carries `<redner id="11005217 999990074"><name><vorname>SvenjaSvenja</vorname><nachname>SchulzeSchulze</nachname><fraktion>SPDSPD</fraktion></name></redner>` in an `ivz-eintrag`, i.e. two TOC entries merged into one element by the Bundestag. Two speakers are affected, across twelve protocols: redner `11005217 999990074` ("SvenjaSvenja SchulzeSchulze", SPDSPD) in 21/18, 21/24, 21/25, 21/28, 21/44, 21/45, and redner `11005304` ("Dirk-UlrichAlexander Mende Föhr", SPDCDU/CSU) in 20/91, 20/94, 20/96, 20/103, 20/114, 20/116. The earlier note in this file ("no current code path concatenates names, so just fold them into the migration") was wrong. Fix belongs in `parse_redner` (`scripts/validate_dip_protocol.py:313`): detect a doubled `<redner id>` and either split it or drop the entry, then the parties rows disappear on the next rebuild.
 - The Gruppe spellings are two DIP surfaces disagreeing: `/person` returns `"Gruppe BSW"`/`"Gruppe Die Linke"` (via `ingest_mdb_roster`), the protocol's `sampled_people` return `"BSW (Gruppe)"`/`"Die Linke (Gruppe)"`, and `normalize_faction` has no rule for either. `'BSW'` (0 MdBs) is a third spelling with no rows behind it.
+- Added 2026-09-24: this also affects MP identity, not only aggregates. On the 2026-09-19 store no `mps` row is referenced by both `speeches` and `vote_members` (0 overlap), so every speech↔vote link for a person is made by `collect_abgeordnete`'s pass 2 (normalized name + party, `scripts/build_dip_pulse_site.py` ~5446-5470). A person whose speaker row says `BSW (Gruppe)` and whose vote/roster row says `Gruppe BSW` won't merge unless `_normalized_mp_party` happens to fold them. After the fix, check that on a rebuilt store.
 
 **Effort:** S
 **Priority:** P2
@@ -86,34 +87,56 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Context:** Needs a stable state vocabulary per component (`complete`, `partial`, `failed`, `not_requested` already exist for votes in `scripts/features/votes.py`). Natural B / Daten-pilot item.
 
-**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Still P3/deferred per the original D10 call - flagging the repro here in case it changes the priority math.
+**Update 2026-09-24 (v0.6.0.0 ship, adversarial review):** the D10 gap this item exists to close now has a concrete repro. `week_is_complete()` (facts.py) only iterates `week.protocols` - the protocols actually present in the store - so a sitting whose dossier fetch fails (`build_dossiers_with_progress`'s `dip.DipError` -> `continue` path, a real path, not synthetic) is invisible to the completeness check rather than failing it. Repro: seeding 1 of several expected sittings for a period yields `complete=1, publishable=1`. Self-heals once the missing sitting is later acquired (`compute()` recomputes fully every build), but a wrong winner can publish and poison later baselines before that happens. Flagging the repro here in case it changes the priority math — see the database state review update below, which raises this to P2.
+
+**Update 2026-09-24 (database state review):** raised to P2. Since A1 shipped, the facts engine publishes on every build, so this is now a live path to a wrong published card, not a hypothetical. A cheaper first slice than the full table: have `build_dossiers_with_progress` record the protocol ids it skipped on `dip.DipError`, and make `week_is_complete()` fail any week containing one.
 
 **Effort:** M
-**Priority:** P3
+**Priority:** P2
 **Depends on:** None (A1 works without it)
 
-### Regenerate the architecture diagram for the Daten export step
+### Check that roll-call votes are still being acquired after June 2026
 
-**What:** `docs/bundestag-puls-architecture.html`/`.json` (2026-09-06) is a seven-node runtime diagram (DIP API → Fetch & Extract → SQLite Store → `render_html()` → "Static Site Output · pages + data/ cache" → Preview Server) with no export step and no Daten page. Regenerate it so it shows `export_distribution_data()` between the store and `render_site`, the `data/exports/g-<hash>/` + `datenstand.json` generation switch, and the `--data-manifest` override path.
+**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12. If it did, find why the vote scan missed them (`fetch_roll_call_vote_candidates`, `--vote-scan-pages`, `match_roll_call_votes` in `scripts/validate_dip_protocol.py`) and fix it.
 
-**Why:** Deferred from the fix-datenbank plan at the ship gate (2026-09-19) to keep the 0.4.0.0 PR focused; the CHANGELOG's "Known stale docs" entry discloses the gap. Deferred from plan: `~/.gstack/projects/LucaAlv-poliwatch/fix-datenbank-plan.md` (CEO task T22).
+**Why:** On the 2026-09-19 store the latest vote is 2026-06-12 (217 votes in total), but sittings continue to 2026-09-11 (3 more in June, 1 in July, 4 in September). This may just be the summer break with no roll calls. If it isn't, the Fakten vote metrics and every MP's vote count are quietly stale. The store can't tell "no vote" from "not fetched" (see the `protocol_acquisition` item), so check against the source.
 
-**Context:** Correction (2026-09-19): the diagram never described `database.html` as a "12-row sample explorer" as the CHANGELOG entry and the earlier version of this TODO claimed; it simply has no node for the export or the page. Fix the CHANGELOG wording when the diagram lands. The pipeline comment block at the top of `scripts/build_dip_pulse_site.py` (steps 1-7 and the file table) is already updated and is the source for the diagram text.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
-
-### Stop persisting `speeches.paragraphs_json`
-
-**What:** A migration dropping the column from the live schema (duplicate of `speeches.text`, no reader in site code — the only references are the INSERT in `persist_dip_pulse_store.py` and the export-time `DROP COLUMN` in `export_distribution_data`); then remove that export-time `DROP COLUMN` since it would no longer be needed.
-
-**Why:** Measured 2026-09-19: `paragraphs_json` is 114 MB and `text` 113 MB of a 305 MB store, so this saves roughly 37% (not "half"). The distribution copy already drops the column at export time, so the schema change is pure cleanup, not a data-loss risk.
-
-**Context:** Three test fixtures insert into the column and need the same edit: `tests/test_build_dip_pulse_site.py` (~282), `tests/test_daten_export.py` (~144), `tests/_daten_fixture.py` (~133). `test_distribution_copy_drops_paragraphs_json_and_keeps_row_counts` becomes obsolete.
+**Context:** Found in the 2026-09-24 database state review. Start by comparing the bundestag.de Abstimmungen list page for June–September 2026 with `SELECT id, date FROM votes WHERE date >= '2026-06-01'` on a freshly updated store.
 
 **Effort:** S
 **Priority:** P2
+**Depends on:** A fresh online `update` of the store
+
+### Roll-call member rows link to external profiles, never to our own MP pages
+
+**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup`/`canonical_by_mp_id` resolves them. Fall back to the external `profile_url` only when no page exists.
+
+**Why:** Today the member name always links to `member["profile_url"]` (bundestag.de or abgeordnetenwatch), even though `upsert_mp` resolves every vote member to an internal `mp_id` at persist time. A reader on a vote panel can't reach the site's own MP page, which is the page that pools that person's speeches and votes.
+
+**Context:** Speaker names in dossiers already link internally via `mp_lookup` (rerun of `write_report_files` after the roster step in `main()`), so reuse that path. Found in the 2026-09-24 database state review. Not previously tracked.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None (better after the `parties.name` item, which improves how many vote members merge)
+
+### Document `--protocol-wahlperiode` in the README
+
+**What:** Add `--protocol-wahlperiode` to the README's update/backfill section. Say plainly that when `--limit N > 0` is set, the catalog fetch is limited to WP 21 unless `--protocol-wahlperiode 0` is passed.
+
+**Why:** The flag's help text says so (`scripts/build_dip_pulse_site.py:9235`, applied in `fetch_protocols` at :309), but the README never mentions it (`grep -c wahlperiode README.md` = 0). Someone doing a bounded backfill of WP 20 by following the README gets WP 21 only, with no warning. Originally noted as Task 2 of `docs/audit-remediation-plan.md` (2026-08-18) and never moved here.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Line-by-line audit of the ingestion modules
+
+**What:** Review `scripts/validate_dip_protocol.py` (XML parsing, roll-call scraping, DIP enrichment) and `scripts/abgeordnetenwatch.py` line by line, adding fixture tests for every parse branch that has none. Include the roll-call `fetch_html` path, which has a 60 s timeout but no retry/backoff, unlike `ApiClient.get_json`.
+
+**Why:** `docs/audit-remediation-plan.md` (2026-08-18, "fog of war", Task 8) named these two modules, then at 56% and 40% coverage, as never audited, and they do all the acquisition and identity work. The `SPDSPD` doubled-`<redner>` bug under `parties.name` is the kind of source quirk such an audit finds. No evidence it was done, and it was never mirrored here.
+
+**Effort:** M
+**Priority:** P3
 **Depends on:** None
 
 ### Site hosting plan for the 2.5 GB generated site
@@ -156,41 +179,8 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None
 
-### Site-wide `:visited` and `:focus-visible` rules in `global_header_styles`
-
-**What:** Move the Daten page's `a:visited`/`.recipe a:visited`/`.file a:visited` (teal) and `a:focus-visible` outline rules (`scripts/build_dip_pulse_site.py`, Daten page CSS) up into `global_header_styles()` (`scripts/render_dip_pulse_html.py`) so every link-dense page (catalog, dossiers, MP pages) gets them too.
-
-**Why:** Those pages have the same link-density gap the Daten page closed for itself. Checked 2026-09-19: `global_header_styles()` has neither rule; equivalents exist only on the Daten page, the radar rows and the week labels, each written locally.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ## Protokoll-Dossier
-
-### Ranking row titles that skip the "Beratung des Antrags der Abgeordneten …" boilerplate
-
-**What:** Shorten `.attention-row` titles (and the KI-summary/lede rows that reuse `short(heading, 78)`) so the first visible words identify the topic, not the procedural prefix.
-
-**Why:** Real TOP headings are boilerplate-first ("Beratung des Antrags der Abgeordneten Nicole Höchst, Dr. Götz Frömming, Dr. M…", "Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Umwe…"). At the 78-char cut most rows in the Aufmerksamkeitsrang never reach the subject, so the ranking ranks things the reader cannot tell apart. This is also the prerequisite for any denser (one-line) row design, which two independent reviewers proposed on 2026-09-13 and which was rejected only because of this.
-
-**Context:** Titles come from `item["heading"]` in the `attention_rows` loop of `render_html` (`scripts/render_dip_pulse_html.py`) via `short()`; still `short(item.get("heading"), 78)` as of 2026-09-19. The stripper now exists: `strip_heading_boilerplate()` / `agenda_topic()` in `scripts/render_dip_pulse_html.py`, built for the Fakten cards on 2026-09-22 (six openers, strips 2.238 of the archive's 2.727 headings). What is left here is calling it from the `attention_rows` loop and keeping the full heading in the `title` attribute. Keep the full heading in a `title` attribute. The puls.html radar no longer shows headings as titles (it names rows by DIP Vorgang title, heading only in `title=`), so this is dossier-only now. If the "LLM five-word topic label" item under Puls ships, the dossier ranking should reuse that cached label instead of a prefix stripper — decide between the two before starting either.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None (see the LLM topic label item)
-
-### Move the hidden dev-view API dump below the dossier content
-
-**What:** In explicit `--include-dev-view` builds, the `protocol_dev_sections` block (raw API JSON and people list; `.dev-only`) is emitted between the page header and `.layout`. Emit it after `<main>`, or — preferably, given the hosting maths — render it into a separate file loaded on demand.
-
-**Why:** Measured on plenarprotokoll 20/103: 952 KB of hidden markup precede the Aufmerksamkeitsrang aside and the first TOP card, so on a slow connection nothing above the fold can paint until ~1 MB has streamed. Found while placing the aside's toggle script adjacent to the aside (2026-09-14). Added 2026-09-19: across 285 dossiers that is roughly 270 MB of `protocols/` (584 MB total), and the site without `data/` is 1.11 GB — the on-demand variant is the single biggest lever for getting under a 1 GB host cap (see the site-hosting TODO). Note (post-#60, v0.5.0.0): those figures were measured on a build that still emitted the dev block; ordinary publications now omit `dev-view` entirely (`--include-dev-view` refuses to write to the publication directory), so the hosting lever only applies to explicit dev builds — re-measure the public site before relying on it.
-
-**Context:** `render_html` in `scripts/render_dip_pulse_html.py` still interpolates `{protocol_dev_sections}` before `{session_summary_sections}` and `<main>` (2026-09-19). Moving it after `</main>` changes nothing visible (it is `display:none` until toggled) but check `tests/test_render_dip_pulse_html.py::DossierLayoutTests`, which pins the order of `.dev-top-details` inside cards, and the dev-toggle script that reveals `.dev-only`.
-
-**Effort:** S (move) / M (separate file)
-**Priority:** P2 (P1 if the hosting TODO is picked up)
-**Depends on:** None
 
 ### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
 
@@ -214,29 +204,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P3
 **Depends on:** None
 
-### Dossier h1 shows the session, "Bundestag-Puls" moves to the eyebrow
-
-**What:** On `protocols/*.html` make the session title the `h1` and demote the product name to an eyebrow/kicker.
-
-**Why:** Every one of the 285 dossiers has the identical `h1 "Bundestag-Puls"`; the page's actual subject is a muted 15px subtitle. Hierarchy should serve the page, not the brand (flagged in the 2026-09-13 design review).
-
-**Context:** the `<h1>Bundestag-Puls</h1>` block in `render_html`'s page template (`scripts/render_dip_pulse_html.py`). puls.html already made this exact move in 0.3.0.0 (`header["h1"]` = "Was der Bundestag in KW … verhandelt hat" with an eyebrow; `render_front_page` in `scripts/build_dip_pulse_site.py`), so copy that pattern. Check `test_global_header.py` expectations before changing the `h1`.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Escape the pre-existing `index` interpolation in the dossier renderer
-
-**What:** Wrap `item["index"]` with `esc()` at the remaining pre-existing site in `scripts/render_dip_pulse_html.py` (the `top-card` `id="top-{item['index']}"` in `render_html`; still unescaped 2026-09-19).
-
-**Why:** Hygiene. `index` is an int from the XML validator today, so there is no exploit; the `attention_rows` href and the `top-jump` link already escape it, and the last site should match.
-
-**Context:** Pure consistency change; add nothing else. One test asserting anchors still resolve covers it.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
 
@@ -302,11 +269,11 @@ All five items below were gated on "puls.html week radar shipped"; that landed i
 
 ### LLM five-word topic label per Tagesordnungspunkt
 
-**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title (see the "Ranking row titles" item under Protokoll-Dossier, which this would supersede).
+**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title, replacing the deterministic boilerplate-stripped fallback now used there.
 
 **Why:** The DIP Vorgang title is up to 200 characters and, for Antrag-only groups, the lead title is one Fraktion's slogan chosen by DIP ordering. A generated neutral label reads in five seconds and sidesteps the lead-title problem; the Vorgang title stays as the deterministic fallback.
 
-**Context:** The summaries pipeline (`--summary-mode`) already calls an LLM per TOP with receipts; add one more field to its output. Supersedes the earlier idea of a boilerplate stripper for untitled XML headings (of 459 ranked top-5 rows in the cache, the 61 untitled ones are Einzelpläne, Regierungserklärungen and "Zur Geschäftsordnung", all already subject-first).
+**Context:** The summaries pipeline (`--summary-mode`) already calls an LLM per TOP with receipts; add one more field to its output. Dossier ranking rows now strip boilerplate when they use an XML heading; radar rows still prefer the DIP Vorgang title and otherwise truncate the raw XML heading. The generated label would replace both display paths. Of 459 ranked top-5 rows in the cache, the 61 without a DIP title are Einzelpläne, Regierungserklärungen and "Zur Geschäftsordnung", all already subject-first.
 
 **Effort:** L
 **Priority:** P3
@@ -412,11 +379,11 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **What:** A third metric family over the joins (returns of a proceeding to the plenary, speech volume across its debates, final roll-call margin) with a `fakt/<year>-W<ww>.html` card that opens a per-proceeding timeline (debates → speakers → documents → votes). Done when the timeline renders for a proceeding with ≥3 plenary appearances and the card states "seit Beginn unserer Abdeckung (Januar 2022)" wherever a count is censored by the store's start date.
 
-**Why:** Codex's lateral at office hours 2026-09-19: the joins are the asset the corpora lack, and a card that opens a story beats a number. Deferred behind A and B because it needs a bill/timeline page that does not exist and better proceeding titles (see "Ranking row titles that skip the boilerplate" under Protokoll-Dossier).
+**Why:** Codex's lateral at office hours 2026-09-19: the joins are the asset the corpora lack, and a card that opens a story beats a number. Deferred behind A and B because it needs a bill/timeline page that does not exist and better proceeding titles (see "LLM five-word topic label per Tagesordnungspunkt" under Puls).
 
 **Effort:** L
 **Priority:** P3
-**Depends on:** Approach B; a bill/timeline page; the ranking-title item
+**Depends on:** Approach B; a bill/timeline page; the LLM topic-label item
 
 ## Gesetzesvorhaben
 
@@ -470,19 +437,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
-## Repo
-
-### CONTRIBUTING.md
-
-**What:** A short contributor guide with the three commands (tests, offline rebuild, update) and the `.env.local` sharp edge.
-
-**Why:** A contributor today reads a nine-section README to find them; the `.env.local` empty-key behaviour (README §3) bites before the first fetch.
-
-**Context:** README §2, §3, §4, §6 already hold the content; CONTRIBUTING.md is the index. Add issue templates only if outside contributions appear.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 ## Publication
 
 ### Add atomic/versioned publication promotion
@@ -672,6 +626,66 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Enforce the Python version floor
+
+**Completed:** v0.6.4.0 (2026-09-25). Added a Python 3.11 startup check to the build scripts and documented the supported version in the README.
+
+### CONTRIBUTING.md
+
+**Completed:** v0.6.4.0 (2026-09-25). Added a concise command index with README links and the `.env.local` empty-key warning.
+
+### Regenerate the architecture diagram for the Daten export step
+
+**Completed:** v0.6.4.0 (2026-09-25). Updated the diagram to include the Fakten engine, Daten export, generated data paths, manifest override, and Daten page.
+
+### Move the hidden dev-view API dump below the dossier content
+
+**What:** In explicit `--include-dev-view` builds, the `protocol_dev_sections` block (raw API JSON and people list; `.dev-only`) is emitted between the page header and `.layout`. Emit it after `<main>`, or — preferably, given the hosting maths — render it into a separate file loaded on demand.
+
+**Why:** Measured on plenarprotokoll 20/103: 952 KB of hidden markup precede the Aufmerksamkeitsrang aside and the first TOP card, so on a slow connection nothing above the fold can paint until ~1 MB has streamed. Found while placing the aside's toggle script adjacent to the aside (2026-09-14). Added 2026-09-19: across 285 dossiers that is roughly 270 MB of `protocols/` (584 MB total), and the site without `data/` is 1.11 GB — the on-demand variant is the single biggest lever for getting under a 1 GB host cap (see the site-hosting TODO). Note (post-#60, v0.5.0.0): those figures were measured on a build that still emitted the dev block; ordinary publications now omit `dev-view` entirely (`--include-dev-view` refuses to write to the publication directory), so the hosting lever only applies to explicit dev builds — re-measure the public site before relying on it.
+
+**Context:** `render_html` in `scripts/render_dip_pulse_html.py` still interpolates `{protocol_dev_sections}` before `{session_summary_sections}` and `<main>` (2026-09-19). Moving it after `</main>` changes nothing visible (it is `display:none` until toggled) but check `tests/test_render_dip_pulse_html.py::DossierLayoutTests`, which pins the order of `.dev-top-details` inside cards, and the dev-toggle script that reveals `.dev-only`.
+
+**Completed:** 2026-09-25. Verified the existing S variant: protocol dump follows main and ordinary builds omit it; explicit dev builds show `.dev-only` by default and have no dev-toggle (existing behavior retained by user decision).
+
+### Dossier h1 shows the session, "Bundestag-Puls" moves to the eyebrow
+
+**What:** On `protocols/*.html` make the session title the `h1` and demote the product name to an eyebrow/kicker.
+
+**Why:** Every one of the 285 dossiers has the identical `h1 "Bundestag-Puls"`; the page's actual subject is a muted 15px subtitle. Hierarchy should serve the page, not the brand (flagged in the 2026-09-13 design review).
+
+**Context:** the `<h1>Bundestag-Puls</h1>` block in `render_html`'s page template (`scripts/render_dip_pulse_html.py`). puls.html already made this exact move in 0.3.0.0 (`header["h1"]` = "Was der Bundestag in KW … verhandelt hat" with an eyebrow; `render_front_page` in `scripts/build_dip_pulse_site.py`), so copy that pattern. Check `test_global_header.py` expectations before changing the `h1`.
+
+**Completed:** 2026-09-25. Verified the existing session h1/product eyebrow and added explicit title, escaping and fallback regression coverage.
+
+### Site-wide `:visited` and `:focus-visible` rules in `global_header_styles`
+
+**What:** Move the Daten page's `a:visited`/`.recipe a:visited`/`.file a:visited` (teal) and `a:focus-visible` outline rules (`scripts/build_dip_pulse_site.py`, Daten page CSS) up into `global_header_styles()` (`scripts/render_dip_pulse_html.py`) so every link-dense page (catalog, dossiers, MP pages) gets them too.
+
+**Why:** Those pages have the same link-density gap the Daten page closed for itself. Checked 2026-09-19: `global_header_styles()` has neither rule; equivalents exist only on the Daten page, the radar rows and the week labels, each written locally.
+
+**Completed:** 2026-09-25. Shared teal visited links and focus outlines; removed redundant Daten link rules, retaining control and radar/week-specific styles.
+
+### Stop persisting `speeches.paragraphs_json`
+
+**What:** A migration dropping the column from the live schema (duplicate of `speeches.text`, no reader in site code — the only references are the INSERT in `persist_dip_pulse_store.py` and the export-time `DROP COLUMN` in `export_distribution_data`); then remove that export-time `DROP COLUMN` since it would no longer be needed.
+
+**Why:** Measured 2026-09-19: `paragraphs_json` is 114 MB and `text` 113 MB of a 305 MB store, so this saves roughly 37% (not "half"). The distribution copy already drops the column at export time, so the schema change is pure cleanup, not a data-loss risk.
+
+**Context:** Three test fixtures insert into the column and need the same edit: `tests/test_build_dip_pulse_site.py` (~282), `tests/test_daten_export.py` (~144), `tests/_daten_fixture.py` (~133). `test_distribution_copy_drops_paragraphs_json_and_keeps_row_counts` becomes obsolete.
+
+**Completed:** 2026-09-25. Removed schema/INSERT duplication; idempotent migration warns on SQLite < 3.35, and conditional export cleanup preserves legacy-store exports and row counts.
+
+### Escape the pre-existing `index` interpolation in the dossier renderer
+
+**What:** Wrap `item["index"]` with `esc()` at the remaining pre-existing site in `scripts/render_dip_pulse_html.py` (the `top-card` `id="top-{item['index']}"` in `render_html`; still unescaped 2026-09-19).
+
+**Why:** Hygiene. `index` is an int from the XML validator today, so there is no exploit; the `attention_rows` href and the `top-jump` link already escape it, and the last site should match.
+
+**Context:** Pure consistency change; add nothing else. One test asserting anchors still resolve covers it.
+
+**Completed:** 2026-09-25. Escaped TOP card IDs; ranking anchors resolve for numeric and HTML-sensitive indices.
 
 ### `agenda_topic()`, the topic line for the Fakten cards
 

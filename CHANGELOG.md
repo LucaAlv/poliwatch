@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4.0] - 2026-09-25
+
+### Changed
+
+- The architecture diagram now traces Fakten, the Daten export and generation manifest through to the Daten page. A short contributor guide links the test, offline rebuild and online update commands.
+
+### Fixed
+
+- Command-line scripts now reject Python versions below the documented 3.11 floor with a clear English and German error.
+
+## [0.6.3.0] - 2026-09-25
+
+### Fixed
+
+- Aufmerksamkeitsrang rows now begin with the agenda topic instead of procedural wording, keeping the first sub-item's topic on a bundled heading (an Antrag under a) followed by a Gesetzentwurf under b)); the complete normalized heading remains available on hover.
+
+## [0.6.2.0] - 2026-09-25
+
+### Fixed
+
+- Ranking links retain matching TOP anchors when an index contains HTML-sensitive characters.
+- Links share teal visited states and visible keyboard focus outlines, including pages without their own teal palette variable.
+
+### Removed
+
+- New stores and speech writes no longer duplicate speech text in `paragraphs_json`. Existing stores drop the column on SQLite 3.35+; older versions log a warning and retain it. Distribution downloads keep the same schema and row counts.
+
+### Verified
+
+- Dossiers already show the session title above the content and place the protocol developer dump after it. Regression coverage preserves both; explicit developer builds retain their existing visible raw data without a toggle, while normal builds omit it.
+
 ## [0.6.0.0] - 2026-09-24
 
 ### Added
@@ -62,7 +93,7 @@ All notable changes to this project will be documented in this file.
 
 ### Known stale docs
 
-- `docs/bundestag-puls-architecture.html`/`.json` still shows `database.html` as a sample-row explorer with no export step; not regenerated in this change (tracked in TODOS.md).
+- `docs/bundestag-puls-architecture.html`/`.json` omitted the Daten export step and the Daten page; regenerated in 0.6.4.0.
 
 ## [0.3.0.0] - 2026-09-18
 

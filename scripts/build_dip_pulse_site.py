@@ -59,6 +59,11 @@
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from python_version_guard import require_supported_python
+
+    require_supported_python()
+
 import argparse
 import contextlib
 import copy
@@ -1957,7 +1962,9 @@ def _run_export(
         source_conn.close()
 
     try:
-        dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
+        # Direct exports and older SQLite stores may not have been migrated.
+        if "paragraphs_json" in {row["name"] for row in dist_conn.execute("PRAGMA table_info(speeches)")}:
+            dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
         dist_conn.execute(
             "CREATE TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL, has_page INTEGER NOT NULL)"
         )
@@ -2532,9 +2539,7 @@ def _daten_page_styles() -> str:
     }
     a { color:var(--blue); text-decoration:none; }
     a:hover { text-decoration:underline; }
-    a:visited { color:var(--blue); }
-    .recipe a:visited, .file a:visited { color:var(--teal); }
-    a:focus-visible, summary:focus-visible, .button:focus-visible {
+    summary:focus-visible, .button:focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
     }
@@ -6185,9 +6190,11 @@ def resolve_fact_citation(
     if kind == "speeches":
         resolved_rows = [
             row
-            for r in receipts
-            if (row := _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant")))
-            is not None
+            for row in (
+                _fact_speech_citation(conn, r["document_number"], r.get("rede_id"), r.get("page"), r.get("page_quadrant"))
+                for r in receipts
+            )
+            if row is not None
         ]
         if not resolved_rows:
             return None
@@ -6227,9 +6234,11 @@ def resolve_fact_citation(
     if kind == "proceeding":
         resolved_occurrences = [
             row
-            for r in receipts
-            if (row := _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant")))
-            is not None
+            for row in (
+                _fact_proceeding_citation(conn, r["document_number"], r.get("page"), r.get("page_quadrant"))
+                for r in receipts
+            )
+            if row is not None
         ]
         if not resolved_occurrences:
             return None

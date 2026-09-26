@@ -7,11 +7,11 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/LucaAlv/poliwatch",
-      "revision": "e8a79747763a1d29f40bd53d941632f7bcb50516"
+      "revision": "5a0fa498edb6277cf2b4eb574991e1a457f6ba04"
     },
     "viewBox": [
       1350,
-      510
+      550
     ],
     "views": [
       {
@@ -22,10 +22,13 @@
           "builder",
           "fetcher",
           "store",
+          "facts",
+          "export",
+          "manifest",
           "renderer",
           "site"
         ],
-        "note": "One sitting from CLI invocation to a rendered dossier and a rebuilt SQLite store."
+        "note": "Online build: dossiers become store rows, Fakten, distribution files and static pages."
       },
       {
         "id": "external-reach",
@@ -44,11 +47,15 @@
         "id": "served-surface",
         "label": "Served surface",
         "focus": [
+          "export",
+          "manifest",
+          "override",
+          "daten",
           "site",
           "server",
           "browser"
         ],
-        "note": "What leaves the build: static pages plus the whole data/ cache."
+        "note": "The build selects a generated or overridden manifest and renders it into the Daten page; the preview serves the resulting static output."
       }
     ]
   },
@@ -60,8 +67,8 @@
       "sublabel": "api/v2 politicians",
       "tag": "rate-limited",
       "pos": [
-        300,
-        80
+        65,
+        40
       ],
       "size": [
         190,
@@ -75,8 +82,8 @@
       "sublabel": "search.dip.bundestag.de/api/v1",
       "tag": "apikey in query",
       "pos": [
-        565,
-        80
+        355,
+        40
       ],
       "size": [
         195,
@@ -90,8 +97,8 @@
       "sublabel": "protocol XML + vote HTML",
       "tag": "unauthenticated",
       "pos": [
-        835,
-        80
+        655,
+        40
       ],
       "size": [
         170,
@@ -105,8 +112,8 @@
       "sublabel": "summary generation",
       "tag": "opt-in",
       "pos": [
-        1080,
-        80
+        965,
+        40
       ],
       "size": [
         195,
@@ -120,8 +127,8 @@
       "sublabel": "preview_dip_pulse_site.sh",
       "tag": "update | offline | stop",
       "pos": [
-        50,
-        250
+        45,
+        175
       ],
       "size": [
         175,
@@ -144,7 +151,7 @@
       "tag": "orchestrator + publication state",
       "pos": [
         300,
-        250
+        175
       ],
       "size": [
         190,
@@ -153,7 +160,7 @@
       "sources": [
         {
           "path": "scripts/build_dip_pulse_site.py",
-          "line": 5246,
+          "line": 9419,
           "label": "main()"
         }
       ]
@@ -165,8 +172,8 @@
       "sublabel": "validate_dip_protocol.py",
       "tag": "XML parse + HTML scrape",
       "pos": [
-        565,
-        250
+        555,
+        175
       ],
       "size": [
         195,
@@ -187,8 +194,8 @@
       "sublabel": "bundestag-pulse.sqlite",
       "tag": "rebuilt per build",
       "pos": [
-        835,
-        250
+        810,
+        175
       ],
       "size": [
         170,
@@ -205,12 +212,12 @@
     {
       "id": "renderer",
       "type": "backend",
-      "label": "HTML Renderer",
-      "sublabel": "render_dip_pulse_html.py",
+      "label": "Site Renderer",
+      "sublabel": "render_site() + dossier HTML",
       "tag": "stdlib strings, no templates",
       "pos": [
-        1080,
-        250
+        555,
+        310
       ],
       "size": [
         195,
@@ -218,9 +225,9 @@
       ],
       "sources": [
         {
-          "path": "scripts/render_dip_pulse_html.py",
-          "line": 1212,
-          "label": "render_html()"
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 8491,
+          "label": "render_site()"
         }
       ]
     },
@@ -231,8 +238,8 @@
       "sublabel": ".context/dip-pulse-site/",
       "tag": "pages + data/ cache",
       "pos": [
-        1080,
-        390
+        555,
+        445
       ],
       "size": [
         195,
@@ -246,8 +253,8 @@
       "sublabel": "python3 -m http.server",
       "tag": "127.0.0.1:8000",
       "pos": [
-        600,
-        390
+        300,
+        445
       ],
       "size": [
         195,
@@ -261,12 +268,122 @@
       "sublabel": "static pages, no client fetch",
       "tag": "localStorage only",
       "pos": [
-        190,
-        390
+        45,
+        445
       ],
       "size": [
         200,
         72
+      ]
+    },
+    {
+      "id": "facts",
+      "type": "backend",
+      "label": "Fakten Engine",
+      "sublabel": "run_facts_engine()",
+      "tag": "before export",
+      "pos": [
+        1065,
+        175
+      ],
+      "size": [
+        195,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 9333,
+          "label": "compute facts"
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "type": "backend",
+      "label": "Daten Export",
+      "sublabel": "export_distribution_data()",
+      "tag": "SQLite copy + CSV + recipes",
+      "pos": [
+        1065,
+        310
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 1806,
+          "label": "export"
+        }
+      ]
+    },
+    {
+      "id": "manifest",
+      "type": "database",
+      "label": "Generation Switch",
+      "sublabel": "data/exports/datenstand.json",
+      "tag": "points to g-<hash>/",
+      "pos": [
+        810,
+        310
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 1861,
+          "label": "atomic manifest"
+        }
+      ]
+    },
+    {
+      "id": "override",
+      "type": "backend",
+      "label": "Manifest Override",
+      "sublabel": "--data-manifest path or URL",
+      "tag": "skips export unless forced",
+      "pos": [
+        1065,
+        445
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 9377,
+          "label": "override path"
+        }
+      ]
+    },
+    {
+      "id": "daten",
+      "type": "frontend",
+      "label": "Daten Page",
+      "sublabel": "database.html",
+      "tag": "downloads, recipes, schema",
+      "pos": [
+        810,
+        445
+      ],
+      "size": [
+        195,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scripts/build_dip_pulse_site.py",
+          "line": 2658,
+          "label": "page renderer"
+        }
       ]
     }
   ],
@@ -287,7 +404,10 @@
       "wraps": [
         "cli",
         "builder",
-        "fetcher"
+        "fetcher",
+        "facts",
+        "export",
+        "override"
       ]
     },
     {
@@ -295,7 +415,9 @@
       "label": "Served surface — loopback by default",
       "wraps": [
         "server",
-        "site"
+        "site",
+        "manifest",
+        "daten"
       ]
     }
   ],
@@ -315,7 +437,10 @@
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 40
+      "labelAt": [
+        330,
+        125
+      ]
     },
     {
       "id": "builder-dossier",
@@ -330,8 +455,7 @@
       "to": "fetcher",
       "label": "REST, cursor-paged",
       "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": 40
+      "toSide": "top"
     },
     {
       "id": "btde-sources",
@@ -359,25 +483,14 @@
       "variant": "emphasis"
     },
     {
-      "id": "store-rows",
-      "from": "store",
-      "to": "renderer",
-      "label": "joined rows",
-      "variant": "emphasis"
-    },
-    {
-      "id": "render-pages",
-      "from": "renderer",
-      "to": "site",
-      "label": "writes HTML",
-      "variant": "emphasis",
-      "labelDy": 32
-    },
-    {
       "id": "serve-dir",
       "from": "site",
       "to": "server",
-      "label": "read per request"
+      "label": "read per request",
+      "labelAt": [
+        525,
+        531
+      ]
     },
     {
       "id": "http",
@@ -385,6 +498,97 @@
       "to": "browser",
       "label": "HTTP :8000",
       "variant": "emphasis"
+    },
+    {
+      "id": "store-facts",
+      "from": "store",
+      "to": "facts",
+      "label": "compute + persist facts",
+      "variant": "emphasis",
+      "labelAt": [
+        1023,
+        261
+      ]
+    },
+    {
+      "id": "facts-export",
+      "from": "facts",
+      "to": "export",
+      "label": "finalised store",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "export-manifest",
+      "from": "export",
+      "to": "manifest",
+      "label": "write generation, switch manifest",
+      "variant": "emphasis",
+      "labelAt": [
+        1053,
+        396
+      ]
+    },
+    {
+      "id": "store-render",
+      "from": "store",
+      "to": "renderer",
+      "label": "rows + site data",
+      "variant": "emphasis"
+    },
+    {
+      "id": "manifest-daten",
+      "from": "manifest",
+      "to": "daten",
+      "label": "selected manifest",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "override-daten",
+      "from": "override",
+      "to": "daten",
+      "label": "local file or URL",
+      "variant": "dashed",
+      "labelAt": [
+        1035,
+        531
+      ]
+    },
+    {
+      "id": "render-pages",
+      "from": "renderer",
+      "to": "site",
+      "label": "writes static pages",
+      "variant": "emphasis",
+      "labelAt": [
+        653,
+        396
+      ]
+    },
+    {
+      "id": "daten-site",
+      "from": "daten",
+      "to": "site",
+      "label": "database.html",
+      "variant": "emphasis",
+      "labelAt": [
+        780,
+        531
+      ]
+    },
+    {
+      "id": "manifest-render",
+      "from": "manifest",
+      "to": "renderer",
+      "label": "selected manifest",
+      "variant": "emphasis",
+      "labelAt": [
+        780,
+        396
+      ]
     }
   ],
   "cards": [
@@ -392,33 +596,27 @@
       "dot": "cyan",
       "title": "Build path",
       "items": [
-        "update sources .env.local, then hands flags to the builder.",
-        "Per sitting: XML transcript, DIP joins, roll-call scrape.",
-        "Builder writes data/*.json, rebuilds SQLite, renders pages.",
-        "Default mode is --offline: cached JSON in, no network calls.",
-        "Offline re-renders only; it never re-derives rows."
+        "Per sitting: XML transcript, DIP joins, roll-call scrape, then data/*.json and SQLite.",
+        "Fakten runs before the distribution export and static page render.",
+        "--offline reuses cached JSON; an unchanged export reuses its generation."
       ]
     },
     {
       "dot": "amber",
       "title": "Sources and failure modes",
       "items": [
-        "DIP: apikey in the query, cursor paging, 429/5xx retries.",
-        "Roll calls are scraped from bundestag.de HTML; drift only warns.",
-        "abgeordnetenwatch throttles and trips a breaker; build survives.",
-        "Public components are fixed; optional data reports explicit acquisition state.",
-        "features.json → local → env → --enrich; legacy aliases warn through 0.5.x."
+        "DIP uses an API key and cursor paging; roll calls use Bundestag HTML.",
+        "abgeordnetenwatch throttles; optional LLM summaries send excerpts out.",
+        "Public components are fixed; optional acquisitions report their state."
       ]
     },
     {
       "dot": "rose",
       "title": "Trust boundaries",
       "items": [
-        "Keys stay in gitignored .env.local; DIP and the LLM see them.",
-        "Summaries send transcript excerpts out; reuse mode calls nothing.",
-        "Binds 127.0.0.1; PREVIEW_BIND=0.0.0.0 widens it deliberately.",
-        "data/ ships with the pages — publishing publishes the cache.",
-        "Browser state is localStorage only; no client-side fetch."
+        "Keys stay in gitignored .env.local; the preview binds 127.0.0.1 by default.",
+        "datenstand.json selects g-<hash>/; --data-manifest can select a local file or URL.",
+        "data/ ships with the pages, including the cached DIP JSON and SQLite store — hosting the output makes the whole cache public."
       ]
     }
   ]

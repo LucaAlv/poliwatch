@@ -4,11 +4,53 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import _support  # noqa: F401
 import persist_dip_pulse_store as pulse_store
 from _support import FIXTURES
+
+
+class ParagraphMigrationTests(unittest.TestCase):
+    def test_initialize_omits_paragraphs_and_accepts_already_absent_column(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        with conn:
+            pulse_store.initialize(conn)
+            pulse_store.initialize(conn)
+        self.assertNotIn("paragraphs_json", {r["name"] for r in conn.execute("PRAGMA table_info(speeches)")})
+        conn.close()
+
+    def test_initialize_migrates_existing_speeches_without_changing_other_data(self):
+        report = json.loads((FIXTURES / "report.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "store.sqlite")
+            pulse_store.persist_report(conn, report)
+            if "paragraphs_json" not in {r["name"] for r in conn.execute("PRAGMA table_info(speeches)")}:
+                conn.execute("ALTER TABLE speeches ADD COLUMN paragraphs_json TEXT NOT NULL DEFAULT '[]'")
+            columns = [r["name"] for r in conn.execute("PRAGMA table_info(speeches)") if r["name"] != "paragraphs_json"]
+            query = "SELECT " + ", ".join(columns) + " FROM speeches ORDER BY id"
+            before = [tuple(r) for r in conn.execute(query)]
+            with conn:
+                pulse_store.initialize(conn)
+            self.assertNotIn("paragraphs_json", {r["name"] for r in conn.execute("PRAGMA table_info(speeches)")})
+            self.assertEqual(before, [tuple(r) for r in conn.execute(query)])
+            self.assertEqual([], list(conn.execute("PRAGMA foreign_key_check")))
+            conn.close()
+
+    def test_old_sqlite_warns_and_keeps_legacy_column(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        pulse_store.initialize(conn)
+        if "paragraphs_json" not in {r["name"] for r in conn.execute("PRAGMA table_info(speeches)")}:
+            conn.execute("ALTER TABLE speeches ADD COLUMN paragraphs_json TEXT NOT NULL DEFAULT '[]'")
+        with mock.patch.object(sqlite3, "sqlite_version", "3.34.1"):
+            with self.assertLogs(pulse_store.__name__, level="WARNING") as logs:
+                pulse_store.initialize(conn)
+        self.assertIn("3.35", logs.output[0])
+        self.assertIn("paragraphs_json", {r["name"] for r in conn.execute("PRAGMA table_info(speeches)")})
+        conn.close()
 
 
 class PersistReportTests(unittest.TestCase):

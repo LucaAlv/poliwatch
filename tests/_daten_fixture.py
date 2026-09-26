@@ -145,10 +145,10 @@ def seed_store(path: Path) -> dict[str, Any]:
                     """
                     INSERT INTO speeches(
                       protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
-                      paragraph_count, char_count, text, paragraphs_json, snippet, fraktion,
+                      paragraph_count, char_count, text, snippet, fraktion,
                       created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, '[]', ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         protocol_id,

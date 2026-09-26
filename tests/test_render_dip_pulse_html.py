@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from html.parser import HTMLParser
 import json
 import re
 import unittest
@@ -20,6 +21,38 @@ class DossierLayoutTests(unittest.TestCase):
         if match is None:
             raise AssertionError("Rendered dossier has no first TOP card")
         return match.group(1)
+
+    def test_ranking_anchors_resolve_to_top_cards(self) -> None:
+        class Anchors(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.targets = set()
+                self.links = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if attrs.get("class") == "top-card":
+                    self.targets.add(attrs["id"])
+                if attrs.get("class") == "attention-row":
+                    self.links.append(attrs["href"][1:])
+
+        for index in (1, '1"&<>'):
+            with self.subTest(index=index):
+                report = copy.deepcopy(self.report)
+                report["agenda_items"][0]["index"] = index
+                anchors = Anchors()
+                anchors.feed(pulse_html.render_html(report))
+                self.assertTrue(anchors.links)
+                self.assertTrue(set(anchors.links) <= anchors.targets)
+                self.assertIn(f"top-{index}", anchors.targets)
+
+    def test_protocol_dev_dump_follows_content_and_is_opt_in(self) -> None:
+        normal = pulse_html.render_html(self.report)
+        self.assertNotIn('class="api-overview dev-only"', normal)
+        dev = pulse_html.render_html(self.report, include_dev_view=True)
+        self.assertGreater(dev.index('class="api-overview dev-only"'), dev.index('</main>'))
+        self.assertLess(dev.index('class="dev-only dev-top-details"'), dev.index('</main>'))
+        self.assertIn('class="api-overview dev-only"', dev)
 
     def test_documents_are_metadata_before_metrics_and_speakers_are_full_width(self) -> None:
         card = self._top_card(pulse_html.render_html(self.report))
@@ -152,7 +185,7 @@ class AttentionRankingTests(unittest.TestCase):
         list_match = re.search(r'<div class="attention-list" id="attention-list">(.*?)</div>', aside, re.S)
         self.assertIsNotNone(list_match)
         self.assertEqual(list_match.group(1).count('class="attention-row"'), expected_count)
-        rows = re.findall(r'<a class="attention-row" href="#top-(\d+)">', aside)
+        rows = re.findall(r'<a class="attention-row" href="#top-(\d+)"(?: title="[^"]*")?>', aside)
         self.assertEqual(len(rows), expected_count)
         for index in rows:
             with self.subTest(top=index):
@@ -171,6 +204,48 @@ class AttentionRankingTests(unittest.TestCase):
         rows = self._assert_rows_resolve(markup, aside, 7)
         self.assertEqual(rows, ["2", "6", "4", "7", "3", "1", "5"], "rows must be sorted by speech count, descending")
         self.assertNotIn("<h2>Aufmerksamkeitsrang <span", aside, "no count badge; the header tile already carries the number")
+
+    def test_row_titles_show_topic_and_keep_full_heading_in_tooltip(self) -> None:
+        topic = (
+            'zur "Sicherung & Zukunft" <Thema> mit einem sehr langen ergänzenden Abschnitt, '
+            "der die sichtbare Zeile über ihre maximale Länge hinaus verlängert"
+        )
+        normalized_heading = (
+            "Beratung des Antrags der Abgeordneten Nicole Höchst und der Fraktion der CDU/CSU "
+            + topic
+        )
+        heading = "  " + normalized_heading.replace(" Nicole", "\nNicole") + "  "
+        item = self._item(1, 1)
+        item["heading"] = heading
+
+        row = re.search(r'<a class="attention-row"[^>]*>.*?</a>', self._render([item]), re.S)
+        self.assertIsNotNone(row)
+        rendered = row.group(0)
+        self.assertIn(
+            'title="Beratung des Antrags der Abgeordneten Nicole Höchst und der Fraktion der CDU/CSU '
+            'zur &quot;Sicherung &amp; Zukunft&quot; &lt;Thema&gt; mit einem sehr langen ergänzenden Abschnitt, '
+            'der die sichtbare Zeile über ihre maximale Länge hinaus verlängert"',
+            rendered,
+        )
+        self.assertIn(
+            'class="row-title">zur &quot;Sicherung &amp; Zukunft&quot; &lt;Thema&gt; mit einem sehr langen '
+            'ergänzenden Abschnitt…</span>',
+            rendered,
+        )
+        self.assertNotIn("Beratung des Antrags", rendered.split('<span class="row-title">', 1)[1].split('</span>', 1)[0])
+
+    def test_row_titles_keep_plain_headings_and_omit_empty_tooltips(self) -> None:
+        plain = self._item(1, 1)
+        plain["heading"] = "Ein unerkannter Tagesordnungspunkt"
+        missing = self._item(2, 1)
+        missing["heading"] = None
+        aside = self._aside(self._render([plain, missing]))
+        rows = re.findall(r'<a class="attention-row"[^>]*>.*?</a>', aside, re.S)
+        self.assertEqual(len(rows), 2)
+        self.assertIn('title="Ein unerkannter Tagesordnungspunkt"', rows[0])
+        self.assertNotIn(" title=", rows[1].split(">", 1)[0])
+        self.assertIn('class="row-title">Ein unerkannter Tagesordnungspunkt</span>', rows[0])
+        self.assertIn('class="row-title"></span>', rows[1])
 
     def test_collapse_is_rendered_server_side_above_the_preview_size(self) -> None:
         preview = pulse_html.ATTENTION_PREVIEW_ROWS
@@ -951,6 +1026,21 @@ class AgendaTopicTests(unittest.TestCase):
         heading = "hier: Einzelplan 30 Bundesministerium für Bildung und Forschung"
         self.assertEqual(pulse_html.strip_heading_boilerplate(heading), heading)
         self.assertEqual(pulse_html.strip_heading_boilerplate(""), "")
+
+    def test_a_bundled_heading_keeps_the_first_sub_items_topic(self) -> None:
+        # A joint agenda item files an Antrag under a) and a Gesetzentwurf
+        # under b). The Gesetzentwurf rule's opener has no fixed starting
+        # phrase, so matched against the whole heading it can skip past a)
+        # entirely and surface b)'s topic instead, hiding a)'s.
+        self.assertEqual(
+            pulse_html.strip_heading_boilerplate(
+                "a) Beratung des Antrags der Fraktion der AfD Rente mit 63 "
+                "sofort abschaffen b) Erste Beratung des von der "
+                "Bundesregierung eingebrachten Entwurfs eines Gesetzes zur "
+                "Änderung des Rentenrechts"
+            ),
+            "Rente mit 63 sofort abschaffen",
+        )
 
 
 if __name__ == "__main__":
