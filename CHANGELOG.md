@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 - Each SQL recipe on the Daten page has a "Kopieren" button. Where the browser cannot write to the clipboard, the button selects the SQL for ⌘C/Strg+C instead; a copy that fails late never overrides a newer click or your own selection. Without JavaScript the button stays hidden.
 - Dossier footers link to the Daten page when the build has data to show, like the other pages' Daten links.
 
+## [0.6.5.0] - 2026-09-25
+
+### Changed
+
+- When sitting counts differ, the Wochenvergleich now compares speeches, agenda items, speech text, and Fraktion speaking shares across weekdays present in both weeks. The page names those weekdays and keeps `n/a` when none overlap.
+
+### Fixed
+
+- The Wochenpuls sparkline now identifies its full-week trend when the figures above it use matched weekdays.
+
 ## [0.6.4.0] - 2026-09-25
 
 ### Changed
