@@ -683,22 +683,29 @@ class CurrentTopHighlightTests(unittest.TestCase):
         # A final card shorter than the viewport never reaches reachedLine,
         # so at the page end the lowest visible card must beat "reached".
         script = pulse_html.attention_runtime_script()
-        body = script[script.index("const pickCurrent = () => {"):script.index("const onScroll")]
+        body = script[script.index("const pickCurrent = () => {"):script.index("const onViewportChange")]
         self.assertIn("if (!lowest || top > lowest.top) lowest = { card, top };", body)
+        # Gated on the page scrolling at all: a dossier that fits one screen
+        # is "at the end" from first paint and must start at its first card.
         self.assertIn(
-            "const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1;", body
+            "const atBottom = pageHeight > window.innerHeight + 1 && window.innerHeight + window.scrollY >= pageHeight - 1;",
+            body,
         )
         self.assertLess(body.index("const atBottom"), body.index("const winner = (atBottom && lowest) || reached || pending;"))
 
-    def test_scroll_recheck_is_passive_frame_throttled_and_torn_down(self) -> None:
+    def test_scroll_and_resize_recheck_is_frame_throttled_and_torn_down(self) -> None:
         script = pulse_html.attention_runtime_script()
-        on_scroll = script[script.index("const onScroll = () => {"):script.index("const onIntersect")]
-        self.assertIn("if (scrollFrame) return;", on_scroll)
-        self.assertIn("window.requestAnimationFrame(", on_scroll)
+        handler = script[script.index("const onViewportChange = () => {"):script.index("const onIntersect")]
+        self.assertIn("if (scrollFrame) return;", handler)
+        self.assertIn("window.requestAnimationFrame(", handler)
+        # A resize can push the unchanged current row out of the list's view.
+        self.assertLess(handler.index("pickCurrent();"), handler.index("if (row) revealRow(row);"))
         start_body = script[script.index("const start = () => {"):script.index("const stop = () => {")]
-        self.assertIn('window.addEventListener("scroll", onScroll, { passive: true });', start_body)
+        self.assertIn('window.addEventListener("scroll", onViewportChange, { passive: true });', start_body)
+        self.assertIn('window.addEventListener("resize", onViewportChange);', start_body)
         stop_body = script[script.index("const stop = () => {"):script.index("const sync")]
-        self.assertIn('window.removeEventListener("scroll", onScroll);', stop_body)
+        self.assertIn('window.removeEventListener("scroll", onViewportChange);', stop_body)
+        self.assertIn('window.removeEventListener("resize", onViewportChange);', stop_body)
         self.assertIn("window.cancelAnimationFrame(scrollFrame);", stop_body)
 
     def test_sync_switches_on_static_layout_with_a_legacy_listener_fallback(self) -> None:

@@ -775,6 +775,8 @@ def attention_runtime_script() -> str:
       // At the very end of the page the lowest visible card wins instead: a
       // final card shorter than the viewport can never scroll up to the line,
       // so the rule above would leave the card before it current for good.
+      // Only on a page that scrolls at all - one that fits the viewport is
+      // "at the end" from first paint and must start at its first card.
       const pickCurrent = () => {
         let reached = null;
         let pending = null;
@@ -789,20 +791,25 @@ def attention_runtime_script() -> str:
             pending = { card, top };
           }
         });
-        const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1;
+        const pageHeight = document.documentElement.scrollHeight;
+        const atBottom = pageHeight > window.innerHeight + 1 && window.innerHeight + window.scrollY >= pageHeight - 1;
         const winner = (atBottom && lowest) || reached || pending;
         if (winner) setCurrent(winner.card.id);
       };
 
       // Intersection events only fire when a card enters or leaves the
-      // viewport, not when one crosses reachedLine or the page hits its end,
-      // so re-pick on scroll too - at most once per frame, passive.
+      // viewport, not when one crosses reachedLine, the page hits its end or
+      // a resize (inside the sticky layout) reshuffles both - so re-pick on
+      // scroll and resize too, at most once per frame, and re-reveal the
+      // current row, which a shorter list can push out of view unchanged.
       let scrollFrame = 0;
-      const onScroll = () => {
+      const onViewportChange = () => {
         if (scrollFrame) return;
         scrollFrame = window.requestAnimationFrame(() => {
           scrollFrame = 0;
           pickCurrent();
+          const row = current && rows.get(current);
+          if (row) revealRow(row);
         });
       };
 
@@ -828,14 +835,16 @@ def attention_runtime_script() -> str:
         // it is on screen.
         observer = new IntersectionObserver(onIntersect);
         cards.forEach((card) => observer.observe(card));
-        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("scroll", onViewportChange, { passive: true });
+        window.addEventListener("resize", onViewportChange);
       };
 
       const stop = () => {
         if (!observer) return;
         observer.disconnect();
         observer = null;
-        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("scroll", onViewportChange);
+        window.removeEventListener("resize", onViewportChange);
         if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
         scrollFrame = 0;
         inView.clear();
