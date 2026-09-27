@@ -159,6 +159,15 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         markup = render_vote_summary(item)
         self.assertNotIn("XLSX", markup)
 
+    def test_off_allowlist_xlsx_url_renders_the_rest_of_the_panel_instead_of_failing(self) -> None:
+        # xlsx_url is scraped from a free-form href on a second bundestag.de
+        # page, the same class of external data as a Drucksache link (which
+        # render_document_links already degrades gracefully for); an
+        # off-allowlist value must not take the whole vote panel down.
+        item = {"votes": [_vote(xlsx_url="https://evil.example/x.xlsx")]}
+        markup = render_vote_summary(item)
+        self.assertNotIn("evil.example", markup)
+
 
 if __name__ == "__main__":
     unittest.main()

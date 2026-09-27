@@ -165,10 +165,17 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         docs_html = render_document_links(vote.get("document_numbers") or [], document_links)
         docs_text = f" · Drucksachen {docs_html}" if docs_html else ""
         xlsx_url = vote.get("xlsx_url")
+        xlsx_href = None
+        if xlsx_url:
+            try:
+                xlsx_href = html.source_url(xlsx_url, "bundestag-roll-call")
+            except (html.publication.PublicationStateError, ValueError):
+                # Scraped from a free-form href on a second bundestag.de page,
+                # same class of external data as a Drucksache link: an
+                # off-allowlist value must not take the vote panel down.
+                xlsx_href = None
         xlsx_text = (
-            f' · <a href="{html.esc(html.source_url(xlsx_url, "bundestag-roll-call"))}">Abstimmungsliste (XLSX)</a>'
-            if xlsx_url
-            else ""
+            f' · <a href="{html.esc(xlsx_href)}">Abstimmungsliste (XLSX)</a>' if xlsx_href else ""
         )
         detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
         result_badge = render_result_badge(vote)

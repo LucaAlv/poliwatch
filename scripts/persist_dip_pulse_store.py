@@ -999,10 +999,23 @@ def persist_votes(
               result_raw = excluded.result_raw,
               result_source = excluded.result_source,
               -- A copy of the vote without a link (e.g. the same vote attached to
-              -- a second agenda item) never erases one already stored. Across
-              -- builds the store is rebuilt, so carry-forward happens in the
+              -- a second agenda item) never erases one already stored, so a
+              -- missing link normally falls back to COALESCE. Two cases must
+              -- NOT fall back, though: an explicit ambiguous-match refusal
+              -- (xlsx_ambiguous) - COALESCE alone can't tell "no fresh data
+              -- this copy" from "fresh data explicitly rejected this match"
+              -- (Codex structured review, 2026-09-27) - and a changed date or
+              -- title, the same guard carry_forward_vote_provenance already
+              -- applies at the report layer: an old link was matched by
+              -- (date, title), so once either changes it no longer vouches
+              -- for this row (coverage audit, 2026-09-27). Across builds the
+              -- store is rebuilt, so ordinary carry-forward happens in the
               -- report (build_dip_pulse_site.carry_forward_vote_provenance).
-              xlsx_url = COALESCE(excluded.xlsx_url, votes.xlsx_url),
+              xlsx_url = CASE
+                WHEN ? THEN NULL
+                WHEN excluded.date IS NOT votes.date OR excluded.title IS NOT votes.title THEN excluded.xlsx_url
+                ELSE COALESCE(excluded.xlsx_url, votes.xlsx_url)
+              END,
               updated_at = excluded.updated_at
             """,
             (
@@ -1021,6 +1034,7 @@ def persist_votes(
                 clean(vote.get("xlsx_url")),
                 now,
                 now,
+                bool(vote.get("xlsx_ambiguous")),
             ),
         )
         conn.execute(

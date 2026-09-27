@@ -660,6 +660,10 @@ _VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
 _VOTE_NEGATION_RE = re.compile(r"\bnicht\b", re.I)
 # Where the next vote's narration starts: its "Gesamt" or its own tally.
 _NEXT_TALLY_RE = re.compile(r"Gesamt|Ja:\s*\d")
+# A Drucksache number's shape, e.g. "21/6561". Shared with
+# parse_roll_call_list_page, which populates the document_numbers this
+# function cross-checks against.
+_DOCUMENT_NUMBER_RE = re.compile(r"\b\d{1,2}/\d{1,6}\b")
 
 
 def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
@@ -676,7 +680,9 @@ def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
     return paragraphs
 
 
-def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int) -> str | None:
+def scrape_official_vote_result(
+    detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
+) -> str | None:
     """bundestag.de states a vote's result only as prose in the page's
     "Beschluss" section, never as a machine-readable field, and one page's
     Beschluss text can narrate several related votes (a Gesetzentwurf, then its
@@ -686,6 +692,16 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
     ("Gesamt: 562 Ja:434 Nein:128 Enthaltungen --<br/>Gesetzentwurf
     angenommen"). Anything looser, a negation ("nicht angenommen") or both
     outcome words returns None - the caller then derives.
+
+    A tally with no outcome line of its own (e.g. a unanimous show-of-hands
+    decision needs no "Gesamt"/"Ja: N" marker) is not a boundary _NEXT_TALLY_RE
+    recognizes, so the one-line lookahead can otherwise bleed into a completely
+    unrelated neighboring decision's outcome word. When document_numbers is
+    known and the attributed text names a *different*, specific document
+    number, refuse rather than guess - a real outcome sentence often does not
+    repeat its own Drucksache number at all (the fixture and several live
+    pages read "Gesetzentwurf angenommen" with no number), so the check must
+    not require a match, only reject a proven mismatch.
     """
     section_match = _BESCHLUSS_SECTION_RE.search(detail_html)
     if not section_match:
@@ -714,6 +730,12 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
     words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
     # The negation check spans both lines: "ist nicht<br/>angenommen".
     if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
+        return None
+    # Refuse only on a proven mismatch (the text names a specific OTHER
+    # document): a genuine outcome sentence often names no number at all, so
+    # absence of our own number is not itself suspicious.
+    named_numbers = set(_DOCUMENT_NUMBER_RE.findall(text))
+    if document_numbers and named_numbers and not named_numbers & set(document_numbers):
         return None
     return "accepted" if words == {"angenommen"} else "rejected"
 
@@ -759,9 +781,11 @@ def _is_publishable_xlsx_url(url: str) -> bool:
 
 
 def namenslisten_blocks(html_text: str) -> list[str]:
-    # Any row div, even one with extra classes, starts a new block; otherwise a
-    # row without an XLSX would run into the next row and take its file.
-    return re.split(r'(?=<div class="e-linkListItem[\s"])', html_text)[1:]
+    # Any row div starts a new block, regardless of attribute order or extra
+    # classes (\b matches the class as a whole word anywhere in class=""):
+    # otherwise a row without an XLSX would run into the next row and take
+    # its file, or a markup change that reorders id/class would merge rows.
+    return re.split(r'(?=<div\b[^>]*\bclass="[^"]*\be-linkListItem\b[^"]*")', html_text)[1:]
 
 
 def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
@@ -879,7 +903,7 @@ def parse_roll_call_list_page(html_text: str) -> list[dict[str, Any]]:
         heading = strip_tags(heading_matches[-1]) if heading_matches else ""
         if topic and heading.startswith(topic):
             heading = clean_text(heading[len(topic) :])
-        document_numbers = sorted(set(re.findall(r"\b\d{1,2}/\d{1,6}\b", strip_tags(block))))
+        document_numbers = sorted(set(_DOCUMENT_NUMBER_RE.findall(strip_tags(block))))
         vote_id = vote_id_match.group(1)
         entries.append(
             {
@@ -995,7 +1019,7 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     total = vote.get("total") or {}
     yes_count = int(total.get("yes") or 0)
     no_count = int(total.get("no") or 0)
-    official = scrape_official_vote_result(detail_html, yes_count, no_count)
+    official = scrape_official_vote_result(detail_html, yes_count, no_count, vote.get("document_numbers"))
     result_raw, result_source = vote_result(official=official, yes_count=yes_count, no_count=no_count)
     enriched_vote["result_raw"] = result_raw
     enriched_vote["result_source"] = result_source

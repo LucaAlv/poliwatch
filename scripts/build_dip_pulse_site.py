@@ -985,13 +985,21 @@ def reconcile_generated_and_cached_summaries(
 
 
 def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
-    """Keep a vote's XLSX link and official result when a rescan found weaker data.
+    """Keep a vote's XLSX link when a rescan found no link this time.
 
     The SQLite store is rebuilt from these reports every run, so the report is
-    the only place a previously found link or official result survives. A vote
-    ages out of the Namenslisten page's 200-row window, or one Beschluss scrape
-    misses: without this the next build reverts it to no link / derived.
-    An official result is only carried while the counts are unchanged.
+    the only place a previously found link survives. A vote ages out of the
+    Namenslisten page's 200-row window: without this the next build reverts
+    it to no link.
+
+    The official result is deliberately NOT carried forward: every vote this
+    function sees was just fetched fresh by fetch_roll_call_vote_detail, which
+    always sets result_raw/result_source, so "not official this time" is never
+    missing data - it is this run's own scrape (with today's parser) disagreeing
+    with a cached run. Carrying the old value forward would silently revert any
+    parser fix - a rescan that now correctly refuses a match (e.g. a "nicht
+    angenommen" negation the old parser missed) must not have that refusal
+    overwritten by the stale cached "official" result.
     """
     previous_votes: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
@@ -1013,13 +1021,6 @@ def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[
                 and (vote.get("date"), vote.get("title")) == (previous.get("date"), previous.get("title"))
             ):
                 vote["xlsx_url"] = previous["xlsx_url"]
-            if (
-                vote.get("result_source") != "official"
-                and previous.get("result_source") == "official"
-                and (vote.get("total") or {}) == (previous.get("total") or {})
-            ):
-                vote["result_raw"] = previous.get("result_raw")
-                vote["result_source"] = "official"
 
 
 def reuse_existing_dossier_enrichments(
@@ -3555,7 +3556,15 @@ def render_votes_archive_script() -> str:
     (() => {
       const container = document.querySelector('[data-archive]');
       if (!container) return;
-      const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const rows = Array.from(container.querySelectorAll('[data-row]')).map((row) => {
+        let positions = {};
+        try {
+          positions = JSON.parse(row.dataset.fraktionPositions || '{}');
+        } catch (err) {
+          positions = {};
+        }
+        return { row, positions, month: row.dataset.month };
+      });
       const headings = Array.from(container.querySelectorAll('h2[data-month]'));
       const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
       const noResults = document.querySelector('[data-no-results]');
@@ -3563,19 +3572,18 @@ def render_votes_archive_script() -> str:
       const active = new Set();
       const apply = () => {
         let visible = 0;
-        rows.forEach((row) => {
-          let positions = {};
-          try {
-            positions = JSON.parse(row.dataset.fraktionPositions || '{}');
-          } catch (err) {
-            positions = {};
-          }
-          const show = active.size === 0 || Array.from(active).some((name) => positions[name] === 'yes');
+        const visibleMonths = new Set();
+        const activeList = Array.from(active);
+        rows.forEach(({ row, positions, month }) => {
+          const show = activeList.length === 0 || activeList.some((name) => positions[name] === 'yes');
           row.hidden = !show;
-          if (show) visible += 1;
+          if (show) {
+            visible += 1;
+            visibleMonths.add(month);
+          }
         });
         headings.forEach((heading) => {
-          heading.hidden = !rows.some((row) => !row.hidden && row.dataset.month === heading.dataset.month);
+          heading.hidden = !visibleMonths.has(heading.dataset.month);
         });
         if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
         if (count) {

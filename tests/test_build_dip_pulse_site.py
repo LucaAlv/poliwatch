@@ -248,7 +248,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual(item["xml_speakers"][0]["speaker"]["abgeordnetenwatch"], cached_profile)
         self.assertIsNot(item["votes"], previous["agenda_items"][0]["votes"])
 
-    def test_rescan_keeps_a_previously_found_xlsx_link_and_official_result(self) -> None:
+    def test_rescan_keeps_a_previously_found_xlsx_link(self) -> None:
         total = {"yes": 434, "no": 128, "abstain": 0, "absent": 68}
         previous = {"agenda_items": [{"votes": [{
             "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
@@ -260,7 +260,24 @@ class CollectAbgeordneteTests(unittest.TestCase):
         build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
         vote = report["agenda_items"][0]["votes"][0]
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
-        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "official"))
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "derived"))
+
+    def test_rescan_never_restores_a_stale_official_result_over_a_fresh_derived_one(self) -> None:
+        # A parser fix (e.g. the "nicht angenommen" negation guard) can make a
+        # rescan correctly refuse a match that an older parser wrongly called
+        # official. The cached "official" value must stay dead, even though
+        # this vote's total is unchanged - matching totals is exactly the
+        # normal case for a vote whose count never changes between builds.
+        total = {"yes": 100, "no": 400}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "rejected", "result_source": "derived",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("rejected", "derived"))
 
     def test_rescan_does_not_carry_an_official_result_over_changed_counts(self) -> None:
         previous = {"agenda_items": [{"votes": [{
@@ -276,9 +293,9 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/2/new_xls.xlsx")
 
     def test_carry_forward_keeps_a_freshly_scraped_official_result_over_a_stale_one(self) -> None:
-        # The guard is "vote.get('result_source') != 'official'": when this
-        # build's own scrape already found an official result, a *different*
-        # previous official value must never overwrite it, even with matching
+        # carry_forward_vote_provenance never touches result_raw/result_source
+        # at all: a fresh official result stays exactly as this run scraped it,
+        # even when a *different* previous official value exists with matching
         # counts.
         total = {"yes": 300, "no": 200}
         previous = {"agenda_items": [{"votes": [{
@@ -337,8 +354,9 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
 
     def test_reuse_existing_dossier_enrichments_carries_vote_provenance_forward(self) -> None:
-        # The rescan path (votes=False) is where carry-forward matters; pin the
-        # wiring, not just the standalone function.
+        # Pin the wiring, not just the standalone function: the xlsx_url
+        # carries forward, but the fresh scrape's own result_source is never
+        # overwritten by a stale cached one.
         total = {"yes": 300, "no": 200}
         previous = {"agenda_items": [{"votes": [{
             "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
@@ -350,7 +368,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
         build_dip_pulse_site.reuse_existing_dossier_enrichments(report, previous, votes=False, profiles=False)
         vote = report["agenda_items"][0]["votes"][0]
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
-        self.assertEqual(vote["result_source"], "official")
+        self.assertEqual(vote["result_source"], "derived")
 
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -410,6 +428,83 @@ class CollectAbgeordneteTests(unittest.TestCase):
             finally:
                 conn.close()
             self.assertIn("birth_year", columns)
+
+    def test_offline_main_backfills_derived_vote_results_before_exporting_the_store(self) -> None:
+        # 921e8a0 ("Restore the _migrate_vote_results backfill") exists
+        # because --offline builds keep and export the EXISTING store rather
+        # than a fresh one: a store persisted before the badge shipped must
+        # still get result_raw/result_source before run_data_pipeline's
+        # export copies it. This pins that wiring inside main()'s offline
+        # branch; _migrate_vote_results itself is already unit-tested in
+        # tests/test_persist_dip_pulse_store.py.
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            database_path = output_dir / "data" / "bundestag-pulse.sqlite"
+            conn = pulse_store.connect(database_path)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE votes (
+                      id TEXT PRIMARY KEY, date TEXT, topic TEXT, title TEXT, description TEXT,
+                      detail_url TEXT, yes_count INTEGER NOT NULL DEFAULT 0,
+                      no_count INTEGER NOT NULL DEFAULT 0, abstain_count INTEGER NOT NULL DEFAULT 0,
+                      absent_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                    );
+                    """
+                )
+                now = pulse_store.utc_now()
+                conn.execute(
+                    "INSERT INTO votes(id, yes_count, no_count, created_at, updated_at) VALUES ('legacy-1', 300, 200, ?, ?)",
+                    (now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            args = SimpleNamespace(
+                output_dir=output_dir,
+                database_path=None,
+                offline=True,
+                no_persist=False,
+            )
+            with (
+                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached"}]),
+                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[]),
+                mock.patch.object(
+                    build_dip_pulse_site,
+                    "render_site",
+                    return_value=output_dir / "index.html",
+                ),
+            ):
+                self.assertEqual(build_dip_pulse_site.main(), 0)
+
+            conn = pulse_store.connect(database_path)
+            try:
+                row = conn.execute(
+                    "SELECT result_raw, result_source FROM votes WHERE id = 'legacy-1'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(tuple(row), ("accepted", "derived"))
+
+            # The store alone isn't the point - a build that persisted the
+            # backfill but exported first (or from a stale connection) would
+            # also pass the assertion above. Check the actual exported file
+            # run_data_pipeline wrote, since that's what 921e8a0 was about.
+            import csv
+            import gzip
+
+            export_dirs = sorted((output_dir / "data" / "exports").glob("g-*"))
+            self.assertEqual(len(export_dirs), 1)
+            csv_path = export_dirs[0] / "votes-local.csv.gz"
+            self.assertTrue(csv_path.exists())
+            with gzip.open(csv_path, "rt", encoding="utf-8", newline="") as handle:
+                exported_rows = {row["id"]: row for row in csv.DictReader(handle)}
+            self.assertEqual(
+                (exported_rows["legacy-1"]["result_raw"], exported_rows["legacy-1"]["result_source"]),
+                ("accepted", "derived"),
+            )
 
     def test_write_report_reuses_catalog_protocol_metadata(self) -> None:
         protocol = {
@@ -2251,6 +2346,22 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         self.assertEqual([row["vote"]["id"] for row in rows], ["10", "9"])
 
+    def test_collect_sorts_same_date_non_numeric_ids_lexically_descending(self) -> None:
+        # _vote_id_sort_key's non-digit branch ((-1, text)) is only ever hit
+        # by legacy records predating the roll-call id field; two of them
+        # sharing a date is the only case that actually compares two "-1"
+        # tuples against each other instead of against a numeric id.
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "a-legacy", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "b-legacy", "date": "2026-06-10", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["b-legacy", "a-legacy"])
+
     def test_render_index_shows_empty_state_message_when_there_are_no_rows(self) -> None:
         markup = build_dip_pulse_site.render_votes_archive_index([])
         self.assertIn("keine namentlichen Abstimmungen erkannt", markup)
@@ -2304,6 +2415,23 @@ class VotesArchiveTests(unittest.TestCase):
         positions = json.loads(html_lib.unescape(positions_match.group(1)))
         self.assertEqual(positions["SPD"], "yes")
         self.assertEqual(positions["CDU/CSU"], "no")
+
+    def test_render_index_chip_order_puts_fraktionslos_last(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [
+                {"name": "fraktionslos", "leading_vote": "yes"},
+                {"name": "SPD", "leading_vote": "yes"},
+                {"name": "AfD", "leading_vote": "no"},
+            ],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        chip_order = re.findall(r'data-fraktion-chip="([^"]+)"', markup)
+        self.assertEqual(chip_order, ["AfD", "SPD", "fraktionslos"])
 
     def test_render_index_omits_chip_section_when_no_fraction_positions_exist(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T"}

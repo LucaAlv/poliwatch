@@ -261,6 +261,13 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         body = "<ul><li>Gesamt:500 Ja:300 Nein:200</li><li>Gesamt:400 Ja:100 Nein:300 Antrag abgelehnt</li></ul>"
         self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
 
+    def test_nbsp_inside_the_tally_itself_still_matches(self) -> None:
+        # Live pages can render the tally's own spacing as &nbsp; too, not
+        # only the "nicht angenommen" phrase; strip_tags decodes it to a
+        # literal NBSP character, which \s still has to match.
+        body = "<p>Gesamt: 500 Ja: 300 Nein: 200 Enthaltungen --<br/>Gesetzentwurf angenommen</p>"
+        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 300, 200), "accepted")
+
     def test_both_outcome_words_for_one_tally_are_refused(self) -> None:
         body = "<p>Gesamt: 500 Ja:300 Nein:200 angenommen aber abgelehnt</p>"
         self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
@@ -287,6 +294,44 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         <div class="bt-artikel__aside-section">
         """
         self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+
+    def test_a_tally_less_neighbor_decision_is_rejected_when_it_names_another_document(self) -> None:
+        # A unanimous/show-of-hands decision has no "Gesamt"/"Ja: N" of its own,
+        # so it is not a boundary _NEXT_TALLY_RE recognizes; sitting right after
+        # a real tally with no outcome sentence of its own, on the very next
+        # line of the SAME paragraph, its "angenommen" would otherwise get
+        # attributed to that unrelated tally (found by Codex's adversarial
+        # review, 2026-09-27). document_numbers is this vote's own Drucksache
+        # numbers; the neighbor names a specific, different one.
+        body = "<p>Gesamt:500 Ja:100 Nein:400<br/>Entschließungsantrag 21/999 einstimmig angenommen</p>"
+        self.assertIsNone(
+            dip.scrape_official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"])
+        )
+
+    def test_document_numbers_still_confirm_a_genuine_match(self) -> None:
+        body = "<p>Gesamt: 500 Ja: 100 Nein: 400 Enthaltungen --<br/>Antrag 21/123 abgelehnt</p>"
+        self.assertEqual(
+            dip.scrape_official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"]),
+            "rejected",
+        )
+
+    def test_document_numbers_never_refuse_an_outcome_sentence_that_names_no_number(self) -> None:
+        # Regression pin (found via the roll_call_detail_beschluss fixture,
+        # maintainability review 2026-09-27): a genuine outcome sentence often
+        # repeats no Drucksache number at all ("Gesetzentwurf angenommen"),
+        # with the number appearing only earlier, in the vote's own heading
+        # line, outside the checked window. Absence of our number must never
+        # by itself refuse a match - only a proven, different number does.
+        html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
+        self.assertEqual(dip.scrape_official_vote_result(html, 434, 128, document_numbers=["21/6561"]), "accepted")
+        self.assertEqual(dip.scrape_official_vote_result(html, 127, 418, document_numbers=["21/8195"]), "rejected")
+
+    def test_document_numbers_defaults_to_the_old_behavior_when_unknown(self) -> None:
+        # Without document_numbers (e.g. a candidate the overview list page
+        # named no Drucksache for), the cross-check cannot run; the caller
+        # still gets the pre-existing one-line-lookahead result.
+        body = "<p>Gesamt:500 Ja:100 Nein:400<br/>Entschließungsantrag 21/999 einstimmig angenommen</p>"
+        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 100, 400), "accepted")
 
 
 class NamenslistenMatchingTests(unittest.TestCase):
@@ -389,6 +434,21 @@ class NamenslistenRowBoundaryTests(unittest.TestCase):
         entries = dip.parse_namenslisten_page(page)
         self.assertEqual([entry["title"] for entry in entries], ["Mit Liste"])
 
+    def test_row_boundary_survives_attribute_reordering_and_extra_leading_classes(self) -> None:
+        # The split only required the literal prefix class="e-linkListItem;
+        # a markup change putting id before class, or another class first,
+        # would silently merge two rows and let the second row's XLSX get
+        # attributed to the first (Codex adversarial review, 2026-09-27).
+        page = (
+            '<div id="row1" class="e-linkListItem"><a class="e-linkListItem__anchor" href="/a.pdf"><span>'
+            "11.06.2026: Ohne Liste</span></a></div>"
+            '<div class="wrapper e-linkListItem"><a class="e-linkListItem__anchor" href="/b.pdf"><span>'
+            "11.06.2026: Mit Liste</span></a>"
+            '<a href="https://www.bundestag.de/resource/blob/2/b_xls.xlsx">XLSX</a></div>'
+        )
+        entries = dip.parse_namenslisten_page(page)
+        self.assertEqual([entry["title"] for entry in entries], ["Mit Liste"])
+
     def test_unparsable_xlsx_href_is_skipped_not_raised(self) -> None:
         page = (
             '<div class="e-linkListItem"><a class="e-linkListItem__anchor" href="/a.pdf"><span>'
@@ -419,6 +479,10 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
             "date": "2026-06-11",
             "title": "Bundeswehreinsatz in Kosovo (KFOR)",
             "total": {"yes": 434, "no": 128, "abstain": 0, "absent": 68},
+            # A real roll-call candidate always carries this from
+            # parse_roll_call_list_page; pin that fetch_roll_call_vote_detail
+            # actually threads it into scrape_official_vote_result.
+            "document_numbers": ["21/6561"],
         }
         with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):
             enriched = dip.fetch_roll_call_vote_detail(vote)

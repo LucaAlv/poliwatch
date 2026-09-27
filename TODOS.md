@@ -273,6 +273,18 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A concrete deployment/serving lifecycle
 
+### Global header nav links to a page a build didn't write when its feature is off
+
+**What:** `render_global_header` (`scripts/render_dip_pulse_html.py`) accepts a `features: Selection` parameter but never uses it to filter `NAV_ITEMS` — every nav item renders unconditionally. `bills`, `abgeordnete`/`mp-pages`, `fakten`/`facts`, `database`/`store`, and now `votes` all skip writing their page when their feature is deselected (`write_pages`/`write_*_pages` returning early), so a build that deselects any of them still links every page's header to a file that was never written — a sitewide dead link for that nav entry.
+
+**Why:** Found by Claude's adversarial `/ship` review (2026-09-27) while checking the `votes` nav entry this branch adds; the same gap already existed for the other four items before this diff, so this is a pre-existing pattern the branch extended consistently rather than introduced. The real published site always builds with every feature enabled (`publication_selection() = all_selection()`), so this has never actually produced a dead link in production.
+
+**Context:** Fix once for all five items: filter `NAV_ITEMS` by a nav-key → component-id map (`votes`→`votes`, `bills`→`bills`, `abgeordnete`→`mp-pages`, `fakten`→`facts`, `database`→`store`) and call `features.enabled(component_id)` per item before rendering.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Community
 
 ### Choose and document repository license and contribution governance
@@ -314,6 +326,18 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Effort:** S
 **Priority:** P2
 **Depends on:** Vote outcome badge
+
+### Namenslisten rows with no XLSX file are dropped, weakening ambiguity detection
+
+**What:** `parse_namenslisten_page` silently skips a Namenslisten row that has no `.xlsx` href at all, so a (date, normalized title) collision only registers as ambiguous when the row *without* a file is still present. Keep every row (with `xlsx_url: None` for a fileless one) and have `roll_call_xlsx_matches` treat a match against any fileless row at the same key as ambiguous too, not only a second distinct URL. Done when a fixture with one fileless and one filed row sharing a (date, title) key returns no match, not the filed row's URL.
+
+**Why:** Found by Codex's adversarial review (2026-09-27). Latent: the live Namenslisten page currently has 0 fileless rows among 60 (verified the same day), so no real vote is affected today, but the code path itself can't tell "the only row" from "the only row *with a file*."
+
+**Context:** `roll_call_xlsx_matches`'s "more than one distinct XLSX returns None" rule already exists for the two-files case; this extends the same never-guess principle to the zero-vs-one-file case.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Politikfeld tags on Tagesordnungspunkte and votes
 
