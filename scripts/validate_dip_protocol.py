@@ -656,34 +656,60 @@ _BESCHLUSS_SECTION_RE = re.compile(
     r'<h2 class="bt-artikel__aside-section-title">Beschluss</h2>(.*?)</div>\s*<div class="bt-artikel__aside-section">',
     re.S,
 )
-# "nicht angenommen" is captured so it can be refused, never read as "angenommen".
-_VOTE_OUTCOME_WORD_RE = re.compile(r"\b(nicht\s+)?(angenommen|abgelehnt)\b")
+_VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
+_VOTE_NEGATION_RE = re.compile(r"\bnicht\b", re.I)
+
+
+def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
+    """The Beschluss section as paragraphs of plain-text lines: <p> ends a
+    paragraph, <br> ends a line, markup and entities (&nbsp;) are flattened."""
+    paragraphs = []
+    for block in re.split(r"</?p\b[^>]*>", section_html, flags=re.I):
+        lines = [strip_tags(line) for line in re.split(r"<br\s*/?>", block, flags=re.I)]
+        lines = [line for line in lines if line]
+        if lines:
+            paragraphs.append(lines)
+    return paragraphs
 
 
 def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int) -> str | None:
     """bundestag.de states a vote's result only as prose in the page's
-    "Beschluss" section (e.g. "... Gesamt: 562 Ja:434 Nein:128 ... angenommen"),
-    never as a machine-readable field, and one page's Beschluss text can narrate
-    several related votes (a Gesetzentwurf, then its Entschließungsantrag). This
-    vote's own Ja/Nein counts are the only way to find its sentence in that text.
-    Returns None when no confident match exists - the caller then derives.
+    "Beschluss" section, never as a machine-readable field, and one page's
+    Beschluss text can narrate several related votes (a Gesetzentwurf, then its
+    Entschließungsantrag). This vote's own Ja/Nein counts are the only way to
+    find its sentence. The outcome must follow the tally directly: on the same
+    line before the next "Gesamt", or on the next line of the same paragraph
+    ("Gesamt: 562 Ja:434 Nein:128 Enthaltungen --<br/>Gesetzentwurf
+    angenommen"). Anything looser, a negation ("nicht angenommen") or both
+    outcome words returns None - the caller then derives.
     """
     section_match = _BESCHLUSS_SECTION_RE.search(detail_html)
     if not section_match:
         return None
-    section = section_match.group(1)
+    tally_re = re.compile(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b")
     # Two votes in one section with identical tallies would be indistinguishable:
     # only a unique match is confident enough to call official.
-    count_matches = list(re.finditer(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b", section))
-    if len(count_matches) != 1:
+    hits = [
+        (lines, index, match)
+        for lines in _beschluss_paragraphs(section_match.group(1))
+        for index, line in enumerate(lines)
+        for match in tally_re.finditer(line)
+    ]
+    if len(hits) != 1:
         return None
-    count_match = count_matches[0]
-    window = section[count_match.end() :]
-    boundary = window.find("Gesamt")
-    outcome_match = _VOTE_OUTCOME_WORD_RE.search(window[:boundary] if boundary != -1 else window)
-    if not outcome_match or outcome_match.group(1):
-        return None
-    return "accepted" if outcome_match.group(2) == "angenommen" else "rejected"
+    lines, index, match = hits[0]
+    rest_of_line = lines[index][match.end() :].split("Gesamt")[0]
+    candidates = [rest_of_line]
+    if index + 1 < len(lines):
+        candidates.append(lines[index + 1])
+    for text in candidates:
+        words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
+        if not words:
+            continue
+        if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
+            return None
+        return "accepted" if words == {"angenommen"} else "rejected"
+    return None
 
 
 # bundestag.de publishes each roll-call vote's PDF/XLSX Namensliste on a page

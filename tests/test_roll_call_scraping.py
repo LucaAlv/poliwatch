@@ -216,6 +216,28 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         """
         self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
 
+    def _section(self, body: str) -> str:
+        return (
+            '<h2 class="bt-artikel__aside-section-title">Beschluss</h2>'
+            f"{body}</div>\n<div class=\"bt-artikel__aside-section\">"
+        )
+
+    def test_negation_behind_an_entity_or_markup_is_still_refused(self) -> None:
+        for body in (
+            "<p>Gesamt:500 Ja:100 Nein:400 Der Antrag ist nicht&nbsp;angenommen.</p>",
+            "<p>Gesamt:500 Ja:100 Nein:400 Der Antrag ist <strong>nicht</strong> angenommen.</p>",
+        ):
+            with self.subTest(body=body):
+                self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
+
+    def test_outcome_in_a_later_paragraph_is_not_this_votes(self) -> None:
+        body = "<p>Gesamt:500 Ja:100 Nein:400 Enthaltungen --</p><p>Ein weiterer Antrag wurde angenommen.</p>"
+        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
+
+    def test_outcome_on_the_line_after_the_tally_is_read(self) -> None:
+        body = "<p>Gesamt: 500 Ja: 100 Nein: 400 Enthaltungen --<br/>Antrag abgelehnt</p>"
+        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 100, 400), "rejected")
+
     def test_boundary_stops_before_the_next_votes_outcome_word(self) -> None:
         # This vote's own count match is unique, but its sentence has no outcome
         # word before the next "Gesamt" marker; the next vote's "abgelehnt" must

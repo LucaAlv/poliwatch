@@ -313,6 +313,17 @@ class CollectAbgeordneteTests(unittest.TestCase):
         vote = report["agenda_items"][0]["votes"][0]
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
 
+    def test_carry_forward_drops_an_xlsx_link_once_the_title_changed(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Alt", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Neu", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
+
     def test_reuse_existing_dossier_enrichments_carries_vote_provenance_forward(self) -> None:
         # The rescan path (votes=False) is where carry-forward matters; pin the
         # wiring, not just the standalone function.
@@ -2119,6 +2130,15 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('data-archive-count data-total="1" aria-live="polite"><strong>1</strong> Abstimmungen</p>', markup)
         self.assertNotIn('class="summary-grid"', markup)
         self.assertIn("von ${total} Abstimmungen", markup)
+
+    def test_tied_fraktion_is_not_a_ja_majority(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": [
+            {"name": "fraktionslos", "counts": {"yes": 1, "no": 1, "abstain": 0}, "leading_vote": "yes"},
+            {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}, "leading_vote": "yes"},
+            {"name": "AfD", "counts": {"yes": 0, "no": 80, "abstain": 0}, "leading_vote": "no"},
+        ]}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        self.assertEqual(rows[0]["fraction_positions"], {"fraktionslos": "tie", "SPD": "yes", "AfD": "no"})
 
     def test_rows_sort_reverse_chronological(self) -> None:
         older = self._entry(

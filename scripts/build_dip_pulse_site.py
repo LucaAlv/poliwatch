@@ -1000,7 +1000,13 @@ def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[
             previous = previous_votes.get(pulse_html.vote_key(vote))
             if not previous:
                 continue
-            if not vote.get("xlsx_url") and previous.get("xlsx_url"):
+            # The link was matched by (date, title); if either changed, the
+            # old match no longer vouches for this vote.
+            if (
+                not vote.get("xlsx_url")
+                and previous.get("xlsx_url")
+                and (vote.get("date"), vote.get("title")) == (previous.get("date"), previous.get("title"))
+            ):
                 vote["xlsx_url"] = previous["xlsx_url"]
             if (
                 vote.get("result_source") != "official"
@@ -3254,6 +3260,18 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
     return "–"
 
 
+def _fraction_position(fraction: dict[str, Any]) -> str | None:
+    # The "Ja-Mehrheit" chip needs a strict majority: leading_vote breaks a tie
+    # (1 Ja, 1 Nein) by key order and would call it "yes".
+    counts = fraction.get("counts") or {}
+    cast = [int(counts.get(key) or 0) for key in ("yes", "no", "abstain")]
+    leading = fraction.get("leading_vote")
+    if not any(cast) or leading != "yes":
+        return leading
+    yes, no, abstain = cast
+    return "yes" if yes > no and yes > abstain else "tie"
+
+
 def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     # bundestag.de roll-call ids are integers of varying width; compare them
     # numerically so "10" sorts after "9" on the same date.
@@ -3282,7 +3300,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 if key in rows:
                     continue
                 fraction_positions = {
-                    str(fraction["name"]): fraction.get("leading_vote")
+                    str(fraction["name"]): _fraction_position(fraction)
                     for fraction in vote.get("fractions") or []
                     if fraction.get("name")
                 }

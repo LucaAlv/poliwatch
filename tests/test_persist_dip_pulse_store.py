@@ -462,6 +462,72 @@ class VoteResultColumnsTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_backfill_derives_a_result_for_rows_that_predate_the_column_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    # A pre-migration row (never resolved) and one already
+                    # resolved as "official" - the backfill must leave the
+                    # latter alone rather than downgrade it to derived.
+                    conn.execute(
+                        """
+                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
+                        VALUES ('legacy-1', 300, 200, ?, ?)
+                        """,
+                        (now, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO votes(
+                          id, yes_count, no_count, result_raw, result_source, created_at, updated_at
+                        )
+                        VALUES ('official-1', 1, 99, 'accepted', 'official', ?, ?)
+                        """,
+                        (now, now),
+                    )
+
+                pulse_store.initialize(conn)
+
+                rows = {
+                    row["id"]: (row["result_raw"], row["result_source"])
+                    for row in conn.execute("SELECT id, result_raw, result_source FROM votes")
+                }
+                self.assertEqual(rows["legacy-1"], ("accepted", "derived"))
+                self.assertEqual(rows["official-1"], ("accepted", "official"))
+            finally:
+                conn.close()
+
+    def test_backfill_leaves_a_zero_zero_row_unresolved(self) -> None:
+        # vote_result(yes_count=0, no_count=0) is (None, None) - "never guess" -
+        # so a legacy row with no counts at all must stay untouched, not get
+        # coerced into a rejected/derived result.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
+                        VALUES ('no-counts-1', 0, 0, ?, ?)
+                        """,
+                        (now, now),
+                    )
+
+                pulse_store.initialize(conn)
+
+                row = conn.execute(
+                    "SELECT result_raw, result_source FROM votes WHERE id = 'no-counts-1'"
+                ).fetchone()
+                self.assertIsNone(row["result_raw"])
+                self.assertIsNone(row["result_source"])
+            finally:
+                conn.close()
+
 
 class ConnectGuardTests(unittest.TestCase):
     def test_connect_refuses_a_store_with_a_nonzero_user_version(self) -> None:
