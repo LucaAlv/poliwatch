@@ -53,6 +53,10 @@ VOTE_LABELS = {
 # never needs to know them.
 ATTENTION_PREVIEW_ROWS = 5
 ATTENTION_PREVIEW_ROWS_PHONE = 3
+# Where the sticky rail stops being one: the CSS uncaps the aside
+# (position:static) at this query, and the current-TOP observer in
+# attention_runtime_script switches itself off at the same one.
+ATTENTION_STATIC_LAYOUT_QUERY = "(max-width: 1120px), (max-height: 480px)"
 
 # DIP "vorgangstyp" values as they show up in the Debattenprofil on puls.html.
 # Keys are the raw DIP strings. "kurz" is the one-line hover bubble on the label,
@@ -710,11 +714,16 @@ def attention_runtime_script() -> str:
     emitted directly after the aside rather than at the end of the body: the
     collapse is visible from first paint, so the button must work as soon as
     it is on screen, not after the 2-3 MB of TOP cards behind it have parsed.
-    One job: the expand/collapse toggle that the narrow layout shows. The
-    collapsed state itself is rendered server-side (data-collapsed on the
-    aside) and the media queries decide whether it has any effect, so this
-    script never inspects the viewport. The "more below" fade on the desktop
-    list is pure CSS (a sticky ::after), so there is nothing to keep in sync.
+    Two jobs share this one script tag rather than splitting into a second
+    one elsewhere in the page:
+      - the expand/collapse toggle that the narrow layout shows. The
+        collapsed state itself is rendered server-side (data-collapsed on the
+        aside) and the media queries decide whether it has any effect, so
+        this part never inspects the viewport. The "more below" fade on the
+        desktop list is pure CSS (a sticky ::after), so there is nothing to
+        keep in sync.
+      - marking which .attention-row is "current": the one whose .top-card
+        is at the top of the reading column right now, via IntersectionObserver.
     """
     return """
   <script>
@@ -735,8 +744,173 @@ def attention_runtime_script() -> str:
         else if (revealed) revealed.focus();
       });
     })();
+    // Deferred to DOMContentLoaded: this script tag sits right after the
+    // aside (see the module docstring above) so the toggle above works from
+    // first paint, but that puts it before <main> - the .top-card elements
+    // this half needs do not exist in the DOM yet at that point in parsing.
+    document.addEventListener("DOMContentLoaded", () => {
+      const list = document.getElementById("attention-list");
+      if (!list || typeof IntersectionObserver !== "function") return;
+      const rows = new Map();
+      list.querySelectorAll(".attention-row").forEach((row) => {
+        const id = (row.getAttribute("href") || "").slice(1);
+        if (id) rows.set(id, row);
+      });
+      const cards = Array.from(document.querySelectorAll(".top-card")).filter((card) => rows.has(card.id));
+      if (!cards.length) return;
+
+      // Off entirely where the CSS media query below turns the aside static
+      // above <main> instead of a sticky rail next to the cards - there is
+      // no "you are here" row without a rail to put it on.
+      const staticLayout = window.matchMedia("__STATIC_LAYOUT_QUERY__");
+
+      const inView = new Set();
+      let reachedLine = 0;
+      let current = null;
+      let observer = null;
+
+      // Scrolls only .attention-list's own scrollport - never the page. A
+      // sticky, viewport-capped aside means bringing a row into the list's
+      // view never requires moving the document, so the list is scrolled
+      // directly (Element.scrollBy) rather than through row.scrollIntoView,
+      // which would also be free to move ancestor scrollers. Always instant:
+      // a smooth list scroll still running when the reader clicks a row makes
+      // Chrome drop that click's jump to the card (13 of 17 rapid clicks in a
+      // live check; 0 of 17 without the animation).
+      const revealRow = (row) => {
+        const listBox = list.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        let delta = 0;
+        if (rowBox.top < listBox.top) delta = rowBox.top - listBox.top;
+        else if (rowBox.bottom > listBox.bottom) delta = rowBox.bottom - listBox.bottom;
+        if (!delta) return;
+        list.scrollBy({ top: delta });
+      };
+
+      const setCurrent = (id) => {
+        if (id === current) return;
+        if (current) {
+          const previous = rows.get(current);
+          if (previous) previous.removeAttribute("aria-current");
+        }
+        current = id;
+        if (!id) return;
+        const row = rows.get(id);
+        if (!row) return;
+        row.setAttribute("aria-current", "true");
+        revealRow(row);
+      };
+
+      // Among the currently visible cards, "nearest the top of the viewport"
+      // means: the one whose top edge has already reached (scrolled above)
+      // the viewport's own top edge, picking the one that reached it most
+      // recently (its top is the largest, i.e. least negative, of that
+      // group) - that is the card whose content actually fills row 0 of the
+      // screen. Before any card has reached that edge yet (page load, or any
+      // scroll position above the first card), fall back to the one closest
+      // to it from below (the smallest positive top). Live boundingClientRect
+      // reads, not the entry's cached one, because a tall card can sit in
+      // `inView` across many scroll frames with no new intersection event.
+      // "Reached" is measured against the cards' own scroll-margin-top, not a
+      // literal 0: a sidebar click (or #top-N on load) parks the target card
+      // that far below the edge, and it must count as reached there rather
+      // than depend on the grid gap pushing the previous card out of view.
+      // At the very end of the page the lowest visible card wins instead: a
+      // final card shorter than the viewport can never scroll up to the line,
+      // so the rule above would leave the card before it current for good.
+      // Only on a page that scrolls at all - one that fits the viewport is
+      // "at the end" from first paint and must start at its first card.
+      const pickCurrent = () => {
+        let reached = null;
+        let pending = null;
+        let lowest = null;
+        cards.forEach((card) => {
+          if (!inView.has(card.id)) return;
+          const top = card.getBoundingClientRect().top;
+          if (!lowest || top > lowest.top) lowest = { card, top };
+          if (top <= reachedLine) {
+            if (!reached || top > reached.top) reached = { card, top };
+          } else if (!pending || top < pending.top) {
+            pending = { card, top };
+          }
+        });
+        const pageHeight = document.documentElement.scrollHeight;
+        const atBottom = pageHeight > window.innerHeight + 1 && window.innerHeight + window.scrollY >= pageHeight - 1;
+        const winner = (atBottom && lowest) || reached || pending;
+        if (winner) setCurrent(winner.card.id);
+      };
+
+      // Intersection events only fire when a card enters or leaves the
+      // viewport, not when one crosses reachedLine, the page hits its end or
+      // a resize (inside the sticky layout) reshuffles both - so re-pick on
+      // scroll and resize too, at most once per frame. Only a resize also
+      // re-reveals an unchanged current row (a shorter list can push it out
+      // of view); on scroll the list moves only when the current row
+      // changes, so a reader browsing the list is not snapped back.
+      let scrollFrame = 0;
+      let revealOnFrame = false;
+      const onViewportChange = () => {
+        if (scrollFrame) return;
+        scrollFrame = window.requestAnimationFrame(() => {
+          scrollFrame = 0;
+          pickCurrent();
+          if (!revealOnFrame) return;
+          revealOnFrame = false;
+          const row = current && rows.get(current);
+          if (row) revealRow(row);
+        });
+      };
+      const onResize = () => {
+        revealOnFrame = true;
+        onViewportChange();
+      };
+
+      const onIntersect = (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) inView.add(entry.target.id);
+          else inView.delete(entry.target.id);
+        });
+        pickCurrent();
+      };
+
+      const start = () => {
+        if (observer) return;
+        reachedLine = parseFloat(window.getComputedStyle(cards[0]).scrollMarginTop) || 0;
+        // rootMargin stays at the default, unshrunk viewport rather than the
+        // thin top band a typical scrollspy uses: shrinking it creates a dead
+        // zone above the band that the page header and the ranking head sit
+        // in, so at the top of the page - before the first card has scrolled
+        // up into a shrunk band - nothing would be "current" at all. Observing
+        // the full viewport instead and resolving "nearest the top" through
+        // pickCurrent's own rule (above) has no such dead zone: the first
+        // card counts as visible, and thus current, as soon as any part of
+        // it is on screen.
+        observer = new IntersectionObserver(onIntersect);
+        cards.forEach((card) => observer.observe(card));
+        window.addEventListener("scroll", onViewportChange, { passive: true });
+        window.addEventListener("resize", onResize);
+      };
+
+      const stop = () => {
+        if (!observer) return;
+        observer.disconnect();
+        observer = null;
+        window.removeEventListener("scroll", onViewportChange);
+        window.removeEventListener("resize", onResize);
+        revealOnFrame = false;
+        if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
+        scrollFrame = 0;
+        inView.clear();
+        setCurrent(null);
+      };
+
+      const sync = () => { if (staticLayout.matches) stop(); else start(); };
+      sync();
+      if (staticLayout.addEventListener) staticLayout.addEventListener("change", sync);
+      else if (staticLayout.addListener) staticLayout.addListener(sync);
+    });
   </script>
-"""
+""".replace("__STATIC_LAYOUT_QUERY__", ATTENTION_STATIC_LAYOUT_QUERY)
 
 
 def theme_runtime_script() -> str:
@@ -2436,6 +2610,7 @@ def render_html(
     mp_lookup: dict[str, int] | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> str:
     features = publication_selection()
     from features.loader import load as load_components
@@ -2621,9 +2796,12 @@ def render_html(
         '<a href="../overview.html">Sitzungen</a>',
         '<a href="../bills/index.html">Gesetze</a>',
         '<a href="../abgeordnete/index.html">Abgeordnete</a>',
+        # Only when the build has Daten, like every other page's Daten link;
+        # the caller predicts that (see dossier_database_page_href).
+        f'<a href="{esc(database_page_href)}">Daten</a>' if database_page_href else "",
         '<a href="../sources.html">Quellen</a>',
     ]
-    footer_nav = " · ".join(footer_links)
+    footer_nav = " · ".join(link for link in footer_links if link)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
     protocol_dev_sections = (
         "".join(components["dev-view"].dossier_sections(report, {"scope": "protocol"}))
@@ -2861,7 +3039,9 @@ def render_html(
       them and the sticky aside clips its tail again. (No braces in this
       comment: the stylesheet is a Python f-string.) --aside-gap is the sticky
       offset; the viewport cap is 100vh minus that gap on both ends. The three
-      1120px blocks (and the two 720px blocks) must stay in lockstep.
+      1120px blocks (and the two 720px blocks) must stay in lockstep; only the
+      uncap query is a constant (ATTENTION_STATIC_LAYOUT_QUERY, shared with the
+      current-TOP observer), the other two are still literals.
     */
     aside {{
       position:sticky;
@@ -2908,6 +3088,17 @@ def render_html(
       padding:12px 16px;
       border-bottom:1px solid #edf0f4;
       color:var(--ink);
+    }}
+    /* The state (aria-current, set by the IntersectionObserver in
+       attention_runtime_script) and its styling are the same thing - no
+       separate "active" class to keep in sync. Screen only: printing does
+       not stop the observer, and "you are here" means nothing on paper. */
+    @media screen {{
+      .attention-row[aria-current="true"] {{
+        background:var(--blue-soft, #eef5ff);
+        box-shadow:inset 3px 0 0 var(--blue);
+      }}
+      .attention-row[aria-current="true"] .row-title {{ color:var(--blue); }}
     }}
     .ranking-note {{
       padding:8px 16px;
@@ -3422,7 +3613,7 @@ def render_html(
       background:#202833;
       color:#fff;
     }}
-    @media (max-width: 1120px), (max-height: 480px), print {{
+    @media {ATTENTION_STATIC_LAYOUT_QUERY}, print {{
       aside {{ position:static; max-height:none; }}
       .attention-list {{ overflow:visible; }}
       .attention-list::after {{ display:none; }}
