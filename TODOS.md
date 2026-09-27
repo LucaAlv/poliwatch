@@ -339,6 +339,38 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** None
 
+### A tally-less neighboring decision with no document number of its own can still steal the official badge
+
+**What:** `scrape_official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
+
+**Why:** Found by the /ship red-team review (2026-09-27), same family as the Beschlussempfehlung-inversion badge caveat already shipped in 85411a4 ("acceptable only while the site is not public"). Latent: every real "Beschluss" narration checked so far — the project's own fixture and every live bundestag.de page fetched during this and the prior review round — attaches a document number to every decision it mentions, including tally-less ones, so this specific shape has not been observed on real data. A cheap fix was explored and rejected: requiring a document-number match whenever the lookahead line starts with a proposition keyword (Gesetzentwurf/Beschlussempfehlung/Entschließungsantrag/...) also rejects the fixture's own legitimate "Gesetzentwurf angenommen" case, which has the identical shape.
+
+**Context:** The badge already discloses "(berechnet)" for any non-official result, so a bleed here would show a false-confidence "Laut Beschluss auf bundestag.de" label with the wrong outcome rather than the honest derived caveat — worse than the inversion caveat, which at least states the right raw counts.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
+
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `scrape_official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+
+**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `carry_forward_vote_provenance`'s XLSX guard compares raw titles, not the normalized match key
+
+**What:** The (date, title) guard in `carry_forward_vote_provenance` compares `vote.get("title") == previous.get("title")` exactly, but the matcher this guard exists to protect (`validate_dip_protocol.roll_call_xlsx_matches`/`_title_match_key`) normalizes to letters-and-digits-only, specifically because bundestag.de hyphenates the same title differently across its two pages. A cosmetic re-punctuation of the same roll-call-list heading between two builds is read as "title changed", permanently dropping a previously-found XLSX link once the vote ages past the Namenslisten page's 200-row window, even though the vote's normalized identity never changed. Compare via the same normalized key both places.
+
+**Why:** Found by the /ship red-team review (2026-09-27). Data-loss only (an optional link disappears), never a wrong link.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Politikfeld tags on Tagesordnungspunkte and votes
 
 **What:** A fixed, closed list of 13 Politikfelder (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie); one to three tags per TOP and vote, stored in the SQLite store and exported in the Daten CSVs; tag chips on the dossier, the votes archive and the week radar act as filters. Done when every vote in the store has ≥1 tag or an explicit `untagged` row, and the list is enforced by a test that rejects any other label.

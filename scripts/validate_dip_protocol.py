@@ -702,6 +702,16 @@ def scrape_official_vote_result(
     repeat its own Drucksache number at all (the fixture and several live
     pages read "Gesetzentwurf angenommen" with no number), so the check must
     not require a match, only reject a proven mismatch.
+
+    KNOWN RESIDUAL GAP (red-team review, 2026-09-27): this only catches a
+    bleed where the neighboring decision names a *different* number. A
+    neighboring, tally-less decision that names NO number at all is
+    indistinguishable from this vote's own number-less outcome sentence (the
+    same shape the paragraph above requires accepting) and is not caught.
+    Every real "Beschluss" narration checked so far - the fixture and every
+    live page fetched during this review - attaches a document number to
+    every decision it mentions, including tally-less ones, so this has not
+    been observed in practice; it is tracked as a TODO, not fixed here.
     """
     section_match = _BESCHLUSS_SECTION_RE.search(detail_html)
     if not section_match:
