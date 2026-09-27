@@ -238,6 +238,33 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         body = "<p>Gesamt: 500 Ja: 100 Nein: 400 Enthaltungen --<br/>Antrag abgelehnt</p>"
         self.assertEqual(dip.scrape_official_vote_result(self._section(body), 100, 400), "rejected")
 
+    def test_next_votes_tally_on_the_following_line_is_a_boundary(self) -> None:
+        for body in (
+            "<p>Gesamt:500 Ja:300 Nein:200<br/>Gesamt:400 Ja:100 Nein:300 Antrag abgelehnt</p>",
+            "<p>Gesamt:500 Ja:300 Nein:200 Gesamt:400 Ja:100 Nein:300<br/>Antrag abgelehnt</p>",
+        ):
+            with self.subTest(body=body):
+                self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+
+    def test_negation_split_across_the_line_break_is_refused(self) -> None:
+        body = "<p>Gesamt: 500 Ja:300 Nein:200 Enthaltungen -- Der Gesetzentwurf ist nicht<br/>angenommen.</p>"
+        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+
+    def test_list_items_are_lines_as_on_live_pages(self) -> None:
+        # bundestag.de vote 949 (live, 2026-09-27): one <li> per line.
+        body = (
+            "<ul><li>endgültiges Ergebnis</li><li>Gesamt: 716 Ja: 87 Nein: 626 Enthaltungen: 3</li>"
+            "<li>Gesetzentwurf 20/15099 abgelehnt</li></ul>"
+        )
+        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 87, 626), "rejected")
+        # ...and the next vote's tally item is still a boundary.
+        body = "<ul><li>Gesamt:500 Ja:300 Nein:200</li><li>Gesamt:400 Ja:100 Nein:300 Antrag abgelehnt</li></ul>"
+        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+
+    def test_both_outcome_words_for_one_tally_are_refused(self) -> None:
+        body = "<p>Gesamt: 500 Ja:300 Nein:200 angenommen aber abgelehnt</p>"
+        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+
     def test_boundary_stops_before_the_next_votes_outcome_word(self) -> None:
         # This vote's own count match is unique, but its sentence has no outcome
         # word before the next "Gesamt" marker; the next vote's "abgelehnt" must
@@ -350,6 +377,26 @@ class NamenslistenMatchingTests(unittest.TestCase):
         self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "Bundeswehreinsatz in Kosovo (KFOR)", entries))
 
 
+class NamenslistenRowBoundaryTests(unittest.TestCase):
+    def test_row_with_extra_classes_still_starts_its_own_block(self) -> None:
+        page = (
+            '<div class="e-linkListItem"><a class="e-linkListItem__anchor" href="/a.pdf"><span>'
+            "11.06.2026: Ohne Liste</span></a></div>"
+            '<div class="e-linkListItem extra"><a class="e-linkListItem__anchor" href="/b.pdf"><span>'
+            "11.06.2026: Mit Liste</span></a>"
+            '<a href="https://www.bundestag.de/resource/blob/2/b_xls.xlsx">XLSX</a></div>'
+        )
+        entries = dip.parse_namenslisten_page(page)
+        self.assertEqual([entry["title"] for entry in entries], ["Mit Liste"])
+
+    def test_unparsable_xlsx_href_is_skipped_not_raised(self) -> None:
+        page = (
+            '<div class="e-linkListItem"><a class="e-linkListItem__anchor" href="/a.pdf"><span>'
+            '11.06.2026: Kaputt</span></a><a href="https://[broken/x.xlsx">XLSX</a></div>'
+        )
+        self.assertEqual(dip.parse_namenslisten_page(page), [])
+
+
 class FetchRollCallVoteDetailTests(unittest.TestCase):
     def setUp(self) -> None:
         # namenslisten_entries() memoizes per process; each test brings its own page.
@@ -396,6 +443,19 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
         self.assertEqual(enriched["result_raw"], "rejected")
         self.assertEqual(enriched["result_source"], "derived")
         self.assertIsNone(enriched["xlsx_url"])
+
+    def test_two_files_for_one_vote_mark_the_match_ambiguous(self) -> None:
+        row = (
+            '<div class="e-linkListItem"><a class="e-linkListItem__anchor" href="/x.pdf"><span>'
+            "11.06.2026: Gleicher Titel</span></a>"
+            '<a href="https://www.bundestag.de/resource/blob/{n}/a_xls.xlsx">XLSX</a></div>'
+        )
+        page = row.format(n=1) + row.format(n=2)
+        vote = {"id": "1", "date": "2026-06-11", "title": "Gleicher Titel", "total": {"yes": 2, "no": 1}}
+        with patch.object(dip, "fetch_html", side_effect=lambda url: page if "/liste/" in url else ""):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+        self.assertIsNone(enriched["xlsx_url"])
+        self.assertTrue(enriched["xlsx_ambiguous"])
 
     def _namenslisten_row(self, index: int, xlsx: bool = True) -> str:
         link = f'<a href="https://www.bundestag.de/resource/blob/{index}/x_xls.xlsx">XLSX</a>' if xlsx else ""

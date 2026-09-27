@@ -658,14 +658,18 @@ _BESCHLUSS_SECTION_RE = re.compile(
 )
 _VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
 _VOTE_NEGATION_RE = re.compile(r"\bnicht\b", re.I)
+# Where the next vote's narration starts: its "Gesamt" or its own tally.
+_NEXT_TALLY_RE = re.compile(r"Gesamt|Ja:\s*\d")
 
 
 def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
-    """The Beschluss section as paragraphs of plain-text lines: <p> ends a
-    paragraph, <br> ends a line, markup and entities (&nbsp;) are flattened."""
+    """The Beschluss section as paragraphs of plain-text lines: <p> and lists
+    end a paragraph; <br> and list items end a line (live pages put the tally
+    and its outcome in consecutive <li>s, "Gesamt: 716 Ja: 87 Nein: 626 ...",
+    then "Gesetzentwurf ... abgelehnt"). Markup and entities are flattened."""
     paragraphs = []
-    for block in re.split(r"</?p\b[^>]*>", section_html, flags=re.I):
-        lines = [strip_tags(line) for line in re.split(r"<br\s*/?>", block, flags=re.I)]
+    for block in re.split(r"</?(?:p|ul|ol)\b[^>]*>", section_html, flags=re.I):
+        lines = [strip_tags(line) for line in re.split(r"<br\s*/?>|</?li\b[^>]*>", block, flags=re.I)]
         lines = [line for line in lines if line]
         if lines:
             paragraphs.append(lines)
@@ -698,18 +702,20 @@ def scrape_official_vote_result(detail_html: str, yes_count: int, no_count: int)
     if len(hits) != 1:
         return None
     lines, index, match = hits[0]
-    rest_of_line = lines[index][match.end() :].split("Gesamt")[0]
-    candidates = [rest_of_line]
-    if index + 1 < len(lines):
-        candidates.append(lines[index + 1])
-    for text in candidates:
-        words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
-        if not words:
-            continue
-        if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
-            return None
-        return "accepted" if words == {"angenommen"} else "rejected"
-    return None
+    rest = lines[index][match.end() :]
+    boundary = _NEXT_TALLY_RE.search(rest)
+    # The text that belongs to this vote: the rest of its line and, only when
+    # no other vote started on that line, the next line up to the next tally.
+    text = rest[: boundary.start()] if boundary else rest
+    if not boundary and index + 1 < len(lines):
+        following = lines[index + 1]
+        next_boundary = _NEXT_TALLY_RE.search(following)
+        text = f"{text} {following[: next_boundary.start()] if next_boundary else following}"
+    words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
+    # The negation check spans both lines: "ist nicht<br/>angenommen".
+    if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
+        return None
+    return "accepted" if words == {"angenommen"} else "rejected"
 
 
 # bundestag.de publishes each roll-call vote's PDF/XLSX Namensliste on a page
@@ -745,13 +751,17 @@ def _is_publishable_xlsx_url(url: str) -> bool:
     # every later (offline) render.
     try:
         publication.validate_external_url(url, "bundestag-roll-call")
-    except publication.PublicationStateError:
+    except (publication.PublicationStateError, ValueError):
+        # urlsplit raises ValueError on e.g. "https://[broken"; an optional link
+        # must never take the vote's other data down with it.
         return False
     return True
 
 
 def namenslisten_blocks(html_text: str) -> list[str]:
-    return re.split(r'(?=<div class="e-linkListItem">)', html_text)[1:]
+    # Any row div, even one with extra classes, starts a new block; otherwise a
+    # row without an XLSX would run into the next row and take its file.
+    return re.split(r'(?=<div class="e-linkListItem[\s"])', html_text)[1:]
 
 
 def parse_namenslisten_page(html_text: str) -> list[dict[str, str]]:
@@ -819,15 +829,19 @@ def find_roll_call_xlsx_url(date: str | None, title: str | None, namenslisten: l
     matching compares letters and digits only. No match, or more than one
     distinct XLSX for the same key, returns None - never guess a URL.
     """
+    matches = roll_call_xlsx_matches(date, title, namenslisten)
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def roll_call_xlsx_matches(date: str | None, title: str | None, namenslisten: list[dict[str, str]]) -> set[str]:
     target_title = _title_match_key(title)
     if not date or not target_title:
-        return None
-    matches = {
+        return set()
+    return {
         entry["xlsx_url"]
         for entry in namenslisten
         if entry["date"] == date and _title_match_key(entry["title"]) == target_title
     }
-    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def configured_roll_call_list_id(value: str | None = None) -> str:
@@ -989,7 +1003,11 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     # The XLSX link is optional provenance from a second page: a failed fetch
     # leaves it unknown rather than discarding the fractions/members/result
     # already fetched for this vote.
-    enriched_vote["xlsx_url"] = find_roll_call_xlsx_url(vote.get("date"), vote.get("title"), namenslisten_entries())
+    xlsx_matches = roll_call_xlsx_matches(vote.get("date"), vote.get("title"), namenslisten_entries())
+    enriched_vote["xlsx_url"] = next(iter(xlsx_matches)) if len(xlsx_matches) == 1 else None
+    # A successful fetch that found two files for this vote is a refusal, not
+    # missing data: carry_forward_vote_provenance must not restore an old link.
+    enriched_vote["xlsx_ambiguous"] = len(xlsx_matches) > 1
     return enriched_vote
 
 

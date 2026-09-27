@@ -70,11 +70,16 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
     parts = []
     for number in document_numbers:
         link = links.get(str(number))
+        href = None
         if link:
             url, source = link
-            parts.append(
-                f'<a class="doc-link" href="{html.esc(html.source_url(url, source))}">{html.esc(number)}</a>'
-            )
+            try:
+                href = html.source_url(url, source)
+            except (html.publication.PublicationStateError, ValueError):
+                # An off-allowlist URL from DIP/XML loses its link, never the build.
+                href = None
+        if href:
+            parts.append(f'<a class="doc-link" href="{html.esc(href)}">{html.esc(number)}</a>')
         else:
             parts.append(f'<span class="doc-link muted">{html.esc(number)}</span>')
     if not parts:

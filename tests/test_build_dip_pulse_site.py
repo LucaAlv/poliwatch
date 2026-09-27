@@ -324,6 +324,18 @@ class CollectAbgeordneteTests(unittest.TestCase):
         build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
         self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
 
+    def test_carry_forward_respects_a_fresh_ambiguous_xlsx_refusal(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "T", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "T", "total": {"yes": 1, "no": 0},
+            "xlsx_url": None, "xlsx_ambiguous": True,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
+
     def test_reuse_existing_dossier_enrichments_carries_vote_provenance_forward(self) -> None:
         # The rescan path (votes=False) is where carry-forward matters; pin the
         # wiring, not just the standalone function.

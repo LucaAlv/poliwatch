@@ -1004,6 +1004,7 @@ def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[
             # old match no longer vouches for this vote.
             if (
                 not vote.get("xlsx_url")
+                and not vote.get("xlsx_ambiguous")
                 and previous.get("xlsx_url")
                 and (vote.get("date"), vote.get("title")) == (previous.get("date"), previous.get("title"))
             ):

@@ -71,6 +71,11 @@ class RenderDocumentLinksTests(unittest.TestCase):
         self.assertIn('href="https://dip.bundestag.de/x"', html)
         self.assertIn("21/8157", html)
 
+    def test_off_allowlist_drucksache_url_renders_unlinked_instead_of_failing(self) -> None:
+        html = render_document_links(["21/1"], {"21/1": ("https://evil.example/x.pdf", "bundestag-dip")})
+        self.assertNotIn("<a ", html)
+        self.assertIn('<span class="doc-link muted">21/1</span>', html)
+
     def test_several_drucksachen_render_as_one_pill_list_without_commas(self) -> None:
         html = render_document_links(["21/1", "21/2"], {})
         self.assertTrue(html.startswith('<span class="doc-link-list">'))
