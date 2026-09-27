@@ -11,7 +11,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 19 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit ihren Ergebniszeilen daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 19 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 

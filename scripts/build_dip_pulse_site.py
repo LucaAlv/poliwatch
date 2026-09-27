@@ -534,6 +534,7 @@ def write_report_files(
     features: Selection | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     protocol = report.get("protocol") or {}
@@ -546,6 +547,7 @@ def write_report_files(
             features=features,
             mp_lookup=mp_lookup,
             include_dev_view=include_dev_view,
+            database_page_href=database_page_href,
         ),
         encoding="utf-8",
     )
@@ -664,6 +666,7 @@ def rebuild_cached_detail_pages(
     cached_entries: list[dict[str, Any]] | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls.
 
@@ -681,6 +684,7 @@ def rebuild_cached_detail_pages(
                 mp_lookup,
                 features,
                 include_dev_view=include_dev_view,
+                database_page_href=database_page_href,
             )
         )
     return entries
@@ -1204,6 +1208,7 @@ def write_report_and_page(
     include_dev_view: bool = False,
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -1295,6 +1300,7 @@ def write_report_and_page(
         mp_lookup,
         features,
         include_dev_view=include_dev_view,
+        database_page_href=database_page_href,
     )
 
 
@@ -2418,6 +2424,7 @@ def render_daten_recipes(
               <div class="recipe-sql">
                 <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
                 <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+                <button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>
               </div>
               <div class="recipe-result">
                 {body}
@@ -2427,6 +2434,80 @@ def render_daten_recipes(
             """
         )
     return "".join(blocks)
+
+
+# Rendered without JS as hidden ("no dead button shows without JS") and
+# revealed once this script has wired up a click handler for it. One script
+# tag for all five recipe buttons, next to the markup it controls rather than
+# folded into page_scripts (shared by every page, most of which have none).
+def recipe_copy_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const buttons = document.querySelectorAll(".recipe-copy");
+      if (!buttons.length) return;
+      const clipboardAvailable = !!(navigator.clipboard && window.isSecureContext);
+      // Page-wide, bumped on every copy click: a clipboard write that fails
+      // late (e.g. behind a permission prompt) must not select its SQL over
+      // a newer click or a selection the reader made in the meantime.
+      let latestCopy = 0;
+
+      buttons.forEach((button) => {
+        const sqlBlock = button.closest(".recipe-sql");
+        const code = sqlBlock && sqlBlock.querySelector("pre code");
+        if (!code) return;
+        const defaultLabel = button.textContent;
+        let resetTimer = null;
+
+        const flash = (label) => {
+          if (resetTimer) window.clearTimeout(resetTimer);
+          button.textContent = label;
+          resetTimer = window.setTimeout(() => {
+            button.textContent = defaultLabel;
+            resetTimer = null;
+          }, 2000);
+        };
+
+        // Non-secure contexts (e.g. a page opened straight off disk, no
+        // server) have no navigator.clipboard at all; select the SQL text
+        // instead so Cmd/Ctrl+C still works, and never fall back to the
+        // deprecated document.execCommand.
+        const selectFallback = () => {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          flash("Markiert – mit ⌘C/Strg+C kopieren");
+        };
+
+        button.addEventListener("click", () => {
+          const copy = ++latestCopy;
+          if (!clipboardAvailable) {
+            selectFallback();
+            return;
+          }
+          const selectionAtClick = String(window.getSelection() || "");
+          navigator.clipboard.writeText(code.textContent).then(
+            () => {
+              if (copy === latestCopy) flash("Kopiert");
+            },
+            () => {
+              if (copy !== latestCopy) return;
+              const untouched = String(window.getSelection() || "") === selectionAtClick;
+              if (untouched) selectFallback();
+              else flash("Nicht kopiert");
+            },
+          );
+        });
+
+        button.hidden = false;
+      });
+    })();
+  </script>
+"""
 
 
 def render_daten_schema(manifest: dict[str, Any]) -> tuple[str, str, str]:
@@ -2625,6 +2706,26 @@ def _daten_page_styles() -> str:
     }
     .recipe:first-child { border-top:none; padding-top:0; }
     .recipe pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .recipe-copy {
+      appearance:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      margin-top:8px;
+      padding:6px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--blue);
+      font:inherit;
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }
+    .recipe-copy[hidden] { display:none; }
+    .recipe-copy:hover { border-color:var(--blue); }
+    .recipe-copy:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
     .recipe-empty { font-size:14px; }
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { padding:8px; border-bottom:1px solid var(--surface-3); text-align:left; vertical-align:top; }
@@ -2643,7 +2744,7 @@ def _daten_page_styles() -> str:
     details pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.45; }
     footer { padding-top:24px; margin-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
     @media print {
-      .site-header, .download-panel { display:none; }
+      .site-header, .download-panel, .recipe-copy { display:none; }
     }
     @media screen and (max-width: 1024px) {
       .recipe { grid-template-columns:minmax(0,1fr); }
@@ -2752,6 +2853,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
     </main>
   </div>
   {pulse_html.page_scripts(features)}
+  {recipe_copy_runtime_script()}
 </body>
 </html>
 """
@@ -9312,6 +9414,21 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def data_manifest_source(args: argparse.Namespace) -> str | None:
+    return getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+
+
+# Dossiers are written before run_data_pipeline produces the manifest that every
+# other page's "Daten" link keys on, so their footer predicts it from the
+# export's own condition: a manifest override, or a persisted store to export.
+# The one miss is an export that raises DataExportUnavailable (old SQLite);
+# database.html is then the fallback page, which says exactly that.
+def dossier_database_page_href(args: argparse.Namespace, database_path: Path) -> str | None:
+    if data_manifest_source(args) or (not args.no_persist and database_path.exists()):
+        return "../database.html"
+    return None
+
+
 # CLI > env > default, read in the layer that actually runs the build (not in
 # parse_args itself), per the DX addendum. getattr() throughout: main() must
 # keep working against the pre-existing test stub that mocks parse_args() with
@@ -9320,7 +9437,7 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     base_url_raw = (
         getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
     )
-    manifest_raw = getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+    manifest_raw = data_manifest_source(args)
     license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
     issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
     issues_url = (issues_url or "").strip() or None
@@ -9555,6 +9672,7 @@ def main() -> int:
             features,
             cached_entries=cached_entries,
             include_dev_view=args.include_dev_view,
+            database_page_href=dossier_database_page_href(args, database_path),
         )
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
@@ -9671,6 +9789,7 @@ def main() -> int:
                     profile_resolver=profile_resolver,
                     features=features,
                     include_dev_view=args.include_dev_view,
+                    database_page_href=dossier_database_page_href(args, database_path),
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -9717,6 +9836,7 @@ def main() -> int:
                         canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
                 finally:
                     store.close()
+                database_page_href = dossier_database_page_href(args, database_path)
                 entries = [
                     write_report_files(
                         entry["report"],
@@ -9724,6 +9844,7 @@ def main() -> int:
                         mp_lookup,
                         features,
                         include_dev_view=args.include_dev_view,
+                        database_page_href=database_page_href,
                     )
                     for entry in entries
                 ]

@@ -109,30 +109,40 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
-### Recipe SQL copy buttons, recipe result CSVs / DATA.md / dossier "Daten" footer link
+### Recipe result CSVs and `DATA.md`
 
-**What:** (a) A "Kopieren" clipboard button on each recipe's SQL block. (b) Per-recipe result CSVs, a `DATA.md` in the release, and a "Daten" link in dossier footers (`footer_links` in `render_html`, `scripts/render_dip_pulse_html.py`, currently Katalog · API-Sitzungen · Gesetze · Quellen · Einstellungen).
+**What:** Per-recipe result CSVs and a `DATA.md` in the release.
 
-**Why:** Both were scoped out of PR #59 (no new script per the design doc; b is an Approach-C follow-up once the data path has real usage). Checked 2026-09-19: no clipboard code, no `DATA.md`, no Daten footer link exist. The former item (b), externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+**Why:** Scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
 
 **Effort:** S–M
 **Priority:** P3
 **Depends on:** None
 
+### Validate remote-manifest recipes before showing their SQL
 
-## Protokoll-Dossier
+**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
 
-### Current-TOP highlight in the ranking sidebar
+**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
 
-**What:** Mark the TOP currently in view in the desktop sidebar (`IntersectionObserver` on `.top-card`, `aria-current="true"` on the matching `.attention-row`), optionally scrolling the row into view inside `.attention-list`.
+**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
 
-**Why:** On 2–3 MB dossier pages the reader loses their place; the sidebar is the page map, but today it does not say "you are here".
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
 
-**Context:** Hooks exist since the sidebar fix (#56, v0.2.2.0): `#attention-list` wraps the rows, `#top-{index}` ids on cards, `attention_runtime_script()` owns the toggle behaviour. No `IntersectionObserver` exists anywhere yet. Respect `prefers-reduced-motion` for any scrolling; keep the highlight off on ≤1120px where the aside is static.
+### Recipe copy: compare the selection by range, not by text
 
-**Effort:** M
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
+
+**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
+
+**Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+
+## Protokoll-Dossier
 
 
 ## Puls
@@ -438,6 +448,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Current-TOP highlight in the ranking sidebar
+
+**Completed:** v0.6.6.0 (2026-09-26). `IntersectionObserver` on `.top-card` plus a frame-throttled scroll/resize re-pick sets `aria-current="true"` on the matching `.attention-row`, styled through `[aria-current]` (screen only); off wherever the aside is static (`ATTENTION_STATIC_LAYOUT_QUERY`). "Reached" is measured against the cards' scroll-margin-top, the lowest visible card wins at the end of a scrolling page, and the row-reveal scrolls only `.attention-list`, instantly (a running smooth list scroll made Chrome drop row-click jumps). Ships alongside the copy-button half of the recipe TODO above.
 
 ### Weekday-matched Wochenvergleich when sitting counts differ
 
