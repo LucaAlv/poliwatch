@@ -5155,7 +5155,7 @@ def render_front_page(
     .radar-list {{ margin:8px 0 0; padding:0; list-style:none; }}
     .radar-row {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 220px 160px;
+      grid-template-columns:minmax(0,1fr) 220px 200px;
       gap:10px 22px;
       align-items:start;
       padding:14px 0;
@@ -5187,7 +5187,7 @@ def render_front_page(
       border:1px solid var(--line);
       border-radius:999px;
       background:var(--paper);
-      font-size:11px;
+      font-size:12px;
       color:var(--ink);
     }}
     .radar-badge {{ justify-self:start; color:var(--amber); border-color:var(--amber); }}
@@ -5200,7 +5200,7 @@ def render_front_page(
     .radar-who {{ display:grid; gap:6px; align-content:start; padding-top:2px; }}
     .who-stack {{ display:flex; overflow:hidden; height:10px; border-radius:999px; background:var(--line); }}
     .who-stack.empty {{ outline:1px solid var(--line); }}
-    .radar-legend {{ margin:0; font-size:11px; line-height:1.4; color:var(--muted); }}
+    .radar-legend {{ margin:0; font-size:12px; line-height:1.4; color:var(--muted); }}
     .radar-row a {{ text-decoration-line:underline; text-decoration-color:transparent; text-underline-offset:2px; }}
     .radar-row a:hover {{ text-decoration-color:currentColor; }}
     .radar-row a:visited {{ text-decoration-color:var(--muted); }}
@@ -5283,7 +5283,7 @@ def render_front_page(
     .week-metric span {{
       display:block;
       color:var(--muted);
-      font-size:11px;
+      font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
@@ -5295,7 +5295,7 @@ def render_front_page(
       gap:6px;
       margin-top:5px;
     }}
-    .week-metric-foot em {{ color:var(--muted); font-size:11px; font-style:normal; }}
+    .week-metric-foot em {{ color:var(--muted); font-size:12px; font-style:normal; }}
     .week-delta {{ font-size:12px; font-weight:750; white-space:nowrap; }}
     .week-delta.up {{ color:var(--teal); }}
     .week-delta.down {{ color:var(--amber); }}
