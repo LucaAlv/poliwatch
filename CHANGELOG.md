@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0.0] - 2026-09-28
+
+### Added
+
+- Every roll-call vote panel now shows whether the motion passed. The badge reads "Angenommen" or "Abgelehnt", sourced from bundestag.de's own stated result when the page states one, or otherwise computed from the vote count and marked "(berechnet)" so the difference is visible on hover.
+- Every Drucksache a vote panel mentions now links to its source document instead of showing plain text, and a link to the vote's XLSX Namensliste export appears next to the detail link when bundestag.de has published one.
+- A new "Abstimmungen" page lists every roll-call vote across every sitting the site has built, reverse-chronological and grouped by month, with a Fraktion filter (by that Fraktion's majority position on each vote).
+
 ## [0.6.6.0] - 2026-09-26
 
 ### Added
