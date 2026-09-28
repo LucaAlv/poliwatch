@@ -112,6 +112,14 @@ class DossierLayoutTests(unittest.TestCase):
             markup,
         )
 
+    def test_layout_css_includes_the_vote_result_badge_rules(self) -> None:
+        # VOTE_RESULT_BADGE_CSS is interpolated into render_html's own <style>
+        # block (shared with votes/index.html via the same constant); pin that
+        # the dossier page actually carries it, not only the archive page.
+        markup = pulse_html.render_html(self.report)
+        self.assertIn(".vote-result-accepted { background:#0f766e; }", markup)
+        self.assertIn(".vote-result-rejected { background:#b91c1c; }", markup)
+
     def test_footer_links_to_the_daten_page_between_abgeordnete_and_quellen(self) -> None:
         # Same relative-path depth as its neighbours (dossiers live one level
         # down, under protocols/) and the same position render_overview uses

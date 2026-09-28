@@ -2,11 +2,89 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import render_dip_pulse_html as html
 
 from . import BaseComponent, REGISTRY
+
+
+RESULT_BADGE_LABELS = {"accepted": "Angenommen", "rejected": "Abgelehnt"}
+# Only bundestag.de's own Beschluss wording is official; anything else is our
+# yes>no rule, which misreads Beschlussempfehlungen and qualified-majority votes,
+# so the reader sees which one a badge is.
+RESULT_SOURCE_NOTES = {
+    "official": "Laut Beschluss auf bundestag.de",
+    "derived": "Aus den Stimmenzahlen berechnet (Ja gegen Nein), kein amtliches Ergebnis gefunden",
+}
+
+
+def result_badge_label(result_raw: Any) -> str | None:
+    return RESULT_BADGE_LABELS.get(str(result_raw or ""))
+
+
+def render_result_badge(vote: dict[str, Any]) -> str:
+    """The Angenommen/Abgelehnt pill for the dossier panel and the votes
+    archive; a vote with no recorded result renders no badge.
+    """
+    result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
+    label = result_badge_label(result_raw)
+    if not label:
+        return ""
+    if result_source == "official":
+        return (
+            f'<span class="vote-result vote-result-{html.esc(result_raw)}"'
+            f' title="{html.esc(RESULT_SOURCE_NOTES["official"])}">{html.esc(label)}</span>'
+        )
+    return (
+        f'<span class="vote-result vote-result-{html.esc(result_raw)} vote-result-derived"'
+        f' title="{html.esc(RESULT_SOURCE_NOTES["derived"])}">{html.esc(label)}'
+        ' <span class="vote-result-note">(berechnet)</span></span>'
+    )
+
+
+def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """Map a Drucksache number to (url, source) using the same XML/DIP objects
+    ``validate_dip_protocol.top_document_numbers`` already matched this vote
+    against, so a vote's ``document_numbers`` never need a second URL builder.
+    The XML protocol is authoritative (footer: "Das XML-Protokoll ist
+    maßgeblich") and wins over the DIP API when both name a URL for the number.
+    """
+    links: dict[str, tuple[str, str]] = {}
+    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+        number = doc.get("dokumentnummer")
+        url = doc.get("url")
+        if number and url:
+            links.setdefault(str(number), (url, "bundestag-dip"))
+    for doc in item.get("xml_drucksachen") or []:
+        number = doc.get("dokumentnummer")
+        url = doc.get("url")
+        if number and url:
+            links[str(number)] = (url, "bundestag-xml")
+    return links
+
+
+def render_document_links(document_numbers: list[str], links: dict[str, tuple[str, str]]) -> str:
+    parts = []
+    for number in document_numbers:
+        link = links.get(str(number))
+        href = None
+        if link:
+            url, source = link
+            try:
+                href = html.source_url(url, source)
+            except (html.publication.PublicationStateError, ValueError):
+                # An off-allowlist URL from DIP/XML loses its link, never the build.
+                href = None
+        if href:
+            parts.append(f'<a class="doc-link" href="{html.esc(href)}">{html.esc(number)}</a>')
+        else:
+            parts.append(f'<span class="doc-link muted">{html.esc(number)}</span>')
+    if not parts:
+        return ""
+    return f'<span class="doc-link-list">{"".join(parts)}</span>'
+
 
 
 def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None = None) -> str:
@@ -82,13 +160,28 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
                 "</section>"
             )
         total = vote.get("total") or {}
-        docs = ", ".join(vote.get("document_numbers") or [])
-        docs_text = f" · Drucksachen {html.esc(docs)}" if docs else ""
+        document_links = document_source_links(item)
+        docs_html = render_document_links(vote.get("document_numbers") or [], document_links)
+        docs_text = f" · Drucksachen {docs_html}" if docs_html else ""
+        xlsx_url = vote.get("xlsx_url")
+        xlsx_href = None
+        if xlsx_url:
+            try:
+                xlsx_href = html.source_url(xlsx_url, "bundestag-roll-call")
+            except (html.publication.PublicationStateError, ValueError):
+                # Scraped from a free-form href on a second bundestag.de page,
+                # same class of external data as a Drucksache link: an
+                # off-allowlist value must not take the vote panel down.
+                xlsx_href = None
+        xlsx_text = (
+            f' · <a href="{html.esc(xlsx_href)}">Abstimmungsliste (XLSX)</a>' if xlsx_href else ""
+        )
         detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
+        result_badge = render_result_badge(vote)
         panels.append(
             '<section class="vote-panel">'
-            '<div class="vote-head"><div><h3>Namentliche Abstimmung</h3>'
-            f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}</p>'
+            f'<div class="vote-head"><div><h3>Namentliche Abstimmung{result_badge}</h3>'
+            f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
             f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
@@ -109,6 +202,13 @@ class VotesComponent(BaseComponent):
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
         return [render_vote_summary(ctx["item"], acquisition)]
+
+    def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
+        selection = ctx.get("selection")
+        if selection is not None and not selection.enabled("votes"):
+            return {}
+        rows = ctx["collect_votes_archive"](ctx["entries"])
+        return ctx["write_votes_archive_page"](output_dir, rows, selection)
 
 
 COMPONENT = VotesComponent(REGISTRY["votes"])

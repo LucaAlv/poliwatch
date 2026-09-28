@@ -222,7 +222,7 @@ python3 scripts/build_dip_pulse_site.py --explain-config
 
 | Enrichment | Network work |
 |---|---|
-| `votes` | Refresh roll-call totals, fraction results, and individual votes from bundestag.de |
+| `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, and the XLSX Namensliste link from bundestag.de |
 | `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
 | `mp-roster` | Refresh the complete MdB roster from DIP |
 
@@ -308,6 +308,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
 | Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed; then run an online update with the relevant `--enrich` option (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
+| `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |

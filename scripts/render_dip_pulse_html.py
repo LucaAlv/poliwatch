@@ -389,6 +389,49 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+# The Angenommen/Abgelehnt pill, shared by the dossier panel and votes/index.html.
+VOTE_RESULT_BADGE_CSS = """
+    .vote-result {
+      display:inline-flex;
+      align-items:center;
+      margin-left:8px;
+      padding:2px 8px;
+      border-radius:999px;
+      color:white;
+      font-size:12px;
+      font-weight:680;
+      vertical-align:middle;
+    }
+    .vote-result-accepted { background:#0f766e; }
+    .vote-result-rejected { background:#b91c1c; }
+    .vote-result-derived { background:transparent; border:1px solid currentColor; padding:1px 7px; }
+    .vote-result-derived.vote-result-accepted { color:#0f766e; }
+    .vote-result-derived.vote-result-rejected { color:#b91c1c; }
+    .vote-result-note { margin-left:4px; font-weight:500; }
+    /* Only the archive row turns dark; the dossier .vote-panel stays light. */
+    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
+    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+"""
+
+
+# Drucksache pills, shared by the dossier (TOP documents, vote panel) and
+# votes/index.html. A number with no known URL is a dashed, non-link pill.
+DOC_LINK_CSS = """
+    .doc-link {
+      display:inline-block;
+      margin:0 6px 6px 0;
+      padding:3px 7px;
+      border:1px solid #cfd7e3;
+      border-radius:6px;
+      background:white;
+      font-weight:650;
+    }
+    span.doc-link.muted { border-style:dashed; background:transparent; }
+    .doc-link-list { display:inline-flex; flex-wrap:wrap; gap:6px; vertical-align:baseline; }
+    .doc-link-list .doc-link { margin:0; }
+"""
+
+
 def source_url(value: Any, source: str) -> str:
     """Validate an external provenance URL before it reaches public HTML."""
     return publication.validate_external_url(str(value or ""), source)
@@ -1241,7 +1284,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
                 if first_vote_index is None:
                     first_vote_index = item.get("index")
                 for vote in votes:
-                    sitting_vote_ids.add(_vote_key(vote))
+                    sitting_vote_ids.add(vote_key(vote))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
@@ -1282,8 +1325,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
     }
 
 
-def _vote_key(vote: dict[str, Any]) -> str:
-    """Identity of a roll-call vote: its id, or (title, date) for legacy records."""
+def vote_key(vote: dict[str, Any]) -> str:
+    """Identity of a roll-call vote: its id, or (title, date) for legacy records.
+
+    Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
+    a vote can attach to two agenda items, so both dedupe on this key rather
+    than on attachment.
+    """
     if vote.get("id"):
         return str(vote["id"])
     return f"{vote.get('title') or ''}|{vote.get('date') or ''}"
@@ -3241,6 +3289,7 @@ def render_html(
     }}
     .vote-head h3 {{ margin-bottom:5px; color:#0f5f59; }}
     .vote-head p {{ margin:0; font-size:13px; }}
+{VOTE_RESULT_BADGE_CSS}
     .vote-total {{ display:grid; gap:8px; }}
     .vote-stack {{
       display:flex;
@@ -3349,15 +3398,7 @@ def render_html(
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
-    .doc-link {{
-      display:inline-block;
-      margin:0 6px 6px 0;
-      padding:3px 7px;
-      border:1px solid #cfd7e3;
-      border-radius:6px;
-      background:white;
-      font-weight:650;
-    }}
+{DOC_LINK_CSS}
     .top-documents {{
       display:flex;
       align-items:baseline;

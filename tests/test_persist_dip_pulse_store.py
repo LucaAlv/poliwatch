@@ -374,6 +374,102 @@ class SpeechFraktionTests(unittest.TestCase):
                 conn.close()
 
 
+class VoteResultColumnsTests(unittest.TestCase):
+    def test_initialize_adds_result_and_xlsx_columns(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        with conn:
+            pulse_store.initialize(conn)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(votes)")}
+        self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
+        conn.close()
+
+    def test_persist_votes_writes_result_and_xlsx_url_and_updates_on_conflict(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        vote["result_raw"] = "accepted"
+        vote["result_source"] = "official"
+        vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                row = conn.execute(
+                    "SELECT result_raw, result_source, xlsx_url FROM votes WHERE id = ?", (vote["id"],)
+                ).fetchone()
+                self.assertEqual(tuple(row), ("accepted", "official", vote["xlsx_url"]))
+
+                # A rebuild that resolves a different result overwrites it, but a
+                # run that found no XLSX link keeps the stored one.
+                vote["result_raw"] = "rejected"
+                vote["result_source"] = "derived"
+                vote["xlsx_url"] = None
+                pulse_store.persist_report(conn, report)
+                row = conn.execute(
+                    "SELECT result_raw, result_source, xlsx_url FROM votes WHERE id = ?", (vote["id"],)
+                ).fetchone()
+                self.assertEqual(tuple(row), ("rejected", "derived", "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"))
+
+                # A newly found link still replaces the stored one.
+                vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/2/vote_xls.xlsx"
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertEqual(row[0], vote["xlsx_url"])
+            finally:
+                conn.close()
+
+    def test_persist_votes_clears_the_link_on_an_explicit_ambiguous_refusal(self) -> None:
+        # xlsx_ambiguous=True means the scraper found 2+ distinct XLSX files
+        # for this vote's (date, title) and explicitly refused to guess - that
+        # refusal must win over the old stored link, unlike a plain missing
+        # xlsx_url (e.g. a duplicate attachment of the same vote), which
+        # COALESCE is meant to preserve (Codex structured review, 2026-09-27).
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertEqual(row[0], vote["xlsx_url"])
+
+                vote["xlsx_url"] = None
+                vote["xlsx_ambiguous"] = True
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertIsNone(row[0])
+            finally:
+                conn.close()
+
+    def test_persist_votes_drops_the_link_once_the_title_changed(self) -> None:
+        # The stored xlsx_url was matched by (date, title); the same guard
+        # carry_forward_vote_provenance applies at the report layer must also
+        # hold at the SQL layer, or a title correction between builds would
+        # leave a no-longer-matching link stuck on the row forever (coverage
+        # audit, 2026-09-27).
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        vote["xlsx_url"] = "https://www.bundestag.de/resource/blob/1/vote_xls.xlsx"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertEqual(row[0], vote["xlsx_url"])
+
+                vote["title"] = f"{vote['title']} (korrigiert)"
+                vote["xlsx_url"] = None
+                pulse_store.persist_report(conn, report)
+                row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
+                self.assertIsNone(row[0])
+            finally:
+                conn.close()
+
+
 class ConnectGuardTests(unittest.TestCase):
     def test_connect_refuses_a_store_with_a_nonzero_user_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

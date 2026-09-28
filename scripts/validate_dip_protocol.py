@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -194,7 +195,7 @@ def fetch_text(url: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=60) as res:
             return res.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
         raise DipError(f"Failed to fetch XML {url}: {exc}") from exc
 
 
@@ -203,7 +204,7 @@ def fetch_html(url: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=60) as res:
             return res.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
         raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
 
 
@@ -624,6 +625,265 @@ def leading_vote(counts: dict[str, int]) -> str:
     return max(cast, key=cast.get)
 
 
+_CONSTITUTIONAL_TITLE_RE = re.compile(r"Grundgesetz", re.I)
+
+
+def vote_result(
+    *, official: str | None, yes_count: int, no_count: int, title: str | None = None
+) -> tuple[str | None, str | None]:
+    """Decide a roll-call vote's outcome: ``(result_raw, result_source)``.
+
+    The bundestag.de page wins when it states one (``official`` is "accepted"
+    or "rejected", scraped from its Beschluss text by
+    ``scrape_official_vote_result``); otherwise the result is derived from the
+    counts. A tie is rejected (GOBT Section 48 Abs. 2: at a tie the question is
+    answered no). No counts at all means unknown - never guess.
+
+    A Grundgesetz amendment needs two thirds of the Bundestag's members
+    (Art. 79 Abs. 2 GG), not a Ja > Nein majority, so more Ja than Nein cannot
+    be read as acceptance there: the derived result is unknown. Ja <= Nein is
+    still a certain rejection.
+    """
+    if official in ("accepted", "rejected"):
+        return official, "official"
+    if yes_count == 0 and no_count == 0:
+        return None, None
+    if yes_count > no_count:
+        if _CONSTITUTIONAL_TITLE_RE.search(title or ""):
+            return None, None
+        return "accepted", "derived"
+    return "rejected", "derived"
+
+
+_BESCHLUSS_SECTION_RE = re.compile(
+    r'<h2 class="bt-artikel__aside-section-title">Beschluss</h2>(.*?)</div>\s*<div class="bt-artikel__aside-section">',
+    re.S,
+)
+_VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
+_VOTE_NEGATION_RE = re.compile(r"\bnicht\b", re.I)
+# Where the next vote's narration starts: its "Gesamt" or its own tally.
+_NEXT_TALLY_RE = re.compile(r"Gesamt|Ja:\s*\d")
+# A Drucksache number's shape, e.g. "21/6561". Shared with
+# parse_roll_call_list_page, which populates the document_numbers this
+# function cross-checks against.
+_DOCUMENT_NUMBER_RE = re.compile(r"\b\d{1,2}/\d{1,6}\b")
+
+
+def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
+    """The Beschluss section as paragraphs of plain-text lines: <p> and lists
+    end a paragraph; <br> and list items end a line (live pages put the tally
+    and its outcome in consecutive <li>s, "Gesamt: 716 Ja: 87 Nein: 626 ...",
+    then "Gesetzentwurf ... abgelehnt"). A blank line ("<br/><br/>") is kept as
+    "" so callers can see where one decision's block ends. Markup and entities
+    are flattened."""
+    paragraphs = []
+    for block in re.split(r"</?(?:p|ul|ol)\b[^>]*>", section_html, flags=re.I):
+        block = re.sub(r"(?:</?li\b[^>]*>\s*)+", "<br/>", block, flags=re.I)
+        lines = [strip_tags(line) for line in re.split(r"<br\s*/?>", block, flags=re.I)]
+        if any(lines):
+            paragraphs.append(lines)
+    return paragraphs
+
+
+def scrape_official_vote_result(
+    detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
+) -> str | None:
+    """bundestag.de states a vote's result only as prose in the page's
+    "Beschluss" section, never as a machine-readable field, and one page's
+    Beschluss text can narrate several related votes (a Gesetzentwurf, then its
+    Entschließungsantrag). This vote's own Ja/Nein counts are the only way to
+    find its sentence. The outcome must follow the tally directly: on the same
+    line before the next "Gesamt", or on the next line of the same paragraph
+    ("Gesamt: 562 Ja:434 Nein:128 Enthaltungen --<br/>Gesetzentwurf
+    angenommen"). Anything looser, a negation ("nicht angenommen") or both
+    outcome words returns None - the caller then derives.
+
+    A tally with no outcome line of its own (e.g. a unanimous show-of-hands
+    decision needs no "Gesamt"/"Ja: N" marker) is not a boundary _NEXT_TALLY_RE
+    recognizes, so the one-line lookahead can otherwise bleed into a completely
+    unrelated neighboring decision's outcome word. When document_numbers is
+    known and the attributed text names a *different*, specific document
+    number, refuse rather than guess - a real outcome sentence often does not
+    repeat its own Drucksache number at all (the fixture and several live
+    pages read "Gesetzentwurf angenommen" with no number), so the check must
+    not require a match, only reject a proven mismatch.
+
+    A blank line ends a vote's block: live pages separate consecutive
+    decisions with "<br/><br/>", so a tally-less neighbor (a show-of-hands item)
+    sits behind a blank line and its outcome word is never adopted; only the
+    line directly under the tally counts. Two decisions with no blank line
+    between them remain indistinguishable (not observed on any live page).
+    """
+    section_match = _BESCHLUSS_SECTION_RE.search(detail_html)
+    if not section_match:
+        return None
+    tally_re = re.compile(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b")
+    # Two votes in one section with identical tallies would be indistinguishable:
+    # only a unique match is confident enough to call official.
+    hits = [
+        (lines, index, match)
+        for lines in _beschluss_paragraphs(section_match.group(1))
+        for index, line in enumerate(lines)
+        for match in tally_re.finditer(line)
+    ]
+    if len(hits) != 1:
+        return None
+    lines, index, match = hits[0]
+    rest = lines[index][match.end() :]
+    boundary = _NEXT_TALLY_RE.search(rest)
+    # The text that belongs to this vote: the rest of its line and, only when
+    # no other vote started on that line, the next line up to the next tally.
+    text = rest[: boundary.start()] if boundary else rest
+    if not boundary and index + 1 < len(lines):
+        following = lines[index + 1]
+        next_boundary = _NEXT_TALLY_RE.search(following)
+        text = f"{text} {following[: next_boundary.start()] if next_boundary else following}"
+    words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
+    # The negation check spans both lines: "ist nicht<br/>angenommen".
+    if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
+        return None
+    # Refuse only on a proven mismatch (the text names a specific OTHER
+    # document): a genuine outcome sentence often names no number at all, so
+    # absence of our own number is not itself suspicious.
+    named_numbers = set(_DOCUMENT_NUMBER_RE.findall(text))
+    if document_numbers and named_numbers and not named_numbers & set(document_numbers):
+        return None
+    return "accepted" if words == {"angenommen"} else "rejected"
+
+
+# bundestag.de publishes each roll-call vote's PDF/XLSX Namensliste on a page
+# separate from the vote's own detail page (no XLSX link exists there at all,
+# confirmed against several live votes), keyed by nothing the roll-call list
+# shares - only a "DD.MM.YYYY: <title>" link label. Matching is therefore by
+# (date, normalized title), never a derived URL pattern (blob ids are opaque
+# and the "_xls"/"-xls" filename suffix is inconsistent across sittings).
+DEFAULT_NAMENSLISTEN_LIST_ID = "462112-462112"
+NAMENSLISTEN_LIST_ID_ENV = "BT_NAMENSLISTEN_LIST_ID"
+NAMENSLISTEN_PAGE_LIMIT = 200
+
+
+def namenslisten_list_url(list_id: str | None = None) -> str:
+    # Like the roll-call list id, the catalog id can change per Wahlperiode.
+    list_id = list_id or os.environ.get(NAMENSLISTEN_LIST_ID_ENV) or DEFAULT_NAMENSLISTEN_LIST_ID
+    return (
+        f"{BT_BASE_URL}/ajax/filterlist/de/parlament/plenum/abstimmung/liste/{list_id}"
+        f"?offset=0&limit={NAMENSLISTEN_PAGE_LIMIT}"
+    )
+
+
+_NAMENSLISTEN_ROW_RE = re.compile(
+    r'<a[^>]*class="e-linkListItem__anchor"[^>]*>\s*<span>\s*(\d{2}\.\d{2}\.\d{4}):\s*(.*?)\s*</span>',
+    re.S,
+)
+_NAMENSLISTEN_XLSX_RE = re.compile(r'href="([^"]+\.xlsx)"')
+
+
+def _is_publishable_xlsx_url(url: str) -> bool:
+    # Checked at scrape time with the same allowlist render uses: an off-host
+    # or non-https href would otherwise be cached in the dossier JSON and fail
+    # every later (offline) render.
+    try:
+        publication.validate_external_url(url, "bundestag-roll-call")
+    except (publication.PublicationStateError, ValueError):
+        # urlsplit raises ValueError on e.g. "https://[broken"; an optional link
+        # must never take the vote's other data down with it.
+        return False
+    return True
+
+
+def namenslisten_blocks(html_text: str) -> list[str]:
+    # Any row div starts a new block, regardless of attribute order or extra
+    # classes (\b matches the class as a whole word anywhere in class=""):
+    # otherwise a row without an XLSX would run into the next row and take
+    # its file, or a markup change that reorders id/class would merge rows.
+    return re.split(r'(?=<div\b[^>]*\bclass="[^"]*\be-linkListItem\b[^"]*")', html_text)[1:]
+
+
+def parse_namenslisten_page(html_text: str) -> list[dict[str, str | None]]:
+    """Each row on the Namenslisten page names one vote and links its XLSX
+    export next to its PDF; there is no id shared with the roll-call vote
+    pages, so every row is identified only by its "DD.MM.YYYY: <title>" text.
+    """
+    entries: list[dict[str, str | None]] = []
+    for block in namenslisten_blocks(html_text):
+        row_match = _NAMENSLISTEN_ROW_RE.search(block)
+        xlsx_match = _NAMENSLISTEN_XLSX_RE.search(block)
+        if not row_match:
+            continue
+        date = iso_date(row_match.group(1))
+        if not date:
+            continue
+        # A row without a publishable file is kept with xlsx_url None: it still
+        # counts when deciding whether a (date, title) key is ambiguous.
+        xlsx_url = None
+        if xlsx_match:
+            xlsx_href = unescape(xlsx_match.group(1))
+            candidate = xlsx_href if xlsx_href.startswith("http") else f"{BT_BASE_URL}{xlsx_href}"
+            xlsx_url = candidate if _is_publishable_xlsx_url(candidate) else None
+        entries.append({"date": date, "title": strip_tags(row_match.group(2)), "xlsx_url": xlsx_url})
+    return entries
+
+
+# The Namenslisten list is the same page for every vote, so one build process
+# fetches it once. A failed fetch is not memoized: the next vote retries.
+_namenslisten_entries: list[dict[str, str | None]] | None = None
+
+
+def namenslisten_entries() -> list[dict[str, str | None]]:
+    global _namenslisten_entries
+    if _namenslisten_entries is None:
+        try:
+            html_text = fetch_html(namenslisten_list_url())
+        except DipError:
+            return []
+        entries = parse_namenslisten_page(html_text)
+        raw_rows = len(namenslisten_blocks(html_text))
+        if not entries:
+            # A placeholder page or drifted markup: warn, and let the next vote
+            # retry rather than caching "no links" for the whole build.
+            print("warning: Namenslisten page parsed to 0 rows; no XLSX links this time", file=sys.stderr)
+            return []
+        if raw_rows >= NAMENSLISTEN_PAGE_LIMIT:
+            print(
+                f"warning: Namenslisten page returned {raw_rows} rows (the request limit); "
+                "votes older than the last row get no XLSX link",
+                file=sys.stderr,
+            )
+        _namenslisten_entries = entries
+    return _namenslisten_entries
+
+
+def title_match_key(value: str | None) -> str:
+    return re.sub(r"[^0-9a-zA-Z]+", "", value or "").lower()
+
+
+def find_roll_call_xlsx_url(
+    date: str | None, title: str | None, namenslisten: list[dict[str, str | None]]
+) -> str | None:
+    """Match a vote to its XLSX export by (date, normalized title): the two
+    bundestag.de pages hyphenate the same title slightly differently, so
+    matching compares letters and digits only. No match, or more than one
+    distinct XLSX for the same key, returns None - never guess a URL.
+    """
+    matches = roll_call_xlsx_matches(date, title, namenslisten)
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def roll_call_xlsx_matches(
+    date: str | None, title: str | None, namenslisten: list[dict[str, str | None]]
+) -> set[str | None]:
+    target_title = title_match_key(title)
+    if not date or not target_title:
+        return set()
+    # A fileless row (xlsx_url None) is a member too: a filed row sharing its
+    # key may belong to that other vote, so {url, None} is ambiguous, not unique.
+    return {
+        entry["xlsx_url"]
+        for entry in namenslisten
+        if entry["date"] == date and title_match_key(entry["title"]) == target_title
+    }
+
+
 def configured_roll_call_list_id(value: str | None = None) -> str:
     return value or os.environ.get(ROLL_CALL_LIST_ID_ENV) or DEFAULT_ROLL_CALL_LIST_ID
 
@@ -659,7 +919,7 @@ def parse_roll_call_list_page(html_text: str) -> list[dict[str, Any]]:
         heading = strip_tags(heading_matches[-1]) if heading_matches else ""
         if topic and heading.startswith(topic):
             heading = clean_text(heading[len(topic) :])
-        document_numbers = sorted(set(re.findall(r"\b\d{1,2}/\d{1,6}\b", strip_tags(block))))
+        document_numbers = sorted(set(_DOCUMENT_NUMBER_RE.findall(strip_tags(block))))
         vote_id = vote_id_match.group(1)
         entries.append(
             {
@@ -771,6 +1031,25 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     enriched_vote = dict(vote)
     enriched_vote["fractions"] = parse_fraction_votes(detail_html)
     enriched_vote["members"] = parse_member_votes(member_html)
+
+    total = vote.get("total") or {}
+    yes_count = int(total.get("yes") or 0)
+    no_count = int(total.get("no") or 0)
+    official = scrape_official_vote_result(detail_html, yes_count, no_count, vote.get("document_numbers"))
+    result_raw, result_source = vote_result(
+        official=official, yes_count=yes_count, no_count=no_count, title=vote.get("title")
+    )
+    enriched_vote["result_raw"] = result_raw
+    enriched_vote["result_source"] = result_source
+
+    # The XLSX link is optional provenance from a second page: a failed fetch
+    # leaves it unknown rather than discarding the fractions/members/result
+    # already fetched for this vote.
+    xlsx_matches = roll_call_xlsx_matches(vote.get("date"), vote.get("title"), namenslisten_entries())
+    enriched_vote["xlsx_url"] = next(iter(xlsx_matches)) if len(xlsx_matches) == 1 else None
+    # A successful fetch that found two files for this vote is a refusal, not
+    # missing data: carry_forward_vote_provenance must not restore an old link.
+    enriched_vote["xlsx_ambiguous"] = len(xlsx_matches) > 1
     return enriched_vote
 
 

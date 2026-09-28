@@ -248,6 +248,140 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual(item["xml_speakers"][0]["speaker"]["abgeordnetenwatch"], cached_profile)
         self.assertIsNot(item["votes"], previous["agenda_items"][0]["votes"])
 
+    def test_rescan_keeps_a_previously_found_xlsx_link(self) -> None:
+        total = {"yes": 434, "no": 128, "abstain": 0, "absent": 68}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "derived", "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "derived"))
+
+    def test_rescan_never_restores_a_stale_official_result_over_a_fresh_derived_one(self) -> None:
+        # A parser fix (e.g. the "nicht angenommen" negation guard) can make a
+        # rescan correctly refuse a match that an older parser wrongly called
+        # official. The cached "official" value must stay dead, even though
+        # this vote's total is unchanged - matching totals is exactly the
+        # normal case for a vote whose count never changes between builds.
+        total = {"yes": 100, "no": 400}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "rejected", "result_source": "derived",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("rejected", "derived"))
+
+    def test_rescan_does_not_carry_an_official_result_over_changed_counts(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": {"yes": 1, "no": 2}, "result_raw": "rejected", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": {"yes": 3, "no": 2}, "result_raw": "accepted", "result_source": "derived",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/2/new_xls.xlsx",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "derived"))
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/2/new_xls.xlsx")
+
+    def test_carry_forward_keeps_a_freshly_scraped_official_result_over_a_stale_one(self) -> None:
+        # carry_forward_vote_provenance never touches result_raw/result_source
+        # at all: a fresh official result stays exactly as this run scraped it,
+        # even when a *different* previous official value exists with matching
+        # counts.
+        total = {"yes": 300, "no": 200}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "rejected", "result_source": "official",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual((vote["result_raw"], vote["result_source"]), ("accepted", "official"))
+
+    def test_carry_forward_with_no_existing_report_is_a_safe_no_op(self) -> None:
+        report = {"agenda_items": [{"votes": [{"id": "1007", "total": {"yes": 1, "no": 0}}]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, None)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertNotIn("xlsx_url", vote)
+        self.assertEqual(vote["total"], {"yes": 1, "no": 0})
+
+    def test_carry_forward_matches_id_less_legacy_votes_by_title_and_date(self) -> None:
+        # pulse_html.vote_key falls back to "title|date" when a vote has no id
+        # (legacy records predating the roll-call id field); carry-forward must
+        # still find the match through that composite key.
+        previous = {"agenda_items": [{"votes": [{
+            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+
+    def test_carry_forward_keeps_an_xlsx_link_across_a_cosmetic_title_repunctuation(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Bundeswehr-Einsatz (KFOR)", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Bundeswehreinsatz  (KFOR)", "total": {"yes": 1, "no": 0},
+            "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertEqual(report["agenda_items"][0]["votes"][0]["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+
+    def test_carry_forward_drops_an_xlsx_link_once_the_title_changed(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Alt", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Neu", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
+
+    def test_carry_forward_respects_a_fresh_ambiguous_xlsx_refusal(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "T", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "T", "total": {"yes": 1, "no": 0},
+            "xlsx_url": None, "xlsx_ambiguous": True,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertIsNone(report["agenda_items"][0]["votes"][0]["xlsx_url"])
+
+    def test_reuse_existing_dossier_enrichments_carries_vote_provenance_forward(self) -> None:
+        # Pin the wiring, not just the standalone function: the xlsx_url
+        # carries forward, but the fresh scrape's own result_source is never
+        # overwritten by a stale cached one.
+        total = {"yes": 300, "no": 200}
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "official",
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "total": dict(total), "result_raw": "accepted", "result_source": "derived", "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.reuse_existing_dossier_enrichments(report, previous, votes=False, profiles=False)
+        vote = report["agenda_items"][0]["votes"][0]
+        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+        self.assertEqual(vote["result_source"], "derived")
+
     def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
@@ -911,6 +1045,11 @@ class CurrentPulseOrderTests(unittest.TestCase):
             )
             self.assertTrue((output_dir / "bills" / "index.html").exists())
             self.assertTrue((output_dir / "abgeordnete" / "index.html").exists())
+            # render_site() pins publication_selection() regardless of the
+            # features argument passed in (see the comment at its top), so the
+            # votes archive - like bills and abgeordnete - is always written,
+            # not gated by the reduced default_selection() passed here.
+            self.assertTrue((output_dir / "votes" / "index.html").exists())
             self.assertIn("--no-persist", (output_dir / "database.html").read_text(encoding="utf-8"))
             rendered = "\n".join(path.read_text(encoding="utf-8") for path in output_dir.rglob("*.html"))
             self.assertIn('href="bills/index.html"', rendered)
@@ -1994,9 +2133,322 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
         unnumbered["page_path"] = Path("plenarprotokoll-21-99.html")
         stats = pulse_html.week_stats((2026, 24), [unnumbered])
         self.assertEqual(stats["vote_sittings"], [("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2, 1)])
-        self.assertEqual(pulse_html._vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
-        self.assertEqual(pulse_html._vote_key({}), "|")
-        self.assertEqual(pulse_html._vote_key({"id": 42, "title": "x"}), "42")
+        self.assertEqual(pulse_html.vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
+        self.assertEqual(pulse_html.vote_key({}), "|")
+        self.assertEqual(pulse_html.vote_key({"id": 42, "title": "x"}), "42")
+
+
+class VotesArchiveTests(unittest.TestCase):
+    def _entry(self, datum: str, document_number: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        slug = document_number.replace("/", "-")
+        return {
+            "report": {
+                "protocol": {"datum": datum, "dokumentnummer": document_number, "titel": "T"},
+                "agenda_items": items,
+            },
+            "page_path": Path(f"plenarprotokoll-{slug}.html"),
+        }
+
+    def _item(self, index: int, votes: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"index": index, "votes": votes, "xml_drucksachen": [], "api": {}}
+
+    def test_collect_deduplicates_a_vote_attached_to_two_agenda_items(self) -> None:
+        shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [shared]), self._item(2, [shared])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual(len(rows), 1)
+
+    def test_collect_skips_an_id_less_vote_like_the_store_does(self) -> None:
+        # persist_votes drops a vote without an id; the archive must agree so
+        # its row count stays equal to SELECT count(*) FROM votes.
+        legacy = {"date": "2026-06-10", "title": "Ohne Id", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [legacy])])
+        self.assertEqual(build_dip_pulse_site.collect_votes_archive([entry]), [])
+
+    def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-archive-count data-total="1" aria-live="polite"><strong>1</strong> Abstimmungen</p>', markup)
+        self.assertNotIn('class="summary-grid"', markup)
+        self.assertIn("von ${total} Abstimmungen", markup)
+
+    def test_tied_fraktion_is_not_a_ja_majority(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": [
+            {"name": "fraktionslos", "counts": {"yes": 1, "no": 1, "abstain": 0}, "leading_vote": "yes"},
+            {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}, "leading_vote": "yes"},
+            {"name": "AfD", "counts": {"yes": 0, "no": 80, "abstain": 0}, "leading_vote": "no"},
+        ]}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        self.assertEqual(rows[0]["fraction_positions"], {"fraktionslos": "tie", "SPD": "yes", "AfD": "no"})
+
+    def test_ja_plurality_below_half_of_the_votes_is_not_a_ja_majority(self) -> None:
+        fraction = {"counts": {"yes": 40, "no": 35, "abstain": 25}, "leading_vote": "yes"}
+        self.assertEqual(build_dip_pulse_site._fraction_position(fraction), "tie")
+
+    def test_rows_sort_reverse_chronological(self) -> None:
+        older = self._entry(
+            "2026-06-01", "21/80", [self._item(1, [{"id": "v-old", "date": "2026-06-01", "title": "Alt"}])]
+        )
+        newer = self._entry(
+            "2026-06-10", "21/82", [self._item(1, [{"id": "v-new", "date": "2026-06-10", "title": "Neu"}])]
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([older, newer])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["v-new", "v-old"])
+
+    def test_procedure_type_comes_from_the_matching_linked_drucksache(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        item = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
+
+    def test_row_count_matches_the_persisted_store(self) -> None:
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        entry = {"report": report, "page_path": Path("plenarprotokoll-x.html")}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                store_count = conn.execute("SELECT count(*) FROM votes").fetchone()[0]
+            finally:
+                conn.close()
+        self.assertEqual(len(rows), store_count)
+
+    def test_write_page_is_skipped_when_the_votes_feature_is_off(self) -> None:
+        from features import Selection
+
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        ctx = {
+            "selection": Selection(frozenset({"bills"})),
+            "entries": [entry],
+            "collect_votes_archive": build_dip_pulse_site.collect_votes_archive,
+            "write_votes_archive_page": build_dip_pulse_site.write_votes_archive_page,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            result = build_dip_pulse_site.votes_feature.COMPONENT.write_pages(output_dir, ctx)
+            self.assertEqual(result, {})
+            self.assertFalse((output_dir / "votes" / "index.html").exists())
+
+        # Sanity: the same rows produce a page when the feature is enabled.
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            output = build_dip_pulse_site.write_votes_archive_page(output_dir, rows)
+            self.assertEqual(output["count"], 1)
+            self.assertTrue((output_dir / "votes" / "index.html").exists())
+
+    def test_procedure_type_falls_back_to_em_dash_when_no_drucksache_matches(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/9999"]}
+        item = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(rows[0]["procedure_type"], "–")
+
+    def test_collect_handles_the_legacy_singular_vote_key(self) -> None:
+        vote = {"id": "v-legacy", "date": "2026-06-10", "title": "Legacy"}
+        item = {"index": 1, "vote": vote, "xml_drucksachen": [], "api": {}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["vote"]["id"], "v-legacy")
+
+    def test_collect_ignores_entries_with_no_report(self) -> None:
+        rows = build_dip_pulse_site.collect_votes_archive([{"page_path": Path("x.html")}, {"report": None}])
+        self.assertEqual(rows, [])
+
+    def test_collect_leaves_href_none_when_page_path_is_missing(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
+        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertIsNone(rows[0]["href"])
+
+    def test_collect_sorts_same_date_ties_by_id_descending(self) -> None:
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "10", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "9", "date": "2026-06-10", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["10", "9"])
+
+    def test_collect_sorts_same_date_non_numeric_ids_lexically_descending(self) -> None:
+        # _vote_id_sort_key's non-digit branch ((-1, text)) is only ever hit
+        # by legacy records predating the roll-call id field; two of them
+        # sharing a date is the only case that actually compares two "-1"
+        # tuples against each other instead of against a numeric id.
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "a-legacy", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "b-legacy", "date": "2026-06-10", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual([row["vote"]["id"] for row in rows], ["b-legacy", "a-legacy"])
+
+    def test_render_index_shows_empty_state_message_when_there_are_no_rows(self) -> None:
+        markup = build_dip_pulse_site.render_votes_archive_index([])
+        self.assertIn("keine namentlichen Abstimmungen erkannt", markup)
+        self.assertNotIn('class="archive-row"', markup)
+
+    def test_render_index_groups_multiple_months_under_separate_headers(self) -> None:
+        june = self._entry(
+            "2026-06-10", "21/82", [self._item(1, [{"id": "v-june", "date": "2026-06-10", "title": "Juni"}])]
+        )
+        may = self._entry(
+            "2026-05-01", "21/80", [self._item(1, [{"id": "v-may", "date": "2026-05-01", "title": "Mai"}])]
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([may, june])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertEqual(markup.count('class="archive-month"'), 2)
+        self.assertIn("Juni 2026", markup)
+        self.assertIn("Mai 2026", markup)
+        # Reverse-chronological: June's header must appear before May's.
+        self.assertLess(markup.index("Juni 2026"), markup.index("Mai 2026"))
+
+    def test_render_index_shows_one_header_for_several_votes_in_the_same_month(self) -> None:
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [
+                self._item(1, [{"id": "v1", "date": "2026-06-10", "title": "A"}]),
+                self._item(2, [{"id": "v2", "date": "2026-06-05", "title": "B"}]),
+            ],
+        )
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertEqual(markup.count('class="archive-month"'), 1)
+        self.assertEqual(markup.count('class="archive-row"'), 2)
+
+    def test_render_index_shows_fraktion_chips_and_positions_json_for_filtering(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [{"name": "SPD", "leading_vote": "yes"}, {"name": "CDU/CSU", "leading_vote": "no"}],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-fraktion-chip="SPD"', markup)
+        self.assertIn('data-fraktion-chip="CDU/CSU"', markup)
+        positions_match = re.search(r"data-fraktion-positions='([^']*)'", markup)
+        self.assertIsNotNone(positions_match)
+        import html as html_lib
+
+        positions = json.loads(html_lib.unescape(positions_match.group(1)))
+        self.assertEqual(positions["SPD"], "yes")
+        self.assertEqual(positions["CDU/CSU"], "no")
+
+    def test_render_index_chip_order_puts_fraktionslos_last(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [
+                {"name": "fraktionslos", "leading_vote": "yes"},
+                {"name": "SPD", "leading_vote": "yes"},
+                {"name": "AfD", "leading_vote": "no"},
+            ],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        chip_order = re.findall(r'data-fraktion-chip="([^"]+)"', markup)
+        self.assertEqual(chip_order, ["AfD", "SPD", "fraktionslos"])
+
+    def test_render_index_omits_chip_section_when_no_fraction_positions_exist(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T"}
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertNotIn('class="archive-filters"', markup)
+        # A concrete chip button has data-fraktion-chip="<name>"; the embedded
+        # filter script also mentions the bare attribute selector, so match on
+        # the quote to tell an actual chip apart from that script text.
+        self.assertNotIn('data-fraktion-chip="', markup)
+
+    def test_render_index_badge_and_docs_render_and_title_links_when_href_is_present(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "result_raw": "accepted",
+            "document_numbers": ["21/6561"],
+        }
+        item = {
+            "index": 3,
+            "votes": [vote],
+            "xml_drucksachen": [
+                {"dokumentnummer": "21/6561", "url": "https://dserver.bundestag.de/btd/21/065/2106561.pdf"}
+            ],
+            "api": {},
+        }
+        entry = self._entry("2026-06-10", "21/82", [item])
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('vote-result-accepted vote-result-derived"', markup)
+        self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
+        self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
+        # votes/index.html sits one level down, so the dossier link climbs out.
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#top-3">T</a>', markup)
+
+    def test_render_index_carries_the_site_foundation_and_a_working_hidden_rule(self) -> None:
+        markup = build_dip_pulse_site.render_votes_archive_index([])
+        # Same base stylesheet as bills/abgeordnete: tokens, shell width, header.
+        self.assertIn("--ink:#171a1f", markup)
+        self.assertIn(".shell { max-width:1280px", markup)
+        # display:grid on .archive-row would otherwise beat the UA [hidden] rule
+        # and the Fraktion filter would hide nothing.
+        self.assertIn(".archive-row[hidden], .archive-month[hidden] { display:none; }", markup)
+        # Chip colors are hardcoded for light mode; dark mode needs themed ones.
+        self.assertIn(':root[data-theme="dark"] .chip.is-active { background:var(--surface-2)', markup)
+
+    def test_render_index_chips_expose_pressed_state_and_months_are_filterable(self) -> None:
+        vote = {
+            "id": "v1",
+            "date": "2026-06-10",
+            "title": "T",
+            "fractions": [{"name": "SPD", "leading_vote": "yes"}],
+        }
+        entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
+        markup = build_dip_pulse_site.render_votes_archive_index(build_dip_pulse_site.collect_votes_archive([entry]))
+        self.assertIn('aria-pressed="false" data-fraktion-chip="SPD"', markup)
+        self.assertIn('<h2 class="archive-month" data-month="Juni 2026">', markup)
+        self.assertIn('<article class="archive-row" data-row data-month="Juni 2026"', markup)
+
+    def test_outcome_columns_are_labelled_derived_in_the_data_dictionary(self) -> None:
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "result_raw"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "result_source"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "xlsx_url"), "bundestag.de")
+
+    def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
+        self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")
+        self.assertEqual(build_dip_pulse_site._month_label("2026-13-10"), "Unbekanntes Datum")
+        self.assertEqual(build_dip_pulse_site._month_label("2026-12-10"), "Dezember 2026")
+
+    def test_render_index_title_is_plain_text_when_href_is_missing(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "Ohne Link"}
+        entry = {"report": {"protocol": {"datum": "2026-06-10"}, "agenda_items": [self._item(1, [vote])]}}
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn("Ohne Link", markup)
+        self.assertNotRegex(markup, r'<a href="[^"]*">Ohne Link</a>')
 
 
 class BuildClockAndWeekTests(unittest.TestCase):

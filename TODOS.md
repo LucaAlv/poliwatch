@@ -273,6 +273,18 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A concrete deployment/serving lifecycle
 
+### Global header nav links to a page a build didn't write when its feature is off
+
+**What:** `render_global_header` (`scripts/render_dip_pulse_html.py`) accepts a `features: Selection` parameter but never uses it to filter `NAV_ITEMS` — every nav item renders unconditionally. `bills`, `abgeordnete`/`mp-pages`, `fakten`/`facts`, `database`/`store`, and now `votes` all skip writing their page when their feature is deselected (`write_pages`/`write_*_pages` returning early), so a build that deselects any of them still links every page's header to a file that was never written — a sitewide dead link for that nav entry.
+
+**Why:** Found by Claude's adversarial `/ship` review (2026-09-27) while checking the `votes` nav entry this branch adds; the same gap already existed for the other four items before this diff, so this is a pre-existing pattern the branch extended consistently rather than introduced. The real published site always builds with every feature enabled (`publication_selection() = all_selection()`), so this has never actually produced a dead link in production.
+
+**Context:** Fix once for all five items: filter `NAV_ITEMS` by a nav-key → component-id map (`votes`→`votes`, `bills`→`bills`, `abgeordnete`→`mp-pages`, `fakten`→`facts`, `database`→`store`) and call `features.enabled(component_id)` per item before rendering.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Community
 
 ### Choose and document repository license and contribution governance
@@ -291,18 +303,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, München; 169 posts for WP 21 as of 2026-09-19). Their counting rules live on [/methodik/](https://plenarwatch.de/methodik/); read it before touching any item below rather than re-deriving the rule here. Coverage audit of our code on 2026-09-19: their vote tallies, per-sitting summaries, MP pages and bill tracking we already have (`scripts/features/votes.py`, `summaries.py`, `mp-pages`, `bills`); everything else in their nav (Feed, Zwischenrufe, Präsenz, Muster, Bundestag, Methodik) is a gap or partial. Excluded on purpose: Telegram/YouTube/Instagram and the "Unterstützen" page (distribution, not product).
 
-### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
-
-**What:** Each roll-call panel shows the whole-vote result ("Angenommen" / "Abgelehnt", derived from `yes_count` vs `no_count`), every entry of `document_numbers` as a link to its DIP Drucksache, and a second source link to the bundestag.de XLSX export next to the existing detail-page link. Done when all three render on every vote in an offline rebuild and a test covers a tie/abstention-heavy vote.
-
-**Why:** `render_vote_summary` (`scripts/features/votes.py:12`) renders per-fraction tallies and a per-fraction `leading_vote` pill but never says whether the motion passed; Drucksache numbers are plain text (`votes.py:61-62`); `detail_url` is the HTML page (`roll_call_vote_url`, `scripts/validate_dip_protocol.py:584`), and `grep -rn xlsx` is empty. Plenarwatch leads every post with the badge and closes with the XLSX, and their Präsenz/Muster pages are built from that XLSX, so the link is also the receipt for items further down.
-
-**Context:** Outcome logic is one function over `votes` columns; keep it in `validate_dip_protocol.py` next to `leading_vote` (line 564) so the store carries it. The XLSX URL pattern is visible on any bundestag.de Abstimmung page (the same page `fetch_roll_call_vote_detail`, line 711, already scrapes). Inversion of the badge for Beschlussempfehlungen is the next item, so name the column `result_raw`, never "passed".
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** None
-
 ### Inverted-vote reading for Beschlussempfehlungen ("Ja = Antrag ablehnen")
 
 **What:** When the voted document is a committee recommendation to reject a motion, the panel states the reversal in one procedural sentence, prints the legend `Ja = Antrag ablehnen · Nein = Antrag annehmen`, and derives each fraction's position ("für den Antrag" / "gegen den Antrag" / "geteilt") from its `leading_vote`; raw counts stay untouched. Done when the Übergewinnsteuer-style case (plenarwatch post `ablehnung-eines-antrags-zur-uebergewinnsteuer-2026-04-24`) renders the derived positions and a test pins the inversion.
@@ -315,17 +315,41 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P1
 **Depends on:** Vote outcome badge
 
-### Votes archive across sittings (`votes/index.html`)
+### Majority rule for derived vote outcomes (Art. 79(2), 67, 68 GG)
 
-**What:** One page listing every roll-call vote in the store, reverse-chronological and grouped by month, each row with date, title, outcome badge, Drucksache and the procedure type; filter chips for Fraktion (majority position) and, once tags exist, Politikfeld. Done when the page is in `NAV_ITEMS` (`scripts/features/__init__.py:43-51`), gated by the `votes` feature, and lists the same count as `SELECT count(*) FROM votes`.
+**What:** `validate_dip_protocol.vote_result` derives "Angenommen"/"Abgelehnt" from a plain yes>no majority of votes cast. A Grundgesetz amendment needs two thirds of the members (Art. 79(2) GG); Kanzlerwahl, konstruktives Misstrauensvotum and Vertrauensfrage need an absolute majority of the members (Art. 63, 67, 68 GG). Thread the applicable threshold (from the Vorgang/Drucksache type) into `vote_result`, or return unknown for those vote types when no official result was scraped. Done when a test pins a GG amendment with yes>no but below two thirds of members as "Abgelehnt".
 
-**Why:** Our votes are only reachable inside the sitting dossier or one MP's page; `render_votes_card` (`scripts/build_dip_pulse_site.py:2821`) aggregates the current week only. Plenarwatch's `/archiv/` (169 items, topic × Fraktion × procedure filters) is the page a reader lands on from search.
+**Why:** Found by the /ship red-team review of the badge (2026-09-26). Latent: every Grundgesetz vote in the real store is labelled correctly today, but a high-absence sitting would mislabel one silently.
 
-**Context:** Rows are a query over `votes` joined to `vote_fractions`; the dossier already renders the row body, so this is a second renderer over the same data, like the RSS item under Puls. Filters are client-side `data-*` attributes, no JS framework.
+**Context:** The official-result scrape already wins when bundestag.de states the outcome; the gap is only in the derived fallback.
 
-**Effort:** M
+**Effort:** S
 **Priority:** P2
 **Depends on:** Vote outcome badge
+
+### A tally-less neighboring decision with no document number of its own can still steal the official badge
+
+**What:** `scrape_official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
+
+**Why:** Found by the /ship red-team review (2026-09-27), same family as the Beschlussempfehlung-inversion badge caveat already shipped in 85411a4 ("acceptable only while the site is not public"). Latent: every real "Beschluss" narration checked so far — the project's own fixture and every live bundestag.de page fetched during this and the prior review round — attaches a document number to every decision it mentions, including tally-less ones, so this specific shape has not been observed on real data. A cheap fix was explored and rejected: requiring a document-number match whenever the lookahead line starts with a proposition keyword (Gesetzentwurf/Beschlussempfehlung/Entschließungsantrag/...) also rejects the fixture's own legitimate "Gesetzentwurf angenommen" case, which has the identical shape.
+
+**Context:** The badge already discloses "(berechnet)" for any non-official result, so a bleed here would show a false-confidence "Laut Beschluss auf bundestag.de" label with the wrong outcome rather than the honest derived caveat — worse than the inversion caveat, which at least states the right raw counts.
+
+**Update (2026-09-28):** narrowed: the outcome is now only read from the line directly under the tally (a blank "<br/><br/>" line ends the block), which closes the blank-line-separated shape. Still open: two decisions with no blank line between them.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
+
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `scrape_official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+
+**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Politikfeld tags on Tagesordnungspunkte and votes
 
@@ -448,6 +472,14 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Depends on:** Fraktionsblöcke, Deterministic validators
 
 ## Completed
+
+### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
+
+**Completed:** v0.7.0.0 (2026-09-26). Badge ("Angenommen"/"Abgelehnt") from `result_raw`/`result_source` (official bundestag.de wording when scrapable, otherwise derived with a tie counting as rejected), every `document_numbers` entry linked to its Drucksache via the XML/DIP objects that already matched the vote, and a scraped XLSX link (bundestag.de publishes it on a separate Namenslisten page, matched by date and title — never a derived URL). Real store (2026-09-26): 217/217 votes backfilled as derived (166 accepted, 51 rejected, 0 ties); 12/217 XLSX links matched from one live Namenslisten fetch.
+
+### Votes archive across sittings (`votes/index.html`)
+
+**Completed:** v0.7.0.0 (2026-09-26). Reverse-chronological, grouped by month, with client-side Fraktion chips (majority "yes" position); gated by the `votes` feature and added to `NAV_ITEMS`. Row count verified equal to `SELECT count(*) FROM votes`.
 
 ### Current-TOP highlight in the ranking sidebar
 
