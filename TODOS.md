@@ -354,6 +354,34 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P2
 **Depends on:** None
 
+### Combined Antrag titles render as one four-line bold block on puls.html
+
+**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+
+**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Week comparison with no basis still draws every n/a slot
+
+**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. Tests at `tests/test_build_dip_pulse_site.py` (lines ~1438, 1612, 2823) assert the chips today, so they change with this.
+
+**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Staleness of the "Aktueller Puls" week is only gray meta text
+
+**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line. Nested cards (section > panel > tile) and Inter as the display face are the other open notes; neither changed.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
