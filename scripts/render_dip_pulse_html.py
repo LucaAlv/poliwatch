@@ -729,6 +729,10 @@ def global_header_styles() -> str:
       border-color:var(--line) !important;
       color:var(--ink) !important;
     }
+    :root[data-theme="dark"] :is(.site-nav a:hover, .site-nav summary:hover) {
+      background:var(--surface-2) !important;
+      border-color:var(--blue) !important;
+    }
     :root[data-theme="dark"] :is(.site-nav a[aria-current="page"], .site-nav-more[data-active] summary) {
       background:var(--blue-soft) !important;
       border-color:var(--blue) !important;
