@@ -148,7 +148,7 @@ Important generated files:
 | `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
 | `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
-| `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
+| `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
@@ -397,9 +397,9 @@ Common options:
 | `--include-dev-view` | off | Include developer markup only in a separate, explicit output directory |
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
-| `--limit N` | `0` | Number of recent Bundestag protocols in the catalog; `0` means all available |
+| `--limit N` | `0` | Acquire only the newest N protocols of `--protocol-wahlperiode`; `0` means no cap. The catalog is always fetched whole |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
-| `--document-number NUM` | none | Restrict catalog/detail generation to one protocol; can be repeated |
+| `--document-number NUM` | none | Acquire only this protocol; can be repeated. The catalog and every cached dossier are kept |
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |

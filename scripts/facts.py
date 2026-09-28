@@ -15,8 +15,11 @@ The rule (plan D5/D10/D12/D20/D21/D24,
 * Each metric yields at most one observation per period -- the period's max or
   min over its candidate rows, or their count for a counting metric -- and only
   when the period is complete for the metric's coverage domain (votes: every
-  sitting's vote acquisition is ``complete``; speeches: every sitting's XML was
-  parsed). Incomplete periods yield no observation and never enter anyone's
+  sitting's vote acquisition is ``complete`` and stamped; speeches: every
+  sitting's XML was parsed). Every sitting DIP lists for the period must be
+  there: periods are judged against the DIP catalog, not against the store, so
+  a sitting whose dossier failed or was never built makes its period
+  incomplete. Incomplete periods yield no observation and never enter anyone's
   history.
 * The percentile is the share of *prior* observations the value strictly beats
   in the metric's direction (max: greater, min: smaller). Prior means strictly
@@ -545,7 +548,11 @@ def validate_registry(registry: Iterable[Mapping[str, Any]] = REGISTRY) -> None:
 class Week:
     key: tuple[int, int]
     wahlperiode: int
+    #: The sittings the store holds for this week.
     protocols: tuple[dict[str, Any], ...]
+    #: The sittings DIP's catalog lists for this week (document number + date),
+    #: persisted or not. Empty when no authoritative catalog was given.
+    expected: tuple[dict[str, str], ...] = ()
 
     @property
     def label(self) -> str:
@@ -566,7 +573,8 @@ class Week:
 
     @property
     def first_date(self) -> date:
-        return date.fromisoformat(str(self.protocols[0]["date"])[:10])
+        source = self.protocols or self.expected
+        return date.fromisoformat(str(source[0]["date"])[:10])
 
 
 def week_label(key: tuple[int, int]) -> str:
@@ -595,9 +603,109 @@ def load_protocols(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
-def sitting_weeks(protocols: Iterable[Mapping[str, Any]]) -> list[Week]:
-    """Group protocols into ISO sitting weeks, oldest first."""
+CATALOG_FILENAME = "plenarprotokoll-catalog.json"
+
+
+@dataclass(frozen=True)
+class SittingCatalog:
+    """The sittings DIP lists: what a period is judged against.
+
+    The store holds only sittings that got a dossier, so judging a period by
+    the store alone cannot see a sitting whose dossier failed or was never
+    built. ``authoritative`` says the list was fetched in full for this build
+    (not cut by --limit or --document-number, and not an older narrowed
+    cache); without it no period can be called complete. ``unusable`` counts
+    catalog entries with no usable document number or date, which cannot be
+    placed in a period.
+    """
+
+    sittings: tuple[dict[str, str], ...]
+    authoritative: bool
+    unusable: int = 0
+    fetched_at: str | None = None
+
+
+def sitting_catalog(
+    protocols: Iterable[Mapping[str, Any]], *, authoritative: bool, fetched_at: str | None = None
+) -> SittingCatalog:
+    """Build a catalog from protocol dicts, DIP's (``dokumentnummer``/``datum``)
+    or the store's (``document_number``/``date``)."""
+    rows: dict[str, dict[str, str]] = {}
+    unusable = 0
+    for protocol in protocols:
+        number = str(protocol.get("document_number") or protocol.get("dokumentnummer") or "").strip()
+        day = str(protocol.get("date") or protocol.get("datum") or "")[:10]
+        try:
+            wahlperiode(number)
+        except FactsError:
+            unusable += 1
+            continue
+        if iso_week_key(day) is None:
+            unusable += 1
+            continue
+        rows[number] = {"document_number": number, "date": day}
+    ordered = tuple(sorted(rows.values(), key=lambda row: (row["date"], row["document_number"])))
+    return SittingCatalog(ordered, authoritative, unusable, fetched_at)
+
+
+def load_sitting_catalog(path: Path) -> SittingCatalog | None:
+    """The authoritative catalog a build cached, or None.
+
+    Only a file that says ``"authoritative": true`` counts. A missing,
+    unreadable or older list-shaped file, or one cut by --limit, is not
+    evidence of what DIP lists, so the caller must fail closed.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("authoritative") is not True:
+        return None
+    protocols = payload.get("protocols")
+    if not isinstance(protocols, list):
+        return None
+    return sitting_catalog(
+        (item for item in protocols if isinstance(item, dict)),
+        authoritative=True,
+        fetched_at=payload.get("fetched_at"),
+    )
+
+
+def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None) -> list[dict[str, str]]:
+    """The catalog sittings a store is judged against.
+
+    The DIP catalog reaches back to 1949; judging all of it would add
+    thousands of empty, incomplete periods for sittings nobody asked for. The
+    judged range runs from the store's earliest sitting to the catalog's
+    newest, so a gap inside the range or a sitting after it counts, and the
+    history before the first dossier does not.
+    """
+    if catalog is None or not catalog.authoritative:
+        return []
+    days = [str(p.get("date") or "")[:10] for p in protocols if p.get("date")]
+    if not days:
+        return []
+    lower = min(days)
+    return [dict(sitting) for sitting in catalog.sittings if sitting["date"] >= lower]
+
+
+def build_periods(
+    protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None
+) -> tuple[list[Week], list[Month]]:
+    expected = expected_sittings(protocols, catalog)
+    return sitting_weeks(protocols, expected), sitting_months(protocols, expected)
+
+
+def sitting_weeks(
+    protocols: Iterable[Mapping[str, Any]], expected: Iterable[Mapping[str, str]] = ()
+) -> list[Week]:
+    """Group protocols into ISO sitting weeks, oldest first.
+
+    ``expected`` are catalog sittings; a week only the catalog knows (no
+    persisted sitting) is still a week, and is never complete.
+    """
     grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    expected_by_key: dict[tuple[int, int], list[dict[str, str]]] = {}
     for protocol in protocols:
         number = protocol.get("document_number")
         wp = wahlperiode(number)
@@ -607,13 +715,24 @@ def sitting_weeks(protocols: Iterable[Mapping[str, Any]]) -> list[Week]:
         entry = dict(protocol)
         entry["wahlperiode"] = wp
         grouped.setdefault(key, []).append(entry)
+    for sitting in expected:
+        key = iso_week_key(sitting["date"])
+        if key is not None:
+            expected_by_key.setdefault(key, []).append(dict(sitting))
     weeks: list[Week] = []
-    for key in sorted(grouped):
-        rows = sorted(grouped[key], key=lambda p: (str(p["date"]), protocol_number(p["document_number"])))
-        wps = {p["wahlperiode"] for p in rows}
-        if len(wps) != 1:
-            raise FactsError(f"facts: sitting week {week_label(key)} spans Wahlperioden {sorted(wps)}")
-        weeks.append(Week(key=key, wahlperiode=wps.pop(), protocols=tuple(rows)))
+    for key in sorted(set(grouped) | set(expected_by_key)):
+        rows = sorted(grouped.get(key, []), key=lambda p: (str(p["date"]), protocol_number(p["document_number"])))
+        listed = tuple(sorted(expected_by_key.get(key, []), key=lambda s: (s["date"], s["document_number"])))
+        if rows:
+            wps = {p["wahlperiode"] for p in rows}
+            if len(wps) != 1:
+                raise FactsError(f"facts: sitting week {week_label(key)} spans Wahlperioden {sorted(wps)}")
+            wp = wps.pop()
+        else:
+            # Only the catalog knows this week: a bad catalog date must not
+            # abort the build, so the newest Wahlperiode listed wins.
+            wp = max(wahlperiode(s["document_number"]) for s in listed)
+        weeks.append(Week(key=key, wahlperiode=wp, protocols=tuple(rows), expected=listed))
     return weeks
 
 
@@ -622,6 +741,7 @@ class Month:
     key: tuple[int, int]  # (year, month)
     wahlperiode: int
     protocols: tuple[dict[str, Any], ...]
+    expected: tuple[dict[str, str], ...] = ()
 
     period_kind = "month"
 
@@ -639,10 +759,13 @@ class Month:
 
     @property
     def first_date(self) -> date:
-        return date.fromisoformat(str(self.protocols[0]["date"])[:10])
+        source = self.protocols or self.expected
+        return date.fromisoformat(str(source[0]["date"])[:10])
 
 
-def sitting_months(protocols: Iterable[Mapping[str, Any]]) -> list[Month]:
+def sitting_months(
+    protocols: Iterable[Mapping[str, Any]], expected: Iterable[Mapping[str, str]] = ()
+) -> list[Month]:
     """Group protocols into calendar months, oldest first.
 
     A month is built straight from each protocol's own date, never from
@@ -660,6 +783,7 @@ def sitting_months(protocols: Iterable[Mapping[str, Any]]) -> list[Month]:
     to, tie-broken by the latest protocol's Wahlperiode.
     """
     grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    expected_by_key: dict[tuple[int, int], list[dict[str, str]]] = {}
     for protocol in protocols:
         number = protocol.get("document_number")
         wp = wahlperiode(number)
@@ -670,14 +794,21 @@ def sitting_months(protocols: Iterable[Mapping[str, Any]]) -> list[Month]:
         entry = dict(protocol)
         entry["wahlperiode"] = wp
         grouped.setdefault(key, []).append(entry)
+    for sitting in expected:
+        date_text = str(sitting["date"])
+        expected_by_key.setdefault((int(date_text[:4]), int(date_text[5:7])), []).append(dict(sitting))
     months: list[Month] = []
-    for key in sorted(grouped):
-        rows = sorted(grouped[key], key=lambda p: (str(p["date"]), protocol_number(p["document_number"])))
-        counts = Counter(p["wahlperiode"] for p in rows)
-        top_count = max(counts.values())
-        tied = {wp for wp, count in counts.items() if count == top_count}
-        wp = tied.pop() if len(tied) == 1 else max(rows, key=lambda p: str(p["date"]))["wahlperiode"]
-        months.append(Month(key=key, wahlperiode=wp, protocols=tuple(rows)))
+    for key in sorted(set(grouped) | set(expected_by_key)):
+        rows = sorted(grouped.get(key, []), key=lambda p: (str(p["date"]), protocol_number(p["document_number"])))
+        listed = tuple(sorted(expected_by_key.get(key, []), key=lambda s: (s["date"], s["document_number"])))
+        if rows:
+            counts = Counter(p["wahlperiode"] for p in rows)
+            top_count = max(counts.values())
+            tied = {wp for wp, count in counts.items() if count == top_count}
+            wp = tied.pop() if len(tied) == 1 else max(rows, key=lambda p: str(p["date"]))["wahlperiode"]
+        else:
+            wp = max(wahlperiode(s["document_number"]) for s in listed)
+        months.append(Month(key=key, wahlperiode=wp, protocols=tuple(rows), expected=listed))
     return months
 
 
@@ -687,16 +818,19 @@ def sitting_months(protocols: Iterable[Mapping[str, Any]]) -> list[Month]:
 # ---------------------------------------------------------------------------
 
 
-def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, bool]]:
-    """document_number -> {"votes": bool, "speeches": bool} per cached report.
+def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """document_number -> {"votes": bool, "speeches": bool, "reasons": {...}}.
 
     Speeches are complete when the XML was parsed (``xml_speech_count`` is
-    present). Votes are complete when the report's vote acquisition state is
-    ``complete``. A legacy report without an ``acquisition`` block (the bulk
-    of the cache as of 2026-09-19) carries no signal against the votes the
-    store holds and counts as complete; A1 reads the state the build writes.
+    present). Votes are complete only with evidence: the report's vote
+    acquisition state is ``complete`` *and* carries ``acquired_at``. A report
+    without an ``acquisition`` block (every report cached before the state was
+    recorded) and votes reused from cache without ``acquired_at`` are unknown,
+    and unknown is incomplete: nothing says the roll-call list was ever read
+    for that sitting. ``reasons`` names, per domain that is not complete, why,
+    for the build's list of what to re-acquire.
     """
-    result: dict[str, dict[str, bool]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for report in reports:
         protocol = report.get("protocol") or {}
         number = protocol.get("dokumentnummer")
@@ -705,15 +839,33 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
         summary = report.get("validation_summary") or {}
         speeches = summary.get("xml_speech_count") is not None
         acquisition = (report.get("acquisition") or {}).get("votes")
-        if acquisition:
-            votes = str(acquisition.get("acquisition_state")) == "complete"
+        votes_reason: str | None = None
+        if not acquisition:
+            votes = False
+            votes_reason = "no vote acquisition metadata (report predates it)"
         else:
-            votes = True
-        result[str(number)] = {"votes": votes, "speeches": speeches}
+            state = str(acquisition.get("acquisition_state"))
+            if state != "complete":
+                votes = False
+                reasons = ", ".join(str(r) for r in acquisition.get("failure_reasons") or ())
+                votes_reason = f"votes {state}" + (f" ({reasons})" if reasons else "")
+            elif not acquisition.get("acquired_at"):
+                votes = False
+                votes_reason = "cached votes without acquired_at"
+            else:
+                votes = True
+        result[str(number)] = {
+            "votes": votes,
+            "speeches": speeches,
+            "reasons": {
+                "votes": votes_reason,
+                "speeches": None if speeches else "XML speeches not parsed",
+            },
+        }
     return result
 
 
-def completeness_from_entries(entries: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, bool]]:
+def completeness_from_entries(entries: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """The build's completeness map, from the in-memory dossier entries (D10).
 
     The build and the replay must agree on which weeks have a fact, so both
@@ -724,7 +876,7 @@ def completeness_from_entries(entries: Iterable[Mapping[str, Any]]) -> dict[str,
     return completeness_from_reports(entry.get("report") or {} for entry in entries)
 
 
-def load_completeness(data_dir: Path) -> dict[str, dict[str, bool]]:
+def load_completeness(data_dir: Path) -> dict[str, dict[str, Any]]:
     reports = []
     for path in sorted(data_dir.glob("plenarprotokoll-*.json")):
         with path.open(encoding="utf-8") as handle:
@@ -734,13 +886,38 @@ def load_completeness(data_dir: Path) -> dict[str, dict[str, bool]]:
     return completeness_from_reports(reports)
 
 
-def week_is_complete(week: Week, completeness: Mapping[str, Mapping[str, bool]], domain: str) -> bool:
-    """Every sitting of the week is complete for ``domain``; unknown sittings are not."""
-    for protocol in week.protocols:
-        state = completeness.get(str(protocol["document_number"]))
-        if not state or not state.get(domain):
-            return False
-    return True
+def period_gaps(
+    period: Week | Month, completeness: Mapping[str, Mapping[str, Any]], domain: str
+) -> list[dict[str, str]]:
+    """Every sitting that keeps ``period`` from being complete for ``domain``.
+
+    A sitting is a gap when the catalog lists it but the store holds no
+    protocol for it (``not_persisted``), when it is in the store with no
+    report to judge (``no_report``), or when its report says the domain is not
+    complete (the report's own reason). A period with no gap and at least one
+    sitting is complete.
+    """
+    persisted = {str(p["document_number"]): p for p in period.protocols}
+    listed = {sitting["document_number"]: sitting for sitting in period.expected}
+    gaps: list[dict[str, str]] = []
+    for number in sorted({*persisted, *listed}, key=lambda n: (str((persisted.get(n) or listed[n])["date"]), n)):
+        day = str((persisted.get(number) or listed[number])["date"])[:10]
+        if number not in persisted:
+            gaps.append({"document_number": number, "date": day, "reason": "not_persisted"})
+            continue
+        state = completeness.get(number)
+        if not state:
+            gaps.append({"document_number": number, "date": day, "reason": "no_report"})
+        elif not state.get(domain):
+            reason = (state.get("reasons") or {}).get(domain) or f"{domain} incomplete"
+            gaps.append({"document_number": number, "date": day, "reason": str(reason)})
+    return gaps
+
+
+def week_is_complete(week: Week | Month, completeness: Mapping[str, Mapping[str, Any]], domain: str) -> bool:
+    """Every sitting of the period is there and complete for ``domain``;
+    unknown sittings are not."""
+    return bool(week.protocols or week.expected) and not period_gaps(week, completeness, domain)
 
 
 # ---------------------------------------------------------------------------
@@ -1210,8 +1387,9 @@ def _citation(metric: Mapping[str, Any], observation: Observation) -> dict[str, 
 def compute(
     conn: sqlite3.Connection,
     registry: Iterable[Mapping[str, Any]],
-    completeness: Mapping[str, Mapping[str, bool]],
+    completeness: Mapping[str, Mapping[str, Any]],
     *,
+    catalog: SittingCatalog | None,
     built: Iterable[str] = ("votes",),
     force_all: bool = False,
     floor: float = PUBLICATION_FLOOR,
@@ -1230,14 +1408,21 @@ def compute(
     gates month completeness: the still-running calendar month never counts
     as complete no matter how complete its sittings-so-far are, since a
     sitting later in the same month can still change its winner.
+
+    ``catalog`` is what DIP lists. Periods are enumerated from it as well as
+    from the store, so a week or month with no persisted sitting is still a
+    (never complete) period, and a listed sitting the store lacks makes its
+    period incomplete. Without an authoritative catalog no period can be
+    judged and every one is incomplete (fail closed); pass
+    ``SittingCatalog((), False)`` to say so explicitly.
     """
     registry = tuple(registry)
     validate_registry(registry)
     built_set = set(built)
     today = today or date.today()
     protocols = load_protocols(conn)
-    weeks = sitting_weeks(protocols)
-    months = sitting_months(protocols)
+    weeks, months = build_periods(protocols, catalog)
+    catalog_known = catalog is not None and catalog.authoritative
     starts = coverage_starts(weeks)
     periods_by_kind: dict[str, list[Any]] = {"week": weeks, "month": months}
 
@@ -1249,7 +1434,7 @@ def compute(
         candidates = candidate_rows(conn, metric)
         history: list[tuple[Any, float]] = []
         for period in periods:
-            complete = week_is_complete(period, completeness, metric["coverage"])
+            complete = catalog_known and week_is_complete(period, completeness, metric["coverage"])
             if period.period_kind == "month" and period.key >= (today.year, today.month):
                 complete = False
             row: dict[str, Any] = {
@@ -1755,8 +1940,9 @@ def _posted_text(entries: Sequence[tuple[Any, ...]]) -> str:
 def compute_and_store(
     conn: sqlite3.Connection,
     registry: Iterable[Mapping[str, Any]] = REGISTRY,
-    completeness: Mapping[str, Mapping[str, bool]] | None = None,
+    completeness: Mapping[str, Mapping[str, Any]] | None = None,
     *,
+    catalog: SittingCatalog | None,
     built: Iterable[str] = ("votes",),
     no_persist: bool = False,
     out=sys.stderr,
@@ -1770,8 +1956,14 @@ def compute_and_store(
     metric, via FactsError.
     """
     registry = tuple(registry)
+    if catalog is None or not catalog.authoritative:
+        print(
+            "facts: no authoritative sitting catalog (run an online update); "
+            "every period is incomplete, no fact can be posted",
+            file=out,
+        )
     rows = compute(
-        conn, registry, completeness if completeness is not None else {}, built=built, today=today
+        conn, registry, completeness if completeness is not None else {}, catalog=catalog, built=built, today=today
     )
     snapshot = snapshot_from_rows(registry, rows)
     posted = sum(1 for row in rows if row["publishable"])
@@ -2206,18 +2398,25 @@ def replay(
     *,
     weeks: int,
     cards_dir: Path | None,
-    completeness: Mapping[str, Mapping[str, bool]] | None = None,
+    completeness: Mapping[str, Mapping[str, Any]] | None = None,
     data_dir: Path | None = None,
+    catalog: SittingCatalog | None = None,
 ) -> dict[str, Any]:
     """Compute every week read-only, write the last ``weeks``' posted facts as
-    SVGs and return the replay table plus the gate numbers."""
+    SVGs and return the replay table plus the gate numbers.
+
+    ``catalog`` defaults to the authoritative catalog cached next to the
+    dossiers; without one every week replays as incomplete.
+    """
     if completeness is None:
         completeness = load_completeness(data_dir or store.parent)
+    if catalog is None:
+        catalog = load_sitting_catalog((data_dir or store.parent) / CATALOG_FILENAME)
     conn = open_readonly(store)
     try:
         built = {"votes"} if conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        rows = compute(conn, REGISTRY, completeness, built=built)
-        rows_all = compute(conn, REGISTRY, completeness, built=built, force_all=True)
+        rows = compute(conn, REGISTRY, completeness, catalog=catalog, built=built)
+        rows_all = compute(conn, REGISTRY, completeness, catalog=catalog, built=built, force_all=True)
         unlinked = conn.execute(
             "SELECT COUNT(*) FROM votes v WHERE NOT EXISTS "
             "(SELECT 1 FROM agenda_item_votes aiv WHERE aiv.vote_id = v.id)"

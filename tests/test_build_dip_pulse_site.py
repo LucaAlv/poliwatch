@@ -1003,13 +1003,36 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 abg_mps=[],
                 mp_lookup={},
                 today=date(2026, 9, 15),
+                authoritative_catalog=True,
             )
 
             catalog = json.loads(
                 (output_dir / "data" / "plenarprotokoll-catalog.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual([item["dokumentnummer"] for item in catalog], ["21/84", "21/9", "20/100"])
+        self.assertTrue(catalog["authoritative"])
+        self.assertTrue(catalog["fetched_at"].endswith("Z"))
+        self.assertEqual([item["dokumentnummer"] for item in catalog["protocols"]], ["21/84", "21/9", "20/100"])
+
+    def test_render_site_never_writes_a_catalog_it_was_not_handed_whole(self) -> None:
+        # An offline render holds the cached catalog plus dossier-derived
+        # protocols. Rewriting the file from that would make a partial list
+        # look authoritative, so only a build that fetched the catalog writes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            path.write_text('{"authoritative": true, "protocols": []}', encoding="utf-8")
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[],
+                mp_lookup={},
+                today=date(2026, 9, 15),
+            )
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"authoritative": true, "protocols": []}')
 
     def test_entry_sort_key_tolerates_incomplete_reports(self) -> None:
         # A truncated or hand-edited dossier JSON must sort last, not crash the build.
@@ -2827,6 +2850,118 @@ class BuildClockAndWeekTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("--week 2026-21 ist nicht im Archiv; vorhanden: 2026-24 (Dossiers wurden bereits geschrieben", stderr.getvalue())
             render_site.assert_not_called()
+
+    def test_online_main_fetches_the_whole_catalog_whatever_narrows_the_acquisition(self) -> None:
+        # C1: completeness is judged against everything DIP lists, so
+        # --document-number/--limit narrow what is acquired, never the catalog.
+        catalog = [
+            self._catalog_protocol("21/84", "5799", "2026-06-12"),
+            self._catalog_protocol("21/83", "5798", "2026-06-11"),
+            self._catalog_protocol("21/70", "5780", "2026-05-20"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--document-number", "21/84")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog) as fetch,
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
+                mock.patch.object(build_dip_pulse_site, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0)
+            self.assertEqual(fetch.call_args.args[1:], (0, [], None))
+            self.assertEqual([p["dokumentnummer"] for p in build_dossiers.call_args.args[0]], ["21/84"])
+            self.assertEqual(len(render_site.call_args.kwargs["protocols"]), 3)
+            self.assertTrue(render_site.call_args.kwargs["authoritative_catalog"])
+            catalog_arg = pipeline.call_args.kwargs["catalog"]
+            self.assertTrue(catalog_arg.authoritative)
+            self.assertEqual(
+                [s["document_number"] for s in catalog_arg.sittings], ["21/70", "21/83", "21/84"]
+            )
+
+    def test_online_main_reports_a_missing_document_number_as_an_error(self) -> None:
+        catalog = [self._catalog_protocol("21/84", "5799", "2026-06-12")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--document-number", "21/999")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress") as build_dossiers,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 1)
+            self.assertIn("No BT Plenarprotokoll found for 21/999", stderr.getvalue())
+            build_dossiers.assert_not_called()
+
+    def test_select_acquisition_protocols_narrows_only_the_acquisition(self) -> None:
+        catalog = [
+            self._catalog_protocol("20/213", "4000", "2025-02-10"),
+            self._catalog_protocol("21/84", "5799", "2026-06-12"),
+            self._catalog_protocol("21/83", "5798", "2026-06-11"),
+            self._catalog_protocol("21/70", "5780", "2026-05-20"),
+        ]
+        select = build_dip_pulse_site.select_acquisition_protocols
+        numbers = lambda rows: [p["dokumentnummer"] for p in rows]  # noqa: E731
+        self.assertEqual(numbers(select(catalog, [], 0, None)), ["21/84", "21/83", "21/70", "20/213"])
+        self.assertEqual(numbers(select(catalog, [], 2, 21)), ["21/84", "21/83"])
+        self.assertEqual(numbers(select(catalog, [], 2, None)), ["21/84", "21/83"])
+        self.assertEqual(numbers(select(catalog, [], 9, 20)), ["20/213"])
+        self.assertEqual(numbers(select(catalog, ["21/70", "20/213"], 1, 21)), ["21/70", "20/213"])
+        with self.assertRaises(build_dip_pulse_site.dip.DipError):
+            select(catalog, ["21/1"], 0, None)
+        self.assertEqual(len(catalog), 4)
+
+    def test_offline_main_judges_completeness_by_the_cached_authoritative_catalog_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            (output_dir / "data").mkdir(parents=True)
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            args = SimpleNamespace(
+                output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=None, today=date(2026, 9, 15)
+            )
+            cached = [{"id": "5799", "datum": "2026-06-12", "dokumentnummer": "21/84"}]
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            outcomes = []
+            for label, payload in (
+                ("authoritative", {"authoritative": True, "fetched_at": "2026-09-28T10:00:00Z", "protocols": cached}),
+                ("older list-shaped cache", cached),
+            ):
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                with (
+                    mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                    mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=cached),
+                    mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[entry]),
+                    mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[entry]),
+                    mock.patch.object(build_dip_pulse_site, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
+                    mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                    mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+                ):
+                    self.assertEqual(build_dip_pulse_site.main(), 0)
+                outcomes.append((label, pipeline.call_args.kwargs["catalog"]))
+                # An offline render never rewrites the catalog it read.
+                self.assertFalse(render_site.call_args.kwargs.get("authoritative_catalog", False))
+        self.assertTrue(outcomes[0][1].authoritative)
+        self.assertEqual([s["document_number"] for s in outcomes[0][1].sittings], ["21/84"])
+        self.assertIsNone(outcomes[1][1])
+
+    def test_load_cached_protocols_reads_the_catalog_file_and_ignores_the_older_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "data").mkdir()
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")
+            path.write_text(json.dumps({"authoritative": True, "protocols": [protocol]}), encoding="utf-8")
+            self.assertEqual([p["id"] for p in build_dip_pulse_site.load_cached_protocols(output_dir)], ["5799"])
+            path.write_text(json.dumps([protocol]), encoding="utf-8")
+            stderr = io.StringIO()
+            with mock.patch.object(sys, "stderr", stderr):
+                self.assertEqual(build_dip_pulse_site.load_cached_protocols(output_dir), [])
+            self.assertIn("predates the catalog format", stderr.getvalue())
 
     def test_online_main_without_week_skips_the_archive_check(self) -> None:
         protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")

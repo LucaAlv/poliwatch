@@ -8,12 +8,14 @@ One test per rule and per edge in the plan's "Failure modes" table
 from __future__ import annotations
 
 import io
+import json
 import re
 import sqlite3
 import tempfile
 import unittest
 import unittest.mock
 import xml.etree.ElementTree as ET
+from datetime import timedelta
 from pathlib import Path
 
 import _support  # noqa: F401
@@ -109,6 +111,7 @@ class StoreCase(unittest.TestCase):
         return conn
 
     def compute(self, built=("votes",), registry=facts.REGISTRY, **kwargs):
+        kwargs.setdefault("catalog", self.seeded["catalog"])
         return facts.compute(
             self.conn, registry, self.seeded["completeness"], built=set(built), **kwargs
         )
@@ -1164,26 +1167,46 @@ class CompletenessTests(StoreCase):
             {
                 "protocol": {"dokumentnummer": "21/90"},
                 "validation_summary": {"xml_speech_count": 10, "roll_call_vote_candidate_count": 0},
-                "acquisition": {"votes": {"acquisition_state": "complete"}},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
-                # Legacy report without an acquisition block (282 of 290 cached
-                # reports on 2026-09-19): the cache carries no signal against
-                # the votes the store holds, so votes count as complete.
+                # Legacy report without an acquisition block (285 of 285 cached
+                # reports on 2026-09-28): nothing says the roll-call list was
+                # ever read for this sitting, so its votes are unknown, and
+                # unknown is incomplete.
                 "protocol": {"dokumentnummer": "20/100"},
                 "validation_summary": {"xml_speech_count": 10, "roll_call_vote_candidate_count": 3},
             },
             {
                 "protocol": {"dokumentnummer": "20/99"},
                 "validation_summary": {},
-                "acquisition": {"votes": {"acquisition_state": "failed"}},
+                "acquisition": {"votes": {"acquisition_state": "failed", "failure_reasons": ["scan_budget_exhausted"]}},
+            },
+            {
+                # Votes reused from a cache that never stamped them: complete
+                # on paper, unknown in fact.
+                "protocol": {"dokumentnummer": "20/98"},
+                "validation_summary": {"xml_speech_count": 10},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None}},
             },
         ]
         completeness = facts.completeness_from_reports(reports)
-        self.assertEqual(completeness["21/91"], {"votes": False, "speeches": True})
-        self.assertEqual(completeness["21/90"], {"votes": True, "speeches": True})
-        self.assertEqual(completeness["20/100"], {"votes": True, "speeches": True})
-        self.assertEqual(completeness["20/99"], {"votes": False, "speeches": False})
+        self.assertEqual(
+            {number: (state["votes"], state["speeches"]) for number, state in completeness.items()},
+            {
+                "21/91": (False, True),
+                "21/90": (True, True),
+                "20/100": (False, True),
+                "20/99": (False, False),
+                "20/98": (False, True),
+            },
+        )
+        self.assertEqual(completeness["21/91"]["reasons"]["votes"], "votes not_requested")
+        self.assertIn("no vote acquisition metadata", completeness["20/100"]["reasons"]["votes"])
+        self.assertEqual(completeness["20/99"]["reasons"]["votes"], "votes failed (scan_budget_exhausted)")
+        self.assertEqual(completeness["20/98"]["reasons"]["votes"], "cached votes without acquired_at")
+        self.assertIsNone(completeness["21/90"]["reasons"]["votes"])
+        self.assertEqual(completeness["20/99"]["reasons"]["speeches"], "XML speeches not parsed")
 
     def test_the_build_and_the_replay_derive_the_same_map(self) -> None:
         # D10: one function, fed the build's in-memory entries or the same
@@ -1192,7 +1215,7 @@ class CompletenessTests(StoreCase):
             {
                 "protocol": {"dokumentnummer": "21/90"},
                 "validation_summary": {"xml_speech_count": 10},
-                "acquisition": {"votes": {"acquisition_state": "complete"}},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             }
         ]
         entries = [{"report": reports[0], "report_path": "ignored"}]
@@ -1226,12 +1249,211 @@ class CompletenessTests(StoreCase):
 # ---------------------------------------------------------------------------
 
 
+class CatalogCompletenessTests(StoreCase):
+    """C1/E1/E11: a period is judged against the sittings DIP lists, not the
+    sittings the store happens to hold."""
+
+    @staticmethod
+    def extra_sittings(index: int, numbers: tuple[str, ...], *, year: int = 2025) -> list[dict[str, str]]:
+        """Catalog sittings on other days of the ISO week `week_specs` puts sitting `index` in."""
+        return [
+            {"document_number": number, "date": facts.date.fromisocalendar(year, 3 + index, 2 + offset).isoformat()}
+            for offset, number in enumerate(numbers)
+        ]
+
+    def periods(self, rows, metric_id=LAENGSTE):
+        return {row["period_key"]: row for row in self.rows_for(rows, metric_id)}
+
+    def test_catalog_three_store_one_is_incomplete_and_unpublishable(self) -> None:
+        seeded = self.seed(week_specs(10))
+        listed = seeded["catalog_sittings"] + self.extra_sittings(4, ("21/50", "21/51"))
+        rows = self.compute(catalog=_facts_fixture.catalog_for(listed))
+        for metric_id in (LAENGSTE, KNAPPSTE):
+            row = self.rows_for(rows, metric_id)[4]
+            self.assertEqual((row["complete"], row["publishable"]), (0, 0), metric_id)
+            self.assertIsNone(row["value"])
+        # The other weeks are untouched, and the gap never enters a baseline.
+        self.assertEqual(self.rows_for(rows, LAENGSTE)[3]["complete"], 1)
+        self.assertEqual(self.rows_for(rows, LAENGSTE)[5]["baseline_count"], 4)
+
+    def test_catalog_three_store_three_is_complete(self) -> None:
+        specs = week_specs(10)
+        day = facts.date.fromisocalendar(2025, 7, 2)
+        specs += [
+            {**week_specs(1)[0], "document_number": number, "date": (day + timedelta(days=offset * 2)).isoformat()}
+            for offset, number in enumerate(("21/50", "21/51"))
+        ]
+        seeded = self.seed(specs)
+        self.assertEqual(len(seeded["catalog_sittings"]), 12)
+        row = self.rows_for(self.compute(), LAENGSTE)[4]
+        self.assertEqual(row["complete"], 1)
+        self.assertIsNotNone(row["value"])
+
+    def test_a_week_with_zero_persisted_sittings_is_still_judged(self) -> None:
+        specs = week_specs(10)
+        missing = specs.pop(4)
+        seeded = self.seed(specs)
+        listed = seeded["catalog_sittings"] + [
+            {"document_number": missing["document_number"], "date": missing["date"]}
+        ]
+        rows = self.compute(catalog=_facts_fixture.catalog_for(listed))
+        weekly = self.rows_for(rows, LAENGSTE)
+        self.assertEqual(len(weekly), 10)
+        empty = self.periods(rows)["2025-W07"]
+        self.assertEqual((empty["complete"], empty["publishable"], empty["wahlperiode"]), (0, 0, 21))
+        self.assertIsNone(empty["value"])
+        # It never enters a baseline either.
+        self.assertEqual(weekly[5]["baseline_count"], 4)
+
+    def test_a_month_with_zero_persisted_sittings_is_still_judged(self) -> None:
+        specs = month_specs(8)
+        missing = specs.pop(3)
+        seeded = self.seed(specs)
+        listed = seeded["catalog_sittings"] + [
+            {"document_number": missing["document_number"], "date": missing["date"]}
+        ]
+        rows = self.compute(registry=facts.MONTHLY_REGISTRY, catalog=_facts_fixture.catalog_for(listed))
+        monthly = self.rows_for(rows, AKTIVSTE)
+        self.assertEqual(len(monthly), 8)
+        empty = self.periods(rows, AKTIVSTE)["2025-04"]
+        self.assertEqual((empty["complete"], empty["publishable"], empty["period_kind"]), (0, 0, "month"))
+        self.assertIsNone(empty["value"])
+
+    def test_no_catalog_means_no_period_is_complete(self) -> None:
+        self.seed(week_specs(10))
+        for catalog in (None, _facts_fixture.catalog_for([], authoritative=False)):
+            with self.subTest(catalog=catalog):
+                rows = self.compute(catalog=catalog)
+                self.assertTrue(rows)
+                self.assertEqual({row["complete"] for row in rows}, {0})
+                self.assertEqual({row["publishable"] for row in rows}, {0})
+
+    def test_a_narrowed_catalog_is_not_authoritative(self) -> None:
+        # A catalog cut by --limit or --document-number lists fewer sittings
+        # than exist; it cannot vouch for a week even when it lists the ones
+        # the store holds.
+        seeded = self.seed(week_specs(10))
+        narrowed = _facts_fixture.catalog_for(seeded["catalog_sittings"][:3], authoritative=False)
+        rows = self.compute(catalog=narrowed)
+        self.assertEqual({row["complete"] for row in rows}, {0})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / facts.CATALOG_FILENAME
+            for label, payload in (
+                ("older list-shaped file", "[]"),
+                ("not authoritative", '{"authoritative": false, "protocols": []}'),
+                ("no protocols", '{"authoritative": true}'),
+                ("unreadable", "{"),
+            ):
+                with self.subTest(label):
+                    path.write_text(payload, encoding="utf-8")
+                    self.assertIsNone(facts.load_sitting_catalog(path))
+            self.assertIsNone(facts.load_sitting_catalog(Path(tmp) / "missing.json"))
+            path.write_text(
+                json.dumps({"authoritative": True, "fetched_at": "2026-09-28T10:00:00Z", "protocols": [
+                    {"dokumentnummer": "21/2", "datum": "2025-01-02"},
+                    {"dokumentnummer": "21/1", "datum": "2025-01-01"},
+                    {"dokumentnummer": "kaputt", "datum": "2025-01-03"},
+                    {"dokumentnummer": "21/3"},
+                ]}),
+                encoding="utf-8",
+            )
+            loaded = facts.load_sitting_catalog(path)
+        self.assertTrue(loaded.authoritative)
+        self.assertEqual([s["document_number"] for s in loaded.sittings], ["21/1", "21/2"])
+        self.assertEqual((loaded.unusable, loaded.fetched_at), (2, "2026-09-28T10:00:00Z"))
+
+    def test_the_judged_range_starts_at_the_earliest_persisted_sitting(self) -> None:
+        # The catalog reaches back to 1949: judging all of it would add
+        # thousands of empty periods. Before the first dossier nothing is
+        # judged; after the last one, everything DIP lists is.
+        seeded = self.seed(week_specs(10))
+        before = [{"document_number": "19/1", "date": "2019-01-16"}, {"document_number": "21/1", "date": "2025-01-02"}]
+        after = [{"document_number": "21/99", "date": "2025-06-11"}]
+        rows = self.compute(catalog=_facts_fixture.catalog_for(seeded["catalog_sittings"] + before + after))
+        weekly = self.rows_for(rows, LAENGSTE)
+        keys = [row["period_key"] for row in weekly]
+        self.assertEqual(len(weekly), 11)
+        self.assertNotIn("2019-W03", keys)
+        self.assertNotIn("2025-W01", keys)
+        self.assertEqual(keys[-1], "2025-W24")
+        self.assertEqual((weekly[-1]["complete"], weekly[-1]["publishable"]), (0, 0))
+
+    def test_a_sitting_the_catalog_omits_is_judged_by_its_own_state(self) -> None:
+        specs = week_specs(10)
+        specs[4]["complete"] = {"speeches": False}
+        seeded = self.seed(specs)
+        listed = [s for s in seeded["catalog_sittings"] if s["document_number"] != "21/1"]
+        rows = self.compute(catalog=_facts_fixture.catalog_for(listed))
+        weekly = self.rows_for(rows, LAENGSTE)
+        self.assertEqual(weekly[0]["complete"], 1)
+        self.assertEqual(weekly[4]["complete"], 0)
+
+    def test_legacy_reports_make_votes_facts_incomplete_and_leave_speech_facts_alone(self) -> None:
+        specs = week_specs(10)
+        seeded = self.seed(specs)
+        reports = [
+            {"protocol": {"dokumentnummer": spec["document_number"]}, "validation_summary": {"xml_speech_count": 5}}
+            for spec in specs
+        ]
+        completeness = facts.completeness_from_reports(reports)
+        rows = facts.compute(self.conn, facts.REGISTRY, completeness, catalog=seeded["catalog"], built={"votes"})
+        self.assertEqual({row["complete"] for row in self.rows_for(rows, KNAPPSTE)}, {0})
+        self.assertEqual({row["complete"] for row in self.rows_for(rows, LAENGSTE)}, {1})
+
+    def test_cached_votes_without_acquired_at_make_votes_facts_incomplete(self) -> None:
+        specs = week_specs(10)
+        seeded = self.seed(specs)
+        reports = [
+            {
+                "protocol": {"dokumentnummer": spec["document_number"]},
+                "validation_summary": {"xml_speech_count": 5},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None if index == 4 else "2026-09-28T10:00:00Z"}},
+            }
+            for index, spec in enumerate(specs)
+        ]
+        rows = facts.compute(
+            self.conn, facts.REGISTRY, facts.completeness_from_reports(reports), catalog=seeded["catalog"], built={"votes"}
+        )
+        flags = [row["complete"] for row in self.rows_for(rows, KNAPPSTE)]
+        self.assertEqual(flags, [1, 1, 1, 1, 0, 1, 1, 1, 1, 1])
+
+    def test_period_gaps_name_the_sitting_and_the_reason(self) -> None:
+        seeded = self.seed(week_specs(10))
+        listed = seeded["catalog_sittings"] + self.extra_sittings(4, ("21/50",))
+        completeness = dict(seeded["completeness"])
+        completeness["21/5"] = {"votes": False, "speeches": True, "reasons": {"votes": "votes partial (scan_budget_exhausted)"}}
+        del completeness["21/3"]
+        weeks, _months = facts.build_periods(facts.load_protocols(self.conn), _facts_fixture.catalog_for(listed))
+        by_key = {week.period_key: week for week in weeks}
+        gaps = facts.period_gaps(by_key["2025-W07"], completeness, "votes")
+        self.assertEqual(
+            [(g["document_number"], g["reason"]) for g in gaps],
+            [("21/50", "not_persisted"), ("21/5", "votes partial (scan_budget_exhausted)")],
+        )
+        self.assertEqual(
+            [(g["document_number"], g["reason"]) for g in facts.period_gaps(by_key["2025-W05"], completeness, "votes")],
+            [("21/3", "no_report")],
+        )
+        # The same week is complete for the domain nothing is wrong with.
+        self.assertEqual(facts.period_gaps(by_key["2025-W07"], completeness, "speeches")[0]["reason"], "not_persisted")
+
+    def test_compute_and_store_says_once_when_there_is_no_catalog(self) -> None:
+        self.seed(week_specs(10))
+        conn = self.writable()
+        out = io.StringIO()
+        report = facts.compute_and_store(
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=None, built={"votes"}, out=out
+        )
+        self.assertEqual(out.getvalue().count("no authoritative sitting catalog"), 1)
+        self.assertEqual(report["posted"], 0)
+
+
 class EngineTests(StoreCase):
     def store_all(self, specs=None, **kwargs):
         self.seed(specs or week_specs(12))
         conn = self.writable()
         report = facts.compute_and_store(
-            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet(), **kwargs
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet(), **kwargs
         )
         return conn, report
 
@@ -1259,7 +1481,7 @@ class EngineTests(StoreCase):
         specs = week_specs(12) + month_specs(7, start_number=101, year=2020)
         self.seed(specs)
         conn = self.writable()
-        report = facts.compute_and_store(conn, facts.ALL_REGISTRY, self.seeded["completeness"], out=quiet())
+        report = facts.compute_and_store(conn, facts.ALL_REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet())
         self.assertTrue(report["written"])
         metrics = facts.load_metrics(conn)
         self.assertEqual([m["id"] for m in metrics], [m["id"] for m in facts.ALL_REGISTRY])
@@ -1299,7 +1521,7 @@ class EngineTests(StoreCase):
         again.row_factory = sqlite3.Row
         try:
             report = facts.compute_and_store(
-                again, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+                again, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
             )
         finally:
             again.close()
@@ -1319,7 +1541,7 @@ class EngineTests(StoreCase):
                 "WHERE protocol_id = 'p12' AND rede_id = 'ID1200200'"
             )
         report = facts.compute_and_store(
-            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
         )
         self.assertTrue(report["written"])
         after = {
@@ -1340,7 +1562,7 @@ class EngineTests(StoreCase):
             # below every prior week: its card disappears.
             conn.execute("UPDATE speeches SET char_count = 1 WHERE protocol_id = 'p12'")
         report = facts.compute_and_store(
-            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
         )
         self.assertTrue(report["written"])
         self.assertEqual(len(report["changed_winners"]), 1)
@@ -1367,7 +1589,7 @@ class EngineTests(StoreCase):
                 "UPDATE speeches SET char_count = 2100 WHERE protocol_id = 'p12' AND rede_id = 'ID1200200'"
             )
         report = facts.compute_and_store(
-            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
         )
         self.assertTrue(report["written"])
         after = {
@@ -1407,6 +1629,7 @@ class EngineTests(StoreCase):
                 again,
                 facts.REGISTRY,
                 self.seeded["completeness"],
+                catalog=self.seeded["catalog"],
                 no_persist=True,
                 out=quiet(),
             )
@@ -1433,7 +1656,7 @@ class EngineTests(StoreCase):
         )
         with self.assertRaises(facts.FactsError) as ctx:
             facts.compute_and_store(
-                conn, broken, self.seeded["completeness"], out=quiet()
+                conn, broken, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
             )
         self.assertIn(SITZUNG, str(ctx.exception))
         self.assertFalse(facts.tables_exist(conn))
@@ -1445,7 +1668,7 @@ class EngineTests(StoreCase):
             for metric in facts.REGISTRY
         )
         report = facts.compute_and_store(
-            conn, relabelled, self.seeded["completeness"], out=quiet()
+            conn, relabelled, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
         )
         self.assertTrue(report["written"])
         stored = {metric["id"]: metric for metric in facts.load_metrics(conn)}
@@ -1463,7 +1686,7 @@ class EngineTests(StoreCase):
         self.assertIsNone(facts.read_snapshot(conn))
         self.assertEqual(facts.load_facts(conn), [])
         report = facts.compute_and_store(
-            conn, facts.REGISTRY, self.seeded["completeness"], out=quiet()
+            conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], out=quiet()
         )
         self.assertTrue(report["written"])
         self.assertTrue(facts.tables_exist(conn))
@@ -1685,6 +1908,7 @@ class ReplayTests(StoreCase):
                 weeks=5,
                 cards_dir=Path(cards),
                 completeness=self.seeded["completeness"],
+                catalog=self.seeded["catalog"],
             )
             self.assertEqual(len(list(Path(cards).glob("*.svg"))), 8)
         self.assertEqual(self.path.stat().st_mtime_ns, before)
@@ -1704,7 +1928,11 @@ class ReplayTests(StoreCase):
         self.seed(week_specs(12))
         self.conn.close()
         report = facts.replay(
-            self.path, weeks=3, cards_dir=None, completeness=self.seeded["completeness"]
+            self.path,
+            weeks=3,
+            cards_dir=None,
+            completeness=self.seeded["completeness"],
+            catalog=self.seeded["catalog"],
         )
         out = io.StringIO()
         facts.print_report(report, out=out)
@@ -1726,7 +1954,8 @@ class ReplayTests(StoreCase):
         conn = facts.open_readonly(REAL_STORE)
         try:
             completeness = facts.load_completeness(REAL_STORE.parent)
-            rows = facts.compute(conn, facts.MONTHLY_REGISTRY, completeness, built={"votes"})
+            catalog = facts.load_sitting_catalog(REAL_STORE.parent / facts.CATALOG_FILENAME)
+            rows = facts.compute(conn, facts.MONTHLY_REGISTRY, completeness, catalog=catalog, built={"votes"})
         finally:
             conn.close()
         june = {row["metric_id"]: row for row in rows if row["period_key"] == "2026-06"}
@@ -1806,7 +2035,7 @@ class PageTests(StoreCase):
     def write_pages(self, weeks, output_name="site", mp_lookup=None, **kwargs):
         seeded = self.seed(weeks, **kwargs)
         conn = self.writable()
-        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
         output_dir = Path(self.tmp.name) / output_name
         output_dir.mkdir(exist_ok=True)
@@ -1839,7 +2068,7 @@ class PageTests(StoreCase):
         conn.execute("UPDATE agenda_items SET page_start_quadrant = NULL")
         conn.execute("UPDATE speeches SET page_quadrant = NULL")
         conn.commit()
-        facts.compute_and_store(conn, facts.REGISTRY, self.seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.REGISTRY, self.seeded["completeness"], catalog=self.seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
         output_dir = Path(self.tmp.name) / "null-quadrant-site"
         output_dir.mkdir()
@@ -1876,7 +2105,7 @@ class PageTests(StoreCase):
         weeks = week_specs(9)
         seeded = self.seed(weeks)
         conn = self.writable()
-        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
         output_dir = Path(self.tmp.name) / "stale-site"
         (output_dir / "fakt").mkdir(parents=True)
@@ -1909,7 +2138,7 @@ class PageTests(StoreCase):
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
         conn.commit()
-        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
         output_dir = Path(self.tmp.name) / "drucksache-site"
         output_dir.mkdir()
@@ -1929,7 +2158,7 @@ class PageTests(StoreCase):
         # placeholder instead of crashing, and skip writing that one SVG.
         seeded = self.seed(week_specs(9))
         conn = self.writable()
-        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.execute("UPDATE speeches SET rede_id = 'GONE' WHERE protocol_id = 'p9' AND rede_id = 'ID900100'")
         conn.commit()
         conn.close()
@@ -2024,7 +2253,7 @@ class PageTests(StoreCase):
     def write_monthly_pages(self, months, output_name="monthly-site", mp_lookup=None, **kwargs):
         seeded = self.seed(months, **kwargs)
         conn = self.writable()
-        facts.compute_and_store(conn, facts.ALL_REGISTRY, seeded["completeness"], built={"votes"}, out=quiet())
+        facts.compute_and_store(conn, facts.ALL_REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
         conn.close()
         output_dir = Path(self.tmp.name) / output_name
         output_dir.mkdir(exist_ok=True)

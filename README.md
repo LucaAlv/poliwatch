@@ -135,7 +135,7 @@ Pull the current catalog and re-enrich the newest sittings, keeping everything a
 scripts/preview_dip_pulse_site.sh update --preserve-existing-dossiers
 ```
 
-With the default `--limit 0`, the catalog covers every Bundestag plenary protocol back to 1949 — 4,667 entries in an August 2026 run, fetched in roughly 15 seconds. Only the newest `--detail-limit` sittings become dossiers; the rest stay catalog rows. Pass `--limit 20` if you want a short catalog instead.
+Every online build fetches the whole catalog — every Bundestag plenary protocol back to 1949, 4,667 entries in an August 2026 run, in roughly 15 seconds — and caches it as an *authoritative* catalog (`data/plenarprotokoll-catalog.json`). It is what completeness is judged against: a week or month is complete only when every sitting the catalog lists for it is in the store and fully acquired (§5). `--limit` and `--document-number` narrow which sittings are *acquired*, never the catalog. Only the newest `--detail-limit` sittings become dossiers; the rest stay catalog rows.
 
 Enrich exactly one sitting, leaving every other dossier untouched:
 
@@ -147,7 +147,7 @@ scripts/preview_dip_pulse_site.sh update \
   --preserve-existing-dossiers
 ```
 
-Only the dossier work is narrowed here. The catalog is still fetched (`--limit 20` keeps that cheap); drop `--limit` if you want the full catalog again.
+Only the dossier work is narrowed here; the catalog is fetched whole either way.
 
 **The `--preserve-existing-dossiers` flag matters.** Each online build rewrites the catalog and rebuilds the SQLite store from the dossiers that build knows about. Without the flag, that set is only the dossiers generated in *this* run, so a narrow update silently shrinks the site to those sittings. The cached JSON stays on disk, so recover by re-running a build that is not restricted to one document, with the flag: `scripts/preview_dip_pulse_site.sh update --limit 20 --detail-limit -1 --preserve-existing-dossiers`. Note that `--preserve-existing-dossiers` cannot rescue a `--document-number` build — preserved dossiers are filtered to the catalog, and that flag restricts the catalog to the one protocol.
 
@@ -155,9 +155,9 @@ Related knobs, in the order you will reach for them:
 
 | Flag | Effect |
 |---|---|
-| `--limit N` | Protocols in the catalog. Default `0` = every available BT protocol. |
+| `--limit N` | Acquire only the newest N protocols of `--protocol-wahlperiode`. Default `0` = no cap. The catalog is always fetched whole. |
 | `--detail-limit N` | Protocols enriched into dossiers. Default `5`; `0` = all fetched, `-1` = none. |
-| `--document-number 21/90` | Restrict catalog *and* dossiers to this protocol. Repeatable. Narrowing tool. |
+| `--document-number 21/90` | Acquire only this protocol (repeatable); the catalog is unaffected. |
 | `--dossier-document-number 21/90` | Add one dossier without restricting the catalog. Repeatable. Additive tool. |
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
 | `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |

@@ -329,6 +329,36 @@ def fetch_protocols(
     return protocols if fetch_all else protocols[:limit]
 
 
+# Which sittings of the catalog this run acquires. --document-number and
+# --limit narrow the acquisition only: the catalog stays whole, because
+# completeness is judged against everything DIP lists and the store keeps every
+# cached dossier whatever this run refreshes.
+def select_acquisition_protocols(
+    catalog: list[dict[str, Any]],
+    document_numbers: list[str],
+    limit: int,
+    wahlperiode: int | None,
+) -> list[dict[str, Any]]:
+    ordered = sorted(catalog, key=protocol_sort_key, reverse=True)
+    if document_numbers:
+        by_number = {normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in ordered}
+        wanted = [normalized_document_number(number) for number in document_numbers]
+        missing = [number for number in wanted if number not in by_number]
+        if missing:
+            raise dip.DipError(f"No BT Plenarprotokoll found for {', '.join(missing)}")
+        return [protocol for protocol in ordered if normalized_document_number(protocol.get("dokumentnummer")) in wanted]
+    if limit > 0:
+        if wahlperiode:
+            prefix = f"{wahlperiode}/"
+            ordered = [
+                protocol
+                for protocol in ordered
+                if normalized_document_number(protocol.get("dokumentnummer")).startswith(prefix)
+            ]
+        return ordered[:limit]
+    return ordered
+
+
 # Decide which of the fetched protocols get a full dossier page.
 #
 #   detail_limit  < 0  -> none (catalog-only build)
@@ -615,13 +645,19 @@ def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any
 def load_cached_protocols(output_dir: Path) -> list[dict[str, Any]]:
     """Load the protocol catalog from disk, augmenting it with cached dossier
     reports so offline renders work even when the catalog was never written."""
-    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
+    catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
     protocols: list[dict[str, Any]] = []
     if catalog_path.exists():
         try:
             cached = json.loads(catalog_path.read_text(encoding="utf-8"))
-            if isinstance(cached, list):
-                protocols.extend(item for item in cached if isinstance(item, dict))
+            if isinstance(cached, dict) and isinstance(cached.get("protocols"), list):
+                protocols.extend(item for item in cached["protocols"] if isinstance(item, dict))
+            else:
+                print(
+                    f"warning: Ignoring cached protocol catalog {catalog_path}: it predates the catalog format "
+                    "completeness is judged against. Fix: run an online update.",
+                    file=sys.stderr,
+                )
         except (OSError, json.JSONDecodeError) as exc:
             print(f"warning: Could not read cached protocol catalog {catalog_path}: {exc}", file=sys.stderr)
 
@@ -9004,6 +9040,7 @@ def render_site(
     data_export_error: str | None = None,
     is_remote_manifest: bool = False,
     bill_slugs: set[str] | None = None,
+    authoritative_catalog: bool = False,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -9058,9 +9095,21 @@ def render_site(
         data_stand = f"Stand {stand_display} · {pulse_html.format_int(manifest['protocols']['count'])} Protokolle"
 
     # The raw catalog as JSON. It is also what load_cached_protocols() reads back
-    # for an --offline render.
-    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
-    catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # for an --offline render, and what completeness is judged against. Only a
+    # build that fetched the whole DIP catalog may write it: an offline render
+    # holds the cache plus dossier-derived protocols, and rewriting the file
+    # from that would turn a partial list into an "authoritative" one.
+    catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
+    if authoritative_catalog:
+        catalog_path.write_text(
+            json.dumps(
+                {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     components = {
         component.feature.id: component
         for component in feature_loader.load(features, include_dev_view=include_dev_view)
@@ -9615,7 +9664,10 @@ def parse_args() -> argparse.Namespace:
         "--limit",
         type=int,
         default=0,
-        help="Number of recent Bundestag protocols to include in the catalog. Use 0 for every available BT protocol.",
+        help=(
+            "Acquire only the newest N Bundestag protocols of --protocol-wahlperiode (0 = no cap). "
+            "The catalog itself is always fetched whole: completeness is judged against it."
+        ),
     )
     parser.add_argument(
         "--detail-limit",
@@ -9627,7 +9679,10 @@ def parse_args() -> argparse.Namespace:
         "--document-number",
         action="append",
         default=[],
-        help="Specific protocol document number to include, e.g. 21/84. Can be repeated.",
+        help=(
+            "Acquire only this protocol, e.g. 21/84 (repeatable). The catalog and every cached dossier "
+            "are kept; only the named sittings are refreshed."
+        ),
     )
     parser.add_argument(
         "--dossier-document-number",
@@ -9790,8 +9845,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=21,
         help=(
-            "Legislative period used to narrow limited protocol catalog fetches "
-            "(default 21; use 0 to query all periods before applying --limit)."
+            "Legislative period --limit counts the newest protocols of "
+            "(default 21; use 0 to count across all periods)."
         ),
     )
     parser.add_argument(
@@ -9899,7 +9954,11 @@ def resolve_commit() -> str | None:
 # rebuild of an unchanged store leaves the store's mtime alone and the export's
 # skip rule still holds. A metric whose SQL raises a FactsError aborts the
 # build naming the metric (FactsError is a RuntimeError, which main() reports).
-def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+def run_facts_engine(
+    database_path: Path,
+    entries: list[dict[str, Any]],
+    catalog: facts.SittingCatalog | None,
+) -> dict[str, Any]:
     store = pulse_store.connect(database_path)
     try:
         pulse_store.initialize(store)
@@ -9908,6 +9967,7 @@ def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict
             store,
             facts.ALL_REGISTRY,
             facts.completeness_from_entries(entries),
+            catalog=catalog,
             built=built,
         )
     finally:
@@ -9930,6 +9990,7 @@ def run_data_pipeline(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
     canonical_by_mp_id: dict[int, int],
+    catalog: facts.SittingCatalog | None,
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
@@ -9940,7 +10001,7 @@ def run_data_pipeline(
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
-        run_facts_engine(database_path, entries)
+        run_facts_engine(database_path, entries, catalog)
 
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
@@ -10116,6 +10177,10 @@ def main() -> int:
                 abg_mps=abg_mps,
                 mp_lookup=mp_lookup,
                 canonical_by_mp_id=canonical_by_mp_id,
+                # The cached catalog on its own, never the protocols above: those
+                # also hold dossier-derived entries, which prove nothing about
+                # what DIP lists.
+                catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
             )
         except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -10173,9 +10238,13 @@ def main() -> int:
         # changing the catalog; the second protocols_for_detail_pages() call
         # re-filters that combined list for a usable XML URL.
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
-        protocols = fetch_protocols(client, args.limit, args.document_number, protocol_wahlperiode)
+        # The whole catalog, whatever narrows the acquisition below.
+        protocols = fetch_protocols(client, 0, [], None)
+        acquisition_scope = select_acquisition_protocols(
+            protocols, args.document_number, args.limit, protocol_wahlperiode
+        )
         detail_limit = None if args.document_number else args.detail_limit
-        detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
+        detail_protocols = protocols_for_detail_pages(acquisition_scope, detail_limit)
         protocols, detail_protocols = add_explicit_dossier_protocols(
             client,
             protocols,
@@ -10315,6 +10384,7 @@ def main() -> int:
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
             canonical_by_mp_id=canonical_by_mp_id,
+            catalog=facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now()),
         )
     except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -10339,6 +10409,7 @@ def main() -> int:
         data_export_error=data_export_error,
         is_remote_manifest=is_remote_manifest,
         bill_slugs=bill_slugs,
+        authoritative_catalog=True,
     )
     print(index_path)
     return 0
