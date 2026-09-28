@@ -160,7 +160,8 @@ Related knobs, in the order you will reach for them:
 | `--document-number 21/90` | Restrict catalog *and* dossiers to this protocol. Repeatable. Narrowing tool. |
 | `--dossier-document-number 21/90` | Add one dossier without restricting the catalog. Repeatable. Additive tool. |
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
-| `--enrich ID` | Add optional vote, profile, or full-roster acquisition to this update. Omit it for the fastest update. |
+| `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |
+| `--no-votes` | Skip roll-call vote acquisition for this update. Cached votes and their acquisition state are kept. |
 
 While developing a single dossier, the fastest online build is:
 
@@ -222,7 +223,7 @@ python3 scripts/build_dip_pulse_site.py --explain-config
 
 | Enrichment | Network work |
 |---|---|
-| `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, and the XLSX Namensliste link from bundestag.de |
+| `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, and the XLSX Namensliste link from bundestag.de. **On by default** for every online update. |
 | `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
 | `mp-roster` | Refresh the complete MdB roster from DIP |
 
@@ -234,12 +235,17 @@ The ordinary offline preview needs no feature arguments:
 scripts/preview_dip_pulse_site.sh
 ```
 
-Use `--enrich` only when an online update should acquire optional data. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, or `all`:
+An online update acquires roll-call votes by default: a sitting fetched without them is recorded as `not_requested`, and the newest votes never reach the store. Use `--enrich` for the enrichments that are not on by default. It is repeatable and accepts `votes`, `aw-profiles`, `mp-roster`, or `all`:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
+scripts/preview_dip_pulse_site.sh update --enrich aw-profiles
 scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
+scripts/preview_dip_pulse_site.sh update --no-votes     # skip the roll-call scan this time
 ```
+
+The vote scan reads the Bundestag's roll-call list newest first, at most `--vote-scan-pages` pages (default 30) per sitting; one build shares the pages between its sittings. A sitting's votes are recorded `complete` only when the scan passed the sitting's date or reached the end of the list. When it used every page without doing either, the sitting is `partial` (or `failed` if no vote was found) with the reason `scan_budget_exhausted`, and the build prints `raise --vote-scan-pages`. A failed request is `source_unavailable` for that sitting's votes; the dossier is still built and cached votes are kept. A roll-call vote whose Drucksache number matches no agenda item is listed on stderr and counted in `validation_summary.unmatched_roll_call_vote_count`; it does not make the acquisition partial.
+
+**Precedence.** Sources speak in this order, later ones winning: the built-in default (`votes`), `features.json`, `features.local.json`, `--features-file`, `BUNDESTAG_PULSE_ENRICHMENTS`, then `--enrich` and `--vote-scan-pages N` (N > 0, which selects votes). A config file's `enrich` list replaces the set built up by earlier config layers but never removes the default, so a `features.local.json` that lists only `aw-profiles` still acquires votes. Only a veto switches a default off: `--no-votes` (which beats everything, including `--enrich votes` on the same command line), `--vote-scan-pages 0`, a `-votes` entry in an `enrich` list or in `BUNDESTAG_PULSE_ENRICHMENTS`, or the legacy `disable` key. `--explain-config` prints the effective set with the source of each entry and this precedence line.
 
 Without `--summary-mode auto` the default `reuse` carries existing summaries forward and makes no LLM request. Generating summaries needs `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` and may incur provider cost. `--enrich all` deliberately does not imply summary generation.
 
@@ -248,10 +254,10 @@ An update that omits an enrichment reuses already cached votes, profile links, s
 For durable operator defaults, use the gitignored `features.local.json` next to `features.json`:
 
 ```json
-{ "enrich": ["votes", "aw-profiles"] }
+{ "enrich": ["aw-profiles", "-votes"] }
 ```
 
-`BUNDESTAG_PULSE_ENRICHMENTS=votes,aw-profiles` is the environment-variable equivalent. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.5.x`; they no longer remove published UI and are scheduled for removal in `0.6.0`.
+`BUNDESTAG_PULSE_ENRICHMENTS=aw-profiles,-votes` is the environment-variable equivalent. The example adds profile links and vetoes the vote scan; drop `-votes` to keep the default. The old `--features`, `--enable`, `--disable`, `--list-features`, and `BUNDESTAG_PULSE_FEATURES` inputs remain accepted with a warning throughout `0.5.x`; they no longer remove published UI and are scheduled for removal in `0.6.0`.
 
 Developer payloads are separate from presentation and enrichment. Use `--include-dev-view` only with a dedicated output directory such as `.context/dip-pulse-site-dev`; the builder rejects attempts to mix it into the ordinary public output.
 
@@ -306,7 +312,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `error: No cached protocols found in .context/dip-pulse-site/data.` | Offline build on an empty cache. Run one online update first (§2). |
 | Site suddenly shows only one sitting | A narrow online update rewrote the catalog. Re-run with `--preserve-existing-dossiers`. |
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
-| Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed; then run an online update with the relevant `--enrich` option (§5). |
+| Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed. Votes are acquired by default, so `not_requested` means `--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry was in effect: run an online update without it. `partial` or `failed` with `scan_budget_exhausted` means the roll-call scan ran out of pages before reaching the sitting's date: raise `--vote-scan-pages`. Profile links need `--enrich aw-profiles` (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |

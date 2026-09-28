@@ -103,6 +103,14 @@ class RollCallCandidateFetch:
     list_html_seen: bool
     parsed_entry_count: int
     selector_warning: bool
+    # How the scan ended: "date_passed" (an entry older than the sitting was
+    # seen), "list_end" (the list ran out), "budget_exhausted" (all
+    # --vote-scan-pages used with neither: older votes may still be listed
+    # beyond the window) or "not_scanned". Only the first two prove that every
+    # candidate of the sitting's date was seen.
+    scan_end: str = "not_scanned"
+    pages_fetched: int = 0
+    pages_from_cache: int = 0
 
 
 def load_local_env(path: Path | None = None) -> None:
@@ -942,7 +950,13 @@ def fetch_roll_call_vote_candidates(
     roll_call_list_id: str | None = None,
     *,
     include_diagnostics: bool = False,
+    page_cache: dict[str, str] | None = None,
 ) -> list[dict[str, Any]] | RollCallCandidateFetch:
+    """Scan the roll-call list, newest first, for votes dated ``protocol_date``.
+
+    ``page_cache`` maps a list URL to its HTML so the sittings of one build
+    share the pages instead of each re-reading them from the top.
+    """
     target_date = iso_date(protocol_date)
     if not target_date or scan_pages <= 0:
         result = RollCallCandidateFetch([], False, 0, False)
@@ -952,23 +966,39 @@ def fetch_roll_call_vote_candidates(
     list_html_seen = False
     parsed_entry_count = 0
     page_size = 10
+    scan_end = "budget_exhausted"
+    pages_fetched = 0
+    pages_from_cache = 0
     for page_index in range(scan_pages):
-        html_text = fetch_html(roll_call_list_url(roll_call_list_id, page_index * page_size, page_size))
+        url = roll_call_list_url(roll_call_list_id, page_index * page_size, page_size)
+        if page_cache is not None and url in page_cache:
+            html_text = page_cache[url]
+            pages_from_cache += 1
+        else:
+            html_text = fetch_html(url)
+            pages_fetched += 1
+            if page_cache is not None:
+                page_cache[url] = html_text
         if html_text.strip():
             list_html_seen = True
         page_entries = parse_roll_call_list_page(html_text)
         parsed_entry_count += len(page_entries)
         if not page_entries:
+            scan_end = "list_end"
             break
         candidates.extend(entry for entry in page_entries if entry.get("date") == target_date)
         dated = [entry.get("date") for entry in page_entries if entry.get("date")]
         if dated and min(dated) < target_date:
+            scan_end = "date_passed"
             break
     result = RollCallCandidateFetch(
         candidates=candidates,
         list_html_seen=list_html_seen,
         parsed_entry_count=parsed_entry_count,
         selector_warning=list_html_seen and parsed_entry_count == 0,
+        scan_end=scan_end,
+        pages_fetched=pages_fetched,
+        pages_from_cache=pages_from_cache,
     )
     return result if include_diagnostics else result.candidates
 
@@ -1537,6 +1567,7 @@ def enrich_with_api(
     vote_scan_pages: int = 30,
     roll_call_list_id: str | None = None,
     progress: Callable[[str], None] | None = None,
+    roll_call_page_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
@@ -1545,16 +1576,32 @@ def enrich_with_api(
     activities = client.list_all("/aktivitaet", {"f.plenarprotokoll": protocol_id})
     if progress:
         progress(f"Fetched {len(activities)} parliamentary activity record(s).")
-    roll_call_fetch = fetch_roll_call_vote_candidates(
-        protocol.get("datum"),
-        vote_scan_pages,
-        roll_call_list_id,
-        include_diagnostics=True,
-    )
+    # A failed roll-call fetch is a vote acquisition failure, not a reason to
+    # lose the whole dossier: the first error stops further vote requests and
+    # the state below records it.
+    vote_fetch_error: DipError | None = None
+    try:
+        roll_call_fetch = fetch_roll_call_vote_candidates(
+            protocol.get("datum"),
+            vote_scan_pages,
+            roll_call_list_id,
+            include_diagnostics=True,
+            page_cache=roll_call_page_cache,
+        )
+    except DipError as exc:
+        vote_fetch_error = exc
+        roll_call_fetch = RollCallCandidateFetch([], False, 0, False, scan_end="failed")
+        print(f"warning: roll-call list unavailable for {protocol.get('dokumentnummer') or protocol_id}: {exc}", file=sys.stderr)
     assert isinstance(roll_call_fetch, RollCallCandidateFetch)
     roll_call_candidates = roll_call_fetch.candidates
     if progress:
         progress(f"Found {len(roll_call_candidates)} roll-call vote candidate(s).")
+        if vote_scan_pages > 0:
+            progress(
+                f"Roll-call scan ended by {roll_call_fetch.scan_end}: "
+                f"{roll_call_fetch.pages_fetched} list page(s) fetched, "
+                f"{roll_call_fetch.pages_from_cache} reused from this build."
+            )
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
     positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
@@ -1623,7 +1670,16 @@ def enrich_with_api(
             linked_drucksachen.extend(linked_drucksachen_for_vorgang(vorgang_id))
 
         linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
-        votes = match_roll_call_votes(top, linked_drucksachen, roll_call_candidates, roll_call_cache)
+        votes = []
+        if vote_fetch_error is None:
+            try:
+                votes = match_roll_call_votes(top, linked_drucksachen, roll_call_candidates, roll_call_cache)
+            except DipError as exc:
+                vote_fetch_error = exc
+                print(
+                    f"warning: roll-call vote details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {exc}",
+                    file=sys.stderr,
+                )
 
         enriched_tops.append(
             {
@@ -1706,8 +1762,36 @@ def enrich_with_api(
         warnings.append("Mindestens ein XML-TOP mit Reden hatte keine passenden DIP-Aktivitäten im Seitenbereich.")
     if len(activities) >= 100:
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
-    if roll_call_candidates and not roll_call_cache:
+    attached_vote_ids = {str(vote["id"]) for top in enriched_tops for vote in top["votes"]}
+    unmatched_candidates = [
+        candidate for candidate in roll_call_candidates if str(candidate["id"]) not in attached_vote_ids
+    ]
+    if roll_call_candidates and not attached_vote_ids:
         warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
+    elif unmatched_candidates and vote_fetch_error is None:
+        warnings.append(
+            f"{len(unmatched_candidates)} von {len(roll_call_candidates)} namentlichen Abstimmungen dieses Sitzungsdatums "
+            "passten per Drucksachennummer zu keinem TOP."
+        )
+    if unmatched_candidates and vote_fetch_error is None:
+        for candidate in unmatched_candidates:
+            print(
+                f"warning: [{protocol.get('dokumentnummer') or protocol_id}] roll-call vote {candidate['id']} "
+                f"({candidate.get('title')!r}, {candidate.get('document_numbers') or 'no document numbers'}) "
+                "matched no TOP",
+                file=sys.stderr,
+            )
+    if roll_call_fetch.scan_end == "budget_exhausted":
+        message = (
+            f"warning: [{protocol.get('dokumentnummer') or protocol_id}] roll-call scan used all "
+            f"{vote_scan_pages} list page(s) without reaching {protocol.get('datum')}; older votes may be missing. "
+            "Fix: raise --vote-scan-pages."
+        )
+        warnings.append(
+            f"Die Suche in der Liste der namentlichen Abstimmungen endete nach {vote_scan_pages} Seiten, "
+            "bevor sie das Sitzungsdatum passierte; Abstimmungen können fehlen."
+        )
+        print(message, file=sys.stderr)
     if roll_call_fetch.selector_warning:
         warnings.append(ROLL_CALL_LIST_PARSE_WARNING)
         print(f"warning: {ROLL_CALL_LIST_PARSE_WARNING}", file=sys.stderr)
@@ -1720,7 +1804,7 @@ def enrich_with_api(
             f"{failed_ids}{suffix}."
         )
 
-    vote_records = len(roll_call_cache)
+    vote_records = len(attached_vote_ids)
     if vote_scan_pages <= 0:
         vote_facts = publication.DomainFacts(
             domain="votes",
@@ -1730,30 +1814,44 @@ def enrich_with_api(
         )
     else:
         attempted_at = utc_now()
+        # A complete acquisition needs full evidence: the scan reached the end
+        # of the list or passed the sitting's date, and no request failed.
+        # Anything else is partial (some votes attached) or failed (none), with
+        # the reason named. A candidate that matches no TOP is logged above and
+        # counted in api_totals, but does not make the acquisition partial: the
+        # vote itself was seen, only its TOP could not be told.
+        failure_reasons: list[str] = []
         if roll_call_fetch.selector_warning:
-            vote_state = (
-                publication.AcquisitionState.PARTIAL
-                if vote_records
-                else publication.AcquisitionState.FAILED
-            )
+            failure_reasons.append("source_changed")
+        if vote_fetch_error is not None:
+            failure_reasons.append("source_unavailable")
+        if roll_call_fetch.scan_end == "budget_exhausted":
+            failure_reasons.append("scan_budget_exhausted")
+        if failure_reasons:
             vote_facts = publication.DomainFacts(
                 domain="votes",
-                acquisition_state=vote_state,
+                acquisition_state=(
+                    publication.AcquisitionState.PARTIAL
+                    if vote_records
+                    else publication.AcquisitionState.FAILED
+                ),
                 source="bundestag-roll-call",
                 records=vote_records,
-                rejected=1,
-                failure_reasons=("source_changed",),
+                rejected=1 if roll_call_fetch.selector_warning else 0,
+                failure_reasons=tuple(failure_reasons),
                 acquired_at=attempted_at if vote_records else None,
                 attempted_at=attempted_at,
                 attempted=True,
             )
         else:
+            # A verified zero-vote sitting is stamped too: acquired_at says
+            # the list was read to the end of the date, not that a vote exists.
             vote_facts = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=publication.AcquisitionState.COMPLETE,
                 source="bundestag-roll-call",
                 records=vote_records,
-                acquired_at=attempted_at if vote_records else None,
+                acquired_at=attempted_at,
                 attempted_at=attempted_at,
                 attempted=True,
             )
@@ -1772,6 +1870,8 @@ def enrich_with_api(
             ),
             "roll_call_vote_candidate_count": len(roll_call_candidates),
             "matched_roll_call_vote_count": len(roll_call_cache),
+            "unmatched_roll_call_vote_count": len(unmatched_candidates),
+            "roll_call_scan_end": roll_call_fetch.scan_end,
         },
         "sampled_people": [compact_person(person) for person in person_records],
         "api_records": {
@@ -1782,6 +1882,7 @@ def enrich_with_api(
             "person_fetch_errors": person_fetch_errors,
             "roll_call_vote_candidates": roll_call_candidates,
             "matched_roll_call_votes": list(roll_call_cache.values()),
+            "unmatched_roll_call_vote_ids": [str(candidate["id"]) for candidate in unmatched_candidates],
         },
         "agenda_items": enriched_tops,
         "warnings": warnings,
@@ -1828,6 +1929,7 @@ def build_report(
         getattr(args, "vote_scan_pages", 30),
         getattr(args, "roll_call_list_id", None),
         progress=progress,
+        roll_call_page_cache=getattr(args, "roll_call_page_cache", None),
     )
 
     agenda_items = enrichment["agenda_items"]
@@ -1841,22 +1943,17 @@ def build_report(
     tops_with_api_drucksachen = sum(1 for top in enrichment["agenda_items"] if top["api"]["linked_drucksachen"])
     acquisition = enrichment.get("acquisition")
     if not acquisition:
-        vote_records = int((enrichment.get("api_totals") or {}).get("matched_roll_call_vote_count") or 0)
-        vote_requested = int(getattr(args, "vote_scan_pages", 30)) > 0
-        attempted_at = utc_now() if vote_requested else None
+        # enrich_with_api always reports its own vote acquisition. Without one,
+        # only "not requested" is a statement the caller can make; claiming a
+        # requested scan complete would be unsupported.
+        if int(getattr(args, "vote_scan_pages", 30)) > 0:
+            raise DipError("Vote acquisition was requested but the enrichment reported no vote acquisition state.")
         acquisition = {
             "votes": publication.DomainFacts(
                 domain="votes",
-                acquisition_state=(
-                    publication.AcquisitionState.COMPLETE
-                    if vote_requested
-                    else publication.AcquisitionState.NOT_REQUESTED
-                ),
+                acquisition_state=publication.AcquisitionState.NOT_REQUESTED,
                 source="bundestag-roll-call",
-                records=vote_records,
-                acquired_at=attempted_at if vote_records else None,
-                attempted_at=attempted_at,
-                attempted=vote_requested,
+                records=int((enrichment.get("api_totals") or {}).get("matched_roll_call_vote_count") or 0),
             ).as_dict()
         }
 

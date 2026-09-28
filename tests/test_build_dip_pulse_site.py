@@ -1254,16 +1254,25 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
 
     def test_enrichment_precedence_matrix(self) -> None:
         scenarios = (
-            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles"}),
-            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster"}),
+            # votes is a default, so a replacing config keeps it unless it vetoes it.
+            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles", "votes"}),
+            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster", "votes"}),
             (
                 "canonical env follows legacy env",
                 {},
                 {"env": {"BUNDESTAG_PULSE_FEATURES": "votes", "BUNDESTAG_PULSE_ENRICHMENTS": "aw-profiles"}},
                 {"votes", "aw-profiles"},
             ),
-            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster"}),
-            ("empty local replacement clears repository", {"repo": ["votes"], "local": []}, {}, set()),
+            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster", "votes"}),
+            ("empty local replacement clears repository but not the default", {"repo": ["aw-profiles"], "local": []}, {}, {"votes"}),
+            ("config without votes keeps the default", {"local": ["aw-profiles"]}, {}, {"aw-profiles", "votes"}),
+            ("a -votes entry in a config vetoes the default", {"local": ["aw-profiles", "-votes"]}, {}, {"aw-profiles"}),
+            ("a -votes entry in the environment vetoes the default", {}, {"env": {"BUNDESTAG_PULSE_ENRICHMENTS": "-votes"}}, set()),
+            ("--no-votes vetoes the default", {}, {"args": {"no_votes": True}}, set()),
+            ("--no-votes beats --enrich votes", {}, {"args": {"no_votes": True, "enrich": ["votes"]}}, set()),
+            ("--no-votes beats --vote-scan-pages", {}, {"args": {"no_votes": True, "vote_scan_pages": 5}}, set()),
+            ("--vote-scan-pages 0 turns votes off", {}, {"args": {"vote_scan_pages": 0}}, set()),
+            ("--enrich votes lifts a config veto", {"local": ["-votes"]}, {"args": {"enrich": ["votes"]}}, {"votes"}),
             ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
         )
         for label, files, inputs, expected in scenarios:
@@ -1321,21 +1330,65 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
         self.assertFalse(args.no_roster)
         self.assertTrue(args.no_abgeordnetenwatch)
 
-    def test_default_update_enrichments_do_not_make_network_side_jobs(self) -> None:
-        args = SimpleNamespace(
-            enrich=[],
-            enable=[],
-            disable=[],
-            features=None,
-            features_file=None,
-            vote_scan_pages=None,
-        )
+    def test_default_update_acquires_votes_and_nothing_else(self) -> None:
+        args = self._config_args(no_votes=False)
         with tempfile.TemporaryDirectory() as tmp:
             selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
         build_dip_pulse_site.apply_to_args(args, selection)
-        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertEqual(set(selection), {"votes"})
+        self.assertEqual(args.vote_scan_pages, 30)
         self.assertTrue(args.no_roster)
         self.assertTrue(args.no_abgeordnetenwatch)
+        self.assertIn(("add", "votes", "default"), selection.provenance)
+
+    def test_no_votes_turns_the_scan_off_and_keeps_the_rest(self) -> None:
+        args = self._config_args(no_votes=True, enrich=["mp-roster"])
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(set(selection), {"mp-roster"})
+        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertFalse(args.no_roster)
+
+    def test_existing_config_that_omits_votes_still_acquires_votes(self) -> None:
+        # The repository's own features.json ships an empty enrich list, and an
+        # operator's features.local.json may list only other enrichments. Both
+        # replace the configured set; neither may switch the default off.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "features.json").write_text('{"enrich": []}', encoding="utf-8")
+            (root / "features.local.json").write_text('{"enrich": ["aw-profiles"]}', encoding="utf-8")
+            args = self._config_args(no_votes=False)
+            with mock.patch.dict("os.environ", {}, clear=True):
+                selection = build_dip_pulse_site.resolve_from_args(args, root=root)
+            build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(set(selection), {"votes", "aw-profiles"})
+        self.assertEqual(args.vote_scan_pages, 30)
+
+    def test_legacy_config_disable_still_vetoes_votes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "features.local.json").write_text('{"disable": ["votes"]}', encoding="utf-8")
+            with mock.patch.dict("os.environ", {}, clear=True):
+                selection = build_dip_pulse_site.resolve_from_args(self._config_args(), root=Path(tmp))
+        self.assertNotIn("votes", selection)
+
+    def test_explain_config_states_precedence_and_default_source(self) -> None:
+        args = self._config_args(no_votes=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        stdout = io.StringIO()
+        with mock.patch("sys.stdout", stdout):
+            build_dip_pulse_site.print_effective_config(selection, args)
+        output = stdout.getvalue()
+        self.assertIn("enrichment=votes source=default", output)
+        self.assertIn("precedence=built-in default < features.json", output)
+        self.assertIn("--no-votes beats all of them", output)
+
+    def test_no_votes_flag_is_documented_and_parsed(self) -> None:
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py", "--no-votes"]):
+            self.assertTrue(build_dip_pulse_site.parse_args().no_votes)
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py"]):
+            self.assertFalse(build_dip_pulse_site.parse_args().no_votes)
 
     def test_positive_vote_scan_pages_implies_vote_enrichment(self) -> None:
         args = SimpleNamespace(

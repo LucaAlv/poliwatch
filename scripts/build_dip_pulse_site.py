@@ -1126,19 +1126,56 @@ def annotate_report_acquisition(
     vote_records = sum(
         len(_iter_report_votes(item)) for item in report.get("agenda_items") or []
     )
+    prior_votes = ((existing_report or {}).get("acquisition") or {}).get("votes")
     if vote_scan_pages == 0:
-        acquisition["votes"] = publication.DomainFacts(
-            domain="votes",
-            acquisition_state=(
-                publication.AcquisitionState.COMPLETE
-                if vote_records
-                else publication.AcquisitionState.NOT_REQUESTED
-            ),
-            source="bundestag-roll-call",
-            records=vote_records,
-            reused=vote_records,
-            acquired_at=_prior_acquired_at(existing_report, "votes") if vote_records else None,
-        ).as_dict()
+        # No scan this run: the votes on the report are the cached ones, so
+        # they keep the state their acquisition recorded (partial and failed
+        # included). Only a report that never recorded one has nothing to keep;
+        # its votes are unknown provenance (no acquired_at), not "complete".
+        if prior_votes:
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=prior_votes["acquisition_state"],
+                source="bundestag-roll-call",
+                records=vote_records,
+                reused=vote_records,
+                rejected=int(prior_votes.get("rejected") or 0),
+                failure_reasons=tuple(prior_votes.get("failure_reasons") or ()),
+                acquired_at=prior_votes.get("acquired_at"),
+                attempted_at=prior_votes.get("attempted_at"),
+                attempted=bool(prior_votes.get("attempted")),
+            ).as_dict()
+        else:
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=(
+                    publication.AcquisitionState.COMPLETE
+                    if vote_records
+                    else publication.AcquisitionState.NOT_REQUESTED
+                ),
+                source="bundestag-roll-call",
+                records=vote_records,
+                reused=vote_records,
+            ).as_dict()
+    else:
+        fresh = acquisition.get("votes") or {}
+        carried = max(0, vote_records - int(fresh.get("records") or 0))
+        if fresh.get("acquisition_state") in {"partial", "failed"} and carried:
+            # The scan could not vouch for this sitting, so the cached votes
+            # were kept (reuse_existing_dossier_enrichments). They are still
+            # only partial evidence: the failed attempt's reasons stay.
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=publication.AcquisitionState.PARTIAL,
+                source="bundestag-roll-call",
+                records=vote_records,
+                reused=carried,
+                rejected=int(fresh.get("rejected") or 0),
+                failure_reasons=tuple(fresh.get("failure_reasons") or ()),
+                acquired_at=fresh.get("acquired_at") or (prior_votes or {}).get("acquired_at"),
+                attempted_at=fresh.get("attempted_at"),
+                attempted=bool(fresh.get("attempted")),
+            ).as_dict()
 
     profile_records, _profile_targets = _report_profile_counts(report)
     if profile_resolver is None:
@@ -1251,6 +1288,7 @@ def write_report_and_page(
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
     database_page_href: str | None = None,
+    roll_call_page_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -1278,14 +1316,19 @@ def write_report_and_page(
         # fail before making any provider calls when the budget cannot suffice.
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
+        roll_call_page_cache=roll_call_page_cache,
     )
     report = dip.build_report(args, protocol=protocol)
     if summary_mode in {"auto", "required"}:
         reconcile_generated_and_cached_summaries(report, existing_report)
+    # Cached votes carry forward when this run did not scan, and also when the
+    # scan could not vouch for the sitting (partial or failed): a failed
+    # attempt must not delete what an earlier one found.
+    fresh_vote_state = ((report.get("acquisition") or {}).get("votes") or {}).get("acquisition_state")
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
-        votes=vote_scan_pages == 0,
+        votes=vote_scan_pages == 0 or fresh_vote_state != "complete",
         profiles=profile_resolver is None,
     )
     # Post-processing steps supplied by enrichment components. In reuse mode the
@@ -8655,7 +8698,9 @@ def build_publication_manifest(
     ))
 
     def optional_domain(domain: str, source: str, records: int, selected_id: str) -> publication.DomainFacts:
-        requested = selected_id in selected
+        # Selected is a configuration; requested is something this run did. An
+        # offline render selects the default enrichments too but fetches nothing.
+        requested = selected_id in selected and acquisition_attempted
         cached = records > 0 and not requested
         state = publication.AcquisitionState.COMPLETE if requested or cached else publication.AcquisitionState.NOT_REQUESTED
         return publication.DomainFacts(
@@ -9222,12 +9267,29 @@ def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> Non
             raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
 
 
+# Enrichments an online update acquires unless an operator vetoes them. Votes
+# are here because a build that silently skips them records every sitting as
+# "not requested" and leaves the store without the newest roll calls.
+DEFAULT_ENRICHMENTS: tuple[str, ...] = ("votes",)
+
+# Order in which sources speak, lowest first; shown by --explain-config.
+ENRICHMENT_PRECEDENCE = (
+    "built-in default < features.json < features.local.json < --features-file < "
+    "BUNDESTAG_PULSE_ENRICHMENTS < --enrich / --vote-scan-pages N > 0; "
+    "a veto (--no-votes, --vote-scan-pages 0, a '-votes' entry, legacy 'disable') "
+    "beats every default and every layer below it, and --no-votes beats all of them"
+)
+
+
 # Build the final Selection for this run, then let features.resolve() close it
 # over dependencies and validate it.
 def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSelection:
     """Resolve operator acquisition as one ordered, provenance-carrying stream."""
     current: set[str] = set()
     operations: list[tuple[str, str, str]] = []
+    # Ids an operator explicitly switched off. A default never re-adds one; a
+    # later explicit add lifts the veto again (later layers win).
+    vetoed: set[str] = set()
 
     def validate_id(value: str, source: str) -> tuple[str, ...]:
         if value == "all":
@@ -9248,14 +9310,22 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
         for value in previous:
             operations.append(("overridden", value, source))
         for token in tokens:
+            if token.startswith("-"):
+                remove([token], source)
+                continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
+                vetoed.discard(value)
                 operations.append(("replace", value, source))
 
     def add(values: Any, source: str) -> None:
         for token in _split_feature_tokens(values):
+            if token.startswith("-"):
+                remove([token], source)
+                continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
+                vetoed.discard(value)
                 operations.append(("add", value, source))
 
     def remove(values: Any, source: str) -> None:
@@ -9264,6 +9334,7 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
             if raw not in ENRICHMENT_REGISTRY:
                 continue
             current.discard(raw)
+            vetoed.add(raw)
             operations.append(("remove", raw, source))
 
     def load_config(path: Path, *, replace_enrich: bool) -> None:
@@ -9309,8 +9380,21 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
         remove(("aw-profiles",), "--no-abgeordnetenwatch")
 
     add(getattr(args, "enrich", None), "--enrich")
-    if (getattr(args, "vote_scan_pages", None) or 0) > 0:
+    scan_pages = getattr(args, "vote_scan_pages", None)
+    if scan_pages is not None and scan_pages > 0:
         add(("votes",), "--vote-scan-pages")
+    elif scan_pages == 0:
+        remove(("votes",), "--vote-scan-pages 0")
+    # Defaults come last, so a config file that lists other enrichments (a
+    # replacement of the set) cannot silently turn them off. Only a veto can.
+    for default in DEFAULT_ENRICHMENTS:
+        if default not in current and default not in vetoed:
+            current.add(default)
+            operations.append(("add", default, "default"))
+    # --no-votes is the operator's last word: it beats --enrich votes and
+    # --vote-scan-pages N > 0 given on the same command line.
+    if getattr(args, "no_votes", False):
+        remove(("votes",), "--no-votes")
     return EnrichmentSelection(frozenset(current), tuple(operations))
 
 
@@ -9382,6 +9466,7 @@ def print_effective_config(selection: EnrichmentSelection, args: argparse.Namesp
     print("Effective operator configuration (no network or writes)")
     print(f"summary_mode={getattr(args, 'summary_mode', 'reuse')} source=--summary-mode/default")
     print(f"include_dev_view={str(bool(getattr(args, 'include_dev_view', False))).lower()} source=--include-dev-view/default")
+    print(f"precedence={ENRICHMENT_PRECEDENCE}")
     if not selection.ids:
         print("enrichments=(none) source=resolved configuration")
     else:
@@ -9519,7 +9604,12 @@ def parse_args() -> argparse.Namespace:
         metavar="ID",
         action="append",
         default=[],
-        help="Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable.",
+        help=(
+            "Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable. "
+            "votes is on by default (turn it off with --no-votes). A config file's enrich list "
+            "replaces earlier config layers but never removes a default; only a veto does "
+            "(see --explain-config for the precedence)."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -9654,7 +9744,16 @@ def parse_args() -> argparse.Namespace:
         "--vote-scan-pages",
         type=int,
         default=None,
-        help="Roll-call list pages per sitting (default 30 with --enrich votes, otherwise 0).",
+        help=(
+            "Roll-call list pages scanned per sitting (default 30: votes are acquired by default). "
+            "0 turns vote acquisition off, like --no-votes. A sitting whose date lies beyond the "
+            "window is recorded as partial (scan_budget_exhausted); raise this to reach older sittings."
+        ),
+    )
+    parser.add_argument(
+        "--no-votes",
+        action="store_true",
+        help="Skip roll-call vote acquisition for this update (cached votes and their state are kept).",
     )
     parser.add_argument(
         "--roll-call-list-id",
@@ -10065,6 +10164,9 @@ def main() -> int:
         )
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    # One roll-call list page cache per build: every sitting reads the same
+    # pages from the top, so only the first one pays for them.
+    roll_call_page_cache: dict[str, str] = {}
     try:
         # Step 1: the catalog, then the subset of it that gets a dossier.
         # --dossier-document-number can add sittings to the dossier list without
@@ -10123,6 +10225,7 @@ def main() -> int:
                     features=features,
                     include_dev_view=args.include_dev_view,
                     database_page_href=dossier_database_page_href(args, database_path),
+                    roll_call_page_cache=roll_call_page_cache,
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
