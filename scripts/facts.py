@@ -920,6 +920,126 @@ def week_is_complete(week: Week | Month, completeness: Mapping[str, Mapping[str,
     return bool(week.protocols or week.expected) and not period_gaps(week, completeness, domain)
 
 
+COVERAGE_DOMAINS = ("votes", "speeches")
+
+
+def sitting_gaps(
+    protocols: Sequence[Mapping[str, Any]],
+    completeness: Mapping[str, Mapping[str, Any]],
+    catalog: SittingCatalog | None,
+) -> dict[str, dict[str, Any]]:
+    """document_number -> {"date", "reasons": {domain: reason}} for every judged
+    sitting that is missing or not fully acquired.
+
+    ``domain`` is "dossier" for a sitting with no protocol in the store
+    (``not_persisted``) or none to judge (``no_report``), else "votes" or
+    "speeches" with the report's own reason. This is the list a backfill
+    works through. Empty without an authoritative catalog: nothing can be
+    judged then, and the caller says so.
+    """
+    if catalog is None or not catalog.authoritative:
+        return {}
+    persisted = {str(p["document_number"]): p for p in protocols}
+    listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog)}
+    gaps: dict[str, dict[str, Any]] = {}
+    for number in {*persisted, *listed}:
+        reasons: dict[str, str] = {}
+        if number not in persisted:
+            reasons["dossier"] = "not_persisted"
+        elif not completeness.get(number):
+            reasons["dossier"] = "no_report"
+        else:
+            state = completeness[number]
+            for domain in COVERAGE_DOMAINS:
+                if not state.get(domain):
+                    reasons[domain] = str((state.get("reasons") or {}).get(domain) or f"{domain} incomplete")
+        if reasons:
+            source = persisted.get(number) or listed[number]
+            gaps[number] = {"date": str(source["date"])[:10], "reasons": reasons}
+    return dict(sorted(gaps.items(), key=lambda item: (item[1]["date"], item[0])))
+
+
+def incomplete_periods(
+    protocols: Sequence[Mapping[str, Any]],
+    completeness: Mapping[str, Mapping[str, Any]],
+    catalog: SittingCatalog | None,
+) -> list[dict[str, Any]]:
+    """Every week and month with a gap in some coverage domain, oldest first,
+    each with the sittings that keep it from being complete."""
+    if catalog is None or not catalog.authoritative:
+        return []
+    weeks, months = build_periods(protocols, catalog)
+    result: list[dict[str, Any]] = []
+    for period in (*weeks, *months):
+        sittings: dict[str, dict[str, Any]] = {}
+        for domain in COVERAGE_DOMAINS:
+            for gap in period_gaps(period, completeness, domain):
+                entry = sittings.setdefault(
+                    gap["document_number"],
+                    {"document_number": gap["document_number"], "date": gap["date"], "reasons": {}},
+                )
+                # A sitting with no dossier is missing for every domain at
+                # once; say it once, under "dossier", as sitting_gaps does.
+                if gap["reason"] in ("not_persisted", "no_report"):
+                    entry["reasons"]["dossier"] = gap["reason"]
+                else:
+                    entry["reasons"][domain] = gap["reason"]
+        if sittings:
+            result.append(
+                {
+                    "period_kind": period.period_kind,
+                    "period_key": period.period_key,
+                    "sittings": sorted(sittings.values(), key=lambda s: (s["date"], s["document_number"])),
+                }
+            )
+    return result
+
+
+_GAP_DOMAIN_TEXT = {"votes": "Abstimmungen nicht vollständig erfasst", "speeches": "Reden nicht erfasst"}
+
+
+def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) -> str:
+    """The German clause a withheld cell shows: which sitting is missing."""
+    parts: list[str] = []
+    for gap in gaps[:shown]:
+        number, reason = gap["document_number"], gap["reason"]
+        if reason == "not_persisted":
+            parts.append(f"Sitzung {number} ({gap['date']}) fehlt")
+        elif reason == "no_report":
+            parts.append(f"Sitzung {number}: kein Bericht")
+        else:
+            parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
+    if len(gaps) > shown:
+        parts.append(f"und {len(gaps) - shown} weitere")
+    return ", ".join(parts)
+
+
+def gap_notes(
+    protocols: Sequence[Mapping[str, Any]],
+    completeness: Mapping[str, Mapping[str, Any]],
+    catalog: SittingCatalog | None,
+) -> dict[tuple[str, str, str], str]:
+    """(period_kind, period_key, coverage domain) -> the note for that period.
+
+    Without an authoritative catalog every period is incomplete and the note
+    says why, so a cell never reads as merely "unvollständig".
+    """
+    weeks, months = build_periods(protocols, catalog)
+    notes: dict[tuple[str, str, str], str] = {}
+    authoritative = catalog is not None and catalog.authoritative
+    for period in (*weeks, *months):
+        for domain in COVERAGE_DOMAINS:
+            if not authoritative:
+                notes[(period.period_kind, period.period_key, domain)] = (
+                    "kein vollständiger DIP-Katalog zwischengespeichert (Online-Update nötig)"
+                )
+                continue
+            gaps = period_gaps(period, completeness, domain)
+            if gaps:
+                notes[(period.period_kind, period.period_key, domain)] = gap_note(gaps, domain)
+    return notes
+
+
 # ---------------------------------------------------------------------------
 # Observation, percentile, baseline, selection, receipts (pure)
 # ---------------------------------------------------------------------------
@@ -1958,8 +2078,9 @@ def compute_and_store(
     registry = tuple(registry)
     if catalog is None or not catalog.authoritative:
         print(
-            "facts: no authoritative sitting catalog (run an online update); "
-            "every period is incomplete, no fact can be posted",
+            "warning: [facts] no authoritative sitting catalog is cached, so no period can be judged complete "
+            "and no Fakt can be posted. Fix: run an online update (it fetches the whole DIP catalog). "
+            "Docs: README.md#backfill-incomplete-sittings",
             file=out,
         )
     rows = compute(
@@ -1975,6 +2096,10 @@ def compute_and_store(
         "periods_with_a_fact": len({(r["period_kind"], r["period_key"]) for r in rows if r["publishable"]}),
         "written": False,
         "changed_winners": [],
+        # What keeps a period from being complete: the sittings a backfill has
+        # to acquire, and the weeks/months they hold back.
+        "sitting_gaps": sitting_gaps(load_protocols(conn), completeness or {}, catalog),
+        "incomplete_periods": incomplete_periods(load_protocols(conn), completeness or {}, catalog),
     }
     if no_persist:
         print("facts: --no-persist, nothing written", file=out)

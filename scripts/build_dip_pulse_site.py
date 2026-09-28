@@ -359,6 +359,111 @@ def select_acquisition_protocols(
     return ordered
 
 
+# --backfill-incomplete: the sittings a facts period is waiting for. A sitting
+# counts when the catalog lists it and the cached dossiers do not cover it
+# (missing), or when its report says votes or speeches are not fully acquired.
+# Sittings DIP has published no XML for cannot be acquired yet and are
+# returned separately so the caller can say so instead of failing on them.
+def incomplete_sitting_protocols(
+    entries: list[dict[str, Any]], catalog: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    stored = []
+    for entry in entries:
+        protocol = (entry.get("report") or {}).get("protocol") or {}
+        stored.append(
+            {
+                "document_number": normalized_document_number(protocol.get("dokumentnummer")),
+                "date": str(protocol.get("datum") or "")[:10],
+            }
+        )
+    gaps = facts.sitting_gaps(
+        stored, facts.completeness_from_entries(entries), facts.sitting_catalog(catalog, authoritative=True)
+    )
+    acquirable: list[dict[str, Any]] = []
+    waiting: list[dict[str, Any]] = []
+    for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
+        if normalized_document_number(protocol.get("dokumentnummer")) in gaps:
+            (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
+    return acquirable, waiting
+
+
+def _first_numbers(numbers: list[str], limit: int = 3) -> str:
+    shown = ", ".join(numbers[:limit])
+    return f"{shown}, …" if len(numbers) > limit else shown
+
+
+# What keeps facts periods from being complete, printed on every build that
+# ran the engine: the periods, the sittings behind them, and the exact command
+# that acquires them.
+def format_incomplete_report(
+    report: dict[str, Any],
+    *,
+    output_dir: Path,
+    catalog_protocols: list[dict[str, Any]],
+    vote_scan_pages: int,
+    shown_periods: int = 6,
+) -> list[str]:
+    periods = report.get("incomplete_periods") or []
+    gaps = report.get("sitting_gaps") or {}
+    if not periods and not gaps:
+        return []
+    has_xml = {
+        normalized_document_number(protocol.get("dokumentnummer")): bool(protocol_xml_url(protocol))
+        for protocol in catalog_protocols
+    }
+    weeks = [period for period in periods if period["period_kind"] == "week"]
+    months = [period for period in periods if period["period_kind"] == "month"]
+    missing = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "not_persisted"]
+    waiting = [number for number in missing if not has_xml.get(number, True)]
+    partial = {number: gap for number, gap in gaps.items() if "dossier" not in gap["reasons"]}
+    acquirable = [number for number in gaps if number not in waiting]
+    lines = [
+        f"warning: [facts] {len(weeks)} weeks and {len(months)} months are incomplete: "
+        "a Fakt needs every sitting DIP lists, fully acquired."
+    ]
+    if missing:
+        lines.append(f"  {len(missing)} listed sittings are not in the store: {_first_numbers(missing, 12)}")
+    if waiting:
+        lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
+    if partial:
+        counts = Counter(
+            f"{domain}: {reason}" for gap in partial.values() for domain, reason in sorted(gap["reasons"].items())
+        )
+        lines.append(f"  {len(partial)} sittings are in the store but not fully acquired:")
+        lines.extend(f"    {label} ({count}×)" for label, count in counts.most_common())
+    for label, group in (("weeks", weeks), ("months", months)):
+        if not group:
+            continue
+        newest = sorted(group, key=lambda period: period["period_key"], reverse=True)[:shown_periods]
+        rendered = []
+        for period in newest:
+            lost = [s["document_number"] for s in period["sittings"] if "dossier" in s["reasons"]]
+            weak = [s["document_number"] for s in period["sittings"] if "dossier" not in s["reasons"]]
+            detail = "; ".join(
+                part
+                for part in (
+                    f"missing {_first_numbers(lost)}" if lost else "",
+                    f"incomplete {_first_numbers(weak)}" if weak else "",
+                )
+                if part
+            )
+            rendered.append(f"{period['period_key']} ({detail})")
+        more = f" (newest {len(newest)} of {len(group)})" if len(group) > len(newest) else ""
+        lines.append(f"  incomplete {label}{more}: {'; '.join(rendered)}")
+    if acquirable:
+        command = f"python3 scripts/build_dip_pulse_site.py --output-dir {output_dir} --backfill-incomplete"
+        exhausted = any(
+            "scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values()
+        )
+        if exhausted:
+            command += f" --vote-scan-pages {max(2 * vote_scan_pages, vote_scan_pages + 30)}"
+        lines.append(f"  Fix: {command}   (acquires {len(acquirable)} sittings; every other cached dossier is kept)")
+    else:
+        lines.append("  Fix: none available now; run an online update once DIP publishes the missing protocols")
+    lines.append("  Docs: README.md#backfill-incomplete-sittings")
+    return lines
+
+
 # Decide which of the fetched protocols get a full dossier page.
 #
 #   detail_limit  < 0  -> none (catalog-only build)
@@ -607,10 +712,10 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
         return None
 
 
-# Collect cached dossiers from data/ for the given protocols (--preserve-existing-dossiers
-# and the offline render). Reports whose sitting is not part of this build's
-# catalog are ignored, and unreadable files are skipped with a warning instead
-# of failing the build.
+# Collect cached dossiers from data/ for the given protocols (every online build
+# keeps them all, and the offline render reads them). Reports whose sitting is
+# not part of this build's catalog are ignored, and unreadable files are skipped
+# with a warning instead of failing the build.
 def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
@@ -6801,14 +6906,18 @@ def _renderable_fact(conn: sqlite3.Connection, fact_row: dict[str, Any]) -> dict
     return row
 
 
-def _fact_status_text(row: dict[str, Any] | None) -> tuple[str, str | None, bool]:
+def _fact_status_text(row: dict[str, Any] | None, *, with_note: bool = True) -> tuple[str, str | None, bool]:
     """(cell text, in-page anchor or None, whether it is posted) for one
     metric's cell in a period. None row: the metric was not built this
-    update (e.g. --enrich without votes)."""
+    update (e.g. --enrich without votes). An incomplete period names the
+    sitting that keeps it incomplete when ``write_facts_pages`` attached a
+    ``gap_note`` (the archive table keeps the short text and puts the note in
+    a tooltip; the week page shows it)."""
     if row is None:
         return "–", None, False
     if not row.get("complete"):
-        return "unvollständig erfasst", None, False
+        note = row.get("gap_note") if with_note else None
+        return (f"unvollständig erfasst: {note}" if note else "unvollständig erfasst"), None, False
     if row.get("publishable"):
         return f"Platz {row['rank']}", row["metric_id"], True
     return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
@@ -6972,12 +7081,15 @@ def _render_facts_archive_table(
         cells = []
         any_posted = False
         for metric in registry:
-            text, anchor, posted = _fact_status_text(period_rows.get(metric["id"]))
+            cell_row = period_rows.get(metric["id"])
+            text, anchor, posted = _fact_status_text(cell_row, with_note=False)
             any_posted = any_posted or posted
             if posted:
                 cells.append(f'<td><a href="{pulse_html.esc(period_key)}.html#{pulse_html.esc(anchor)}">{pulse_html.esc(text)}</a></td>')
             else:
-                cells.append(f'<td class="muted">{pulse_html.esc(text)}</td>')
+                note = (cell_row or {}).get("gap_note") if cell_row and not cell_row.get("complete") else None
+                title = f' title="{pulse_html.esc(note)}"' if note else ""
+                cells.append(f'<td class="muted"{title}>{pulse_html.esc(text)}</td>')
         row_class = "archive-row" if any_posted else "archive-row greyed"
         rows_html.append(
             f'<tr class="{row_class}"><td><a href="{pulse_html.esc(period_key)}.html">{pulse_html.esc(period_text)}</a></td>'
@@ -7239,6 +7351,7 @@ def write_facts_pages(
     document_numbers: set[str],
     bill_slugs: set[str],
     features: Selection | None = None,
+    entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """fakt/index.html, fakt/<period_key>.html, fakt/<period_key>-<metric>.svg
     and fakt/methodik.html. Reads the three tables scripts/facts.py persisted;
@@ -7257,6 +7370,21 @@ def write_facts_pages(
         conn = facts.open_readonly(database_path)
         try:
             all_facts = facts.load_facts(conn)
+            # An incomplete period says which sitting keeps it incomplete. The
+            # store holds no acquisition state, so the reports the build is
+            # holding and the cached catalog are read again here, exactly as the
+            # engine judged them.
+            notes = facts.gap_notes(
+                facts.load_protocols(conn),
+                facts.completeness_from_entries(entries or []),
+                facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+            )
+            for row in all_facts:
+                if not row["complete"]:
+                    metric = facts.REGISTRY_BY_ID.get(row["metric_id"])
+                    note = notes.get((row["period_kind"], row["period_key"], (metric or {}).get("coverage")))
+                    if note:
+                        row["gap_note"] = note
             by_period = _facts_group_by_period(all_facts)
             by_metric, by_metric_index = _facts_group_by_metric(all_facts)
             _ensure_lead_position_tables(conn)
@@ -9739,9 +9867,12 @@ def parse_args() -> argparse.Namespace:
         help="Skip writing the SQLite graph store.",
     )
     parser.add_argument(
-        "--preserve-existing-dossiers",
+        "--backfill-incomplete",
         action="store_true",
-        help="Load existing dossier JSON files from OUTPUT_DIR/data and keep them visible in the generated catalog.",
+        help=(
+            "Acquire exactly the sittings the last build left missing or not fully acquired (the list every build "
+            "prints under 'incomplete'), ignoring --limit and --detail-limit. Every other cached dossier is kept."
+        ),
     )
     parser.add_argument(
         "--person-limit",
@@ -9891,6 +10022,10 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.force_export and args.no_persist:
         parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
+    if args.backfill_incomplete and args.document_number:
+        parser.error("--backfill-incomplete cannot be combined with --document-number: it acquires the sittings the last build listed as incomplete")
+    if args.backfill_incomplete and args.offline:
+        parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.offline and args.data_manifest and is_url(args.data_manifest):
         parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
     if args.no_persist and args.data_base_url:
@@ -10001,7 +10136,14 @@ def run_data_pipeline(
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
-        run_facts_engine(database_path, entries, catalog)
+        facts_report = run_facts_engine(database_path, entries, catalog)
+        for line in format_incomplete_report(
+            facts_report,
+            output_dir=output_dir,
+            catalog_protocols=protocols,
+            vote_scan_pages=int(getattr(args, "vote_scan_pages", None) or 30),
+        ):
+            print(line, file=sys.stderr)
 
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
@@ -10240,10 +10382,25 @@ def main() -> int:
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
-        acquisition_scope = select_acquisition_protocols(
-            protocols, args.document_number, args.limit, protocol_wahlperiode
-        )
-        detail_limit = None if args.document_number else args.detail_limit
+        if getattr(args, "backfill_incomplete", False):
+            acquisition_scope, waiting = incomplete_sitting_protocols(
+                load_existing_detail_entries(output_dir, protocols), protocols
+            )
+            print(
+                f"[backfill] {len(acquisition_scope)} incomplete or missing sitting(s) to acquire"
+                + (
+                    f"; {len(waiting)} not acquirable yet (DIP has no XML): "
+                    + ", ".join(normalized_document_number(p.get("dokumentnummer")) for p in waiting)
+                    if waiting
+                    else ""
+                ),
+                file=sys.stderr,
+            )
+        else:
+            acquisition_scope = select_acquisition_protocols(
+                protocols, args.document_number, args.limit, protocol_wahlperiode
+            )
+        detail_limit = None if (args.document_number or getattr(args, "backfill_incomplete", False)) else args.detail_limit
         detail_protocols = protocols_for_detail_pages(acquisition_scope, detail_limit)
         protocols, detail_protocols = add_explicit_dossier_protocols(
             client,
@@ -10252,13 +10409,12 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
-        # With --preserve-existing-dossiers, dossiers from earlier builds stay
-        # visible in the catalog even when this run only regenerates a few.
-        existing_entries = (
-            load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
-        )
+        # What this run acquires is one scope; what the store keeps is another.
+        # Every cached dossier of the catalog stays, whatever the acquisition
+        # was narrowed to, and only the acquired sittings are refreshed.
+        existing_entries = load_existing_detail_entries(output_dir, protocols)
         # --week must name a week this build will actually hold; check it against
-        # the dossier catalog (plus the preserved dossiers that stay in the
+        # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.
         if reject_unknown_week(
             pulse_week,

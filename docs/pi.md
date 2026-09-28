@@ -127,7 +127,7 @@ sudo nano /etc/systemd/system/poliwatch-update.service
 The `ExecStart` line controls the build:
 
 ```ini
-ExecStart=/usr/bin/python3 scripts/build_dip_pulse_site.py --output-dir /srv/poliwatch/site --limit 0 --detail-limit 20 --preserve-existing-dossiers --summary-mode reuse
+ExecStart=/usr/bin/python3 scripts/build_dip_pulse_site.py --output-dir /srv/poliwatch/site --limit 0 --detail-limit 20 --summary-mode reuse
 ```
 
 Useful values:
@@ -153,13 +153,7 @@ sudo systemctl start --no-block poliwatch-update.service \
   && sudo journalctl -fu poliwatch-update.service
 ```
 
-Always retain:
-
-```text
---preserve-existing-dossiers
-```
-
-Without it, a narrow update can remove older dossiers from the rendered site and SQLite store.
+An update never removes older dossiers from the rendered site and SQLite store: every cached dossier is kept whatever the run acquires.
 
 ## Process one specific session
 
@@ -170,16 +164,11 @@ cd /home/luca/apps/poliwatch
 
 python3 scripts/build_dip_pulse_site.py \
   --output-dir /srv/poliwatch/site \
-  --limit 0 \
-  --detail-limit -1 \
-  --dossier-document-number 21/90 \
-  --preserve-existing-dossiers \
+  --document-number 21/90 \
   --summary-mode reuse
 ```
 
-Replace `21/90` with the desired document number.
-
-Unlike `--document-number`, `--dossier-document-number` adds a dossier without restricting the complete catalog to that one session.
+Replace `21/90` with the desired document number. `--document-number` narrows only what is acquired: the catalog and every other cached dossier are kept.
 
 ## Run directly without systemd
 
@@ -192,7 +181,6 @@ python3 scripts/build_dip_pulse_site.py \
   --output-dir /srv/poliwatch/site \
   --limit 0 \
   --detail-limit 20 \
-  --preserve-existing-dossiers \
   --summary-mode reuse
 ```
 
@@ -310,7 +298,7 @@ Type=oneshot
 User=luca
 WorkingDirectory=/home/luca/apps/poliwatch
 EnvironmentFile=/home/luca/apps/poliwatch/.env.local
-ExecStart=/usr/bin/python3 scripts/build_dip_pulse_site.py --output-dir /srv/poliwatch/site --limit 0 --detail-limit 20 --preserve-existing-dossiers --summary-mode reuse
+ExecStart=/usr/bin/python3 scripts/build_dip_pulse_site.py --output-dir /srv/poliwatch/site --limit 0 --detail-limit 20 --summary-mode reuse
 PrivateTmp=true
 NoNewPrivileges=true
 ```

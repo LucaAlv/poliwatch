@@ -14,6 +14,7 @@ class FactsComponent(BaseComponent):
             ctx.get("document_numbers") or set(),
             ctx.get("bill_slugs") or set(),
             ctx["selection"],
+            ctx.get("entries"),
         )
 
 

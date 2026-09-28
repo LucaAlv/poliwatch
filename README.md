@@ -129,27 +129,21 @@ scripts/preview_dip_pulse_site.sh
 
 `update`, `refresh`, and `fetch` are the same alias for "online build". Everything after that word goes to `build_dip_pulse_site.py`.
 
-Pull the current catalog and re-enrich the newest sittings, keeping everything already built:
+Pull the current catalog and re-enrich the newest sittings; every dossier already built stays:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update --preserve-existing-dossiers
+scripts/preview_dip_pulse_site.sh update
 ```
 
-Every online build fetches the whole catalog — every Bundestag plenary protocol back to 1949, 4,667 entries in an August 2026 run, in roughly 15 seconds — and caches it as an *authoritative* catalog (`data/plenarprotokoll-catalog.json`). It is what completeness is judged against: a week or month is complete only when every sitting the catalog lists for it is in the store and fully acquired (§5). `--limit` and `--document-number` narrow which sittings are *acquired*, never the catalog. Only the newest `--detail-limit` sittings become dossiers; the rest stay catalog rows.
+Every online build fetches the whole catalog — every Bundestag plenary protocol back to 1949, 4,667 entries in an August 2026 run, in roughly 15 seconds — and caches it as an *authoritative* catalog (`data/plenarprotokoll-catalog.json`). It is what completeness is judged against: a week or month is complete only when every sitting the catalog lists for it is in the store and fully acquired (§5). Only the newest `--detail-limit` sittings become dossiers; the rest stay catalog rows.
 
-Enrich exactly one sitting, leaving every other dossier untouched:
+**Acquisition and retention are separate scopes.** The flags below choose which sittings are *acquired* (fetched again and rewritten). The SQLite store and the site are always rebuilt from the whole catalog plus every dossier cached in `data/plenarprotokoll-*.json`, so a narrow update never drops another sitting, speech, vote or page. There is no flag for this.
+
+Acquire exactly one sitting, leaving every other dossier untouched:
 
 ```bash
-scripts/preview_dip_pulse_site.sh update \
-  --limit 20 \
-  --detail-limit -1 \
-  --dossier-document-number 21/90 \
-  --preserve-existing-dossiers
+scripts/preview_dip_pulse_site.sh update --document-number 21/90
 ```
-
-Only the dossier work is narrowed here; the catalog is fetched whole either way.
-
-**The `--preserve-existing-dossiers` flag matters.** Each online build rewrites the catalog and rebuilds the SQLite store from the dossiers that build knows about. Without the flag, that set is only the dossiers generated in *this* run, so a narrow update silently shrinks the site to those sittings. The cached JSON stays on disk, so recover by re-running a build that is not restricted to one document, with the flag: `scripts/preview_dip_pulse_site.sh update --limit 20 --detail-limit -1 --preserve-existing-dossiers`. Note that `--preserve-existing-dossiers` cannot rescue a `--document-number` build — preserved dossiers are filtered to the catalog, and that flag restricts the catalog to the one protocol.
 
 Related knobs, in the order you will reach for them:
 
@@ -157,19 +151,49 @@ Related knobs, in the order you will reach for them:
 |---|---|
 | `--limit N` | Acquire only the newest N protocols of `--protocol-wahlperiode`. Default `0` = no cap. The catalog is always fetched whole. |
 | `--detail-limit N` | Protocols enriched into dossiers. Default `5`; `0` = all fetched, `-1` = none. |
-| `--document-number 21/90` | Acquire only this protocol (repeatable); the catalog is unaffected. |
-| `--dossier-document-number 21/90` | Add one dossier without restricting the catalog. Repeatable. Additive tool. |
+| `--document-number 21/90` | Acquire only this protocol (repeatable); the catalog and every cached dossier are kept. |
+| `--dossier-document-number 21/90` | Also acquire this protocol on top of what `--detail-limit` selects. Repeatable. |
+| `--backfill-incomplete` | Acquire exactly the sittings the build reports as incomplete (below). |
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
 | `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |
 | `--no-votes` | Skip roll-call vote acquisition for this update. Cached votes and their acquisition state are kept. |
 
-While developing a single dossier, the fastest online build is:
+To iterate on one dossier without touching the rest of a site, build it into its own directory: `scripts/build_dip_pulse_site.py --output-dir .context/scratch --document-number 21/90`.
 
-```bash
-scripts/preview_dip_pulse_site.sh update --document-number 21/90
+### Backfill incomplete sittings
+
+Every build that ran the facts engine prints what is incomplete, for example:
+
+```text
+warning: [facts] 4 weeks and 3 months are incomplete: a Fakt needs every sitting DIP lists, fully acquired.
+  13 listed sittings are not in the store: 21/85, 21/86, 21/87, …
+  not acquirable yet (DIP has no XML for them): 21/96, 21/97
+  285 sittings are in the store but not fully acquired:
+    votes: no vote acquisition metadata (report predates it) (285×)
+  incomplete weeks (newest 4 of 4): 2026-W39 (missing 21/95, 21/96, 21/97); …
+  Fix: python3 scripts/build_dip_pulse_site.py --output-dir .context/dip-pulse-site --backfill-incomplete   (acquires 296 sittings; every other cached dossier is kept)
+  Docs: README.md#backfill-incomplete-sittings
 ```
 
-`--document-number` restricts the catalog *and* the store to that one protocol, so use it when you want a one-sitting site to iterate on, not as a refresh of a full local site. Rebuild the wider site with the recovery command above, raising `--limit` (or dropping it, for the full catalog) to the breadth you want back.
+The `facts` pages name the missing sitting too (`unvollständig erfasst: Sitzung 21/96 (2026-09-24) fehlt`). A sitting keeps its period incomplete for one of these reasons:
+
+| Reason | Meaning |
+|---|---|
+| `not_persisted` | DIP lists it, the store has no dossier: never built, cut by `--detail-limit`, or its build failed. |
+| `no vote acquisition metadata` | The cached report predates the recorded vote state, so nothing says the roll-call list was read. |
+| `cached votes without acquired_at` | Votes were reused from a cache that never stamped them. |
+| `votes not_requested` | The sitting was built with `--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry. |
+| `votes partial` / `votes failed` | The scan ran out of pages (`scan_budget_exhausted`: raise `--vote-scan-pages`), a request failed (`source_unavailable`) or the Bundestag markup changed (`source_changed`). |
+| `XML speeches not parsed` | The dossier has no parsed speeches. |
+
+One recipe fixes all of them:
+
+```bash
+python3 scripts/build_dip_pulse_site.py --output-dir .context/dip-pulse-site --backfill-incomplete
+# add --vote-scan-pages 60 when the list names scan_budget_exhausted
+```
+
+`--backfill-incomplete` acquires exactly the listed sittings DIP has XML for, ignoring `--limit` and `--detail-limit` (and it cannot be combined with `--document-number`); every other cached dossier is kept. Each sitting is a full re-download of its XML and DIP data, so a backfill of many sittings takes a while. A sitting that is still incomplete afterwards stays in the next report with its reason.
 
 ### 4c. After pulling code changes — refresh the site
 
@@ -283,7 +307,7 @@ PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 | `--today YYYY-MM-DD` | Build date: decides running vs. past week and is printed as "Auswertung vom" |
 | `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC (a CI build with a pinned epoch shows that UTC date) |
 | neither | The current date at build time |
-| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps with `--preserve-existing-dossiers`) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps: every cached dossier stays) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24
@@ -296,7 +320,7 @@ Stop the server before changing `PORT`, `PREVIEW_BIND`, or `DIP_PULSE_OUTPUT_DIR
 `.context/dip-pulse-site/` is self-contained static output. Every internal link is relative (only citations to bundestag.de and abgeordnetenwatch.de are absolute), so it can be copied to any static host, including a subdirectory:
 
 ```bash
-python3 scripts/build_dip_pulse_site.py --preserve-existing-dossiers
+python3 scripts/build_dip_pulse_site.py
 rsync -a .context/dip-pulse-site/ user@host:/var/www/bundestag-puls/
 ```
 
@@ -310,7 +334,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 |---|---|
 | `error: DIP_API_KEY is not set.` | Online mode without a key. Put it in `.env.local`. A `DIP_API_KEY=... scripts/preview_dip_pulse_site.sh update ...` prefix only works when `.env.local` does not define the key at all — an empty `DIP_API_KEY=` line overwrites it (§2). |
 | `error: No cached protocols found in .context/dip-pulse-site/data.` | Offline build on an empty cache. Run one online update first (§2). |
-| Site suddenly shows only one sitting | A narrow online update rewrote the catalog. Re-run with `--preserve-existing-dossiers`. |
+| Weeks or months read `unvollständig erfasst` and no Fakt is posted | Their sittings are missing or not fully acquired. The build prints which, and the command that fixes it: see "Backfill incomplete sittings" in §4b. |
 | Port already in use | `PORT=9000 scripts/preview_dip_pulse_site.sh` |
 | Votes or profile links are unavailable | Check `sources.html#datenstand` for whether acquisition was skipped, partial, or failed. Votes are acquired by default, so `not_requested` means `--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry was in effect: run an online update without it. `partial` or `failed` with `scan_budget_exhausted` means the roll-call scan ran out of pages before reaching the sitting's date: raise `--vote-scan-pages`. Profile links need `--enrich aw-profiles` (§5). |
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |

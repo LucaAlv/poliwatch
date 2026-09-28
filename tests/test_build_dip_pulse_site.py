@@ -2817,7 +2817,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
             with (
                 mock.patch.object(
                     sys, "argv",
-                    self._online_argv(output_dir, "--week", "2026-21", "--detail-limit", "1", "--preserve-existing-dossiers"),
+                    self._online_argv(output_dir, "--week", "2026-21", "--detail-limit", "1"),
                 ),
                 mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
                 mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[preserved]),

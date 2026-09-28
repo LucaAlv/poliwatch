@@ -407,7 +407,7 @@ Common options:
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
 | `--no-persist` | off | Skip SQLite graph-store generation |
-| `--preserve-existing-dossiers` | off | Keep cached dossier JSON files visible in the generated catalog |
+| `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit`; not combinable with `--document-number`. Every cached dossier is kept whatever an update acquires |
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
 | `--vote-scan-pages N` | `30` | Roll-call list pages scanned per sitting. `0` turns votes off (like `--no-votes`); a sitting older than the window is `partial` (`scan_budget_exhausted`) |
 | `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
@@ -563,7 +563,7 @@ python3 scripts/build_dip_pulse_site.py --offline
 
 When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
 
-A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --dossier-document-number 21/90 --preserve-existing-dossiers --enrich votes` (see README §4b) — a plain `update --enrich votes` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
+A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --backfill-incomplete` (see README §4b) — a plain `update` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
 
 If no cached protocols exist, offline mode fails with:
 
