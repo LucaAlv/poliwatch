@@ -2108,10 +2108,18 @@ def render_source_links(item: dict[str, Any]) -> str:
     for doc in item.get("xml_drucksachen") or []:
         url = doc.get("url")
         number = doc.get("dokumentnummer")
+        href = None
         if url:
-            links.append(
-                f'<a class="doc-link" href="{esc(source_url(url, "bundestag-xml"))}">{esc(number)}</a>'
-            )
+            # The XML's Drucksache references are extracted from running text,
+            # so one can carry any URL (20/206 quotes a syriahr.com article).
+            # A foreign or unsafe host loses its link like every other dossier
+            # link does; it must not abort the whole build.
+            try:
+                href = source_url(url, "bundestag-xml")
+            except publication.PublicationStateError:
+                href = None
+        if href:
+            links.append(f'<a class="doc-link" href="{esc(href)}">{esc(number)}</a>')
         else:
             links.append(f'<span class="doc-link muted">{esc(number)}</span>')
     if not links:
