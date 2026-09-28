@@ -5116,8 +5116,8 @@ def render_front_page(
       padding-bottom:20px;
       border-bottom:1px solid var(--line);
     }}
-    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; overflow-wrap:anywhere; }}
-    h2 {{ margin:0; font-size:18px; line-height:1.25; }}
+    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; overflow-wrap:anywhere; text-wrap:balance; }}
+    h2 {{ margin:0; font-size:18px; line-height:1.25; text-wrap:balance; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
     .page-actions, .week-chips {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
     .week-chips {{ margin-top:12px; }}
@@ -5134,7 +5134,7 @@ def render_front_page(
       font-size:13px;
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
-    .week-chips a {{ color:var(--ink); }}
+    .week-chips a {{ color:var(--ink); gap:.3em; }}
     .week-facts {{ margin-top:12px; max-width:860px; font-size:15px; line-height:1.5; }}
     .eyebrow {{
       color:var(--muted);
