@@ -125,13 +125,11 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         markup = render_vote_summary({"votes": [vote]})
         self.assertNotIn("vote-result", markup)
 
-    def test_pre_badge_vote_derives_its_badge_from_the_counts(self) -> None:
-        # Cached dossier JSON from before the badge: no result keys at all. The
-        # tie must come out rejected through vote_result, not a preset value.
+    def test_vote_without_a_recorded_result_renders_no_badge(self) -> None:
         vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
-        markup = render_vote_summary({"votes": [vote]})
-        self.assertIn('vote-result-rejected vote-result-derived"', markup)
-        self.assertIn('>Abgelehnt <span class="vote-result-note">(berechnet)</span></span>', markup)
+        vote.pop("result_raw", None)
+        vote.pop("result_source", None)
+        self.assertNotIn("vote-result", render_vote_summary({"votes": [vote]}))
 
     def test_drucksache_renders_as_a_link_when_a_source_url_is_known(self) -> None:
         item = {

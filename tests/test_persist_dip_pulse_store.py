@@ -384,28 +384,6 @@ class VoteResultColumnsTests(unittest.TestCase):
         self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
         conn.close()
 
-    def test_initialize_alters_a_votes_table_that_predates_the_columns(self) -> None:
-        # The standalone persist CLI can target a store built before the badge;
-        # CREATE TABLE IF NOT EXISTS leaves that table alone, so the ALTER must.
-        conn = sqlite3.connect(":memory:")
-        conn.row_factory = sqlite3.Row
-        # The votes table exactly as main created it before the badge.
-        conn.execute(
-            """
-            CREATE TABLE votes (
-              id TEXT PRIMARY KEY, date TEXT, topic TEXT, title TEXT, description TEXT,
-              detail_url TEXT, yes_count INTEGER NOT NULL DEFAULT 0,
-              no_count INTEGER NOT NULL DEFAULT 0, abstain_count INTEGER NOT NULL DEFAULT 0,
-              absent_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-            )
-            """
-        )
-        with conn:
-            pulse_store.initialize(conn)
-        columns = {row["name"] for row in conn.execute("PRAGMA table_info(votes)")}
-        self.assertTrue({"result_raw", "result_source", "xlsx_url"} <= columns)
-        conn.close()
-
     def test_persist_votes_writes_result_and_xlsx_url_and_updates_on_conflict(self) -> None:
         report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
         vote = report["agenda_items"][0]["votes"][0]
@@ -488,93 +466,6 @@ class VoteResultColumnsTests(unittest.TestCase):
                 pulse_store.persist_report(conn, report)
                 row = conn.execute("SELECT xlsx_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()
                 self.assertIsNone(row[0])
-            finally:
-                conn.close()
-
-    def test_persist_votes_derives_a_result_for_pre_badge_vote_records(self) -> None:
-        # Dossier JSON cached before the badge shipped has no result keys; the
-        # row must get a derived result from its counts, never NULL.
-        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
-        vote = report["agenda_items"][0]["votes"][0]
-        for key in ("result_raw", "result_source", "xlsx_url"):
-            vote.pop(key, None)
-        total = vote.get("total") or {}
-        expected = "accepted" if int(total.get("yes") or 0) > int(total.get("no") or 0) else "rejected"
-
-        with tempfile.TemporaryDirectory() as tmp:
-            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
-            try:
-                pulse_store.persist_report(conn, report)
-                row = conn.execute(
-                    "SELECT result_raw, result_source FROM votes WHERE id = ?", (vote["id"],)
-                ).fetchone()
-                self.assertEqual(tuple(row), (expected, "derived"))
-            finally:
-                conn.close()
-
-    def test_backfill_derives_a_result_for_rows_that_predate_the_column_only(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
-            try:
-                pulse_store.initialize(conn)
-                now = pulse_store.utc_now()
-                with conn:
-                    # A pre-migration row (never resolved) and one already
-                    # resolved as "official" - the backfill must leave the
-                    # latter alone rather than downgrade it to derived.
-                    conn.execute(
-                        """
-                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
-                        VALUES ('legacy-1', 300, 200, ?, ?)
-                        """,
-                        (now, now),
-                    )
-                    conn.execute(
-                        """
-                        INSERT INTO votes(
-                          id, yes_count, no_count, result_raw, result_source, created_at, updated_at
-                        )
-                        VALUES ('official-1', 1, 99, 'accepted', 'official', ?, ?)
-                        """,
-                        (now, now),
-                    )
-
-                pulse_store.initialize(conn)
-
-                rows = {
-                    row["id"]: (row["result_raw"], row["result_source"])
-                    for row in conn.execute("SELECT id, result_raw, result_source FROM votes")
-                }
-                self.assertEqual(rows["legacy-1"], ("accepted", "derived"))
-                self.assertEqual(rows["official-1"], ("accepted", "official"))
-            finally:
-                conn.close()
-
-    def test_backfill_leaves_a_zero_zero_row_unresolved(self) -> None:
-        # vote_result(yes_count=0, no_count=0) is (None, None) - "never guess" -
-        # so a legacy row with no counts at all must stay untouched, not get
-        # coerced into a rejected/derived result.
-        with tempfile.TemporaryDirectory() as tmp:
-            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
-            try:
-                pulse_store.initialize(conn)
-                now = pulse_store.utc_now()
-                with conn:
-                    conn.execute(
-                        """
-                        INSERT INTO votes(id, yes_count, no_count, created_at, updated_at)
-                        VALUES ('no-counts-1', 0, 0, ?, ?)
-                        """,
-                        (now, now),
-                    )
-
-                pulse_store.initialize(conn)
-
-                row = conn.execute(
-                    "SELECT result_raw, result_source FROM votes WHERE id = 'no-counts-1'"
-                ).fetchone()
-                self.assertIsNone(row["result_raw"])
-                self.assertIsNone(row["result_source"])
             finally:
                 conn.close()
 

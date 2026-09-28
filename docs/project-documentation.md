@@ -562,7 +562,7 @@ python3 scripts/build_dip_pulse_site.py --offline
 
 When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
 
-A cached dossier report from before the outcome badge shipped has no `result_raw`/`result_source` at all, so both the dossier panel and the votes archive fall back to the derived yes/no rule (`validate_dip_protocol.stored_vote_result`) and show "(berechnet)" for that vote regardless of build mode — an `--offline` rebuild only re-renders, it never re-fetches. The SQLite store gets the same derived backfill separately, via a one-time schema migration, so its exported CSVs never carry a `NULL` result next to a rendered badge. Recovering bundestag.de's own stated result for an already-cached vote needs that one dossier re-enriched, e.g. `update --dossier-document-number 21/90 --preserve-existing-dossiers --enrich votes` (see README §4b) — a plain `update --enrich votes` only re-scrapes the `--detail-limit` newest sittings, not every cached one.
+A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --dossier-document-number 21/90 --preserve-existing-dossiers --enrich votes` (see README §4b) — a plain `update --enrich votes` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
 
 If no cached protocols exist, offline mode fails with:
 

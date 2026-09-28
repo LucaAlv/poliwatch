@@ -1018,7 +1018,8 @@ def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[
                 not vote.get("xlsx_url")
                 and not vote.get("xlsx_ambiguous")
                 and previous.get("xlsx_url")
-                and (vote.get("date"), vote.get("title")) == (previous.get("date"), previous.get("title"))
+                and vote.get("date") == previous.get("date")
+                and dip.title_match_key(vote.get("title")) == dip.title_match_key(previous.get("title"))
             ):
                 vote["xlsx_url"] = previous["xlsx_url"]
 
@@ -3365,15 +3366,16 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
 
 
 def _fraction_position(fraction: dict[str, Any]) -> str | None:
-    # The "Ja-Mehrheit" chip needs a strict majority: leading_vote breaks a tie
-    # (1 Ja, 1 Nein) by key order and would call it "yes".
+    # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
+    # (Ja + Nein + Enthaltung): leading_vote alone would call a tie (1 Ja,
+    # 1 Nein) or a plurality (40 Ja, 35 Nein, 25 Enthaltungen) "yes".
     counts = fraction.get("counts") or {}
     cast = [int(counts.get(key) or 0) for key in ("yes", "no", "abstain")]
     leading = fraction.get("leading_vote")
     if not any(cast) or leading != "yes":
         return leading
     yes, no, abstain = cast
-    return "yes" if yes > no and yes > abstain else "tie"
+    return "yes" if yes > no + abstain else "tie"
 
 
 def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:

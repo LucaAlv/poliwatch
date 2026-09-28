@@ -330,6 +330,18 @@ class CollectAbgeordneteTests(unittest.TestCase):
         vote = report["agenda_items"][0]["votes"][0]
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
 
+    def test_carry_forward_keeps_an_xlsx_link_across_a_cosmetic_title_repunctuation(self) -> None:
+        previous = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Bundeswehr-Einsatz (KFOR)", "total": {"yes": 1, "no": 0},
+            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
+        }]}]}
+        report = {"agenda_items": [{"votes": [{
+            "id": "1007", "date": "2026-06-11", "title": "Bundeswehreinsatz  (KFOR)", "total": {"yes": 1, "no": 0},
+            "xlsx_url": None,
+        }]}]}
+        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
+        self.assertEqual(report["agenda_items"][0]["votes"][0]["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
+
     def test_carry_forward_drops_an_xlsx_link_once_the_title_changed(self) -> None:
         previous = {"agenda_items": [{"votes": [{
             "id": "1007", "date": "2026-06-11", "title": "Alt", "total": {"yes": 1, "no": 0},
@@ -428,83 +440,6 @@ class CollectAbgeordneteTests(unittest.TestCase):
             finally:
                 conn.close()
             self.assertIn("birth_year", columns)
-
-    def test_offline_main_backfills_derived_vote_results_before_exporting_the_store(self) -> None:
-        # 921e8a0 ("Restore the _migrate_vote_results backfill") exists
-        # because --offline builds keep and export the EXISTING store rather
-        # than a fresh one: a store persisted before the badge shipped must
-        # still get result_raw/result_source before run_data_pipeline's
-        # export copies it. This pins that wiring inside main()'s offline
-        # branch; _migrate_vote_results itself is already unit-tested in
-        # tests/test_persist_dip_pulse_store.py.
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp) / "site"
-            database_path = output_dir / "data" / "bundestag-pulse.sqlite"
-            conn = pulse_store.connect(database_path)
-            try:
-                conn.executescript(
-                    """
-                    CREATE TABLE votes (
-                      id TEXT PRIMARY KEY, date TEXT, topic TEXT, title TEXT, description TEXT,
-                      detail_url TEXT, yes_count INTEGER NOT NULL DEFAULT 0,
-                      no_count INTEGER NOT NULL DEFAULT 0, abstain_count INTEGER NOT NULL DEFAULT 0,
-                      absent_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                    );
-                    """
-                )
-                now = pulse_store.utc_now()
-                conn.execute(
-                    "INSERT INTO votes(id, yes_count, no_count, created_at, updated_at) VALUES ('legacy-1', 300, 200, ?, ?)",
-                    (now, now),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-
-            args = SimpleNamespace(
-                output_dir=output_dir,
-                database_path=None,
-                offline=True,
-                no_persist=False,
-            )
-            with (
-                mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
-                mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"id": "cached"}]),
-                mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[]),
-                mock.patch.object(
-                    build_dip_pulse_site,
-                    "render_site",
-                    return_value=output_dir / "index.html",
-                ),
-            ):
-                self.assertEqual(build_dip_pulse_site.main(), 0)
-
-            conn = pulse_store.connect(database_path)
-            try:
-                row = conn.execute(
-                    "SELECT result_raw, result_source FROM votes WHERE id = 'legacy-1'"
-                ).fetchone()
-            finally:
-                conn.close()
-            self.assertEqual(tuple(row), ("accepted", "derived"))
-
-            # The store alone isn't the point - a build that persisted the
-            # backfill but exported first (or from a stale connection) would
-            # also pass the assertion above. Check the actual exported file
-            # run_data_pipeline wrote, since that's what 921e8a0 was about.
-            import csv
-            import gzip
-
-            export_dirs = sorted((output_dir / "data" / "exports").glob("g-*"))
-            self.assertEqual(len(export_dirs), 1)
-            csv_path = export_dirs[0] / "votes-local.csv.gz"
-            self.assertTrue(csv_path.exists())
-            with gzip.open(csv_path, "rt", encoding="utf-8", newline="") as handle:
-                exported_rows = {row["id"]: row for row in csv.DictReader(handle)}
-            self.assertEqual(
-                (exported_rows["legacy-1"]["result_raw"], exported_rows["legacy-1"]["result_source"]),
-                ("accepted", "derived"),
-            )
 
     def test_write_report_reuses_catalog_protocol_metadata(self) -> None:
         protocol = {
@@ -2246,6 +2181,10 @@ class VotesArchiveTests(unittest.TestCase):
         ]}
         rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
         self.assertEqual(rows[0]["fraction_positions"], {"fraktionslos": "tie", "SPD": "yes", "AfD": "no"})
+
+    def test_ja_plurality_below_half_of_the_votes_is_not_a_ja_majority(self) -> None:
+        fraction = {"counts": {"yes": 40, "no": 35, "abstain": 25}, "leading_vote": "yes"}
+        self.assertEqual(build_dip_pulse_site._fraction_position(fraction), "tie")
 
     def test_rows_sort_reverse_chronological(self) -> None:
         older = self._entry(

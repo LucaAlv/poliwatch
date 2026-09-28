@@ -154,27 +154,19 @@ class VoteResultTests(unittest.TestCase):
     def test_derived_no_greater_than_yes_is_rejected(self) -> None:
         self.assertEqual(dip.vote_result(official=None, yes_count=100, no_count=300), ("rejected", "derived"))
 
+    def test_grundgesetz_amendment_with_more_ja_than_nein_is_unknown(self) -> None:
+        # Art. 79 Abs. 2 GG: two thirds of the members, not Ja > Nein.
+        title = "Gesetz zur Änderung des Grundgesetzes"
+        self.assertEqual(dip.vote_result(official=None, yes_count=400, no_count=200, title=title), (None, None))
+        self.assertEqual(
+            dip.vote_result(official=None, yes_count=200, no_count=400, title=title), ("rejected", "derived")
+        )
+        self.assertEqual(
+            dip.vote_result(official="accepted", yes_count=400, no_count=200, title=title), ("accepted", "official")
+        )
+
     def test_missing_counts_are_unknown(self) -> None:
         self.assertEqual(dip.vote_result(official=None, yes_count=0, no_count=0), (None, None))
-
-
-class StoredVoteResultTests(unittest.TestCase):
-    def test_pre_badge_record_derives_from_the_stored_counts(self) -> None:
-        vote = {"total": {"yes": 300, "no": 200}}
-        self.assertEqual(dip.stored_vote_result(vote), ("accepted", "derived"))
-
-    def test_already_recorded_result_is_returned_as_is(self) -> None:
-        vote = {"result_raw": "rejected", "result_source": "official", "total": {"yes": 999, "no": 0}}
-        # The recorded result wins even though the counts would derive
-        # differently: persist/render must agree with what was actually stored.
-        self.assertEqual(dip.stored_vote_result(vote), ("rejected", "official"))
-
-    def test_result_source_present_without_result_raw_is_returned_verbatim(self) -> None:
-        # An inconsistent stored row (result_source set, result_raw missing)
-        # still short-circuits on "or" rather than falling through to derive -
-        # this pins that behavior rather than a preference either way.
-        vote = {"result_source": "official", "total": {"yes": 300, "no": 200}}
-        self.assertEqual(dip.stored_vote_result(vote), (None, "official"))
 
 
 class ScrapeOfficialVoteResultTests(unittest.TestCase):
@@ -245,6 +237,13 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         ):
             with self.subTest(body=body):
                 self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+
+    def test_outcome_behind_a_blank_line_belongs_to_the_next_decision(self) -> None:
+        # A show-of-hands decision after this vote's tally has no tally of its
+        # own and, here, no document number; the blank line ("<br/><br/>")
+        # that separates decision blocks on live pages keeps its outcome out.
+        body = "<p>Gesamt:500 Ja:100 Nein:400 Enthaltungen --<br/><br/>Antrag einstimmig angenommen</p>"
+        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
 
     def test_negation_split_across_the_line_break_is_refused(self) -> None:
         body = "<p>Gesamt: 500 Ja:300 Nein:200 Enthaltungen -- Der Gesetzentwurf ist nicht<br/>angenommen.</p>"
@@ -345,7 +344,7 @@ class NamenslistenMatchingTests(unittest.TestCase):
             {entry["date"] for entry in self.entries}, {"2026-06-12", "2026-06-11"}
         )
 
-    def test_row_missing_the_xlsx_link_is_skipped(self) -> None:
+    def test_row_missing_the_xlsx_link_is_kept_without_a_url(self) -> None:
         html = """
         <div class="e-linkListItem">
         <a class="e-linkListItem__anchor"><span>10.06.2026: Ohne XLSX </span></a>
@@ -356,16 +355,24 @@ class NamenslistenMatchingTests(unittest.TestCase):
         </div>
         """
         entries = dip.parse_namenslisten_page(html)
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["title"], "Mit XLSX")
+        self.assertEqual([(e["title"], e["xlsx_url"] is None) for e in entries], [("Ohne XLSX", True), ("Mit XLSX", False)])
 
-    def test_row_with_an_off_host_xlsx_link_is_skipped(self) -> None:
+    def test_a_fileless_row_sharing_the_key_makes_the_filed_row_ambiguous(self) -> None:
+        entries = [
+            {"date": "2026-06-11", "title": "Antrag A", "xlsx_url": None},
+            {"date": "2026-06-11", "title": "Antrag-A", "xlsx_url": "https://www.bundestag.de/resource/blob/1/x.xlsx"},
+        ]
+        self.assertEqual(len(dip.roll_call_xlsx_matches("2026-06-11", "Antrag A", entries)), 2)
+        self.assertIsNone(dip.find_roll_call_xlsx_url("2026-06-11", "Antrag A", entries))
+
+    def test_row_with_an_off_host_xlsx_link_keeps_no_url(self) -> None:
         html = (
             '<div class="e-linkListItem">'
             '<a href="https://example.com/x.xlsx" class="e-linkListItem__anchor">'
             "<span>11.06.2026: Bundeswehreinsatz in Kosovo (KFOR)</span></a></div>"
         )
-        self.assertEqual(dip.parse_namenslisten_page(html), [])
+        entries = dip.parse_namenslisten_page(html)
+        self.assertEqual([e["xlsx_url"] for e in entries], [None])
 
     def test_relative_xlsx_link_is_made_absolute(self) -> None:
         html = (
@@ -432,7 +439,7 @@ class NamenslistenRowBoundaryTests(unittest.TestCase):
             '<a href="https://www.bundestag.de/resource/blob/2/b_xls.xlsx">XLSX</a></div>'
         )
         entries = dip.parse_namenslisten_page(page)
-        self.assertEqual([entry["title"] for entry in entries], ["Mit Liste"])
+        self.assertEqual([(e["title"], e["xlsx_url"] is None) for e in entries], [("Ohne Liste", True), ("Mit Liste", False)])
 
     def test_row_boundary_survives_attribute_reordering_and_extra_leading_classes(self) -> None:
         # The split only required the literal prefix class="e-linkListItem;
@@ -447,14 +454,14 @@ class NamenslistenRowBoundaryTests(unittest.TestCase):
             '<a href="https://www.bundestag.de/resource/blob/2/b_xls.xlsx">XLSX</a></div>'
         )
         entries = dip.parse_namenslisten_page(page)
-        self.assertEqual([entry["title"] for entry in entries], ["Mit Liste"])
+        self.assertEqual([(e["title"], e["xlsx_url"] is None) for e in entries], [("Ohne Liste", True), ("Mit Liste", False)])
 
     def test_unparsable_xlsx_href_is_skipped_not_raised(self) -> None:
         page = (
             '<div class="e-linkListItem"><a class="e-linkListItem__anchor" href="/a.pdf"><span>'
             '11.06.2026: Kaputt</span></a><a href="https://[broken/x.xlsx">XLSX</a></div>'
         )
-        self.assertEqual(dip.parse_namenslisten_page(page), [])
+        self.assertEqual([e["xlsx_url"] for e in dip.parse_namenslisten_page(page)], [None])
 
 
 class FetchRollCallVoteDetailTests(unittest.TestCase):
@@ -534,7 +541,7 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
         stderr = StringIO()
         with patch.object(dip, "fetch_html", return_value=html), patch("sys.stderr", stderr):
             entries = dip.namenslisten_entries()
-        self.assertEqual(len(entries), dip.NAMENSLISTEN_PAGE_LIMIT - 1)
+        self.assertEqual(len(entries), dip.NAMENSLISTEN_PAGE_LIMIT)
         self.assertIn(f"returned {dip.NAMENSLISTEN_PAGE_LIMIT} rows", stderr.getvalue())
 
     def test_zero_row_page_warns_and_is_not_cached(self) -> None:

@@ -327,18 +327,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P2
 **Depends on:** Vote outcome badge
 
-### Namenslisten rows with no XLSX file are dropped, weakening ambiguity detection
-
-**What:** `parse_namenslisten_page` silently skips a Namenslisten row that has no `.xlsx` href at all, so a (date, normalized title) collision only registers as ambiguous when the row *without* a file is still present. Keep every row (with `xlsx_url: None` for a fileless one) and have `roll_call_xlsx_matches` treat a match against any fileless row at the same key as ambiguous too, not only a second distinct URL. Done when a fixture with one fileless and one filed row sharing a (date, title) key returns no match, not the filed row's URL.
-
-**Why:** Found by Codex's adversarial review (2026-09-27). Latent: the live Namenslisten page currently has 0 fileless rows among 60 (verified the same day), so no real vote is affected today, but the code path itself can't tell "the only row" from "the only row *with a file*."
-
-**Context:** `roll_call_xlsx_matches`'s "more than one distinct XLSX returns None" rule already exists for the two-files case; this extends the same never-guess principle to the zero-vs-one-file case.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### A tally-less neighboring decision with no document number of its own can still steal the official badge
 
 **What:** `scrape_official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
@@ -347,8 +335,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Context:** The badge already discloses "(berechnet)" for any non-official result, so a bleed here would show a false-confidence "Laut Beschluss auf bundestag.de" label with the wrong outcome rather than the honest derived caveat — worse than the inversion caveat, which at least states the right raw counts.
 
-**Effort:** M
-**Priority:** P1
+**Update (2026-09-28):** narrowed: the outcome is now only read from the line directly under the tally (a blank "<br/><br/>" line ends the block), which closes the blank-line-separated shape. Still open: two decisions with no blank line between them.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
@@ -356,16 +346,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `scrape_official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
 
 **Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### `carry_forward_vote_provenance`'s XLSX guard compares raw titles, not the normalized match key
-
-**What:** The (date, title) guard in `carry_forward_vote_provenance` compares `vote.get("title") == previous.get("title")` exactly, but the matcher this guard exists to protect (`validate_dip_protocol.roll_call_xlsx_matches`/`_title_match_key`) normalizes to letters-and-digits-only, specifically because bundestag.de hyphenates the same title differently across its two pages. A cosmetic re-punctuation of the same roll-call-list heading between two builds is read as "title changed", permanently dropping a previously-found XLSX link once the vote ages past the Namenslisten page's 200-row window, even though the vote's normalized identity never changed. Compare via the same normalized key both places.
-
-**Why:** Found by the /ship red-team review (2026-09-27). Data-loss only (an optional link disappears), never a wrong link.
 
 **Effort:** S
 **Priority:** P3

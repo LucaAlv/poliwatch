@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import render_dip_pulse_html as html
-from validate_dip_protocol import stored_vote_result
 
 from . import BaseComponent, REGISTRY
 
@@ -27,9 +26,9 @@ def result_badge_label(result_raw: Any) -> str | None:
 
 def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
-    archive; votes cached before the badge shipped fall back to the derived rule.
+    archive; a vote with no recorded result renders no badge.
     """
-    result_raw, result_source = stored_vote_result(vote)
+    result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
     label = result_badge_label(result_raw)
     if not label:
         return ""
