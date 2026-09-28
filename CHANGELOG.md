@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0.0] - 2026-09-28
+
+### Added
+
+- Every roll-call vote panel now shows whether the motion passed. The badge reads "Angenommen" or "Abgelehnt", sourced from bundestag.de's own stated result when the page states one, or otherwise computed from the vote count and marked "(berechnet)" so the difference is visible on hover.
+- Every Drucksache a vote panel mentions now links to its source document instead of showing plain text, and a link to the vote's XLSX Namensliste export appears next to the detail link when bundestag.de has published one.
+- A new "Abstimmungen" page lists every roll-call vote across every sitting the site has built, reverse-chronological and grouped by month, with a Fraktion filter (by that Fraktion's majority position on each vote).
+
+## [0.6.6.0] - 2026-09-26
+
+### Added
+
+- The dossier sidebar now marks the TOP you are reading. The highlight follows scrolling, sidebar clicks, resizes and the end of the page, keeps the marked row in view inside the ranking list, and turns off where the sidebar sits above the text (narrow or short windows) and in print.
+- Each SQL recipe on the Daten page has a "Kopieren" button. Where the browser cannot write to the clipboard, the button selects the SQL for ⌘C/Strg+C instead; a copy that fails late never overrides a newer click or your own selection. Without JavaScript the button stays hidden.
+- Dossier footers link to the Daten page when the build has data to show, like the other pages' Daten links.
+
 ## [0.6.5.0] - 2026-09-25
 
 ### Changed

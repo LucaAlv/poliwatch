@@ -113,6 +113,7 @@ from features import (
     resolve,
 )
 from features import loader as feature_loader
+from features import votes as votes_feature
 
 
 # Human-readable one-liners for every table in the SQLite store. Used only by the
@@ -534,6 +535,7 @@ def write_report_files(
     features: Selection | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     protocol = report.get("protocol") or {}
@@ -546,6 +548,7 @@ def write_report_files(
             features=features,
             mp_lookup=mp_lookup,
             include_dev_view=include_dev_view,
+            database_page_href=database_page_href,
         ),
         encoding="utf-8",
     )
@@ -664,6 +667,7 @@ def rebuild_cached_detail_pages(
     cached_entries: list[dict[str, Any]] | None = None,
     *,
     include_dev_view: bool = False,
+    database_page_href: str | None = None,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls.
 
@@ -681,6 +685,7 @@ def rebuild_cached_detail_pages(
                 mp_lookup,
                 features,
                 include_dev_view=include_dev_view,
+                database_page_href=database_page_href,
             )
         )
     return entries
@@ -979,6 +984,46 @@ def reconcile_generated_and_cached_summaries(
     ).as_dict()
 
 
+def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    """Keep a vote's XLSX link when a rescan found no link this time.
+
+    The SQLite store is rebuilt from these reports every run, so the report is
+    the only place a previously found link survives. A vote ages out of the
+    Namenslisten page's 200-row window: without this the next build reverts
+    it to no link.
+
+    The official result is deliberately NOT carried forward: every vote this
+    function sees was just fetched fresh by fetch_roll_call_vote_detail, which
+    always sets result_raw/result_source, so "not official this time" is never
+    missing data - it is this run's own scrape (with today's parser) disagreeing
+    with a cached run. Carrying the old value forward would silently revert any
+    parser fix - a rescan that now correctly refuses a match (e.g. a "nicht
+    angenommen" negation the old parser missed) must not have that refusal
+    overwritten by the stale cached "official" result.
+    """
+    previous_votes: dict[str, dict[str, Any]] = {}
+    for item in (existing_report or {}).get("agenda_items") or []:
+        for vote in _iter_report_votes(item):
+            previous_votes.setdefault(pulse_html.vote_key(vote), vote)
+    if not previous_votes:
+        return
+    for item in report.get("agenda_items") or []:
+        for vote in _iter_report_votes(item):
+            previous = previous_votes.get(pulse_html.vote_key(vote))
+            if not previous:
+                continue
+            # The link was matched by (date, title); if either changed, the
+            # old match no longer vouches for this vote.
+            if (
+                not vote.get("xlsx_url")
+                and not vote.get("xlsx_ambiguous")
+                and previous.get("xlsx_url")
+                and vote.get("date") == previous.get("date")
+                and dip.title_match_key(vote.get("title")) == dip.title_match_key(previous.get("title"))
+            ):
+                vote["xlsx_url"] = previous["xlsx_url"]
+
+
 def reuse_existing_dossier_enrichments(
     report: dict[str, Any],
     existing_report: dict[str, Any] | None,
@@ -987,6 +1032,7 @@ def reuse_existing_dossier_enrichments(
     profiles: bool,
 ) -> None:
     """Carry cached optional data forward when this update does not refresh it."""
+    carry_forward_vote_provenance(report, existing_report)
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
         for key in agenda_item_reuse_keys(item):
@@ -1204,6 +1250,7 @@ def write_report_and_page(
     include_dev_view: bool = False,
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
+    database_page_href: str | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -1295,6 +1342,7 @@ def write_report_and_page(
         mp_lookup,
         features,
         include_dev_view=include_dev_view,
+        database_page_href=database_page_href,
     )
 
 
@@ -1397,8 +1445,13 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 
+# The outcome is mostly computed here from the counts (vote_result); only a
+# minority is read off bundestag.de's Beschluss text, so the column is derived.
+_COLUMN_SOURCE_DERIVED = {("votes", "result_raw"), ("votes", "result_source")}
+
+
 def column_source(table: str, column: str) -> str:
-    if table in _TABLE_SOURCE_DERIVED:
+    if table in _TABLE_SOURCE_DERIVED or (table, column) in _COLUMN_SOURCE_DERIVED:
         return "derived"
     if (table, column) in _COLUMN_SOURCE_ABGEORDNETENWATCH:
         return "abgeordnetenwatch"
@@ -2418,6 +2471,7 @@ def render_daten_recipes(
               <div class="recipe-sql">
                 <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
                 <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+                <button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>
               </div>
               <div class="recipe-result">
                 {body}
@@ -2427,6 +2481,80 @@ def render_daten_recipes(
             """
         )
     return "".join(blocks)
+
+
+# Rendered without JS as hidden ("no dead button shows without JS") and
+# revealed once this script has wired up a click handler for it. One script
+# tag for all five recipe buttons, next to the markup it controls rather than
+# folded into page_scripts (shared by every page, most of which have none).
+def recipe_copy_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const buttons = document.querySelectorAll(".recipe-copy");
+      if (!buttons.length) return;
+      const clipboardAvailable = !!(navigator.clipboard && window.isSecureContext);
+      // Page-wide, bumped on every copy click: a clipboard write that fails
+      // late (e.g. behind a permission prompt) must not select its SQL over
+      // a newer click or a selection the reader made in the meantime.
+      let latestCopy = 0;
+
+      buttons.forEach((button) => {
+        const sqlBlock = button.closest(".recipe-sql");
+        const code = sqlBlock && sqlBlock.querySelector("pre code");
+        if (!code) return;
+        const defaultLabel = button.textContent;
+        let resetTimer = null;
+
+        const flash = (label) => {
+          if (resetTimer) window.clearTimeout(resetTimer);
+          button.textContent = label;
+          resetTimer = window.setTimeout(() => {
+            button.textContent = defaultLabel;
+            resetTimer = null;
+          }, 2000);
+        };
+
+        // Non-secure contexts (e.g. a page opened straight off disk, no
+        // server) have no navigator.clipboard at all; select the SQL text
+        // instead so Cmd/Ctrl+C still works, and never fall back to the
+        // deprecated document.execCommand.
+        const selectFallback = () => {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          flash("Markiert – mit ⌘C/Strg+C kopieren");
+        };
+
+        button.addEventListener("click", () => {
+          const copy = ++latestCopy;
+          if (!clipboardAvailable) {
+            selectFallback();
+            return;
+          }
+          const selectionAtClick = String(window.getSelection() || "");
+          navigator.clipboard.writeText(code.textContent).then(
+            () => {
+              if (copy === latestCopy) flash("Kopiert");
+            },
+            () => {
+              if (copy !== latestCopy) return;
+              const untouched = String(window.getSelection() || "") === selectionAtClick;
+              if (untouched) selectFallback();
+              else flash("Nicht kopiert");
+            },
+          );
+        });
+
+        button.hidden = false;
+      });
+    })();
+  </script>
+"""
 
 
 def render_daten_schema(manifest: dict[str, Any]) -> tuple[str, str, str]:
@@ -2625,6 +2753,26 @@ def _daten_page_styles() -> str:
     }
     .recipe:first-child { border-top:none; padding-top:0; }
     .recipe pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .recipe-copy {
+      appearance:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      margin-top:8px;
+      padding:6px 12px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:var(--panel);
+      color:var(--blue);
+      font:inherit;
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }
+    .recipe-copy[hidden] { display:none; }
+    .recipe-copy:hover { border-color:var(--blue); }
+    .recipe-copy:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
     .recipe-empty { font-size:14px; }
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { padding:8px; border-bottom:1px solid var(--surface-3); text-align:left; vertical-align:top; }
@@ -2643,7 +2791,7 @@ def _daten_page_styles() -> str:
     details pre { margin:8px 0 0; padding:12px; background:var(--surface-2); border-radius:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.45; }
     footer { padding-top:24px; margin-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
     @media print {
-      .site-header, .download-panel { display:none; }
+      .site-header, .download-panel, .recipe-copy { display:none; }
     }
     @media screen and (max-width: 1024px) {
       .recipe { grid-template-columns:minmax(0,1fr); }
@@ -2752,6 +2900,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
     </main>
   </div>
   {pulse_html.page_scripts(features)}
+  {recipe_copy_runtime_script()}
 </body>
 </html>
 """
@@ -3197,6 +3346,287 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
           <h3>Namentliche Abstimmungen</h3>
           {body}
         </article>"""
+
+
+# ---------------------------------------------------------------------------
+# PAGE: votes/index.html - every roll-call vote across every sitting
+#
+# Reverse-chronological, grouped by month, with client-side Fraktion chips.
+# Row rendering (badge, linked Drucksachen) reuses features.votes rather than
+# forking the dossier panel's markup.
+# ---------------------------------------------------------------------------
+
+
+def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
+    numbers = {str(number) for number in vote.get("document_numbers") or []}
+    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+        if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
+            return str(doc["drucksachetyp"])
+    return "–"
+
+
+def _fraction_position(fraction: dict[str, Any]) -> str | None:
+    # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
+    # (Ja + Nein + Enthaltung): leading_vote alone would call a tie (1 Ja,
+    # 1 Nein) or a plurality (40 Ja, 35 Nein, 25 Enthaltungen) "yes".
+    counts = fraction.get("counts") or {}
+    cast = [int(counts.get(key) or 0) for key in ("yes", "no", "abstain")]
+    leading = fraction.get("leading_vote")
+    if not any(cast) or leading != "yes":
+        return leading
+    yes, no, abstain = cast
+    return "yes" if yes > no + abstain else "tie"
+
+
+def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
+    # bundestag.de roll-call ids are integers of varying width; compare them
+    # numerically so "10" sorts after "9" on the same date.
+    text = str(vote_id or "")
+    return (int(text), "") if text.isdigit() else (-1, text)
+
+
+def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every roll-call vote across every dossier, one row per unique vote id.
+
+    A vote can attach to two agenda items (pulse_html.vote_key handles the
+    dedupe, same rule week_stats uses for the Wochenvergleich vote count).
+    """
+    rows: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        report = entry.get("report") or {}
+        page_path = entry.get("page_path")
+        for item in report.get("agenda_items") or []:
+            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+            for vote in votes:
+                # persist_votes skips a vote without an id, so the archive does
+                # too: the row count must equal SELECT count(*) FROM votes.
+                if not vote.get("id"):
+                    continue
+                key = pulse_html.vote_key(vote)
+                if key in rows:
+                    continue
+                fraction_positions = {
+                    str(fraction["name"]): _fraction_position(fraction)
+                    for fraction in vote.get("fractions") or []
+                    if fraction.get("name")
+                }
+                rows[key] = {
+                    "vote": vote,
+                    "document_links": votes_feature.document_source_links(item),
+                    "fraction_positions": fraction_positions,
+                    "procedure_type": _vote_procedure_type(vote, item),
+                    "href": (
+                        f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                        if page_path
+                        else None
+                    ),
+                }
+    return sorted(
+        rows.values(),
+        key=lambda row: (row["vote"].get("date") or "", _vote_id_sort_key(row["vote"].get("id"))),
+        reverse=True,
+    )
+
+
+def _month_label(date_iso: str | None) -> str:
+    match = re.match(r"(\d{4})-(\d{2})", date_iso or "")
+    if not match:
+        return "Unbekanntes Datum"
+    year, month = match.groups()
+    if not 1 <= int(month) <= 12:
+        return "Unbekanntes Datum"
+    return facts.month_display(f"{year}-{month}")
+
+
+def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    fraktion_names = sorted(
+        {name for row in rows for name in row["fraction_positions"]},
+        key=lambda value: (value == "fraktionslos", value),
+    )
+    chips = "".join(
+        f'<button type="button" class="chip" aria-pressed="false" data-fraktion-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
+        for name in fraktion_names
+    )
+
+    current_month = None
+    items = []
+    for row in rows:
+        vote = row["vote"]
+        month = _month_label(vote.get("date"))
+        if month != current_month:
+            items.append(f'<h2 class="archive-month" data-month="{pulse_html.esc(month)}">{pulse_html.esc(month)}</h2>')
+            current_month = month
+        badge_html = votes_feature.render_result_badge(vote)
+        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"])
+        title = vote.get("title") or vote.get("topic") or "Ohne Titel"
+        title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
+        positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
+        items.append(
+            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
+            f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\'>'
+            f'<time>{pulse_html.esc(vote.get("date"))}</time>'
+            f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p></div>'
+            "</article>"
+        )
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls &middot; Abstimmungen</title>
+  {pulse_html.page_head(features)}
+  <style>{votes_archive_styles()}</style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(depth=1, active="votes", features=features)}
+    <header class="page-header">
+      <div>
+        <h1>Abstimmungen</h1>
+        <p>Jede namentliche Abstimmung aus den erzeugten Plenarprotokoll-Dossiers, neueste zuerst.</p>
+      </div>
+    </header>
+    <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
+    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><div class="chip-row">' + chips + '</div></section>' if chips else ''}
+    <section class="archive-list" data-archive>
+      {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
+      <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Fraktion.</p>
+    </section>
+    <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a></footer>
+  </div>
+  {render_votes_archive_script()}
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+def votes_archive_styles() -> str:
+    return bill_styles() + """
+    .archive-count { margin:16px 0 0; color:var(--muted); font-size:14px; }
+    .archive-count strong { color:var(--ink); font-size:18px; }
+    .archive-filters { margin-top:20px; }
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .chip {
+      min-height:30px;
+      padding:4px 11px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:var(--panel);
+      color:#333a45;
+      font:inherit;
+      font-size:13px;
+      font-weight:650;
+      cursor:pointer;
+    }
+    .chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
+    .chip:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    :root[data-theme="dark"] .chip { color:var(--ink); }
+    :root[data-theme="dark"] .chip.is-active { background:var(--surface-2); color:var(--blue); }
+    .archive-list { margin-top:20px; display:grid; gap:10px; }
+    .archive-month { margin:18px 0 4px; font-size:15px; color:var(--muted); }
+    .archive-row {
+      display:grid;
+      grid-template-columns:110px minmax(0,1fr);
+      gap:14px;
+      padding:12px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:var(--panel);
+    }
+    .archive-row[hidden], .archive-month[hidden] { display:none; }
+    .archive-row time { color:var(--muted); font-size:13px; }
+    .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
+    .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
+    .archive-empty { margin-top:16px; color:var(--muted); }
+""" + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + """
+    @media (max-width: 640px) {
+      .archive-row { grid-template-columns:1fr; gap:4px; }
+    }
+"""
+
+
+# Inline script for votes/index.html: toggles Fraktion chips (multi-select)
+# and shows a row when any active Fraktion's leading vote on it was "yes" -
+# same interaction plenarwatch's own "Nach Fraktion:" archive filter offers.
+def render_votes_archive_script() -> str:
+    return """
+  <script>
+    (() => {
+      const container = document.querySelector('[data-archive]');
+      if (!container) return;
+      const rows = Array.from(container.querySelectorAll('[data-row]')).map((row) => {
+        let positions = {};
+        try {
+          positions = JSON.parse(row.dataset.fraktionPositions || '{}');
+        } catch (err) {
+          positions = {};
+        }
+        return { row, positions, month: row.dataset.month };
+      });
+      const headings = Array.from(container.querySelectorAll('h2[data-month]'));
+      const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
+      const noResults = document.querySelector('[data-no-results]');
+      const count = document.querySelector('[data-archive-count]');
+      const active = new Set();
+      const apply = () => {
+        let visible = 0;
+        const visibleMonths = new Set();
+        const activeList = Array.from(active);
+        rows.forEach(({ row, positions, month }) => {
+          const show = activeList.length === 0 || activeList.some((name) => positions[name] === 'yes');
+          row.hidden = !show;
+          if (show) {
+            visible += 1;
+            visibleMonths.add(month);
+          }
+        });
+        headings.forEach((heading) => {
+          heading.hidden = !visibleMonths.has(heading.dataset.month);
+        });
+        if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
+        if (count) {
+          const total = count.dataset.total;
+          count.innerHTML = active.size === 0
+            ? `<strong>${total}</strong> Abstimmungen`
+            : `<strong>${visible}</strong> von ${total} Abstimmungen`;
+        }
+        chips.forEach((chip) => {
+          const on = active.has(chip.dataset.fraktionChip);
+          chip.classList.toggle('is-active', on);
+          chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+      };
+      chips.forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const value = chip.dataset.fraktionChip;
+          if (active.has(value)) {
+            active.delete(value);
+          } else {
+            active.add(value);
+          }
+          apply();
+        });
+      });
+      apply();
+    })();
+  </script>
+"""
+
+
+def write_votes_archive_page(
+    output_dir: Path,
+    rows: list[dict[str, Any]],
+    features: Selection | None = None,
+) -> dict[str, Any]:
+    features = features or publication_selection()
+    votes_dir = output_dir / "votes"
+    votes_dir.mkdir(parents=True, exist_ok=True)
+    (votes_dir / "index.html").write_text(render_votes_archive_index(rows, features), encoding="utf-8")
+    return {"count": len(rows), "index_path": votes_dir / "index.html"}
 
 
 def _speakers_note(stats: dict[str, Any]) -> str:
@@ -8597,6 +9027,8 @@ def render_site(
         "mp_lookup": mp_lookup,
         "collect_bill_pages": collect_bill_pages,
         "write_bill_pages": write_bill_pages,
+        "collect_votes_archive": collect_votes_archive,
+        "write_votes_archive_page": write_votes_archive_page,
         "write_abgeordnete_pages": write_abgeordnete_pages,
         "write_facts_pages": write_facts_pages,
         "database_path": database_path,
@@ -8631,6 +9063,9 @@ def render_site(
         f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Sitzungswochen",
         file=sys.stderr,
     )
+    votes_output = components["votes"].write_pages(output_dir, component_context)
+    if votes_output:
+        print(f"abstimmungen: {votes_output['count']} im Archiv", file=sys.stderr)
     # The core pages. Each render_* call below owns exactly one output file.
     index_path = output_dir / "index.html"
     pulse_path = output_dir / "puls.html"
@@ -9312,6 +9747,21 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def data_manifest_source(args: argparse.Namespace) -> str | None:
+    return getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+
+
+# Dossiers are written before run_data_pipeline produces the manifest that every
+# other page's "Daten" link keys on, so their footer predicts it from the
+# export's own condition: a manifest override, or a persisted store to export.
+# The one miss is an export that raises DataExportUnavailable (old SQLite);
+# database.html is then the fallback page, which says exactly that.
+def dossier_database_page_href(args: argparse.Namespace, database_path: Path) -> str | None:
+    if data_manifest_source(args) or (not args.no_persist and database_path.exists()):
+        return "../database.html"
+    return None
+
+
 # CLI > env > default, read in the layer that actually runs the build (not in
 # parse_args itself), per the DX addendum. getattr() throughout: main() must
 # keep working against the pre-existing test stub that mocks parse_args() with
@@ -9320,7 +9770,7 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     base_url_raw = (
         getattr(args, "data_base_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_BASE_URL") or "data/exports/"
     )
-    manifest_raw = getattr(args, "data_manifest", None) or os.environ.get("BUNDESTAG_PULSE_DATA_MANIFEST")
+    manifest_raw = data_manifest_source(args)
     license_text = getattr(args, "data_license", None) or os.environ.get("BUNDESTAG_PULSE_DATA_LICENSE") or ""
     issues_url = getattr(args, "data_issues_url", None) or os.environ.get("BUNDESTAG_PULSE_DATA_ISSUES_URL")
     issues_url = (issues_url or "").strip() or None
@@ -9555,6 +10005,7 @@ def main() -> int:
             features,
             cached_entries=cached_entries,
             include_dev_view=args.include_dev_view,
+            database_page_href=dossier_database_page_href(args, database_path),
         )
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
@@ -9671,6 +10122,7 @@ def main() -> int:
                     profile_resolver=profile_resolver,
                     features=features,
                     include_dev_view=args.include_dev_view,
+                    database_page_href=dossier_database_page_href(args, database_path),
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -9717,6 +10169,7 @@ def main() -> int:
                         canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
                 finally:
                     store.close()
+                database_page_href = dossier_database_page_href(args, database_path)
                 entries = [
                     write_report_files(
                         entry["report"],
@@ -9724,6 +10177,7 @@ def main() -> int:
                         mp_lookup,
                         features,
                         include_dev_view=args.include_dev_view,
+                        database_page_href=database_page_href,
                     )
                     for entry in entries
                 ]

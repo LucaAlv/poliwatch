@@ -214,6 +214,9 @@ def initialize(conn: sqlite3.Connection) -> None:
           no_count INTEGER NOT NULL DEFAULT 0,
           abstain_count INTEGER NOT NULL DEFAULT 0,
           absent_count INTEGER NOT NULL DEFAULT 0,
+          result_raw TEXT,
+          result_source TEXT,
+          xlsx_url TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -926,13 +929,15 @@ def persist_votes(
         if not vote_id:
             continue
         total = vote.get("total") or {}
+        result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
         conn.execute(
             """
             INSERT INTO votes(
               id, date, topic, title, description, detail_url, yes_count, no_count,
-              abstain_count, absent_count, created_at, updated_at
+              abstain_count, absent_count, result_raw, result_source, xlsx_url,
+              created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               date = excluded.date,
               topic = excluded.topic,
@@ -943,6 +948,26 @@ def persist_votes(
               no_count = excluded.no_count,
               abstain_count = excluded.abstain_count,
               absent_count = excluded.absent_count,
+              result_raw = excluded.result_raw,
+              result_source = excluded.result_source,
+              -- A copy of the vote without a link (e.g. the same vote attached to
+              -- a second agenda item) never erases one already stored, so a
+              -- missing link normally falls back to COALESCE. Two cases must
+              -- NOT fall back, though: an explicit ambiguous-match refusal
+              -- (xlsx_ambiguous) - COALESCE alone can't tell "no fresh data
+              -- this copy" from "fresh data explicitly rejected this match"
+              -- (Codex structured review, 2026-09-27) - and a changed date or
+              -- title, the same guard carry_forward_vote_provenance already
+              -- applies at the report layer: an old link was matched by
+              -- (date, title), so once either changes it no longer vouches
+              -- for this row (coverage audit, 2026-09-27). Across builds the
+              -- store is rebuilt, so ordinary carry-forward happens in the
+              -- report (build_dip_pulse_site.carry_forward_vote_provenance).
+              xlsx_url = CASE
+                WHEN ? THEN NULL
+                WHEN excluded.date IS NOT votes.date OR excluded.title IS NOT votes.title THEN excluded.xlsx_url
+                ELSE COALESCE(excluded.xlsx_url, votes.xlsx_url)
+              END,
               updated_at = excluded.updated_at
             """,
             (
@@ -956,8 +981,12 @@ def persist_votes(
                 int(total.get("no") or 0),
                 int(total.get("abstain") or 0),
                 int(total.get("absent") or 0),
+                clean(result_raw),
+                clean(result_source),
+                clean(vote.get("xlsx_url")),
                 now,
                 now,
+                bool(vote.get("xlsx_ambiguous")),
             ),
         )
         conn.execute(

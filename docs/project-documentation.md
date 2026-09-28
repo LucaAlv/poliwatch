@@ -131,6 +131,7 @@ It creates these directories under the output directory:
 |   `-- exports/            # distribution SQLite + CSVs + datenstand.json, unless --no-persist
 |-- protocols/
 |-- bills/                  # always published; honest empty state without matching data
+|-- votes/                  # votes/index.html: Abstimmungen archive across all built sittings; always published like bills/
 |-- fakt/                   # "Fakt der Woche": index.html, methodik.html, <period_key>.html, <period_key>-<metric_id>.svg
 `-- abgeordnete/            # always published; observed MPs remain available without a full roster
 ```
@@ -151,6 +152,7 @@ Important generated files:
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
+| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, reverse-chronological and grouped by month, with a Fraktion filter |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
@@ -185,7 +187,7 @@ Shared schema-v2 trust boundary for acquisition facts, presentation-state deriva
 
 ## Fixed public presentation and enrichments
 
-Every ordinary static publication has seven stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Fakten, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
+Every ordinary static publication has eight stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Abstimmungen, Fakten, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
 
 Votes, profile links, and the full roster have explicit acquisition states: `not_requested`, `complete`, `partial`, or `failed`. Renderers derive contextual public copy from those facts. A successful lookup with zero matching votes is therefore different from a build that never requested vote data. `data/features.json` aggregates those facts and `sources.html#datenstand` explains them.
 
@@ -216,6 +218,7 @@ Protocol extraction and enrichment engine. Given a DIP protocol id or document n
 - parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen,
 - fetches related DIP `/vorgangsposition`, `/aktivitaet`, and `/person` records,
 - scans Bundestag roll-call vote pages and matches votes by same-day protocol plus Drucksachennummer,
+- scrapes each vote's own detail page for bundestag.de's stated Beschluss result (falling back to a yes/no majority when none is stated) and for a link to that vote's XLSX Namensliste export on a separate Namenslisten list page, matched by date and normalized title,
 - optionally generates per-agenda-item LLM summaries.
 
 It prints a validation report JSON to stdout:
@@ -234,9 +237,9 @@ Standalone HTML renderer for a single validation report JSON. `build_dip_pulse_s
 python3 scripts/render_dip_pulse_html.py .context/report.json .context/report.html
 ```
 
-The renderer owns the detailed dossier page HTML, shared site header styles, party colors, vote labels, source links, speaker/profile links, and summary presentation.
+The renderer owns the detailed dossier page HTML, shared site header styles, party colors, vote labels, source links, speaker/profile links, summary presentation, and a footer nav whose Daten link is predicted, before the export runs, by `dossier_database_page_href()` in `build_dip_pulse_site.py` from the same conditions the SQLite export uses; a build whose export later fails with `DataExportUnavailable` (old SQLite) still shows the link, landing on `database.html`'s own explanation rather than the recipes page.
 
-The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is sticky and its rows scroll inside the panel; at 1120px and below it renders collapsed to `ATTENTION_PREVIEW_ROWS` rows (`ATTENTION_PREVIEW_ROWS_PHONE` at 720px and below) behind an expand button, protocols without agenda items or extracted speeches get a plain notice instead of a ranking, and print output shows every row without controls. Ranking row labels strip recognized procedural boilerplate from the start of the agenda heading and keep the full normalized heading in the link's `title` tooltip. Both row counts are module constants near the top of the file.
+The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is sticky and its rows scroll inside the panel; at 1120px and below it renders collapsed to `ATTENTION_PREVIEW_ROWS` rows (`ATTENTION_PREVIEW_ROWS_PHONE` at 720px and below) behind an expand button, protocols without agenda items or extracted speeches get a plain notice instead of a ranking, and print output shows every row without controls. Ranking row labels strip recognized procedural boilerplate from the start of the agenda heading and keep the full normalized heading in the link's `title` tooltip. Both row counts are module constants near the top of the file. An `IntersectionObserver` in `attention_runtime_script()` also tracks which ranking row is "current" as the reader scrolls, setting `aria-current="true"` on the matching `.attention-row` and scrolling it into view inside the list; the observer itself switches off wherever the static-layout media query matches (`ATTENTION_STATIC_LAYOUT_QUERY`, shared between the CSS and the script), since there is no rail to mark "you are here" on. The highlight's styling is `@media screen` only, so printing shows no marker even though the observer keeps running.
 
 ### `scripts/persist_dip_pulse_store.py`
 
@@ -536,6 +539,7 @@ python3 scripts/abgeordnetenwatch.py \
 | `GEMINI_API_KEY` | build/validation | Only Gemini summaries | Gemini summary generation |
 | `GOOGLE_API_KEY` | validation | Optional Gemini fallback | Alternative Gemini key name |
 | `BT_ROLL_CALL_LIST_ID` | build/validation | No | Bundestag roll-call vote filterlist id override; `--roll-call-list-id` wins when both are set |
+| `BT_NAMENSLISTEN_LIST_ID` | build/validation | No | Bundestag Namenslisten (XLSX export) list id override; no CLI flag equivalent |
 | `SOURCE_DATE_EPOCH` | build | No | Integer Unix timestamp read as UTC; pins the build clock for puls.html (`--today` wins when both are set) |
 | `PORT` | preview script | No | HTTP server port |
 | `PREVIEW_BIND` | preview script | No | HTTP server bind host; defaults to localhost-only |
@@ -558,6 +562,8 @@ python3 scripts/build_dip_pulse_site.py --offline
 
 When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
 
+A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --dossier-document-number 21/90 --preserve-existing-dossiers --enrich votes` (see README §4b) — a plain `update --enrich votes` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
+
 If no cached protocols exist, offline mode fails with:
 
 ```text
@@ -567,7 +573,7 @@ error: No cached protocols found in .context/dip-pulse-site/data. Run an online 
 Online commands require `DIP_API_KEY` and can call several external services:
 
 - DIP API for Plenarprotokolle, Vorgangspositionen, Aktivitaeten, Personen, and Drucksachen links.
-- Bundestag web pages for roll-call vote list/detail pages only with `--enrich votes`.
+- Bundestag web pages for roll-call vote list/detail pages, plus the Namenslisten (XLSX export) list page, only with `--enrich votes`.
 - abgeordnetenwatch.de API only with `--enrich aw-profiles`.
 - Anthropic or Gemini APIs only when summaries are generated/refreshed.
 
@@ -695,6 +701,8 @@ python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
 
 BT_ROLL_CALL_LIST_ID=NEW-ID python3 scripts/validate_dip_protocol.py --document-number 21/87
 ```
+
+The separate Namenslisten (XLSX export) list page warns the same way, but the two warnings need different responses. `warning: Namenslisten page parsed to 0 rows; no XLSX links this time` means the page returned no parseable rows — a rotated list id or drifted markup — so try `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). `warning: Namenslisten page returned N rows (the request limit); votes older than the last row get no XLSX link` is informational, not fixable that way: `NAMENSLISTEN_PAGE_LIMIT` (200) is a fixed request parameter independent of the list id, so a different id cannot widen the window. A vote that ages out of it simply gets no link in this build; `carry_forward_vote_provenance` keeps a link a previous build already found, so this only affects a vote whose link was never found while still in-window.
 
 ## Recommended Development Workflow
 
