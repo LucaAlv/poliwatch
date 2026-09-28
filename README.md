@@ -195,6 +195,28 @@ python3 scripts/build_dip_pulse_site.py --output-dir .context/dip-pulse-site --b
 
 `--backfill-incomplete` acquires exactly the listed sittings DIP has XML for, ignoring `--limit` and `--detail-limit` (and it cannot be combined with `--document-number`); every other cached dossier is kept. Each sitting is a full re-download of its XML and DIP data, so a backfill of many sittings takes a while. A sitting that is still incomplete afterwards stays in the next report with its reason.
 
+### Try a fetch or a backfill in a scratch directory
+
+Before an online run rewrites the site you serve, run it into a copy and look at the result. Call `build_dip_pulse_site.py` directly with its own `--output-dir`: the preview wrapper always builds into and serves its own `OUTPUT_DIR` (`DIP_PULSE_OUTPUT_DIR`, default `.context/dip-pulse-site`), so passing `--output-dir` through `update` would build somewhere it does not serve.
+
+```bash
+# 1. A copy of the cache (a clone copy, so it is cheap on macOS and APFS; use --reflink=auto elsewhere)
+cp -cR .context/dip-pulse-site .context/scratch
+
+# 2. The run under test, into the copy only
+python3 scripts/build_dip_pulse_site.py --output-dir .context/scratch --backfill-incomplete
+
+# 3. Look at it, on another port than the real preview
+python3 -m http.server 8001 --directory .context/scratch
+
+# 4. Compare the store with the original
+for d in dip-pulse-site scratch; do
+  sqlite3 .context/$d/data/bundestag-pulse.sqlite "SELECT COUNT(*), MAX(date) FROM votes"
+done
+```
+
+The copy has its own `data/` (cached reports, catalog, store, abgeordnetenwatch cache), so the run reads and writes nothing else. Delete it with `rm -rf .context/scratch`, or swap it in with `mv` once the numbers are right. The build prints its incomplete-sittings report (above) for the copy too, so the run shows which weeks and months it fixed.
+
 ### 4c. After pulling code changes — refresh the site
 
 ```bash
