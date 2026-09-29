@@ -278,6 +278,82 @@ class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
         self.assertNotIn("source_stale", caught_up["acquisition"]["votes"]["failure_reasons"])
 
 
+class NonConvergingGapsAreKnownTests(unittest.TestCase):
+    def test_vote_shrinkage_is_structural(self) -> None:
+        self.assertTrue(build._structural_vote_gap({"reasons": {"votes": "votes partial (vote_shrinkage)"}}, 30))
+
+    def test_a_budget_gap_is_not_structural_when_votes_are_off(self) -> None:
+        gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}
+        self.assertFalse(build._structural_vote_gap(gap, 0))
+        # So it is a vote-only gap, and the votes-off hint applies.
+        catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
+        stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
+        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
+        _acq, _wait, vote_only, structural = build.incomplete_sitting_protocols([{"report": stuck}], catalog, votes=False, scan_pages=0)
+        self.assertEqual(([p["dokumentnummer"] for p in vote_only], structural), (["21/1"], []))
+
+    def test_source_stale_is_left_alone_only_while_the_list_may_be_catching_up(self) -> None:
+        import datetime as _dt
+
+        today = dip.datetime.now(dip.timezone.utc).date()
+        recent = {"date": (today - _dt.timedelta(days=3)).isoformat(), "reasons": {"votes": "votes partial (source_stale)"}}
+        old = {"date": (today - _dt.timedelta(days=30)).isoformat(), "reasons": {"votes": "votes partial (source_stale)"}}
+        self.assertTrue(build._structural_vote_gap(recent, 30))
+        self.assertFalse(build._structural_vote_gap(old, 30))  # now a rescan can settle it
+
+
+class MergeOnlyRestoresVotesDatedForTheSittingTests(unittest.TestCase):
+    def test_a_cached_vote_dated_another_day_is_a_misattribution_not_a_missed_vote(self) -> None:
+        existing = report_with(0, votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [
+            {"id": "1", "title": "V1", "date": "2026-07-10"},
+            {"id": "2", "title": "V2", "date": "2026-05-02"},  # cached under the wrong sitting by an old bug
+        ]
+        fresh = report_with(0, votes_facts("complete", acquired_at=STAMP, attempted_at=STAMP))
+        fresh["protocol"] = {"dokumentnummer": "21/90", "datum": "2026-07-10"}
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1"])
+
+
+class MergeRestoresOnlyVotesThatStillBelongToTheTopTests(unittest.TestCase):
+    def test_a_vote_the_rescan_attached_nowhere_is_not_put_back_on_a_top_it_no_longer_matches(self) -> None:
+        moved = {**vote("1"), "document_numbers": ["21/9"]}
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [moved]
+        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        fresh = report_with(0, votes_facts("partial", records=0, reasons=("source_unavailable",), attempted_at=STAMP))
+        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
+
+    def test_a_vote_that_matches_the_top_is_restored(self) -> None:
+        kept = {**vote("1"), "document_numbers": ["21/5"]}
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [kept]
+        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        fresh = report_with(0, votes_facts("partial", records=0, reasons=("source_unavailable",), attempted_at=STAMP))
+        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1"])
+
+
+class CombinedReasonsAreParsedNotMatchedAsTextTests(unittest.TestCase):
+    def test_a_budget_reason_combined_with_unmatched_is_structural_at_any_budget(self) -> None:
+        gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages, unmatched_candidate)"}}
+        self.assertTrue(build._structural_vote_gap(gap, 30))
+        self.assertTrue(build._structural_vote_gap(gap, 90))
+
+    def test_the_scan_budget_travels_through_a_no_scan_rebuild(self) -> None:
+        prior = votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP)
+        existing = report_with(1, prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "budget_exhausted", "roll_call_scan_pages": 30}
+        fresh = report_with(1, None)
+        fresh["validation_summary"] = {"roll_call_scan_end": "not_scanned", "roll_call_scan_pages": 0}
+        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=0, profile_resolver=None, summary_mode="off")
+        self.assertEqual(fresh["validation_summary"]["roll_call_scan_pages"], 30)
+
+
 class MergeRequiresTheSameTopIdTests(unittest.TestCase):
     def test_votes_are_not_carried_between_tops_that_only_share_an_index(self) -> None:
         existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
@@ -370,9 +446,10 @@ class MergeKeepsALegitimateSecondAttachmentTests(unittest.TestCase):
 
 
 class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
-    def test_a_budget_exhausted_sitting_with_unmatched_votes_is_still_worth_a_rescan(self) -> None:
+    def test_a_budget_exhausted_sitting_that_also_has_unmatched_votes_is_structural(self) -> None:
+        # A wider scan settles the budget part, but the unmatched part survives it.
         gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted, unmatched_candidate)"}}
-        self.assertFalse(build._structural_vote_gap(gap))
+        self.assertTrue(build._structural_vote_gap(gap))
         self.assertTrue(build._structural_vote_gap({"reasons": {"votes": "votes partial (unmatched_candidate)"}}))
 
     def test_a_sitting_held_back_only_by_unmatched_votes_is_not_reacquired(self) -> None:
@@ -399,7 +476,7 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
             "incomplete_periods": [],
         }
         text = "\n".join(build.format_incomplete_report(report, output_dir=Path("out"), catalog_protocols=catalog, vote_scan_pages=30))
-        self.assertIn("1 sittings a backfill cannot fix: roll-call votes no agenda item claims", text)
+        self.assertIn("1 sittings a backfill cannot fix now: roll-call votes no agenda item claims", text)
         self.assertIn("(21/1)", text)
         self.assertIn("(acquires 1 sittings;", text)
 

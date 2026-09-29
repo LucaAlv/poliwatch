@@ -389,10 +389,25 @@ def _structural_vote_gap(gap: dict[str, Any], scan_pages: int | None = None) -> 
     if set(reasons) != {"votes"}:
         return False
     text = reasons["votes"]
-    if text in ("votes partial (unmatched_candidate)", "roll-call votes matched no TOP"):
+    if text == "roll-call votes matched no TOP":
         return True
+    listed = text[text.index("(") + 1 : text.rindex(")")].split(", ") if "(" in text and text.endswith(")") else []
+    tokens = {token.split(" after ")[0] for token in listed}
+    # Any of these is reproduced by a rescan whatever else is going on: the
+    # list shows votes no TOP claims, or a complete scan disagrees with the cache.
+    if tokens & {"unmatched_candidate", "vote_shrinkage"}:
+        return True
+    if text == "votes partial (source_stale)":
+        # Only while the list may still be catching up; after that a rescan can
+        # settle it, so the backfill takes it again.
+        day = str(gap.get("date") or "")[:10]
+        try:
+            age = (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
+        except ValueError:
+            return False
+        return age <= dip.ROLL_CALL_LIST_LAG_DAYS
     used = _BUDGET_PAGES_RE.search(text)
-    return bool(used) and scan_pages is not None and scan_pages <= int(used.group(1)) and "unmatched" not in text
+    return bool(used) and bool(scan_pages) and scan_pages <= int(used.group(1))
 
 
 def incomplete_sitting_protocols(
@@ -480,8 +495,9 @@ def format_incomplete_report(
         lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
     if structural:
         lines.append(
-            f"  {len(structural)} sittings a backfill cannot fix: roll-call votes no agenda item claims (they need "
-            f"a better match rule) or a scan budget already used ({_first_numbers(structural, 12)})"
+            f"  {len(structural)} sittings a backfill cannot fix now: roll-call votes no agenda item claims (they need "
+            f"a better match rule), a complete scan that lacks cached votes, a scan budget already used, or a list "
+            f"that may not have caught up yet ({_first_numbers(structural, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -1279,10 +1295,19 @@ def reuse_existing_dossier_enrichments(
             have = {pulse_html.vote_key(vote) for vote in current}
             # A vote the rescan attached to another TOP stays there: the cached
             # TOP may be a misattribution the rescan has since corrected.
+            sitting_day = str((report.get("protocol") or {}).get("datum") or "")[:10]
             missing = [
                 copy.deepcopy(vote)
                 for vote in _iter_report_votes(previous)
                 if pulse_html.vote_key(vote) not in have
+                # A cached vote dated another day is a misattribution the
+                # rescan has corrected, not one it missed.
+                and (not sitting_day or not vote.get("date") or str(vote["date"])[:10] == sitting_day)
+                # Only a vote that still belongs to this TOP by the rule that
+                # attaches votes (Drucksache overlap) is restored; a vote the
+                # rescan un-attached, or attached elsewhere, stays where the
+                # rescan put it. A vote with no Drucksachen has nothing to test.
+                and (_vote_matches_item(vote, item) or not vote.get("document_numbers"))
                 and (pulse_html.vote_key(vote) not in fresh_vote_keys or _vote_matches_item(vote, item))
             ]
             if missing:
@@ -1369,6 +1394,7 @@ def _keep_prior_scan_end(report: dict[str, Any], existing_report: dict[str, Any]
             "unmatched_roll_call_vote_count",
             "roll_call_vote_candidate_count",
             "matched_roll_call_vote_count",
+            "roll_call_scan_pages",
         ):
             if counter in prior_summary:
                 summary[counter] = prior_summary[counter]
