@@ -381,8 +381,11 @@ def _structural_vote_gap(gap: dict[str, Any]) -> bool:
     """A gap only a better match rule can close: votes the list shows that no
     agenda item claims. A rescan reproduces it exactly."""
     reasons = gap["reasons"]
-    return set(reasons) == {"votes"} and (
-        "unmatched_candidate" in reasons["votes"] or reasons["votes"] == "roll-call votes matched no TOP"
+    # Exactly this reason: "scan_budget_exhausted, unmatched_candidate" is
+    # still fixable with a wider scan.
+    return set(reasons) == {"votes"} and reasons["votes"] in (
+        "votes partial (unmatched_candidate)",
+        "roll-call votes matched no TOP",
     )
 
 
@@ -608,6 +611,18 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
 
 # Agenda items carry either a list of roll-call votes ("votes") or a single
 # legacy "vote" dict. Normalise both shapes into a list.
+def _vote_matches_item(vote: dict[str, Any], item: dict[str, Any]) -> bool:
+    """Whether the vote's Drucksachen overlap the item's, the rule that attaches
+    a vote to a TOP (validate_dip_protocol.match_roll_call_votes)."""
+    numbers = {str(doc.get("dokumentnummer")) for doc in item.get("xml_drucksachen") or [] if doc.get("dokumentnummer")}
+    numbers.update(
+        str(doc.get("dokumentnummer"))
+        for doc in (item.get("api") or {}).get("linked_drucksachen") or []
+        if doc.get("dokumentnummer")
+    )
+    return bool(numbers & {str(n) for n in vote.get("document_numbers") or []})
+
+
 def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
 
@@ -1255,7 +1270,8 @@ def reuse_existing_dossier_enrichments(
             missing = [
                 copy.deepcopy(vote)
                 for vote in _iter_report_votes(previous)
-                if pulse_html.vote_key(vote) not in have and pulse_html.vote_key(vote) not in fresh_vote_keys
+                if pulse_html.vote_key(vote) not in have
+                and (pulse_html.vote_key(vote) not in fresh_vote_keys or _vote_matches_item(vote, item))
             ]
             if missing:
                 item["votes"] = [*current, *missing]
@@ -1412,7 +1428,11 @@ def annotate_report_acquisition(
         # verification must survive a failed re-check just the same.
         # An unmatched candidate is not a failed re-check: the vote set is
         # known to be short, so a prior verification cannot vouch for it.
-        recheck_only = "unmatched_candidate" not in (fresh.get("failure_reasons") or [])
+        # Nor may it vouch when the re-parse dropped votes it had verified
+        # (different TOP ids leave nothing to re-attach them to).
+        recheck_only = "unmatched_candidate" not in (fresh.get("failure_reasons") or []) and unique_votes >= int(
+            (prior_votes or {}).get("records") or 0
+        )
         if fresh.get("acquisition_state") in {"partial", "failed"} and (carried or (prior_complete and recheck_only)):
             # The scan could not vouch for this sitting, so the cached votes
             # were kept (reuse_existing_dossier_enrichments). A failed re-check

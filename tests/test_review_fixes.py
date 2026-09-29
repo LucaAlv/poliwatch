@@ -204,7 +204,59 @@ class MergeDoesNotReattachAVoteTheRescanMovedTests(unittest.TestCase):
         self.assertEqual([v["id"] for v in fresh["agenda_items"][1]["votes"]], ["1"])
 
 
+class ReparsedSittingLosingVotesIsNotStillVerifiedTests(unittest.TestCase):
+    def test_votes_dropped_by_a_reparse_do_not_stay_verified_after_a_failed_recheck(self) -> None:
+        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
+        existing = two_vote_report(prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
+        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
+        fresh["agenda_items"][0]["top_id"] = "TOP 9"  # the XML was re-parsed with other ids and indices
+        fresh["agenda_items"][0]["index"] = 9
+        fresh["validation_summary"] = {"roll_call_scan_end": "failed"}
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
+        self.assertNotEqual(fresh["acquisition"]["votes"]["acquisition_state"], "complete")
+        fresh["protocol"] = {"dokumentnummer": "21/90"}
+        self.assertFalse(facts.completeness_from_reports([fresh])["21/90"]["votes"])
+
+
+class MergeKeepsALegitimateSecondAttachmentTests(unittest.TestCase):
+    def test_a_vote_matching_both_tops_by_drucksache_stays_on_both_after_a_failed_refresh(self) -> None:
+        shared = {**vote("1"), "document_numbers": ["21/5"]}
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [shared]
+        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [dict(shared)],
+                                         "xml_drucksachen": [{"dokumentnummer": "21/5"}]})
+        fresh = report_with(0, votes_facts("partial", records=1, reasons=("source_unavailable",), acquired_at=STAMP, attempted_at=STAMP))
+        fresh["agenda_items"][0]["votes"] = [dict(shared)]
+        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [],
+                                      "xml_drucksachen": [{"dokumentnummer": "21/5"}]})
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][1]["votes"]], ["1"])
+
+    def test_a_vote_whose_drucksachen_do_not_match_the_old_top_is_not_restored_there(self) -> None:
+        moved = {**vote("1"), "document_numbers": ["21/9"]}
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [moved]
+        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": []})
+        fresh = report_with(0, votes_facts("partial", records=1, reasons=("source_unavailable",), acquired_at=STAMP, attempted_at=STAMP))
+        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
+        fresh["agenda_items"][0]["votes"] = []
+        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [dict(moved)],
+                                      "xml_drucksachen": [{"dokumentnummer": "21/9"}]})
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
+
+
 class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
+    def test_a_budget_exhausted_sitting_with_unmatched_votes_is_still_worth_a_rescan(self) -> None:
+        gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted, unmatched_candidate)"}}
+        self.assertFalse(build._structural_vote_gap(gap))
+        self.assertTrue(build._structural_vote_gap({"reasons": {"votes": "votes partial (unmatched_candidate)"}}))
+
     def test_a_sitting_held_back_only_by_unmatched_votes_is_not_reacquired(self) -> None:
         stuck = report_with(1, votes_facts("partial", records=1, reasons=("unmatched_candidate",), acquired_at=STAMP, attempted_at=STAMP))
         stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_end": "date_passed"}
