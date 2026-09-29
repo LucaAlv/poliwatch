@@ -218,7 +218,8 @@ class PartyMigrationTests(unittest.TestCase):
                 pulse_store.initialize(conn)
 
                 names = [row["name"] for row in conn.execute("SELECT name FROM parties ORDER BY name")]
-                self.assertEqual(names, ["BSW (Gruppe)", "CDU/CSU", "Die Linke"])
+                # "BSW (Gruppe)" is the Gruppe BSW: one Zusammenschluss, one row.
+                self.assertEqual(names, ["CDU/CSU", "Die Linke", "Gruppe BSW"])
                 self.assertEqual(len(names), len(set(names)))
 
                 dangling = conn.execute(

@@ -42,6 +42,7 @@ def make_output(
     sprechrolle: bool = False,
     fact: dict | None = None,
     bills: int | None = None,
+    roster: bool = True,
 ) -> Path:
     """An output directory with a tiny store.
 
@@ -78,8 +79,8 @@ def make_output(
             for sequence, (rede_id, fraktion, chars, role) in enumerate(speeches):
                 mp = conn.execute(
                     "INSERT INTO mps(identity_key, display_name, party_id, is_mdb, created_at, updated_at) "
-                    "VALUES (?, ?, ?, 1, ?, ?)",
-                    (f"mp-{rede_id}", f"MdB {rede_id}", party(fraktion or "SPD"), NOW, NOW),
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (f"mp-{rede_id}", f"MdB {rede_id}", party(fraktion or "SPD"), int(roster), NOW, NOW),
                 ).lastrowid
                 conn.execute(
                     "INSERT INTO speeches(protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, "
@@ -217,6 +218,23 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertIn("1 periods newly incomplete", out)
         self.assertIn("week 2026-W10: Sitzung 21/2 fehlt", out)
         self.assertEqual(line_of(out, "publishable weeks", "stored facts"), "publishable weeks 1 -> 0 -1")
+
+    def test_a_parties_name_that_disappears_is_listed_and_a_missing_roster_is_unavailable(self) -> None:
+        old = make_output(
+            self.tmp / "o", protocols={"21/1": [("R1", "SPDSPD", 5, None), ("R2", "SPD", 5, None)]}, roster=False
+        )
+        new = make_output(
+            self.tmp / "n", protocols={"21/1": [("R1", "SPD", 5, None), ("R2", "SPD", 5, None)]}, roster=True
+        )
+        _, out, _ = run(old, new)
+        section = "parties [whole store]"
+        # A spelling fix removes a row; the figures alone (mps 1 -> none) would not say so.
+        self.assertEqual(line_of(out, "SPDSPD: mps rows", section), "SPDSPD: mps rows 1 -> no row")
+        self.assertEqual(line_of(out, "SPDSPD: Reden", section), "SPDSPD: Reden 1 -> no row")
+        self.assertEqual(line_of(out, "SPD: mps rows", section), "SPD: mps rows 1 -> 2 +1")
+        self.assertEqual(line_of(out, "SPD: Reden", section), "SPD: Reden 1 -> 2 +1")
+        # The old store has no MdB roster: unavailable, not 0.
+        self.assertEqual(line_of(out, "SPD: MdB", section), "SPD: MdB unavailable -> 2")
 
     def test_it_only_reads(self) -> None:
         old, new = self.stores()

@@ -33,6 +33,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 
+import derive
 import publication_state as publication
 
 
@@ -368,6 +369,9 @@ def extract_drucksachen(elem: ET.Element) -> list[dict[str, str | None]]:
     return docs
 
 
+_REDNER_LABEL_RE = re.compile(r"^(?P<name>.+?)\s*\((?P<fraktion>[^()]+)\)\s*:?$")
+
+
 def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     if redner is None:
         return None
@@ -383,6 +387,15 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     role_short = child_text(name, "rolle/rolle_kurz") or None
     parts = [part for part in (title, first, last) if part]
     display_name = clean_text(" ".join(parts)) or elem_text(redner)
+    if fraction and derive.zusammenschluss(fraction) is None:
+        # Two people folded into one element ("SPDCDU/CSU", first name
+        # "Dirk-UlrichAlexander"): no field of it can be trusted, but the label
+        # the protocol prints after the element ("Alexander Föhr (CDU/CSU):")
+        # names the person. Its name and Fraktion replace the garbled ones.
+        label = _REDNER_LABEL_RE.match(clean_text(redner.tail))
+        if label:
+            display_name, first, last = clean_text(label.group("name")), None, None
+            fraction = clean_text(label.group("fraktion"))
     return {
         "xml_redner_id": redner.attrib.get("id"),
         "display_name": display_name,
@@ -421,13 +434,9 @@ def parse_toc(root: ET.Element) -> dict[str, dict[str, Any]]:
 
 
 def redner_key(redner: ET.Element | None) -> str | None:
-    """The person a ``<redner id="...">`` names, or None when it names nobody.
-
-    Bundestag's merged records carry two ids in one attribute
-    ("11005217 999990074"); the first is the person.
-    """
-    ids = (redner.attrib.get("id") or "").split() if redner is not None else []
-    return ids[0] if ids else None
+    """The person a ``<redner id="...">`` names, or None when it names nobody
+    (a merged record's two ids name the first)."""
+    return derive.first_redner_id(redner.attrib.get("id")) if redner is not None else None
 
 
 class SpeechText(NamedTuple):
@@ -701,15 +710,9 @@ def unique_by(items: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[s
 
 
 def normalize_faction(value: str | None) -> str:
-    value = clean_text(value)
-    upper = value.upper()
-    if upper in {"B90/GRÜNE", "GRÜNE", "BÜNDNIS 90/DIE GRÜNEN"}:
-        return "BÜNDNIS 90/DIE GRÜNEN"
-    if upper in {"LINKE", "DIE LINKE"}:
-        return "Die Linke"
-    if upper in {"FRAKTIONSLOSE", "FRAKTIONSLOS"}:
-        return "fraktionslos"
-    return value or "Unbekannt"
+    """derive.zusammenschluss, with "Unbekannt" where it names nothing (the
+    vote pages need a label for every Fraktion row)."""
+    return derive.zusammenschluss(value) or "Unbekannt"
 
 
 def vote_counts_from_csv(value: str | None) -> dict[str, int]:

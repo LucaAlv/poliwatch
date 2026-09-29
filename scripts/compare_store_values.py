@@ -120,7 +120,9 @@ class Measured:
     votes: list[tuple[str | None, str | None, str]] | None = None
     #: (document_number or None, leading_vote or None) per vote_fractions row.
     leading: list[tuple[str | None, str | None]] | None = None
-    parties: dict[str, int] | None = None
+    #: name -> {"mps": rows of mps, "mdb": of them MdB, "reden": Reden naming it}
+    parties: dict[str, dict[str, int]] | None = None
+    has_roster: bool = False
     facts_snapshot: dict[str, list[list[Any]]] | None = None
     facts_rows: dict[tuple[str, str, str], tuple[int, int, str | None]] | None = None
     bill_pages: int | None = None
@@ -226,12 +228,20 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
 
     if store.has("parties", "id", "name") and store.has("mps", "party_id", "is_mdb"):
         measured.parties = {
-            str(name): int(count)
-            for name, count in conn.execute(
-                "SELECT pa.name, COUNT(m.id) FROM parties pa "
-                "LEFT JOIN mps m ON m.party_id = pa.id AND m.is_mdb = 1 GROUP BY pa.id"
+            str(name): {"mps": int(mps), "mdb": int(mdb or 0), "reden": 0}
+            for name, mps, mdb in conn.execute(
+                "SELECT pa.name, COUNT(m.id), SUM(m.is_mdb = 1) FROM parties pa "
+                "LEFT JOIN mps m ON m.party_id = pa.id GROUP BY pa.id"
             )
         }
+        # No MdB roster in the store (an update without --enrich mp-roster): the
+        # MdB counts say nothing, not "0".
+        measured.has_roster = bool(conn.execute("SELECT 1 FROM mps WHERE is_mdb = 1 LIMIT 1").fetchone())
+        if store.has("speeches", "fraktion"):
+            for name, reden in conn.execute(
+                "SELECT fraktion, COUNT(*) FROM speeches WHERE fraktion IS NOT NULL AND fraktion <> '' GROUP BY fraktion"
+            ):
+                measured.parties.setdefault(str(name), {"mps": 0, "mdb": 0, "reden": 0})["reden"] = int(reden)
 
     try:
         measured.facts_snapshot = facts.read_snapshot(conn)
@@ -425,10 +435,8 @@ def compare(
     for table in sorted(set(old.tables) | set(new.tables)):
         report.row(table, old.tables.get(table), new.tables.get(table))
 
-    report.heading("parties: MdB per name [whole store]")
-    _compare_maps(report, old.parties, new.parties, only_changed=True)
-    if old.parties is not None and new.parties is not None and old.parties == new.parties:
-        report.line("(no party name or MdB count changed)")
+    report.heading("parties [whole store]: mps rows, MdB, Reden naming it")
+    _party_rows(report, old, new)
 
     report.heading(f"vote_fractions.leading_vote [{cohort}]")
     if old.leading is None or new.leading is None:
@@ -484,6 +492,34 @@ def compare(
 
     report.heading("stored facts [whole store]")
     _facts_rows(report, old, new)
+
+
+def _party_rows(report: Report, old: Measured, new: Measured) -> None:
+    """Every parties name that is on one side only or whose figures moved. A
+    name that disappears (SPDSPD) or appears is exactly what a spelling fix
+    changes, so it is listed even when its counts would be equal."""
+    if old.parties is None or new.parties is None:
+        report.row("(all)", None if old.parties is None else "present", None if new.parties is None else "present")
+        return
+    shown = False
+    for name in sorted(set(old.parties) | set(new.parties)):
+        was, now = old.parties.get(name), new.parties.get(name)
+        for key, label in (("mps", "mps rows"), ("mdb", "MdB"), ("reden", "Reden")):
+            before = None if was is None else was[key]
+            after = None if now is None else now[key]
+            if key == "mdb":
+                before = before if old.has_roster else None
+                after = after if new.has_roster else None
+            if was is not None and now is not None and before == after:
+                continue
+            shown = True
+            report.row(
+                f"{name}: {label}",
+                "no row" if was is None else before,
+                "no row" if now is None else after,
+            )
+    if not shown:
+        report.line("(no parties name or count changed)")
 
 
 def _vote_rows(report: Report, old: Measured, new: Measured, scope: set[str] | None) -> None:

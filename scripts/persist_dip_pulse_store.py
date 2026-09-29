@@ -13,12 +13,12 @@ import ast
 import json
 import logging
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import derive
-from validate_dip_protocol import normalize_faction
 
 
 SCHEMA_VERSION = 1
@@ -343,7 +343,7 @@ def _migrate_party_names(conn: sqlite3.Connection) -> None:
     plan = [
         (row["id"], row["name"], clean_name)
         for row in rows
-        for clean_name in [normalize_faction(unwrap_dip_faction(row["name"]))]
+        for clean_name in [derive.zusammenschluss(unwrap_dip_faction(row["name"]))]
         if clean_name and clean_name != row["name"]
     ]
     if not plan:
@@ -433,7 +433,9 @@ def utc_now() -> str:
 
 
 def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | None:
-    name = clean(name)
+    # Every name enters parties through derive.zusammenschluss, so one
+    # Zusammenschluss is one row whatever spelling its source used.
+    name = derive.zusammenschluss(clean(name))
     if not name:
         return None
     conn.execute(
@@ -447,11 +449,11 @@ def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | 
     return int(conn.execute("SELECT id FROM parties WHERE name = ?", (name,)).fetchone()["id"])
 
 
-def speaker_party_name(speaker: dict[str, Any] | None) -> str | None:
+def speaker_party_name(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str | None:
     if not speaker:
         return None
     if speaker.get("fraktion"):
-        return normalize_faction(speaker.get("fraktion"))
+        return derive.speech_zusammenschluss(speaker, protocol)
     if speaker.get("role") or speaker.get("role_short"):
         return "Regierung"
     return None
@@ -659,7 +661,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
     for person in report.get("sampled_people") or []:
         fraktion = unwrap_dip_faction(person.get("fraktion"))
-        party_id = upsert_party(conn, normalize_faction(fraktion) if fraktion else None, now)
+        party_id = upsert_party(conn, fraktion, now)
         display_name = clean(person.get("titel")) or clean(person.get("id")) or "Unbekannt"
         upsert_mp(
             conn,
@@ -864,18 +866,20 @@ def persist_speeches(
     item: dict[str, Any],
     agenda_item_id: int,
     now: str,
+    protocol: dict[str, Any] | None = None,
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
         speaker = speech.get("speaker") or {}
         profile = speaker.get("abgeordnetenwatch") or {}
-        party_name = speaker_party_name(speaker)
+        party_name = speaker_party_name(speaker, protocol)
         party_id = upsert_party(conn, party_name, now)
-        # The Fraktion as the protocol states it for this Rede, normalised the same
-        # way parties.name is. NULL when the XML names none (a minister speaking in
-        # role); the reader then falls back to the MP's party.
-        raw_fraktion = clean(speaker.get("fraktion"))
-        speech_fraktion = normalize_faction(raw_fraktion) if raw_fraktion else None
-        display_name = clean(speaker.get("display_name")) or "Unbekannt"
+        # The Zusammenschluss as the protocol states it for this Rede, normalised
+        # the same way parties.name is. NULL when the XML names none (a minister
+        # speaking in role, or a merged record naming two); the reader then falls
+        # back to the MP's party.
+        speech_fraktion = derive.speech_zusammenschluss(speaker, protocol)
+        display_name = clean(derive.undouble(speaker.get("display_name"))) or "Unbekannt"
+        xml_redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         mp_id = upsert_mp(
             conn,
@@ -884,11 +888,11 @@ def persist_speeches(
             party_id=party_id,
             identity_key=mp_identity(
                 aw_politician_id=aw_politician_id,
-                xml_redner_id=speaker.get("xml_redner_id"),
+                xml_redner_id=xml_redner_id,
                 display_name=display_name,
                 party_name=party_name,
             ),
-            xml_redner_id=speaker.get("xml_redner_id"),
+            xml_redner_id=xml_redner_id,
             profile_url=profile.get("url"),
             aw_politician_id=aw_politician_id,
         )
@@ -1019,11 +1023,22 @@ def persist_votes(
                     (vote_id, document_id),
                 )
 
+        # Rows of one vote that name the same Zusammenschluss under two
+        # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
+        by_party: dict[str, dict[str, int]] = {}
         for fraction in vote.get("fractions") or []:
-            party_id = upsert_party(conn, normalize_faction(fraction.get("name")), now)
+            counts = fraction.get("counts") or {}
+            merged = by_party.setdefault(
+                derive.zusammenschluss(fraction.get("name")) or "Unbekannt",
+                {"yes": 0, "no": 0, "abstain": 0, "absent": 0, "total": 0},
+            )
+            for key in ("yes", "no", "abstain", "absent"):
+                merged[key] += int(counts.get(key) or 0)
+            merged["total"] += int(fraction.get("total") or 0)
+        for party_name, merged in by_party.items():
+            party_id = upsert_party(conn, party_name, now)
             if party_id is None:
                 continue
-            counts = fraction.get("counts") or {}
             conn.execute(
                 """
                 INSERT INTO vote_fractions(
@@ -1035,20 +1050,20 @@ def persist_votes(
                 (
                     vote_id,
                     party_id,
-                    int(counts.get("yes") or 0),
-                    int(counts.get("no") or 0),
-                    int(counts.get("abstain") or 0),
-                    int(counts.get("absent") or 0),
-                    int(fraction.get("total") or 0),
+                    merged["yes"],
+                    merged["no"],
+                    merged["abstain"],
+                    merged["absent"],
+                    merged["total"],
                     # Derived from the counts: a cached report's own
                     # leading_vote is ignored, so a rule change applies on
                     # re-persist (plan F1/E2).
-                    derive.majority_vote(counts),
+                    derive.majority_vote(merged),
                 ),
             )
 
         for member in vote.get("members") or []:
-            party_name = normalize_faction(member.get("faction"))
+            party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
             party_id = upsert_party(conn, party_name, now)
             profile = member.get("abgeordnetenwatch") or {}
             aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
@@ -1079,6 +1094,22 @@ def persist_votes(
             )
 
 
+def _warn_merged_redner_ids(report: dict[str, Any]) -> None:
+    """A ``<redner id>`` with two ids is a merged record in the Bundestag XML;
+    the first is used. Say where, so the source can be checked."""
+    number = clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+    for item in report.get("agenda_items") or []:
+        for speech in item.get("xml_speakers") or []:
+            raw = (speech.get("speaker") or {}).get("xml_redner_id")
+            ids = derive.redner_ids(raw)
+            if len(ids) > 1:
+                print(
+                    f"warning: [redner-id] {number} Rede {speech.get('rede_id') or '?'}: the Redner id \"{raw}\" "
+                    f"names {len(ids)} ids (a merged record in the Bundestag XML); using the first, {ids[0]}.",
+                    file=sys.stderr,
+                )
+
+
 def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     now = utc_now()
     initialize(conn)
@@ -1087,6 +1118,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     if not protocol_id:
         raise ValueError("Report has no protocol.id")
 
+    _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)
         persist_sampled_people(conn, report, now)
@@ -1094,7 +1126,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
             persist_positions(conn, item, agenda_item_id, now)
             persist_agenda_documents(conn, item, agenda_item_id, now)
-            persist_speeches(conn, protocol_id, item, agenda_item_id, now)
+            persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_votes(conn, item, agenda_item_id, now)
 
 

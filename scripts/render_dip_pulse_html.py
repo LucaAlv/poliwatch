@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
+import derive
 import publication_state as publication
 from features import (
     NAV_ITEMS,
@@ -1091,25 +1092,30 @@ def render_profile_link(speaker: dict[str, Any] | None) -> str:
     )
 
 
-def speaker_party(speaker: dict[str, Any] | None) -> str:
+def speaker_party(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str:
     if not speaker:
         return "Unbekannt"
-    fraction = speaker.get("fraktion")
+    # Derived like parties.name and speeches.fraktion, from the raw string and
+    # the Sitzung, so a stale cached report shows the same Zusammenschluss the
+    # store holds. A string that names none (a merged record) falls through to
+    # the role, like no string at all.
+    fraction = derive.speech_zusammenschluss(speaker, protocol)
     if fraction:
-        return str(fraction).replace("\xa0", " ")
+        return fraction
     if speaker.get("role") or speaker.get("role_short"):
         return "Regierung"
     return "Unbekannt"
 
 
-def item_stats(item: dict[str, Any]) -> dict[str, Any]:
+def item_stats(item: dict[str, Any], protocol: dict[str, Any] | None = None) -> dict[str, Any]:
     speakers = item.get("xml_speakers") or []
     if not speakers:
         speakers = item.get("xml_speakers_first") or []
-    party_counts = Counter(speaker_party(s.get("speaker")) for s in speakers)
+    parties = [speaker_party(s.get("speaker"), protocol) for s in speakers]
     total_chars = sum(int(s.get("char_count") or 0) for s in speakers)
     return {
-        "party_counts": party_counts,
+        "parties": parties,
+        "party_counts": Counter(parties),
         "total_chars": total_chars,
         "speakers": speakers,
         "speech_count": int(item.get("xml_speech_count") or len(speakers)),
@@ -1259,7 +1265,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
         sitting_vote_ids: set[str] = set()
         first_vote_index = None
         for item in items:
-            stats = item_stats(item)
+            stats = item_stats(item, protocol)
             speech_count += stats["speech_count"]
             party_counts.update(stats["party_counts"])
             sitting_speeches += stats["speech_count"]
@@ -1820,9 +1826,9 @@ def topic_row(
     dossier_href: str,
 ) -> dict[str, Any]:
     """One radar row: what the TOP is, how much of the week it took, who spoke."""
-    stats = item_stats(item)
-    identity = topic_identity(item)
     protocol = _entry_protocol(entry)
+    stats = item_stats(item, protocol)
+    identity = topic_identity(item)
     current_week = iso_week_key(protocol.get("datum"))
     speech_count = int(stats["speech_count"])
     party_total = sum(stats["party_counts"].values())
@@ -2340,8 +2346,8 @@ def render_speakers(
     rows = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unbekannt")
-        party = speaker_party(speaker)
+        name = esc(derive.speaker_display_name(speaker))
+        party = stats["parties"][sequence]
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
@@ -2413,8 +2419,8 @@ def render_llm_summary(
     chunk_rows = []
     for chunk in chunks:
         speaker = chunk.get("speaker") or {}
-        name = speaker.get("display_name") or "Unbekannt"
-        party_or_role = speaker.get("fraktion") or speaker.get("role_short") or speaker.get("role") or "unbekannt"
+        name = derive.speaker_display_name(speaker)
+        party_or_role = derive.zusammenschluss(speaker.get("fraktion")) or speaker.get("role_short") or speaker.get("role") or "unbekannt"
         source = source_page_text(chunk.get("source_page"))
         anchor = source_chunk_anchor(item, stats, chunk)
         source_ref = f"Seite {source}" if source else "Redebeitrag"
@@ -2577,8 +2583,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unbekannt")
-        party = speaker_party(speaker)
+        name = esc(derive.speaker_display_name(speaker))
+        party = stats["parties"][sequence]
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
@@ -2631,7 +2637,7 @@ def render_html(
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
     items = report.get("agenda_items") or []
-    stats_by_index = {item["index"]: item_stats(item) for item in items}
+    stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     total_votes = sum(

@@ -5468,8 +5468,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for speech in item.get("xml_speakers") or []:
                     speaker = speech.get("speaker") or {}
-                    name = first_value(speaker.get("display_name"), "Unbekannt")
-                    party = pulse_html.speaker_party(speaker)
+                    name = derive.speaker_display_name(speaker)
+                    party = pulse_html.speaker_party(speaker, protocol)
                     speaker_key = f"{name}|{party}"
                     entry_count = speaker_bucket.setdefault(
                         speaker_key,
@@ -6070,7 +6070,7 @@ def ingest_mdb_roster(
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
             fraktion = fraktion_list[0] if fraktion_list else None
-            party_name = dip.normalize_faction(fraktion) if fraktion else None
+            party_name = derive.zusammenschluss(fraktion)
             party_id = pulse_store.upsert_party(store, party_name, now)
             display_name = (
                 pulse_store.clean(compact.get("titel"))
