@@ -496,7 +496,7 @@ def format_incomplete_report(
     if structural:
         lines.append(
             f"  {len(structural)} sittings a backfill cannot fix now: roll-call votes no agenda item claims (they need "
-            f"a better match rule), a complete scan that lacks cached votes, a scan budget already used, or a list "
+            f"a better match rule), a scan budget already used, or a list "
             f"that may not have caught up yet ({_first_numbers(structural, 12)})"
         )
     if redated:
@@ -1389,7 +1389,15 @@ def annotate_report_acquisition(
         # included). Only a report that never recorded one has nothing to keep;
         # its votes are unknown provenance (no acquired_at), not "complete".
         if prior_votes:
-            _keep_prior_scan_end(report, existing_report)
+            # The prior evidence vouches for the votes it verified. If a re-parse
+            # (different top_ids) left some of them without an item to sit on,
+            # it no longer does: the sitting reads as unverified and a backfill
+            # acquires it again.
+            unique_now = len(
+                {pulse_html.vote_key(v) for item in report.get("agenda_items") or [] for v in _iter_report_votes(item)}
+            )
+            if unique_now >= int(prior_votes.get("records") or 0):
+                _keep_prior_scan_end(report, existing_report)
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=prior_votes.get("acquisition_state") or "not_requested",
@@ -1516,12 +1524,20 @@ def keep_cached_dossier_when_votes_failed(
     if vote_scan_pages == 0 or existing_report is None:
         return
     fresh = (report.get("acquisition") or {}).get("votes") or {}
+    cached_votes = any(_iter_report_votes(item) for item in existing_report.get("agenda_items") or [])
+    if not cached_votes:
+        return
     transient = {"source_unavailable", "source_changed"} & set(fresh.get("failure_reasons") or ())
-    if fresh.get("acquisition_state") in {"partial", "failed"} and transient and any(
-        _iter_report_votes(item) for item in existing_report.get("agenda_items") or []
-    ):
+    if fresh.get("acquisition_state") in {"partial", "failed"} and transient:
         raise dip.DipError(
             f"Roll-call scan failed ({', '.join(sorted(transient))}); keeping the cached dossier with its votes."
+        )
+    # A scan that reads as complete but attaches no vote at all to a sitting whose
+    # cache holds some is more likely a shortened or stale list page than a
+    # sitting that lost its votes: keep the cached dossier and say so.
+    if fresh.get("acquisition_state") == "complete" and not int(fresh.get("records") or 0):
+        raise dip.DipError(
+            "Roll-call scan attached no vote although the cached dossier holds some; keeping the cached dossier."
         )
 
 

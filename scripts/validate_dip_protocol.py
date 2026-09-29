@@ -1165,6 +1165,14 @@ def top_document_numbers(top: dict[str, Any], linked_drucksachen: list[dict[str,
     return numbers
 
 
+def _days_since(day: str) -> int | None:
+    """Whole days from an ISO date to today (UTC); None for a date that does not exist."""
+    try:
+        return (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
+    except ValueError:
+        return None
+
+
 def match_roll_call_votes(
     top: dict[str, Any],
     linked_drucksachen: list[dict[str, Any]],
@@ -1930,7 +1938,8 @@ def enrich_with_api(
             and roll_call_fetch.newest_entry_date
             and target_day
             and roll_call_fetch.newest_entry_date < target_day
-            and 0 <= (datetime.now(timezone.utc).date() - date.fromisoformat(target_day)).days <= ROLL_CALL_LIST_LAG_DAYS
+            and _days_since(target_day) is not None
+            and 0 <= _days_since(target_day) <= ROLL_CALL_LIST_LAG_DAYS
         ):
             failure_reasons.append("source_stale")
         if failure_reasons:
