@@ -2,6 +2,37 @@
 
 Reassessed against the code, the live store and the generated site on 2026-09-19 (after PR #59, v0.4.0.0; rebased onto PR #60, v0.5.0.0). Nothing below is done; corrections from that pass are inline. The Daten section was re-checked against the code and the 2026-09-19 store on 2026-09-24 (database state review): five findings, four new open items and a Python version floor now completed; `protocol_acquisition` raised to P2.
 
+## Roadmap to v1 (2026-09-30)
+
+The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Tracks A and B can run in parallel. C waits for A, because every count A changes moves every series C draws. D has to be finished before anything goes public.
+
+**A. Get the counts right and the coverage in, in this order**
+1. What counts as a Rede: #68 (Kurzinterventionen), #70 (Befragung and Fragestunde), "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts", "Zu Protokoll gegebene Reden: decide what they are, then store them".
+2. "Stable ids for every row a release publishes".
+3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
+4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
+
+**B. Abstimmungen (daily view), independent of A**
+1. "Inverted-vote reading for Beschlussempfehlungen" (the single most misleading state a vote panel can show), then "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
+2. "Roll-call member rows link to external profiles, never to our own MP pages" (after A2, so the links last).
+3. "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
+4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters".
+5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
+
+**C. Analysen (long-term view), after A1–A3**
+1. "Fraktion seat counts in the store" (small; the denominator for per-seat figures).
+2. "Diskursanalyse: precomputed term series per Zusammenschluss and month".
+3. "Politikfelder over time: which Zusammenschluss emphasises what" (after B3).
+4. "Zwischenrufe: parse `<kommentar>` and count reactions per Fraktion", which answers "who interrupts most".
+5. Then "Muster" and "Präsenz".
+
+**D. Before anything goes public**
+- Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
+- The release: "Write the release script", "Codebook (`DATA.md`) and recipe result CSVs in the release", "Public data changelog per release", "A DOI per release and a citation file".
+- Hosting: "Site hosting plan for the 2.5 GB generated site". WP 18 and 19 make it larger.
+
+**Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B/C, and the Puls and copy fixes, which stay at their own priorities. WP 1–17, which have no structured XML in the DIP catalog, come after v1.
+
 ## Daten
 
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
@@ -108,14 +139,14 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
-### Recipe result CSVs and `DATA.md`
+### Codebook (`DATA.md`) and recipe result CSVs in the release
 
-**What:** Per-recipe result CSVs and a `DATA.md` in the release.
+**What:** A codebook (`DATA.md`) in every release: each table and column with its meaning, unit, source (DIP, Plenarprotokoll XML, bundestag.de, abgeordnetenwatch) and licence layer; the counting rules (what counts as a Rede, Sitzung mit Dossier, completeness) quoted from CONTEXT.md and the ADRs; coverage per Wahlperiode; known gaps; how to cite. Also per-recipe result CSVs. Most of the explanatory prose on the Daten page today belongs here, so that it is versioned with the data it describes.
 
-**Why:** Scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+**Why:** A researcher needs the definitions of the release they cite, not of today's site (PRODUCT.md, 2026-09-30). Originally scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
 
 **Effort:** S–M
-**Priority:** P3
+**Priority:** P2 (raised 2026-09-30: part of a citable release)
 **Depends on:** None
 
 ### Validate remote-manifest recipes before showing their SQL
@@ -150,7 +181,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Context:** Measured on the 2026-09-29 store: 55 Zwischenfrage blocks in 8 sittings, all followed by the Redner's own marker or by a Präsident `<name>`; no text had an undeterminable speaker (`speeches.unattributed_char_count` is 0 everywhere). Kurzinterventionen and the Befragung/Fragestunde are their own items (#68, #70).
 
 **Effort:** M
-**Priority:** P3
+**Priority:** P1 (raised 2026-09-30: every series and release count depends on it)
 **Depends on:** None
 
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
@@ -187,6 +218,41 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+### v1 coverage: every Sitzung from WP 18 to the present
+
+**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Measured on 2026-09-30 against the reference copy (`~/agent-runs/poliwatch/.context/dip-pulse-site/`), counting only Bundestag entries in the cached catalog:
+
+| WP | In the catalog | In the store | Missing |
+|---|---|---|---|
+| 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
+| 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
+| 20 | 214 | 201 | 13, from 2021-10-26 to 2022-01-26 |
+| 21 | 87 up to 2026-06-26 | 84 | 3, plus every Sitzung after the catalog snapshot |
+
+The catalog itself is from 2026-08-25, and the store was last updated on 2026-06-22. A newer scratch copy (302 Sitzungen, backfilled 2026-09-29, per the fix-stored-values work) was not found; re-measure against the current reference store before starting. Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
+
+**Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
+
+**Context:**
+- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. In 18/100 (35), 18/200 (11) and 19/239 (29 of 67), `<rede>` elements sit under `<anlagen>` and are skipped; see "Zu Protokoll gegebene Reden" below. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
+- Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
+- WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
+- Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
+
+**Effort:** M (mostly running time and checking)
+**Priority:** P1
+**Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
+
+### Zu Protokoll gegebene Reden: decide what they are, then store them
+
+**What:** Some Plenarprotokolle carry Reden that were handed in in writing rather than delivered ("zu Protokoll gegebene Reden"). They sit under `<anlagen>`, which `parse_protocol_xml` (`scripts/validate_dip_protocol.py`) never reads. 19/239 has 29 such Reden next to 38 delivered ones, 18/100 has 35 next to 104, and 18/200 has 11 next to 35 (checked 2026-09-30; 21/84 has none, WP 20 and 21 not sampled). First decide in CONTEXT.md whether they are Reden (the user's first intuition on 2026-09-30: they count, but it is not decided and needs a /domain-modeling session) (and count toward Redeanteil and term series) or a kind of their own, shown and counted separately. Then parse them, with their TOP, Redner and a flag, and count them in each WP.
+
+**Why:** Today they vanish without a trace, so a researcher who counts Reden per TOP from the release gets a smaller number than the protocol, with no flag saying why. The late-night Sitzungen that use them are also where most of the text on some topics lives.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** A glossary decision (/domain-modeling)
 
 ## Protokoll-Dossier
 
@@ -522,7 +588,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Why:** No taxonomy or filter exists (audit 2026-09-19); topic-level navigation is the main way plenarwatch's archive is browsed. A closed list is what keeps the LLM from inventing categories.
 
-**Context:** Seed deterministically from DIP: `vorgang.sachgebiet` is a free field on every Vorgang the site already fetches, so map DIP Sachgebiete → the 13 fields in a lookup table and let the LLM fill only the gaps (plenarwatch: "assignment failure doesn't block publication"). Tag column on `agenda_items` and `votes`; add to `docs/data-license.md`'s export contract only after the pilot gate under Daten is decided.
+**Context:** Correction 2026-09-30: `sachgebiet` appears nowhere in `scripts/` or the cached report JSON, so the build does not fetch it today. It sits on DIP's `/vorgang` record, which has to be fetched per Vorgang; it can also be empty, as it was on a sampled Kleine Anfrage. The rest of this paragraph assumes that fetch. Seed deterministically from DIP: `vorgang.sachgebiet` is a free field on every Vorgang, so map DIP Sachgebiete → the 13 fields in a lookup table and let the LLM fill only the gaps (plenarwatch: "assignment failure doesn't block publication"). Tag column on `agenda_items` and `votes`; add to `docs/data-license.md`'s export contract only after the pilot gate under Daten is decided.
 
 **Effort:** M
 **Priority:** P2
@@ -568,12 +634,12 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **What:** Persist every `<kommentar>` element of the protocol XML (the parenthesised "(Beifall bei der SPD)", "(Lachen bei der AfD)", "(Zuruf des Abg. …)", "(Widerspruch …)", "(Unruhe)") as rows in a `reactions` table: sitting, speech, kind (Beifall / Lachen / Heiterkeit / Zuruf / Widerspruch / Unruhe / other), source Fraktion(en) parsed from the text, page. A `zwischenrufe.html` page then shows per-Fraktion counts with four views: absolut, kumulativ, pro Sitz, gleitender Schnitt over sittings, plus totals since a named cabinet date. Done when the reactions CSV is on the Daten page and the page's totals match a SQL recipe.
 
-**Why:** `speech_text_and_paragraphs` (`scripts/validate_dip_protocol.py:314-322`) swallows kommentar text into the speech via `itertext()`, so the signal is already in hand but untyped and uncounted; `tests/fixtures/protocol.xml` has zero `kommentar` elements. Plenarwatch's Zwischenrufe tracker is their most-shared page.
+**Why:** Speech text no longer includes `<kommentar>` (`speech_text_and_paragraphs`, `scripts/validate_dip_protocol.py`, since the Rede-text fix; 6 of 34,771 stored Reden contain "(Beifall bei", checked 2026-09-30), so the signal is dropped entirely rather than typed and counted. It is the data behind the long-term question "who interrupts the debate most" (PRODUCT.md). Plenarwatch's Zwischenrufe tracker is their most-shared page.
 
-**Context:** Element name per the Bundestag DTD `dbtplenarprotokoll.dtd` (`kommentar` inside `rede`); verify against a live cached protocol before writing the parser, since no XML is cached in `.context/` today. Fraktion attribution is a regex over a small closed vocabulary ("bei der", "bei Abgeordneten der", "des Abg."), keep an `unattributed` bucket rather than guessing. Stripping kommentar from speech text also cleans the summary chunks; note that as a side effect in the PR.
+**Context:** Element name per the Bundestag DTD `dbtplenarprotokoll.dtd` (`kommentar` inside `rede`); verify against a live cached protocol before writing the parser, since no XML is cached in `.context/` today. Fraktion attribution is a regex over a small closed vocabulary ("bei der", "bei Abgeordneten der", "des Abg."), keep an `unattributed` bucket rather than guessing. 
 
 **Effort:** L
-**Priority:** P3
+**Priority:** P2 (raised 2026-09-30: long-term angle, PRODUCT.md)
 **Depends on:** Fraktion seat counts in the store
 
 ### Präsenz: excused MPs from the protocol Anlage, participation per Fraktion over time
@@ -681,6 +747,146 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Effort:** L
 **Priority:** P4
 **Depends on:** Fraktionsblöcke, Deterministic validators
+
+## Zitierfähiger Datensatz
+
+PRODUCT.md (2026-09-30) makes the dataset a product in its own right: a source researchers and journalists cite. Citable means a reader can name a version, get exactly those rows back later, and look up what changed since. None of the pieces below exist yet. Order: stable ids, then the release script, then the changelog and DOI with the first release. The licence files and the roll-call redistribution question (both under Plenarwatch-Lücken) block any public release that contains votes.
+
+When the first release goes out, the "Project stage: pre-release" section of CLAUDE.md has to become a stability policy: what may change between releases, and how a change is recorded.
+
+### Stable ids for every row a release publishes
+
+**What:** Give every table in the release a key derived from the source, and use it in exports and page URLs. Today `mps.id`, `parties.id`, `agenda_items.id`, `documents.id` and `speeches.id` are `INTEGER PRIMARY KEY` surrogates. They are assigned in insert order during `rebuild_database_from_entries` (`scripts/build_dip_pulse_site.py`), which runs newest Sitzung first, so every new Sitzung renumbers them (checked 2026-09-30). The natural keys already exist as UNIQUE columns: `(protocol_id, rede_id)`, `(protocol_id, item_index)`, `(document_number, url)` and `parties.name`. Publish those, or a deterministic id derived from them, as the key in the SQLite and CSV release. Also:
+- `synthetic_rede_id` embeds the surrogate `agenda_item_id`. Base it on `(protocol_id, item_index, sequence)` instead.
+- MP pages live at `abgeordnete/<mps.id>.html`, a surrogate. Move them to the stable person key below.
+- **Persons need their own key; `mps.identity_key` is not one.** `mp_identity` (`scripts/persist_dip_pulse_store.py`) picks the first available of `aw:`, `dip:`, `xml:`, `profile:` and `name-party:`. That breaks in three ways:
+  - A fallback key is built from mutable values. Correcting a name, a party or a profile URL gives the same person a new key.
+  - The tier changes as enrichment improves. The same MdB is `dip:…` in one build and `aw:…` in the next, once an abgeordnetenwatch match becomes trusted.
+  - One person can hold several `mps` rows, merged only at read time (`canonical_by_mp_id`).
+
+  Mix in the reference store (2026-09-30): 2,159 `profile:`, 1,050 `dip:`, 1,042 `xml:`.
+
+  Instead, publish a `persons` table whose key is minted once and never derived again. Where a person has the Bundestag's Redner-ID (`xml_redner_id`, the MdB-Stammdaten id) or a DIP person id, derive the key from it deterministically. Every other person gets a project id (e.g. `p:000123`) the first time they are seen. That id is stored in an append-only id registry which every rebuild carries over, the way the roster already is (`preserve_roster`). Official ids, abgeordnetenwatch ids, names and parties are attributes of the person, never the key. When a correction merges two persons, the merged-away key stays as an alias pointing to the survivor, never deleted. When a correction splits one, the key stays with one person and the other gets a new key. Keep the shared Redner-ID 11005304 (Föhr/Mende, under Abgeordnete) in mind: an official id is the key only while it names one person.
+
+Protocols, Vorgänge, Vorgangspositionen and votes already use DIP ids, and protocol, bill and vote page paths are already stable.
+
+Done when tests pin these cases:
+- Two builds, one with one more Sitzung than the other, give the same id to every row they share.
+- Correcting a person's name, party or profile URL keeps their person key.
+- A person whose abgeordnetenwatch match turns trusted in a later build keeps their person key.
+- Merging two persons leaves the merged-away key resolvable as an alias.
+
+**Why:** A paper that cites "speech 18234" or links to an MP page must still point to the same thing next month. Today it does not.
+
+**Effort:** L (the person registry is most of it)
+**Priority:** P1
+**Depends on:** None
+
+### Write the release script: versioned, immutable data releases
+
+**What:** `scripts/publish_dip_pulse_data.sh`, referenced as "PR2" since the Daten page (#59) but never written. It publishes the export (SQLite, CSVs, manifest, checksums) as an immutable, dated release with a version number, and the site's `--data-base-url` then points at that release. Decide the version scheme: a date, or semver where a schema change bumps the major version.
+
+**Why:** Without a release, "the dataset" is whatever the last local build produced. Nothing can be cited or downloaded twice with the same result. "Scheduled data-release workflow" and the Daten items are blocked on this.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** Stable ids; licence files (ADR 0003); settle the roll-call source before releasing votes
+
+### Public data changelog per release
+
+**What:** Each release carries a `CHANGES.md` (in the release and on the Daten page) listing what changed in the data since the previous release: schema changes, coverage added, and every correction that moved a published figure, with old value, new value and reason. That is the old/new report the project already writes into commit messages (CLAUDE.md), made public and tied to a release. Keep a machine-readable twin (`changes.json`) so a researcher can check whether a figure they cited was affected.
+
+**Why:** A researcher who cited version N must be able to see whether a later fix touched their numbers. The Fakt der Woche publication ledger covers cards only, and CHANGELOG.md covers code.
+
+**Effort:** S per release once the format exists
+**Priority:** P2
+**Depends on:** The release script
+
+### A DOI per release and a citation file
+
+**What:** A `CITATION.cff` in the repo and a DOI for every data release. Zenodo's GitHub integration archives the repository's source zip on each GitHub release, not the release's data assets. So archive the data files through Zenodo's upload API from the release script instead, which gives a concept DOI plus one DOI per version. Show "Zitieren als …" with the version DOI on the Daten page and in the codebook.
+
+**Why:** A DOI is what journals and editors accept as a stable reference, and it survives a change of host or name. The product name is still open, which matters little here: the DOI stays.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** The release script; the product name (for the record's title, which can be updated later)
+
+## Analysen
+
+The long-term angle of the site (PRODUCT.md, 2026-09-30). None of it exists yet. Every series here counts Reden, so it waits for the Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen, zu Protokoll gegebene Reden) and the v1 coverage backfill. Each recount moves every point of every series.
+
+### Diskursanalyse: precomputed term series per Zusammenschluss and month
+
+**What:** An `analysen/` page, and a Daten recipe that produces the same numbers. For a published, fixed list of topics, each defined by a term list (`data/terms.json`, reviewed like code): mentions per 10,000 words of Reden, by Zusammenschluss and by month (or quarter), across all covered Wahlperioden. Rules to fix before building:
+- **Matching:** German compounds need an explicit rule, for example prefix match on word stems (`klima*` catches Klimaschutz and Klimawandel), plus a list of exclusions. Case-insensitive, on word boundaries. The rule is printed on the page.
+- **Unit:** Reden only, per ADR 0001 and 0002. Zwischenrufe, Sitzungsleitung, Kurzinterventionen and Befragung are excluded, or later shown as their own series.
+- **Normalisation:** per 10,000 words, because raw counts mostly track how much was debated.
+- **Coverage:** only periods whose Sitzungen are complete, or every point labelled as covering Sitzungen mit Dossier only.
+- **Reproducibility:** the chart is the recipe's result. The page says plainly that free search over any term is possible with the SQLite download, and links a ready-made query for it.
+- **Traceability:** each point links to the Reden it counts.
+
+Done when the chart and the recipe give the same numbers on the same release, and a test pins the matching rule on a handful of compounds.
+
+**Why:** Decided 2026-09-30: precomputed series instead of free search on a static site, with free search delegated to the SQLite download. Term lists instead of a topic model are confirmed only provisionally. The user wants to see a preview before deciding, so the first step is a throwaway prototype: three topics, run over the reference store, drawn as a static chart, shown to the user. Build the page only after that decision. Open Discourse's Diskursanalyse, the named reference, uses 73 LDA topics with yearly granularity from 1949 to 2020. Published term lists are weaker at catching synonyms, but anyone can check and recount them, which fits a neutral, research-grade dataset.
+
+**Context:** Start with a small set of topics (Klimaschutz, Migration, and a few more) and a neutrality review of the term lists before publishing. A term list that uses one side's vocabulary ("Klimakrise" vs. "Klimawandel") frames the result. Also consider filters that Open Discourse offers and the store can support: gender and age group from the abgeordnetenwatch columns.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** The Rede-counting items; v1 coverage; stable ids
+
+### Politikfelder over time: which Zusammenschluss emphasises what
+
+**What:** Using the Politikfeld tags, show per Zusammenschluss and per period the share of its Reden (and of its speaking time by characters) that falls under each Politikfeld, and how the share of each Politikfeld in the whole plenary changes over time. Ship as a recipe first, then as a page next to the term series.
+
+**Why:** This answers "which party has which priorities" and "how does attention to a topic change" (PRODUCT.md) from the agenda side, without depending on vocabulary. The term series answers it from the language side. The two complement each other.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Politikfeld tags; the Rede-counting items; v1 coverage
+
+## Abstimmungen
+
+### Abstimmungen for the daily view: what was decided, by topic, with dissenters
+
+**What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
+1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Otherwise write a labelled AI sentence under the validators item.
+2. Topic filter on `votes/index.html`, from the Politikfeld tags.
+3. The named Abweichler per Fraktion on the vote panel. The data exists (recipe `r3-abweichler`).
+4. The responsible committee, from the Beschlussempfehlung.
+
+Done when a vote on the archive can be found by topic and its panel answers "what was decided, who voted how, who broke ranks, where is the source" without leaving the page.
+
+**Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
+
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Inverted-vote reading; Politikfeld tags (for 2); deterministic validators (only for the AI fallback in 1)
+
+## Architektur
+
+### Split the dataset from the site: the site builds from a release alone
+
+**What:** Separate the two halves of the project in the code. On one side: acquisition, the store and the export (the dataset). On the other: the renderers, which read only a store or release. Today `scripts/build_dip_pulse_site.py` (10.7k lines) holds both, and the renderers do not read from the store. Checked 2026-09-30:
+- **Read from in-memory report JSON (`entries`):** the Dossiers (`protocols/*.html`), `puls.html`, the bills pages and the votes archive.
+- **Read from the store:** only `abgeordnete/*`, `fakt/*` (plus `entries` for completeness) and `database.html`.
+- **In the JSON but not the store:** AI summaries and their receipts; acquisition states; validation warnings; per-TOP `xml_drucksachen`, `xml_speakers`, `api.positions` and `api.linked_drucksachen` (the store keeps a subset); raw vote payloads; the DIP API dumps shown in the dev view.
+- **The store can't be rebuilt from the JSON alone:** it carries the MP roster over from the previous store.
+
+The real work is therefore to move into the store everything the site shows, then point each renderer at the store. The file split follows from that.
+
+Done when an offline build from a downloaded release SQLite, with no report JSON present, produces the same site as today's build. Dev-view API dumps are exempt.
+
+**Why:** PRODUCT.md principle 6 (one figure, one computation). Today a figure on a Dossier or puls.html comes from the JSON while the release's figure comes from the store, so the two can drift. It also lets the dataset be released on its own schedule, and makes a second site (if one ever happens) a second renderer over the same release.
+
+**Context:** Do it in slices, one page type at a time, behind a comparison test (old output vs. new output). The votes archive is the easiest first slice, because the `votes`, `vote_fractions` and `vote_members` tables already exist. Overlaps with `protocol_acquisition` (Daten), which moves acquisition states into the store.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** None; best started before the Analysen pages, so new pages are store-first from the start
 
 ## Completed
 
