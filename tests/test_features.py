@@ -15,7 +15,7 @@ class FixedPresentationTests(unittest.TestCase):
             [
                 ("pulse", "Aktueller Puls", "puls.html"),
                 ("overview", "Sitzungen", "overview.html"),
-                ("bills", "Gesetze", "bills/index.html"),
+                ("bills", "Gesetzesvorhaben", "bills/index.html"),
                 ("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),
                 ("votes", "Abstimmungen", "votes/index.html"),
                 ("fakten", "Fakten", "fakt/index.html"),

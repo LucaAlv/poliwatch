@@ -45,7 +45,7 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertNotIn("bills/abgeordnete", markup)
         nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup).group(1)
         self.assertEqual(nav.count("<a "), 8)
-        for label in ("Aktueller Puls", "Sitzungen", "Gesetze", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen"):
+        for label in ("Aktueller Puls", "Sitzungen", "Gesetzesvorhaben", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen"):
             self.assertIn(label, nav)
         for retired in ("api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)

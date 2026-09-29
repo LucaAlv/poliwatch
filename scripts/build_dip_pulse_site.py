@@ -40,7 +40,7 @@
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
-#   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
+#   bills/index.html     ``render_bills_index``      "Gesetzesvorhaben verfolgen" list
 #   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
 #   abgeordnete/index.html   ``render_abgeordnete_index``   MP roster with filters
 #   abgeordnete/<id>.html    ``render_abgeordnete_detail``  one MP profile
@@ -3518,9 +3518,9 @@ def render_landing_page(
             2,
             (
                 "Gesetzgebung",
-                "Gesetze verfolgen",
+                "Gesetzesvorhaben verfolgen",
                 "bills/index.html",
-                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
+                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetzesvorhaben werden lokal im Browser gemerkt.",
                 None,
             ),
         )
@@ -3705,7 +3705,7 @@ def render_landing_page(
     <section class="stat-band" aria-label="Kennzahlen">
       <div><span>API-Sitzungen</span><strong>{pulse_html.esc(protocol_count)}</strong></div>
       <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(entries))}</strong></div>
-      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
       <div><span>Quellenart</span><strong>Primärquellen</strong></div>
     </section>
 
@@ -5246,7 +5246,7 @@ def render_front_page(
 {radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetze</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
+      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -5279,7 +5279,7 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PAGES: bills/index.html and bills/bill-*.html - "Gesetze verfolgen"
+# PAGES: bills/index.html and bills/bill-*.html - "Gesetzesvorhaben verfolgen"
 #
 # These pages are derived data: nothing is fetched here. collect_bill_pages()
 # walks the dossiers that were already built and reassembles them by legislative
@@ -5328,27 +5328,46 @@ def bill_slug(bill: dict[str, Any]) -> str:
     return "bill-" + slugify_document_number(identity)
 
 
-# Decide whether a DIP Vorgangsposition is legislation at all. This is a
-# deliberately crude keyword test over the procedure type, position, title and
-# the linked documents - everything that does not look like a "Gesetz" is left
-# out of the bills section rather than guessed at.
-def bill_like(position: dict[str, Any], docs: list[dict[str, Any]]) -> bool:
-    haystack = " ".join(
-        [
-            str(position.get("vorgangstyp") or ""),
-            str(position.get("vorgangsposition") or ""),
-            str(position.get("titel") or ""),
-            " ".join(str(doc.get("drucksachetyp") or "") for doc in docs),
-            " ".join(str(doc.get("titel") or "") for doc in docs),
-        ]
-    ).lower()
-    return any(marker in haystack for marker in ("gesetz", "gesetzentwurf", "entwurf eines gesetzes"))
+# Only a Gesetzgebung is legislation (CONTEXT.md): a Vorgang whose DIP
+# Vorgangstyp says so. An Entschließungsantrag or Antrag that accompanies one is
+# its own Vorgang, and a Rechtsverordnung is none even when the Bundestag must
+# consent to it. The old keyword test kept anything mentioning "gesetz",
+# "Grundgesetz" or "gesetzliche Krankenversicherung" as well.
+def is_gesetzgebung(position: dict[str, Any]) -> bool:
+    return str(position.get("vorgangstyp") or "") == "Gesetzgebung"
 
 
 # The set of Drucksache numbers attached to a bill, used to match roll-call
 # votes to it.
 def doc_numbers(docs: list[dict[str, Any]]) -> set[str]:
     return {str(doc.get("dokumentnummer")) for doc in docs if doc.get("dokumentnummer")}
+
+
+# The Vorgänge on an agenda item that are not Gesetzgebungen, one row each with
+# the Drucksachen DIP links to it.
+def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for position in positions:
+        vorgang_id = str(position.get("vorgang_id") or "")
+        if not vorgang_id or is_gesetzgebung(position):
+            continue
+        row = rows.setdefault(
+            vorgang_id,
+            {
+                "vorgang_id": vorgang_id,
+                "type": first_value(position.get("vorgangstyp"), "Vorgang"),
+                "title": first_value(position.get("titel")),
+                "documents": [],
+            },
+        )
+        row["documents"].extend(
+            {"dokumentnummer": doc.get("dokumentnummer"), "drucksachetyp": doc.get("drucksachetyp"), "url": doc.get("url")}
+            for doc in linked_docs
+            if str(doc.get("vorgang_id") or "") == vorgang_id
+        )
+    for row in rows.values():
+        row["documents"] = unique_records(row["documents"], ("dokumentnummer", "url"))
+    return list(rows.values())
 
 
 # Re-index the built dossiers by legislative procedure.
@@ -5370,6 +5389,10 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
             linked_docs = api.get("linked_drucksachen") or []
             positions = api.get("positions") or []
             item_votes = item.get("votes") or []
+            # What else is on this agenda item next to its Gesetzgebungen: the
+            # Entschließungsanträge, Anträge and the like that accompany them. They
+            # get no page of their own, but each Gesetzgebung page lists them.
+            related = _related_vorgaenge(positions, linked_docs)
             # A position is one step of a procedure (first reading, committee
             # report, ...). Collect the documents that belong to this procedure,
             # adding the position's own source document when DIP did not link it.
@@ -5393,8 +5416,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                             "urheber": [],
                         }
                     )
-                # Skip anything that is not legislation.
-                if not bill_like(position, position_docs):
+                # Skip anything that is not a Gesetzgebung.
+                if not is_gesetzgebung(position):
                     continue
 
                 # Identity for the bill: the DIP Vorgang id when present, else a
@@ -5420,11 +5443,13 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         "protocol_refs": [],
                         "documents": [],
                         "positions": [],
+                        "related": [],
                         "events": [],
                         "votes": [],
                         "raw": {"agenda_items": []},
                     },
                 )
+                bill["related"].extend(row for row in related if row["vorgang_id"] != vorgang_id)
                 bill["title"] = first_value(bill.get("title"), position.get("titel"), item.get("heading"))
                 bill["type"] = first_value(position.get("vorgangstyp"), bill.get("type"))
                 bill["documents"].extend(position_docs)
@@ -5522,6 +5547,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
     for key, bill in bills.items():
         bill["documents"] = unique_records(bill["documents"], ("vorgang_id", "dokumentnummer", "url"))
         bill["positions"] = unique_records(bill["positions"], ("id", "vorgang_id", "vorgangsposition"))
+        bill["related"] = unique_records(bill["related"], ("vorgang_id",))
         bill["protocol_refs"] = unique_records(bill["protocol_refs"], ("protocol_number", "top_id", "heading"))
         bill["votes"] = unique_records(bill["votes"], ("id",))
         bill["introduced_by"] = unique_values(bill["introduced_by"])
@@ -5836,7 +5862,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Gesetze verfolgen</title>
+  <title>Bundestag-Puls · Gesetzesvorhaben verfolgen</title>
   {pulse_html.page_head(features)}
   <style>{bill_styles()}</style>
 </head>
@@ -5845,7 +5871,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
-        <h1>Gesetze verfolgen</h1>
+        <h1>Gesetzesvorhaben verfolgen</h1>
         <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
       </div>
       <div class="follow-summary">
@@ -5854,7 +5880,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
       </div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Aktuelle Gesetze</span><strong>{pulse_html.esc(len(bills))}</strong></div>
+      <div class="metric"><span>Aktuelle Gesetzesvorhaben</span><strong>{pulse_html.esc(len(bills))}</strong></div>
       <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
       <div class="metric"><span>Plenarstellen</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
       <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
@@ -5923,6 +5949,25 @@ def render_bill_detail(
             "</li>"
         )
 
+    related_rows = []
+    for related in bill.get("related") or []:
+        numbers = ", ".join(
+            str(doc.get("dokumentnummer")) for doc in related.get("documents") or [] if doc.get("dokumentnummer")
+        )
+        related_rows.append(
+            '<li class="doc-row">'
+            f"<strong>{pulse_html.esc(related.get('title') or 'Ohne Titel')}</strong>"
+            f'<span>{pulse_html.esc(related.get("type") or "")}</span>'
+            f"<em>{pulse_html.esc(numbers)}</em>"
+            "</li>"
+        )
+    related_panel = (
+        '<section class="panel"><h2>Begleitende Vorlagen</h2>'
+        f'<ul class="doc-list">{"".join(related_rows)}</ul></section>'
+        if related_rows
+        else ""
+    )
+
     speakers = []
     for speaker in (bill.get("speakers") or [])[:12]:
         mp_href = pulse_html.mp_page_href(
@@ -5965,8 +6010,8 @@ def render_bill_detail(
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
-        <nav class="local-nav" aria-label="Gesetz-Navigation">
-          <a href="index.html">Alle Gesetze</a>
+        <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation">
+          <a href="index.html">Alle Gesetzesvorhaben</a>
         </nav>
         <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
         <h1>{pulse_html.esc(bill.get('title'))}</h1>
@@ -6001,6 +6046,7 @@ def render_bill_detail(
           <h2>Drucksachen</h2>
           <ul class="doc-list">{''.join(docs) if docs else '<li>Keine verknüpften Drucksachen.</li>'}</ul>
         </section>
+        {related_panel}
         <section class="panel">
           <h2>Rohdaten</h2>
           {render_bill_json_details("Normalisierter Bill-Datensatz", bill)}
@@ -6017,7 +6063,7 @@ def render_bill_detail(
         </section>
       </aside>
     </div>
-    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetze verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
+    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetzesvorhaben verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
   </div>
   {render_bill_script()}
   {pulse_html.page_scripts(features)}
@@ -8132,7 +8178,7 @@ def render_overview(
     <section class="summary-band">
       <div><span>API-Sitzungen</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
       <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
-      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
       <div><span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(generated_latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(generated_latest.get('datum', ''))}</em>
@@ -8158,7 +8204,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9119,7 +9165,7 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9472,7 +9518,7 @@ def render_settings_page(
     </header>
     <main class="compatibility-card">
       <h2>Was sich geändert hat</h2>
-      <p>Sitzungen, Abstimmungen, Gesetze und Abgeordnetenprofile werden immer dann gezeigt, wenn sie für die jeweilige Seite gelten. Fehlende oder unvollständige Daten werden direkt am betroffenen Inhalt erklärt.</p>
+      <p>Sitzungen, Abstimmungen, Gesetzesvorhaben und Abgeordnetenprofile werden immer dann gezeigt, wenn sie für die jeweilige Seite gelten. Fehlende oder unvollständige Daten werden direkt am betroffenen Inhalt erklärt.</p>
       <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
       <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
     </main>
@@ -9981,7 +10027,7 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
 # Capability introspection exits before touching the network or output tree.
 def print_capability_table(selection: EnrichmentSelection) -> None:
     print("Feste öffentliche Bereiche")
-    print("  Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Quellen")
+    print("  Aktueller Puls, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
     print("\nOptionale Datenerfassung")
     for enrichment_id, enrichment in ENRICHMENT_REGISTRY.items():
         state = "ausgewählt" if enrichment_id in selection else "nicht ausgewählt"

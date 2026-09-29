@@ -2813,7 +2813,7 @@ def render_html(
     profile_notice = f'<div class="notice profile-state">{esc(profile_copy)}</div>' if profile_copy else ""
     footer_links = [
         '<a href="../overview.html">Sitzungen</a>',
-        '<a href="../bills/index.html">Gesetze</a>',
+        '<a href="../bills/index.html">Gesetzesvorhaben</a>',
         '<a href="../abgeordnete/index.html">Abgeordnete</a>',
         # Only when the build has Daten, like every other page's Daten link;
         # the caller predicts that (see dossier_database_page_href).
