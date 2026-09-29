@@ -377,20 +377,30 @@ def select_acquisition_protocols(
 # (missing), or when its report says votes or speeches are not fully acquired.
 # Sittings DIP has published no XML for cannot be acquired yet and are
 # returned separately so the caller can say so instead of failing on them.
-def _structural_vote_gap(gap: dict[str, Any]) -> bool:
-    """A gap only a better match rule can close: votes the list shows that no
-    agenda item claims. A rescan reproduces it exactly."""
+_BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
+
+
+def _structural_vote_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
+    """A gap a rescan at the current settings reproduces exactly: votes the list
+    shows that no agenda item claims (only a better match rule closes it), or a
+    scan that ran out of pages at a budget no larger than the one asked for now.
+    ``scan_pages`` is the budget the next acquisition would use."""
     reasons = gap["reasons"]
-    # Exactly this reason: "scan_budget_exhausted, unmatched_candidate" is
-    # still fixable with a wider scan.
-    return set(reasons) == {"votes"} and reasons["votes"] in (
-        "votes partial (unmatched_candidate)",
-        "roll-call votes matched no TOP",
-    )
+    if set(reasons) != {"votes"}:
+        return False
+    text = reasons["votes"]
+    if text in ("votes partial (unmatched_candidate)", "roll-call votes matched no TOP"):
+        return True
+    used = _BUDGET_PAGES_RE.search(text)
+    return bool(used) and scan_pages is not None and scan_pages <= int(used.group(1)) and "unmatched" not in text
 
 
 def incomplete_sitting_protocols(
-    entries: list[dict[str, Any]], catalog: list[dict[str, Any]], *, votes: bool = True
+    entries: list[dict[str, Any]],
+    catalog: list[dict[str, Any]],
+    *,
+    votes: bool = True,
+    scan_pages: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     stored = []
     for entry in entries:
@@ -412,7 +422,7 @@ def incomplete_sitting_protocols(
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None:
             continue
-        if _structural_vote_gap(gap):
+        if _structural_vote_gap(gap, scan_pages):
             structural.append(protocol)
         elif not votes and set(gap["reasons"]) == {"votes"}:
             # Votes are off, so re-acquiring this sitting would download it
@@ -453,7 +463,11 @@ def format_incomplete_report(
     waiting = [number for number in missing if not has_xml.get(number, True)]
     partial = {number: gap for number, gap in gaps.items() if "dossier" not in gap["reasons"]}
     redated = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "date_changed"]
-    structural = [number for number, gap in gaps.items() if _structural_vote_gap(gap)]
+    # A scan that ran out of pages is only fixed by a wider scan, so the fix
+    # below raises the budget and judges what it would reach at that budget.
+    exhausted = any("scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values())
+    raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
+    structural = [number for number, gap in gaps.items() if _structural_vote_gap(gap, raised_pages)]
     no_xml = [number for number in gaps if not has_xml.get(number, True)]
     acquirable = [number for number in gaps if number not in no_xml and number not in structural]
     lines = [
@@ -466,8 +480,8 @@ def format_incomplete_report(
         lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
     if structural:
         lines.append(
-            f"  {len(structural)} sittings are held back by roll-call votes no agenda item claims "
-            f"({_first_numbers(structural, 12)}); a backfill cannot fix them, they need a better match rule"
+            f"  {len(structural)} sittings a backfill cannot fix: roll-call votes no agenda item claims (they need "
+            f"a better match rule) or a scan budget already used ({_first_numbers(structural, 12)})"
         )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
@@ -498,16 +512,13 @@ def format_incomplete_report(
         lines.append(f"  incomplete {label}{more}: {'; '.join(rendered)}")
     if acquirable:
         command = f"python3 scripts/build_dip_pulse_site.py --output-dir {shlex.quote(str(output_dir))} --backfill-incomplete"
-        exhausted = any(
-            "scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values()
-        )
         vote_gaps = any("votes" in gap["reasons"] for gap in gaps.values())
         if vote_scan_pages == 0 and vote_gaps:
             # Votes are switched off in this build's configuration; an
             # explicit --enrich lifts a config veto (not --no-votes).
             command += " --enrich votes"
         elif exhausted:
-            command += f" --vote-scan-pages {max(2 * vote_scan_pages, vote_scan_pages + 30)}"
+            command += f" --vote-scan-pages {raised_pages}"
         lines.append(f"  Fix: {command}   (acquires {len(acquirable)} sittings; every other cached dossier is kept)")
     else:
         lines.append("  Fix: none available now; run an online update once DIP publishes the missing protocols")
@@ -1260,7 +1271,8 @@ def reuse_existing_dossier_enrichments(
         )
         if not previous:
             continue
-        if votes and _iter_report_votes(previous):
+        top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
+        if votes and _iter_report_votes(previous) and len(top_ids) <= 1:
             # Merge by vote identity, not only into an empty TOP: a rescan that
             # found some of a TOP's votes must not drop the ones it missed.
             current = _iter_report_votes(item)
@@ -1463,6 +1475,25 @@ def annotate_report_acquisition(
                 attempted=bool(fresh.get("attempted")),
             ).as_dict()
 
+    if vote_scan_pages != 0:
+        fresh_now = acquisition.get("votes") or {}
+        unique_now = len(
+            {pulse_html.vote_key(v) for item in report.get("agenda_items") or [] for v in _iter_report_votes(item)}
+        )
+        lacked = unique_now - int(fresh_now.get("records") or 0)
+        if fresh_now.get("acquisition_state") == "complete" and lacked > 0:
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=publication.AcquisitionState.PARTIAL,
+                source="bundestag-roll-call",
+                records=unique_now,
+                reused=lacked,
+                failure_reasons=("vote_shrinkage",),
+                acquired_at=fresh_now.get("acquired_at"),
+                attempted_at=fresh_now.get("attempted_at"),
+                attempted=bool(fresh_now.get("attempted")),
+            ).as_dict()
+
     profile_records, _profile_targets = _report_profile_counts(report)
     if profile_resolver is None:
         profile_state = (
@@ -1614,7 +1645,10 @@ def write_report_and_page(
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
-        votes=vote_scan_pages == 0 or fresh_vote_state != "complete",
+        # A complete scan that lacks votes the cache holds is not trusted to
+        # have removed them: they are kept and annotate_report_acquisition marks
+        # the sitting partial (vote_shrinkage).
+        votes=True,
         profiles=profile_resolver is None,
     )
     # Post-processing steps supplied by enrichment components. In reuse mode the
@@ -10541,12 +10575,16 @@ def main() -> int:
         protocols = fetch_protocols(client, 0, [], None)
         if getattr(args, "backfill_incomplete", False):
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
-                load_existing_detail_entries(output_dir, protocols), protocols, votes=args.vote_scan_pages != 0
+                load_existing_detail_entries(output_dir, protocols),
+                protocols,
+                votes=args.vote_scan_pages != 0,
+                scan_pages=args.vote_scan_pages,
             )
             if structural:
                 print(
-                    f"[backfill] leaving {len(structural)} sitting(s) held back by roll-call votes no agenda item "
-                    "claims: a rescan cannot fix them (they need a better match rule).",
+                    f"[backfill] leaving {len(structural)} sitting(s) a rescan at these settings cannot fix: roll-call "
+                    "votes no agenda item claims (they need a better match rule), or a scan that already used "
+                    f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
                     file=sys.stderr,
                 )
             if vote_only:

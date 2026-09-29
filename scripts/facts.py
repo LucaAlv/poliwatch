@@ -874,6 +874,12 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
             if state != "complete":
                 votes = False
                 reasons = ", ".join(str(r) for r in acquisition.get("failure_reasons") or ())
+                if "scan_budget_exhausted" in reasons and summary.get("roll_call_scan_pages"):
+                    # Names the budget that was not enough, so a backfill at the
+                    # same budget is known to reproduce the result.
+                    reasons = reasons.replace(
+                        "scan_budget_exhausted", f"scan_budget_exhausted after {summary['roll_call_scan_pages']} pages"
+                    )
                 votes_reason = f"votes {state}" + (f" ({reasons})" if reasons else "")
             elif not acquisition.get("acquired_at"):
                 votes = False

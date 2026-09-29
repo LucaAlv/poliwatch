@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any, Callable
@@ -111,6 +111,8 @@ class RollCallCandidateFetch:
     scan_end: str = "not_scanned"
     pages_fetched: int = 0
     pages_from_cache: int = 0
+    #: Date of the newest entry on the first page; None when there was none.
+    newest_entry_date: str | None = None
 
 
 def load_local_env(path: Path | None = None) -> None:
@@ -202,6 +204,12 @@ class ApiClient:
 
 
 ROLL_CALL_OUTAGE_KEY = "__outage__"
+#: After a network failure the rest of the build skips roll-call fetches for
+#: this long, then tries again (the site may have recovered).
+ROLL_CALL_OUTAGE_COOLDOWN_SECONDS = 300
+#: A sitting this recent with no candidate, on a list whose newest entry is
+#: older than the sitting, may just be ahead of the list.
+ROLL_CALL_LIST_LAG_DAYS = 14
 PAGE_FETCH_RETRIES = 2
 PAGE_FETCH_RETRY_DELAY_SECONDS = 1.5
 
@@ -1005,6 +1013,7 @@ def fetch_roll_call_vote_candidates(
     scan_end = "budget_exhausted"
     pages_fetched = 0
     pages_from_cache = 0
+    newest_entry_date: str | None = None
     for page_index in range(scan_pages):
         url = roll_call_list_url(roll_call_list_id, page_index * page_size, page_size)
         if page_cache is not None and url in page_cache:
@@ -1013,16 +1022,19 @@ def fetch_roll_call_vote_candidates(
         else:
             if page_cache is not None and ROLL_CALL_OUTAGE_KEY in page_cache:
                 # A list page already failed after its retries in this build:
-                # every further uncached page would spend the same minutes on
-                # the same outage. Pages already cached are still served.
-                raise DipError(f"roll-call list unavailable earlier in this build: {page_cache[ROLL_CALL_OUTAGE_KEY]}")
+                # further uncached pages would spend the same minutes on the
+                # same outage, until the cooldown ends. Cached pages are served.
+                failed_at, _, message = page_cache[ROLL_CALL_OUTAGE_KEY].partition("|")
+                if time.monotonic() - float(failed_at) < ROLL_CALL_OUTAGE_COOLDOWN_SECONDS:
+                    raise DipError(f"roll-call list unavailable earlier in this build: {message}")
+                del page_cache[ROLL_CALL_OUTAGE_KEY]
             try:
                 html_text = fetch_html(url)
             except DipError as exc:
                 # Only a network or server failure says the site is down; a 404
                 # or 403 on one page says nothing about the next sitting's pages.
                 if page_cache is not None and getattr(exc, "transient", False):
-                    page_cache[ROLL_CALL_OUTAGE_KEY] = str(exc)
+                    page_cache[ROLL_CALL_OUTAGE_KEY] = f"{time.monotonic()}|{exc}"
                 raise
             pages_fetched += 1
             # An empty page is not remembered: it may be a maintenance page,
@@ -1032,6 +1044,9 @@ def fetch_roll_call_vote_candidates(
         if html_text.strip():
             list_html_seen = True
         page_entries = parse_roll_call_list_page(html_text)
+        if page_index == 0:
+            first_dates = [entry.get("date") for entry in page_entries if entry.get("date")]
+            newest_entry_date = max(first_dates) if first_dates else None
         parsed_entry_count += len(page_entries)
         if not page_entries:
             scan_end = "list_end"
@@ -1051,6 +1066,7 @@ def fetch_roll_call_vote_candidates(
         scan_end=scan_end,
         pages_fetched=pages_fetched,
         pages_from_cache=pages_from_cache,
+        newest_entry_date=newest_entry_date,
     )
     return result if include_diagnostics else result.candidates
 
@@ -1904,12 +1920,25 @@ def enrich_with_api(
         # sitting's votes are known to be short, so they cannot be complete.
         if unmatched_candidates and vote_fetch_error is None:
             failure_reasons.append("unmatched_candidate")
+        # A recent sitting with no candidate on a list whose newest entry is
+        # older than the sitting: the list may simply not have caught up.
+        target_day = iso_date(protocol.get("datum"))
+        if (
+            not roll_call_candidates
+            and vote_fetch_error is None
+            and roll_call_fetch.scan_end == "date_passed"
+            and roll_call_fetch.newest_entry_date
+            and target_day
+            and roll_call_fetch.newest_entry_date < target_day
+            and 0 <= (datetime.now(timezone.utc).date() - date.fromisoformat(target_day)).days <= ROLL_CALL_LIST_LAG_DAYS
+        ):
+            failure_reasons.append("source_stale")
         if failure_reasons:
             vote_facts = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=(
                     publication.AcquisitionState.PARTIAL
-                    if vote_records or failure_reasons == ["unmatched_candidate"]
+                    if vote_records or failure_reasons in (["unmatched_candidate"], ["source_stale"])
                     else publication.AcquisitionState.FAILED
                 ),
                 source="bundestag-roll-call",
@@ -1949,6 +1978,7 @@ def enrich_with_api(
             "matched_roll_call_vote_count": len(roll_call_cache),
             "unmatched_roll_call_vote_count": len(unmatched_candidates),
             "roll_call_scan_end": roll_call_fetch.scan_end,
+            "roll_call_scan_pages": vote_scan_pages,
         },
         "sampled_people": [compact_person(person) for person in person_records],
         "api_records": {

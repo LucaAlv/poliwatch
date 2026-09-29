@@ -188,6 +188,9 @@ The `facts` pages name the missing sitting too (`unvollständig erfasst: Sitzung
 | `no scan-end evidence` | The votes were stamped complete by a build that did not record how the scan ended. |
 | `roll-call votes matched no TOP` | The list shows a vote no agenda item claims (`unmatched_candidate`); the match may need a better rule, a backfill will not fix it. |
 | `date_changed` | DIP now dates the sitting differently from the store; the backfill refreshes it. |
+| `vote_shrinkage` | A complete scan found fewer votes than the cache holds (a stale or partial list); the cached votes are kept and the sitting is partial. |
+| `source_stale` | A sitting of the last two weeks with no roll call on a list whose newest entry is older: the list may not have caught up. It settles by itself after 14 days, or on the next backfill once the list catches up. |
+| `scan_budget_exhausted after N pages` | A backfill at the same `--vote-scan-pages` reproduces it, so the backfill leaves the sitting alone and the printed fix raises the budget. |
 
 One recipe fixes all of them:
 

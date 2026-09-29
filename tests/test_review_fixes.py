@@ -170,6 +170,124 @@ class DateCorrectionBeforeTheJudgedRangeStillCountsTests(StoreCase):
         self.assertEqual(gaps[first["document_number"]]["reasons"], {"dossier": "date_changed"})
 
 
+class OutageCooldownTests(unittest.TestCase):
+    def test_the_outage_marker_expires_and_the_list_is_tried_again(self) -> None:
+        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
+        cache = {dip.ROLL_CALL_OUTAGE_KEY: f"{dip.time.monotonic() - dip.ROLL_CALL_OUTAGE_COOLDOWN_SECONDS - 1}|boom"}
+        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)):
+            result = dip.fetch_roll_call_vote_candidates("2026-07-01", 3, include_diagnostics=True, page_cache=cache)
+        self.assertEqual(result.scan_end, "date_passed")
+        self.assertNotIn(dip.ROLL_CALL_OUTAGE_KEY, cache)
+
+
+class CompleteScanLackingCachedVotesIsPartialTests(unittest.TestCase):
+    def test_a_complete_scan_that_finds_fewer_votes_than_the_cache_keeps_them_and_says_so(self) -> None:
+        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
+        existing = two_vote_report(prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
+        fresh = report_with(0, votes_facts("complete", records=0, acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
+        fresh["validation_summary"] = {"roll_call_scan_end": "date_passed"}
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
+        votes = fresh["acquisition"]["votes"]
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1", "2"])
+        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["vote_shrinkage"]))
+        self.assertEqual((votes["records"], votes["reused"]), (2, 2))
+
+    def test_a_complete_scan_that_agrees_with_the_cache_stays_complete(self) -> None:
+        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
+        existing = two_vote_report(prior)
+        fresh = report_with(0, votes_facts("complete", records=2, acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
+        fresh["agenda_items"][0]["votes"] = [vote("1"), vote("2")]
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
+        self.assertEqual(fresh["acquisition"]["votes"]["acquisition_state"], "complete")
+
+
+class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
+    GAP = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}
+
+    def test_a_scan_that_used_its_pages_is_structural_until_the_budget_grows(self) -> None:
+        self.assertTrue(build._structural_vote_gap(self.GAP, 30))
+        self.assertTrue(build._structural_vote_gap(self.GAP, 20))
+        self.assertFalse(build._structural_vote_gap(self.GAP, 60))
+        self.assertFalse(build._structural_vote_gap(self.GAP, None))
+        self.assertFalse(build._structural_vote_gap({"reasons": {"votes": "votes partial (scan_budget_exhausted)"}}, 30))
+
+    def test_completeness_names_the_budget_that_was_not_enough(self) -> None:
+        report = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
+        report["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30}
+        state = facts.completeness_from_reports([report])["21/90"]
+        self.assertEqual(state["reasons"]["votes"], "votes partial (scan_budget_exhausted after 30 pages)")
+
+    def test_the_printed_fix_raises_the_budget_and_counts_what_it_would_reach(self) -> None:
+        report = {
+            "sitting_gaps": {"21/1": {"date": "2026-06-11", "reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}},
+            "incomplete_periods": [],
+        }
+        catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
+        text = "\n".join(build.format_incomplete_report(report, output_dir=Path("out"), catalog_protocols=catalog, vote_scan_pages=30))
+        self.assertIn("--vote-scan-pages 60", text)
+        self.assertIn("(acquires 1 sittings;", text)
+        self.assertNotIn("a backfill cannot fix", text)
+
+    def test_backfill_at_the_same_budget_leaves_it_alone_and_a_larger_one_takes_it(self) -> None:
+        stuck = report_with(1, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
+        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_pages": 30, "roll_call_scan_end": "budget_exhausted"}
+        stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
+        catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}}]
+        same = build.incomplete_sitting_protocols([{"report": stuck}], catalog, scan_pages=30)
+        self.assertEqual(([p["dokumentnummer"] for p in same[0]], [p["dokumentnummer"] for p in same[3]]), ([], ["21/1"]))
+        wider = build.incomplete_sitting_protocols([{"report": stuck}], catalog, scan_pages=60)
+        self.assertEqual([p["dokumentnummer"] for p in wider[0]], ["21/1"])
+
+
+class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
+    def enrich(self, pages: list[str], date: str):
+        from test_vote_acquisition import FakeClient, agenda
+
+        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch("sys.stderr", io.StringIO()):
+            return dip.enrich_with_api(
+                FakeClient(), {"id": "p1", "dokumentnummer": "21/90", "datum": date}, agenda("21/9"), person_limit=0, vote_scan_pages=30
+            )
+
+    def test_a_recent_sitting_newer_than_the_lists_newest_entry_is_partial_source_stale(self) -> None:
+        import datetime as _dt
+
+        today = dip.datetime.now(dip.timezone.utc).date()
+        newest = (today - _dt.timedelta(days=9)).strftime("%d.%m.%Y")
+        sitting = (today - _dt.timedelta(days=2)).isoformat()
+        enrichment = self.enrich([list_page(("1", newest, "21/1"))], sitting)
+        votes = enrichment["acquisition"]["votes"]
+        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["source_stale"]))
+
+    def test_an_old_sitting_or_a_list_that_has_caught_up_is_verified(self) -> None:
+        import datetime as _dt
+
+        today = dip.datetime.now(dip.timezone.utc).date()
+        # A sitting long ago: no lag possible any more.
+        old = self.enrich([list_page(("1", "05.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))], "2026-07-01")
+        self.assertEqual(old["acquisition"]["votes"]["acquisition_state"], "complete")
+        # The list already shows a vote on the sitting's day or later: it has caught up.
+        recent = (today - _dt.timedelta(days=2))
+        caught_up = self.enrich(
+            [list_page(("1", recent.strftime("%d.%m.%Y"), "21/1"), ("2", (recent - _dt.timedelta(days=3)).strftime("%d.%m.%Y"), "21/2"))],
+            recent.isoformat(),
+        )
+        self.assertEqual(caught_up["acquisition"]["votes"]["acquisition_state"], "partial")  # candidate 21/1 is unmatched by agenda 21/9
+        self.assertNotIn("source_stale", caught_up["acquisition"]["votes"]["failure_reasons"])
+
+
+class MergeRequiresTheSameTopIdTests(unittest.TestCase):
+    def test_votes_are_not_carried_between_tops_that_only_share_an_index(self) -> None:
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0].update({"top_id": "TOP 1", "index": 1, "votes": [vote("1")]})
+        fresh = report_with(0, votes_facts("partial", records=0, reasons=("source_unavailable",), attempted_at=STAMP))
+        fresh["agenda_items"][0].update({"top_id": "TOP 7", "index": 1, "votes": []})  # another TOP, same index
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
+
+
 class OutageFlagOnlyForTransientFailuresTests(unittest.TestCase):
     def test_a_404_on_one_page_does_not_disable_the_rest_of_the_build(self) -> None:
         import urllib.error
@@ -281,7 +399,8 @@ class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
             "incomplete_periods": [],
         }
         text = "\n".join(build.format_incomplete_report(report, output_dir=Path("out"), catalog_protocols=catalog, vote_scan_pages=30))
-        self.assertIn("1 sittings are held back by roll-call votes no agenda item claims (21/1)", text)
+        self.assertIn("1 sittings a backfill cannot fix: roll-call votes no agenda item claims", text)
+        self.assertIn("(21/1)", text)
         self.assertIn("(acquires 1 sittings;", text)
 
     def test_a_gap_without_an_xml_url_is_not_counted_as_acquirable(self) -> None:
@@ -324,7 +443,7 @@ class RollCallPageCacheTests(unittest.TestCase):
         cache: dict[str, str] = {}
         with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)):
             dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
-        cache[dip.ROLL_CALL_OUTAGE_KEY] = "boom"
+        cache[dip.ROLL_CALL_OUTAGE_KEY] = f"{dip.time.monotonic()}|boom"
         opener = mock.Mock(side_effect=dip.DipError("still down"))
         with mock.patch.object(dip, "fetch_html", opener):
             result = dip.fetch_roll_call_vote_candidates("2026-07-01", 3, include_diagnostics=True, page_cache=cache)

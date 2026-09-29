@@ -99,7 +99,8 @@ class ScanEndTests(unittest.TestCase):
             with self.assertRaises(dip.DipError):
                 dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
         # Only the outage marker is remembered, never a page.
-        self.assertEqual(cache, {dip.ROLL_CALL_OUTAGE_KEY: "boom"})
+        self.assertEqual(list(cache), [dip.ROLL_CALL_OUTAGE_KEY])
+        self.assertTrue(cache[dip.ROLL_CALL_OUTAGE_KEY].endswith("|boom"))
 
     def test_one_failed_list_page_stops_further_list_fetches_in_the_build(self) -> None:
         cache: dict[str, str] = {}
