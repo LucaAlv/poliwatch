@@ -756,17 +756,29 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 
 ### Stable ids for every row a release publishes
 
-**What:** Give every table in the release a key derived from the source, and use it in exports and page URLs. Today `mps.id`, `parties.id`, `agenda_items.id`, `documents.id` and `speeches.id` are `INTEGER PRIMARY KEY` surrogates. They are assigned in insert order during `rebuild_database_from_entries` (`scripts/build_dip_pulse_site.py`), which runs newest Sitzung first, so every new Sitzung renumbers them (checked 2026-09-30). The natural keys already exist as UNIQUE columns: `(protocol_id, rede_id)`, `(protocol_id, item_index)`, `(document_number, url)`, `mps.identity_key` and `parties.name`. Publish those, or a deterministic id derived from them, as the key in the SQLite and CSV release. Also:
+**What:** Give every table in the release a key derived from the source, and use it in exports and page URLs. Today `mps.id`, `parties.id`, `agenda_items.id`, `documents.id` and `speeches.id` are `INTEGER PRIMARY KEY` surrogates. They are assigned in insert order during `rebuild_database_from_entries` (`scripts/build_dip_pulse_site.py`), which runs newest Sitzung first, so every new Sitzung renumbers them (checked 2026-09-30). The natural keys already exist as UNIQUE columns: `(protocol_id, rede_id)`, `(protocol_id, item_index)`, `(document_number, url)` and `parties.name`. Publish those, or a deterministic id derived from them, as the key in the SQLite and CSV release. Also:
 - `synthetic_rede_id` embeds the surrogate `agenda_item_id`. Base it on `(protocol_id, item_index, sequence)` instead.
-- MP pages live at `abgeordnete/<mps.id>.html`, a surrogate. Move them to a stable person key: the abgeordnetenwatch id or the DIP person id where one exists.
+- MP pages live at `abgeordnete/<mps.id>.html`, a surrogate. Move them to the stable person key below.
+- **Persons need their own key; `mps.identity_key` is not one.** `mp_identity` (`scripts/persist_dip_pulse_store.py`) picks the first available of `aw:`, `dip:`, `xml:`, `profile:` and `name-party:`. That breaks in three ways:
+  - A fallback key is built from mutable values. Correcting a name, a party or a profile URL gives the same person a new key.
+  - The tier changes as enrichment improves. The same MdB is `dip:…` in one build and `aw:…` in the next, once an abgeordnetenwatch match becomes trusted.
+  - One person can hold several `mps` rows, merged only at read time (`canonical_by_mp_id`).
+
+  Mix in the reference store (2026-09-30): 2,159 `profile:`, 1,050 `dip:`, 1,042 `xml:`.
+
+  Instead, publish a `persons` table whose key is minted once and never derived again. Where a person has the Bundestag's Redner-ID (`xml_redner_id`, the MdB-Stammdaten id) or a DIP person id, derive the key from it deterministically. Every other person gets a project id (e.g. `p:000123`) the first time they are seen. That id is stored in an append-only id registry which every rebuild carries over, the way the roster already is (`preserve_roster`). Official ids, abgeordnetenwatch ids, names and parties are attributes of the person, never the key. When a correction merges two persons, the merged-away key stays as an alias pointing to the survivor, never deleted. When a correction splits one, the key stays with one person and the other gets a new key. Keep the shared Redner-ID 11005304 (Föhr/Mende, under Abgeordnete) in mind: an official id is the key only while it names one person.
 
 Protocols, Vorgänge, Vorgangspositionen and votes already use DIP ids, and protocol, bill and vote page paths are already stable.
 
-Done when two builds, one with one more Sitzung than the other, give the same id to every row they share. A test pins this.
+Done when tests pin these cases:
+- Two builds, one with one more Sitzung than the other, give the same id to every row they share.
+- Correcting a person's name, party or profile URL keeps their person key.
+- A person whose abgeordnetenwatch match turns trusted in a later build keeps their person key.
+- Merging two persons leaves the merged-away key resolvable as an alias.
 
 **Why:** A paper that cites "speech 18234" or links to an MP page must still point to the same thing next month. Today it does not.
 
-**Effort:** M
+**Effort:** L (the person registry is most of it)
 **Priority:** P1
 **Depends on:** None
 
