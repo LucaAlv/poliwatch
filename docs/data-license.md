@@ -25,13 +25,13 @@ The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP la
 
 ## What we changed (DIP no. 4b)
 
-- The protocol XML and DIP API records are extracted and split into tables. `speeches.text` is the unaltered speech text. The duplicate `paragraphs_json` column is dropped at export.
+- The protocol XML and DIP API records are extracted and split into tables. `speeches.text` is the speech text with whitespace normalised: the paragraphs of a Rede (without the speaker line) are joined with single spaces, non-breaking spaces become plain spaces, and runs of whitespace collapse to one space. Wording and punctuation are not edited, but paragraph breaks are not kept. The duplicate `paragraphs_json` column is dropped at export.
 - Fraktion spellings are normalised to one form per Fraktion (`parties.name`, `speeches.fraktion`).
   - `speeches.fraktion` is the Fraktion the protocol names for that Rede, i.e. the affiliation at the time of the speech.
   - `mps.party_id` is the affiliation as of the last build.
   - `speeches.fraktion` is `NULL` when the XML names no Fraktion (a minister speaking in role).
 - Persons from the DIP roster, the protocol XML and the roll-call lists are consolidated into one person id (`mp_canonical`). Its purpose is that the exported „Rezepte" counts match the site's profile pages.
-- The `derived` tables are computed by `scripts/facts.py` at build time (percentiles, baselines, receipts).
+- `fact_metrics`, `facts` and `fact_sources` are computed by `scripts/facts.py` at build time (percentiles, baselines, receipts). `mp_canonical` and `datenstand` are created by `scripts/build_dip_pulse_site.py` during export.
 - The site's machine-generated summaries are not part of the export.
 
 ## Known gap

@@ -59,7 +59,7 @@ Rejected alternatives:
 
 ### D2 `speeches.text` ships in full
 
-The text is an unaltered extraction from the Plenarprotokoll, an amtliches Werk. § 62 (no changes) is met by not editing the text, and § 63 (name the source) by the source line.
+The text is an extraction from the Plenarprotokoll, an amtliches Werk, not a verbatim copy: the paragraphs of a Rede are joined with single spaces, non-breaking spaces become plain spaces, and whitespace runs collapse (`validate_dip_protocol.speech_text_and_paragraphs`, `persist_dip_pulse_store.clean`). Wording and punctuation are untouched. Whether that meets § 62 (no changes) is open question 7. § 63 (name the source) is met by the source line.
 
 The full-corpus file is not a collection that consists „überwiegend" of one speaker's speeches ([§ 48 Abs. 2 UrhG](https://www.gesetze-im-internet.de/urhg/__48.html)).
 
@@ -114,6 +114,8 @@ The operator is one person with limited time, the audience is mostly not develop
 5. Whether redistributing the bundestag.de roll-call scrape is covered by the protocol basis, or needs the Bundestag's written consent.
    - The cheaper first step is a one-line question to parlamentsdokumentation@bundestag.de.
 6. Whether the site is „journalistisch-redaktionell gestaltet" at all (§ 18 Abs. 2 MStV, and the press-law duties that come with it), or whether § 18 Abs. 1 is enough.
+
+7. Whether whitespace normalisation and joining paragraphs (D2) count as a change under § 62 UrhG, or whether the export must keep paragraph breaks.
 
 ## Consequences and follow-ups
 
