@@ -1924,6 +1924,21 @@ class ReplayTests(StoreCase):
         self.assertIn("changed_wp_vs_all", gate)
         self.assertEqual(len(gate["recent_cards"]), 8)
 
+    def test_replay_defaults_to_the_catalog_cached_next_to_the_store(self) -> None:
+        seeded = self.seed(week_specs(10))
+        self.conn.close()
+        kwargs = dict(weeks=3, cards_dir=None, completeness=seeded["completeness"])
+        without = facts.replay(self.path, **kwargs)
+        self.assertEqual({row["complete"] for row in without["rows"]}, {0})
+        (self.path.parent / facts.CATALOG_FILENAME).write_text(
+            json.dumps({"authoritative": True, "protocols": [
+                {"dokumentnummer": s["document_number"], "datum": s["date"]} for s in seeded["catalog_sittings"]
+            ]}),
+            encoding="utf-8",
+        )
+        cached = facts.replay(self.path, **kwargs)
+        self.assertEqual({row["complete"] for row in cached["rows"]}, {1})
+
     def test_print_report_renders_every_metric_column(self) -> None:
         self.seed(week_specs(12))
         self.conn.close()

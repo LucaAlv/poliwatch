@@ -482,3 +482,87 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GapPrimitiveTests(unittest.TestCase):
+    """The pure functions behind the incomplete report and the withheld-cell notes."""
+
+    PERSISTED = [
+        {"document_number": "21/1", "date": "2025-01-02"},
+        {"document_number": "21/2", "date": "2025-01-09"},
+    ]
+    LISTED = PERSISTED + [{"document_number": "21/3", "date": "2025-01-16"}]
+
+    @staticmethod
+    def state(votes: bool, speeches: bool = True, reason: str | None = None) -> dict:
+        return {"votes": votes, "speeches": speeches, "reasons": {"votes": reason, "speeches": None}}
+
+    def completeness(self) -> dict:
+        return {"21/1": self.state(False, reason="votes partial (scan_budget_exhausted)")}
+
+    def test_sitting_gaps_name_missing_unreported_and_partial_sittings_oldest_first(self) -> None:
+        catalog = facts.sitting_catalog(self.LISTED, authoritative=True)
+        gaps = facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog)
+        self.assertEqual(list(gaps), ["21/1", "21/2", "21/3"])
+        self.assertEqual(gaps["21/1"]["reasons"], {"votes": "votes partial (scan_budget_exhausted)"})
+        self.assertEqual(gaps["21/2"]["reasons"], {"dossier": "no_report"})
+        self.assertEqual(gaps["21/3"], {"date": "2025-01-16", "reasons": {"dossier": "not_persisted"}})
+
+    def test_without_an_authoritative_catalog_nothing_can_be_listed(self) -> None:
+        for catalog in (None, facts.sitting_catalog(self.LISTED, authoritative=False)):
+            with self.subTest(catalog=catalog):
+                self.assertEqual(facts.sitting_gaps(self.PERSISTED, self.completeness(), catalog), {})
+                self.assertEqual(facts.incomplete_periods(self.PERSISTED, self.completeness(), catalog), [])
+
+    def test_a_sitting_without_a_dossier_is_named_once_under_dossier_in_every_period(self) -> None:
+        catalog = facts.sitting_catalog(self.LISTED, authoritative=True)
+        periods = facts.incomplete_periods(self.PERSISTED, self.completeness(), catalog)
+        self.assertEqual({p["period_kind"] for p in periods}, {"week", "month"})
+        for period in periods:
+            missing = [s for s in period["sittings"] if s["document_number"] == "21/3"]
+            if missing:
+                self.assertEqual(missing[0]["reasons"], {"dossier": "not_persisted"}, period["period_key"])
+        month = next(p for p in periods if p["period_kind"] == "month")
+        self.assertEqual([s["document_number"] for s in month["sittings"]], ["21/1", "21/2", "21/3"])
+
+    def test_gap_notes_cover_every_domain_and_period_or_say_why_none_can_be_judged(self) -> None:
+        catalog = facts.sitting_catalog(self.LISTED, authoritative=True)
+        notes = facts.gap_notes(self.PERSISTED, self.completeness(), catalog)
+        week_key = facts.build_periods(self.PERSISTED, catalog)[0][0].period_key
+        self.assertIn("Sitzung 21/1: Abstimmungen nicht vollständig erfasst", notes[("week", week_key, "votes")])
+        self.assertNotIn(("week", week_key, "speeches"), notes)
+        blind = facts.gap_notes(self.PERSISTED, self.completeness(), None)
+        self.assertTrue(blind)
+        self.assertTrue(all("DIP-Katalog" in note for note in blind.values()))
+        self.assertEqual({domain for _kind, _key, domain in blind}, {"votes", "speeches"})
+
+    def test_a_period_only_the_catalog_knows_takes_its_date_and_newest_wahlperiode_from_the_catalog(self) -> None:
+        catalog = facts.sitting_catalog(
+            self.PERSISTED
+            + [
+                {"document_number": "20/300", "date": "2025-03-04"},
+                {"document_number": "21/9", "date": "2025-03-05"},
+            ],
+            authoritative=True,
+        )
+        weeks, months = facts.build_periods(self.PERSISTED, catalog)
+        week = next(w for w in weeks if not w.protocols)
+        month = next(m for m in months if not m.protocols)
+        self.assertEqual((week.wahlperiode, month.wahlperiode), (21, 21))
+        self.assertEqual(week.first_date, date(2025, 3, 4))
+        self.assertEqual(month.first_date, date(2025, 3, 4))
+        self.assertFalse(facts.week_is_complete(week, {}, "votes"))
+
+    def test_sitting_catalog_dedups_by_number_reads_both_spellings_and_counts_the_unplaceable(self) -> None:
+        catalog = facts.sitting_catalog(
+            [
+                {"dokumentnummer": " 21/2 ", "datum": "2025-01-09T00:00:00"},
+                {"document_number": "21/2", "date": "2025-01-09"},
+                {"dokumentnummer": "21/1", "datum": "2025-01-02"},
+                {"dokumentnummer": "21/4", "datum": "kein Datum"},
+                {"dokumentnummer": "", "datum": "2025-01-10"},
+            ],
+            authoritative=True,
+        )
+        self.assertEqual([s["document_number"] for s in catalog.sittings], ["21/1", "21/2"])
+        self.assertEqual(catalog.unusable, 2)

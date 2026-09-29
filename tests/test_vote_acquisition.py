@@ -86,6 +86,19 @@ class ScanEndTests(unittest.TestCase):
         self.assertEqual((first.pages_fetched, first.pages_from_cache), (2, 0))
         self.assertEqual((second.pages_fetched, second.pages_from_cache), (0, 2))
 
+    def test_a_failed_page_fetch_is_not_cached_and_is_fetched_again(self) -> None:
+        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
+        good = paged(pages)
+        cache: dict[str, str] = {}
+        with mock.patch.object(dip, "fetch_html", side_effect=dip.DipError("boom")):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
+        self.assertEqual(cache, {})
+        with mock.patch.object(dip, "fetch_html", side_effect=good):
+            result = dip.fetch_roll_call_vote_candidates("2026-07-01", 3, include_diagnostics=True, page_cache=cache)
+        self.assertEqual((result.pages_fetched, result.pages_from_cache), (1, 0))
+        self.assertEqual(len(cache), 1)
+
     def test_not_scanning_is_not_a_scan_end(self) -> None:
         result = dip.fetch_roll_call_vote_candidates("2026-07-01", 0, include_diagnostics=True)
         self.assertEqual(result.scan_end, "not_scanned")
@@ -224,6 +237,34 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         self.assertEqual((votes["acquisition_state"], votes["records"]), ("partial", 1))
         self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
 
+    def test_a_failed_vote_request_does_not_blame_the_top_matching_for_the_votes_it_never_read(self) -> None:
+        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "01.07.2026", "21/2"), ("3", "30.06.2026", "21/3"))]
+        calls: list[str] = []
+
+        def detail(candidate: dict) -> dict:
+            calls.append(candidate["id"])
+            raise dip.DipError("timeout")
+
+        stderr = io.StringIO()
+        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch.object(
+            dip, "fetch_roll_call_vote_detail", side_effect=detail
+        ), mock.patch("sys.stderr", stderr):
+            enrichment = dip.enrich_with_api(
+                FakeClient(),  # type: ignore[arg-type]
+                {"id": "p1", "dokumentnummer": "21/90", "datum": "2026-07-01"},
+                agenda("21/1", "21/2"),
+                person_limit=0,
+                vote_scan_pages=3,
+            )
+        # The first failure stops further vote requests for this sitting.
+        self.assertEqual(len(calls), 1)
+        votes = enrichment["acquisition"]["votes"]
+        self.assertEqual((votes["acquisition_state"], votes["records"]), ("failed", 0))
+        self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
+        self.assertIn("vote details unavailable", stderr.getvalue())
+        self.assertNotIn("matched no TOP", stderr.getvalue())
+        self.assertFalse(any("keinem TOP" in warning for warning in enrichment["warnings"]))
+
     def test_the_progress_log_counts_the_requests_the_vote_scan_made(self) -> None:
         pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "01.07.2026", "21/77"), ("3", "30.06.2026", "21/3"))]
         lines: list[str] = []
@@ -240,6 +281,16 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
             )
         self.assertIn("Roll-call scan ended by date_passed: 1 list page(s) fetched, 0 reused from this build.", lines)
         self.assertIn("Roll-call details: 1 vote(s) fetched (2 requests), 1 candidate(s) matched no TOP.", lines)
+
+    def test_a_vote_without_an_xlsx_link_or_official_result_is_still_complete(self) -> None:
+        # The Namenslisten endpoint only serves a rolling window, so an older
+        # vote normally has neither; only the votes themselves count.
+        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
+        enrichment, _ = self.enrich(pages, "2026-07-01", ("21/1",))
+        vote = enrichment["agenda_items"][0]["votes"][0]
+        self.assertIsNone(vote.get("xlsx_url"))
+        self.assertIsNone(vote.get("result_source"))
+        self.assertEqual(enrichment["acquisition"]["votes"]["acquisition_state"], "complete")
 
     def test_no_scan_is_not_requested(self) -> None:
         enrichment, _ = self.enrich([], "2026-07-01", ("21/1",), scan_pages=0)
