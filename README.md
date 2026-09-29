@@ -265,8 +265,12 @@ cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -
 cp -cR .context/baseline .context/after
 #    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...):
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
-#    needs the XML or a profile lookup again (Rede text, match kinds): an online run into the copy,
-#    e.g. `--document-number 21/84`, or `--backfill-incomplete` (see "Try a fetch or a backfill in a scratch directory")
+#    needs the XML or a profile lookup again (Rede text, merged Redner records, match kinds): an online run into
+#    the copy, e.g. `--document-number 21/84`, or `--backfill-incomplete` (see "Try a fetch or a backfill in a
+#    scratch directory"). To re-parse every cached sitting, name each one (about 30 s per sitting without votes,
+#    so 2 to 3 hours for 300 sittings; `--no-votes` keeps the votes already cached):
+python3 scripts/build_dip_pulse_site.py --output-dir .context/after --no-votes \
+  $(ls .context/after/data/plenarprotokoll-2*-*.json | sed -E 's#.*plenarprotokoll-([0-9]+)-([0-9]+)\.json#--document-number \1/\2#')
 
 # 3. Compare, old first
 python3 scripts/compare_store_values.py .context/baseline .context/after                 # the fixed cohort (default)
