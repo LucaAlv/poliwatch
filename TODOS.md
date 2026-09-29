@@ -287,17 +287,24 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Community
 
-### Choose and document repository license and contribution governance
+### Contribution governance: SECURITY.md, conduct rules, issue forms, contact channels
 
-**What:** Make an explicit legal/product choice for the project license, contribution process, security reporting, conduct expectations, and support channel.
+**What:** Implement ADR 0003 D5:
+- `SECURITY.md` with a scope section, and GitHub private vulnerability reporting switched on.
+- `/.well-known/security.txt` on the site.
+- Short German conduct rules (no party politics in issues, no disparaging statements about people), linked from `CONTRIBUTING.md`.
+- `.github/ISSUE_TEMPLATE/` with the „Datenfehler" and „Fehler auf der Seite" forms, auto-applying triage labels, and `config.yml` with `blank_issues_enabled: false` and a contact link to the Impressum e-mail for private matters.
+- The site's `issues_url` link pre-fills the page URL in the Datenfehler form.
 
-**Why:** A public repository without these files is difficult for outside contributors to use or redistribute confidently, even when its local developer experience is strong.
+Done when a new issue can only be opened through one of the two forms and `security.txt` is served by the preview.
 
-**Context:** This was identified during the developer-experience review but is deliberately separate from the fixed-public-experience migration. Begin with repository ownership and intended contribution model, obtain appropriate legal guidance for the license decision, then add the chosen `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, code of conduct, and issue templates consistently. Do not infer a license from code visibility alone.
+**Why:** Data-error reports are the most valuable contribution and need structure. Private requests (GDPR, corrections from the people concerned, press) need a non-public channel. On a political site, the conduct risk is party-political debate, which a generic code of conduct does not address.
 
-**Effort:** M
+**Context:** Decided 2026-09-29 ([ADR 0003](docs/adr/0003-licences-and-impressum.md), D5). E-mail is answered at the owner's discretion and only for matters that cannot be public. `security.txt` needs the final domain and the dedicated e-mail address, both also needed by the Impressum item.
+
+**Effort:** S
 **Priority:** P3
-**Depends on:** Repository owner/legal product decision
+**Depends on:** Domain and contact address (Impressum item)
 
 ## Plenarwatch-Lücken
 
@@ -447,15 +454,61 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** None
 
-### Impressum and a final licence text before the site goes public
+### Impressum, Datenschutz and licence files before the site goes public
 
-**What:** `impressum.html` (§ 5 DDG, name, address, contact) linked from every footer, and the placeholder "Die genaue Lizenzformulierung … steht noch aus" (`scripts/build_dip_pulse_site.py:6495-6499`, `docs/data-license.md` status "pending") replaced by the decided licence on `sources.html`, the Daten page and the export manifest. Done when `grep -rn "steht noch aus"` over the generated site is empty.
+**What:** Implement [ADR 0003](docs/adr/0003-licences-and-impressum.md):
+- `impressum.html`: Luca Veh as a private person; postal address and e-mail; citing § 5 DDG and § 18 MStV; the same person named as Verantwortlicher under § 18 Abs. 2 MStV.
+- `datenschutz.html`.
+- Both linked from every footer.
+- `LICENSE` (MIT, code only, pointing to `LICENSE-DATA.md` for data).
+- The short string from `docs/data-license.md` set as the default `--data-license`.
+- The `lizenz` item on `sources.html` (the "Die genaue Lizenzformulierung … steht noch aus" placeholder in `scripts/build_dip_pulse_site.py`) replaced by the layer table.
+- The site's machine-generated summaries labelled as such.
 
-**Why:** Both are hard requirements the day the hosting plan under Daten ships; plenarwatch carries Impressum, Methodik and a GbR name in every footer. The licence question is already open in `docs/data-license.md`; this item ties its deadline to hosting.
+Done when `grep -rn "steht noch aus"` over the generated site is empty and every footer links Impressum and Datenschutz.
 
-**Context:** Content decision is the user's (which licence, whose name in the Impressum); the code change is a footer link and one string. Blocks the hosting item, not the other way round.
+**Why:** Name and address are required for any non-private Telemedium (§ 18 Abs. 1 MStV). The DIP terms require naming the source and marking changes on redistribution. Hosting can't ship without either.
+
+**Context:**
+- Decisions are made (ADR 0003).
+- Before launch, the ADR's open questions go to a lawyer, first of all whether a c/o address is enough under § 18 MStV. That answer decides which address goes in `impressum.html`.
+- Re-check § 5 DDG and DIP no. 4d if donations are added.
+- Blocks the hosting item, not the other way round.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Lawyer answer on the address (ADR 0003, question 1)
+
+### Tag the abgeordnetenwatch MP columns with their real source
+
+**What:** Move `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` from `_COLUMN_SOURCE_DIP_ROSTER` to `_COLUMN_SOURCE_ABGEORDNETENWATCH` (`scripts/build_dip_pulse_site.py`), with a test that pins the tags. Afterwards, delete the "Known gap" paragraph in `docs/data-license.md`.
+
+**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
 
 **Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Cite protocols as „BT-PlPr." per DIP no. 4c
+
+**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
+
+**Why:** DIP no. 4c prescribes the abbreviations exactly.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Settle the roll-call source for redistribution
+
+**What:**
+- Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten.
+- Ask parlamentsdokumentation@bundestag.de whether the roll-call XLSX lists may be redistributed.
+- If the answer is no, or only the XLSX carries the non-voters, source per-member votes from the protocol XML or from abgeordnetenwatch (CC0) instead.
+
+**Why:** bundestag.de's default terms are private use only. The Open Data page calls the XLSX lists open data but names no licence (ADR 0003, open question 5).
+
+**Effort:** S (check and e-mail); M if the source must change
 **Priority:** P2
 **Depends on:** None
 
