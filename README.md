@@ -253,6 +253,34 @@ python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .cont
 
 It applies what is derived when persisting. It does not re-parse XML or re-resolve profiles; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 
+#### Validate a data correction
+
+A change that moves a stored value (a parsing rule, a derivation, an identity rule) is checked against the store before it is trusted: keep a copy of the store from before the change, apply the change to another copy, and let `scripts/compare_store_values.py` print what moved.
+
+```bash
+# 1. The baseline: a copy of the whole output directory, made before the change
+cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -R elsewhere
+
+# 2. Apply the change to a second copy, by the route it needs (4c)
+cp -cR .context/baseline .context/after
+#    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...):
+python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
+#    needs the XML or a profile lookup again (Rede text, match kinds): an online run into the copy,
+#    e.g. `--document-number 21/84`, or `--backfill-incomplete` (see "Try a fetch or a backfill in a scratch directory")
+
+# 3. Compare, old first
+python3 scripts/compare_store_values.py .context/baseline .context/after                 # the fixed cohort (default)
+python3 scripts/compare_store_values.py .context/baseline .context/after --cohort all    # whole-store coverage
+```
+
+Both arguments are output directories (the store plus the generated pages). The script only reads, and exits 0 once it compared, 2 for a directory that is not an output directory. It prints old, new and the delta for the row counts, `parties` (mps rows, MdB, Reden naming each name; a name that appears or disappears is listed), the Mehrheitsvotum distribution, votes and their newest date, the characters of all Reden (with the largest per-protocol moves and the characters no speaker could be found for), the Redeanteil per Zusammenschluss and Sprechrolle, the Reden that fall back to the speaker's party, the Zusammenführung (records, merges per provenance, name buckets left split), the `r3-abweichler` recipe, the generated pages, and the stored facts: publishable weeks and months, every period that stopped being complete with its reason, and every changed winner with the identity of the winning speech or vote.
+
+- **Fixed cohort** (default) compares what is parsed from a protocol on the protocols both stores hold, so a sitting an online run acquired does not blur a value fix. **`--cohort all`** shows what a rebuild added or lost. Row counts, parties, pages and facts are always whole-store, and say so in their heading.
+- A quantity with no evidence in a store (an older schema without the column, a page directory that was not built, no MdB roster) prints `unavailable`, never 0. A one-sided quantity shows the other side's figures against `unavailable`.
+- Quote the output in the commit that changes the value, with one or two examples a reader can check at the source: the protocol, the Rede id or vote id, the page. Say which part the change fixes and which it only measures.
+
+Tests for the script are in `tests/test_compare_store_values.py`; `scripts/compare_store_values.py --help` lists the options.
+
 Hard reset, when the cache itself is suspect:
 
 ```bash

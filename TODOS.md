@@ -4,57 +4,6 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ## Daten
 
-### `parties.name` still holds two concatenated names and three Gruppe spellings
-
-**What:** After the list-repr fix and migration (A1 step 1, 2026-09-22) the store has 15 `parties` rows, of which five are still not one Fraktion each: `'SPDSPD'` (1 MdB) and `'SPDCDU/CSU'` (1 MdB), and the pairs `'BSW (Gruppe)'` (10) / `'Gruppe BSW'` (10) / `'BSW'` (0) and `'Die Linke (Gruppe)'` (16) / `'Gruppe Die Linke'` (29). Decide the canonical spelling for the two Gruppen, add it to `normalize_faction` (`scripts/validate_dip_protocol.py:593`), and drop or split the two concatenated rows.
-
-**Why:** Same consequence as the list-repr bug the migration just fixed: anything grouping by `parties.name` — R2's "Redeanteil je Fraktion", the Fakten cards' Fraktion caption — splits one Fraktion across two rows. Left open deliberately when the migration landed, because neither residue comes from the list-repr bug and folding them in would have meant guessing.
-
-**Context:** Causes established 2026-09-22, both different from the list-repr bug, which is why the migration does not touch them.
-- `'SPDSPD'`/`'SPDCDU/CSU'` come from the **source XML**: `21045.xml` carries `<redner id="11005217 999990074"><name><vorname>SvenjaSvenja</vorname><nachname>SchulzeSchulze</nachname><fraktion>SPDSPD</fraktion></name></redner>` in an `ivz-eintrag`, i.e. two TOC entries merged into one element by the Bundestag. Two speakers are affected, across twelve protocols: redner `11005217 999990074` ("SvenjaSvenja SchulzeSchulze", SPDSPD) in 21/18, 21/24, 21/25, 21/28, 21/44, 21/45, and redner `11005304` ("Dirk-UlrichAlexander Mende Föhr", SPDCDU/CSU) in 20/91, 20/94, 20/96, 20/103, 20/114, 20/116. The earlier note in this file ("no current code path concatenates names, so just fold them into the migration") was wrong. Fix belongs in `parse_redner` (`scripts/validate_dip_protocol.py:313`): detect a doubled `<redner id>` and either split it or drop the entry, then the parties rows disappear on the next rebuild.
-- The Gruppe spellings are two DIP surfaces disagreeing: `/person` returns `"Gruppe BSW"`/`"Gruppe Die Linke"` (via `ingest_mdb_roster`), the protocol's `sampled_people` return `"BSW (Gruppe)"`/`"Die Linke (Gruppe)"`, and `normalize_faction` has no rule for either. `'BSW'` (0 MdBs) is a third spelling with no rows behind it.
-- Added 2026-09-24: this also affects MP identity, not only aggregates. On the 2026-09-19 store no `mps` row is referenced by both `speeches` and `vote_members` (0 overlap), so every speech↔vote link for a person is made by `collect_abgeordnete`'s pass 2 (normalized name + party, `scripts/build_dip_pulse_site.py` ~5446-5470). A person whose speaker row says `BSW (Gruppe)` and whose vote/roster row says `Gruppe BSW` won't merge unless `_normalized_mp_party` happens to fold them. After the fix, check that on a rebuilt store.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-### Credit a Rede's text only to its Redner (Sitzungsleitung and Zwischenfragen leak in)
-
-**What:** `speech_text_and_paragraphs()` (`scripts/validate_dip_protocol.py:365`) joins every direct `<p>` of a `<rede>` except the `klasse="redner"` marker lines, so the words of the Sitzungsleitung (after a `<name>` element) and of Zwischenfragen by other MdBs (after a `<p klasse="redner">` with a different `redner id`) are stored as the main Redner's text. Split the `<rede>` by current speaker, keep only the paragraphs spoken while the current speaker is the Rede's first `redner id`, and store the others separately or drop them. Also decide how to detect Gastansprachen (CONTEXT.md: shown with the Sitzung, never counted as a Rede) and keep them out of speech counts.
-
-**Why:** `speeches.text`, `char_count` and `paragraph_count` feed `laengste-rede` and every length metric. The inflation is uneven: a Rede with several Zwischenfragen grows, one without doesn't, so length rankings partly reward exchanges instead of long speeches. Measured on 21/84 (2026-09-25): 89 of 99 Reden contain text not by their Redner; counted text is 348,218 chars against 332,742 by the Redner, i.e. Sitzungsleitung +3.2% and other speakers +1.4%. The measurement is approximate: text after a `<name>` that the Redner resumes without a new `redner` marker was counted as Sitzungsleitung.
-
-**Context:** Found while settling Rede/Zwischenfrage/Sitzungsleitung in CONTEXT.md; the XML structure definition (bundestag.de/services/opendata, `dbtplenarprotokoll_kommentiert.pdf`) says a `<rede>` may end with words of the Präsident. A Zwischenfrage should eventually be credited to the MdB who asked it. Fixing this changes stored speech text, so past Fakten on `laengste-rede` may change winner on the next rebuild.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
-### Say "nicht abgegeben", never "Abwesend", and stop inventing a Mehrheitsvotum
-
-**What:** Two small fixes to match CONTEXT.md (Stimme, nicht abgegeben, Mehrheitsvotum). (1) The Abgeordnete page labels an uncast Stimme "Abwesend" (`scripts/build_dip_pulse_site.py:5819`) while the vote panel says "nicht abg." (`scripts/render_dip_pulse_html.py:40`); use "nicht abgegeben" in both. (2) `leading_vote()` (`scripts/validate_dip_protocol.py:615`) returns `max()` over Ja/Nein/Enthaltung, so a tie yields "yes", and returns "absent" when nobody in the Zusammenschluss voted; both cases should yield no Mehrheitsvotum (NULL), and `scripts/features/votes.py:47` should stop falling back to "absent".
-
-**Why:** "Abwesend" claims an MdB was not in the room, which no published source supports (the Anwesenheitsliste under § 14 AbgG is not published). A tie reported as Ja invents a group position, and "absent" as a group position reads like a collective boycott.
-
-**Context:** Settled in /domain-modeling 2026-09-25. `vote_fractions.leading_vote` is persisted, so a rebuild is needed to clear stored values; anything reading it (vote panels, Fakten) must handle NULL.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-### One Abweichung rule: exclude fraktionslose MdBs from `r3-abweichler`, drop "Linie" from the wording
-
-**What:** Two fixes to match CONTEXT.md (Abweichung, Abweichler). (1) The Daten recipe `r3-abweichler` (`scripts/build_dip_pulse_site.py:1486`) counts fraktionslose MdBs against the pseudo-Zusammenschluss "fraktionslos"; add the `parties.name <> 'fraktionslos'` exclusion that `meiste-abweichler` (`scripts/facts.py:184`) already has. (2) Replace "gegen die Linie ihrer Fraktion" (`scripts/facts.py:187` unit, `scripts/facts.py:1903` caption) and "gegen die eigene Fraktion" (`scripts/build_dip_pulse_site.py:1487` recipe title) with "anders als die Mehrheit der eigenen Fraktion oder Gruppe" or a short form of it.
-
-**Why:** Fraktionslose MdBs do not coordinate, so a "fraktionslos" majority is an artefact of the bucket, and the recipe ranks them as Abweichler for voting unlike unrelated colleagues (151 such Stimmen per the `facts.py` comment). The Daten and Fakten pages should not mean two things by one word. "Linie" claims a group decision the data cannot show (Gewissensfragen have none) and "Fraktion" leaves out the Gruppen the rule counts.
-
-**Context:** Settled in /domain-modeling 2026-09-26. The Enthaltung rule (an Enthaltung is never an Abweichung) is unchanged; the code already follows it. Changing the `meiste-abweichler` unit or caption text does not change its values, so no metric version bump is needed; check whether published Karten embed the old unit string. Once `leading_vote()` returns NULL for ties (item above), both queries already skip those votes via `leading_vote IN ('yes', 'no')`.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
 **What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
@@ -192,6 +141,18 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Depends on:** None
 
 
+### Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts
+
+**What:** A Rede's stored text is now only its Redner's (Sitzungsleitung and Zwischenfragen no longer leak in). Two things are left. (1) The words of an MdB who asks a Zwischenfrage (a `<p klasse="redner">` with another `redner id` inside the `<rede>`) are dropped, not stored: credit them to the asker as a Zwischenfrage of their own (CONTEXT.md: Zwischenfrage). `speech_text_and_paragraphs` (`scripts/validate_dip_protocol.py`) already walks the segments; it only returns the Redner's. (2) Detect Gastansprachen (CONTEXT.md: shown with the Sitzung, never counted as a Rede) and keep them out of speech counts.
+
+**Why:** Zwischenfragen are still counted for nobody, so an MdB who mostly asks questions shows fewer contributions than they made. Gastansprachen still count as Reden.
+
+**Context:** Measured on the 2026-09-29 store: 55 Zwischenfrage blocks in 8 sittings, all followed by the Redner's own marker or by a Präsident `<name>`; no text had an undeterminable speaker (`speeches.unattributed_char_count` is 0 everywhere). Kurzinterventionen and the Befragung/Fragestunde are their own items (#68, #70).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
 
 ### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
@@ -266,16 +227,16 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Redeanteil je Zusammenschluss per ADR 0001 (puls.html and Daten recipes)
+### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
 
-**What:** puls.html's "Redeanteil der Fraktionen" card (`scripts/build_dip_pulse_site.py`, fed by `speaker_party()` in `scripts/render_dip_pulse_html.py`) puts every speaker with a `<rolle>` into one "Regierung" row among the Fraktionen, including Bundesrat members and the Wehrbeauftragte, and heads Gruppen as "Fraktionen". Show Bundesregierung, Bundesrat and weitere Sprechrolle as three separate rows outside the Zusammenschlüsse, fraktionslose MdBs as their own row, and head the card "Redeanteil der Fraktionen und Gruppen". Same rule for the Daten recipes r1 and r2 (`COALESCE(NULLIF(s.fraktion, ''), p.name)` falls back to a Partei name). Rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil and sort it by characters, not by Reden. Done when no public row is labelled "Regierung" and no share by characters is called Redeanteil.
+**What:** The data half is done: puls.html's Redeanteil shows Bundesregierung, Bundesrat and weitere Sprechrolle as their own rows in the denominator, no row is called "Regierung", and the Daten recipes r1/r2 follow the same rule. What is left is wording: head the puls.html card "Redeanteil der Fraktionen und Gruppen" (Gruppen are still headed as "Fraktionen"), and rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
 
-**Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25) and ADR 0001's consequence "never as a pseudo-Fraktion 'Regierung'", which the ADR itself records as not yet followed.
+**Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25).
 
-**Context:** Needs the Sprechrolle to tell the three sides apart per Rede (the XML `<rolle>`); check what the store keeps. Rule (ADR 0001 amendment, 2026-09-26): Bundeskanzler, Bundesminister, Parl. Staatssekretäre, Staatsminister (Bund), Beauftragte and Koordinatoren der Bundesregierung → Bundesregierung. Land ministers, "Staatsminister (Hessen)" and the like → Bundesrat. Anything else (Wehrbeauftragte) → weitere Sprechrolle. `speaker_party_name` and `speaker_party` both need it. Related: `parties.name` item under Daten, Rede text attribution item.
+**Context:** The three sides sit in the same list as the Zusammenschlüsse in `week_stats`; a card that wants them "outside the Zusammenschlüsse" needs a visual split as well as the heading.
 
-**Effort:** M
-**Priority:** P2
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### "Nächste Sitzungswoche" in the puls.html header
@@ -410,30 +371,38 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
-
-**What:** `bill_like` (`scripts/build_dip_pulse_site.py`) keeps any Vorgangsposition whose Vorgangstyp, title or linked Drucksachen contain the substring "gesetz". Replace that test with "the Vorgang's DIP Vorgangstyp is Gesetzgebung". On the real store (285 Dossiers) `collect_bill_pages` currently yields 839 pages, of which only 551 are Gesetzgebungen. The other 288 are 193 Entschließungsanträge, 76 Anträge, 5 Rechtsverordnungen and a tail that matches only through "Grundgesetz" or "gesetzliche Krankenversicherung": Wahl des Bundeskanzlers (Art. 63 GG), Scholz's Vertrauensfrage (Art. 68 GG), Aktuelle Stunden, Große Anfragen, Geschäftsordnungsänderungen. An accompanying Entschließungsantrag may still be listed as a related item on its Gesetzgebung's page, but it gets no page of its own. Rename the public labels "Gesetze verfolgen", "Alle Gesetze", "Aktuelle Gesetze", "Verfolgte Gesetze" and the "Gesetze" nav entry to use Gesetzesvorhaben (also update `tests/test_features.py`, `tests/test_global_header.py`). The `bills/` URL path can stay. Done when every page under `bills/` is a Gesetzgebung and no public label calls one a Gesetz.
-
-**Why:** CONTEXT.md (Gesetzgebung, Gesetzentwurf, Gesetz, 2026-09-26): only a Gesetzgebung is legislation, and a Gesetzgebung is not a Gesetz until it has been verkündet.
-
-**Context:** The "Verfolgte Gesetze" count also feeds `derive_feature_readiness` (`bill_count`) and the start page. It will drop by about a third. Stored bill slugs linked from elsewhere (`bill_slugs` in `run_data_pipeline`) will then stop resolving for non-Gesetzgebung Vorgänge. Check that those links fall back cleanly.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ## Abgeordnete
 
-### Make the Namensabgleich unique, and stop treating name-found ids as proof
+### Rejoin the six people who have two Redner-IDs (a corroborated name-found id)
 
-**What:** `collect_abgeordnete` (`scripts/build_dip_pulse_site.py`) pass 2 merges every record of a name+party bucket whose ids of the same kind don't contradict each other. Require exactly one candidate on each side, and leave a bucket of namesakes split. Two records with ids of different kinds (one DIP-Person-ID only, one Redner-ID only) currently merge with nothing to contradict them. Also record whether an `aw_politician_id` came from the exact `ext_id_bundestagsverwaltung` lookup or from the resolver's name-search fallback (`scripts/abgeordnetenwatch.py`); the latter must not act as a Personenkennung in pass 1. Normalise titles ("Dr.") consistently on both sides, since roster and speaker names may differ there (check). Done when no Personenseite joins two namesakes and every join by name is unique.
+**What:** Nancy Faeser, Boris Pistorius, Clara Bünger, Daniel Rinkert, Alexander Bartz and Emily Vontz appear in the Plenarprotokolle under their MdB Redner-ID and under a 99999xxxx id for their Reden in a government role (Faeser: 11005452 and 999990119). The second record's abgeordnetenwatch id was found by name and equals the one the first record found by Redner-ID. Since name-found ids are no Personenkennung, the two records are two Personenseiten now (two records on one side stay split). Consider a rule that joins them: a name-found id equal to a trusted id of another record with the same normalised name and no contradicting Personenkennung, with its own provenance next to `ext_id` and `unique_name`. `erste-reden` counts a Redner-ID as a person, so these six also read as extra debutants; grouping it by `mp_canonical` would fix that once the records are joined.
 
-**Why:** CONTEXT.md (Personenkennung, Namensabgleich, Zusammenführung, 2026-09-25): a split Person is preferable to two Persons shown as one.
+**Why:** A Person shown twice is the accepted price of the Namensabgleich rule, but here the evidence for one Person is strong and repeated. Measured 2026-09-29 on the reference store: `erste-reden` moved in 15 weekly periods (by 1 to 3) and flipped `publishable` twice when the records were split.
 
-**Context:** Worth checking the Bundestag's MdB-Stammdaten as an official bridge. As far as known, they carry the same ID as the Plenarprotokoll's Redner-ID, plus name and Fraktion histories, and could replace most name matching between the DIP roster and the Reden. Related: `parties.name` spellings under Daten, which break name+party buckets.
+**Context:** The same measurement found five name-search matches that were the wrong person (Vinzenz/Albrecht Glaser, Nora/Thomas Seitz, Sonja/Steffi Lemke, Nicole/Martin Hess, Serdar/Gülistan Yüksel) and those are fixed. A corroboration rule must not rejoin them: there the names differ.
 
-**Effort:** M
-**Priority:** P2
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### The Bundestag XML gives one Redner-ID to two people (11005304)
+
+**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
+
+**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Store DIP `person_roles` so a Rede without a Zusammenschluss uses the Zugehörigkeit of its Wahlperiode
+
+**What:** ADR 0001 says a Rede whose Plenarprotokoll names no Zusammenschluss counts for the speaker's Zugehörigkeit on the date of the Sitzung. The store keeps no membership history: `mps.person_roles_json` is DIP's `funktion` list, and `compact_person` drops DIP's `person_roles` (fraktion and Wahlperiode per role). The Rede therefore counts for the speaker's party as the store holds it. Keep `person_roles`, and let `derive` pick the role of the Rede's Wahlperiode.
+
+**Why:** Measured 2026-09-29: only 1 Rede (20/109 ID2010905000) has neither a Zusammenschluss nor a Sprechrolle, so the approximation costs almost nothing today; `compare_store_values.py` reports the count so it stays visible.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
@@ -798,3 +767,32 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 **Completed:** v0.8.0.0 (2026-09-29). Cause: vote scraping was opt-in (`features.json` ships an empty `enrich` list), so every update since June recorded votes as `not_requested`. Votes are now a default enrichment (`--no-votes` opts out). Backfilled into a scratch copy of the reference store: votes 217 -> 232, newest 2026-06-12 -> 2026-09-25 (2026-06-25 1, 07-08 1, 07-09 1, 07-10 8, 09-24 1, 09-25 3).
 
+### One Zusammenschluss per `parties` row
+
+**What:** `parties` had `SPDSPD`, `SPDCDU/CSU`, `BSW`, `BSW (Gruppe)`, `Die Linke (Gruppe)` beside `Gruppe BSW`/`Gruppe Die Linke`, and the Die Linke row mixed the WP 20 Fraktion, the WP 20 Gruppe and the WP 21 Fraktion.
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `derive.zusammenschluss` maps every spelling to one name and `upsert_party` routes every name through it. A WP 20 Rede from 2023-12-06 on naming "Die Linke" is a Gruppe Die Linke Rede (`derive.speech_zusammenschluss`; 383 Reden move). The merged Bundestag records are read from the printed label (`parse_redner`) or, in cached reports, drop their Fraktion. Reference store: 15 parties -> 9 (10 after this item, 9 after the Regierung item). The cause was not only the table of contents: the merged `<redner>` elements sit inside the `<rede>` too.
+
+### Credit a Rede's text only to its Redner
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `speech_text_and_paragraphs` keeps only what the Redner said (a `<name>` is the Sitzungsleitung, a `<p klasse="redner">` marker names the speaker); the Redner resumes under an explicit marker, so no resumption is inferred (checked on 961 Reden of 8 sittings, WP 20 and 21). Reference store: 126.300.719 -> 121.793.810 characters (-4.506.909), 21/84 349.531 -> 333.888 (89 of 99 Reden change), `laengste-rede` 54 periods (35 lower value, 4 newly and 5 no longer publishable). The Zwischenfrage and Gastansprache remainder is tracked above.
+
+### Say "nicht abgegeben", never "Abwesend", and stop inventing a Mehrheitsvotum
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `derive.majority_vote` is the plurality among Ja/Nein/Enthaltung and None on a tie or when nobody voted; persist and the pages derive it from the counts and ignore a cached value. Reference store: 37 `vote_fractions` rows lose their Mehrheitsvotum (29 fraktionslos Ja/Nein ties that read "yes", 3 shared tops, 5 "absent"). The Abgeordnete page and the vote panel say "nicht abgegeben".
+
+### One Abweichung rule: exclude fraktionslose MdBs from `r3-abweichler`, drop "Linie" from the wording
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `r3-abweichler` excludes `fraktionslos` (381 -> 371 rows, 806 -> 648 Abweichungen; the old top entry was a fraktionsloser MdB with 81), and the recipe title, the `meiste-abweichler` unit, caveat and Karte caption say "anders als die Mehrheit der eigenen Fraktion oder Gruppe".
+
+### Sprechrolle per Rede, no "Regierung" party (ADR 0001, data half)
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `speeches.sprechrolle` (bundesregierung, bundesrat, weitere) from `SPRECHROLLE_RULES` in `scripts/derive.py`; an unmapped role fails persist with one `ERROR [sprechrolle]` naming all of them. Reference store: Bundesregierung 5.394 Reden, Bundesrat 61, weitere 8; 1.556 Reden of MdBs in a government role leave their Fraktion's Redeanteil. The wording half is tracked above.
+
+### Make the Namensabgleich unique, and stop treating name-found ids as proof
+
+**Completed:** branch `fix-stored-values` (2026-09-29). Only an abgeordnetenwatch id looked up by the Redner-ID (`match` = ext_id) is a Personenkennung (`mps.aw_match`); Zusammenführung joins by shared Personenkennung (ext_id) or by a unique 1+1 name+party bucket (unique_name), titles ignored, and every Personenseite records its merges. Reference store: five wrong-person matches undone (108 Reden), 640 ext_id and 861 unique_name merges, 322 + 397 name buckets left split. Follow-ups: the six double-ID people above and the shared Redner-ID 11005304.
+
+### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
+
+**Completed:** branch `fix-stored-values` (2026-09-29). `is_gesetzgebung` (Vorgangstyp) replaces the keyword test; Entschließungsanträge and the like are listed as "Begleitende Vorlagen" on their Gesetzgebung's page; labels say Gesetzesvorhaben. Reference store: 903 -> 594 bill pages. The old figures (839 -> 551) were measured on a smaller store.
