@@ -100,6 +100,16 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(before, sha(self.database))
         self.assertFalse(self.database.with_name(f".{self.database.name}.tmp").exists())
 
+    def test_non_object_cached_json_aborts_and_leaves_the_store_alone(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        (self.output_dir / "data" / "plenarprotokoll-21-99.json").write_text("[]", encoding="utf-8")
+        with self.assertRaises(build.CachedReportError) as caught:
+            self.repersist()
+        self.assertIn("top-level JSON value is not an object", str(caught.exception))
+        self.assertEqual(before, sha(self.database))
+        self.assertFalse(self.database.with_name(f".{self.database.name}.tmp").exists())
+
     def test_a_report_that_fails_to_persist_leaves_an_old_schema_store_byte_identical(self) -> None:
         # An older schema: a column the current initialize() would add is
         # missing. The source must be read as it is, not migrated, so even a
@@ -188,6 +198,36 @@ class RepersistTests(unittest.TestCase):
         code, err = self.run_main("--repersist")
         self.assertEqual(code, 0, err)
         self.assertIn("store content unchanged, file kept", err)
+
+    def test_the_command_preserves_roster_when_mp_roster_is_selected(self) -> None:
+        self.repersist()
+        conn = pulse_store.connect(self.database)
+        try:
+            now = pulse_store.utc_now()
+            with conn:
+                pulse_store.upsert_mp(
+                    conn,
+                    now=now,
+                    display_name="Ada Lovelace",
+                    party_id=pulse_store.upsert_party(conn, "SPD", now),
+                    identity_key="dip:ada",
+                    dip_person_id="ada",
+                    is_mdb=True,
+                )
+        finally:
+            conn.close()
+
+        code, err = self.run_main("--repersist", "--enrich", "mp-roster")
+
+        self.assertEqual(code, 0, err)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM mps WHERE identity_key = 'dip:ada' AND is_mdb = 1").fetchone()[0],
+                1,
+            )
+        finally:
+            conn.close()
 
     def test_the_flag_needs_offline_and_persistence(self) -> None:
         for argv in (["build", "--repersist"], ["build", "--offline", "--repersist", "--no-persist"]):

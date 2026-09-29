@@ -6504,7 +6504,18 @@ def collect_abgeordnete(
         else:
             totals["buckets_split_namesakes"] += 1
     for left, right in pending:
+        left_root, right_root = find(left), find(right)
+        if left_root == right_root:
+            continue
+        # Earlier queued joins can add identifiers to either component. Check
+        # the current components so aliases cannot bridge two different people.
+        if _external_ids_conflict(
+            _merge_external_ids(rows_of[left_root]), _merge_external_ids(rows_of[right_root])
+        ):
+            totals["buckets_split_namesakes"] += 1
+            continue
         union(left, right, "unique_name")
+        rows_of[right_root].extend(rows_of.pop(left_root))
 
     # Group the merged rows back into one bucket per person.
     components: dict[int, list[dict[str, Any]]] = {}
@@ -10735,7 +10746,7 @@ def main() -> int:
         if getattr(args, "repersist", False):
             try:
                 cached_entries, replaced = repersist_cached_reports(
-                    output_dir, database_path, protocols, preserve_roster="mp-roster" not in enrichments
+                    output_dir, database_path, protocols, preserve_roster=True
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
