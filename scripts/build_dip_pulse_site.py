@@ -123,7 +123,7 @@ from features import votes as votes_feature
 # here falls back to a generic sentence in render_daten_schema().
 DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
-    "parties": "Normalisierte Parteien und Rollen wie Regierung oder fraktionslos.",
+    "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
@@ -131,11 +131,11 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
-    "speeches": "Extrahierte Redebeiträge mit Redner, Seite, Textumfang, Snippet und optionalem Volltext.",
+    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere).",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
-    "vote_fractions": "Fraktionssummen je namentlicher Abstimmung.",
+    "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
