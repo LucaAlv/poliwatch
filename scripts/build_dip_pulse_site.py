@@ -365,8 +365,8 @@ def select_acquisition_protocols(
 # Sittings DIP has published no XML for cannot be acquired yet and are
 # returned separately so the caller can say so instead of failing on them.
 def incomplete_sitting_protocols(
-    entries: list[dict[str, Any]], catalog: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    entries: list[dict[str, Any]], catalog: list[dict[str, Any]], *, votes: bool = True
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -381,10 +381,18 @@ def incomplete_sitting_protocols(
     )
     acquirable: list[dict[str, Any]] = []
     waiting: list[dict[str, Any]] = []
+    vote_only: list[dict[str, Any]] = []
     for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
-        if normalized_document_number(protocol.get("dokumentnummer")) in gaps:
+        gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
+        if gap is None:
+            continue
+        if not votes and set(gap["reasons"]) == {"votes"}:
+            # Votes are off, so re-acquiring this sitting would download it
+            # again and leave it exactly as incomplete as it is.
+            vote_only.append(protocol)
+        else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
-    return acquirable, waiting
+    return acquirable, waiting, vote_only
 
 
 def _first_numbers(numbers: list[str], limit: int = 3) -> str:
@@ -455,7 +463,12 @@ def format_incomplete_report(
         exhausted = any(
             "scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values()
         )
-        if exhausted:
+        vote_gaps = any("votes" in gap["reasons"] for gap in gaps.values())
+        if vote_scan_pages == 0 and vote_gaps:
+            # Votes are switched off in this build's configuration; an
+            # explicit --enrich lifts a config veto (not --no-votes).
+            command += " --enrich votes"
+        elif exhausted:
             command += f" --vote-scan-pages {max(2 * vote_scan_pages, vote_scan_pages + 30)}"
         lines.append(f"  Fix: {command}   (acquires {len(acquirable)} sittings; every other cached dossier is kept)")
     else:
@@ -10147,7 +10160,7 @@ def run_data_pipeline(
             facts_report,
             output_dir=output_dir,
             catalog_protocols=protocols,
-            vote_scan_pages=int(getattr(args, "vote_scan_pages", None) or 30),
+            vote_scan_pages=30 if getattr(args, "vote_scan_pages", None) is None else int(args.vote_scan_pages),
         ):
             print(line, file=sys.stderr)
 
@@ -10389,9 +10402,15 @@ def main() -> int:
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
         if getattr(args, "backfill_incomplete", False):
-            acquisition_scope, waiting = incomplete_sitting_protocols(
-                load_existing_detail_entries(output_dir, protocols), protocols
+            acquisition_scope, waiting, vote_only = incomplete_sitting_protocols(
+                load_existing_detail_entries(output_dir, protocols), protocols, votes=args.vote_scan_pages != 0
             )
+            if vote_only:
+                print(
+                    f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "
+                    "(--no-votes, --vote-scan-pages 0 or a -votes entry). Fix: add --enrich votes.",
+                    file=sys.stderr,
+                )
             print(
                 f"[backfill] {len(acquisition_scope)} incomplete or missing sitting(s) to acquire"
                 + (

@@ -193,7 +193,7 @@ python3 scripts/build_dip_pulse_site.py --output-dir .context/dip-pulse-site --b
 # add --vote-scan-pages 60 when the list names scan_budget_exhausted
 ```
 
-`--backfill-incomplete` acquires exactly the listed sittings DIP has XML for, ignoring `--limit` and `--detail-limit` (and it cannot be combined with `--document-number`); every other cached dossier is kept. Each sitting is a full re-download of its XML and DIP data, so a backfill of many sittings takes a while. A sitting that is still incomplete afterwards stays in the next report with its reason.
+`--backfill-incomplete` acquires exactly the listed sittings DIP has XML for, ignoring `--limit` and `--detail-limit` (and it cannot be combined with `--document-number`); every other cached dossier is kept. Each sitting is a full re-download of its XML and DIP data, so a backfill of many sittings takes a while. A sitting that is still incomplete afterwards stays in the next report with its reason. With votes switched off (`--no-votes`, `--vote-scan-pages 0` or a `-votes` config entry) the backfill skips the sittings held back only by votes, says how many, and the printed fix adds `--enrich votes`, which lifts a config veto.
 
 ### Try a fetch or a backfill in a scratch directory
 

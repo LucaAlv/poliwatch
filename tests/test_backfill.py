@@ -160,14 +160,53 @@ class BackfillSelectionTests(unittest.TestCase):
             catalog_protocol("21/1", "pp-1", "2026-06-11"),
             catalog_protocol("20/9", "pp-old", "2020-01-01"),
         ]
-        acquirable, waiting = build.incomplete_sitting_protocols(entries, catalog)
+        acquirable, waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/5", "21/3", "21/2"])
         self.assertEqual([p["dokumentnummer"] for p in waiting], ["21/4"])
+
+    def test_with_votes_off_sittings_held_back_only_by_votes_are_skipped(self) -> None:
+        entries = self.entries(
+            report_for(1, acquisition=COMPLETE_VOTES),
+            report_for(2),  # only its votes are unknown
+            {**report_for(3, acquisition=COMPLETE_VOTES), "validation_summary": {}},  # speeches not parsed
+        )
+        catalog = [catalog_protocol(f"21/{n}", f"pp-{n}", f"2026-06-{10 + n:02d}") for n in (4, 3, 2, 1)]
+        acquirable, _waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog, votes=False)
+        self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3"])
+        self.assertEqual([p["dokumentnummer"] for p in vote_only], ["21/2"])
+        acquirable, _waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog)
+        self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3", "21/2"])
+        self.assertEqual(vote_only, [])
+
+    def test_backfill_with_votes_off_says_what_it_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            for name in ("protocols", "data"):
+                (output_dir / name).mkdir(parents=True)
+            write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES))
+            write_cached(output_dir, report_for(2))
+            catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir),
+                    "--backfill-incomplete", "--no-votes"]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
+                mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+                mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build.main()
+        self.assertEqual(code, 0, stderr.getvalue())
+        self.assertEqual(build_dossiers.call_args.args[0], [])
+        self.assertIn("skipping 1 sitting(s) held back only by votes", stderr.getvalue())
+        self.assertIn("add --enrich votes", stderr.getvalue())
 
     def test_nothing_is_selected_when_every_sitting_is_complete(self) -> None:
         entries = self.entries(report_for(1, acquisition=COMPLETE_VOTES), report_for(2, acquisition=COMPLETE_VOTES))
         catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
-        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], []))
+        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], [], []))
 
     def test_backfill_incomplete_acquires_exactly_those_ignoring_detail_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -292,6 +331,38 @@ class IncompleteReportTests(StoreCase):
         self.assertIn("votes: no vote acquisition metadata (report predates it) (1×)", text)
         # A budget-exhausted scan is only fixed by a wider scan.
         self.assertIn("--backfill-incomplete --vote-scan-pages 60", text)
+
+    def test_the_printed_fix_lifts_a_vote_veto_instead_of_repeating_it(self) -> None:
+        seeded = self.seed(week_specs(10))
+        completeness = {n: {**st, "votes": False, "reasons": {"votes": "votes not_requested"}} for n, st in seeded["completeness"].items()}
+        conn = self.writable()
+        report = facts.compute_and_store(
+            conn, facts.ALL_REGISTRY, completeness, catalog=seeded["catalog"], built={"votes"}, out=io.StringIO()
+        )
+        off = "\n".join(build.format_incomplete_report(
+            report, output_dir=Path("out"), catalog_protocols=[], vote_scan_pages=0))
+        self.assertIn("--backfill-incomplete --enrich votes", off)
+        self.assertNotIn("--vote-scan-pages", off)
+        on = "\n".join(build.format_incomplete_report(
+            report, output_dir=Path("out"), catalog_protocols=[], vote_scan_pages=30))
+        self.assertNotIn("--enrich votes", on)
+
+    def test_run_data_pipeline_passes_the_real_scan_setting_not_a_default(self) -> None:
+        args = SimpleNamespace(no_persist=False, vote_scan_pages=0, data_base_url=None, data_manifest=None,
+                               data_license=None, data_issues_url=None, force_export=False)
+        seeded = self.seed(week_specs(3))
+        with (
+            mock.patch.object(build, "export_distribution_data", return_value={}),
+            mock.patch.object(build, "collect_bill_pages", return_value=[]),
+            mock.patch.object(build, "derive_feature_readiness", return_value={}),
+            mock.patch.object(build, "run_facts_engine", return_value={}),
+            mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
+        ):
+            build.run_data_pipeline(
+                args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
+                abg_mps=[], mp_lookup={}, canonical_by_mp_id={}, catalog=seeded["catalog"],
+            )
+        self.assertEqual(fmt.call_args.kwargs["vote_scan_pages"], 0)
 
     def test_a_complete_store_prints_nothing(self) -> None:
         seeded = self.seed(week_specs(10))
