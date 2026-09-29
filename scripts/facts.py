@@ -980,10 +980,13 @@ def sitting_gaps(
         return {}
     persisted = {str(p["document_number"]): p for p in protocols}
     listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog)}
+    # Dates are compared against the whole catalog, not the judged range: DIP
+    # may have moved a stored sitting to before the range starts.
+    dated = {s["document_number"]: s["date"] for s in catalog.sittings}
     gaps: dict[str, dict[str, Any]] = {}
     for number in {*persisted, *listed}:
         reasons: dict[str, str] = {}
-        if number in persisted and number in listed and listed[number]["date"] != str(persisted[number]["date"])[:10]:
+        if number in persisted and number in dated and dated[number] != str(persisted[number]["date"])[:10]:
             reasons["dossier"] = "date_changed"
         elif number not in persisted:
             reasons["dossier"] = "not_persisted"

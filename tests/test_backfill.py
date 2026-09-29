@@ -163,7 +163,7 @@ class BackfillSelectionTests(unittest.TestCase):
             catalog_protocol("21/1", "pp-1", "2026-06-11"),
             catalog_protocol("20/9", "pp-old", "2020-01-01"),
         ]
-        acquirable, waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog)
+        acquirable, waiting, vote_only, structural = build.incomplete_sitting_protocols(entries, catalog)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/5", "21/3", "21/2"])
         self.assertEqual([p["dokumentnummer"] for p in waiting], ["21/4"])
 
@@ -174,10 +174,10 @@ class BackfillSelectionTests(unittest.TestCase):
             {**report_for(3, acquisition=COMPLETE_VOTES), "validation_summary": {}},  # speeches not parsed
         )
         catalog = [catalog_protocol(f"21/{n}", f"pp-{n}", f"2026-06-{10 + n:02d}") for n in (4, 3, 2, 1)]
-        acquirable, _waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog, votes=False)
+        acquirable, _waiting, vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog, votes=False)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3"])
         self.assertEqual([p["dokumentnummer"] for p in vote_only], ["21/2"])
-        acquirable, _waiting, vote_only = build.incomplete_sitting_protocols(entries, catalog)
+        acquirable, _waiting, vote_only, _structural = build.incomplete_sitting_protocols(entries, catalog)
         self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/4", "21/3", "21/2"])
         self.assertEqual(vote_only, [])
 
@@ -209,7 +209,7 @@ class BackfillSelectionTests(unittest.TestCase):
     def test_nothing_is_selected_when_every_sitting_is_complete(self) -> None:
         entries = self.entries(report_for(1, acquisition=COMPLETE_VOTES), report_for(2, acquisition=COMPLETE_VOTES))
         catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
-        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], [], []))
+        self.assertEqual(build.incomplete_sitting_protocols(entries, catalog), ([], [], [], []))
 
     def test_backfill_incomplete_acquires_exactly_those_ignoring_detail_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

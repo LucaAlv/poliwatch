@@ -226,7 +226,9 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
             if exc.code in {429, 500, 502, 503, 504} and attempt < PAGE_FETCH_RETRIES:
                 time.sleep(PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1))
                 continue
-            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+            failure = DipError(f"Failed to fetch {kind} {url}: {exc}")
+            failure.transient = exc.code in {429, 500, 502, 503, 504}  # type: ignore[attr-defined]
+            raise failure from exc
         except (OSError, http.client.HTTPException) as exc:
             if attempt < PAGE_FETCH_RETRIES:
                 delay = PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1)
@@ -236,7 +238,9 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
                 )
                 time.sleep(delay)
                 continue
-            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+            failure = DipError(f"Failed to fetch {kind} {url}: {exc}")
+            failure.transient = True  # type: ignore[attr-defined]
+            raise failure from exc
     raise AssertionError("unreachable")
 
 
@@ -1015,7 +1019,9 @@ def fetch_roll_call_vote_candidates(
             try:
                 html_text = fetch_html(url)
             except DipError as exc:
-                if page_cache is not None:
+                # Only a network or server failure says the site is down; a 404
+                # or 403 on one page says nothing about the next sitting's pages.
+                if page_cache is not None and getattr(exc, "transient", False):
                     page_cache[ROLL_CALL_OUTAGE_KEY] = str(exc)
                 raise
             pages_fetched += 1
@@ -1039,7 +1045,9 @@ def fetch_roll_call_vote_candidates(
         candidates=candidates,
         list_html_seen=list_html_seen,
         parsed_entry_count=parsed_entry_count,
-        selector_warning=list_html_seen and parsed_entry_count == 0,
+        # A blank page 1 is as unverifiable as a page whose markup changed: it
+        # must not read as "the list is empty, so this sitting had no votes".
+        selector_warning=parsed_entry_count == 0,
         scan_end=scan_end,
         pages_fetched=pages_fetched,
         pages_from_cache=pages_from_cache,
@@ -1146,7 +1154,14 @@ def match_roll_call_votes(
     linked_drucksachen: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
     cache: dict[str, dict[str, Any]],
+    errors: list[DipError] | None = None,
 ) -> list[dict[str, Any]]:
+    """The roll-call votes whose Drucksachen overlap the TOP's.
+
+    With ``errors`` given, a failed detail fetch is appended there and the
+    votes fetched so far are still returned: a later failure must not discard
+    a vote that was fetched successfully. Without it the error propagates.
+    """
     top_numbers = top_document_numbers(top, linked_drucksachen)
     matches: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -1154,7 +1169,13 @@ def match_roll_call_votes(
         if top_numbers and vote_numbers and top_numbers & vote_numbers:
             vote_id = str(candidate["id"])
             if vote_id not in cache:
-                cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+                try:
+                    cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+                except DipError as exc:
+                    if errors is None:
+                        raise
+                    errors.append(exc)
+                    break
             matches.append(cache[vote_id])
     return matches
 
@@ -1716,12 +1737,14 @@ def enrich_with_api(
         linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
         votes = []
         if vote_fetch_error is None:
-            try:
-                votes = match_roll_call_votes(top, linked_drucksachen, roll_call_candidates, roll_call_cache)
-            except DipError as exc:
-                vote_fetch_error = exc
+            match_errors: list[DipError] = []
+            votes = match_roll_call_votes(
+                top, linked_drucksachen, roll_call_candidates, roll_call_cache, match_errors
+            )
+            if match_errors:
+                vote_fetch_error = match_errors[0]
                 print(
-                    f"warning: roll-call vote details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {exc}",
+                    f"warning: roll-call vote details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {vote_fetch_error}",
                     file=sys.stderr,
                 )
 

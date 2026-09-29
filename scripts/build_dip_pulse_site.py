@@ -330,12 +330,13 @@ def fetch_protocols(
             break
         previous_cursor = cursor
         params["cursor"] = cursor
-    if fetch_all and num_found is not None and len(protocols) < num_found:
+    unique_protocols = len({str(p.get("id") or p.get("dokumentnummer")) for p in protocols})
+    if fetch_all and num_found is not None and unique_protocols < num_found:
         # The whole catalog is what completeness is judged against and what the
         # store keeps dossiers for: a short fetch must stop the build, not
         # become an "authoritative" catalog.
         raise dip.DipError(
-            f"DIP returned {len(protocols)} of {num_found} protocols; the catalog is incomplete. "
+            f"DIP returned {unique_protocols} of {num_found} protocols; the catalog is incomplete. "
             "Fix: run the update again."
         )
     return protocols if fetch_all else protocols[:limit]
@@ -376,9 +377,18 @@ def select_acquisition_protocols(
 # (missing), or when its report says votes or speeches are not fully acquired.
 # Sittings DIP has published no XML for cannot be acquired yet and are
 # returned separately so the caller can say so instead of failing on them.
+def _structural_vote_gap(gap: dict[str, Any]) -> bool:
+    """A gap only a better match rule can close: votes the list shows that no
+    agenda item claims. A rescan reproduces it exactly."""
+    reasons = gap["reasons"]
+    return set(reasons) == {"votes"} and (
+        "unmatched_candidate" in reasons["votes"] or reasons["votes"] == "roll-call votes matched no TOP"
+    )
+
+
 def incomplete_sitting_protocols(
     entries: list[dict[str, Any]], catalog: list[dict[str, Any]], *, votes: bool = True
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     stored = []
     for entry in entries:
         protocol = (entry.get("report") or {}).get("protocol") or {}
@@ -394,17 +404,20 @@ def incomplete_sitting_protocols(
     acquirable: list[dict[str, Any]] = []
     waiting: list[dict[str, Any]] = []
     vote_only: list[dict[str, Any]] = []
+    structural: list[dict[str, Any]] = []
     for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
         gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
         if gap is None:
             continue
-        if not votes and set(gap["reasons"]) == {"votes"}:
+        if _structural_vote_gap(gap):
+            structural.append(protocol)
+        elif not votes and set(gap["reasons"]) == {"votes"}:
             # Votes are off, so re-acquiring this sitting would download it
             # again and leave it exactly as incomplete as it is.
             vote_only.append(protocol)
         else:
             (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
-    return acquirable, waiting, vote_only
+    return acquirable, waiting, vote_only, structural
 
 
 def _first_numbers(numbers: list[str], limit: int = 3) -> str:
@@ -437,7 +450,9 @@ def format_incomplete_report(
     waiting = [number for number in missing if not has_xml.get(number, True)]
     partial = {number: gap for number, gap in gaps.items() if "dossier" not in gap["reasons"]}
     redated = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "date_changed"]
-    acquirable = [number for number in gaps if number not in waiting]
+    structural = [number for number, gap in gaps.items() if _structural_vote_gap(gap)]
+    no_xml = [number for number in gaps if not has_xml.get(number, True)]
+    acquirable = [number for number in gaps if number not in no_xml and number not in structural]
     lines = [
         f"warning: [facts] {len(weeks)} weeks and {len(months)} months are incomplete: "
         "a Fakt needs every sitting DIP lists, fully acquired."
@@ -446,6 +461,11 @@ def format_incomplete_report(
         lines.append(f"  {len(missing)} listed sittings are not in the store: {_first_numbers(missing, 12)}")
     if waiting:
         lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
+    if structural:
+        lines.append(
+            f"  {len(structural)} sittings are held back by roll-call votes no agenda item claims "
+            f"({_first_numbers(structural, 12)}); a backfill cannot fix them, they need a better match rule"
+        )
     if redated:
         lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
     if partial:
@@ -1215,6 +1235,9 @@ def reuse_existing_dossier_enrichments(
         for key in agenda_item_reuse_keys(item):
             existing_by_key[key] = item
 
+    fresh_vote_keys = {
+        pulse_html.vote_key(vote) for fresh_item in report.get("agenda_items") or [] for vote in _iter_report_votes(fresh_item)
+    }
     for item in report.get("agenda_items") or []:
         previous = next(
             (existing_by_key[key] for key in agenda_item_reuse_keys(item) if key in existing_by_key),
@@ -1227,8 +1250,12 @@ def reuse_existing_dossier_enrichments(
             # found some of a TOP's votes must not drop the ones it missed.
             current = _iter_report_votes(item)
             have = {pulse_html.vote_key(vote) for vote in current}
+            # A vote the rescan attached to another TOP stays there: the cached
+            # TOP may be a misattribution the rescan has since corrected.
             missing = [
-                copy.deepcopy(vote) for vote in _iter_report_votes(previous) if pulse_html.vote_key(vote) not in have
+                copy.deepcopy(vote)
+                for vote in _iter_report_votes(previous)
+                if pulse_html.vote_key(vote) not in have and pulse_html.vote_key(vote) not in fresh_vote_keys
             ]
             if missing:
                 item["votes"] = [*current, *missing]
@@ -1303,9 +1330,20 @@ def _keep_prior_scan_end(report: dict[str, Any], existing_report: dict[str, Any]
     for itself, which must not erase what the reused votes were verified by.
     A report cached before the field existed has none, and stays unverified.
     """
-    prior = ((existing_report or {}).get("validation_summary") or {}).get("roll_call_scan_end")
+    prior_summary = (existing_report or {}).get("validation_summary") or {}
+    prior = prior_summary.get("roll_call_scan_end")
     if prior:
-        report.setdefault("validation_summary", {})["roll_call_scan_end"] = prior
+        summary = report.setdefault("validation_summary", {})
+        summary["roll_call_scan_end"] = prior
+        # The shortfall the scan recorded travels with the votes: a build that
+        # does not scan writes 0 for itself, which must not un-hold a sitting.
+        for counter in (
+            "unmatched_roll_call_vote_count",
+            "roll_call_vote_candidate_count",
+            "matched_roll_call_vote_count",
+        ):
+            if counter in prior_summary:
+                summary[counter] = prior_summary[counter]
 
 
 def annotate_report_acquisition(
@@ -1332,7 +1370,7 @@ def annotate_report_acquisition(
             _keep_prior_scan_end(report, existing_report)
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
-                acquisition_state=prior_votes["acquisition_state"],
+                acquisition_state=prior_votes.get("acquisition_state") or "not_requested",
                 source="bundestag-roll-call",
                 records=vote_records,
                 reused=vote_records,
@@ -1361,8 +1399,14 @@ def annotate_report_acquisition(
             {pulse_html.vote_key(vote) for item in report.get("agenda_items") or [] for vote in _iter_report_votes(item)}
         )
         carried = max(0, unique_votes - int(fresh.get("records") or 0))
+        # "Verified" means the whole completeness criteria, not just a stamp:
+        # the prior report must also record how its scan ended and no shortfall.
+        prior_summary = (existing_report or {}).get("validation_summary") or {}
         prior_complete = (
-            (prior_votes or {}).get("acquisition_state") == "complete" and bool((prior_votes or {}).get("acquired_at"))
+            (prior_votes or {}).get("acquisition_state") == "complete"
+            and bool((prior_votes or {}).get("acquired_at"))
+            and prior_summary.get("roll_call_scan_end") in facts.COMPLETE_SCAN_ENDS
+            and not int(prior_summary.get("unmatched_roll_call_vote_count") or 0)
         )
         # A verified zero-vote sitting has nothing to carry, but its earlier
         # verification must survive a failed re-check just the same.
@@ -10476,9 +10520,15 @@ def main() -> int:
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
         if getattr(args, "backfill_incomplete", False):
-            acquisition_scope, waiting, vote_only = incomplete_sitting_protocols(
+            acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
                 load_existing_detail_entries(output_dir, protocols), protocols, votes=args.vote_scan_pages != 0
             )
+            if structural:
+                print(
+                    f"[backfill] leaving {len(structural)} sitting(s) held back by roll-call votes no agenda item "
+                    "claims: a rescan cannot fix them (they need a better match rule).",
+                    file=sys.stderr,
+                )
             if vote_only:
                 print(
                     f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "

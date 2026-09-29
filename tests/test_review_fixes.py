@@ -90,6 +90,22 @@ class ScanEndEvidenceTests(unittest.TestCase):
         self.assertEqual(fresh["validation_summary"]["roll_call_scan_end"], "date_passed")
         self.assertTrue(facts.completeness_from_reports([fresh])["21/90"]["votes"])
 
+    def test_a_no_scan_rebuild_does_not_unhold_a_sitting_with_unmatched_votes(self) -> None:
+        prior = votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP)
+        existing = report_with(1, prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "date_passed", "unmatched_roll_call_vote_count": 2}
+        fresh = report_with(1, None)
+        fresh["validation_summary"] = {"roll_call_scan_end": "not_scanned", "unmatched_roll_call_vote_count": 0}
+        self.annotate(fresh, existing, scan_pages=0)
+        self.assertEqual(fresh["validation_summary"]["unmatched_roll_call_vote_count"], 2)
+        self.assertFalse(facts.completeness_from_reports([fresh])["21/90"]["votes"])
+
+    def test_a_blank_first_page_is_not_a_verified_empty_list(self) -> None:
+        for html in ("", "   ", "<html><body>Wartungsarbeiten</body></html>"):
+            with self.subTest(html=html), mock.patch.object(dip, "fetch_html", return_value=html):
+                result = dip.fetch_roll_call_vote_candidates("2026-07-01", 3, include_diagnostics=True)
+            self.assertTrue(result.selector_warning)
+
     def test_a_stamp_from_before_scan_ends_were_recorded_stays_unverified(self) -> None:
         prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
         existing = two_vote_report(prior)  # no roll_call_scan_end: cached by an older build
@@ -109,6 +125,121 @@ class ScanEndEvidenceTests(unittest.TestCase):
         self.annotate(fresh, existing, scan_pages=30)
         self.assertEqual(fresh["validation_summary"]["roll_call_scan_end"], "list_end")
         self.assertTrue(facts.completeness_from_reports([fresh])["21/90"]["votes"])
+
+
+class PriorVerificationNeedsTheFullCriteriaTests(unittest.TestCase):
+    def test_a_stamp_without_scan_end_evidence_is_not_restored_after_a_failed_refresh(self) -> None:
+        prior = votes_facts("complete", records=0, acquired_at=STAMP, attempted_at=STAMP)
+        existing = report_with(0, prior)  # stamped by an older build: no roll_call_scan_end
+        fresh = report_with(0, votes_facts("failed", reasons=("source_changed",), attempted_at="2026-09-28T10:00:00Z"))
+        fresh["validation_summary"] = {"roll_call_scan_end": "list_end"}  # maintenance page read as an empty list
+        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
+        self.assertEqual(fresh["acquisition"]["votes"]["acquisition_state"], "failed")
+
+
+class LaterDetailFailureKeepsTheVotesAlreadyFetchedTests(unittest.TestCase):
+    def test_the_first_vote_of_a_top_survives_a_failure_on_the_second(self) -> None:
+        candidates = [
+            {"id": "1", "document_numbers": ["21/1"]},
+            {"id": "2", "document_numbers": ["21/1"]},
+        ]
+
+        def detail(candidate: dict) -> dict:
+            if candidate["id"] == "2":
+                raise dip.DipError("timeout")
+            return {**candidate, "fractions": [], "members": []}
+
+        top = {"drucksachen": [{"dokumentnummer": "21/1"}]}
+        cache: dict = {}
+        errors: list = []
+        with mock.patch.object(dip, "fetch_roll_call_vote_detail", side_effect=detail):
+            matches = dip.match_roll_call_votes(top, [], candidates, cache, errors)
+            self.assertEqual([m["id"] for m in matches], ["1"])
+            self.assertEqual(len(errors), 1)
+            with self.assertRaises(dip.DipError):  # without a collector the error still propagates
+                dip.match_roll_call_votes(top, [], candidates, {}, None)
+
+
+class DateCorrectionBeforeTheJudgedRangeStillCountsTests(StoreCase):
+    def test_a_stored_sitting_moved_to_before_the_range_is_a_gap(self) -> None:
+        seeded = self.seed(week_specs(6))
+        first = dict(seeded["catalog_sittings"][0])
+        moved = {**first, "date": "2024-06-03"}  # long before the store's earliest sitting
+        listed = [moved] + seeded["catalog_sittings"][1:]
+        gaps = facts.sitting_gaps(facts.load_protocols(self.conn), seeded["completeness"], _facts_fixture.catalog_for(listed))
+        self.assertEqual(gaps[first["document_number"]]["reasons"], {"dossier": "date_changed"})
+
+
+class OutageFlagOnlyForTransientFailuresTests(unittest.TestCase):
+    def test_a_404_on_one_page_does_not_disable_the_rest_of_the_build(self) -> None:
+        import urllib.error
+
+        cache: dict[str, str] = {}
+        not_found = urllib.error.HTTPError("https://example.test/x", 404, "nf", {}, None)  # type: ignore[arg-type]
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=not_found), mock.patch.object(dip.time, "sleep"):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
+        self.assertNotIn(dip.ROLL_CALL_OUTAGE_KEY, cache)
+
+    def test_a_network_failure_after_its_retries_does_set_it(self) -> None:
+        cache: dict[str, str] = {}
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=ConnectionResetError(54, "reset")), mock.patch.object(
+            dip.time, "sleep"
+        ), mock.patch("sys.stderr"):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
+        self.assertIn(dip.ROLL_CALL_OUTAGE_KEY, cache)
+
+
+class MergeDoesNotReattachAVoteTheRescanMovedTests(unittest.TestCase):
+    def test_a_vote_now_on_another_top_is_not_restored_to_its_old_one(self) -> None:
+        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
+        existing["agenda_items"][0]["votes"] = [vote("1")]
+        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": []})
+        fresh = report_with(0, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
+        fresh["agenda_items"][0]["votes"] = []
+        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [vote("1")]})  # corrected attribution
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][1]["votes"]], ["1"])
+
+
+class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):
+    def test_a_sitting_held_back_only_by_unmatched_votes_is_not_reacquired(self) -> None:
+        stuck = report_with(1, votes_facts("partial", records=1, reasons=("unmatched_candidate",), acquired_at=STAMP, attempted_at=STAMP))
+        stuck["validation_summary"] = {"xml_speech_count": 3, "roll_call_scan_end": "date_passed"}
+        stuck["protocol"] = {"dokumentnummer": "21/1", "datum": "2026-06-11"}
+        legacy = report_with(1, None)
+        legacy["protocol"] = {"dokumentnummer": "21/2", "datum": "2026-06-12"}
+        legacy["validation_summary"] = {"xml_speech_count": 3}
+        catalog = [
+            {"id": "pp-2", "dokumentnummer": "21/2", "datum": "2026-06-12", "fundstelle": {"xml_url": "https://example.test/2.xml"}},
+            {"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11", "fundstelle": {"xml_url": "https://example.test/1.xml"}},
+        ]
+        acquirable, waiting, vote_only, structural = build.incomplete_sitting_protocols(
+            [{"report": stuck}, {"report": legacy}], catalog
+        )
+        self.assertEqual([p["dokumentnummer"] for p in acquirable], ["21/2"])
+        self.assertEqual([p["dokumentnummer"] for p in structural], ["21/1"])
+        report = {
+            "sitting_gaps": {
+                "21/1": {"date": "2026-06-11", "reasons": {"votes": "votes partial (unmatched_candidate)"}},
+                "21/2": {"date": "2026-06-12", "reasons": {"votes": "no vote acquisition metadata (report predates it)"}},
+            },
+            "incomplete_periods": [],
+        }
+        text = "\n".join(build.format_incomplete_report(report, output_dir=Path("out"), catalog_protocols=catalog, vote_scan_pages=30))
+        self.assertIn("1 sittings are held back by roll-call votes no agenda item claims (21/1)", text)
+        self.assertIn("(acquires 1 sittings;", text)
+
+    def test_a_gap_without_an_xml_url_is_not_counted_as_acquirable(self) -> None:
+        report = {
+            "sitting_gaps": {"21/1": {"date": "2026-06-11", "reasons": {"dossier": "date_changed"}}},
+            "incomplete_periods": [],
+        }
+        catalog = [{"id": "pp-1", "dokumentnummer": "21/1", "datum": "2026-06-11"}]
+        text = "\n".join(build.format_incomplete_report(report, output_dir=Path("out"), catalog_protocols=catalog, vote_scan_pages=30))
+        self.assertIn("Fix: none available now", text)
 
 
 class UnmatchedVotesHoldACachedReportBackTests(unittest.TestCase):
@@ -152,6 +283,17 @@ class RollCallPageCacheTests(unittest.TestCase):
 
 
 class CatalogFetchIsCheckedAgainstDipsCountTests(unittest.TestCase):
+    def test_duplicates_across_cursor_pages_do_not_mask_missing_protocols(self) -> None:
+        pages = [
+            {"documents": [{"id": "1"}, {"id": "2"}], "cursor": "a", "numFound": 3},
+            {"documents": [{"id": "2"}], "cursor": "b", "numFound": 3},
+            {"documents": [], "cursor": "b", "numFound": 3},
+        ]
+        client = mock.Mock()
+        client.get_json.side_effect = pages
+        with self.assertRaisesRegex(dip.DipError, "2 of 3 protocols"):
+            build.fetch_protocols(client, 0, [], None)
+
     def client(self, pages: list[dict]) -> mock.Mock:
         client = mock.Mock()
         client.get_json.side_effect = pages

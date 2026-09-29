@@ -36,6 +36,13 @@ def list_page(*entries: tuple[str, str, str]) -> str:
     )
 
 
+def transient_error(message: str) -> "dip.DipError":
+    """A DipError as _fetch_page raises it for a network or server failure."""
+    error = dip.DipError(message)
+    error.transient = True  # type: ignore[attr-defined]
+    return error
+
+
 def paged(pages: list[str]):
     """A fetch_html stand-in serving `pages` by offset; past the end it is empty."""
     requested: list[str] = []
@@ -88,7 +95,7 @@ class ScanEndTests(unittest.TestCase):
 
     def test_a_failed_page_is_not_cached_as_a_page(self) -> None:
         cache: dict[str, str] = {}
-        with mock.patch.object(dip, "fetch_html", side_effect=dip.DipError("boom")):
+        with mock.patch.object(dip, "fetch_html", side_effect=transient_error("boom")):
             with self.assertRaises(dip.DipError):
                 dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
         # Only the outage marker is remembered, never a page.
@@ -96,7 +103,7 @@ class ScanEndTests(unittest.TestCase):
 
     def test_one_failed_list_page_stops_further_list_fetches_in_the_build(self) -> None:
         cache: dict[str, str] = {}
-        opener = mock.Mock(side_effect=dip.DipError("boom"))
+        opener = mock.Mock(side_effect=transient_error("boom"))
         with mock.patch.object(dip, "fetch_html", opener):
             with self.assertRaises(dip.DipError):
                 dip.fetch_roll_call_vote_candidates("2026-07-01", 5, page_cache=cache)
@@ -388,6 +395,7 @@ class CachedVoteStateTests(unittest.TestCase):
     def test_a_failed_recheck_keeps_a_verified_acquisition_and_records_the_attempt(self) -> None:
         prior = votes_facts("complete", records=2, acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
         existing = report_with(2, prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
         fresh = report_with(0, votes_facts("failed", reasons=("scan_budget_exhausted",), attempted_at="2026-09-28T10:00:00Z"))
         build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
         votes = self.annotate(fresh, existing, scan_pages=30)
@@ -402,6 +410,7 @@ class CachedVoteStateTests(unittest.TestCase):
     def test_a_failed_recheck_keeps_a_verified_zero_vote_sitting(self) -> None:
         prior = votes_facts("complete", records=0, acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
         existing = report_with(0, prior)
+        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
         fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
         build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
         votes = self.annotate(fresh, existing, scan_pages=30)
