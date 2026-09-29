@@ -182,13 +182,15 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
             )
         }
     if store.has("speeches", "unattributed_char_count") and store.has("protocols", "document_number"):
+        # NULL means the report predates the measurement: no evidence, not 0.
         measured.unattributed_by_protocol = {
-            str(number): int(chars or 0)
+            str(number): int(chars)
             for number, chars in conn.execute(
                 "SELECT p.document_number, SUM(s.unattributed_char_count) FROM speeches s "
                 "JOIN protocols p ON p.id = s.protocol_id GROUP BY p.document_number"
             )
-        }
+            if chars is not None
+        } or None
     if store.has("speeches", "fraktion") and store.has("mps", "party_id") and store.has("parties", "name"):
         group = _redeanteil_group_sql(store)
         measured.reden_by_group = {
