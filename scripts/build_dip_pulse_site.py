@@ -798,11 +798,20 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
         return None
 
 
+class CachedReportError(Exception):
+    """A cached dossier report that a strict load could not read."""
+
+
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
 # with a warning instead of failing the build.
-def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#
+# ``strict`` is for a re-persist, which must not swap in a database built from
+# fewer reports than the cache holds: an unreadable file raises instead.
+def load_existing_detail_entries(
+    output_dir: Path, protocols: list[dict[str, Any]], *, strict: bool = False
+) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
     data_dir = output_dir / "data"
@@ -814,7 +823,11 @@ def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any
             continue
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            if not isinstance(report, dict):
+                raise ValueError("the top-level JSON value is not an object")
+        except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
+            if strict:
+                raise CachedReportError(f"{report_path} is unreadable: {exc}") from exc
             print(f"warning: Skipping unreadable dossier report {report_path}: {exc}", file=sys.stderr)
             continue
         protocol = report.get("protocol") or {}
@@ -954,31 +967,96 @@ def merge_detail_entries(
 #
 # Written to a temporary file next to the target and moved into place only on
 # success, so a failed build never leaves a half-written database behind - the
-# database explorer page and the download link both read this file.
+# database explorer page and the download link both read this file. The store
+# being replaced is only ever read, and through a read-only connection: a
+# rebuild that fails part-way must leave it byte for byte as it was, even when
+# it was written by an older schema.
+class DatabaseRebuildError(Exception):
+    """A cached report that could not be persisted; the previous store stays."""
+
+
+# Columns holding when a row was written, not what it says. A re-persist that
+# changes nothing but these has changed nothing (E9).
+_TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
+
+
+def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
+    """The MdB roster rows of an existing store, read without migrating it."""
+    if not database_path.exists():
+        return []
+    previous = facts.open_readonly(database_path)
+    try:
+        columns = {row[1] for row in previous.execute("PRAGMA table_info(mps)")}
+        if "is_mdb" not in columns:
+            return []
+        return [
+            dict(row)
+            for row in previous.execute(
+                """
+                SELECT m.*, p.name AS party_name
+                FROM mps m
+                LEFT JOIN parties p ON p.id = m.party_id
+                WHERE m.is_mdb = 1
+                """
+            )
+        ]
+    finally:
+        previous.close()
+
+
+def _content_digests(database_path: Path) -> dict[str, str] | None:
+    """table -> digest of its column names and rows, timestamps left out; None
+    when the file cannot be read that way (then it counts as changed)."""
+    try:
+        conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        digests: dict[str, str] = {}
+        tables = [
+            name
+            for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        for table in tables:
+            columns = [
+                row[1] for row in conn.execute(f'PRAGMA table_info("{table}")') if row[1] not in _TIMESTAMP_COLUMNS
+            ]
+            digest = hashlib.sha256(repr(columns).encode("utf-8"))
+            selected = ", ".join(f'"{column}"' for column in columns)
+            for row in conn.execute(f'SELECT {selected} FROM "{table}" ORDER BY rowid'):
+                digest.update(repr(row).encode("utf-8"))
+            digests[table] = digest.hexdigest()
+        return digests
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def _same_content(current: Path, rebuilt: Path) -> bool:
+    before = _content_digests(current)
+    return before is not None and before == _content_digests(rebuilt)
+
+
+def _entry_label(entry: dict[str, Any]) -> str:
+    protocol = entry["report"].get("protocol") or {}
+    number = normalized_document_number(protocol.get("dokumentnummer")) or "an unnumbered protocol"
+    return f"{number} ({entry.get('report_path')})"
+
+
 def rebuild_database_from_entries(
     database_path: Path,
     entries: list[dict[str, Any]],
     *,
     preserve_roster: bool = True,
-) -> None:
-    roster_rows: list[dict[str, Any]] = []
-    if preserve_roster and database_path.exists():
-        previous = pulse_store.connect(database_path)
-        try:
-            pulse_store.initialize(previous)
-            roster_rows = [
-                dict(row)
-                for row in previous.execute(
-                    """
-                    SELECT m.*, p.name AS party_name
-                    FROM mps m
-                    LEFT JOIN parties p ON p.id = m.party_id
-                    WHERE m.is_mdb = 1
-                    """
-                )
-            ]
-        finally:
-            previous.close()
+    keep_if_unchanged: bool = False,
+) -> bool:
+    """Rebuild the store from ``entries`` and swap it in. Returns whether the
+    file was replaced: with ``keep_if_unchanged`` a rebuild whose content (leaving
+    timestamps out) equals the current store leaves that file alone."""
+    roster_rows = _read_roster_rows(database_path) if preserve_roster else []
 
     # The facts the previous store held, carried into the fresh one. The engine
     # recomputes them right after this and overwrites them if anything moved -
@@ -1007,7 +1085,10 @@ def rebuild_database_from_entries(
     try:
         pulse_store.initialize(store)
         for entry in entries:
-            pulse_store.persist_report(store, entry["report"])
+            try:
+                pulse_store.persist_report(store, entry["report"])
+            except Exception as exc:
+                raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
@@ -1041,7 +1122,27 @@ def rebuild_database_from_entries(
         raise
     finally:
         store.close()
+    if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
+        temp_path.unlink()
+        return False
     temp_path.replace(database_path)
+    return True
+
+
+def repersist_cached_reports(
+    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True
+) -> tuple[list[dict[str, Any]], bool]:
+    """``--offline --repersist``: every cached report into a fresh store, in the
+    order an online build persists them, swapped in only if all of them
+    persisted. Returns the loaded entries (the render reuses them) and whether
+    the store file was replaced. Raises CachedReportError or DatabaseRebuildError
+    with the previous store untouched."""
+    cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    entries = merge_detail_entries(protocols, cached, [])
+    replaced = rebuild_database_from_entries(
+        database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
+    )
+    return cached, replaced
 
 
 # ---------------------------------------------------------------------------
@@ -10000,6 +10101,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repersist",
+        action="store_true",
+        help=(
+            "With --offline: persist every cached report into a fresh SQLite store (roster rows kept) and "
+            "swap it in only when all of them persisted, so fixes that derive values at persist time apply "
+            "without a network. Any failure exits 1 and leaves the previous store untouched; a store whose "
+            "content would not change (timestamps aside) is left as it is."
+        ),
+    )
+    parser.add_argument(
         "--database-path",
         type=Path,
         help="SQLite graph store path. Defaults to OUTPUT_DIR/data/bundestag-pulse.sqlite.",
@@ -10169,6 +10280,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
     if args.backfill_incomplete and args.document_number:
         parser.error("--backfill-incomplete cannot be combined with --document-number: it acquires the sittings the last build listed as incomplete")
+    if args.repersist and not args.offline:
+        parser.error(
+            "--repersist re-persists the cached reports and needs --offline; "
+            "an online update already rebuilds the store from every cached report"
+        )
+    if args.repersist and args.no_persist:
+        parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.offline and args.data_manifest and is_url(args.data_manifest):
@@ -10421,6 +10539,29 @@ def main() -> int:
             )
             return 1
 
+        # --repersist: apply what persist derives from the cached reports (the
+        # render alone never does). All or nothing: any failure leaves the
+        # previous store untouched and the run stops before anything is rendered.
+        cached_entries: list[dict[str, Any]] | None = None
+        if getattr(args, "repersist", False):
+            try:
+                cached_entries, replaced = repersist_cached_reports(
+                    output_dir, database_path, protocols, preserve_roster="mp-roster" not in enrichments
+                )
+            except (CachedReportError, DatabaseRebuildError) as exc:
+                print(
+                    f"ERROR [repersist]: {exc}. The previous store is untouched. "
+                    "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
+                    "Docs: README.md#re-persist-the-cached-reports",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                f"repersist: {len(cached_entries)} cached reports persisted; "
+                + ("store replaced" if replaced else "store content unchanged, file kept"),
+                file=sys.stderr,
+            )
+
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         canonical_by_mp_id: dict[int, int] = {}
@@ -10445,7 +10586,8 @@ def main() -> int:
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
-        cached_entries = load_existing_detail_entries(output_dir, protocols)
+        if cached_entries is None:
+            cached_entries = load_existing_detail_entries(output_dir, protocols)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 

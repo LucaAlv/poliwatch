@@ -234,22 +234,24 @@ The offline rebuild regenerates every page from the existing cache, so template,
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
-- **The update changed what gets persisted** (new columns filled during persist, new derived rows). Either run an online build, or re-persist the cached reports without any network access. Build a fresh database and swap it in, the way the online build does — persisting into the existing file would leave rows behind for protocols that are no longer cached:
-
-  ```bash
-  DB=.context/dip-pulse-site/data/bundestag-pulse.sqlite
-  rm -f "$DB.new"
-  for report in .context/dip-pulse-site/data/plenarprotokoll-*.json; do
-    case "$report" in *catalog.json) continue;; esac
-    python3 scripts/persist_dip_pulse_store.py "$report" --database "$DB.new"
-  done
-  mv "$DB.new" "$DB"
-  scripts/preview_dip_pulse_site.sh
-  ```
+- **The update changed what gets persisted** (new columns filled during persist, values derived from the cached reports). Re-persist the cached reports without any network access, see [Re-persist the cached reports](#re-persist-the-cached-reports) below.
 
 - **The update changed fetching or extraction** (`validate_dip_protocol.py`, roll-call scraping, profile resolution). The cached reports predate the fix, so re-fetch with 4b.
 
 Otherwise the offline rebuild is enough.
+
+#### Re-persist the cached reports
+
+```bash
+python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/dip-pulse-site
+```
+
+`--repersist` (only with `--offline`) persists every cached `plenarprotokoll-*.json` into a fresh database, in the order an online build uses, and keeps the MdB roster rows and the stored facts. Then it renders as usual. The new database replaces the old one only when every report persisted:
+
+- an unreadable or malformed cached report, or a report that fails to persist, prints one `ERROR [repersist]:` line naming the file, exits 1, and leaves the previous database byte for byte as it was (it is opened read-only, so an older schema is not migrated either);
+- when the rebuilt content equals the current database apart from timestamps, the existing file is kept and the run says so, so running it twice changes nothing.
+
+It applies what is derived when persisting. It does not re-parse XML or re-resolve profiles; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 
 Hard reset, when the cache itself is suspect:
 
