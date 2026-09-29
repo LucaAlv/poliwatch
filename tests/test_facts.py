@@ -1166,7 +1166,14 @@ class CompletenessTests(StoreCase):
             },
             {
                 "protocol": {"dokumentnummer": "21/90"},
-                "validation_summary": {"xml_speech_count": 10, "roll_call_vote_candidate_count": 0},
+                "validation_summary": {"xml_speech_count": 10, "roll_call_scan_end": "date_passed"},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
+            },
+            {
+                # Stamped complete by a build that did not yet record how the
+                # scan ended: it was also given to scans that ran out of pages.
+                "protocol": {"dokumentnummer": "20/97"},
+                "validation_summary": {"xml_speech_count": 10},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             },
             {
@@ -1199,8 +1206,10 @@ class CompletenessTests(StoreCase):
                 "20/100": (False, True),
                 "20/99": (False, False),
                 "20/98": (False, True),
+                "20/97": (False, True),
             },
         )
+        self.assertEqual(completeness["20/97"]["reasons"]["votes"], "no scan-end evidence (report predates it)")
         self.assertEqual(completeness["21/91"]["reasons"]["votes"], "votes not_requested")
         self.assertIn("no vote acquisition metadata", completeness["20/100"]["reasons"]["votes"])
         self.assertEqual(completeness["20/99"]["reasons"]["votes"], "votes failed (scan_budget_exhausted)")
@@ -1367,14 +1376,14 @@ class CatalogCompletenessTests(StoreCase):
         # thousands of empty periods. Before the first dossier nothing is
         # judged; after the last one, everything DIP lists is.
         seeded = self.seed(week_specs(10))
-        before = [{"document_number": "19/1", "date": "2019-01-16"}, {"document_number": "21/1", "date": "2025-01-02"}]
+        before = [{"document_number": "19/1", "date": "2019-01-16"}, {"document_number": "20/9", "date": "2024-11-20"}]
         after = [{"document_number": "21/99", "date": "2025-06-11"}]
         rows = self.compute(catalog=_facts_fixture.catalog_for(seeded["catalog_sittings"] + before + after))
         weekly = self.rows_for(rows, LAENGSTE)
         keys = [row["period_key"] for row in weekly]
         self.assertEqual(len(weekly), 11)
         self.assertNotIn("2019-W03", keys)
-        self.assertNotIn("2025-W01", keys)
+        self.assertNotIn("2024-W47", keys)
         self.assertEqual(keys[-1], "2025-W24")
         self.assertEqual((weekly[-1]["complete"], weekly[-1]["publishable"]), (0, 0))
 
@@ -1406,7 +1415,7 @@ class CatalogCompletenessTests(StoreCase):
         reports = [
             {
                 "protocol": {"dokumentnummer": spec["document_number"]},
-                "validation_summary": {"xml_speech_count": 5},
+                "validation_summary": {"xml_speech_count": 5, "roll_call_scan_end": "date_passed"},
                 "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": None if index == 4 else "2026-09-28T10:00:00Z"}},
             }
             for index, spec in enumerate(specs)

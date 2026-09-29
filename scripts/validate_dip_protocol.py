@@ -993,10 +993,6 @@ def fetch_roll_call_vote_candidates(
     if not target_date or scan_pages <= 0:
         result = RollCallCandidateFetch([], False, 0, False)
         return result if include_diagnostics else result.candidates
-    if page_cache is not None and ROLL_CALL_OUTAGE_KEY in page_cache:
-        # A list page already failed after its retries in this build: every
-        # further sitting would spend the same minutes on the same outage.
-        raise DipError(f"roll-call list unavailable earlier in this build: {page_cache[ROLL_CALL_OUTAGE_KEY]}")
 
     candidates: list[dict[str, Any]] = []
     list_html_seen = False
@@ -1011,6 +1007,11 @@ def fetch_roll_call_vote_candidates(
             html_text = page_cache[url]
             pages_from_cache += 1
         else:
+            if page_cache is not None and ROLL_CALL_OUTAGE_KEY in page_cache:
+                # A list page already failed after its retries in this build:
+                # every further uncached page would spend the same minutes on
+                # the same outage. Pages already cached are still served.
+                raise DipError(f"roll-call list unavailable earlier in this build: {page_cache[ROLL_CALL_OUTAGE_KEY]}")
             try:
                 html_text = fetch_html(url)
             except DipError as exc:
@@ -1018,7 +1019,9 @@ def fetch_roll_call_vote_candidates(
                     page_cache[ROLL_CALL_OUTAGE_KEY] = str(exc)
                 raise
             pages_fetched += 1
-            if page_cache is not None:
+            # An empty page is not remembered: it may be a maintenance page,
+            # and every later sitting of the build would reuse it as the end.
+            if page_cache is not None and parse_roll_call_list_page(html_text):
                 page_cache[url] = html_text
         if html_text.strip():
             list_html_seen = True
@@ -1863,11 +1866,10 @@ def enrich_with_api(
     else:
         attempted_at = utc_now()
         # A complete acquisition needs full evidence: the scan reached the end
-        # of the list or passed the sitting's date, and no request failed.
-        # Anything else is partial (some votes attached) or failed (none), with
-        # the reason named. A candidate that matches no TOP is logged above and
-        # counted in api_totals, but does not make the acquisition partial: the
-        # vote itself was seen, only its TOP could not be told.
+        # of the list or passed the sitting's date, no request failed and every
+        # candidate found its TOP. Anything else is partial (some votes attached)
+        # or failed (none), with the reason named. Unmatched candidates are also
+        # logged above and counted in api_totals.
         failure_reasons: list[str] = []
         if roll_call_fetch.selector_warning:
             failure_reasons.append("source_changed")
@@ -1875,12 +1877,16 @@ def enrich_with_api(
             failure_reasons.append("source_unavailable")
         if roll_call_fetch.scan_end == "budget_exhausted":
             failure_reasons.append("scan_budget_exhausted")
+        # A vote the list shows but no TOP claims is not in the store: the
+        # sitting's votes are known to be short, so they cannot be complete.
+        if unmatched_candidates and vote_fetch_error is None:
+            failure_reasons.append("unmatched_candidate")
         if failure_reasons:
             vote_facts = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=(
                     publication.AcquisitionState.PARTIAL
-                    if vote_records
+                    if vote_records or failure_reasons == ["unmatched_candidate"]
                     else publication.AcquisitionState.FAILED
                 ),
                 source="bundestag-roll-call",

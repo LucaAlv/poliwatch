@@ -73,6 +73,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import re
 import shutil
 import sqlite3
@@ -318,14 +319,25 @@ def fetch_protocols(
     # is exhausted, which is the only reliable end-of-data signal.
     previous_cursor = None
     fetch_all = limit <= 0
+    num_found: int | None = None
     while fetch_all or len(protocols) < limit:
         page = client.get_json("/plenarprotokoll", params)
         protocols.extend(page.get("documents") or [])
+        if isinstance(page.get("numFound"), int) and not isinstance(page.get("numFound"), bool):
+            num_found = page["numFound"]
         cursor = page.get("cursor")
         if not cursor or cursor == previous_cursor:
             break
         previous_cursor = cursor
         params["cursor"] = cursor
+    if fetch_all and num_found is not None and len(protocols) < num_found:
+        # The whole catalog is what completeness is judged against and what the
+        # store keeps dossiers for: a short fetch must stop the build, not
+        # become an "authoritative" catalog.
+        raise dip.DipError(
+            f"DIP returned {len(protocols)} of {num_found} protocols; the catalog is incomplete. "
+            "Fix: run the update again."
+        )
     return protocols if fetch_all else protocols[:limit]
 
 
@@ -424,6 +436,7 @@ def format_incomplete_report(
     missing = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "not_persisted"]
     waiting = [number for number in missing if not has_xml.get(number, True)]
     partial = {number: gap for number, gap in gaps.items() if "dossier" not in gap["reasons"]}
+    redated = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "date_changed"]
     acquirable = [number for number in gaps if number not in waiting]
     lines = [
         f"warning: [facts] {len(weeks)} weeks and {len(months)} months are incomplete: "
@@ -433,6 +446,8 @@ def format_incomplete_report(
         lines.append(f"  {len(missing)} listed sittings are not in the store: {_first_numbers(missing, 12)}")
     if waiting:
         lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
+    if redated:
+        lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
     if partial:
         counts = Counter(
             f"{domain}: {reason}" for gap in partial.values() for domain, reason in sorted(gap["reasons"].items())
@@ -459,7 +474,7 @@ def format_incomplete_report(
         more = f" (newest {len(newest)} of {len(group)})" if len(group) > len(newest) else ""
         lines.append(f"  incomplete {label}{more}: {'; '.join(rendered)}")
     if acquirable:
-        command = f"python3 scripts/build_dip_pulse_site.py --output-dir {output_dir} --backfill-incomplete"
+        command = f"python3 scripts/build_dip_pulse_site.py --output-dir {shlex.quote(str(output_dir))} --backfill-incomplete"
         exhausted = any(
             "scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values()
         )
@@ -664,6 +679,14 @@ def add_explicit_dossier_protocols(
 # ---------------------------------------------------------------------------
 
 
+# A crash mid-write must never leave a truncated file where a cached report or
+# the catalog used to be: both are read back as evidence on the next build.
+def write_text_atomic(path: Path, text: str) -> None:
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
 def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
     slug = slugify_document_number(document_number)
     return (
@@ -689,7 +712,7 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     page_path.write_text(
         pulse_html.render_html(
             report,
@@ -1199,11 +1222,17 @@ def reuse_existing_dossier_enrichments(
         )
         if not previous:
             continue
-        if votes and not _iter_report_votes(item) and _iter_report_votes(previous):
-            if previous.get("votes"):
-                item["votes"] = copy.deepcopy(previous["votes"])
-            elif previous.get("vote"):
-                item["vote"] = copy.deepcopy(previous["vote"])
+        if votes and _iter_report_votes(previous):
+            # Merge by vote identity, not only into an empty TOP: a rescan that
+            # found some of a TOP's votes must not drop the ones it missed.
+            current = _iter_report_votes(item)
+            have = {pulse_html.vote_key(vote) for vote in current}
+            missing = [
+                copy.deepcopy(vote) for vote in _iter_report_votes(previous) if pulse_html.vote_key(vote) not in have
+            ]
+            if missing:
+                item["votes"] = [*current, *missing]
+                item.pop("vote", None)
         if not profiles:
             continue
 
@@ -1266,6 +1295,19 @@ def _prior_acquired_at(existing_report: dict[str, Any] | None, domain: str) -> s
     )
 
 
+def _keep_prior_scan_end(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    """Votes reused from the cache keep the evidence their scan recorded.
+
+    validation_summary.roll_call_scan_end says how the roll-call scan ended
+    (date_passed / list_end). A build that does not scan writes "not_scanned"
+    for itself, which must not erase what the reused votes were verified by.
+    A report cached before the field existed has none, and stays unverified.
+    """
+    prior = ((existing_report or {}).get("validation_summary") or {}).get("roll_call_scan_end")
+    if prior:
+        report.setdefault("validation_summary", {})["roll_call_scan_end"] = prior
+
+
 def annotate_report_acquisition(
     report: dict[str, Any],
     existing_report: dict[str, Any] | None,
@@ -1287,6 +1329,7 @@ def annotate_report_acquisition(
         # included). Only a report that never recorded one has nothing to keep;
         # its votes are unknown provenance (no acquired_at), not "complete".
         if prior_votes:
+            _keep_prior_scan_end(report, existing_report)
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=prior_votes["acquisition_state"],
@@ -1323,17 +1366,24 @@ def annotate_report_acquisition(
         )
         # A verified zero-vote sitting has nothing to carry, but its earlier
         # verification must survive a failed re-check just the same.
-        if fresh.get("acquisition_state") in {"partial", "failed"} and (carried or prior_complete):
+        # An unmatched candidate is not a failed re-check: the vote set is
+        # known to be short, so a prior verification cannot vouch for it.
+        recheck_only = "unmatched_candidate" not in (fresh.get("failure_reasons") or [])
+        if fresh.get("acquisition_state") in {"partial", "failed"} and (carried or (prior_complete and recheck_only)):
             # The scan could not vouch for this sitting, so the cached votes
             # were kept (reuse_existing_dossier_enrichments). A failed re-check
             # does not undo an earlier verified acquisition: if the cached
             # votes came from a complete, stamped one, that state stands and
             # the failed attempt is recorded next to it. Otherwise they are
             # only partial evidence.
+            if prior_complete and recheck_only:
+                _keep_prior_scan_end(report, existing_report)
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=(
-                    publication.AcquisitionState.COMPLETE if prior_complete else publication.AcquisitionState.PARTIAL
+                    publication.AcquisitionState.COMPLETE
+                    if prior_complete and recheck_only
+                    else publication.AcquisitionState.PARTIAL
                 ),
                 source="bundestag-roll-call",
                 records=unique_votes,
@@ -1342,7 +1392,7 @@ def annotate_report_acquisition(
                 failure_reasons=tuple(fresh.get("failure_reasons") or ()),
                 acquired_at=(
                     (prior_votes or {}).get("acquired_at")
-                    if prior_complete
+                    if prior_complete and recheck_only
                     else fresh.get("acquired_at") or (prior_votes or {}).get("acquired_at")
                 ),
                 attempted_at=fresh.get("attempted_at"),
@@ -9260,14 +9310,14 @@ def render_site(
     # from that would turn a partial list into an "authoritative" one.
     catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
     if authoritative_catalog:
-        catalog_path.write_text(
+        write_text_atomic(
+            catalog_path,
             json.dumps(
                 {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
                 ensure_ascii=False,
                 indent=2,
             )
             + "\n",
-            encoding="utf-8",
         )
     components = {
         component.feature.id: component
@@ -10059,6 +10109,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.force_export and args.no_persist:
         parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
+    if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
+        parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
     if args.backfill_incomplete and args.document_number:
         parser.error("--backfill-incomplete cannot be combined with --document-number: it acquires the sittings the last build listed as incomplete")
     if args.backfill_incomplete and args.offline:
@@ -10130,6 +10182,7 @@ def run_facts_engine(
     database_path: Path,
     entries: list[dict[str, Any]],
     catalog: facts.SittingCatalog | None,
+    today: date | None = None,
 ) -> dict[str, Any]:
     store = pulse_store.connect(database_path)
     try:
@@ -10141,6 +10194,7 @@ def run_facts_engine(
             facts.completeness_from_entries(entries),
             catalog=catalog,
             built=built,
+            today=today,
         )
     finally:
         store.close()
@@ -10173,7 +10227,9 @@ def run_data_pipeline(
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
-        facts_report = run_facts_engine(database_path, entries, catalog)
+        facts_report = run_facts_engine(
+            database_path, entries, catalog, today=resolve_today(getattr(args, "today", None))
+        )
         for line in format_incomplete_report(
             facts_report,
             output_dir=output_dir,

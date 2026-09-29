@@ -53,7 +53,7 @@ import sys
 import textwrap
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
@@ -681,8 +681,8 @@ def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCa
 
     The DIP catalog reaches back to 1949; judging all of it would add
     thousands of empty, incomplete periods for sittings nobody asked for. The
-    judged range runs from the store's earliest sitting to the catalog's
-    newest, so a gap inside the range or a sitting after it counts, and the
+    judged range runs from the start of the week or month of the store's
+    earliest sitting to the catalog's newest, so a gap inside the range or a sitting after it counts, and the
     history before the first dossier does not.
     """
     if catalog is None or not catalog.authoritative:
@@ -690,7 +690,12 @@ def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCa
     days = [str(p.get("date") or "")[:10] for p in protocols if p.get("date")]
     if not days:
         return []
-    lower = min(days)
+    # From the start of the first stored sitting's week or month, whichever is
+    # earlier: an earlier listed sitting of that period is missing, not out of
+    # range, and judging the period on the sittings we happen to hold would
+    # call it complete.
+    first = date.fromisoformat(min(days))
+    lower = min(first - timedelta(days=first.weekday()), first.replace(day=1)).isoformat()
     return [dict(sitting) for sitting in catalog.sittings if sitting["date"] >= lower]
 
 
@@ -698,6 +703,18 @@ def build_periods(
     protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None
 ) -> tuple[list[Week], list[Month]]:
     expected = expected_sittings(protocols, catalog)
+    if catalog is not None and catalog.authoritative:
+        # A sitting DIP now dates differently than the store holds it sits in
+        # two periods at once; tag it so the store's period is not complete
+        # until a backfill has refreshed the date.
+        listed = {s["document_number"]: s["date"] for s in catalog.sittings}
+        tagged = []
+        for protocol in protocols:
+            day = listed.get(str(protocol["document_number"]))
+            if day and day != str(protocol.get("date") or "")[:10]:
+                protocol = {**protocol, "date_conflict": day}
+            tagged.append(protocol)
+        protocols = tagged
     return sitting_weeks(protocols, expected), sitting_months(protocols, expected)
 
 
@@ -823,6 +840,10 @@ def sitting_months(
 # ---------------------------------------------------------------------------
 
 
+#: How a roll-call scan may end for its votes to count as verified.
+COMPLETE_SCAN_ENDS = ("date_passed", "list_end")
+
+
 def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """document_number -> {"votes": bool, "speeches": bool, "reasons": {...}}.
 
@@ -857,6 +878,16 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
             elif not acquisition.get("acquired_at"):
                 votes = False
                 votes_reason = "cached votes without acquired_at"
+            elif int(summary.get("unmatched_roll_call_vote_count") or 0) > 0:
+                # Stamped complete before an unmatched candidate made an
+                # acquisition partial: the report itself records the shortfall.
+                votes = False
+                votes_reason = "roll-call votes matched no TOP"
+            elif summary.get("roll_call_scan_end") not in COMPLETE_SCAN_ENDS:
+                # A stamp from before scans recorded how they ended proves
+                # nothing: it was also given to scans that ran out of pages.
+                votes = False
+                votes_reason = "no scan-end evidence (report predates it)"
             else:
                 votes = True
         result[str(number)] = {
@@ -907,6 +938,9 @@ def period_gaps(
     gaps: list[dict[str, str]] = []
     for number in sorted({*persisted, *listed}, key=lambda n: (str((persisted.get(n) or listed[n])["date"]), n)):
         day = str((persisted.get(number) or listed[number])["date"])[:10]
+        if number in persisted and persisted[number].get("date_conflict"):
+            gaps.append({"document_number": number, "date": day, "reason": "date_changed"})
+            continue
         if number not in persisted:
             gaps.append({"document_number": number, "date": day, "reason": "not_persisted"})
             continue
@@ -949,7 +983,9 @@ def sitting_gaps(
     gaps: dict[str, dict[str, Any]] = {}
     for number in {*persisted, *listed}:
         reasons: dict[str, str] = {}
-        if number not in persisted:
+        if number in persisted and number in listed and listed[number]["date"] != str(persisted[number]["date"])[:10]:
+            reasons["dossier"] = "date_changed"
+        elif number not in persisted:
             reasons["dossier"] = "not_persisted"
         elif not completeness.get(number):
             reasons["dossier"] = "no_report"
@@ -985,7 +1021,7 @@ def incomplete_periods(
                 )
                 # A sitting with no dossier is missing for every domain at
                 # once; say it once, under "dossier", as sitting_gaps does.
-                if gap["reason"] in ("not_persisted", "no_report"):
+                if gap["reason"] in ("not_persisted", "no_report", "date_changed"):
                     entry["reasons"]["dossier"] = gap["reason"]
                 else:
                     entry["reasons"][domain] = gap["reason"]
@@ -1012,6 +1048,8 @@ def gap_note(gaps: Sequence[Mapping[str, str]], domain: str, *, shown: int = 2) 
             parts.append(f"Sitzung {number} ({gap['date']}) fehlt")
         elif reason == "no_report":
             parts.append(f"Sitzung {number}: kein Bericht")
+        elif reason == "date_changed":
+            parts.append(f"Sitzung {number}: Datum laut DIP geändert")
         else:
             parts.append(f"Sitzung {number}: {_GAP_DOMAIN_TEXT[domain]}")
     if len(gaps) > shown:

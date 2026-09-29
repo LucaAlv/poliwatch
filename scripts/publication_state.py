@@ -40,6 +40,7 @@ FAILURE_CODES = {
     "source_changed",
     "summary_budget_exhausted",
     "scan_budget_exhausted",
+    "unmatched_candidate",
     "unsafe_url",
     "unsafe_output_path",
 }

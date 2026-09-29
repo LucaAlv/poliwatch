@@ -196,11 +196,11 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 ### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
 
-### Roll-call votes that match no TOP are still counted as a complete acquisition
+### Match roll-call votes to a TOP when Drucksache numbers fail
 
-**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) logs a roll-call candidate whose Drucksache numbers match no TOP, counts it (`validation_summary.unmatched_roll_call_vote_count`, ids in `api_records.unmatched_roll_call_vote_ids`) and still calls the acquisition `complete`, following E4's wording. Decide whether an unmatched vote should make it `partial`, and match by title or vote date where Drucksache numbers fail.
+**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) attaches a roll-call vote to a TOP only when their Drucksache numbers overlap. A candidate that matches none is logged, counted (`validation_summary.unmatched_roll_call_vote_count`) and, since fix-votes-completeness, makes the sitting's votes `partial` (`unmatched_candidate`). Match by title or vote date where numbers fail, or store the vote against the Sitzung without a TOP.
 
-**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, yet the sittings count as complete. Marking them partial would make 15 sittings, and their weeks, incomplete for good until the matching improves.
+**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, and those sittings, with the weeks and months holding them, stay incomplete until this is fixed.
 
 **Effort:** M
 **Priority:** P2

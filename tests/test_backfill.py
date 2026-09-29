@@ -52,6 +52,9 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
     report["validation_summary"] = {"xml_speech_count": 3}
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
+        # The evidence a scan records (how it ended); a report cached before
+        # it existed has none and is unverified.
+        report["validation_summary"]["roll_call_scan_end"] = "date_passed"
     return report
 
 

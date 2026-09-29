@@ -181,8 +181,12 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         self.assertIn("roll-call vote 2", stderr)
         self.assertIn("matched no TOP", stderr)
         self.assertTrue(any("1 von 2" in warning for warning in enrichment["warnings"]))
-        # The vote itself was seen; only its TOP could not be told.
-        self.assertEqual(enrichment["acquisition"]["votes"]["acquisition_state"], "complete")
+        # The vote is on the list but in no TOP, so it is not in the store: the
+        # sitting's votes are known to be short.
+        votes = enrichment["acquisition"]["votes"]
+        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["unmatched_candidate"]))
+        self.assertEqual(votes["records"], 1)
+        self.assertEqual(enrichment["api_totals"]["roll_call_scan_end"], "date_passed")
 
     def test_no_candidate_matching_any_top_keeps_the_existing_warning(self) -> None:
         pages = [list_page(("1", "01.07.2026", "21/77"), ("2", "30.06.2026", "21/2"))]
@@ -192,11 +196,11 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
 
     def test_budget_exhaustion_with_some_votes_is_partial_with_its_own_reason(self) -> None:
         pages = [list_page(("1", "01.07.2026", "21/1")), list_page(("2", "01.07.2026", "21/2"))]
-        enrichment, stderr = self.enrich(pages, "2026-07-01", ("21/1",), scan_pages=2)
+        enrichment, stderr = self.enrich(pages, "2026-07-01", ("21/1", "21/2"), scan_pages=2)
         votes = enrichment["acquisition"]["votes"]
         self.assertEqual(votes["acquisition_state"], "partial")
         self.assertEqual(votes["failure_reasons"], ["scan_budget_exhausted"])
-        self.assertEqual(votes["records"], 1)
+        self.assertEqual(votes["records"], 2)
         self.assertEqual(votes["rejected"], 0)
         self.assertIn("raise --vote-scan-pages", stderr)
 
