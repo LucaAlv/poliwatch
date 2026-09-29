@@ -236,6 +236,10 @@ class PersistTests(unittest.TestCase):
         ]
         conn, _ = self.persist(item)
         self.assertEqual([r["name"] for r in conn.execute("SELECT name FROM parties")], ["Gruppe BSW"])
+        # ... and one vote_fractions row: the counts add before the Mehrheitsvotum
+        # is derived (1 Ja + 2 Nein is Nein, not two rows saying Ja and Nein).
+        rows = conn.execute("SELECT yes_count, no_count, total_count, leading_vote FROM vote_fractions").fetchall()
+        self.assertEqual([tuple(row) for row in rows], [(1, 2, 3, "no")])
 
 
 class RenderTests(unittest.TestCase):

@@ -191,11 +191,15 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
         }
     if store.has("speeches", "unattributed_char_count") and store.has("protocols", "document_number"):
         # NULL means the report predates the measurement: no evidence, not 0.
+        # SUM skips NULLs, so a protocol with some speeches measured and some
+        # not would report a partial sum as its total; only a protocol whose
+        # every speech carries a measurement gets a figure.
         measured.unattributed_by_protocol = {
             str(number): int(chars)
             for number, chars in conn.execute(
                 "SELECT p.document_number, SUM(s.unattributed_char_count) FROM speeches s "
-                "JOIN protocols p ON p.id = s.protocol_id GROUP BY p.document_number"
+                "JOIN protocols p ON p.id = s.protocol_id GROUP BY p.document_number "
+                "HAVING COUNT(s.unattributed_char_count) = COUNT(*)"
             )
             if chars is not None
         } or None

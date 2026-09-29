@@ -195,6 +195,26 @@ class CompareStoreValuesTests(unittest.TestCase):
             "sum over protocols unavailable -> unavailable",
         )
 
+    def test_a_protocol_with_a_speech_lacking_the_measurement_has_no_unattributed_total(self) -> None:
+        # SUM skips NULL: 21/1 would report 7 as its total though one of its two
+        # speeches was never measured. 21/2 is fully measured and keeps its figure.
+        root = make_output(
+            self.tmp / "s",
+            protocols={"21/1": [("r1", "SPD", 10, None), ("r2", "SPD", 10, None)], "21/2": [("r3", "SPD", 10, None)]},
+        )
+        conn = pulse_store.connect(root / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.execute("UPDATE speeches SET unattributed_char_count = 7 WHERE rede_id IN ('r1', 'r3')")
+            conn.commit()
+        finally:
+            conn.close()
+        store = compare.open_store(root)
+        try:
+            measured = compare.measure(store, recipes=False)
+        finally:
+            store.conn.close()
+        self.assertEqual(measured.unattributed_by_protocol, {"21/2": 7})
+
     def test_redeanteil_moves_a_role_speaker_out_of_the_fraktion_rows(self) -> None:
         old, new = self.stores()
         _, out, _ = run(old, new)

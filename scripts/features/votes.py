@@ -120,9 +120,9 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         )
     for vote in votes:
         fraction_rows = []
-        for fraction in vote.get("fractions") or []:
-            name = fraction.get("name") or "Unbekannt"
-            counts = fraction.get("counts") or {}
+        for fraction in derive.merge_fractions(vote.get("fractions")):
+            name = fraction["name"]
+            counts = fraction["counts"]
             # From the counts, never the report's cached leading_vote: a stale
             # report must not show a Mehrheitsvotum the store does not hold.
             leading = derive.majority_vote(counts)
@@ -138,7 +138,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
                 '<div class="vote-fraction-row">'
                 f'<span class="party-dot" style="background:{color}"></span>'
                 f'<strong>{html.esc(name)}</strong>'
-                f'{html.render_vote_stack(counts, int(fraction.get("total") or 0))}'
+                f'{html.render_vote_stack(counts, fraction["total"])}'
                 f"{pill}"
                 "</div>"
             )

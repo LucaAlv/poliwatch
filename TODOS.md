@@ -783,4 +783,4 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
 
-**Completed:** v0.9.0.0 (2026-09-29). `is_gesetzgebung` (Vorgangstyp) replaces the keyword test; Entschließungsanträge and the like are listed as "Begleitende Vorlagen" on their Gesetzgebung's page; labels say Gesetzesvorhaben. Reference store: 903 -> 594 bill pages. The old figures (839 -> 551) were measured on a smaller store.
+**Completed:** v0.9.0.0 (2026-09-29). `is_gesetzgebung` (Vorgangstyp) replaces the keyword test; Entschließungsanträge and the like are listed as "Weitere Vorgänge zu diesem Tagesordnungspunkt" on the page of each Gesetzgebung of the same agenda item; labels say Gesetzesvorhaben. Reference store: 903 -> 594 bill pages. The old figures (839 -> 551) were measured on a smaller store.

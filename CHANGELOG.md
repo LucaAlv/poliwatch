@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
 - Government, Bundesrat, and other official speaking roles count separately from factions. Unknown roles stop persistence with a diagnostic naming the affected speeches.
 - Vote majorities are absent on a tie or when nobody voted. Vote panels, archive filters, and dissent counts use the same rule; non-attached members are excluded from faction dissent.
 - Person pages use verified identifiers and unambiguous name matches, keeping namesakes and conflicting DIP identities separate while rejoining corroborated records for people with two speaker IDs.
-- Only legislative procedures receive Gesetzesvorhaben pages; accompanying motions appear on the related procedure’s page. Public labels and the data-correction recipes now describe these rules.
+- Only legislative procedures receive Gesetzesvorhaben pages; other procedures on the same agenda item (Entschließungsanträge, Anträge) are listed on each Gesetzgebung’s page as such, not as its companions. Public labels and the data-correction recipes now describe these rules.
 
 ## [0.8.0.0] - 2026-09-29
 

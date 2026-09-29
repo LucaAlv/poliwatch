@@ -169,3 +169,17 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderVoteSummaryFractionTests(unittest.TestCase):
+    SPELLINGS = [
+        {"name": "Gruppe BSW", "counts": {"yes": 1}, "total": 1},
+        {"name": "BSW (Gruppe)", "counts": {"no": 2}, "total": 2},
+    ]
+
+    def test_two_spellings_of_one_zusammenschluss_are_one_row_with_one_mehrheitsvotum(self) -> None:
+        panel = render_vote_summary({"votes": [_vote(fractions=self.SPELLINGS)]})
+        self.assertEqual(panel.count('class="vote-fraction-row"'), 1)
+        self.assertEqual(panel.count("Gruppe BSW"), 1)
+        self.assertEqual(panel.count('<em class="vote-pill vote-no">'), 1)
+        self.assertNotIn('<em class="vote-pill vote-yes">', panel)

@@ -106,6 +106,31 @@ def zusammenschluss(value: Any) -> str | None:
 GRUPPE_DIE_LINKE_SINCE = "2023-12-06"
 
 
+VOTE_COUNT_KEYS = ("yes", "no", "abstain", "absent")
+
+
+def merge_fractions(fractions: Iterable[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """The fraction rows of one namentliche Abstimmung, one per Zusammenschluss.
+
+    Rows that name the same Zusammenschluss under two spellings ("Gruppe BSW",
+    "BSW (Gruppe)") are one row: their counts add. Persistence, the vote panel
+    and the votes archive all go through this, so none of them can show a
+    Mehrheitsvotum that another does not hold. Rows come back in first-seen
+    order, named as ``zusammenschluss`` names them ("Unbekannt" for none).
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for fraction in fractions or []:
+        counts = fraction.get("counts") or {}
+        row = merged.setdefault(
+            zusammenschluss(fraction.get("name")) or "Unbekannt",
+            {"counts": {key: 0 for key in VOTE_COUNT_KEYS}, "total": 0},
+        )
+        for key in VOTE_COUNT_KEYS:
+            row["counts"][key] += int(counts.get(key) or 0)
+        row["total"] += int(fraction.get("total") or 0)
+    return [{"name": name, **row} for name, row in merged.items()]
+
+
 def speech_zusammenschluss(speaker: Mapping[str, Any] | None, protocol: Mapping[str, Any] | None = None) -> str | None:
     """The Zusammenschluss the Plenarprotokoll names beside a Redner for one
     Rede: ``zusammenschluss`` of the raw string, told apart by the Sitzung when

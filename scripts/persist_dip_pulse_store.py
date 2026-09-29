@@ -1038,17 +1038,8 @@ def persist_votes(
 
         # Rows of one vote that name the same Zusammenschluss under two
         # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
-        by_party: dict[str, dict[str, int]] = {}
-        for fraction in vote.get("fractions") or []:
-            counts = fraction.get("counts") or {}
-            merged = by_party.setdefault(
-                derive.zusammenschluss(fraction.get("name")) or "Unbekannt",
-                {"yes": 0, "no": 0, "abstain": 0, "absent": 0, "total": 0},
-            )
-            for key in ("yes", "no", "abstain", "absent"):
-                merged[key] += int(counts.get(key) or 0)
-            merged["total"] += int(fraction.get("total") or 0)
-        for party_name, merged in by_party.items():
+        for merged in derive.merge_fractions(vote.get("fractions")):
+            party_name = merged["name"]
             party_id = upsert_party(conn, party_name, now)
             if party_id is None:
                 continue
@@ -1063,15 +1054,15 @@ def persist_votes(
                 (
                     vote_id,
                     party_id,
-                    merged["yes"],
-                    merged["no"],
-                    merged["abstain"],
-                    merged["absent"],
+                    merged["counts"]["yes"],
+                    merged["counts"]["no"],
+                    merged["counts"]["abstain"],
+                    merged["counts"]["absent"],
                     merged["total"],
                     # Derived from the counts: a cached report's own
                     # leading_vote is ignored, so a rule change applies on
                     # re-persist (plan F1/E2).
-                    derive.majority_vote(merged),
+                    derive.majority_vote(merged["counts"]),
                 ),
             )
 

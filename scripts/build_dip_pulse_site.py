@@ -3865,9 +3865,9 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 if key in rows:
                     continue
                 fraction_positions = {
-                    str(fraction["name"]): position
-                    for fraction in vote.get("fractions") or []
-                    if fraction.get("name") and (position := _fraction_position(fraction)) is not None
+                    fraction["name"]: position
+                    for fraction in derive.merge_fractions(vote.get("fractions"))
+                    if (position := _fraction_position(fraction)) is not None
                 }
                 rows[key] = {
                     "vote": vote,
@@ -5347,7 +5347,8 @@ def doc_numbers(docs: list[dict[str, Any]]) -> set[str]:
 
 
 # The Vorgänge on an agenda item that are not Gesetzgebungen, one row each with
-# the Drucksachen DIP links to it.
+# the Drucksachen DIP links to it. Sharing an agenda item is all they have in
+# common with a Gesetzgebung there: nothing here says one accompanies another.
 def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
     for position in positions:
@@ -5392,9 +5393,11 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
             linked_docs = api.get("linked_drucksachen") or []
             positions = api.get("positions") or []
             item_votes = item.get("votes") or []
-            # What else is on this agenda item next to its Gesetzgebungen: the
-            # Entschließungsanträge, Anträge and the like that accompany them. They
-            # get no page of their own, but each Gesetzgebung page lists them.
+            # What else is on this agenda item next to its Gesetzgebungen:
+            # Entschließungsanträge, Anträge and the like. DIP does not say which
+            # Gesetzgebung one of them belongs to when an item bundles several
+            # procedures, so each Gesetzgebung page lists them as the other
+            # Vorgänge of the same item, not as its own companions.
             related = _related_vorgaenge(positions, linked_docs)
             # A position is one step of a procedure (first reading, committee
             # report, ...). Collect the documents that belong to this procedure,
@@ -5965,7 +5968,7 @@ def render_bill_detail(
             "</li>"
         )
     related_panel = (
-        '<section class="panel"><h2>Begleitende Vorlagen</h2>'
+        '<section class="panel"><h2>Weitere Vorgänge zu diesem Tagesordnungspunkt</h2>'
         f'<ul class="doc-list">{"".join(related_rows)}</ul></section>'
         if related_rows
         else ""
