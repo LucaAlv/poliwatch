@@ -100,6 +100,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           wahlkreis TEXT,
           bundesland TEXT,
           aw_politician_id INTEGER,
+          aw_match TEXT,
           person_roles_json TEXT,
           is_mdb INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
@@ -289,6 +290,7 @@ _MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("wahlkreis", "TEXT"),
     ("bundesland", "TEXT"),
     ("aw_politician_id", "INTEGER"),
+    ("aw_match", "TEXT"),
     ("person_roles_json", "TEXT"),
     ("is_mdb", "INTEGER NOT NULL DEFAULT 0"),
 )
@@ -463,13 +465,17 @@ def speaker_party_name(speaker: dict[str, Any] | None, protocol: dict[str, Any] 
 def mp_identity(
     *,
     aw_politician_id: Any = None,
+    aw_match: Any = None,
     dip_person_id: Any = None,
     xml_redner_id: Any = None,
     profile_url: Any = None,
     display_name: Any = None,
     party_name: Any = None,
 ) -> str:
-    if aw_politician_id:
+    # An abgeordnetenwatch id found by searching a name is a guess, not a
+    # Personenkennung: it names the person only when it was looked up by their
+    # Redner-ID (ext_id).
+    if aw_politician_id and aw_match == derive.TRUSTED_AW_MATCH:
         return f"aw:{aw_politician_id}"
     if dip_person_id:
         return f"dip:{dip_person_id}"
@@ -499,6 +505,7 @@ def upsert_mp(
     wahlkreis: Any = None,
     bundesland: Any = None,
     aw_politician_id: Any = None,
+    aw_match: Any = None,
     person_roles_json: Any = None,
     is_mdb: bool = False,
 ) -> int:
@@ -508,10 +515,10 @@ def upsert_mp(
           identity_key, dip_person_id, xml_redner_id, display_name, title,
           function, wahlperiode, profile_url, party_id,
           birth_year, gender, profession, wahlkreis, bundesland,
-          aw_politician_id, person_roles_json, is_mdb,
+          aw_politician_id, aw_match, person_roles_json, is_mdb,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(identity_key) DO UPDATE SET
           dip_person_id = COALESCE(excluded.dip_person_id, mps.dip_person_id),
           xml_redner_id = COALESCE(excluded.xml_redner_id, mps.xml_redner_id),
@@ -527,6 +534,7 @@ def upsert_mp(
           wahlkreis = COALESCE(excluded.wahlkreis, mps.wahlkreis),
           bundesland = COALESCE(excluded.bundesland, mps.bundesland),
           aw_politician_id = COALESCE(excluded.aw_politician_id, mps.aw_politician_id),
+          aw_match = CASE WHEN excluded.aw_politician_id IS NOT NULL THEN excluded.aw_match ELSE mps.aw_match END,
           person_roles_json = COALESCE(excluded.person_roles_json, mps.person_roles_json),
           is_mdb = MAX(mps.is_mdb, excluded.is_mdb),
           updated_at = excluded.updated_at
@@ -547,6 +555,7 @@ def upsert_mp(
             clean(wahlkreis),
             clean(bundesland),
             aw_politician_id if isinstance(aw_politician_id, int) else None,
+            clean(aw_match) if isinstance(aw_politician_id, int) else None,
             clean(person_roles_json),
             1 if is_mdb else 0,
             now,
@@ -889,6 +898,7 @@ def persist_speeches(
             party_id=party_id,
             identity_key=mp_identity(
                 aw_politician_id=aw_politician_id,
+                aw_match=profile.get("match"),
                 xml_redner_id=xml_redner_id,
                 display_name=display_name,
                 party_name=party_name,
@@ -896,6 +906,7 @@ def persist_speeches(
             xml_redner_id=xml_redner_id,
             profile_url=profile.get("url"),
             aw_politician_id=aw_politician_id,
+            aw_match=profile.get("match"),
         )
         page, quadrant = source_page_ref(speech.get("source_page"))
         conn.execute(
@@ -1077,12 +1088,14 @@ def persist_votes(
                 party_id=party_id,
                 identity_key=mp_identity(
                     aw_politician_id=aw_politician_id,
+                    aw_match=profile.get("match"),
                     profile_url=profile_url,
                     display_name=member.get("name"),
                     party_name=party_name,
                 ),
                 profile_url=profile_url,
                 aw_politician_id=aw_politician_id,
+                aw_match=profile.get("match"),
             )
             conn.execute(
                 """

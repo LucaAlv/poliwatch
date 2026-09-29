@@ -616,6 +616,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         identity_key=pulse_store.mp_identity(dip_person_id="dip-ada"),
                         dip_person_id="dip-ada",
                         aw_politician_id=77,
+                        aw_match="ext_id",
                         profession="Mathematician",
                         is_mdb=True,
                     )
@@ -627,6 +628,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         identity_key=pulse_store.mp_identity(xml_redner_id="11001"),
                         xml_redner_id="11001",
                         aw_politician_id=77,
+                        aw_match="ext_id",
                     )
                     conn.execute(
                         """

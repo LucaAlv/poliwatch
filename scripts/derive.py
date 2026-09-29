@@ -268,3 +268,22 @@ def check_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> None:
 ZUSAMMENSCHLUSS_SQL = (
     "CASE WHEN s.sprechrolle IS NOT NULL THEN NULL ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END"
 )
+
+
+# --- Personenkennung -----------------------------------------------------------
+
+#: The match kind of an abgeordnetenwatch lookup by the Redner-ID sent to its
+#: ext_id field. That id is a Personenkennung: the Bundestag assigned it to the
+#: Person, and abgeordnetenwatch records it for the same Person. Any other kind
+#: ("name": found by searching a name) is a Namensabgleich, a guess.
+TRUSTED_AW_MATCH = "ext_id"
+
+
+def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int | None:
+    """The abgeordnetenwatch id of ``profile`` when it may serve as identity,
+    else None. An id with no recorded match kind (a cache from before the kind
+    was kept) counts as found by name, until it is resolved again."""
+    profile = profile or {}
+    kind = match if match is not None else profile.get("match")
+    value = profile.get("id")
+    return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None

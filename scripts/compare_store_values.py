@@ -128,6 +128,9 @@ class Measured:
     has_roster: bool = False
     facts_snapshot: dict[str, list[list[Any]]] | None = None
     facts_rows: dict[tuple[str, str, str], tuple[int, int, str | None]] | None = None
+    #: Zusammenführung of the store's mps rows by the rules of this tree (rows,
+    #: entries, merges per provenance, name buckets left split).
+    zusammenfuehrung: dict[str, int] | None = None
     bill_pages: int | None = None
     person_pages: int | None = None
     r3_rows: int | None = None
@@ -273,11 +276,32 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
             )
         }
 
+    measured.zusammenfuehrung = _zusammenfuehrung(store)
     measured.bill_pages = _count_pages(store.directory, "bills")
     measured.person_pages = _count_pages(store.directory, "abgeordnete")
     if recipes:
         measured.r3_rows = _recipe_rows(store, "r3-abweichler")
     return measured
+
+
+def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
+    """Run this tree's Zusammenführung over the store's mps rows and return its
+    statistics. A store from before ``aw_match`` was kept counts every
+    abgeordnetenwatch id as found by name (the rule for an unrecorded kind)."""
+    if not (store.has("mps", "id", "display_name") and store.has("speeches") and store.has("vote_members")):
+        return None
+    import build_dip_pulse_site as build
+
+    conn = store.conn
+    conn.row_factory = sqlite3.Row
+    stats: dict[str, int] = {}
+    try:
+        build.collect_abgeordnete(conn, stats)
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.row_factory = None
+    return stats
 
 
 def _recipe_rows(store: Store, recipe_id: str) -> int | None:
@@ -520,6 +544,22 @@ def compare(
 
     report.heading("Daten recipe r3-abweichler [whole store]")
     report.row("rows without LIMIT (recipe of this tree)", old.r3_rows, new.r3_rows)
+
+    report.heading("Zusammenführung of the mps rows, by the rules of this tree [whole store]")
+    labels = (
+        ("rows", "mps rows"),
+        ("entries", "Personen after Zusammenführung"),
+        ("merges_ext_id", "merges by Personenkennung (ext_id)"),
+        ("merges_unique_name", "merges by unique name + party (unique_name)"),
+        ("buckets_split_namesakes", "name buckets left split: two on one side"),
+        ("buckets_split_3plus", "name buckets left split: 3+ records"),
+    )
+    for key, label in labels:
+        report.row(
+            label,
+            None if old.zusammenfuehrung is None else old.zusammenfuehrung.get(key),
+            None if new.zusammenfuehrung is None else new.zusammenfuehrung.get(key),
+        )
 
     report.heading("generated pages [whole store]")
     report.row("bills/ pages", old.bill_pages, new.bill_pages)

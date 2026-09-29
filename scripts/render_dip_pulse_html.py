@@ -2322,14 +2322,17 @@ def mp_page_href(
     prefix: str = "abgeordnete/",
 ) -> str | None:
     """Internal Abgeordnete profile URL for a speaker, or None when the speaker
-    does not resolve to a known MP. Tries abgeordnetenwatch id, then the
+    does not resolve to a known MP. Tries the Personenkennungen only: the
+    abgeordnetenwatch id when it was looked up by the Redner-ID (a name-found id
+    is a guess and could send the reader to a namesake), then the
     Bundestagsverwaltung speaker id, then the DIP person id."""
     if not mp_lookup:
         return None
-    profile = speaker.get("abgeordnetenwatch") or {}
+    aw_id = derive.trusted_aw_id(speaker.get("abgeordnetenwatch"))
+    xml_id = derive.first_redner_id(speaker.get("xml_redner_id"))
     candidates = (
-        f"aw:{profile.get('id')}" if profile.get("id") else None,
-        f"xml:{speaker.get('xml_redner_id')}" if speaker.get("xml_redner_id") else None,
+        f"aw:{aw_id}" if aw_id else None,
+        f"xml:{xml_id}" if xml_id else None,
         f"dip:{speaker.get('dip_person_id')}" if speaker.get("dip_person_id") else None,
     )
     for key in candidates:

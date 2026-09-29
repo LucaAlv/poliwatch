@@ -1103,7 +1103,18 @@ def rebuild_database_from_entries(
                         now=now,
                         display_name=row.get("display_name"),
                         party_id=party_id,
-                        identity_key=row["identity_key"],
+                        # Keyed by today's rule, not the stored key: a roster row
+                        # written when a name-found abgeordnetenwatch id still named
+                        # identity would otherwise fold into a speaker row sharing it.
+                        identity_key=pulse_store.mp_identity(
+                            aw_politician_id=row.get("aw_politician_id"),
+                            aw_match=row.get("aw_match"),
+                            dip_person_id=row.get("dip_person_id"),
+                            xml_redner_id=derive.first_redner_id(row.get("xml_redner_id")),
+                            profile_url=row.get("profile_url"),
+                            display_name=row.get("display_name"),
+                            party_name=row.get("party_name"),
+                        ),
                         dip_person_id=row.get("dip_person_id"),
                         xml_redner_id=row.get("xml_redner_id"),
                         title=row.get("title"),
@@ -1116,6 +1127,7 @@ def rebuild_database_from_entries(
                         wahlkreis=row.get("wahlkreis"),
                         bundesland=row.get("bundesland"),
                         aw_politician_id=row.get("aw_politician_id"),
+                        aw_match=row.get("aw_match"),
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
@@ -5501,6 +5513,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     profile = speaker.get("abgeordnetenwatch") or {}
                     if profile.get("id") and not entry_count.get("aw_id"):
                         entry_count["aw_id"] = profile.get("id")
+                        entry_count["aw_match"] = profile.get("match")
                     if speaker.get("xml_redner_id") and not entry_count.get("xml_redner_id"):
                         entry_count["xml_redner_id"] = speaker.get("xml_redner_id")
 
@@ -5914,7 +5927,7 @@ def render_bill_detail(
     for speaker in (bill.get("speakers") or [])[:12]:
         mp_href = pulse_html.mp_page_href(
             {
-                "abgeordnetenwatch": {"id": speaker.get("aw_id")},
+                "abgeordnetenwatch": {"id": speaker.get("aw_id"), "match": speaker.get("aw_match")},
                 "xml_redner_id": speaker.get("xml_redner_id"),
             },
             mp_lookup,
@@ -6097,7 +6110,7 @@ def ingest_mdb_roster(
                 or "Unbekannt"
             )
 
-            profile_url = aw_id = birth_year = gender = profession = wahlkreis = bundesland = None
+            profile_url = aw_id = aw_match = birth_year = gender = profession = wahlkreis = bundesland = None
             if profile_resolver is not None:
                 profile = profile_resolver.resolve(
                     first_name=compact.get("vorname"),
@@ -6107,6 +6120,7 @@ def ingest_mdb_roster(
                 if profile:
                     profile_url = profile.get("url")
                     aw_id = profile.get("id")
+                    aw_match = profile.get("match")
                     birth_year = profile.get("year_of_birth")
                     gender = profile.get("sex")
                     profession = profile.get("profession")
@@ -6121,7 +6135,9 @@ def ingest_mdb_roster(
                 now=now,
                 display_name=display_name,
                 party_id=party_id,
-                identity_key=pulse_store.mp_identity(aw_politician_id=aw_id, dip_person_id=compact.get("id")),
+                identity_key=pulse_store.mp_identity(
+                    aw_politician_id=aw_id, aw_match=aw_match, dip_person_id=compact.get("id")
+                ),
                 dip_person_id=compact.get("id"),
                 title=compact.get("titel"),
                 function=funktion,
@@ -6133,6 +6149,7 @@ def ingest_mdb_roster(
                 wahlkreis=wahlkreis,
                 bundesland=bundesland,
                 aw_politician_id=aw_id,
+                aw_match=aw_match,
                 person_roles_json=pulse_store.dumps(funktion) if funktion else None,
                 is_mdb=True,
             )
@@ -6163,15 +6180,18 @@ def _parse_listish(value: Any) -> list[Any]:
 
 
 def _mp_keys(row: dict[str, Any]) -> list[str]:
-    """External identity keys for an MP row, used to link rows that describe the
-    same person across sources (DIP roster vs. protocol speaker)."""
+    """Personenkennungen of an MP row, used to link rows that describe the same
+    person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
+    id counts only when it was looked up by the Redner-ID (match kind ext_id); one
+    found by searching a name is a Namensabgleich and links nothing."""
     keys: list[str] = []
-    if row.get("aw_politician_id") is not None:
+    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         keys.append(f"aw:{row['aw_politician_id']}")
     if row.get("dip_person_id"):
         keys.append(f"dip:{row['dip_person_id']}")
-    if row.get("xml_redner_id"):
-        keys.append(f"xml:{row['xml_redner_id']}")
+    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
+    if xml_id:
+        keys.append(f"xml:{xml_id}")
     return keys
 
 
@@ -6179,12 +6199,13 @@ def _mp_keys(row: dict[str, Any]) -> list[str]:
 # by name+party when their id buckets do not contradict each other.
 def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
-    if row.get("aw_politician_id") is not None:
+    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         ids["aw"].add(str(row["aw_politician_id"]))
     if row.get("dip_person_id"):
         ids["dip"].add(str(row["dip_person_id"]))
-    if row.get("xml_redner_id"):
-        ids["xml"].add(str(row["xml_redner_id"]))
+    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
+    if xml_id:
+        ids["xml"].add(xml_id)
     if row.get("profile_url"):
         ids["profile"].add(str(row["profile_url"]))
     return ids
@@ -6216,9 +6237,20 @@ def _clean_mp_name(name: Any) -> str:
     return text.split(", MdB")[0].strip() or text
 
 
-# Casefolded, whitespace-collapsed name used as a merge bucket key.
+# Academic titles are written on one side and left off on the other ("Dr. Janosch
+# Dahmen" in a Redner line, "Janosch Dahmen" in a vote list), so they are not part of
+# the name a bucket is keyed by. Only leading ones go, and never the last two words.
+_MP_TITLE_WORDS = frozenset(
+    {"dr", "prof", "dipl", "ing", "med", "jur", "rer", "nat", "phil", "h", "c", "habil", "mult", "univ", "mag"}
+)
+
+
+# Casefolded, whitespace-collapsed, title-free name used as a merge bucket key.
 def _normalized_mp_name(name: Any) -> str:
-    return re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip()
+    words = re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip().split(" ")
+    while len(words) > 2 and words[0].rstrip(".") in _MP_TITLE_WORDS:
+        words.pop(0)
+    return " ".join(word for word in words if word)
 
 
 # Party names differ in spelling between sources ("BÜNDNIS 90/DIE GRÜNEN" vs
@@ -6227,29 +6259,44 @@ def _normalized_mp_party(party: Any) -> str:
     text = str(party or "").strip()
     if not text:
         return ""
-    normalized = dip.normalize_faction(text)
+    normalized = derive.zusammenschluss(text)
+    if not normalized:
+        return ""
     tokens = sorted(aw._party_tokens(normalized))
     return "|".join(tokens) if tokens else normalized.casefold()
 
 
 def collect_abgeordnete(
     conn: sqlite3.Connection,
+    stats: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[int, int]]:
     """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
-    pages, consolidating rows that describe the same person (the DIP roster row
-    carries the bio; the protocol-speaker row carries the speeches). Returns the
-    consolidated MPs, a lookup from every external id to the page id (so
-    speaker lists can link without dangling), and a map from every mps.id to
-    its canonical (page) id - the third value feeds the Daten export's
-    mp_canonical table, unconditioned by whether the person gets a page. One
-    grouped query each avoids N+1."""
+    pages, consolidating rows that describe the same Person (Zusammenführung: the
+    DIP roster row carries the bio; the protocol-speaker row carries the
+    speeches). Returns the consolidated MPs, a lookup from every external id to
+    the page id (so speaker lists can link without dangling), and a map from
+    every mps.id to its canonical (page) id - the third value feeds the Daten
+    export's mp_canonical table, unconditioned by whether the person gets a page.
+    One grouped query each avoids N+1.
+
+    Rows join by a shared Personenkennung (provenance ``ext_id``), otherwise by
+    Namensabgleich (``unique_name``): only when a name+party bucket holds exactly
+    one record from the roster/roll-call side and one from the protocol-speaker
+    side, and no Personenkennung contradicts it. Namesakes, or three or more
+    records, stay split: a Person shown twice beats two Persons shown as one.
+    Every returned MP records how many merges of each provenance built it
+    (``merges``); ``stats``, when given, is filled with the totals."""
     # One query per relation, then grouped in Python - three flat queries beat
     # a per-MP query (N+1) by a wide margin at roster size.
+    # A store from before the match kind was kept has no aw_match: every id in it
+    # counts as found by name until it is resolved again.
+    has_aw_match = any(row["name"] == "aw_match" for row in conn.execute("PRAGMA table_info(mps)"))
     base = conn.execute(
-        """
+        f"""
         SELECT m.id, m.display_name, m.title, m.function, m.wahlperiode,
                m.profile_url, m.birth_year, m.gender, m.profession,
-               m.wahlkreis, m.bundesland, m.aw_politician_id, m.person_roles_json,
+               m.wahlkreis, m.bundesland, m.aw_politician_id,
+               {"m.aw_match" if has_aw_match else "NULL"} AS aw_match, m.person_roles_json,
                m.is_mdb, m.dip_person_id, m.xml_redner_id,
                p.name AS party
         FROM mps m
@@ -6311,6 +6358,9 @@ def collect_abgeordnete(
 
     # Union-find: link rows that share any external id into one person.
     parent = {row["id"]: row["id"] for row in rows}
+    #: merges of each provenance that went into the component rooted at a row id
+    provenance: dict[int, dict[str, int]] = {row["id"]: {"ext_id": 0, "unique_name": 0} for row in rows}
+    totals = {"ext_id": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
 
     def find(node: int) -> int:
         while parent[node] != node:
@@ -6318,45 +6368,70 @@ def collect_abgeordnete(
             node = parent[node]
         return node
 
-    def union(a: int, b: int) -> None:
+    def union(a: int, b: int, kind: str) -> None:
         ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
+        if ra == rb:
+            return
+        parent[ra] = rb
+        for name, count in provenance[ra].items():
+            provenance[rb][name] += count
+        provenance[rb][kind] += 1
+        totals[kind] += 1
 
-    # Pass 1: merge rows that share any external id. This is safe evidence.
+    # Pass 1: merge rows that share a Personenkennung (a Redner-ID, a DIP
+    # person id, an abgeordnetenwatch id looked up by Redner-ID).
     first_for_key: dict[str, int] = {}
     for row in rows:
         for key in _mp_keys(row):
             if key in first_for_key:
-                union(row["id"], first_for_key[key])
+                union(row["id"], first_for_key[key], "ext_id")
             else:
                 first_for_key[key] = row["id"]
 
-    def component_external_ids(node: int) -> dict[str, set[str]]:
-        root = find(node)
-        return _merge_external_ids([row for row in rows if find(row["id"]) == root])
+    rows_of: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        rows_of.setdefault(find(row["id"]), []).append(row)
 
-    def can_union_by_name_party(a: int, b: int) -> bool:
-        return not _external_ids_conflict(component_external_ids(a), component_external_ids(b))
+    def sides(root: int) -> set[str]:
+        # "speaker": a Plenarprotokoll named this record as a Redner. "roster":
+        # everything else (a DIP person, a roll-call member).
+        return {"speaker" if member.get("xml_redner_id") else "roster" for member in rows_of[root]}
 
-    # Pass 2: merge rows with the same name and party, but only when the two
-    # sides' external ids do not contradict each other. This is what bridges the
-    # DIP roster row (which has the biography) and the protocol speaker row
-    # (which has the speeches) for a person whose abgeordnetenwatch id was never
-    # resolved.
-    name_party_buckets: dict[tuple[str, str], list[int]] = {}
+    # Pass 2: Namensabgleich on the records pass 1 left. A name+party bucket
+    # merges only when it holds exactly two records, one on each side, and no
+    # Personenkennung of one contradicts one of the other. It is a guess, so
+    # any other shape stays split. Buckets are judged on the pass-1 records and
+    # the unions applied afterwards.
+    buckets: dict[tuple[str, str], set[int]] = {}
     for row in rows:
         name_key = _normalized_mp_name(row.get("display_name"))
         party_key = _normalized_mp_party(row.get("party"))
         if name_key and party_key:
-            name_party_buckets.setdefault((name_key, party_key), []).append(row["id"])
+            buckets.setdefault((name_key, party_key), set()).add(find(row["id"]))
 
-    for ids in name_party_buckets.values():
-        ids.sort()
-        for index, left in enumerate(ids):
-            for right in ids[index + 1 :]:
-                if find(left) != find(right) and can_union_by_name_party(left, right):
-                    union(left, right)
+    pending: list[tuple[int, int]] = []
+    for records in buckets.values():
+        if len(records) < 2:
+            continue
+        ordered = sorted(records)
+        speaker = [root for root in ordered if "speaker" in sides(root)]
+        roster = [root for root in ordered if "roster" in sides(root)]
+        if (
+            len(ordered) == 2
+            and len(speaker) == 1
+            and len(roster) == 1
+            and speaker[0] != roster[0]
+            and not _external_ids_conflict(
+                _merge_external_ids(rows_of[speaker[0]]), _merge_external_ids(rows_of[roster[0]])
+            )
+        ):
+            pending.append((speaker[0], roster[0]))
+        elif len(ordered) >= 3:
+            totals["buckets_split_3plus"] += 1
+        else:
+            totals["buckets_split_namesakes"] += 1
+    for left, right in pending:
+        union(left, right, "unique_name")
 
     # Group the merged rows back into one bucket per person.
     components: dict[int, list[dict[str, Any]]] = {}
@@ -6420,6 +6495,7 @@ def collect_abgeordnete(
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
+            "merges": dict(provenance[find(cid)]),
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -6435,6 +6511,15 @@ def collect_abgeordnete(
 
     # Stable, useful order: most speeches first, then alphabetical.
     mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
+    if stats is not None:
+        stats.update(
+            rows=len(rows),
+            entries=len(mps),
+            merges_ext_id=totals["ext_id"],
+            merges_unique_name=totals["unique_name"],
+            buckets_split_namesakes=totals["buckets_split_namesakes"],
+            buckets_split_3plus=totals["buckets_split_3plus"],
+        )
     return mps, lookup, canonical_by_mp_id
 
 
@@ -6966,7 +7051,7 @@ def _fact_speech_citation(
         f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
                {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,
-               m.xml_redner_id, m.aw_politician_id, m.dip_person_id,
+               m.xml_redner_id, m.aw_politician_id, m.aw_match, m.dip_person_id,
                ai.heading, lp.title AS proceeding_title, p.document_number
         FROM speeches s
         JOIN mps m ON m.id = s.mp_id
@@ -7262,7 +7347,9 @@ def _render_fact_sources(
             mp = speaker_mps[index]
             mp_href = pulse_html.mp_page_href(
                 {
-                    "abgeordnetenwatch": {"id": mp.get("aw_politician_id")} if mp.get("aw_politician_id") else {},
+                    "abgeordnetenwatch": (
+                        {"id": mp.get("aw_politician_id"), "match": mp.get("aw_match")} if mp.get("aw_politician_id") else {}
+                    ),
                     "xml_redner_id": mp.get("xml_redner_id"),
                     "dip_person_id": mp.get("dip_person_id"),
                 },
