@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0.0] - 2026-09-29
+
+### Added
+
+- An update now fetches roll-call votes by default. Until now they were an opt-in, so every update since June recorded votes as "not requested" and the July and September 2026 votes never reached the site. `--no-votes` skips the scan for one run. Backfilled into a copy of the reference store, votes went from 217 to 232 and the newest vote from 2026-06-12 to 2026-09-25.
+- Every build now says what is incomplete: the weeks and months that cannot post a Fakt yet, the sittings DIP lists that are missing or not fully acquired, why, and the exact command that fixes it. `--backfill-incomplete` acquires exactly those sittings and keeps every other cached dossier.
+- A Fakt week or month that is held back names the sitting that is missing ("unvollständig erfasst: Sitzung 21/96 (2026-09-24) fehlt").
+- The build logs how many roll-call list pages and vote pages each sitting needed, and the sittings of one build share the list pages.
+- The repository now carries a domain glossary (`CONTEXT.md`) and decision records (`docs/adr/`) that define the terms the site uses (Sitzung, Dossier, Rede, Fakt, completeness and more), and why a Kurzintervention is not counted as a Rede.
+
+### Changed
+
+- A week or month is now complete only when every sitting DIP lists for it is in the store and fully acquired. Before, a sitting whose dossier failed or was never built was invisible, so a period could look complete on one of three sittings. On the reference copy this withholds the weeks and months that lack sittings (for example June 2026, which had been measured on 3 of 6 sittings), and 15 sittings whose roll-call votes match no agenda item stay incomplete until the match rule improves.
+- A vote acquisition is complete only with evidence: the scan passed the sitting's date, no request failed, every listed vote found its agenda item, and the report records how the scan ended. Older reports without that record are re-acquired by the backfill.
+- Every online build fetches the whole DIP catalog (checked against DIP's own count) and keeps every cached dossier. `--limit` and `--document-number` now narrow only which sittings are refreshed, never what the site and the store keep.
+- A vote scan that fails for a network or server reason keeps the sitting's cached dossier instead of replacing it.
+- Roll-call and XML page requests retry a transient network error; a reset while reading a DIP response no longer ends a long build.
+- The README documents the backfill recipe, a scratch-directory preview, and the order in which config files, environment and flags decide which enrichments run.
+
+### Fixed
+
+- A Drucksache reference with a foreign URL no longer aborts the build (a cached 2022 dossier quotes a syriahr.com article).
+- Cached reports and the catalog are written atomically, so an interrupted build cannot leave a truncated file.
+
+### Removed
+
+- `--preserve-existing-dossiers`. Every build keeps the dossiers it has cached; delete a dossier's JSON file to drop it. A systemd unit or script that passes the flag must drop it.
+
 ## [0.7.0.0] - 2026-09-28
 
 ### Added
