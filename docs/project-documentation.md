@@ -193,7 +193,7 @@ Votes, profile links, and the full roster have explicit acquisition states: `not
 
 AI summaries are controlled separately through `reuse`, `off`, `auto`, and `required` modes. A usable summary is expanded by default, permanently labelled `KI-generiert · nicht redaktionell geprüft`, and has 3–5 distinct resolvable citations. The browser stores only the global expanded/collapsed preference under `bundestag-pulse-ai-summaries-v1`.
 
-Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead. Votes are selected by default (`--no-votes` opts out): a vote scan that cannot vouch for a sitting (`scan_budget_exhausted`, a failed request) keeps that sitting's cached votes and records the attempt as `partial`.
+Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead. Votes are selected by default (`--no-votes` opts out): a vote scan's result replaces that sitting's cached votes, except that a scan failing for a network or server reason keeps the whole cached dossier when it holds votes.
 
 ```bash
 # Publish every experience from the current cache.

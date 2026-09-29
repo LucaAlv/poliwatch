@@ -38,41 +38,6 @@ def two_vote_report(acquisition: dict | None) -> dict:
     return report
 
 
-class CachedVotesMergeByIdentityTests(unittest.TestCase):
-    def annotate(self, report: dict, existing: dict, scan_pages: int = 30) -> dict:
-        build.annotate_report_acquisition(
-            report, existing, vote_scan_pages=scan_pages, profile_resolver=None, summary_mode="off"
-        )
-        return report["acquisition"]["votes"]
-
-    def test_a_partial_rescan_keeps_the_votes_it_missed(self) -> None:
-        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
-        existing = two_vote_report(prior)
-        fresh = report_with(0, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        fresh["agenda_items"][0]["votes"] = [vote("1")]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1", "2"])
-        votes = self.annotate(fresh, existing)
-        self.assertEqual((votes["records"], votes["reused"]), (2, 1))
-
-    def test_a_vote_already_in_the_rescan_is_not_duplicated(self) -> None:
-        existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
-        fresh = report_with(0, None)
-        fresh["agenda_items"][0]["votes"] = [vote("1"), vote("2")]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1", "2"])
-
-    def test_an_unmatched_candidate_is_not_a_failed_recheck_a_prior_verification_can_undo(self) -> None:
-        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
-        existing = two_vote_report(prior)
-        fresh = report_with(0, votes_facts("partial", records=1, reasons=("unmatched_candidate",),
-                                           acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
-        fresh["agenda_items"][0]["votes"] = [vote("1")]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        votes = self.annotate(fresh, existing)
-        self.assertEqual(votes["acquisition_state"], "partial")
-        self.assertEqual(votes["failure_reasons"], ["unmatched_candidate"])
-
 
 class ScanEndEvidenceTests(unittest.TestCase):
     def annotate(self, report: dict, existing: dict | None, scan_pages: int) -> None:
@@ -116,25 +81,6 @@ class ScanEndEvidenceTests(unittest.TestCase):
         self.assertFalse(state["votes"])
         self.assertEqual(state["reasons"]["votes"], "no scan-end evidence (report predates it)")
 
-    def test_a_failed_recheck_over_a_verified_sitting_keeps_its_evidence(self) -> None:
-        prior = votes_facts("complete", records=0, acquired_at=STAMP, attempted_at=STAMP)
-        existing = report_with(0, prior)
-        existing["validation_summary"] = {"roll_call_scan_end": "list_end"}
-        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
-        fresh["validation_summary"] = {"roll_call_scan_end": "failed"}
-        self.annotate(fresh, existing, scan_pages=30)
-        self.assertEqual(fresh["validation_summary"]["roll_call_scan_end"], "list_end")
-        self.assertTrue(facts.completeness_from_reports([fresh])["21/90"]["votes"])
-
-
-class PriorVerificationNeedsTheFullCriteriaTests(unittest.TestCase):
-    def test_a_stamp_without_scan_end_evidence_is_not_restored_after_a_failed_refresh(self) -> None:
-        prior = votes_facts("complete", records=0, acquired_at=STAMP, attempted_at=STAMP)
-        existing = report_with(0, prior)  # stamped by an older build: no roll_call_scan_end
-        fresh = report_with(0, votes_facts("failed", reasons=("source_changed",), attempted_at="2026-09-28T10:00:00Z"))
-        fresh["validation_summary"] = {"roll_call_scan_end": "list_end"}  # maintenance page read as an empty list
-        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
-        self.assertEqual(fresh["acquisition"]["votes"]["acquisition_state"], "failed")
 
 
 class LaterDetailFailureKeepsTheVotesAlreadyFetchedTests(unittest.TestCase):
@@ -179,29 +125,6 @@ class OutageCooldownTests(unittest.TestCase):
         self.assertEqual(result.scan_end, "date_passed")
         self.assertNotIn(dip.ROLL_CALL_OUTAGE_KEY, cache)
 
-
-class CompleteScanLackingCachedVotesIsPartialTests(unittest.TestCase):
-    def test_a_complete_scan_that_finds_fewer_votes_than_the_cache_keeps_them_and_says_so(self) -> None:
-        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
-        existing = two_vote_report(prior)
-        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
-        fresh = report_with(0, votes_facts("complete", records=0, acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
-        fresh["validation_summary"] = {"roll_call_scan_end": "date_passed"}
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
-        votes = fresh["acquisition"]["votes"]
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1", "2"])
-        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["vote_shrinkage"]))
-        self.assertEqual((votes["records"], votes["reused"]), (2, 2))
-
-    def test_a_complete_scan_that_agrees_with_the_cache_stays_complete(self) -> None:
-        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
-        existing = two_vote_report(prior)
-        fresh = report_with(0, votes_facts("complete", records=2, acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
-        fresh["agenda_items"][0]["votes"] = [vote("1"), vote("2")]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
-        self.assertEqual(fresh["acquisition"]["votes"]["acquisition_state"], "complete")
 
 
 class BudgetStuckSittingsAreNotRedownloadedTests(unittest.TestCase):
@@ -279,9 +202,6 @@ class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
 
 
 class NonConvergingGapsAreKnownTests(unittest.TestCase):
-    def test_vote_shrinkage_is_structural(self) -> None:
-        self.assertTrue(build._structural_vote_gap({"reasons": {"votes": "votes partial (vote_shrinkage)"}}, 30))
-
     def test_a_budget_gap_is_not_structural_when_votes_are_off(self) -> None:
         gap = {"reasons": {"votes": "votes partial (scan_budget_exhausted after 30 pages)"}}
         self.assertFalse(build._structural_vote_gap(gap, 0))
@@ -303,39 +223,6 @@ class NonConvergingGapsAreKnownTests(unittest.TestCase):
         self.assertFalse(build._structural_vote_gap(old, 30))  # now a rescan can settle it
 
 
-class MergeOnlyRestoresVotesDatedForTheSittingTests(unittest.TestCase):
-    def test_a_cached_vote_dated_another_day_is_a_misattribution_not_a_missed_vote(self) -> None:
-        existing = report_with(0, votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [
-            {"id": "1", "title": "V1", "date": "2026-07-10"},
-            {"id": "2", "title": "V2", "date": "2026-05-02"},  # cached under the wrong sitting by an old bug
-        ]
-        fresh = report_with(0, votes_facts("complete", acquired_at=STAMP, attempted_at=STAMP))
-        fresh["protocol"] = {"dokumentnummer": "21/90", "datum": "2026-07-10"}
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1"])
-
-
-class MergeRestoresOnlyVotesThatStillBelongToTheTopTests(unittest.TestCase):
-    def test_a_vote_the_rescan_attached_nowhere_is_not_put_back_on_a_top_it_no_longer_matches(self) -> None:
-        moved = {**vote("1"), "document_numbers": ["21/9"]}
-        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [moved]
-        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        fresh = report_with(0, votes_facts("partial", records=0, reasons=("source_unavailable",), attempted_at=STAMP))
-        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
-
-    def test_a_vote_that_matches_the_top_is_restored(self) -> None:
-        kept = {**vote("1"), "document_numbers": ["21/5"]}
-        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [kept]
-        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        fresh = report_with(0, votes_facts("partial", records=0, reasons=("source_unavailable",), attempted_at=STAMP))
-        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1"])
 
 
 class CombinedReasonsAreParsedNotMatchedAsTextTests(unittest.TestCase):
@@ -352,6 +239,67 @@ class CombinedReasonsAreParsedNotMatchedAsTextTests(unittest.TestCase):
         fresh["validation_summary"] = {"roll_call_scan_end": "not_scanned", "roll_call_scan_pages": 0}
         build.annotate_report_acquisition(fresh, existing, vote_scan_pages=0, profile_resolver=None, summary_mode="off")
         self.assertEqual(fresh["validation_summary"]["roll_call_scan_pages"], 30)
+
+
+class ScanResultStandsAsItIsTests(unittest.TestCase):
+    """The carry-forward is gone: a scan's result replaces the cache, or, when the
+    scan failed for a transient reason over a cache with votes, the whole cached
+    dossier is kept."""
+
+    def annotate(self, report: dict, existing: dict | None, scan_pages: int) -> dict:
+        build.annotate_report_acquisition(
+            report, existing, vote_scan_pages=scan_pages, profile_resolver=None, summary_mode="off"
+        )
+        return report["acquisition"]["votes"]
+
+    def test_a_complete_scan_replaces_the_cache_even_with_fewer_votes(self) -> None:
+        existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        fresh = report_with(0, votes_facts("complete", acquired_at="2026-09-28T10:00:00Z", attempted_at="2026-09-28T10:00:00Z"))
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=False, profiles=True)  # a scan run
+        votes = self.annotate(fresh, existing, scan_pages=30)
+        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
+        self.assertEqual((votes["acquisition_state"], votes["records"]), ("complete", 0))
+
+    def test_a_partial_scan_keeps_its_own_state_and_votes_and_merges_nothing(self) -> None:
+        existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        fresh = report_with(0, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
+        fresh["agenda_items"][0]["votes"] = [vote("1")]
+        build.reuse_existing_dossier_enrichments(fresh, existing, votes=False, profiles=True)
+        votes = self.annotate(fresh, existing, scan_pages=30)
+        self.assertEqual([v["id"] for v in fresh["agenda_items"][0]["votes"]], ["1"])
+        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["scan_budget_exhausted"]))
+
+    def test_a_transient_failure_over_cached_votes_keeps_the_cached_dossier(self) -> None:
+        existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        for reason in ("source_unavailable", "source_changed"):
+            with self.subTest(reason=reason):
+                fresh = report_with(0, votes_facts("failed", reasons=(reason,), attempted_at=STAMP))
+                with self.assertRaisesRegex(dip.DipError, "keeping the cached dossier"):
+                    build.keep_cached_dossier_when_votes_failed(fresh, existing, 30)
+
+    def test_other_outcomes_do_not_keep_the_cached_dossier(self) -> None:
+        with_votes = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        cases = (
+            ("no cache", None, votes_facts("failed", reasons=("source_unavailable",), attempted_at=STAMP), 30),
+            ("cache without votes", report_with(0, None), votes_facts("failed", reasons=("source_unavailable",), attempted_at=STAMP), 30),
+            ("no scan requested", with_votes, votes_facts("failed", reasons=("source_unavailable",), attempted_at=STAMP), 0),
+            ("budget exhausted", with_votes, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), attempted_at=STAMP), 30),
+            ("unmatched", with_votes, votes_facts("partial", records=1, reasons=("unmatched_candidate",), attempted_at=STAMP), 30),
+            ("complete", with_votes, votes_facts("complete", acquired_at=STAMP, attempted_at=STAMP), 30),
+        )
+        for label, existing, facts_dict, pages in cases:
+            with self.subTest(label):
+                build.keep_cached_dossier_when_votes_failed(report_with(0, facts_dict), existing, pages)
+
+    def test_a_no_scan_run_copies_cached_votes_into_items_without_votes_only(self) -> None:
+        existing = two_vote_report(votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP))
+        empty = report_with(0, None)
+        build.reuse_existing_dossier_enrichments(empty, existing, votes=True, profiles=True)
+        self.assertEqual([v["id"] for v in empty["agenda_items"][0]["votes"]], ["1", "2"])
+        has_votes = report_with(0, None)
+        has_votes["agenda_items"][0]["votes"] = [vote("9")]
+        build.reuse_existing_dossier_enrichments(has_votes, existing, votes=True, profiles=True)
+        self.assertEqual([v["id"] for v in has_votes["agenda_items"][0]["votes"]], ["9"])
 
 
 class MergeRequiresTheSameTopIdTests(unittest.TestCase):
@@ -385,64 +333,7 @@ class OutageFlagOnlyForTransientFailuresTests(unittest.TestCase):
         self.assertIn(dip.ROLL_CALL_OUTAGE_KEY, cache)
 
 
-class MergeDoesNotReattachAVoteTheRescanMovedTests(unittest.TestCase):
-    def test_a_vote_now_on_another_top_is_not_restored_to_its_old_one(self) -> None:
-        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [vote("1")]
-        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": []})
-        fresh = report_with(0, votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at=STAMP, attempted_at=STAMP))
-        fresh["agenda_items"][0]["votes"] = []
-        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [vote("1")]})  # corrected attribution
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][1]["votes"]], ["1"])
 
-
-class ReparsedSittingLosingVotesIsNotStillVerifiedTests(unittest.TestCase):
-    def test_votes_dropped_by_a_reparse_do_not_stay_verified_after_a_failed_recheck(self) -> None:
-        prior = votes_facts("complete", records=2, acquired_at=STAMP, attempted_at=STAMP)
-        existing = two_vote_report(prior)
-        existing["validation_summary"] = {"roll_call_scan_end": "date_passed"}
-        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
-        fresh["agenda_items"][0]["top_id"] = "TOP 9"  # the XML was re-parsed with other ids and indices
-        fresh["agenda_items"][0]["index"] = 9
-        fresh["validation_summary"] = {"roll_call_scan_end": "failed"}
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        build.annotate_report_acquisition(fresh, existing, vote_scan_pages=30, profile_resolver=None, summary_mode="off")
-        self.assertNotEqual(fresh["acquisition"]["votes"]["acquisition_state"], "complete")
-        fresh["protocol"] = {"dokumentnummer": "21/90"}
-        self.assertFalse(facts.completeness_from_reports([fresh])["21/90"]["votes"])
-
-
-class MergeKeepsALegitimateSecondAttachmentTests(unittest.TestCase):
-    def test_a_vote_matching_both_tops_by_drucksache_stays_on_both_after_a_failed_refresh(self) -> None:
-        shared = {**vote("1"), "document_numbers": ["21/5"]}
-        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [shared]
-        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [dict(shared)],
-                                         "xml_drucksachen": [{"dokumentnummer": "21/5"}]})
-        fresh = report_with(0, votes_facts("partial", records=1, reasons=("source_unavailable",), acquired_at=STAMP, attempted_at=STAMP))
-        fresh["agenda_items"][0]["votes"] = [dict(shared)]
-        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [],
-                                      "xml_drucksachen": [{"dokumentnummer": "21/5"}]})
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual([v["id"] for v in fresh["agenda_items"][1]["votes"]], ["1"])
-
-    def test_a_vote_whose_drucksachen_do_not_match_the_old_top_is_not_restored_there(self) -> None:
-        moved = {**vote("1"), "document_numbers": ["21/9"]}
-        existing = report_with(0, votes_facts("complete", records=1, acquired_at=STAMP, attempted_at=STAMP))
-        existing["agenda_items"][0]["votes"] = [moved]
-        existing["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        existing["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": []})
-        fresh = report_with(0, votes_facts("partial", records=1, reasons=("source_unavailable",), acquired_at=STAMP, attempted_at=STAMP))
-        fresh["agenda_items"][0]["xml_drucksachen"] = [{"dokumentnummer": "21/5"}]
-        fresh["agenda_items"][0]["votes"] = []
-        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": [dict(moved)],
-                                      "xml_drucksachen": [{"dokumentnummer": "21/9"}]})
-        build.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
-        self.assertEqual(fresh["agenda_items"][0]["votes"], [])
 
 
 class BackfillLeavesStructuralUnmatchedSittingsAloneTests(unittest.TestCase):

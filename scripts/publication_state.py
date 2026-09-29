@@ -41,7 +41,6 @@ FAILURE_CODES = {
     "summary_budget_exhausted",
     "scan_budget_exhausted",
     "unmatched_candidate",
-    "vote_shrinkage",
     "source_stale",
     "unsafe_url",
     "unsafe_output_path",

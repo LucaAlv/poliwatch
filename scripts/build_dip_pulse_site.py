@@ -393,9 +393,9 @@ def _structural_vote_gap(gap: dict[str, Any], scan_pages: int | None = None) -> 
         return True
     listed = text[text.index("(") + 1 : text.rindex(")")].split(", ") if "(" in text and text.endswith(")") else []
     tokens = {token.split(" after ")[0] for token in listed}
-    # Any of these is reproduced by a rescan whatever else is going on: the
-    # list shows votes no TOP claims, or a complete scan disagrees with the cache.
-    if tokens & {"unmatched_candidate", "vote_shrinkage"}:
+    # Reproduced by a rescan whatever else is going on: the list shows votes no
+    # TOP claims.
+    if "unmatched_candidate" in tokens:
         return True
     if text == "votes partial (source_stale)":
         # Only while the list may still be catching up; after that a rescan can
@@ -638,18 +638,6 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
 
 # Agenda items carry either a list of roll-call votes ("votes") or a single
 # legacy "vote" dict. Normalise both shapes into a list.
-def _vote_matches_item(vote: dict[str, Any], item: dict[str, Any]) -> bool:
-    """Whether the vote's Drucksachen overlap the item's, the rule that attaches
-    a vote to a TOP (validate_dip_protocol.match_roll_call_votes)."""
-    numbers = {str(doc.get("dokumentnummer")) for doc in item.get("xml_drucksachen") or [] if doc.get("dokumentnummer")}
-    numbers.update(
-        str(doc.get("dokumentnummer"))
-        for doc in (item.get("api") or {}).get("linked_drucksachen") or []
-        if doc.get("dokumentnummer")
-    )
-    return bool(numbers & {str(n) for n in vote.get("document_numbers") or []})
-
-
 def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
 
@@ -1277,9 +1265,6 @@ def reuse_existing_dossier_enrichments(
         for key in agenda_item_reuse_keys(item):
             existing_by_key[key] = item
 
-    fresh_vote_keys = {
-        pulse_html.vote_key(vote) for fresh_item in report.get("agenda_items") or [] for vote in _iter_report_votes(fresh_item)
-    }
     for item in report.get("agenda_items") or []:
         previous = next(
             (existing_by_key[key] for key in agenda_item_reuse_keys(item) if key in existing_by_key),
@@ -1287,32 +1272,15 @@ def reuse_existing_dossier_enrichments(
         )
         if not previous:
             continue
+        # Cached votes are kept whole and only for an item the cache identifies
+        # unambiguously (equal top_id when both have one): an index match alone
+        # can be another TOP. Nothing is merged into a TOP that has votes.
         top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
-        if votes and _iter_report_votes(previous) and len(top_ids) <= 1:
-            # Merge by vote identity, not only into an empty TOP: a rescan that
-            # found some of a TOP's votes must not drop the ones it missed.
-            current = _iter_report_votes(item)
-            have = {pulse_html.vote_key(vote) for vote in current}
-            # A vote the rescan attached to another TOP stays there: the cached
-            # TOP may be a misattribution the rescan has since corrected.
-            sitting_day = str((report.get("protocol") or {}).get("datum") or "")[:10]
-            missing = [
-                copy.deepcopy(vote)
-                for vote in _iter_report_votes(previous)
-                if pulse_html.vote_key(vote) not in have
-                # A cached vote dated another day is a misattribution the
-                # rescan has corrected, not one it missed.
-                and (not sitting_day or not vote.get("date") or str(vote["date"])[:10] == sitting_day)
-                # Only a vote that still belongs to this TOP by the rule that
-                # attaches votes (Drucksache overlap) is restored; a vote the
-                # rescan un-attached, or attached elsewhere, stays where the
-                # rescan put it. A vote with no Drucksachen has nothing to test.
-                and (_vote_matches_item(vote, item) or not vote.get("document_numbers"))
-                and (pulse_html.vote_key(vote) not in fresh_vote_keys or _vote_matches_item(vote, item))
-            ]
-            if missing:
-                item["votes"] = [*current, *missing]
-                item.pop("vote", None)
+        if votes and not _iter_report_votes(item) and _iter_report_votes(previous) and len(top_ids) <= 1:
+            if previous.get("votes"):
+                item["votes"] = copy.deepcopy(previous["votes"])
+            elif previous.get("vote"):
+                item["vote"] = copy.deepcopy(previous["vote"])
         if not profiles:
             continue
 
@@ -1446,79 +1414,10 @@ def annotate_report_acquisition(
                 records=vote_records,
                 reused=vote_records,
             ).as_dict()
-    else:
-        fresh = acquisition.get("votes") or {}
-        # Unique vote ids: a vote attached to two TOPs is one vote.
-        unique_votes = len(
-            {pulse_html.vote_key(vote) for item in report.get("agenda_items") or [] for vote in _iter_report_votes(item)}
-        )
-        carried = max(0, unique_votes - int(fresh.get("records") or 0))
-        # "Verified" means the whole completeness criteria, not just a stamp:
-        # the prior report must also record how its scan ended and no shortfall.
-        prior_summary = (existing_report or {}).get("validation_summary") or {}
-        prior_complete = (
-            (prior_votes or {}).get("acquisition_state") == "complete"
-            and bool((prior_votes or {}).get("acquired_at"))
-            and prior_summary.get("roll_call_scan_end") in facts.COMPLETE_SCAN_ENDS
-            and not int(prior_summary.get("unmatched_roll_call_vote_count") or 0)
-        )
-        # A verified zero-vote sitting has nothing to carry, but its earlier
-        # verification must survive a failed re-check just the same.
-        # An unmatched candidate is not a failed re-check: the vote set is
-        # known to be short, so a prior verification cannot vouch for it.
-        # Nor may it vouch when the re-parse dropped votes it had verified
-        # (different TOP ids leave nothing to re-attach them to).
-        recheck_only = "unmatched_candidate" not in (fresh.get("failure_reasons") or []) and unique_votes >= int(
-            (prior_votes or {}).get("records") or 0
-        )
-        if fresh.get("acquisition_state") in {"partial", "failed"} and (carried or (prior_complete and recheck_only)):
-            # The scan could not vouch for this sitting, so the cached votes
-            # were kept (reuse_existing_dossier_enrichments). A failed re-check
-            # does not undo an earlier verified acquisition: if the cached
-            # votes came from a complete, stamped one, that state stands and
-            # the failed attempt is recorded next to it. Otherwise they are
-            # only partial evidence.
-            if prior_complete and recheck_only:
-                _keep_prior_scan_end(report, existing_report)
-            acquisition["votes"] = publication.DomainFacts(
-                domain="votes",
-                acquisition_state=(
-                    publication.AcquisitionState.COMPLETE
-                    if prior_complete and recheck_only
-                    else publication.AcquisitionState.PARTIAL
-                ),
-                source="bundestag-roll-call",
-                records=unique_votes,
-                reused=carried,
-                rejected=int(fresh.get("rejected") or 0),
-                failure_reasons=tuple(fresh.get("failure_reasons") or ()),
-                acquired_at=(
-                    (prior_votes or {}).get("acquired_at")
-                    if prior_complete and recheck_only
-                    else fresh.get("acquired_at") or (prior_votes or {}).get("acquired_at")
-                ),
-                attempted_at=fresh.get("attempted_at"),
-                attempted=bool(fresh.get("attempted")),
-            ).as_dict()
-
-    if vote_scan_pages != 0:
-        fresh_now = acquisition.get("votes") or {}
-        unique_now = len(
-            {pulse_html.vote_key(v) for item in report.get("agenda_items") or [] for v in _iter_report_votes(item)}
-        )
-        lacked = unique_now - int(fresh_now.get("records") or 0)
-        if fresh_now.get("acquisition_state") == "complete" and lacked > 0:
-            acquisition["votes"] = publication.DomainFacts(
-                domain="votes",
-                acquisition_state=publication.AcquisitionState.PARTIAL,
-                source="bundestag-roll-call",
-                records=unique_now,
-                reused=lacked,
-                failure_reasons=("vote_shrinkage",),
-                acquired_at=fresh_now.get("acquired_at"),
-                attempted_at=fresh_now.get("attempted_at"),
-                attempted=bool(fresh_now.get("attempted")),
-            ).as_dict()
+    # With a scan the result of that scan stands as it is (enrich_with_api wrote
+    # its state): nothing is merged from the cache and no earlier verification
+    # is restored. A scan that failed for a transient reason never gets here
+    # when the cache holds votes (write_report_and_page keeps the cached dossier).
 
     profile_records, _profile_targets = _report_profile_counts(report)
     if profile_resolver is None:
@@ -1604,6 +1503,28 @@ def annotate_report_acquisition(
         ).as_dict()
 
 
+def keep_cached_dossier_when_votes_failed(
+    report: dict[str, Any], existing_report: dict[str, Any] | None, vote_scan_pages: int
+) -> None:
+    """A vote scan that failed for a transient reason must not replace a cached
+    dossier that holds votes.
+
+    The dossier is skipped like any dossier whose refresh failed (the build
+    keeps the cached one whole), so a network blip cannot turn verified votes
+    into a partial sitting. Without cached votes the failed scan stands.
+    """
+    if vote_scan_pages == 0 or existing_report is None:
+        return
+    fresh = (report.get("acquisition") or {}).get("votes") or {}
+    transient = {"source_unavailable", "source_changed"} & set(fresh.get("failure_reasons") or ())
+    if fresh.get("acquisition_state") in {"partial", "failed"} and transient and any(
+        _iter_report_votes(item) for item in existing_report.get("agenda_items") or []
+    ):
+        raise dip.DipError(
+            f"Roll-call scan failed ({', '.join(sorted(transient))}); keeping the cached dossier with its votes."
+        )
+
+
 # Build one complete dossier for a single sitting and write both of its files.
 #
 # The heavy lifting (XML download, agenda/speech extraction, DIP lookups,
@@ -1662,19 +1583,14 @@ def write_report_and_page(
         roll_call_page_cache=roll_call_page_cache,
     )
     report = dip.build_report(args, protocol=protocol)
+    keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
     if summary_mode in {"auto", "required"}:
         reconcile_generated_and_cached_summaries(report, existing_report)
-    # Cached votes carry forward when this run did not scan, and also when the
-    # scan could not vouch for the sitting (partial or failed): a failed
-    # attempt must not delete what an earlier one found.
-    fresh_vote_state = ((report.get("acquisition") or {}).get("votes") or {}).get("acquisition_state")
+    # Cached votes carry forward when this run did not scan.
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
-        # A complete scan that lacks votes the cache holds is not trusted to
-        # have removed them: they are kept and annotate_report_acquisition marks
-        # the sitting partial (vote_shrinkage).
-        votes=True,
+        votes=vote_scan_pages == 0,
         profiles=profile_resolver is None,
     )
     # Post-processing steps supplied by enrichment components. In reuse mode the
