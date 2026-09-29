@@ -218,7 +218,8 @@ class PartyMigrationTests(unittest.TestCase):
                 pulse_store.initialize(conn)
 
                 names = [row["name"] for row in conn.execute("SELECT name FROM parties ORDER BY name")]
-                self.assertEqual(names, ["BSW (Gruppe)", "CDU/CSU", "Die Linke"])
+                # "BSW (Gruppe)" is the Gruppe BSW: one Zusammenschluss, one row.
+                self.assertEqual(names, ["CDU/CSU", "Die Linke", "Gruppe BSW"])
                 self.assertEqual(len(names), len(set(names)))
 
                 dangling = conn.execute(
@@ -329,24 +330,27 @@ class SpeechFraktionTests(unittest.TestCase):
             try:
                 pulse_store.persist_report(conn, report)
                 rows = {
-                    row["rede_id"]: (row["fraktion"], row["party"])
+                    row["rede_id"]: (row["fraktion"], row["party"], row["sprechrolle"])
                     for row in conn.execute(
                         """
-                        SELECT s.rede_id, s.fraktion, p.name AS party
+                        SELECT s.rede_id, s.fraktion, p.name AS party, s.sprechrolle
                         FROM speeches s
                         LEFT JOIN mps m ON m.id = s.mp_id
                         LEFT JOIN parties p ON p.id = m.party_id
                         """
                     )
                 }
+                party_names = {row["name"] for row in conn.execute("SELECT name FROM parties")}
             finally:
                 conn.close()
 
         # Normalised the same way parties.name is.
-        self.assertEqual(rows["R1"][0], "BÜNDNIS 90/DIE GRÜNEN")
-        # No Fraktion in the XML: NULL, and the reader falls back to the party.
-        self.assertIsNone(rows["R2"][0])
-        self.assertEqual(rows["R2"][1], "Regierung")
+        self.assertEqual(rows["R1"], ("BÜNDNIS 90/DIE GRÜNEN", "BÜNDNIS 90/DIE GRÜNEN", None))
+        # No Fraktion in the XML but a role: the Rede counts for the Bundesregierung
+        # and the speaker belongs to no Zusammenschluss, so there is no party row
+        # for "Regierung" (ADR 0001).
+        self.assertEqual(rows["R2"], (None, None, "bundesregierung"))
+        self.assertNotIn("Regierung", party_names)
 
     @unittest.skipUnless(
         sqlite3.sqlite_version_info >= (3, 35),

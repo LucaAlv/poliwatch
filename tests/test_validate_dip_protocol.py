@@ -196,8 +196,6 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         counts = dip.vote_counts_from_csv("10, 5, 2, 1")
         self.assertEqual(counts, {"yes": 10, "no": 5, "abstain": 2, "absent": 1})
         self.assertEqual(dip.vote_total(counts), 18)
-        self.assertEqual(dip.leading_vote(counts), "yes")
-        self.assertEqual(dip.leading_vote({"yes": 0, "no": 0, "abstain": 0, "absent": 9}), "absent")
 
     def test_text_date_and_faction_helpers(self) -> None:
         self.assertEqual(dip.normalize_faction("B90/GRÜNE"), "BÜNDNIS 90/DIE GRÜNEN")

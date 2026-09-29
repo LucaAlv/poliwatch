@@ -234,22 +234,56 @@ The offline rebuild regenerates every page from the existing cache, so template,
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
-- **The update changed what gets persisted** (new columns filled during persist, new derived rows). Either run an online build, or re-persist the cached reports without any network access. Build a fresh database and swap it in, the way the online build does — persisting into the existing file would leave rows behind for protocols that are no longer cached:
-
-  ```bash
-  DB=.context/dip-pulse-site/data/bundestag-pulse.sqlite
-  rm -f "$DB.new"
-  for report in .context/dip-pulse-site/data/plenarprotokoll-*.json; do
-    case "$report" in *catalog.json) continue;; esac
-    python3 scripts/persist_dip_pulse_store.py "$report" --database "$DB.new"
-  done
-  mv "$DB.new" "$DB"
-  scripts/preview_dip_pulse_site.sh
-  ```
+- **The update changed what gets persisted** (new columns filled during persist, values derived from the cached reports). Re-persist the cached reports without any network access, see [Re-persist the cached reports](#re-persist-the-cached-reports) below.
 
 - **The update changed fetching or extraction** (`validate_dip_protocol.py`, roll-call scraping, profile resolution). The cached reports predate the fix, so re-fetch with 4b.
 
 Otherwise the offline rebuild is enough.
+
+#### Re-persist the cached reports
+
+```bash
+python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/dip-pulse-site
+```
+
+`--repersist` (only with `--offline`) persists every cached `plenarprotokoll-*.json` into a fresh database, in the order an online build uses, and keeps the MdB roster rows and the stored facts. Then it renders as usual. The new database replaces the old one only when every report persisted:
+
+- an unreadable or malformed cached report, or a report that fails to persist, prints one `ERROR [repersist]:` line naming the file, exits 1, and leaves the previous database byte for byte as it was (it is opened read-only, so an older schema is not migrated either);
+- when the rebuilt content equals the current database apart from timestamps, the existing file is kept and the run says so, so running it twice changes nothing.
+
+It applies what is derived when persisting. It does not re-parse XML or re-resolve profiles; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
+
+#### Validate a data correction
+
+A change that moves a stored value (a parsing rule, a derivation, an identity rule) is checked against the store before it is trusted: keep a copy of the store from before the change, apply the change to another copy, and let `scripts/compare_store_values.py` print what moved.
+
+```bash
+# 1. The baseline: a copy of the whole output directory, made before the change
+cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -R elsewhere
+
+# 2. Apply the change to a second copy, by the route it needs (4c)
+cp -cR .context/baseline .context/after
+#    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...):
+python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
+#    needs the XML or a profile lookup again (Rede text, merged Redner records, match kinds): an online run into
+#    the copy, e.g. `--document-number 21/84`, or `--backfill-incomplete` (see "Try a fetch or a backfill in a
+#    scratch directory"). To re-parse every cached sitting, name each one (about 30 s per sitting without votes,
+#    so 2 to 3 hours for 300 sittings; `--no-votes` keeps the votes already cached):
+python3 scripts/build_dip_pulse_site.py --output-dir .context/after --no-votes \
+  $(ls .context/after/data/plenarprotokoll-2*-*.json | sed -E 's#.*plenarprotokoll-([0-9]+)-([0-9]+)\.json#--document-number \1/\2#')
+
+# 3. Compare, old first
+python3 scripts/compare_store_values.py .context/baseline .context/after                 # the fixed cohort (default)
+python3 scripts/compare_store_values.py .context/baseline .context/after --cohort all    # whole-store coverage
+```
+
+Both arguments are output directories (the store plus the generated pages). The script only reads, and exits 0 once it compared, 2 for a directory that is not an output directory. It prints old, new and the delta for the row counts, `parties` (mps rows, MdB, Reden naming each name; a name that appears or disappears is listed), the Mehrheitsvotum distribution, votes and their newest date, the characters of all Reden (with the largest per-protocol moves and the characters no speaker could be found for), the Redeanteil per Zusammenschluss and Sprechrolle, the Reden that fall back to the speaker's party, the Zusammenführung (records, merges per provenance, name buckets left split), the `r3-abweichler` recipe, the generated pages, and the stored facts: publishable weeks and months, every period that stopped being complete with its reason, and every changed winner with the identity of the winning speech or vote.
+
+- **Fixed cohort** (default) compares what is parsed from a protocol on the protocols both stores hold, so a sitting an online run acquired does not blur a value fix. **`--cohort all`** shows what a rebuild added or lost. Row counts, parties, pages and facts are always whole-store, and say so in their heading.
+- A quantity with no evidence in a store (an older schema without the column, a page directory that was not built, no MdB roster) prints `unavailable`, never 0. A one-sided quantity shows the other side's figures against `unavailable`.
+- Quote the output in the commit that changes the value, with one or two examples a reader can check at the source: the protocol, the Rede id or vote id, the page. Say which part the change fixes and which it only measures.
+
+Tests for the script are in `tests/test_compare_store_values.py`; `scripts/compare_store_values.py --help` lists the options.
 
 Hard reset, when the cache itself is suspect:
 
@@ -367,10 +401,21 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
+| `ERROR [sprechrolle]: N speaker role(s) map to no Sprechrolle: …` | A speaker's `<rolle_lang>` in a cached protocol is one no rule in `SPRECHROLLE_RULES` maps. The message lists every such role with the protocol and Rede id; the store is left as it was. Add each role to the rules, see [Sprechrolle rules](#sprechrolle-rules), then re-run. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
 | `warning: [puls] N Sitzungen ohne Datum ausgeschlossen (21/82, …)` | Those cached dossiers carry no `datum`, so they cannot be placed in a sitting week; the radar renders from the dated ones and the page header notes the count. Re-fetch the named sittings with `update --document-number …`. With no dated sitting at all the page shows only "Die erzeugten Sitzungen tragen kein Datum". |
 | Radar shows no rows (`warning: [puls] KW …: keine Reden extrahiert`) | Every agenda item of that week has zero extracted speeches, so there is nothing to rank; the page says so in one note. Usually the XML speeches were not fetched or the extraction was empty — re-run `update --document-number …` for the week's sittings and check the dossier's validation warnings. |
+
+### Sprechrolle rules
+
+A Rede in a Sprechrolle (CONTEXT.md; `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
+
+- A role that names a Land in brackets ("Ministerpräsident (Bayern)", "Staatsminister (Hessen)") is the Bundesrat.
+- The Bundeskanzler, Bundesminister, Parlamentarische Staatssekretäre, Staatsminister beim Bund, Beauftragte and Koordinatoren der Bundesregierung are the Bundesregierung.
+- The Wehrbeauftragte des Deutschen Bundestages and the Polizeibeauftragte des Bundes are `weitere`.
+
+A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new title never lands in a Fraktion's numbers unnoticed. To fix it, add a line to `SPRECHROLLE_RULES` with the side it belongs to, then apply it to the cached reports with `--offline --repersist` (§4c). `tests/test_sprechrolle.py` lists every role the cached reports contained when it was written; add the new one there as well.
 
 ## 9. More documentation
 

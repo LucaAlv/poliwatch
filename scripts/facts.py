@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
+import derive
 from persist_dip_pulse_store import SYNTHETIC_REDE_ID_SEPARATOR
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
@@ -192,15 +193,18 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "id": "meiste-abweichler",
         "version": 1,
         "title": "Die meisten Abweichler der Woche",
-        "unit": "Abgeordnete gegen die Linie ihrer Fraktion",
+        "unit": "Abgeordnete, die anders stimmten als die Mehrheit ihrer Fraktion oder Gruppe",
         "direction": "max",
         "aggregation": "extreme",
-        # An abweichlerin votes the opposite way of her Fraktion's
-        # leading_vote. Enthaltung and Abwesenheit are not a counter-vote and
-        # do not count (the Suizidhilfe vote reads 179 this way, 202 with
-        # Enthaltungen); fraktionslose Abgeordnete have no Fraktionslinie to
-        # break, so the pseudo-Fraktion "fraktionslos" is excluded (151 of its
-        # members' votes would otherwise count as deviations).
+        # An Abweichung votes Ja where the Mehrheitsvotum of the MdB's
+        # Zusammenschluss is Nein, or Nein where it is Ja (CONTEXT.md).
+        # Enthaltung and Abwesenheit are not a counter-vote and do not count
+        # (the Suizidhilfe vote reads 179 this way, 202 with Enthaltungen), and
+        # neither does a Zusammenschluss without a Mehrheitsvotum (a tie, or
+        # nobody voted: leading_vote is NULL there). Fraktionslose MdBs belong
+        # to no Zusammenschluss and cannot make an Abweichung, so the
+        # pseudo-Fraktion "fraktionslos" is excluded (151 of its members' votes
+        # would otherwise count as deviations).
         "sql": (
             "SELECT v.id, v.title, v.date, v.detail_url,\n"
             "       CASE WHEN EXISTS (SELECT 1 FROM vote_members vm0 WHERE vm0.vote_id = v.id) THEN (\n"
@@ -233,9 +237,9 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "min_value": 3,
         "requires_topic": False,
         "caveat": (
-            "Bei Gewissensfragen gibt es keine Fraktionslinie. Gezählt wird, wer anders "
-            "stimmt als die Mehrheit der eigenen Fraktion; Enthaltungen und Abwesenheit "
-            "zählen nicht, fraktionslose Abgeordnete bleiben außen vor. Je mehr "
+            "Bei Gewissensfragen stimmen Fraktionen oft frei ab. Gezählt wird, wer anders "
+            "stimmt als die Mehrheit der eigenen Fraktion oder Gruppe; Enthaltungen und "
+            "Abwesenheit zählen nicht, fraktionslose Abgeordnete bleiben außen vor. Je mehr "
             "namentliche Abstimmungen eine Woche hat, desto mehr Abweichungen sind zu "
             "erwarten."
         ),
@@ -286,7 +290,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             LEAD_POSITION_CTE
             + "SELECT s.id, s.rede_id, s.page, s.page_quadrant, s.char_count AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       ai.heading, lp.title AS proceeding_title,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
@@ -340,17 +344,19 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
         "aggregation": "count",
-        # Grouped by the XML speaker id, not by mps.id: the live store splits
-        # one person across an "aw:" and an "xml:" mps row that share their
-        # xml_redner_id (314 display names on the 2026-09-19 store), and
-        # grouping by mps.id turned 4 debutants in 2026-W37 into 233. Every
-        # mps row that carries a speech has an xml_redner_id (0 without).
+        # Grouped by the Person (mp_canonical, the Zusammenführung of the mps
+        # rows), not by mps.id: the live store splits one person across an "aw:"
+        # and an "xml:" mps row that share their xml_redner_id (314 display names
+        # on the 2026-09-19 store), and grouping by mps.id turned 4 debutants in
+        # 2026-W37 into 233. Not by xml_redner_id either: a Person with two
+        # Redner-IDs (an MdB id and one for a government role) would debut twice.
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, p.date AS day,\n"
-            "         COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS person_key\n"
+            "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
             "  JOIN mps m ON m.id = s.mp_id\n"
+            "  JOIN mp_canonical mc ON mc.mp_id = m.id\n"
             "  JOIN protocols p ON p.id = s.protocol_id\n"
             "  WHERE s.mp_id IS NOT NULL\n"
             "),\n"
@@ -365,7 +371,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             ")\n"
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant, 1 AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM first_speech fs\n"
             "JOIN speeches s ON s.id = fs.speech_id\n"
@@ -408,21 +414,22 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         # One row per speech, not per MP: aggregation "grouped_extreme" sums
         # "value" (1 per speech) per "group_id" across every protocol in the
         # month, so candidate_rows() stays a single, unmodified query keyed by
-        # protocol_id. group_id is xml_redner_id, not mps.id -- T10 found the
-        # live store splits one person across an "aw:" and an "xml:" mps row
-        # sharing xml_redner_id (314 display names), the same fix erste-reden
-        # needed. tie_value (char_count, summed the same way) breaks a speech
+        # protocol_id. group_id is the Person (mp_canonical), not mps.id -- T10
+        # found the live store splits one person across an "aw:" and an "xml:"
+        # mps row sharing xml_redner_id (314 display names), the same fix
+        # erste-reden needed. tie_value (char_count, summed the same way) breaks a speech
         # -count tie by who spoke longer, tie_id (mps.id) by the lowest of
         # those (D25A: "ties to most characters, then lowest mps.id").
         "sql": (
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant,\n"
-            "       COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS group_id,\n"
+            "       'p#' || mc.canonical_id AS group_id,\n"
             "       m.id AS tie_id, 1 AS value, s.char_count AS tie_value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
+            "JOIN mp_canonical mc ON mc.mp_id = m.id\n"
             "LEFT JOIN parties pa ON pa.id = m.party_id\n"
             "JOIN protocols p ON p.id = s.protocol_id\n"
             "WHERE s.mp_id IS NOT NULL"
@@ -1113,8 +1120,35 @@ def _id_sort_key(value: Any) -> tuple[int, Any]:
     return (0, int(text)) if text.isdigit() else (1, text)
 
 
+def ensure_canonical(conn: sqlite3.Connection, canonical_by_mp_id: Mapping[int, int] | None = None) -> None:
+    """The temp table ``mp_canonical`` (mp_id, canonical_id) the per-person metrics
+    join, the same shape as the Verteilkopie's, so a reader can run their SQL there.
+
+    The build passes the Zusammenführung's map. Without one (a store read on its
+    own, the tests) rows that share an xml_redner_id are one Person, the rule the
+    metrics used before the map existed. An existing table is kept unless a map is
+    given.
+    """
+    exists = conn.execute("SELECT 1 FROM sqlite_temp_master WHERE type = 'table' AND name = 'mp_canonical'").fetchone()
+    if exists and not canonical_by_mp_id:
+        return
+    conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
+    conn.execute("CREATE TEMP TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL)")
+    if canonical_by_mp_id:
+        conn.executemany(
+            "INSERT INTO mp_canonical(mp_id, canonical_id) VALUES (?, ?)", sorted(canonical_by_mp_id.items())
+        )
+    else:
+        conn.execute(
+            "INSERT INTO mp_canonical(mp_id, canonical_id) "
+            "SELECT m.id, COALESCE(CASE WHEN m.xml_redner_id <> '' THEN "
+            "(SELECT MIN(m2.id) FROM mps m2 WHERE m2.xml_redner_id = m.xml_redner_id) END, m.id) FROM mps m"
+        )
+
+
 def candidate_rows(conn: sqlite3.Connection, metric: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Run the metric's SQL once; rows keyed by protocol id."""
+    ensure_canonical(conn)
     try:
         rows = conn.execute(metric["sql"]).fetchall()
     except sqlite3.Error as exc:
@@ -1511,7 +1545,7 @@ def _citation(metric: Mapping[str, Any], observation: Observation) -> dict[str, 
             {
                 "rede_id": row.get("rede_id"),
                 "display_name": row.get("display_name"),
-                "fraktion": speaker_party({"fraktion": row.get("fraktion")}),
+                "fraktion": speaker_party({"fraktion": row.get("fraktion"), "sprechrolle": row.get("sprechrolle")}),
                 "topic": agenda_topic(row.get("proceeding_title"), row.get("heading")),
             }
         )
@@ -2035,7 +2069,9 @@ def _leads(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str, str]
     identity. A data correction can reattribute a published fact to a
     different speech or vote without changing its rank or value (a fixed
     mp_id, a corrected citation join); comparing this alongside them is what
-    makes that class of correction show up as a changed winner."""
+    makes that class of correction show up as a changed winner. A vote has no
+    rede_id or page, so its ``official_url`` is what tells two votes of one
+    sitting apart."""
     index = {column: position for position, column in enumerate(_SOURCE_KEY_COLUMNS)}
     leads: dict[tuple[str, str, str], tuple[Any, ...]] = {}
     for values in snapshot["fact_sources"]:
@@ -2048,7 +2084,9 @@ def _leads(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str, str]
         )
         leads[key] = tuple(
             values[index[column]]
-            for column in ("entity_kind", "document_number", "rede_id", "page", "page_quadrant")
+            for column in (
+                "entity_kind", "document_number", "rede_id", "page", "page_quadrant", "official_url"
+            )
         )
     return leads
 
@@ -2103,10 +2141,29 @@ def changed_winners(
     return lines
 
 
+def _lead_text(lead: Sequence[Any]) -> str:
+    """The lead receipt's identity as a reader can look it up: the vote's
+    official page, or the sitting plus Rede id and page."""
+    if not lead:
+        return ""
+    kind, document_number, rede_id, page, _quadrant, official_url = lead
+    parts = [str(kind), str(document_number)] if document_number else [str(kind)]
+    if rede_id:
+        parts.append(str(rede_id))
+    if page:
+        parts.append(f"S. {page}")
+    if official_url:
+        parts.append(str(official_url))
+    return " ".join(parts)
+
+
 def _posted_text(entries: Sequence[tuple[Any, ...]]) -> str:
     if not entries:
         return "kein Fakt"
-    return ", ".join(f"{metric_id} ({value:g})" for _, metric_id, value, _lead in entries)
+    return ", ".join(
+        f"{metric_id} ({value:g})" + (f" [{_lead_text(lead)}]" if lead else "")
+        for _, metric_id, value, lead in entries
+    )
 
 
 def compute_and_store(
@@ -2119,6 +2176,7 @@ def compute_and_store(
     no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
+    canonical_by_mp_id: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
@@ -2128,6 +2186,7 @@ def compute_and_store(
     metric, via FactsError.
     """
     registry = tuple(registry)
+    ensure_canonical(conn, canonical_by_mp_id)
     if catalog is None or not catalog.authoritative:
         print(
             "warning: [facts] no authoritative sitting catalog is cached, so no period can be judged complete "
@@ -2291,8 +2350,8 @@ def card_lead(row: Mapping[str, Any]) -> str:
         )
     if metric_id == "meiste-abweichler":
         return (
-            f"{title}: {format_int(int(row['value']))} Abgeordnete stimmten gegen die Linie "
-            f"ihrer Fraktion, bei {card_title(row)}"
+            f"{title}: {format_int(int(row['value']))} Abgeordnete stimmten anders als die "
+            f"Mehrheit ihrer Fraktion oder Gruppe, bei {card_title(row)}"
         )
     if metric_id == "laengste-debatte":
         return (

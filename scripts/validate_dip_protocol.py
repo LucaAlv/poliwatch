@@ -31,8 +31,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from html import unescape
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
+import derive
 import publication_state as publication
 
 
@@ -368,6 +369,9 @@ def extract_drucksachen(elem: ET.Element) -> list[dict[str, str | None]]:
     return docs
 
 
+_REDNER_LABEL_RE = re.compile(r"^(?P<name>.+?)\s*\((?P<fraktion>[^()]+)\)\s*:?$")
+
+
 def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     if redner is None:
         return None
@@ -383,6 +387,15 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     role_short = child_text(name, "rolle/rolle_kurz") or None
     parts = [part for part in (title, first, last) if part]
     display_name = clean_text(" ".join(parts)) or elem_text(redner)
+    if fraction and derive.zusammenschluss(fraction) is None:
+        # Two people folded into one element ("SPDCDU/CSU", first name
+        # "Dirk-UlrichAlexander"): no field of it can be trusted, but the label
+        # the protocol prints after the element ("Alexander Föhr (CDU/CSU):")
+        # names the person. Its name and Fraktion replace the garbled ones.
+        label = _REDNER_LABEL_RE.match(clean_text(redner.tail))
+        if label:
+            display_name, first, last = clean_text(label.group("name")), None, None
+            fraction = clean_text(label.group("fraktion"))
     return {
         "xml_redner_id": redner.attrib.get("id"),
         "display_name": display_name,
@@ -420,15 +433,62 @@ def parse_toc(root: ET.Element) -> dict[str, dict[str, Any]]:
     return toc
 
 
-def speech_text_and_paragraphs(rede: ET.Element) -> tuple[str, list[str]]:
+def redner_key(redner: ET.Element | None) -> str | None:
+    """The person a ``<redner id="...">`` names, or None when it names nobody
+    (a merged record's two ids name the first)."""
+    return derive.first_redner_id(redner.attrib.get("id")) if redner is not None else None
+
+
+class SpeechText(NamedTuple):
+    """What one Rede's XML yields: the Redner's own text and paragraphs, and
+    how many characters no speaker could be determined for."""
+
+    text: str
+    paragraphs: list[str]
+    unattributed_chars: int
+
+
+# Whoever a ``<name>`` element introduces is the Sitzungsleitung ("Präsidentin
+# Julia Klöckner:"): the XML uses it for nobody else. Compared by identity.
+_SITZUNGSLEITUNG = object()
+
+
+def speech_text_and_paragraphs(rede: ET.Element) -> SpeechText:
+    """The words the Rede's Redner spoke (CONTEXT.md: Rede, Sitzungsleitung,
+    Zwischenfrage).
+
+    A ``<rede>`` interleaves the Redner with the Sitzungsleitung and with MdBs
+    asking a Zwischenfrage. The current speaker starts as the Rede's first
+    ``<redner>``, becomes the Sitzungsleitung at a ``<name>`` element and
+    becomes whoever a ``<p klasse="redner">`` marker names. Only paragraphs
+    spoken while the Redner is the current speaker are his or hers. The
+    Redner resumes with a marker of his or her own id: measured on 961 Reden
+    of eight sittings (WP 20 and 21) a ``<name>`` block was always followed by
+    such a marker or by the end of the Rede, so no resumption is inferred from
+    paragraph classes. Text with no determinable speaker (a marker that names
+    nobody, or a Rede that never names its Redner) goes to nobody and is
+    counted in ``unattributed_chars``. ``<kommentar>`` is not a ``<p>`` and
+    stays excluded.
+    """
+    own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+    speaker: object = own
     paragraphs: list[str] = []
-    for paragraph in rede.findall("p"):
-        if paragraph.attrib.get("klasse") == "redner":
-            continue
-        text = elem_text(paragraph)
-        if text:
-            paragraphs.append(text)
-    return clean_text(" ".join(paragraphs)), paragraphs
+    unattributed = 0
+    for child in rede:
+        if child.tag == "name":
+            speaker = _SITZUNGSLEITUNG
+        elif child.tag == "p":
+            if child.attrib.get("klasse") == "redner":
+                speaker = redner_key(child.find("redner"))
+                continue
+            text = elem_text(child)
+            if not text:
+                continue
+            if speaker is None:
+                unattributed += len(text)
+            elif speaker == own:
+                paragraphs.append(text)
+    return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed)
 
 
 def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
@@ -458,7 +518,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         for rede in top.findall("rede"):
             rid = rede.attrib.get("id")
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
-            text, paragraphs = speech_text_and_paragraphs(rede)
+            text, paragraphs, unattributed_chars = speech_text_and_paragraphs(rede)
             page_ref = rid_pages.get(rid or "")
             if page_ref:
                 pages.append(page_ref)
@@ -469,6 +529,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                     "speaker": redner,
                     "paragraph_count": len(paragraphs),
                     "char_count": len(text),
+                    "unattributed_char_count": unattributed_chars,
                     "text": text,
                     "paragraphs": paragraphs,
                     "snippet": text[:240],
@@ -649,15 +710,9 @@ def unique_by(items: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[s
 
 
 def normalize_faction(value: str | None) -> str:
-    value = clean_text(value)
-    upper = value.upper()
-    if upper in {"B90/GRÜNE", "GRÜNE", "BÜNDNIS 90/DIE GRÜNEN"}:
-        return "BÜNDNIS 90/DIE GRÜNEN"
-    if upper in {"LINKE", "DIE LINKE"}:
-        return "Die Linke"
-    if upper in {"FRAKTIONSLOSE", "FRAKTIONSLOS"}:
-        return "fraktionslos"
-    return value or "Unbekannt"
+    """derive.zusammenschluss, with "Unbekannt" where it names nothing (the
+    vote pages need a label for every Fraktion row)."""
+    return derive.zusammenschluss(value) or "Unbekannt"
 
 
 def vote_counts_from_csv(value: str | None) -> dict[str, int]:
@@ -668,13 +723,6 @@ def vote_counts_from_csv(value: str | None) -> dict[str, int]:
 
 def vote_total(counts: dict[str, int]) -> int:
     return sum(int(counts.get(key) or 0) for key in VOTE_KEYS)
-
-
-def leading_vote(counts: dict[str, int]) -> str:
-    cast = {key: int(counts.get(key) or 0) for key in ("yes", "no", "abstain")}
-    if not any(cast.values()):
-        return "absent"
-    return max(cast, key=cast.get)
 
 
 _CONSTITUTIONAL_TITLE_RE = re.compile(r"Grundgesetz", re.I)
@@ -1085,7 +1133,6 @@ def parse_fraction_votes(detail_html: str) -> list[dict[str, Any]]:
                 "name": name,
                 "counts": counts,
                 "total": vote_total(counts),
-                "leading_vote": leading_vote(counts),
             }
         )
     return unique_by(fractions, ("name",))
@@ -1787,6 +1834,7 @@ def enrich_with_api(
                         "speaker": speech["speaker"],
                         "paragraph_count": speech["paragraph_count"],
                         "char_count": speech["char_count"],
+                        "unattributed_char_count": speech["unattributed_char_count"],
                         "text": speech["text"],
                         "paragraphs": speech["paragraphs"],
                         "snippet": speech["snippet"],

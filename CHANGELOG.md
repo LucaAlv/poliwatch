@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0.0] - 2026-09-29
+
+### Added
+
+- Apply stored-value corrections to every cached sitting without network access using `--offline --repersist`. The rebuild preserves the MdB roster, leaves the previous database untouched on failure, and keeps the file when its content is unchanged.
+- Compare two builds with a read-only report showing changes in speech text, vote majorities, affiliations, person pages, legislative pages, and published facts. Shared-sitting and whole-store modes keep new acquisitions distinct from corrected values.
+
+### Fixed
+
+- Speech lengths now include only the named speaker’s words, excluding the chair and intervening speakers. Unattributed text is measured separately.
+- Parliamentary groups and factions use consistent names, including the historical Gruppe Die Linke; duplicate speaker names and merged source records are handled consistently.
+- Government, Bundesrat, and other official speaking roles count separately from factions. Unknown roles stop persistence with a diagnostic naming the affected speeches.
+- Vote majorities are absent on a tie or when nobody voted. Vote panels, archive filters, and dissent counts use the same rule; non-attached members are excluded from faction dissent.
+- Person pages use verified identifiers and unambiguous name matches, keeping namesakes and conflicting DIP identities separate while rejoining corroborated records for people with two speaker IDs.
+- Only legislative procedures receive Gesetzesvorhaben pages; other procedures on the same agenda item (Entschließungsanträge, Anträge) are listed on each Gesetzgebung’s page as such, not as its companions. Public labels and the data-correction recipes now describe these rules.
+
 ## [0.8.0.0] - 2026-09-29
 
 ### Added

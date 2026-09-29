@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Three real Reden cut from Plenarprotokoll 21/84 (2026-09-25),
+  https://dserver.bundestag.de/btp/21/21084.xml, for the tests of
+  validate_dip_protocol.speech_text_and_paragraphs. Element structure and text
+  are the Bundestag's own; only paragraphs in the middle of the two longer
+  Reden were dropped to keep the file small:
+
+  ID218401300  Emmi Zeulner: a Zwischenfrage (asked by Johannes Wagner) with the
+               Präsidentin's question and the Redner's answer, an interjection
+               after which the Redner resumes with a marker of her own id, and
+               a closing "Danke." (complete, uncut).
+  ID218400400  Dr. Janosch Dahmen: two "Ihre Redezeit ist abgelaufen" interjections,
+               each followed by a resuming marker, then the Präsidentin's closing
+               words, which end the Rede without any marker after them.
+  ID218400200  Martin Sichert: an interjection, the resuming marker, and the same
+               closing words.
+-->
+<dbtplenarprotokoll wahlperiode="21" sitzung-nr="84">
+  <sitzungsverlauf>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 1">
+      <rede id="ID218401300">
+        <p klasse="redner">
+          <a id="r13" />
+          <redner id="11004452">
+            <name>
+              <vorname>Emmi</vorname>
+              <nachname>Zeulner</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Emmi Zeulner (CDU/CSU):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Nicht handeln geht nicht! Das ist uns bei den GKV-Finanzen noch einmal sehr deutlich vor Augen geführt worden. Neue Berechnungen zeigen, dass nicht, wie zum Zeitpunkt der Einsetzung der Reformkommission gedacht – begleitet von Fachexperten –, 13 Milliarden Euro eingespart werden müssen, sondern – das musste im Verlauf des Prozesses die Reformkommission selbst einräumen – 15 Milliarden Euro gebraucht werden. Und jetzt, weil die Dynamik in diesem Bereich so extrem ist, kommen noch mal 3,5 Milliarden Euro obendrauf. Das zeigt doch, wo der Handlungsdruck herkommt. Nicht zu handeln, bedeutet, dass Beiträge für Arbeitnehmer und Arbeitgeber einfach eins zu eins weiter steigen. Deswegen ist richtig, was wir heute tun. Wir kehren nämlich zurück zu einer einnahmenorientierten Ausgabenpolitik, und das ist die Grundlage für alles Weitere, was an Strukturreformen auch folgen muss.</p>
+        <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Frau Abgeordnete, lassen Sie eine Zwischenfrage aus den Reihen von Bündnis 90/ Die Grünen zu?</p>
+        <p klasse="redner">
+          <redner id="11004452">
+            <name>
+              <vorname>Emmi</vorname>
+              <nachname>Zeulner</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Emmi Zeulner (CDU/CSU):</p>
+        <p klasse="J_1">Selbstverständlich.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Bitte.</p>
+        <p klasse="redner">
+          <redner id="11005248">
+            <name>
+              <vorname>Johannes</vorname>
+              <nachname>Wagner</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Johannes Wagner (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Vielen Dank, Frau Kollegin Zeulner, dass Sie die Zwischenfrage zulassen. – Wir kommen ja beide aus Bayern. Und der Fraktionsvorsitzende der CSU in Bayern, Herr Holetschek, hat ja gesagt: Es ist nicht akzeptabel, dass der von der Bundesregierung vorgelegte Gesetzentwurf aktuell vorsieht, beim Steuerzuschuss für die Gesundheitskosten der Bürgergeldbeziehenden zu sparen und bei den Pflegekräften Kosten einzusparen. Warum legt die Ministerin in diesem Gesetz dieses Vorhaben weiterhin so an? Was werden Sie tun, damit nicht bei den GKV-Versicherten gespart wird und andere ihren Beitrag leisten?</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <p klasse="redner">
+          <redner id="11004452">
+            <name>
+              <vorname>Emmi</vorname>
+              <nachname>Zeulner</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Emmi Zeulner (CDU/CSU):</p>
+        <p klasse="J_1">Das Thema der Finanzierung der Gesundheitskosten der Bürgergeldempfänger ist natürlich ein hochsensibles, und zwar dahin gehend, dass wir natürlich nur schwerlich erklären können, dass gesetzlich Versicherte für Gesundheitskosten aufkommen sollen, für die eigentlich der Bundeshaushalt und die Gesamtgesellschaft aufkommen sollten. Deswegen haben Sie da einen Punkt. Wir ergeben uns ja nicht in den Verhandlungen und nehmen das einfach hin, sondern es ist die originäre Aufgabe des Parlaments – und das tun wir –, um die besten Lösungen auch in diesem Bereich zu ringen. Die Ministerin hat es angesprochen: Man hat jetzt damit begonnen, einen kleinen Anteil zur Verfügung zu stellen.</p>
+        <p klasse="J">Aber natürlich ist es nicht das Ende der Fahnenstange, sondern wir müssen in diesem Bereich – auch zum Schutz der Beitragszahler – miteinander intensiv in die Diskussion gehen. Und das machen wir. Wir verhandeln aktuell. Deswegen wird es auch am Ende dieser Verhandlungen – das ist die Aufgabe von Politik – eine Abwägung hin zum Gemeinwohl geben. Wenn Dinge nicht von heute auf morgen umzusetzen sind, dann erwarten die Bürger zu Recht – auch in diesem Fall –, dass zumindest ein Pfad aufgezeigt wird, wo es hingeht. Und auch das ist schon angelegt in dem Gesetz. Wir können uns da durchaus mehr vorstellen und streiten und kämpfen auch dafür.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <p klasse="J">Es ist insgesamt ein hochsensibles Thema. Wir haben in der Vergangenheit, und das ist eben auch Teil der Wahrheit, zum Beispiel im Bereich der Ergotherapie – hier wird so getan, als würden wir völlig abgekoppelt von der Realität Gesundheitspolitik betreiben – Lohnsteigerungen organisiert. Wir haben bewusst in besonderen Bereichen, beispielsweise „Ergotherapie“ und „Physiotherapie“, von der Grundlohnsumme – also von den Einnahmen – entkoppelt Verhandlungen möglich gemacht, einfach um einen Nachholeffekt zu organisieren. Das gilt im Übrigen auch für die Pflege. Und die Pflegekräfte, Physiotherapeuten und Ergotherapeuten im Land wissen, dass da ein Nachholeffekt stattgefunden hat.</p>
+        <p klasse="J">Jetzt ist die Aufgabe, in kluger Art und Weise – selbstverständlich vor dem Hintergrund, dass wir stabile Finanzen brauchen – das System zukunftsfest zu machen und es so auszugestalten, dass am Ende diese genannten Berufsgruppen eben nicht hinten runterfallen. Natürlich bekommen sie auch Steigerungen bei der Entlohnung. Aber wir müssen ein Stück weit die Balance in diesem Bereich wieder halten. Und dafür sind wir auch angetreten. Wir sind eben nicht in der Opposition, sondern Union und SPD haben sich entschieden, Verantwortung für dieses Land zu übernehmen, und der kommen wir auch in diesem Bereich nach, indem wir das System gut ausgestalten.</p>
+        <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="J">Es wird auch einen Tag nach den Reformgesetzen geben, an dem Gerechtigkeit herrschen muss – und da bin ich hoch motiviert, genauso wie die Kolleginnen und die Kollegen – im Bereich der Primärversorgung, im Bereich der Notfallversorgung, im Bereich der Pflege; Stichwort „mehr Kompetenzen für die Pflege“. Da wollen wir weitermachen. Wir hören ja nicht auf, sondern wir nehmen Anlauf, um beides zusammenzubringen: eine sichere Versorgung und gute Arbeitsbedingungen.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Ihre Redezeit ist abgelaufen. Bitte beachten!</p>
+        <p klasse="redner">
+          <redner id="11004452">
+            <name>
+              <vorname>Emmi</vorname>
+              <nachname>Zeulner</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Emmi Zeulner (CDU/CSU):</p>
+        <p klasse="J_1">Danke.</p>
+        <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+      </rede>
+      <rede id="ID218400400">
+        <p klasse="redner">
+          <a id="r4" />
+          <redner id="11004962">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Janosch</vorname>
+              <nachname>Dahmen</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Dr. Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Frau Ministerin, Sie haben hier ein Gesetz vorgelegt, das Sie Beitragssatzstabilisierungsgesetz nennen. Aber bereits wenige Wochen nach dessen Beschluss im Kabinett ist seit dieser Woche klar: Sie haben sich grob verschätzt. 3,5 Milliarden Euro fehlen Ihnen zusätzlich, wie Sie kleinlaut gegenüber den Fraktionen im Vermerk eingeräumt haben, weil Ihr Haus von einer völlig unrealistisch niedrigen Ausgabenrate für dieses Jahr ausgegangen ist.</p>
+        <kommentar>(Beifall der Abg. Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der Linken)</kommentar>
+        <p klasse="O">Statt Über- und Fehlversorgung abzubauen, laufen Sie der Pharmaindustrie hinterher. Die SPD tritt nicht für Patienten und Personal ein, –</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Ihre Redezeit ist abgelaufen.</p>
+        <p klasse="redner">
+          <redner id="11004962">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Janosch</vorname>
+              <nachname>Dahmen</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Dr. Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">– sondern schreibt Gastbeiträge für die Pharmaindustrie.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Ihre Redezeit ist abgelaufen.</p>
+        <p klasse="redner">
+          <redner id="11004962">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Janosch</vorname>
+              <nachname>Dahmen</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Dr. Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Wir sagen dieser Gesundheitspolitik den Kampf an.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Danke sehr. – Für die Fraktion Die Linke hat nun Frau Abgeordnete Stella Merendino das Wort. Bitte.</p>
+        <kommentar>(Beifall bei der Linken)</kommentar>
+      </rede>
+      <rede id="ID218400200">
+        <p klasse="redner">
+          <a id="r2" />
+          <redner id="11004892">
+            <name>
+              <vorname>Martin</vorname>
+              <nachname>Sichert</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Martin Sichert (AfD):</p>
+        <p klasse="J_1">Frau Präsidentin! Meine Damen und Herren! Wenn mich sogar Schreiben von CDU-Landräten erreichen, in denen steht – Zitat –: „Dieses Gesetz darf so nicht beschlossen werden“, dann weiß man: Dieses Gesetz ist eine echte Katastrophe.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="O">Mit uns ist das nicht zu machen. Wir stehen an der Seite der Bürger, der Patienten, der Beschäftigten im Gesundheitswesen. Wir werden durch massiven Widerstand aus der Bevölkerung dafür sorgen, dass diese Regierung an der Gesundheitspolitik scheitert, wenn Sie Ihren Irrweg fortsetzen. Schwenken Sie um! Nehmen Sie Ihre Verantwortung endlich ernst, –</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Ihre Zeit ist um.</p>
+        <p klasse="redner">
+          <redner id="11004892">
+            <name>
+              <vorname>Martin</vorname>
+              <nachname>Sichert</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Martin Sichert (AfD):</p>
+        <p klasse="J_1">– und handeln Sie im Interesse Ihres Arbeitgebers, der kein Geringerer ist als das deutsche Volk!</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Für die SPD-Fraktion hat nun Herr Abgeordneter Dr. Christos Pantazis das Wort. Bitte.</p>
+        <kommentar>(Beifall bei der SPD und der CDU/CSU)</kommentar>
+      </rede>
+    </tagesordnungspunkt>
+  </sitzungsverlauf>
+</dbtplenarprotokoll>

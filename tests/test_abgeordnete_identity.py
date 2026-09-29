@@ -29,6 +29,9 @@ class FakeResolver:
                 "id": 42,
                 "url": "https://www.abgeordnetenwatch.de/profile/erika-von-beispiel",
                 "party": "SPD",
+                # Looked up by the Redner-ID it is a Personenkennung; found by a
+                # name (the roll-call member) it is not.
+                "match": "ext_id" if ext_id == "xml-1" else "name",
             }
         return None
 

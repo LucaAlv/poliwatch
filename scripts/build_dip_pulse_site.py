@@ -40,7 +40,7 @@
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
-#   bills/index.html     ``render_bills_index``      "Gesetze verfolgen" list
+#   bills/index.html     ``render_bills_index``      "Gesetzesvorhaben verfolgen" list
 #   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
 #   abgeordnete/index.html   ``render_abgeordnete_index``   MP roster with filters
 #   abgeordnete/<id>.html    ``render_abgeordnete_detail``  one MP profile
@@ -100,6 +100,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
+import derive
 import publication_state as publication
 import facts
 # Public components are fixed product structure. EnrichmentSelection is the
@@ -122,7 +123,7 @@ from features import votes as votes_feature
 # here falls back to a generic sentence in render_daten_schema().
 DATABASE_TABLE_DESCRIPTIONS = {
     "schema_migrations": "Interne Versionsmarke des SQLite-Schemas.",
-    "parties": "Normalisierte Parteien und Rollen wie Regierung oder fraktionslos.",
+    "parties": "Zusammenschlüsse (Fraktionen und Gruppen, etwa CDU/CSU oder Gruppe BSW) und fraktionslos für Abgeordnete ohne Zusammenschluss.",
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
@@ -130,11 +131,11 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
-    "speeches": "Extrahierte Redebeiträge mit Redner, Seite, Textumfang, Snippet und optionalem Volltext.",
+    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere).",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
-    "vote_fractions": "Fraktionssummen je namentlicher Abstimmung.",
+    "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
@@ -798,11 +799,20 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
         return None
 
 
+class CachedReportError(Exception):
+    """A cached dossier report that a strict load could not read."""
+
+
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
 # with a warning instead of failing the build.
-def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#
+# ``strict`` is for a re-persist, which must not swap in a database built from
+# fewer reports than the cache holds: an unreadable file raises instead.
+def load_existing_detail_entries(
+    output_dir: Path, protocols: list[dict[str, Any]], *, strict: bool = False
+) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
     data_dir = output_dir / "data"
@@ -814,7 +824,11 @@ def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any
             continue
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            if not isinstance(report, dict):
+                raise ValueError("the top-level JSON value is not an object")
+        except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
+            if strict:
+                raise CachedReportError(f"{report_path} is unreadable: {exc}") from exc
             print(f"warning: Skipping unreadable dossier report {report_path}: {exc}", file=sys.stderr)
             continue
         protocol = report.get("protocol") or {}
@@ -954,31 +968,99 @@ def merge_detail_entries(
 #
 # Written to a temporary file next to the target and moved into place only on
 # success, so a failed build never leaves a half-written database behind - the
-# database explorer page and the download link both read this file.
+# database explorer page and the download link both read this file. The store
+# being replaced is only ever read, and through a read-only connection: a
+# rebuild that fails part-way must leave it byte for byte as it was, even when
+# it was written by an older schema.
+class DatabaseRebuildError(Exception):
+    """A cached report that could not be persisted; the previous store stays."""
+
+
+# Columns holding when a row was written, not what it says. A re-persist that
+# changes nothing but these has changed nothing (E9).
+_TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
+
+
+def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
+    """The MdB roster rows of an existing store, read without migrating it."""
+    if not database_path.exists():
+        return []
+    previous = facts.open_readonly(database_path)
+    try:
+        columns = {row[1] for row in previous.execute("PRAGMA table_info(mps)")}
+        if "is_mdb" not in columns:
+            return []
+        return [
+            dict(row)
+            for row in previous.execute(
+                """
+                SELECT m.*, p.name AS party_name
+                FROM mps m
+                LEFT JOIN parties p ON p.id = m.party_id
+                WHERE m.is_mdb = 1
+                """
+            )
+        ]
+    finally:
+        previous.close()
+
+
+def _content_digests(database_path: Path) -> dict[str, str] | None:
+    """table -> digest of its column names and rows, timestamps left out; None
+    when the file cannot be read that way (then it counts as changed)."""
+    try:
+        conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        digests: dict[str, str] = {}
+        tables = [
+            name
+            for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        for table in tables:
+            columns = [
+                row[1] for row in conn.execute(f'PRAGMA table_info("{table}")') if row[1] not in _TIMESTAMP_COLUMNS
+            ]
+            digest = hashlib.sha256(repr(columns).encode("utf-8"))
+            selected = ", ".join(f'"{column}"' for column in columns)
+            for row in conn.execute(f'SELECT {selected} FROM "{table}" ORDER BY rowid'):
+                digest.update(repr(row).encode("utf-8"))
+            digests[table] = digest.hexdigest()
+        return digests
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def _same_content(current: Path, rebuilt: Path) -> bool:
+    before = _content_digests(current)
+    return before is not None and before == _content_digests(rebuilt)
+
+
+def _entry_label(entry: dict[str, Any]) -> str:
+    protocol = entry["report"].get("protocol") or {}
+    number = normalized_document_number(protocol.get("dokumentnummer")) or "an unnumbered protocol"
+    return f"{number} ({entry.get('report_path')})"
+
+
 def rebuild_database_from_entries(
     database_path: Path,
     entries: list[dict[str, Any]],
     *,
     preserve_roster: bool = True,
-) -> None:
-    roster_rows: list[dict[str, Any]] = []
-    if preserve_roster and database_path.exists():
-        previous = pulse_store.connect(database_path)
-        try:
-            pulse_store.initialize(previous)
-            roster_rows = [
-                dict(row)
-                for row in previous.execute(
-                    """
-                    SELECT m.*, p.name AS party_name
-                    FROM mps m
-                    LEFT JOIN parties p ON p.id = m.party_id
-                    WHERE m.is_mdb = 1
-                    """
-                )
-            ]
-        finally:
-            previous.close()
+    keep_if_unchanged: bool = False,
+) -> bool:
+    """Rebuild the store from ``entries`` and swap it in. Returns whether the
+    file was replaced: with ``keep_if_unchanged`` a rebuild whose content (leaving
+    timestamps out) equals the current store leaves that file alone."""
+    # Every cached role is checked first, so one error lists all of them and
+    # nothing is built or replaced (DX-E1).
+    derive.check_sprechrollen(entry["report"] for entry in entries)
+    roster_rows = _read_roster_rows(database_path) if preserve_roster else []
 
     # The facts the previous store held, carried into the fresh one. The engine
     # recomputes them right after this and overwrites them if anything moved -
@@ -1007,7 +1089,10 @@ def rebuild_database_from_entries(
     try:
         pulse_store.initialize(store)
         for entry in entries:
-            pulse_store.persist_report(store, entry["report"])
+            try:
+                pulse_store.persist_report(store, entry["report"])
+            except Exception as exc:
+                raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
@@ -1018,9 +1103,23 @@ def rebuild_database_from_entries(
                         now=now,
                         display_name=row.get("display_name"),
                         party_id=party_id,
-                        identity_key=row["identity_key"],
+                        # Keyed by today's rule, not the stored key: a roster row
+                        # written when a name-found abgeordnetenwatch id still named
+                        # identity would otherwise fold into a speaker row sharing it.
+                        identity_key=pulse_store.mp_identity(
+                            aw_politician_id=row.get("aw_politician_id"),
+                            aw_match=row.get("aw_match"),
+                            dip_person_id=row.get("dip_person_id"),
+                            # The roster never supplies a Redner-ID. A stored
+                            # one came from an old speaker merge and may name a
+                            # namesake; only the cached reports can restore it.
+                            xml_redner_id=None,
+                            profile_url=row.get("profile_url"),
+                            display_name=row.get("display_name"),
+                            party_name=row.get("party_name"),
+                        ),
                         dip_person_id=row.get("dip_person_id"),
-                        xml_redner_id=row.get("xml_redner_id"),
+                        xml_redner_id=None,
                         title=row.get("title"),
                         function=row.get("function"),
                         wahlperiode=row.get("wahlperiode"),
@@ -1031,6 +1130,7 @@ def rebuild_database_from_entries(
                         wahlkreis=row.get("wahlkreis"),
                         bundesland=row.get("bundesland"),
                         aw_politician_id=row.get("aw_politician_id"),
+                        aw_match=row.get("aw_match"),
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
@@ -1041,7 +1141,27 @@ def rebuild_database_from_entries(
         raise
     finally:
         store.close()
+    if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
+        temp_path.unlink()
+        return False
     temp_path.replace(database_path)
+    return True
+
+
+def repersist_cached_reports(
+    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True
+) -> tuple[list[dict[str, Any]], bool]:
+    """``--offline --repersist``: every cached report into a fresh store, in the
+    order an online build persists them, swapped in only if all of them
+    persisted. Returns the loaded entries (the render reuses them) and whether
+    the store file was replaced. Raises CachedReportError or DatabaseRebuildError
+    with the previous store untouched."""
+    cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    entries = merge_detail_entries(protocols, cached, [])
+    replaced = rebuild_database_from_entries(
+        database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
+    )
+    return cached, replaced
 
 
 # ---------------------------------------------------------------------------
@@ -1768,7 +1888,14 @@ _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 # The outcome is mostly computed here from the counts (vote_result); only a
 # minority is read off bundestag.de's Beschluss text, so the column is derived.
-_COLUMN_SOURCE_DERIVED = {("votes", "result_raw"), ("votes", "result_source")}
+_COLUMN_SOURCE_DERIVED = {
+    ("votes", "result_raw"),
+    ("votes", "result_source"),
+    # Computed from the counts / the speaker's role when persisting, not read.
+    ("vote_fractions", "leading_vote"),
+    ("speeches", "sprechrolle"),
+    ("speeches", "unattributed_char_count"),
+}
 
 
 def column_source(table: str, column: str) -> str:
@@ -1838,18 +1965,24 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "zeichen", "align": "num"},
         ),
         "depends_on": None,
-        "caveat": "Regierungsmitglieder tragen im DIP die Fraktion „Regierung“.",
+        "caveat": (
+            "Mitglieder der Bundesregierung, Bundesratsmitglieder und weitere Redner in einer Sprechrolle "
+            "erscheinen ohne Fraktion."
+        ),
     },
     {
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT COALESCE(NULLIF(s.fraktion, ''), p.name) AS fraktion, COUNT(*) AS reden,\n"
+            "SELECT CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
+            "                          WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
+            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), p.name) END AS fraktion,\n"
+            "       COUNT(*) AS reden,\n"
             "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY COALESCE(NULLIF(s.fraktion, ''), p.name)\n"
+            "GROUP BY 1\n"
             "ORDER BY reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
@@ -1859,11 +1992,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "anteil_prozent", "align": "num"},
         ),
         "depends_on": None,
-        "caveat": None,
+        "caveat": (
+            "Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen und zählen im Nenner mit: "
+            "alle Zeilen zusammen ergeben 100 %."
+        ),
     },
     {
         "id": "r3-abweichler",
-        "title": "Wer stimmt am häufigsten gegen die eigene Fraktion?",
+        "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
             "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
@@ -1875,6 +2011,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
             "  AND vm.vote <> vf.leading_vote\n"
+            "  AND p.name <> 'fraktionslos'\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY abweichungen DESC, m.display_name\n"
             "LIMIT 5;"
@@ -3384,9 +3521,9 @@ def render_landing_page(
             2,
             (
                 "Gesetzgebung",
-                "Gesetze verfolgen",
+                "Gesetzesvorhaben verfolgen",
                 "bills/index.html",
-                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetze werden lokal im Browser gemerkt.",
+                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetzesvorhaben werden lokal im Browser gemerkt.",
                 None,
             ),
         )
@@ -3571,7 +3708,7 @@ def render_landing_page(
     <section class="stat-band" aria-label="Kennzahlen">
       <div><span>API-Sitzungen</span><strong>{pulse_html.esc(protocol_count)}</strong></div>
       <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(entries))}</strong></div>
-      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
       <div><span>Quellenart</span><strong>Primärquellen</strong></div>
     </section>
 
@@ -3688,14 +3825,15 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
 
 def _fraction_position(fraction: dict[str, Any]) -> str | None:
     # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
-    # (Ja + Nein + Enthaltung): leading_vote alone would call a tie (1 Ja,
-    # 1 Nein) or a plurality (40 Ja, 35 Nein, 25 Enthaltungen) "yes".
+    # (Ja + Nein + Enthaltung): a Mehrheitsvotum of Ja alone would also match a
+    # plurality (40 Ja, 35 Nein, 25 Enthaltungen). That is a stricter test than
+    # the Mehrheitsvotum, not a second definition of it: a Zusammenschluss with
+    # no Mehrheitsvotum (a tie, or nobody voted) has no position and no chip.
     counts = fraction.get("counts") or {}
-    cast = [int(counts.get(key) or 0) for key in ("yes", "no", "abstain")]
-    leading = fraction.get("leading_vote")
-    if not any(cast) or leading != "yes":
+    leading = derive.majority_vote(counts)
+    if leading != "yes":
         return leading
-    yes, no, abstain = cast
+    yes, no, abstain = (int(counts.get(key) or 0) for key in derive.MAJORITY_KEYS)
     return "yes" if yes > no + abstain else "tie"
 
 
@@ -3727,9 +3865,9 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 if key in rows:
                     continue
                 fraction_positions = {
-                    str(fraction["name"]): _fraction_position(fraction)
-                    for fraction in vote.get("fractions") or []
-                    if fraction.get("name")
+                    fraction["name"]: position
+                    for fraction in derive.merge_fractions(vote.get("fractions"))
+                    if (position := _fraction_position(fraction)) is not None
                 }
                 rows[key] = {
                     "vote": vote,
@@ -5111,7 +5249,7 @@ def render_front_page(
 {radar_html}{week_compare_html}
     <footer>
       Statischer Prototyp. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung.{store_note}
-      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetze</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
+      <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -5144,7 +5282,7 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PAGES: bills/index.html and bills/bill-*.html - "Gesetze verfolgen"
+# PAGES: bills/index.html and bills/bill-*.html - "Gesetzesvorhaben verfolgen"
 #
 # These pages are derived data: nothing is fetched here. collect_bill_pages()
 # walks the dossiers that were already built and reassembles them by legislative
@@ -5193,27 +5331,47 @@ def bill_slug(bill: dict[str, Any]) -> str:
     return "bill-" + slugify_document_number(identity)
 
 
-# Decide whether a DIP Vorgangsposition is legislation at all. This is a
-# deliberately crude keyword test over the procedure type, position, title and
-# the linked documents - everything that does not look like a "Gesetz" is left
-# out of the bills section rather than guessed at.
-def bill_like(position: dict[str, Any], docs: list[dict[str, Any]]) -> bool:
-    haystack = " ".join(
-        [
-            str(position.get("vorgangstyp") or ""),
-            str(position.get("vorgangsposition") or ""),
-            str(position.get("titel") or ""),
-            " ".join(str(doc.get("drucksachetyp") or "") for doc in docs),
-            " ".join(str(doc.get("titel") or "") for doc in docs),
-        ]
-    ).lower()
-    return any(marker in haystack for marker in ("gesetz", "gesetzentwurf", "entwurf eines gesetzes"))
+# Only a Gesetzgebung is legislation (CONTEXT.md): a Vorgang whose DIP
+# Vorgangstyp says so. An Entschließungsantrag or Antrag that accompanies one is
+# its own Vorgang, and a Rechtsverordnung is none even when the Bundestag must
+# consent to it. The old keyword test kept anything mentioning "gesetz",
+# "Grundgesetz" or "gesetzliche Krankenversicherung" as well.
+def is_gesetzgebung(position: dict[str, Any]) -> bool:
+    return str(position.get("vorgangstyp") or "") == "Gesetzgebung"
 
 
 # The set of Drucksache numbers attached to a bill, used to match roll-call
 # votes to it.
 def doc_numbers(docs: list[dict[str, Any]]) -> set[str]:
     return {str(doc.get("dokumentnummer")) for doc in docs if doc.get("dokumentnummer")}
+
+
+# The Vorgänge on an agenda item that are not Gesetzgebungen, one row each with
+# the Drucksachen DIP links to it. Sharing an agenda item is all they have in
+# common with a Gesetzgebung there: nothing here says one accompanies another.
+def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for position in positions:
+        vorgang_id = str(position.get("vorgang_id") or "")
+        if not vorgang_id or is_gesetzgebung(position):
+            continue
+        row = rows.setdefault(
+            vorgang_id,
+            {
+                "vorgang_id": vorgang_id,
+                "type": first_value(position.get("vorgangstyp"), "Vorgang"),
+                "title": first_value(position.get("titel")),
+                "documents": [],
+            },
+        )
+        row["documents"].extend(
+            {"dokumentnummer": doc.get("dokumentnummer"), "drucksachetyp": doc.get("drucksachetyp"), "url": doc.get("url")}
+            for doc in linked_docs
+            if str(doc.get("vorgang_id") or "") == vorgang_id
+        )
+    for row in rows.values():
+        row["documents"] = unique_records(row["documents"], ("dokumentnummer", "url"))
+    return list(rows.values())
 
 
 # Re-index the built dossiers by legislative procedure.
@@ -5235,6 +5393,12 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
             linked_docs = api.get("linked_drucksachen") or []
             positions = api.get("positions") or []
             item_votes = item.get("votes") or []
+            # What else is on this agenda item next to its Gesetzgebungen:
+            # Entschließungsanträge, Anträge and the like. DIP does not say which
+            # Gesetzgebung one of them belongs to when an item bundles several
+            # procedures, so each Gesetzgebung page lists them as the other
+            # Vorgänge of the same item, not as its own companions.
+            related = _related_vorgaenge(positions, linked_docs)
             # A position is one step of a procedure (first reading, committee
             # report, ...). Collect the documents that belong to this procedure,
             # adding the position's own source document when DIP did not link it.
@@ -5258,8 +5422,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                             "urheber": [],
                         }
                     )
-                # Skip anything that is not legislation.
-                if not bill_like(position, position_docs):
+                # Skip anything that is not a Gesetzgebung.
+                if not is_gesetzgebung(position):
                     continue
 
                 # Identity for the bill: the DIP Vorgang id when present, else a
@@ -5285,11 +5449,13 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         "protocol_refs": [],
                         "documents": [],
                         "positions": [],
+                        "related": [],
                         "events": [],
                         "votes": [],
                         "raw": {"agenda_items": []},
                     },
                 )
+                bill["related"].extend(row for row in related if row["vorgang_id"] != vorgang_id)
                 bill["title"] = first_value(bill.get("title"), position.get("titel"), item.get("heading"))
                 bill["type"] = first_value(position.get("vorgangstyp"), bill.get("type"))
                 bill["documents"].extend(position_docs)
@@ -5364,8 +5530,8 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for speech in item.get("xml_speakers") or []:
                     speaker = speech.get("speaker") or {}
-                    name = first_value(speaker.get("display_name"), "Unbekannt")
-                    party = pulse_html.speaker_party(speaker)
+                    name = derive.speaker_display_name(speaker)
+                    party = pulse_html.speaker_party(speaker, protocol)
                     speaker_key = f"{name}|{party}"
                     entry_count = speaker_bucket.setdefault(
                         speaker_key,
@@ -5378,6 +5544,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     profile = speaker.get("abgeordnetenwatch") or {}
                     if profile.get("id") and not entry_count.get("aw_id"):
                         entry_count["aw_id"] = profile.get("id")
+                        entry_count["aw_match"] = profile.get("match")
                     if speaker.get("xml_redner_id") and not entry_count.get("xml_redner_id"):
                         entry_count["xml_redner_id"] = speaker.get("xml_redner_id")
 
@@ -5386,6 +5553,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
     for key, bill in bills.items():
         bill["documents"] = unique_records(bill["documents"], ("vorgang_id", "dokumentnummer", "url"))
         bill["positions"] = unique_records(bill["positions"], ("id", "vorgang_id", "vorgangsposition"))
+        bill["related"] = unique_records(bill["related"], ("vorgang_id",))
         bill["protocol_refs"] = unique_records(bill["protocol_refs"], ("protocol_number", "top_id", "heading"))
         bill["votes"] = unique_records(bill["votes"], ("id",))
         bill["introduced_by"] = unique_values(bill["introduced_by"])
@@ -5700,7 +5868,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Gesetze verfolgen</title>
+  <title>Bundestag-Puls · Gesetzesvorhaben verfolgen</title>
   {pulse_html.page_head(features)}
   <style>{bill_styles()}</style>
 </head>
@@ -5709,7 +5877,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
-        <h1>Gesetze verfolgen</h1>
+        <h1>Gesetzesvorhaben verfolgen</h1>
         <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
       </div>
       <div class="follow-summary">
@@ -5718,7 +5886,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
       </div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Aktuelle Gesetze</span><strong>{pulse_html.esc(len(bills))}</strong></div>
+      <div class="metric"><span>Aktuelle Gesetzesvorhaben</span><strong>{pulse_html.esc(len(bills))}</strong></div>
       <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
       <div class="metric"><span>Plenarstellen</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
       <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
@@ -5787,11 +5955,30 @@ def render_bill_detail(
             "</li>"
         )
 
+    related_rows = []
+    for related in bill.get("related") or []:
+        numbers = ", ".join(
+            str(doc.get("dokumentnummer")) for doc in related.get("documents") or [] if doc.get("dokumentnummer")
+        )
+        related_rows.append(
+            '<li class="doc-row">'
+            f"<strong>{pulse_html.esc(related.get('title') or 'Ohne Titel')}</strong>"
+            f'<span>{pulse_html.esc(related.get("type") or "")}</span>'
+            f"<em>{pulse_html.esc(numbers)}</em>"
+            "</li>"
+        )
+    related_panel = (
+        '<section class="panel"><h2>Weitere Vorgänge zu diesem Tagesordnungspunkt</h2>'
+        f'<ul class="doc-list">{"".join(related_rows)}</ul></section>'
+        if related_rows
+        else ""
+    )
+
     speakers = []
     for speaker in (bill.get("speakers") or [])[:12]:
         mp_href = pulse_html.mp_page_href(
             {
-                "abgeordnetenwatch": {"id": speaker.get("aw_id")},
+                "abgeordnetenwatch": {"id": speaker.get("aw_id"), "match": speaker.get("aw_match")},
                 "xml_redner_id": speaker.get("xml_redner_id"),
             },
             mp_lookup,
@@ -5829,8 +6016,8 @@ def render_bill_detail(
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
     <header class="page-header">
       <div>
-        <nav class="local-nav" aria-label="Gesetz-Navigation">
-          <a href="index.html">Alle Gesetze</a>
+        <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation">
+          <a href="index.html">Alle Gesetzesvorhaben</a>
         </nav>
         <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
         <h1>{pulse_html.esc(bill.get('title'))}</h1>
@@ -5865,6 +6052,7 @@ def render_bill_detail(
           <h2>Drucksachen</h2>
           <ul class="doc-list">{''.join(docs) if docs else '<li>Keine verknüpften Drucksachen.</li>'}</ul>
         </section>
+        {related_panel}
         <section class="panel">
           <h2>Rohdaten</h2>
           {render_bill_json_details("Normalisierter Bill-Datensatz", bill)}
@@ -5881,7 +6069,7 @@ def render_bill_detail(
         </section>
       </aside>
     </div>
-    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetze verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
+    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetzesvorhaben verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
   </div>
   {render_bill_script()}
   {pulse_html.page_scripts(features)}
@@ -5966,7 +6154,7 @@ def ingest_mdb_roster(
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
             fraktion = fraktion_list[0] if fraktion_list else None
-            party_name = dip.normalize_faction(fraktion) if fraktion else None
+            party_name = derive.zusammenschluss(fraktion)
             party_id = pulse_store.upsert_party(store, party_name, now)
             display_name = (
                 pulse_store.clean(compact.get("titel"))
@@ -5974,7 +6162,7 @@ def ingest_mdb_roster(
                 or "Unbekannt"
             )
 
-            profile_url = aw_id = birth_year = gender = profession = wahlkreis = bundesland = None
+            profile_url = aw_id = aw_match = birth_year = gender = profession = wahlkreis = bundesland = None
             if profile_resolver is not None:
                 profile = profile_resolver.resolve(
                     first_name=compact.get("vorname"),
@@ -5984,6 +6172,7 @@ def ingest_mdb_roster(
                 if profile:
                     profile_url = profile.get("url")
                     aw_id = profile.get("id")
+                    aw_match = profile.get("match")
                     birth_year = profile.get("year_of_birth")
                     gender = profile.get("sex")
                     profession = profile.get("profession")
@@ -5998,7 +6187,9 @@ def ingest_mdb_roster(
                 now=now,
                 display_name=display_name,
                 party_id=party_id,
-                identity_key=pulse_store.mp_identity(aw_politician_id=aw_id, dip_person_id=compact.get("id")),
+                identity_key=pulse_store.mp_identity(
+                    aw_politician_id=aw_id, aw_match=aw_match, dip_person_id=compact.get("id")
+                ),
                 dip_person_id=compact.get("id"),
                 title=compact.get("titel"),
                 function=funktion,
@@ -6010,6 +6201,7 @@ def ingest_mdb_roster(
                 wahlkreis=wahlkreis,
                 bundesland=bundesland,
                 aw_politician_id=aw_id,
+                aw_match=aw_match,
                 person_roles_json=pulse_store.dumps(funktion) if funktion else None,
                 is_mdb=True,
             )
@@ -6040,15 +6232,18 @@ def _parse_listish(value: Any) -> list[Any]:
 
 
 def _mp_keys(row: dict[str, Any]) -> list[str]:
-    """External identity keys for an MP row, used to link rows that describe the
-    same person across sources (DIP roster vs. protocol speaker)."""
+    """Personenkennungen of an MP row, used to link rows that describe the same
+    person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
+    id counts only when it was looked up by the Redner-ID (match kind ext_id); one
+    found by searching a name is a Namensabgleich and links nothing."""
     keys: list[str] = []
-    if row.get("aw_politician_id") is not None:
+    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         keys.append(f"aw:{row['aw_politician_id']}")
     if row.get("dip_person_id"):
         keys.append(f"dip:{row['dip_person_id']}")
-    if row.get("xml_redner_id"):
-        keys.append(f"xml:{row['xml_redner_id']}")
+    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
+    if xml_id:
+        keys.append(f"xml:{xml_id}")
     return keys
 
 
@@ -6056,12 +6251,13 @@ def _mp_keys(row: dict[str, Any]) -> list[str]:
 # by name+party when their id buckets do not contradict each other.
 def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
-    if row.get("aw_politician_id") is not None:
+    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
         ids["aw"].add(str(row["aw_politician_id"]))
     if row.get("dip_person_id"):
         ids["dip"].add(str(row["dip_person_id"]))
-    if row.get("xml_redner_id"):
-        ids["xml"].add(str(row["xml_redner_id"]))
+    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
+    if xml_id:
+        ids["xml"].add(xml_id)
     if row.get("profile_url"):
         ids["profile"].add(str(row["profile_url"]))
     return ids
@@ -6093,9 +6289,20 @@ def _clean_mp_name(name: Any) -> str:
     return text.split(", MdB")[0].strip() or text
 
 
-# Casefolded, whitespace-collapsed name used as a merge bucket key.
+# Academic titles are written on one side and left off on the other ("Dr. Janosch
+# Dahmen" in a Redner line, "Janosch Dahmen" in a vote list), so they are not part of
+# the name a bucket is keyed by. Only leading ones go, and never the last two words.
+_MP_TITLE_WORDS = frozenset(
+    {"dr", "prof", "dipl", "ing", "med", "jur", "rer", "nat", "phil", "h", "c", "habil", "mult", "univ", "mag"}
+)
+
+
+# Casefolded, whitespace-collapsed, title-free name used as a merge bucket key.
 def _normalized_mp_name(name: Any) -> str:
-    return re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip()
+    words = re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip().split(" ")
+    while len(words) > 2 and words[0].rstrip(".") in _MP_TITLE_WORDS:
+        words.pop(0)
+    return " ".join(word for word in words if word)
 
 
 # Party names differ in spelling between sources ("BÜNDNIS 90/DIE GRÜNEN" vs
@@ -6104,29 +6311,45 @@ def _normalized_mp_party(party: Any) -> str:
     text = str(party or "").strip()
     if not text:
         return ""
-    normalized = dip.normalize_faction(text)
+    normalized = derive.zusammenschluss(text)
+    if not normalized:
+        return ""
     tokens = sorted(aw._party_tokens(normalized))
     return "|".join(tokens) if tokens else normalized.casefold()
 
 
 def collect_abgeordnete(
     conn: sqlite3.Connection,
+    stats: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[int, int]]:
     """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
-    pages, consolidating rows that describe the same person (the DIP roster row
-    carries the bio; the protocol-speaker row carries the speeches). Returns the
-    consolidated MPs, a lookup from every external id to the page id (so
-    speaker lists can link without dangling), and a map from every mps.id to
-    its canonical (page) id - the third value feeds the Daten export's
-    mp_canonical table, unconditioned by whether the person gets a page. One
-    grouped query each avoids N+1."""
+    pages, consolidating rows that describe the same Person (Zusammenführung: the
+    DIP roster row carries the bio; the protocol-speaker row carries the
+    speeches). Returns the consolidated MPs, a lookup from every external id to
+    the page id (so speaker lists can link without dangling), and a map from
+    every mps.id to its canonical (page) id - the third value feeds the Daten
+    export's mp_canonical table, unconditioned by whether the person gets a page.
+    One grouped query each avoids N+1.
+
+    Rows join by a shared Personenkennung (provenance ``ext_id``), by a name-found
+    abgeordnetenwatch id that a same-named record holds as a Personenkennung
+    (``corroborated_name``), otherwise by Namensabgleich (``unique_name``): only when a name+party bucket holds exactly
+    one record from the roster/roll-call side and one from the protocol-speaker
+    side, and no Personenkennung contradicts it. Namesakes, or three or more
+    records, stay split: a Person shown twice beats two Persons shown as one.
+    Every returned MP records how many merges of each provenance built it
+    (``merges``); ``stats``, when given, is filled with the totals."""
     # One query per relation, then grouped in Python - three flat queries beat
     # a per-MP query (N+1) by a wide margin at roster size.
+    # A store from before the match kind was kept has no aw_match: every id in it
+    # counts as found by name until it is resolved again.
+    has_aw_match = any(row["name"] == "aw_match" for row in conn.execute("PRAGMA table_info(mps)"))
     base = conn.execute(
-        """
+        f"""
         SELECT m.id, m.display_name, m.title, m.function, m.wahlperiode,
                m.profile_url, m.birth_year, m.gender, m.profession,
-               m.wahlkreis, m.bundesland, m.aw_politician_id, m.person_roles_json,
+               m.wahlkreis, m.bundesland, m.aw_politician_id,
+               {"m.aw_match" if has_aw_match else "NULL"} AS aw_match, m.person_roles_json,
                m.is_mdb, m.dip_person_id, m.xml_redner_id,
                p.name AS party
         FROM mps m
@@ -6188,6 +6411,9 @@ def collect_abgeordnete(
 
     # Union-find: link rows that share any external id into one person.
     parent = {row["id"]: row["id"] for row in rows}
+    #: merges of each provenance that went into the component rooted at a row id
+    provenance: dict[int, dict[str, int]] = {row["id"]: {"ext_id": 0, "corroborated_name": 0, "unique_name": 0} for row in rows}
+    totals = {"ext_id": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
 
     def find(node: int) -> int:
         while parent[node] != node:
@@ -6195,45 +6421,107 @@ def collect_abgeordnete(
             node = parent[node]
         return node
 
-    def union(a: int, b: int) -> None:
+    def union(a: int, b: int, kind: str) -> None:
         ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
+        if ra == rb:
+            return
+        parent[ra] = rb
+        for name, count in provenance[ra].items():
+            provenance[rb][name] += count
+        provenance[rb][kind] += 1
+        totals[kind] += 1
 
-    # Pass 1: merge rows that share any external id. This is safe evidence.
+    # Pass 1: merge rows that share a Personenkennung (a Redner-ID, a DIP
+    # person id, an abgeordnetenwatch id looked up by Redner-ID).
     first_for_key: dict[str, int] = {}
     for row in rows:
         for key in _mp_keys(row):
             if key in first_for_key:
-                union(row["id"], first_for_key[key])
+                union(row["id"], first_for_key[key], "ext_id")
             else:
                 first_for_key[key] = row["id"]
 
-    def component_external_ids(node: int) -> dict[str, set[str]]:
-        root = find(node)
-        return _merge_external_ids([row for row in rows if find(row["id"]) == root])
+    # Pass 1b: a record whose abgeordnetenwatch id was found by name joins the
+    # record that holds the same id as a Personenkennung when both carry the same
+    # name (titles aside). This is how a Person with two Redner-IDs (an MdB id and
+    # one for a government role) is put back together: the name search returned
+    # the profile the Redner-ID lookup found for the other record. A different
+    # name is no corroboration (a namesake's profile), and a contradicting DIP or
+    # abgeordnetenwatch Personenkennung blocks it. Redner-IDs are not compared:
+    # two of them for one Person is exactly the case.
+    def strong_ids(root: int) -> dict[str, set[str]]:
+        ids = _merge_external_ids([member for member in rows if find(member["id"]) == root])
+        return {kind: ids[kind] for kind in ("aw", "dip")}
 
-    def can_union_by_name_party(a: int, b: int) -> bool:
-        return not _external_ids_conflict(component_external_ids(a), component_external_ids(b))
+    for row in rows:
+        aw_id = row.get("aw_politician_id")
+        if aw_id is None or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
+            continue
+        other = first_for_key.get(f"aw:{aw_id}")
+        name = _normalized_mp_name(row.get("display_name"))
+        if other is None or not name or find(other) == find(row["id"]):
+            continue
+        other_name = next(
+            (_normalized_mp_name(member.get("display_name")) for member in rows if member["id"] == other), ""
+        )
+        if name == other_name and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
+            union(row["id"], other, "corroborated_name")
 
-    # Pass 2: merge rows with the same name and party, but only when the two
-    # sides' external ids do not contradict each other. This is what bridges the
-    # DIP roster row (which has the biography) and the protocol speaker row
-    # (which has the speeches) for a person whose abgeordnetenwatch id was never
-    # resolved.
-    name_party_buckets: dict[tuple[str, str], list[int]] = {}
+    rows_of: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        rows_of.setdefault(find(row["id"]), []).append(row)
+
+    def sides(root: int) -> set[str]:
+        # "speaker": a Plenarprotokoll named this record as a Redner. "roster":
+        # everything else (a DIP person, a roll-call member).
+        return {"speaker" if member.get("xml_redner_id") else "roster" for member in rows_of[root]}
+
+    # Pass 2: Namensabgleich on the records pass 1 left. A name+party bucket
+    # merges only when it holds exactly two records, one on each side, and no
+    # Personenkennung of one contradicts one of the other. It is a guess, so
+    # any other shape stays split. Buckets are judged on the pass-1 records and
+    # the unions applied afterwards.
+    buckets: dict[tuple[str, str], set[int]] = {}
     for row in rows:
         name_key = _normalized_mp_name(row.get("display_name"))
         party_key = _normalized_mp_party(row.get("party"))
         if name_key and party_key:
-            name_party_buckets.setdefault((name_key, party_key), []).append(row["id"])
+            buckets.setdefault((name_key, party_key), set()).add(find(row["id"]))
 
-    for ids in name_party_buckets.values():
-        ids.sort()
-        for index, left in enumerate(ids):
-            for right in ids[index + 1 :]:
-                if find(left) != find(right) and can_union_by_name_party(left, right):
-                    union(left, right)
+    pending: list[tuple[int, int]] = []
+    for records in buckets.values():
+        if len(records) < 2:
+            continue
+        ordered = sorted(records)
+        speaker = [root for root in ordered if "speaker" in sides(root)]
+        roster = [root for root in ordered if "roster" in sides(root)]
+        if (
+            len(ordered) == 2
+            and len(speaker) == 1
+            and len(roster) == 1
+            and speaker[0] != roster[0]
+            and not _external_ids_conflict(
+                _merge_external_ids(rows_of[speaker[0]]), _merge_external_ids(rows_of[roster[0]])
+            )
+        ):
+            pending.append((speaker[0], roster[0]))
+        elif len(ordered) >= 3:
+            totals["buckets_split_3plus"] += 1
+        else:
+            totals["buckets_split_namesakes"] += 1
+    for left, right in pending:
+        left_root, right_root = find(left), find(right)
+        if left_root == right_root:
+            continue
+        # Earlier queued joins can add identifiers to either component. Check
+        # the current components so aliases cannot bridge two different people.
+        if _external_ids_conflict(
+            _merge_external_ids(rows_of[left_root]), _merge_external_ids(rows_of[right_root])
+        ):
+            totals["buckets_split_namesakes"] += 1
+            continue
+        union(left, right, "unique_name")
+        rows_of[right_root].extend(rows_of.pop(left_root))
 
     # Group the merged rows back into one bucket per person.
     components: dict[int, list[dict[str, Any]]] = {}
@@ -6297,6 +6585,7 @@ def collect_abgeordnete(
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
+            "merges": dict(provenance[find(cid)]),
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -6312,6 +6601,16 @@ def collect_abgeordnete(
 
     # Stable, useful order: most speeches first, then alphabetical.
     mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
+    if stats is not None:
+        stats.update(
+            rows=len(rows),
+            entries=len(mps),
+            merges_ext_id=totals["ext_id"],
+            merges_corroborated_name=totals["corroborated_name"],
+            merges_unique_name=totals["unique_name"],
+            buckets_split_namesakes=totals["buckets_split_namesakes"],
+            buckets_split_3plus=totals["buckets_split_3plus"],
+        )
     return mps, lookup, canonical_by_mp_id
 
 
@@ -6583,7 +6882,7 @@ def render_abgeordnete_detail(
     votes = []
     for vote in mp.get("votes") or []:
         direction = (vote.get("vote") or "").lower()
-        label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "Abwesend"}.get(direction, vote.get("vote") or "—")
+        label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "nicht abgegeben"}.get(direction, vote.get("vote") or "—")
         title = pulse_html.esc(vote.get("title") or vote.get("topic") or "Namentliche Abstimmung")
         if vote.get("detail_url"):
             title = (
@@ -6842,8 +7141,8 @@ def _fact_speech_citation(
     row = conn.execute(
         f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
-               COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,
-               m.xml_redner_id, m.aw_politician_id, m.dip_person_id,
+               {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,
+               m.xml_redner_id, m.aw_politician_id, m.aw_match, m.dip_person_id,
                ai.heading, lp.title AS proceeding_title, p.document_number
         FROM speeches s
         JOIN mps m ON m.id = s.mp_id
@@ -6945,7 +7244,7 @@ def resolve_fact_citation(
             "document_number": resolved["document_number"],
             "rede_id": resolved["rede_id"],
             "display_name": resolved["display_name"],
-            "fraktion": pulse_html.speaker_party({"fraktion": resolved["fraktion"]}),
+            "fraktion": pulse_html.speaker_party({"fraktion": resolved["fraktion"], "sprechrolle": resolved["sprechrolle"]}),
             "topic": pulse_html.agenda_topic(resolved["proceeding_title"], resolved["heading"]),
             "speaker_mps": [resolved],
         }
@@ -6966,7 +7265,7 @@ def resolve_fact_citation(
             "document_number": first["document_number"],
             "rede_id": first["rede_id"],
             "display_name": first["display_name"],
-            "fraktion": pulse_html.speaker_party({"fraktion": first["fraktion"]}),
+            "fraktion": pulse_html.speaker_party({"fraktion": first["fraktion"], "sprechrolle": first["sprechrolle"]}),
             "topic": pulse_html.agenda_topic(first["proceeding_title"], first["heading"]),
             "speakers": [str(row.get("display_name") or "Unbekannt") for row in resolved_rows],
             "speaker_mps": resolved_rows,
@@ -7139,7 +7438,9 @@ def _render_fact_sources(
             mp = speaker_mps[index]
             mp_href = pulse_html.mp_page_href(
                 {
-                    "abgeordnetenwatch": {"id": mp.get("aw_politician_id")} if mp.get("aw_politician_id") else {},
+                    "abgeordnetenwatch": (
+                        {"id": mp.get("aw_politician_id"), "match": mp.get("aw_match")} if mp.get("aw_politician_id") else {}
+                    ),
                     "xml_redner_id": mp.get("xml_redner_id"),
                     "dip_person_id": mp.get("dip_person_id"),
                 },
@@ -7922,7 +8223,7 @@ def render_overview(
     <section class="summary-band">
       <div><span>API-Sitzungen</span><strong>{pulse_html.esc(len(protocols))}</strong></div>
       <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(detail_entries))}</strong></div>
-      <div><span>Verfolgte Gesetze</span><strong>{pulse_html.esc(bill_count)}</strong></div>
+      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
       <div><span>Zuletzt erzeugt</span>
         <strong>{pulse_html.esc(generated_latest.get('dokumentnummer', ''))}</strong>
         <em>{pulse_html.esc(generated_latest.get('datum', ''))}</em>
@@ -7948,7 +8249,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -8909,7 +9210,7 @@ def render_sources_page(
       </section>
     </main>
     <footer>
-      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetze</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
+      Quellenlinks verweisen auf öffentliche Bundestags- und DIP-Datensätze. Verfügbarkeit und genaue Inhalte werden von diesen offiziellen Diensten bestimmt. <a href="overview.html">Sitzungen</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9262,7 +9563,7 @@ def render_settings_page(
     </header>
     <main class="compatibility-card">
       <h2>Was sich geändert hat</h2>
-      <p>Sitzungen, Abstimmungen, Gesetze und Abgeordnetenprofile werden immer dann gezeigt, wenn sie für die jeweilige Seite gelten. Fehlende oder unvollständige Daten werden direkt am betroffenen Inhalt erklärt.</p>
+      <p>Sitzungen, Abstimmungen, Gesetzesvorhaben und Abgeordnetenprofile werden immer dann gezeigt, wenn sie für die jeweilige Seite gelten. Fehlende oder unvollständige Daten werden direkt am betroffenen Inhalt erklärt.</p>
       <p>Nur vorhandene KI-Zusammenfassungen lassen sich weiterhin ein- oder ausklappen. Diese Einstellung betrifft ausschließlich KI-generierte Texte, nicht die Quelleninhalte.</p>
       <a class="button" href="sources.html#datenstand">Datenstand dieser Veröffentlichung</a>
     </main>
@@ -9771,7 +10072,7 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
 # Capability introspection exits before touching the network or output tree.
 def print_capability_table(selection: EnrichmentSelection) -> None:
     print("Feste öffentliche Bereiche")
-    print("  Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Quellen")
+    print("  Aktueller Puls, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
     print("\nOptionale Datenerfassung")
     for enrichment_id, enrichment in ENRICHMENT_REGISTRY.items():
         state = "ausgewählt" if enrichment_id in selection else "nicht ausgewählt"
@@ -10000,6 +10301,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repersist",
+        action="store_true",
+        help=(
+            "With --offline: persist every cached report into a fresh SQLite store (roster rows kept) and "
+            "swap it in only when all of them persisted, so fixes that derive values at persist time apply "
+            "without a network. Any failure exits 1 and leaves the previous store untouched; a store whose "
+            "content would not change (timestamps aside) is left as it is."
+        ),
+    )
+    parser.add_argument(
         "--database-path",
         type=Path,
         help="SQLite graph store path. Defaults to OUTPUT_DIR/data/bundestag-pulse.sqlite.",
@@ -10169,6 +10480,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
     if args.backfill_incomplete and args.document_number:
         parser.error("--backfill-incomplete cannot be combined with --document-number: it acquires the sittings the last build listed as incomplete")
+    if args.repersist and not args.offline:
+        parser.error(
+            "--repersist re-persists the cached reports and needs --offline; "
+            "an online update already rebuilds the store from every cached report"
+        )
+    if args.repersist and args.no_persist:
+        parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.offline and args.data_manifest and is_url(args.data_manifest):
@@ -10239,6 +10557,7 @@ def run_facts_engine(
     entries: list[dict[str, Any]],
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
+    canonical_by_mp_id: dict[int, int] | None = None,
 ) -> dict[str, Any]:
     store = pulse_store.connect(database_path)
     try:
@@ -10251,6 +10570,7 @@ def run_facts_engine(
             catalog=catalog,
             built=built,
             today=today,
+            canonical_by_mp_id=canonical_by_mp_id,
         )
     finally:
         store.close()
@@ -10284,7 +10604,11 @@ def run_data_pipeline(
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
         facts_report = run_facts_engine(
-            database_path, entries, catalog, today=resolve_today(getattr(args, "today", None))
+            database_path,
+            entries,
+            catalog,
+            today=resolve_today(getattr(args, "today", None)),
+            canonical_by_mp_id=canonical_by_mp_id,
         )
         for line in format_incomplete_report(
             facts_report,
@@ -10421,6 +10745,32 @@ def main() -> int:
             )
             return 1
 
+        # --repersist: apply what persist derives from the cached reports (the
+        # render alone never does). All or nothing: any failure leaves the
+        # previous store untouched and the run stops before anything is rendered.
+        cached_entries: list[dict[str, Any]] | None = None
+        if getattr(args, "repersist", False):
+            try:
+                cached_entries, replaced = repersist_cached_reports(
+                    output_dir, database_path, protocols, preserve_roster=True
+                )
+            except derive.SprechrolleError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            except (CachedReportError, DatabaseRebuildError) as exc:
+                print(
+                    f"ERROR [repersist]: {exc}. The previous store is untouched. "
+                    "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
+                    "Docs: README.md#re-persist-the-cached-reports",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                f"repersist: {len(cached_entries)} cached reports persisted; "
+                + ("store replaced" if replaced else "store content unchanged, file kept"),
+                file=sys.stderr,
+            )
+
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, int] = {}
         canonical_by_mp_id: dict[int, int] = {}
@@ -10445,7 +10795,8 @@ def main() -> int:
         # --week must name a week with a cached dossier (the catalog lists every
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
-        cached_entries = load_existing_detail_entries(output_dir, protocols)
+        if cached_entries is None:
+            cached_entries = load_existing_detail_entries(output_dir, protocols)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
@@ -10632,11 +10983,15 @@ def main() -> int:
             ):
                 return 2
             if not args.no_persist:
-                rebuild_database_from_entries(
-                    database_path,
-                    entries,
-                    preserve_roster="mp-roster" not in enrichments,
-                )
+                try:
+                    rebuild_database_from_entries(
+                        database_path,
+                        entries,
+                        preserve_roster="mp-roster" not in enrichments,
+                    )
+                except derive.SprechrolleError as exc:
+                    print(exc, file=sys.stderr)
+                    return 1
                 store = pulse_store.connect(database_path)
                 try:
                     pulse_store.initialize(store)

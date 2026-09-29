@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
+import derive
 import publication_state as publication
 from features import (
     NAV_ITEMS,
@@ -33,7 +34,10 @@ PARTY_COLORS = {
     "BÜNDNIS 90/DIE GRÜNEN": "#169b62",
     "Die Linke": "#b01873",
     "fraktionslos": "#7a8699",
-    "Regierung": "#b06b00",
+    # The sides a Rede in a Sprechrolle counts for (ADR 0001), not Fraktionen.
+    "Bundesregierung": "#b06b00",
+    "Bundesrat": "#8c5a2b",
+    "weitere Sprechrolle": "#5b6b7a",
     "Rolle/Amt": "#b06b00",
     "Unbekannt": "#8b949e",
 }
@@ -42,7 +46,7 @@ VOTE_LABELS = {
     "yes": "ja",
     "no": "nein",
     "abstain": "enthalten",
-    "absent": "nicht abg.",
+    "absent": "nicht abgegeben",
 }
 
 # Aufmerksamkeitsrang sidebar on the dossier page. On desktop the aside is
@@ -1091,25 +1095,29 @@ def render_profile_link(speaker: dict[str, Any] | None) -> str:
     )
 
 
-def speaker_party(speaker: dict[str, Any] | None) -> str:
+def speaker_party(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str:
     if not speaker:
         return "Unbekannt"
-    fraction = speaker.get("fraktion")
-    if fraction:
-        return str(fraction).replace("\xa0", " ")
-    if speaker.get("role") or speaker.get("role_short"):
-        return "Regierung"
-    return "Unbekannt"
+    # Derived like speeches.sprechrolle, parties.name and speeches.fraktion,
+    # from the raw fields and the Sitzung, so a stale cached report shows what
+    # the store holds. A Rede in a Sprechrolle counts for its side, never for a
+    # Fraktion; a string that names no Zusammenschluss (a merged record) is
+    # Unbekannt.
+    side = derive.sprechrolle(speaker, strict=False)
+    if side:
+        return derive.SPRECHROLLE_LABELS[side]
+    return derive.speech_zusammenschluss(speaker, protocol) or "Unbekannt"
 
 
-def item_stats(item: dict[str, Any]) -> dict[str, Any]:
+def item_stats(item: dict[str, Any], protocol: dict[str, Any] | None = None) -> dict[str, Any]:
     speakers = item.get("xml_speakers") or []
     if not speakers:
         speakers = item.get("xml_speakers_first") or []
-    party_counts = Counter(speaker_party(s.get("speaker")) for s in speakers)
+    parties = [speaker_party(s.get("speaker"), protocol) for s in speakers]
     total_chars = sum(int(s.get("char_count") or 0) for s in speakers)
     return {
-        "party_counts": party_counts,
+        "parties": parties,
+        "party_counts": Counter(parties),
         "total_chars": total_chars,
         "speakers": speakers,
         "speech_count": int(item.get("xml_speech_count") or len(speakers)),
@@ -1259,7 +1267,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
         sitting_vote_ids: set[str] = set()
         first_vote_index = None
         for item in items:
-            stats = item_stats(item)
+            stats = item_stats(item, protocol)
             speech_count += stats["speech_count"]
             party_counts.update(stats["party_counts"])
             sitting_speeches += stats["speech_count"]
@@ -1820,9 +1828,9 @@ def topic_row(
     dossier_href: str,
 ) -> dict[str, Any]:
     """One radar row: what the TOP is, how much of the week it took, who spoke."""
-    stats = item_stats(item)
-    identity = topic_identity(item)
     protocol = _entry_protocol(entry)
+    stats = item_stats(item, protocol)
+    identity = topic_identity(item)
     current_week = iso_week_key(protocol.get("datum"))
     speech_count = int(stats["speech_count"])
     party_total = sum(stats["party_counts"].values())
@@ -2314,14 +2322,17 @@ def mp_page_href(
     prefix: str = "abgeordnete/",
 ) -> str | None:
     """Internal Abgeordnete profile URL for a speaker, or None when the speaker
-    does not resolve to a known MP. Tries abgeordnetenwatch id, then the
+    does not resolve to a known MP. Tries the Personenkennungen only: the
+    abgeordnetenwatch id when it was looked up by the Redner-ID (a name-found id
+    is a guess and could send the reader to a namesake), then the
     Bundestagsverwaltung speaker id, then the DIP person id."""
     if not mp_lookup:
         return None
-    profile = speaker.get("abgeordnetenwatch") or {}
+    aw_id = derive.trusted_aw_id(speaker.get("abgeordnetenwatch"))
+    xml_id = derive.first_redner_id(speaker.get("xml_redner_id"))
     candidates = (
-        f"aw:{profile.get('id')}" if profile.get("id") else None,
-        f"xml:{speaker.get('xml_redner_id')}" if speaker.get("xml_redner_id") else None,
+        f"aw:{aw_id}" if aw_id else None,
+        f"xml:{xml_id}" if xml_id else None,
         f"dip:{speaker.get('dip_person_id')}" if speaker.get("dip_person_id") else None,
     )
     for key in candidates:
@@ -2340,8 +2351,8 @@ def render_speakers(
     rows = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unbekannt")
-        party = speaker_party(speaker)
+        name = esc(derive.speaker_display_name(speaker))
+        party = stats["parties"][sequence]
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
@@ -2413,8 +2424,8 @@ def render_llm_summary(
     chunk_rows = []
     for chunk in chunks:
         speaker = chunk.get("speaker") or {}
-        name = speaker.get("display_name") or "Unbekannt"
-        party_or_role = speaker.get("fraktion") or speaker.get("role_short") or speaker.get("role") or "unbekannt"
+        name = derive.speaker_display_name(speaker)
+        party_or_role = derive.zusammenschluss(speaker.get("fraktion")) or speaker.get("role_short") or speaker.get("role") or "unbekannt"
         source = source_page_text(chunk.get("source_page"))
         anchor = source_chunk_anchor(item, stats, chunk)
         source_ref = f"Seite {source}" if source else "Redebeitrag"
@@ -2577,8 +2588,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
     cards = []
     for sequence, speech in enumerate(stats["speakers"]):
         speaker = speech.get("speaker") or {}
-        name = esc(speaker.get("display_name") or "Unbekannt")
-        party = speaker_party(speaker)
+        name = esc(derive.speaker_display_name(speaker))
+        party = stats["parties"][sequence]
         color = PARTY_COLORS.get(party, "#6b7280")
         role = speaker.get("role") or speaker.get("role_short") or party
         source = source_page_text(speech.get("source_page"))
@@ -2631,7 +2642,7 @@ def render_html(
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
     items = report.get("agenda_items") or []
-    stats_by_index = {item["index"]: item_stats(item) for item in items}
+    stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
     total_votes = sum(
@@ -2802,7 +2813,7 @@ def render_html(
     profile_notice = f'<div class="notice profile-state">{esc(profile_copy)}</div>' if profile_copy else ""
     footer_links = [
         '<a href="../overview.html">Sitzungen</a>',
-        '<a href="../bills/index.html">Gesetze</a>',
+        '<a href="../bills/index.html">Gesetzesvorhaben</a>',
         '<a href="../abgeordnete/index.html">Abgeordnete</a>',
         # Only when the build has Daten, like every other page's Daten link;
         # the caller predicts that (see dossier_database_page_href).

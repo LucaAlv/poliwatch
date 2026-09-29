@@ -13,11 +13,12 @@ import ast
 import json
 import logging
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import leading_vote, normalize_faction
+import derive
 
 
 SCHEMA_VERSION = 1
@@ -99,6 +100,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           wahlkreis TEXT,
           bundesland TEXT,
           aw_politician_id INTEGER,
+          aw_match TEXT,
           person_roles_json TEXT,
           is_mdb INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
@@ -197,6 +199,8 @@ def initialize(conn: sqlite3.Connection) -> None:
           text TEXT,
           snippet TEXT,
           fraktion TEXT,
+          unattributed_char_count INTEGER,
+          sprechrolle TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(protocol_id, rede_id),
@@ -286,6 +290,7 @@ _MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("wahlkreis", "TEXT"),
     ("bundesland", "TEXT"),
     ("aw_politician_id", "INTEGER"),
+    ("aw_match", "TEXT"),
     ("person_roles_json", "TEXT"),
     ("is_mdb", "INTEGER NOT NULL DEFAULT 0"),
 )
@@ -296,6 +301,8 @@ _MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
 # mps.party_id is the affiliation as of the last build.
 _SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fraktion", "TEXT"),
+    ("unattributed_char_count", "INTEGER"),
+    ("sprechrolle", "TEXT"),
 )
 
 
@@ -340,7 +347,7 @@ def _migrate_party_names(conn: sqlite3.Connection) -> None:
     plan = [
         (row["id"], row["name"], clean_name)
         for row in rows
-        for clean_name in [normalize_faction(unwrap_dip_faction(row["name"]))]
+        for clean_name in [derive.zusammenschluss(unwrap_dip_faction(row["name"]))]
         if clean_name and clean_name != row["name"]
     ]
     if not plan:
@@ -383,11 +390,11 @@ def _repoint_party(conn: sqlite3.Connection, old_id: int, new_id: int) -> None:
             continue
         merged = [int(existing[name] or 0) + int(duplicate[name] or 0) for name in counts]
         merged_by_name = dict(zip(counts, merged))
-        # The merge changes yes/no/abstain totals, so the majority direction
-        # must be recomputed from them - leaving the keeper row's old
-        # leading_vote would let a merge silently reverse which side of a
-        # vote counts as "with the Fraktion" for meiste-abweichler.
-        new_leading = leading_vote(
+        # The merge changes yes/no/abstain totals, so the Mehrheitsvotum must
+        # be recomputed from them - leaving the keeper row's old leading_vote
+        # would let a merge silently reverse which side of a vote counts as
+        # the Zusammenschluss's own for the Abweichler metrics.
+        new_leading = derive.majority_vote(
             {
                 "yes": merged_by_name["yes_count"],
                 "no": merged_by_name["no_count"],
@@ -430,7 +437,9 @@ def utc_now() -> str:
 
 
 def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | None:
-    name = clean(name)
+    # Every name enters parties through derive.zusammenschluss, so one
+    # Zusammenschluss is one row whatever spelling its source used.
+    name = derive.zusammenschluss(clean(name))
     if not name:
         return None
     conn.execute(
@@ -444,26 +453,29 @@ def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | 
     return int(conn.execute("SELECT id FROM parties WHERE name = ?", (name,)).fetchone()["id"])
 
 
-def speaker_party_name(speaker: dict[str, Any] | None) -> str | None:
+def speaker_party_name(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str | None:
     if not speaker:
         return None
-    if speaker.get("fraktion"):
-        return normalize_faction(speaker.get("fraktion"))
-    if speaker.get("role") or speaker.get("role_short"):
-        return "Regierung"
-    return None
+    # Only a Zusammenschluss is a party. A role speaker (Bundesregierung,
+    # Bundesrat, weitere Sprechrolle) belongs to none: the Rede counts for its
+    # side (speeches.sprechrolle), and there is no "Regierung" row.
+    return derive.speech_zusammenschluss(speaker, protocol)
 
 
 def mp_identity(
     *,
     aw_politician_id: Any = None,
+    aw_match: Any = None,
     dip_person_id: Any = None,
     xml_redner_id: Any = None,
     profile_url: Any = None,
     display_name: Any = None,
     party_name: Any = None,
 ) -> str:
-    if aw_politician_id:
+    # An abgeordnetenwatch id found by searching a name is a guess, not a
+    # Personenkennung: it names the person only when it was looked up by their
+    # Redner-ID (ext_id).
+    if aw_politician_id and aw_match == derive.TRUSTED_AW_MATCH:
         return f"aw:{aw_politician_id}"
     if dip_person_id:
         return f"dip:{dip_person_id}"
@@ -493,6 +505,7 @@ def upsert_mp(
     wahlkreis: Any = None,
     bundesland: Any = None,
     aw_politician_id: Any = None,
+    aw_match: Any = None,
     person_roles_json: Any = None,
     is_mdb: bool = False,
 ) -> int:
@@ -502,10 +515,10 @@ def upsert_mp(
           identity_key, dip_person_id, xml_redner_id, display_name, title,
           function, wahlperiode, profile_url, party_id,
           birth_year, gender, profession, wahlkreis, bundesland,
-          aw_politician_id, person_roles_json, is_mdb,
+          aw_politician_id, aw_match, person_roles_json, is_mdb,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(identity_key) DO UPDATE SET
           dip_person_id = COALESCE(excluded.dip_person_id, mps.dip_person_id),
           xml_redner_id = COALESCE(excluded.xml_redner_id, mps.xml_redner_id),
@@ -521,6 +534,7 @@ def upsert_mp(
           wahlkreis = COALESCE(excluded.wahlkreis, mps.wahlkreis),
           bundesland = COALESCE(excluded.bundesland, mps.bundesland),
           aw_politician_id = COALESCE(excluded.aw_politician_id, mps.aw_politician_id),
+          aw_match = CASE WHEN excluded.aw_politician_id IS NOT NULL THEN excluded.aw_match ELSE mps.aw_match END,
           person_roles_json = COALESCE(excluded.person_roles_json, mps.person_roles_json),
           is_mdb = MAX(mps.is_mdb, excluded.is_mdb),
           updated_at = excluded.updated_at
@@ -541,6 +555,7 @@ def upsert_mp(
             clean(wahlkreis),
             clean(bundesland),
             aw_politician_id if isinstance(aw_politician_id, int) else None,
+            clean(aw_match) if isinstance(aw_politician_id, int) else None,
             clean(person_roles_json),
             1 if is_mdb else 0,
             now,
@@ -656,7 +671,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
     for person in report.get("sampled_people") or []:
         fraktion = unwrap_dip_faction(person.get("fraktion"))
-        party_id = upsert_party(conn, normalize_faction(fraktion) if fraktion else None, now)
+        party_id = upsert_party(conn, fraktion, now)
         display_name = clean(person.get("titel")) or clean(person.get("id")) or "Unbekannt"
         upsert_mp(
             conn,
@@ -861,18 +876,20 @@ def persist_speeches(
     item: dict[str, Any],
     agenda_item_id: int,
     now: str,
+    protocol: dict[str, Any] | None = None,
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
         speaker = speech.get("speaker") or {}
         profile = speaker.get("abgeordnetenwatch") or {}
-        party_name = speaker_party_name(speaker)
+        party_name = speaker_party_name(speaker, protocol)
         party_id = upsert_party(conn, party_name, now)
-        # The Fraktion as the protocol states it for this Rede, normalised the same
-        # way parties.name is. NULL when the XML names none (a minister speaking in
-        # role); the reader then falls back to the MP's party.
-        raw_fraktion = clean(speaker.get("fraktion"))
-        speech_fraktion = normalize_faction(raw_fraktion) if raw_fraktion else None
-        display_name = clean(speaker.get("display_name")) or "Unbekannt"
+        # The Zusammenschluss as the protocol states it for this Rede, normalised
+        # the same way parties.name is. NULL when the XML names none (a minister
+        # speaking in role, or a merged record naming two); the reader then falls
+        # back to the MP's party.
+        speech_fraktion = derive.speech_zusammenschluss(speaker, protocol)
+        display_name = clean(derive.undouble(speaker.get("display_name"))) or "Unbekannt"
+        xml_redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         mp_id = upsert_mp(
             conn,
@@ -881,13 +898,15 @@ def persist_speeches(
             party_id=party_id,
             identity_key=mp_identity(
                 aw_politician_id=aw_politician_id,
-                xml_redner_id=speaker.get("xml_redner_id"),
+                aw_match=profile.get("match"),
+                xml_redner_id=xml_redner_id,
                 display_name=display_name,
                 party_name=party_name,
             ),
-            xml_redner_id=speaker.get("xml_redner_id"),
+            xml_redner_id=xml_redner_id,
             profile_url=profile.get("url"),
             aw_politician_id=aw_politician_id,
+            aw_match=profile.get("match"),
         )
         page, quadrant = source_page_ref(speech.get("source_page"))
         conn.execute(
@@ -895,9 +914,9 @@ def persist_speeches(
             INSERT INTO speeches(
               protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
               paragraph_count, char_count, text, snippet, fraktion,
-              created_at, updated_at
+              unattributed_char_count, sprechrolle, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 protocol_id,
@@ -912,6 +931,12 @@ def persist_speeches(
                 clean(speech.get("text")),
                 clean(speech.get("snippet")),
                 speech_fraktion,
+                # NULL for a report cached before the parser measured it:
+                # unknown is not zero.
+                None
+                if speech.get("unattributed_char_count") is None
+                else int(speech["unattributed_char_count"]),
+                derive.sprechrolle(speaker),
                 now,
                 now,
             ),
@@ -1011,11 +1036,13 @@ def persist_votes(
                     (vote_id, document_id),
                 )
 
-        for fraction in vote.get("fractions") or []:
-            party_id = upsert_party(conn, normalize_faction(fraction.get("name")), now)
+        # Rows of one vote that name the same Zusammenschluss under two
+        # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
+        for merged in derive.merge_fractions(vote.get("fractions")):
+            party_name = merged["name"]
+            party_id = upsert_party(conn, party_name, now)
             if party_id is None:
                 continue
-            counts = fraction.get("counts") or {}
             conn.execute(
                 """
                 INSERT INTO vote_fractions(
@@ -1027,17 +1054,20 @@ def persist_votes(
                 (
                     vote_id,
                     party_id,
-                    int(counts.get("yes") or 0),
-                    int(counts.get("no") or 0),
-                    int(counts.get("abstain") or 0),
-                    int(counts.get("absent") or 0),
-                    int(fraction.get("total") or 0),
-                    clean(fraction.get("leading_vote")),
+                    merged["counts"]["yes"],
+                    merged["counts"]["no"],
+                    merged["counts"]["abstain"],
+                    merged["counts"]["absent"],
+                    merged["total"],
+                    # Derived from the counts: a cached report's own
+                    # leading_vote is ignored, so a rule change applies on
+                    # re-persist (plan F1/E2).
+                    derive.majority_vote(merged["counts"]),
                 ),
             )
 
         for member in vote.get("members") or []:
-            party_name = normalize_faction(member.get("faction"))
+            party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
             party_id = upsert_party(conn, party_name, now)
             profile = member.get("abgeordnetenwatch") or {}
             aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
@@ -1049,12 +1079,14 @@ def persist_votes(
                 party_id=party_id,
                 identity_key=mp_identity(
                     aw_politician_id=aw_politician_id,
+                    aw_match=profile.get("match"),
                     profile_url=profile_url,
                     display_name=member.get("name"),
                     party_name=party_name,
                 ),
                 profile_url=profile_url,
                 aw_politician_id=aw_politician_id,
+                aw_match=profile.get("match"),
             )
             conn.execute(
                 """
@@ -1068,6 +1100,22 @@ def persist_votes(
             )
 
 
+def _warn_merged_redner_ids(report: dict[str, Any]) -> None:
+    """A ``<redner id>`` with two ids is a merged record in the Bundestag XML;
+    the first is used. Say where, so the source can be checked."""
+    number = clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+    for item in report.get("agenda_items") or []:
+        for speech in item.get("xml_speakers") or []:
+            raw = (speech.get("speaker") or {}).get("xml_redner_id")
+            ids = derive.redner_ids(raw)
+            if len(ids) > 1:
+                print(
+                    f"warning: [redner-id] {number} Rede {speech.get('rede_id') or '?'}: the Redner id \"{raw}\" "
+                    f"names {len(ids)} ids (a merged record in the Bundestag XML); using the first, {ids[0]}.",
+                    file=sys.stderr,
+                )
+
+
 def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     now = utc_now()
     initialize(conn)
@@ -1076,6 +1124,8 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     if not protocol_id:
         raise ValueError("Report has no protocol.id")
 
+    derive.check_sprechrollen([report])
+    _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)
         persist_sampled_people(conn, report, now)
@@ -1083,7 +1133,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
             persist_positions(conn, item, agenda_item_id, now)
             persist_agenda_documents(conn, item, agenda_item_id, now)
-            persist_speeches(conn, protocol_id, item, agenda_item_id, now)
+            persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_votes(conn, item, agenda_item_id, now)
 
 

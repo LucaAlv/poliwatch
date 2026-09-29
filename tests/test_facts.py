@@ -1741,6 +1741,42 @@ class EngineTests(StoreCase):
 # ---------------------------------------------------------------------------
 
 
+class ChangedWinnerIdentityTests(unittest.TestCase):
+    """E7: a vote has no rede_id or page, so only its official page tells two
+    votes of one sitting apart."""
+
+    @staticmethod
+    def snapshot(url: str, value: float = 5.0):
+        row = {
+            "metric_id": facts.REGISTRY[0]["id"], "metric_version": 1, "period_kind": "week",
+            "period_key": "2026-W10", "iso_year": 2026, "iso_week": 10, "wahlperiode": 21,
+            "complete": 1, "week_n": 9, "value": value, "denominator": None, "baseline_kind": None,
+            "baseline_count": None, "baseline_from": None, "baseline_to": None,
+            "baseline_label": None, "percentile": 0.9, "eligible": 1, "withheld": None,
+            "publishable": 1, "rank": 1,
+            "receipts": [{
+                "entity_kind": "vote", "document_number": "21/1", "rede_id": None, "page": None,
+                "page_quadrant": None, "official_url": url, "position": 0,
+            }],
+        }
+        return facts.snapshot_from_rows(facts.REGISTRY, [row])
+
+    def test_an_equal_value_switch_between_two_votes_of_one_sitting_is_reported(self) -> None:
+        was = self.snapshot("https://www.bundestag.de/abstimmung?id=1")
+        now = self.snapshot("https://www.bundestag.de/abstimmung?id=2")
+        lines = facts.changed_winners(was, now)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("2026-W10: "))
+        # Both identities are printed so the log line can be checked by hand.
+        self.assertIn("abstimmung?id=1", lines[0])
+        self.assertIn("abstimmung?id=2", lines[0])
+        self.assertIn("(5)", lines[0])
+
+    def test_the_same_vote_is_not_reported(self) -> None:
+        url = "https://www.bundestag.de/abstimmung?id=1"
+        self.assertEqual(facts.changed_winners(self.snapshot(url), self.snapshot(url)), [])
+
+
 class UnknownMetricRejectionTests(unittest.TestCase):
     """headline/card_title/card_lead each dispatch on metric_id with an
     explicit branch per registered metric; a metric the registry knows but
