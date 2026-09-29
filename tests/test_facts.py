@@ -1455,6 +1455,15 @@ class CatalogCompletenessTests(StoreCase):
         self.assertIn("Sonder 5 (2025-02-01)", text)
         self.assertNotIn("SDr 1989/06", text)
 
+    def test_a_store_whose_protocols_have_no_dates_does_not_crash_the_engine(self) -> None:
+        seeded = self.seed(week_specs(3))
+        conn = self.writable()
+        conn.execute("UPDATE protocols SET date = NULL")
+        conn.commit()
+        catalog = facts.sitting_catalog([{"dokumentnummer": "Sonder 5", "datum": "2025-02-01"}], authoritative=True)
+        with self.assertRaises(facts.FactsError):  # sitting_weeks refuses undated protocols, as before
+            facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=catalog, built={"votes"}, out=io.StringIO())
+
     def test_compute_and_store_says_once_when_there_is_no_catalog(self) -> None:
         self.seed(week_specs(10))
         conn = self.writable()

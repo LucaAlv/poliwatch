@@ -2093,8 +2093,12 @@ def compute_and_store(
         # A catalog entry that cannot be placed in a period is never judged.
         # Old Sonderdrucke ("SDr 1989/06") are expected; one dated inside the
         # judged range is a listed sitting nobody can see.
-        first_day = min(str(p.get("date") or "")[:10] for p in stored if p.get("date"))
-        hidden = [f"{number} ({day})" for number, day in catalog.unusable_rows if day and day >= first_day]
+        first_day = min((str(p.get("date") or "")[:10] for p in stored if p.get("date")), default="")
+        hidden = (
+            [f"{number} ({day})" for number, day in catalog.unusable_rows if day and day >= first_day]
+            if first_day
+            else []
+        )
         if hidden:
             print(
                 f"warning: [facts] {len(hidden)} catalog entries inside the judged range have no usable document "

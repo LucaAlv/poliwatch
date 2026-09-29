@@ -1318,16 +1318,18 @@ def annotate_report_acquisition(
             {pulse_html.vote_key(vote) for item in report.get("agenda_items") or [] for vote in _iter_report_votes(item)}
         )
         carried = max(0, unique_votes - int(fresh.get("records") or 0))
-        if fresh.get("acquisition_state") in {"partial", "failed"} and carried:
+        prior_complete = (
+            (prior_votes or {}).get("acquisition_state") == "complete" and bool((prior_votes or {}).get("acquired_at"))
+        )
+        # A verified zero-vote sitting has nothing to carry, but its earlier
+        # verification must survive a failed re-check just the same.
+        if fresh.get("acquisition_state") in {"partial", "failed"} and (carried or prior_complete):
             # The scan could not vouch for this sitting, so the cached votes
             # were kept (reuse_existing_dossier_enrichments). A failed re-check
             # does not undo an earlier verified acquisition: if the cached
             # votes came from a complete, stamped one, that state stands and
             # the failed attempt is recorded next to it. Otherwise they are
             # only partial evidence.
-            prior_complete = (
-                (prior_votes or {}).get("acquisition_state") == "complete" and bool((prior_votes or {}).get("acquired_at"))
-            )
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=(

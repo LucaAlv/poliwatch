@@ -201,6 +201,7 @@ class ApiClient:
         return documents
 
 
+ROLL_CALL_OUTAGE_KEY = "__outage__"
 PAGE_FETCH_RETRIES = 2
 PAGE_FETCH_RETRY_DELAY_SECONDS = 1.5
 
@@ -218,6 +219,13 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
             with urllib.request.urlopen(req, timeout=60) as res:
                 return res.read().decode("utf-8")
         except UnicodeDecodeError as exc:
+            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            # A 404 or 403 will not change on a retry; a busy or failing server might.
+            if exc.code in {429, 500, 502, 503, 504} and attempt < PAGE_FETCH_RETRIES:
+                time.sleep(PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1))
+                continue
             raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
         except (OSError, http.client.HTTPException) as exc:
             if attempt < PAGE_FETCH_RETRIES:
@@ -985,6 +993,10 @@ def fetch_roll_call_vote_candidates(
     if not target_date or scan_pages <= 0:
         result = RollCallCandidateFetch([], False, 0, False)
         return result if include_diagnostics else result.candidates
+    if page_cache is not None and ROLL_CALL_OUTAGE_KEY in page_cache:
+        # A list page already failed after its retries in this build: every
+        # further sitting would spend the same minutes on the same outage.
+        raise DipError(f"roll-call list unavailable earlier in this build: {page_cache[ROLL_CALL_OUTAGE_KEY]}")
 
     candidates: list[dict[str, Any]] = []
     list_html_seen = False
@@ -999,7 +1011,12 @@ def fetch_roll_call_vote_candidates(
             html_text = page_cache[url]
             pages_from_cache += 1
         else:
-            html_text = fetch_html(url)
+            try:
+                html_text = fetch_html(url)
+            except DipError as exc:
+                if page_cache is not None:
+                    page_cache[ROLL_CALL_OUTAGE_KEY] = str(exc)
+                raise
             pages_fetched += 1
             if page_cache is not None:
                 page_cache[url] = html_text

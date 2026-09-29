@@ -45,6 +45,20 @@ class PageFetchRetryTests(unittest.TestCase):
                 dip.fetch_text("https://example.test/x.xml")
         self.assertEqual(opener.call_count, dip.PAGE_FETCH_RETRIES + 1)
 
+    def test_a_permanent_http_error_is_not_retried_but_a_busy_server_is(self) -> None:
+        import urllib.error
+
+        def http_error(code: int) -> urllib.error.HTTPError:
+            return urllib.error.HTTPError("https://example.test/x", code, "err", {}, None)  # type: ignore[arg-type]
+
+        for code, calls in ((404, 1), (403, 1), (503, dip.PAGE_FETCH_RETRIES + 1)):
+            with self.subTest(code=code):
+                opener = mock.Mock(side_effect=lambda *a, **k: (_ for _ in ()).throw(http_error(code)))
+                with mock.patch.object(dip.urllib.request, "urlopen", opener), mock.patch.object(dip.time, "sleep"):
+                    with self.assertRaises(dip.DipError):
+                        dip.fetch_html("https://example.test/x")
+                self.assertEqual(opener.call_count, calls)
+
     def test_undecodable_bytes_are_not_retried(self) -> None:
         class Response:
             def __enter__(self):

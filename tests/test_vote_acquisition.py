@@ -86,18 +86,28 @@ class ScanEndTests(unittest.TestCase):
         self.assertEqual((first.pages_fetched, first.pages_from_cache), (2, 0))
         self.assertEqual((second.pages_fetched, second.pages_from_cache), (0, 2))
 
-    def test_a_failed_page_fetch_is_not_cached_and_is_fetched_again(self) -> None:
-        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
-        good = paged(pages)
+    def test_a_failed_page_is_not_cached_as_a_page(self) -> None:
         cache: dict[str, str] = {}
         with mock.patch.object(dip, "fetch_html", side_effect=dip.DipError("boom")):
             with self.assertRaises(dip.DipError):
                 dip.fetch_roll_call_vote_candidates("2026-07-01", 3, page_cache=cache)
-        self.assertEqual(cache, {})
-        with mock.patch.object(dip, "fetch_html", side_effect=good):
-            result = dip.fetch_roll_call_vote_candidates("2026-07-01", 3, include_diagnostics=True, page_cache=cache)
-        self.assertEqual((result.pages_fetched, result.pages_from_cache), (1, 0))
-        self.assertEqual(len(cache), 1)
+        # Only the outage marker is remembered, never a page.
+        self.assertEqual(cache, {dip.ROLL_CALL_OUTAGE_KEY: "boom"})
+
+    def test_one_failed_list_page_stops_further_list_fetches_in_the_build(self) -> None:
+        cache: dict[str, str] = {}
+        opener = mock.Mock(side_effect=dip.DipError("boom"))
+        with mock.patch.object(dip, "fetch_html", opener):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_roll_call_vote_candidates("2026-07-01", 5, page_cache=cache)
+            with self.assertRaisesRegex(dip.DipError, "unavailable earlier in this build"):
+                dip.fetch_roll_call_vote_candidates("2026-07-02", 5, page_cache=cache)
+        self.assertEqual(opener.call_count, 1)
+        # Without a shared cache nothing is remembered.
+        with mock.patch.object(dip, "fetch_html", opener):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_roll_call_vote_candidates("2026-07-02", 5)
+        self.assertEqual(opener.call_count, 2)
 
     def test_not_scanning_is_not_a_scan_end(self) -> None:
         result = dip.fetch_roll_call_vote_candidates("2026-07-01", 0, include_diagnostics=True)
@@ -384,6 +394,16 @@ class CachedVoteStateTests(unittest.TestCase):
         self.assertEqual(votes["attempted_at"], "2026-09-28T10:00:00Z")
         self.assertEqual(votes["failure_reasons"], ["scan_budget_exhausted"])
         self.assertEqual((votes["records"], votes["reused"]), (2, 2))
+
+    def test_a_failed_recheck_keeps_a_verified_zero_vote_sitting(self) -> None:
+        prior = votes_facts("complete", records=0, acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
+        existing = report_with(0, prior)
+        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
+        build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        votes = self.annotate(fresh, existing, scan_pages=30)
+        self.assertEqual((votes["acquisition_state"], votes["records"]), ("complete", 0))
+        self.assertEqual(votes["acquired_at"], "2026-09-01T10:00:00Z")
+        self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
 
     def test_a_failed_scan_over_partial_cached_votes_stays_partial(self) -> None:
         prior = votes_facts("partial", records=2, reasons=("scan_budget_exhausted",),
