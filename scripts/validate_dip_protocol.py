@@ -670,13 +670,6 @@ def vote_total(counts: dict[str, int]) -> int:
     return sum(int(counts.get(key) or 0) for key in VOTE_KEYS)
 
 
-def leading_vote(counts: dict[str, int]) -> str:
-    cast = {key: int(counts.get(key) or 0) for key in ("yes", "no", "abstain")}
-    if not any(cast.values()):
-        return "absent"
-    return max(cast, key=cast.get)
-
-
 _CONSTITUTIONAL_TITLE_RE = re.compile(r"Grundgesetz", re.I)
 
 
@@ -1085,7 +1078,6 @@ def parse_fraction_votes(detail_html: str) -> list[dict[str, Any]]:
                 "name": name,
                 "counts": counts,
                 "total": vote_total(counts),
-                "leading_vote": leading_vote(counts),
             }
         )
     return unique_by(fractions, ("name",))

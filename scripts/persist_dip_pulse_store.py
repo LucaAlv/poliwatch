@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from validate_dip_protocol import leading_vote, normalize_faction
+import derive
+from validate_dip_protocol import normalize_faction
 
 
 SCHEMA_VERSION = 1
@@ -383,11 +384,11 @@ def _repoint_party(conn: sqlite3.Connection, old_id: int, new_id: int) -> None:
             continue
         merged = [int(existing[name] or 0) + int(duplicate[name] or 0) for name in counts]
         merged_by_name = dict(zip(counts, merged))
-        # The merge changes yes/no/abstain totals, so the majority direction
-        # must be recomputed from them - leaving the keeper row's old
-        # leading_vote would let a merge silently reverse which side of a
-        # vote counts as "with the Fraktion" for meiste-abweichler.
-        new_leading = leading_vote(
+        # The merge changes yes/no/abstain totals, so the Mehrheitsvotum must
+        # be recomputed from them - leaving the keeper row's old leading_vote
+        # would let a merge silently reverse which side of a vote counts as
+        # the Zusammenschluss's own for the Abweichler metrics.
+        new_leading = derive.majority_vote(
             {
                 "yes": merged_by_name["yes_count"],
                 "no": merged_by_name["no_count"],
@@ -1032,7 +1033,10 @@ def persist_votes(
                     int(counts.get("abstain") or 0),
                     int(counts.get("absent") or 0),
                     int(fraction.get("total") or 0),
-                    clean(fraction.get("leading_vote")),
+                    # Derived from the counts: a cached report's own
+                    # leading_vote is ignored, so a rule change applies on
+                    # re-persist (plan F1/E2).
+                    derive.majority_vote(counts),
                 ),
             )
 

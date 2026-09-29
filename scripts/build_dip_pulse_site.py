@@ -100,6 +100,7 @@ import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
+import derive
 import publication_state as publication
 import facts
 # Public components are fixed product structure. EnrichmentSelection is the
@@ -1964,7 +1965,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "r3-abweichler",
-        "title": "Wer stimmt am häufigsten gegen die eigene Fraktion?",
+        "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
             "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
@@ -1976,6 +1977,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
             "  AND vm.vote <> vf.leading_vote\n"
+            "  AND p.name <> 'fraktionslos'\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY abweichungen DESC, m.display_name\n"
             "LIMIT 5;"
@@ -3789,14 +3791,15 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
 
 def _fraction_position(fraction: dict[str, Any]) -> str | None:
     # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
-    # (Ja + Nein + Enthaltung): leading_vote alone would call a tie (1 Ja,
-    # 1 Nein) or a plurality (40 Ja, 35 Nein, 25 Enthaltungen) "yes".
+    # (Ja + Nein + Enthaltung): a Mehrheitsvotum of Ja alone would also match a
+    # plurality (40 Ja, 35 Nein, 25 Enthaltungen). That is a stricter test than
+    # the Mehrheitsvotum, not a second definition of it: a Zusammenschluss with
+    # no Mehrheitsvotum (a tie, or nobody voted) has no position and no chip.
     counts = fraction.get("counts") or {}
-    cast = [int(counts.get(key) or 0) for key in ("yes", "no", "abstain")]
-    leading = fraction.get("leading_vote")
-    if not any(cast) or leading != "yes":
+    leading = derive.majority_vote(counts)
+    if leading != "yes":
         return leading
-    yes, no, abstain = cast
+    yes, no, abstain = (int(counts.get(key) or 0) for key in derive.MAJORITY_KEYS)
     return "yes" if yes > no + abstain else "tie"
 
 
@@ -3828,9 +3831,9 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 if key in rows:
                     continue
                 fraction_positions = {
-                    str(fraction["name"]): _fraction_position(fraction)
+                    str(fraction["name"]): position
                     for fraction in vote.get("fractions") or []
-                    if fraction.get("name")
+                    if fraction.get("name") and (position := _fraction_position(fraction)) is not None
                 }
                 rows[key] = {
                     "vote": vote,
@@ -6684,7 +6687,7 @@ def render_abgeordnete_detail(
     votes = []
     for vote in mp.get("votes") or []:
         direction = (vote.get("vote") or "").lower()
-        label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "Abwesend"}.get(direction, vote.get("vote") or "—")
+        label = {"yes": "Ja", "no": "Nein", "abstain": "Enthalten", "absent": "nicht abgegeben"}.get(direction, vote.get("vote") or "—")
         title = pulse_html.esc(vote.get("title") or vote.get("topic") or "Namentliche Abstimmung")
         if vote.get("detail_url"):
             title = (

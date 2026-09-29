@@ -42,7 +42,7 @@ VOTE_LABELS = {
     "yes": "ja",
     "no": "nein",
     "abstain": "enthalten",
-    "absent": "nicht abg.",
+    "absent": "nicht abgegeben",
 }
 
 # Aufmerksamkeitsrang sidebar on the dossier page. On desktop the aside is

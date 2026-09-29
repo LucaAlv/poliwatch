@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import derive
 import render_dip_pulse_html as html
 
 from . import BaseComponent, REGISTRY
@@ -122,14 +123,23 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         for fraction in vote.get("fractions") or []:
             name = fraction.get("name") or "Unbekannt"
             counts = fraction.get("counts") or {}
-            leading = fraction.get("leading_vote") or "absent"
+            # From the counts, never the report's cached leading_vote: a stale
+            # report must not show a Mehrheitsvotum the store does not hold.
+            leading = derive.majority_vote(counts)
             color = html.PARTY_COLORS.get(name, "#6b7280")
+            # No Mehrheitsvotum (a tie, or nobody voted) is no pill, not a
+            # "nicht abgegeben" one.
+            pill = (
+                f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(html.VOTE_LABELS.get(leading, leading))}</em>'
+                if leading
+                else ""
+            )
             fraction_rows.append(
                 '<div class="vote-fraction-row">'
                 f'<span class="party-dot" style="background:{color}"></span>'
                 f'<strong>{html.esc(name)}</strong>'
                 f'{html.render_vote_stack(counts, int(fraction.get("total") or 0))}'
-                f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(html.VOTE_LABELS.get(leading, leading))}</em>'
+                f"{pill}"
                 "</div>"
             )
         member_groups: dict[str, list[dict[str, Any]]] = {}

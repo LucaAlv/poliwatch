@@ -192,15 +192,18 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "id": "meiste-abweichler",
         "version": 1,
         "title": "Die meisten Abweichler der Woche",
-        "unit": "Abgeordnete gegen die Linie ihrer Fraktion",
+        "unit": "Abgeordnete, die anders stimmten als die Mehrheit ihrer Fraktion oder Gruppe",
         "direction": "max",
         "aggregation": "extreme",
-        # An abweichlerin votes the opposite way of her Fraktion's
-        # leading_vote. Enthaltung and Abwesenheit are not a counter-vote and
-        # do not count (the Suizidhilfe vote reads 179 this way, 202 with
-        # Enthaltungen); fraktionslose Abgeordnete have no Fraktionslinie to
-        # break, so the pseudo-Fraktion "fraktionslos" is excluded (151 of its
-        # members' votes would otherwise count as deviations).
+        # An Abweichung votes Ja where the Mehrheitsvotum of the MdB's
+        # Zusammenschluss is Nein, or Nein where it is Ja (CONTEXT.md).
+        # Enthaltung and Abwesenheit are not a counter-vote and do not count
+        # (the Suizidhilfe vote reads 179 this way, 202 with Enthaltungen), and
+        # neither does a Zusammenschluss without a Mehrheitsvotum (a tie, or
+        # nobody voted: leading_vote is NULL there). Fraktionslose MdBs belong
+        # to no Zusammenschluss and cannot make an Abweichung, so the
+        # pseudo-Fraktion "fraktionslos" is excluded (151 of its members' votes
+        # would otherwise count as deviations).
         "sql": (
             "SELECT v.id, v.title, v.date, v.detail_url,\n"
             "       CASE WHEN EXISTS (SELECT 1 FROM vote_members vm0 WHERE vm0.vote_id = v.id) THEN (\n"
@@ -233,9 +236,9 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "min_value": 3,
         "requires_topic": False,
         "caveat": (
-            "Bei Gewissensfragen gibt es keine Fraktionslinie. Gezählt wird, wer anders "
-            "stimmt als die Mehrheit der eigenen Fraktion; Enthaltungen und Abwesenheit "
-            "zählen nicht, fraktionslose Abgeordnete bleiben außen vor. Je mehr "
+            "Bei Gewissensfragen stimmen Fraktionen oft frei ab. Gezählt wird, wer anders "
+            "stimmt als die Mehrheit der eigenen Fraktion oder Gruppe; Enthaltungen und "
+            "Abwesenheit zählen nicht, fraktionslose Abgeordnete bleiben außen vor. Je mehr "
             "namentliche Abstimmungen eine Woche hat, desto mehr Abweichungen sind zu "
             "erwarten."
         ),
@@ -2314,8 +2317,8 @@ def card_lead(row: Mapping[str, Any]) -> str:
         )
     if metric_id == "meiste-abweichler":
         return (
-            f"{title}: {format_int(int(row['value']))} Abgeordnete stimmten gegen die Linie "
-            f"ihrer Fraktion, bei {card_title(row)}"
+            f"{title}: {format_int(int(row['value']))} Abgeordnete stimmten anders als die "
+            f"Mehrheit ihrer Fraktion oder Gruppe, bei {card_title(row)}"
         )
     if metric_id == "laengste-debatte":
         return (

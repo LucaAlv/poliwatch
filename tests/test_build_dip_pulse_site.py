@@ -2260,18 +2260,40 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertNotIn('class="summary-grid"', markup)
         self.assertIn("von ${total} Abstimmungen", markup)
 
-    def test_tied_fraktion_is_not_a_ja_majority(self) -> None:
+    def test_a_tied_fraktion_has_no_position_and_no_chip(self) -> None:
+        # A shared top count is no Mehrheitsvotum, so the Fraktion gets no
+        # position in this vote; the stale cached leading_vote ("yes", what
+        # max() used to pick on a tie) is ignored.
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": [
             {"name": "fraktionslos", "counts": {"yes": 1, "no": 1, "abstain": 0}, "leading_vote": "yes"},
             {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}, "leading_vote": "yes"},
             {"name": "AfD", "counts": {"yes": 0, "no": 80, "abstain": 0}, "leading_vote": "no"},
         ]}
         rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
-        self.assertEqual(rows[0]["fraction_positions"], {"fraktionslos": "tie", "SPD": "yes", "AfD": "no"})
+        self.assertEqual(rows[0]["fraction_positions"], {"SPD": "yes", "AfD": "no"})
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertNotIn('data-fraktion-chip="fraktionslos"', markup)
+        self.assertIn('data-fraktion-chip="SPD"', markup)
+
+    def test_a_fraktion_that_did_not_vote_has_no_position_and_no_chip(self) -> None:
+        # Nobody voted: not an "absent" chip (the old pass-through of "absent").
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": [
+            {"name": "FDP", "counts": {"yes": 0, "no": 0, "abstain": 0, "absent": 9}, "leading_vote": "absent"},
+            {"name": "SPD", "counts": {"yes": 100, "no": 3, "abstain": 0}},
+        ]}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
+        self.assertEqual(rows[0]["fraction_positions"], {"SPD": "yes"})
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertNotIn('data-fraktion-chip="FDP"', markup)
+        self.assertNotIn('"absent"', markup.split("data-fraktion-positions=")[1].split(">")[0])
 
     def test_ja_plurality_below_half_of_the_votes_is_not_a_ja_majority(self) -> None:
+        # The chip stays stricter than the Mehrheitsvotum, which is Ja here.
         fraction = {"counts": {"yes": 40, "no": 35, "abstain": 25}, "leading_vote": "yes"}
         self.assertEqual(build_dip_pulse_site._fraction_position(fraction), "tie")
+        self.assertEqual(
+            build_dip_pulse_site._fraction_position({"counts": {"yes": 51, "no": 30, "abstain": 19}}), "yes"
+        )
 
     def test_rows_sort_reverse_chronological(self) -> None:
         older = self._entry(
@@ -2427,7 +2449,10 @@ class VotesArchiveTests(unittest.TestCase):
             "id": "v1",
             "date": "2026-06-10",
             "title": "T",
-            "fractions": [{"name": "SPD", "leading_vote": "yes"}, {"name": "CDU/CSU", "leading_vote": "no"}],
+            "fractions": [
+                {"name": "SPD", "counts": {"yes": 10, "no": 1, "abstain": 0}},
+                {"name": "CDU/CSU", "counts": {"yes": 0, "no": 9, "abstain": 0}},
+            ],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
         rows = build_dip_pulse_site.collect_votes_archive([entry])
@@ -2448,9 +2473,9 @@ class VotesArchiveTests(unittest.TestCase):
             "date": "2026-06-10",
             "title": "T",
             "fractions": [
-                {"name": "fraktionslos", "leading_vote": "yes"},
-                {"name": "SPD", "leading_vote": "yes"},
-                {"name": "AfD", "leading_vote": "no"},
+                {"name": "fraktionslos", "counts": {"yes": 5, "no": 0, "abstain": 0}},
+                {"name": "SPD", "counts": {"yes": 10, "no": 1, "abstain": 0}},
+                {"name": "AfD", "counts": {"yes": 0, "no": 9, "abstain": 0}},
             ],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
@@ -2511,7 +2536,7 @@ class VotesArchiveTests(unittest.TestCase):
             "id": "v1",
             "date": "2026-06-10",
             "title": "T",
-            "fractions": [{"name": "SPD", "leading_vote": "yes"}],
+            "fractions": [{"name": "SPD", "counts": {"yes": 10, "no": 1, "abstain": 0}}],
         }
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [vote])])
         markup = build_dip_pulse_site.render_votes_archive_index(build_dip_pulse_site.collect_votes_archive([entry]))
