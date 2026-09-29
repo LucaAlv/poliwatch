@@ -173,7 +173,10 @@ class ApiClient:
                     self._retry_delay(path, exc, attempt)
                     continue
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
-            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            except (OSError, http.client.HTTPException) as exc:
+                # URLError and timeouts are OSErrors, and so is a connection
+                # reset while the body is being read, which urlopen does not
+                # wrap: without it one reset ended a two-hour backfill.
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
@@ -1766,6 +1769,13 @@ def enrich_with_api(
     unmatched_candidates = [
         candidate for candidate in roll_call_candidates if str(candidate["id"]) not in attached_vote_ids
     ]
+    if progress and vote_scan_pages > 0:
+        # Every fetched vote costs two requests (detail page, member list); the
+        # Namenslisten page is one more per build, shared by all sittings.
+        progress(
+            f"Roll-call details: {len(roll_call_cache)} vote(s) fetched "
+            f"({2 * len(roll_call_cache)} requests), {len(unmatched_candidates)} candidate(s) matched no TOP."
+        )
     if roll_call_candidates and not attached_vote_ids:
         warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
     elif unmatched_candidates and vote_fetch_error is None:

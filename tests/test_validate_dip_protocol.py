@@ -10,6 +10,43 @@ import validate_dip_protocol as dip
 from _support import FIXTURES
 
 
+class ApiClientRetryTests(unittest.TestCase):
+    def client(self) -> "dip.ApiClient":
+        return dip.ApiClient(api_key="k", retries=2, retry_delay_seconds=0)
+
+    def test_a_connection_reset_while_reading_is_retried(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"documents": []}'
+
+        calls = [ConnectionResetError(54, "reset"), http.client.IncompleteRead(b""), Response()]
+
+        def urlopen(*args, **kwargs):
+            outcome = calls.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=urlopen), mock.patch.object(
+            dip.time, "sleep"
+        ), mock.patch("sys.stderr"):
+            self.assertEqual(self.client().get_json("/x"), {"documents": []})
+        self.assertEqual(calls, [])
+
+    def test_a_persistent_reset_becomes_a_dip_error_not_a_crash(self) -> None:
+        with mock.patch.object(
+            dip.urllib.request, "urlopen", side_effect=ConnectionResetError(54, "reset")
+        ), mock.patch.object(dip.time, "sleep"), mock.patch("sys.stderr"):
+            with self.assertRaises(dip.DipError):
+                self.client().get_json("/x")
+
+
 class ValidateDipProtocolHelperTests(unittest.TestCase):
     def test_build_report_fetches_protocol_when_none_is_preloaded(self) -> None:
         protocol = {
