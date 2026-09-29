@@ -1313,20 +1313,36 @@ def annotate_report_acquisition(
             ).as_dict()
     else:
         fresh = acquisition.get("votes") or {}
-        carried = max(0, vote_records - int(fresh.get("records") or 0))
+        # Unique vote ids: a vote attached to two TOPs is one vote.
+        unique_votes = len(
+            {pulse_html.vote_key(vote) for item in report.get("agenda_items") or [] for vote in _iter_report_votes(item)}
+        )
+        carried = max(0, unique_votes - int(fresh.get("records") or 0))
         if fresh.get("acquisition_state") in {"partial", "failed"} and carried:
             # The scan could not vouch for this sitting, so the cached votes
-            # were kept (reuse_existing_dossier_enrichments). They are still
-            # only partial evidence: the failed attempt's reasons stay.
+            # were kept (reuse_existing_dossier_enrichments). A failed re-check
+            # does not undo an earlier verified acquisition: if the cached
+            # votes came from a complete, stamped one, that state stands and
+            # the failed attempt is recorded next to it. Otherwise they are
+            # only partial evidence.
+            prior_complete = (
+                (prior_votes or {}).get("acquisition_state") == "complete" and bool((prior_votes or {}).get("acquired_at"))
+            )
             acquisition["votes"] = publication.DomainFacts(
                 domain="votes",
-                acquisition_state=publication.AcquisitionState.PARTIAL,
+                acquisition_state=(
+                    publication.AcquisitionState.COMPLETE if prior_complete else publication.AcquisitionState.PARTIAL
+                ),
                 source="bundestag-roll-call",
-                records=vote_records,
+                records=unique_votes,
                 reused=carried,
                 rejected=int(fresh.get("rejected") or 0),
                 failure_reasons=tuple(fresh.get("failure_reasons") or ()),
-                acquired_at=fresh.get("acquired_at") or (prior_votes or {}).get("acquired_at"),
+                acquired_at=(
+                    (prior_votes or {}).get("acquired_at")
+                    if prior_complete
+                    else fresh.get("acquired_at") or (prior_votes or {}).get("acquired_at")
+                ),
                 attempted_at=fresh.get("attempted_at"),
                 attempted=bool(fresh.get("attempted")),
             ).as_dict()

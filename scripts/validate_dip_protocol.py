@@ -201,22 +201,43 @@ class ApiClient:
         return documents
 
 
+PAGE_FETCH_RETRIES = 2
+PAGE_FETCH_RETRY_DELAY_SECONDS = 1.5
+
+
+def _fetch_page(url: str, accept: str, kind: str) -> str:
+    """GET a page, retrying a transient network error like ApiClient does.
+
+    Roll-call pages go through here on every update now that votes are on by
+    default; without a retry one connection reset downgraded a whole sitting's
+    votes to partial.
+    """
+    req = urllib.request.Request(url, headers={"Accept": accept})
+    for attempt in range(PAGE_FETCH_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as res:
+                return res.read().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+        except (OSError, http.client.HTTPException) as exc:
+            if attempt < PAGE_FETCH_RETRIES:
+                delay = PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1)
+                print(
+                    f"warning: {kind} request failed for {url}: {exc}; retrying {attempt + 2}/{PAGE_FETCH_RETRIES + 1} in {delay:g}s.",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+    raise AssertionError("unreachable")
+
+
 def fetch_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"Accept": "application/xml,text/xml,*/*"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return res.read().decode("utf-8")
-    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
-        raise DipError(f"Failed to fetch XML {url}: {exc}") from exc
+    return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
 
 
 def fetch_html(url: str) -> str:
-    req = urllib.request.Request(url, headers={"Accept": "text/html,*/*"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return res.read().decode("utf-8")
-    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
-        raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
+    return _fetch_page(url, "text/html,*/*", "HTML")
 
 
 def post_json(

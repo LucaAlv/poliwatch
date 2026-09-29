@@ -10,6 +10,59 @@ import validate_dip_protocol as dip
 from _support import FIXTURES
 
 
+class PageFetchRetryTests(unittest.TestCase):
+    def test_a_reset_while_fetching_a_page_is_retried_then_succeeds(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return "<html>ok</html>".encode("utf-8")
+
+        calls = [ConnectionResetError(54, "reset"), Response()]
+
+        def urlopen(*args, **kwargs):
+            outcome = calls.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=urlopen), mock.patch.object(
+            dip.time, "sleep"
+        ), mock.patch("sys.stderr"):
+            self.assertEqual(dip.fetch_html("https://example.test/x"), "<html>ok</html>")
+        self.assertEqual(calls, [])
+
+    def test_a_persistent_failure_is_a_dip_error_after_bounded_retries(self) -> None:
+        opener = mock.Mock(side_effect=ConnectionResetError(54, "reset"))
+        with mock.patch.object(dip.urllib.request, "urlopen", opener), mock.patch.object(
+            dip.time, "sleep"
+        ), mock.patch("sys.stderr"):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_text("https://example.test/x.xml")
+        self.assertEqual(opener.call_count, dip.PAGE_FETCH_RETRIES + 1)
+
+    def test_undecodable_bytes_are_not_retried(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b"\xff\xfe"
+
+        opener = mock.Mock(return_value=Response())
+        with mock.patch.object(dip.urllib.request, "urlopen", opener):
+            with self.assertRaises(dip.DipError):
+                dip.fetch_html("https://example.test/x")
+        self.assertEqual(opener.call_count, 1)
+
+
 class ApiClientRetryTests(unittest.TestCase):
     def client(self) -> "dip.ApiClient":
         return dip.ApiClient(api_key="k", retries=2, retry_delay_seconds=0)
@@ -239,7 +292,9 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         def fake_urlopen(*args: object, **kwargs: object) -> object:
             raise http.client.IncompleteRead(b"")
 
-        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=fake_urlopen):
+        with mock.patch.object(dip.urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch.object(
+            dip.time, "sleep"
+        ), mock.patch("sys.stderr"):
             with self.assertRaises(dip.DipError) as ctx:
                 dip.fetch_text("https://example.test/protocol.xml")
         self.assertIn("Failed to fetch XML", str(ctx.exception))

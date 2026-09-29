@@ -623,6 +623,8 @@ class SittingCatalog:
     authoritative: bool
     unusable: int = 0
     fetched_at: str | None = None
+    #: (document number, date) of each unusable entry; the date may be empty.
+    unusable_rows: tuple[tuple[str, str], ...] = ()
 
 
 def sitting_catalog(
@@ -632,6 +634,7 @@ def sitting_catalog(
     or the store's (``document_number``/``date``)."""
     rows: dict[str, dict[str, str]] = {}
     unusable = 0
+    unusable_rows: list[tuple[str, str]] = []
     for protocol in protocols:
         number = str(protocol.get("document_number") or protocol.get("dokumentnummer") or "").strip()
         day = str(protocol.get("date") or protocol.get("datum") or "")[:10]
@@ -639,13 +642,15 @@ def sitting_catalog(
             wahlperiode(number)
         except FactsError:
             unusable += 1
+            unusable_rows.append((number, day))
             continue
         if iso_week_key(day) is None:
             unusable += 1
+            unusable_rows.append((number, day))
             continue
         rows[number] = {"document_number": number, "date": day}
     ordered = tuple(sorted(rows.values(), key=lambda row: (row["date"], row["document_number"])))
-    return SittingCatalog(ordered, authoritative, unusable, fetched_at)
+    return SittingCatalog(ordered, authoritative, unusable, fetched_at, tuple(unusable_rows))
 
 
 def load_sitting_catalog(path: Path) -> SittingCatalog | None:
@@ -2083,6 +2088,19 @@ def compute_and_store(
             "Docs: README.md#backfill-incomplete-sittings",
             file=out,
         )
+    stored = load_protocols(conn)
+    if catalog is not None and catalog.authoritative and stored:
+        # A catalog entry that cannot be placed in a period is never judged.
+        # Old Sonderdrucke ("SDr 1989/06") are expected; one dated inside the
+        # judged range is a listed sitting nobody can see.
+        first_day = min(str(p.get("date") or "")[:10] for p in stored if p.get("date"))
+        hidden = [f"{number} ({day})" for number, day in catalog.unusable_rows if day and day >= first_day]
+        if hidden:
+            print(
+                f"warning: [facts] {len(hidden)} catalog entries inside the judged range have no usable document "
+                f"number and are not judged: {', '.join(hidden[:5])}",
+                file=out,
+            )
     rows = compute(
         conn, registry, completeness if completeness is not None else {}, catalog=catalog, built=built, today=today
     )

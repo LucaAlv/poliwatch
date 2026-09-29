@@ -1437,6 +1437,24 @@ class CatalogCompletenessTests(StoreCase):
         # The same week is complete for the domain nothing is wrong with.
         self.assertEqual(facts.period_gaps(by_key["2025-W07"], completeness, "speeches")[0]["reason"], "not_persisted")
 
+    def test_a_catalog_entry_in_the_judged_range_that_cannot_be_placed_is_reported(self) -> None:
+        seeded = self.seed(week_specs(10))
+        entries = seeded["catalog_sittings"] + [
+            {"dokumentnummer": "SDr 1989/06", "datum": "1989-06-17"},  # old Sonderdruck: expected, silent
+            {"dokumentnummer": "Sonder 5", "datum": "2025-02-01"},  # inside the judged range
+        ]
+        catalog = facts.sitting_catalog(entries, authoritative=True)
+        self.assertEqual(catalog.unusable, 2)
+        conn = self.writable()
+        out = io.StringIO()
+        facts.compute_and_store(
+            conn, facts.REGISTRY, seeded["completeness"], catalog=catalog, built={"votes"}, out=out
+        )
+        text = out.getvalue()
+        self.assertIn("1 catalog entries inside the judged range have no usable document number", text)
+        self.assertIn("Sonder 5 (2025-02-01)", text)
+        self.assertNotIn("SDr 1989/06", text)
+
     def test_compute_and_store_says_once_when_there_is_no_catalog(self) -> None:
         self.seed(week_specs(10))
         conn = self.writable()

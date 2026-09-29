@@ -371,19 +371,47 @@ class CachedVoteStateTests(unittest.TestCase):
         votes = self.annotate(report_with(0, None), None, scan_pages=0)
         self.assertEqual(votes["acquisition_state"], "not_requested")
 
-    def test_a_failed_scan_keeps_the_cached_votes_and_says_the_attempt_failed(self) -> None:
+    def test_a_failed_recheck_keeps_a_verified_acquisition_and_records_the_attempt(self) -> None:
         prior = votes_facts("complete", records=2, acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
         existing = report_with(2, prior)
         fresh = report_with(0, votes_facts("failed", reasons=("scan_budget_exhausted",), attempted_at="2026-09-28T10:00:00Z"))
         build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
         votes = self.annotate(fresh, existing, scan_pages=30)
         self.assertEqual(len(fresh["agenda_items"][0]["votes"]), 2)
-        self.assertEqual(votes["acquisition_state"], "partial")
-        self.assertEqual(votes["failure_reasons"], ["scan_budget_exhausted"])
-        self.assertEqual((votes["records"], votes["reused"]), (2, 2))
-        # The retained votes are as old as the scan that found them.
+        # The earlier scan verified this sitting; a failed re-check does not undo it.
+        self.assertEqual(votes["acquisition_state"], "complete")
         self.assertEqual(votes["acquired_at"], "2026-09-01T10:00:00Z")
         self.assertEqual(votes["attempted_at"], "2026-09-28T10:00:00Z")
+        self.assertEqual(votes["failure_reasons"], ["scan_budget_exhausted"])
+        self.assertEqual((votes["records"], votes["reused"]), (2, 2))
+
+    def test_a_failed_scan_over_partial_cached_votes_stays_partial(self) -> None:
+        prior = votes_facts("partial", records=2, reasons=("scan_budget_exhausted",),
+                            acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
+        existing = report_with(2, prior)
+        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
+        build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        votes = self.annotate(fresh, existing, scan_pages=30)
+        self.assertEqual(votes["acquisition_state"], "partial")
+        self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
+
+    def test_a_failed_scan_over_unstamped_cached_votes_stays_partial(self) -> None:
+        existing = report_with(2, None)  # cached before acquisition metadata existed
+        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
+        build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        self.assertEqual(self.annotate(fresh, existing, scan_pages=30)["acquisition_state"], "partial")
+
+    def test_a_vote_on_two_tops_is_one_reused_vote(self) -> None:
+        prior = votes_facts("partial", records=1, reasons=("scan_budget_exhausted",), acquired_at="2026-09-01T10:00:00Z",
+                            attempted_at="2026-09-01T10:00:00Z")
+        existing = report_with(1, prior)
+        second = {"top_id": "TOP 2", "index": 2, "votes": [dict(existing["agenda_items"][0]["votes"][0])]}
+        existing["agenda_items"].append(second)
+        fresh = report_with(0, votes_facts("failed", reasons=("source_unavailable",), attempted_at="2026-09-28T10:00:00Z"))
+        fresh["agenda_items"].append({"top_id": "TOP 2", "index": 2, "votes": []})
+        build_site.reuse_existing_dossier_enrichments(fresh, existing, votes=True, profiles=True)
+        votes = self.annotate(fresh, existing, scan_pages=30)
+        self.assertEqual((votes["records"], votes["reused"]), (1, 1))
 
     def test_a_complete_scan_replaces_cached_votes(self) -> None:
         prior = votes_facts("complete", records=2, acquired_at="2026-09-01T10:00:00Z", attempted_at="2026-09-01T10:00:00Z")
