@@ -369,10 +369,21 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about roll-call votes | The Bundestag list markup or filterlist id changed. Pass `--roll-call-list-id NEW-ID` or set `BT_ROLL_CALL_LIST_ID`. |
 | `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
+| `ERROR [sprechrolle]: N speaker role(s) map to no Sprechrolle: …` | A speaker's `<rolle_lang>` in a cached protocol is one no rule in `SPRECHROLLE_RULES` maps. The message lists every such role with the protocol and Rede id; the store is left as it was. Add each role to the rules, see [Sprechrolle rules](#sprechrolle-rules), then re-run. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
 | `warning: [puls] N Sitzungen ohne Datum ausgeschlossen (21/82, …)` | Those cached dossiers carry no `datum`, so they cannot be placed in a sitting week; the radar renders from the dated ones and the page header notes the count. Re-fetch the named sittings with `update --document-number …`. With no dated sitting at all the page shows only "Die erzeugten Sitzungen tragen kein Datum". |
 | Radar shows no rows (`warning: [puls] KW …: keine Reden extrahiert`) | Every agenda item of that week has zero extracted speeches, so there is nothing to rank; the page says so in one note. Usually the XML speeches were not fetched or the extraction was empty — re-run `update --document-number …` for the week's sittings and check the dossier's validation warnings. |
+
+### Sprechrolle rules
+
+A Rede in a Sprechrolle (CONTEXT.md; `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
+
+- A role that names a Land in brackets ("Ministerpräsident (Bayern)", "Staatsminister (Hessen)") is the Bundesrat.
+- The Bundeskanzler, Bundesminister, Parlamentarische Staatssekretäre, Staatsminister beim Bund, Beauftragte and Koordinatoren der Bundesregierung are the Bundesregierung.
+- The Wehrbeauftragte des Deutschen Bundestages and the Polizeibeauftragte des Bundes are `weitere`.
+
+A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new title never lands in a Fraktion's numbers unnoticed. To fix it, add a line to `SPRECHROLLE_RULES` with the side it belongs to, then apply it to the cached reports with `--offline --repersist` (§4c). `tests/test_sprechrolle.py` lists every role the cached reports contained when it was written; add the new one there as well.
 
 ## 9. More documentation
 

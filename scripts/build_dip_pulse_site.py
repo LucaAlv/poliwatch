@@ -1057,6 +1057,9 @@ def rebuild_database_from_entries(
     """Rebuild the store from ``entries`` and swap it in. Returns whether the
     file was replaced: with ``keep_if_unchanged`` a rebuild whose content (leaving
     timestamps out) equals the current store leaves that file alone."""
+    # Every cached role is checked first, so one error lists all of them and
+    # nothing is built or replaced (DX-E1).
+    derive.check_sprechrollen(entry["report"] for entry in entries)
     roster_rows = _read_roster_rows(database_path) if preserve_roster else []
 
     # The facts the previous store held, carried into the fresh one. The engine
@@ -1870,7 +1873,14 @@ _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 # The outcome is mostly computed here from the counts (vote_result); only a
 # minority is read off bundestag.de's Beschluss text, so the column is derived.
-_COLUMN_SOURCE_DERIVED = {("votes", "result_raw"), ("votes", "result_source")}
+_COLUMN_SOURCE_DERIVED = {
+    ("votes", "result_raw"),
+    ("votes", "result_source"),
+    # Computed from the counts / the speaker's role when persisting, not read.
+    ("vote_fractions", "leading_vote"),
+    ("speeches", "sprechrolle"),
+    ("speeches", "unattributed_char_count"),
+}
 
 
 def column_source(table: str, column: str) -> str:
@@ -1940,18 +1950,24 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "zeichen", "align": "num"},
         ),
         "depends_on": None,
-        "caveat": "Regierungsmitglieder tragen im DIP die Fraktion „Regierung“.",
+        "caveat": (
+            "Mitglieder der Bundesregierung, Bundesratsmitglieder und weitere Redner in einer Sprechrolle "
+            "erscheinen ohne Fraktion."
+        ),
     },
     {
         "id": "r2-redeanteil-fraktion",
         "title": "Redeanteil je Fraktion nach Zeichen",
         "sql": (
-            "SELECT COALESCE(NULLIF(s.fraktion, ''), p.name) AS fraktion, COUNT(*) AS reden,\n"
+            "SELECT CASE s.sprechrolle WHEN 'bundesregierung' THEN 'Bundesregierung' WHEN 'bundesrat' THEN 'Bundesrat'\n"
+            "                          WHEN 'weitere' THEN 'weitere Sprechrolle'\n"
+            "                          ELSE COALESCE(NULLIF(s.fraktion, ''), p.name) END AS fraktion,\n"
+            "       COUNT(*) AS reden,\n"
             "       ROUND(100.0 * SUM(s.char_count) / (SELECT SUM(char_count) FROM speeches), 1) AS anteil_prozent\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
-            "GROUP BY COALESCE(NULLIF(s.fraktion, ''), p.name)\n"
+            "GROUP BY 1\n"
             "ORDER BY reden DESC, fraktion\n"
             "LIMIT 5;"
         ),
@@ -1961,7 +1977,10 @@ RECIPES: tuple[dict[str, Any], ...] = (
             {"name": "anteil_prozent", "align": "num"},
         ),
         "depends_on": None,
-        "caveat": None,
+        "caveat": (
+            "Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen und zählen im Nenner mit: "
+            "alle Zeilen zusammen ergeben 100 %."
+        ),
     },
     {
         "id": "r3-abweichler",
@@ -6946,7 +6965,7 @@ def _fact_speech_citation(
     row = conn.execute(
         f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
-               COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,
+               {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,
                m.xml_redner_id, m.aw_politician_id, m.dip_person_id,
                ai.heading, lp.title AS proceeding_title, p.document_number
         FROM speeches s
@@ -7049,7 +7068,7 @@ def resolve_fact_citation(
             "document_number": resolved["document_number"],
             "rede_id": resolved["rede_id"],
             "display_name": resolved["display_name"],
-            "fraktion": pulse_html.speaker_party({"fraktion": resolved["fraktion"]}),
+            "fraktion": pulse_html.speaker_party({"fraktion": resolved["fraktion"], "sprechrolle": resolved["sprechrolle"]}),
             "topic": pulse_html.agenda_topic(resolved["proceeding_title"], resolved["heading"]),
             "speaker_mps": [resolved],
         }
@@ -7070,7 +7089,7 @@ def resolve_fact_citation(
             "document_number": first["document_number"],
             "rede_id": first["rede_id"],
             "display_name": first["display_name"],
-            "fraktion": pulse_html.speaker_party({"fraktion": first["fraktion"]}),
+            "fraktion": pulse_html.speaker_party({"fraktion": first["fraktion"], "sprechrolle": first["sprechrolle"]}),
             "topic": pulse_html.agenda_topic(first["proceeding_title"], first["heading"]),
             "speakers": [str(row.get("display_name") or "Unbekannt") for row in resolved_rows],
             "speaker_mps": resolved_rows,
@@ -10551,6 +10570,9 @@ def main() -> int:
                 cached_entries, replaced = repersist_cached_reports(
                     output_dir, database_path, protocols, preserve_roster="mp-roster" not in enrichments
                 )
+            except derive.SprechrolleError as exc:
+                print(exc, file=sys.stderr)
+                return 1
             except (CachedReportError, DatabaseRebuildError) as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
@@ -10777,11 +10799,15 @@ def main() -> int:
             ):
                 return 2
             if not args.no_persist:
-                rebuild_database_from_entries(
-                    database_path,
-                    entries,
-                    preserve_roster="mp-roster" not in enrichments,
-                )
+                try:
+                    rebuild_database_from_entries(
+                        database_path,
+                        entries,
+                        preserve_roster="mp-roster" not in enrichments,
+                    )
+                except derive.SprechrolleError as exc:
+                    print(exc, file=sys.stderr)
+                    return 1
                 store = pulse_store.connect(database_path)
                 try:
                     pulse_store.initialize(store)

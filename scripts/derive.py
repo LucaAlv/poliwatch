@@ -13,7 +13,8 @@ Each function follows the CONTEXT.md entry of the same term.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import re
+from typing import Any, Iterable, Mapping
 
 #: The Stimmen a Mehrheitsvotum is chosen among. "nicht abgegeben" (key
 #: "absent") is not a Stimme.
@@ -146,3 +147,124 @@ def undouble(text: Any) -> str | None:
 
 def speaker_display_name(speaker: Mapping[str, Any] | None) -> str:
     return undouble((speaker or {}).get("display_name")) or "Unbekannt"
+
+
+# --- Sprechrolle ---------------------------------------------------------------
+
+#: The three sides a Rede in a Sprechrolle counts for (ADR 0001, amendment
+#: 2026-09-26). A speaker with no <rolle> has no Sprechrolle (None).
+SPRECHROLLE_LABELS = {
+    "bundesregierung": "Bundesregierung",
+    "bundesrat": "Bundesrat",
+    "weitere": "weitere Sprechrolle",
+}
+
+_LAENDER = (
+    "Baden-Württemberg|Bayern|Berlin|Brandenburg|Bremen|Hamburg|Hessen|Mecklenburg-Vorpommern|Niedersachsen|"
+    "Nordrhein-Westfalen|Rheinland-Pfalz|Saarland|Sachsen-Anhalt|Sachsen|Schleswig-Holstein|Thüringen"
+)
+
+#: Which side each ``<rolle_lang>`` string counts for: (pattern matching the
+#: whole string, side), first match wins. To map a new role add it here (the
+#: build names it and where when one is missing).
+SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
+    # A Land in brackets: Ministerpräsident(in), Minister(in), Staatsminister(in),
+    # Senator(in), Bürgermeister (Hessen), ... speak for the Bundesrat.
+    (rf".+ \(({_LAENDER})\)", "bundesrat"),
+    # Auxiliary organs of the Bundestag: neither government nor Bundesrat.
+    (r"Wehrbeauftragte[r]? des Deutschen Bundestages", "weitere"),
+    (r"Polizeibeauftragte[r]? des Bundes beim Deutschen Bundestag", "weitere"),
+    # Who speaks for the Bundesregierung: its members (Art. 62 GG) and those who
+    # speak on its behalf (ADR 0001).
+    (r"Bundeskanzler(in)?", "bundesregierung"),
+    (r"Bundesminister(in)?( .+)?", "bundesregierung"),
+    (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
+    (r"Staatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),
+    (r"Beauftragte[r]? (der Bundesregierung|des Bundesministeriums) .+", "bundesregierung"),
+    (r"Koordinator(in)? der Bundesregierung .+", "bundesregierung"),
+)
+_COMPILED_RULES = tuple((re.compile(pattern), side) for pattern, side in SPRECHROLLE_RULES)
+
+
+class SprechrolleError(Exception):
+    """Speaker roles no rule maps; the message is the finished ``ERROR [sprechrolle]`` line."""
+
+
+def role_text(speaker: Mapping[str, Any] | None) -> str:
+    """The ``<rolle_lang>`` of a speaker (``role``), else its short form."""
+    speaker = speaker or {}
+    return _clean(speaker.get("role") or speaker.get("role_short"))
+
+
+def side_of_role(text: str) -> str | None:
+    """The side a role string counts for, or None when no rule maps it."""
+    for pattern, side in _COMPILED_RULES:
+        if pattern.fullmatch(text):
+            return side
+    return None
+
+
+def sprechrolle(speaker: Mapping[str, Any] | None, *, strict: bool = True) -> str | None:
+    """The side one Rede counts for, None for a speaker without a role.
+
+    A speaker dict that already carries a derived ``sprechrolle`` (a row read
+    from the store) keeps it. A role no rule maps raises SprechrolleError under
+    ``strict`` (persist: nothing is silently guessed) and reads as None
+    otherwise (a page must render).
+    """
+    if speaker and "sprechrolle" in speaker:
+        return speaker["sprechrolle"] or None
+    text = role_text(speaker)
+    if not text:
+        return None
+    side = side_of_role(text)
+    if side is None and strict:
+        raise SprechrolleError(f'no Sprechrolle rule maps the role "{text}"')
+    return side
+
+
+def unmapped_sprechrollen_error(unmapped: Mapping[str, list[str]], *, limit: int = 4) -> SprechrolleError:
+    """One error naming every unmapped role with where it occurs (protocol and
+    Rede id), where the rules live and what to do."""
+    parts = []
+    for role in sorted(unmapped):
+        where = unmapped[role]
+        shown = ", ".join(where[:limit]) + (f" and {len(where) - limit} more" if len(where) > limit else "")
+        parts.append(f'"{role}" ({shown})')
+    return SprechrolleError(
+        f"ERROR [sprechrolle]: {len(unmapped)} speaker role(s) map to no Sprechrolle: {'; '.join(parts)}. "
+        "The previous store is untouched. "
+        "Fix: add each role to SPRECHROLLE_RULES in scripts/derive.py as bundesregierung, bundesrat or weitere. "
+        "Docs: README.md#sprechrolle-rules"
+    )
+
+
+def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str, list[str]]:
+    """Every distinct role in the reports' speakers that no rule maps, with
+    "protocol Rede-id" for each occurrence."""
+    unmapped: dict[str, list[str]] = {}
+    for report in reports:
+        number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
+        for item in report.get("agenda_items") or []:
+            for speech in item.get("xml_speakers") or []:
+                text = role_text(speech.get("speaker"))
+                if text and side_of_role(text) is None:
+                    unmapped.setdefault(text, []).append(f"{number} {speech.get('rede_id') or '?'}")
+    return unmapped
+
+
+def check_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> None:
+    """Raise one SprechrolleError listing every unmapped role of ``reports``."""
+    unmapped = find_unmapped_sprechrollen(reports)
+    if unmapped:
+        raise unmapped_sprechrollen_error(unmapped)
+
+
+#: The Zusammenschluss a speech counts for in SQL, given ``speeches s`` and
+#: ``parties pa`` (the speaker's row): none for a Rede in a Sprechrolle (it
+#: counts for its side), else the Zusammenschluss the Plenarprotokoll names,
+#: else the speaker's party as the store holds it (an approximation of the
+#: Zugehörigkeit on the day, ADR 0001).
+ZUSAMMENSCHLUSS_SQL = (
+    "CASE WHEN s.sprechrolle IS NOT NULL THEN NULL ELSE COALESCE(NULLIF(s.fraktion, ''), pa.name) END"
+)

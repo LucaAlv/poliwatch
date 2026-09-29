@@ -116,6 +116,9 @@ class Measured:
     reden_by_group: dict[tuple[str, str], int] | None = None
     #: (document_number, sprechrolle) -> Reden.
     reden_by_sprechrolle: dict[tuple[str, str], int] | None = None
+    #: (document_number, "current party" | "no Zusammenschluss") -> Reden that name
+    #: none in the Plenarprotokoll and are no Rede in a Sprechrolle.
+    reden_without_fraktion: dict[tuple[str, str], int] | None = None
     #: (document_number or None, date, vote id) for every vote.
     votes: list[tuple[str | None, str | None, str]] | None = None
     #: (document_number or None, leading_vote or None) per vote_fractions row.
@@ -211,6 +214,21 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
             for number, role, count in conn.execute(
                 "SELECT p.document_number, COALESCE(s.sprechrolle, 'keine'), COUNT(*) FROM speeches s "
                 "JOIN protocols p ON p.id = s.protocol_id GROUP BY p.document_number, 2"
+            )
+        }
+
+    if store.has("speeches", "sprechrolle", "fraktion") and store.has("mps", "party_id"):
+        # ADR 0001: a Rede whose protocol names no Zusammenschluss counts for the
+        # speaker's party as the store holds it (an approximation of the
+        # Zugehörigkeit on the day); with no party either it counts for none.
+        measured.reden_without_fraktion = {
+            (str(number), "current party" if party else "no Zusammenschluss"): int(count)
+            for number, party, count in conn.execute(
+                "SELECT p.document_number, pa.name, COUNT(*) FROM speeches s "
+                "JOIN protocols p ON p.id = s.protocol_id "
+                "LEFT JOIN mps m ON m.id = s.mp_id LEFT JOIN parties pa ON pa.id = m.party_id "
+                "WHERE s.sprechrolle IS NULL AND (s.fraktion IS NULL OR s.fraktion = '') "
+                "GROUP BY p.document_number, pa.name IS NOT NULL"
             )
         }
 
@@ -351,15 +369,19 @@ def _compare_maps(
     limit: int | None = None,
     order: Callable[[str], Any] | None = None,
 ) -> None:
-    if old is None or new is None:
-        report.row("(all)", None if old is None else "present", None if new is None else "present")
+    if old is None and new is None:
+        report.row("(all)", None, None)
         return
-    keys = sorted(set(old) | set(new), key=order) if order else sorted(set(old) | set(new))
-    rows = [(key, old.get(key, 0), new.get(key, 0)) for key in keys]
+    # A side without evidence still shows the other side's figures, against
+    # "unavailable", so a new quantity reads as what it is, not as a jump from 0.
+    keys = sorted(set(old or {}) | set(new or {}), key=order) if order else sorted(set(old or {}) | set(new or {}))
+    rows = [
+        (key, None if old is None else old.get(key, 0), None if new is None else new.get(key, 0)) for key in keys
+    ]
     if only_changed:
         rows = [row for row in rows if row[1] != row[2]]
     if limit is not None and len(rows) > limit:
-        rows.sort(key=lambda row: -abs(row[2] - row[1]))
+        rows.sort(key=lambda row: -abs((row[2] or 0) - (row[1] or 0)))
         rest = len(rows) - limit
         rows = rows[:limit]
     else:
@@ -389,16 +411,22 @@ def _collapse(mapping: dict[tuple[str, str], int] | None, cohort: set[str] | Non
 
 
 def _share_rows(report: Report, old: dict[str, int] | None, new: dict[str, int] | None) -> None:
-    if old is None or new is None:
-        report.row("(all)", None if old is None else "present", None if new is None else "present")
+    if old is None and new is None:
+        report.row("(all)", None, None)
         return
-    old_total, new_total = sum(old.values()) or 1, sum(new.values()) or 1
-    for label in sorted(set(old) | set(new), key=lambda name: -(new.get(name, 0) + old.get(name, 0))):
-        report.row(f"{label} (Reden)", old.get(label, 0), new.get(label, 0))
+    old_total = sum(old.values()) or 1 if old is not None else 1
+    new_total = sum(new.values()) or 1 if new is not None else 1
+    labels = set(old or {}) | set(new or {})
+    for label in sorted(labels, key=lambda name: -((new or {}).get(name, 0) + (old or {}).get(name, 0))):
+        report.row(
+            f"{label} (Reden)",
+            None if old is None else old.get(label, 0),
+            None if new is None else new.get(label, 0),
+        )
         report.row(
             f"{label} (Anteil %)",
-            round(100 * old.get(label, 0) / old_total, 1),
-            round(100 * new.get(label, 0) / new_total, 1),
+            None if old is None else round(100 * old.get(label, 0) / old_total, 1),
+            None if new is None else round(100 * new.get(label, 0) / new_total, 1),
             indent=4,
         )
 
@@ -482,6 +510,13 @@ def compare(
 
     report.heading(f"Redeanteil: Reden and share per Zusammenschluss and Sprechrolle [{cohort}]")
     _share_rows(report, _collapse(old.reden_by_group, scope), _collapse(new.reden_by_group, scope))
+
+    report.heading(f"Reden with no Zusammenschluss in the Plenarprotokoll, no Sprechrolle [{cohort}]")
+    _compare_maps(
+        report,
+        _collapse(old.reden_without_fraktion, scope),
+        _collapse(new.reden_without_fraktion, scope),
+    )
 
     report.heading("Daten recipe r3-abweichler [whole store]")
     report.row("rows without LIMIT (recipe of this tree)", old.r3_rows, new.r3_rows)

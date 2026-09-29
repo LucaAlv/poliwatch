@@ -199,6 +199,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           snippet TEXT,
           fraktion TEXT,
           unattributed_char_count INTEGER,
+          sprechrolle TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(protocol_id, rede_id),
@@ -299,6 +300,7 @@ _MPS_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
 _SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fraktion", "TEXT"),
     ("unattributed_char_count", "INTEGER"),
+    ("sprechrolle", "TEXT"),
 )
 
 
@@ -452,11 +454,10 @@ def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | 
 def speaker_party_name(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str | None:
     if not speaker:
         return None
-    if speaker.get("fraktion"):
-        return derive.speech_zusammenschluss(speaker, protocol)
-    if speaker.get("role") or speaker.get("role_short"):
-        return "Regierung"
-    return None
+    # Only a Zusammenschluss is a party. A role speaker (Bundesregierung,
+    # Bundesrat, weitere Sprechrolle) belongs to none: the Rede counts for its
+    # side (speeches.sprechrolle), and there is no "Regierung" row.
+    return derive.speech_zusammenschluss(speaker, protocol)
 
 
 def mp_identity(
@@ -902,9 +903,9 @@ def persist_speeches(
             INSERT INTO speeches(
               protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
               paragraph_count, char_count, text, snippet, fraktion,
-              unattributed_char_count, created_at, updated_at
+              unattributed_char_count, sprechrolle, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 protocol_id,
@@ -924,6 +925,7 @@ def persist_speeches(
                 None
                 if speech.get("unattributed_char_count") is None
                 else int(speech["unattributed_char_count"]),
+                derive.sprechrolle(speaker),
                 now,
                 now,
             ),
@@ -1118,6 +1120,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     if not protocol_id:
         raise ValueError("Report has no protocol.id")
 
+    derive.check_sprechrollen([report])
     _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)

@@ -34,7 +34,10 @@ PARTY_COLORS = {
     "BÜNDNIS 90/DIE GRÜNEN": "#169b62",
     "Die Linke": "#b01873",
     "fraktionslos": "#7a8699",
-    "Regierung": "#b06b00",
+    # The sides a Rede in a Sprechrolle counts for (ADR 0001), not Fraktionen.
+    "Bundesregierung": "#b06b00",
+    "Bundesrat": "#8c5a2b",
+    "weitere Sprechrolle": "#5b6b7a",
     "Rolle/Amt": "#b06b00",
     "Unbekannt": "#8b949e",
 }
@@ -1095,16 +1098,15 @@ def render_profile_link(speaker: dict[str, Any] | None) -> str:
 def speaker_party(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str:
     if not speaker:
         return "Unbekannt"
-    # Derived like parties.name and speeches.fraktion, from the raw string and
-    # the Sitzung, so a stale cached report shows the same Zusammenschluss the
-    # store holds. A string that names none (a merged record) falls through to
-    # the role, like no string at all.
-    fraction = derive.speech_zusammenschluss(speaker, protocol)
-    if fraction:
-        return fraction
-    if speaker.get("role") or speaker.get("role_short"):
-        return "Regierung"
-    return "Unbekannt"
+    # Derived like speeches.sprechrolle, parties.name and speeches.fraktion,
+    # from the raw fields and the Sitzung, so a stale cached report shows what
+    # the store holds. A Rede in a Sprechrolle counts for its side, never for a
+    # Fraktion; a string that names no Zusammenschluss (a merged record) is
+    # Unbekannt.
+    side = derive.sprechrolle(speaker, strict=False)
+    if side:
+        return derive.SPRECHROLLE_LABELS[side]
+    return derive.speech_zusammenschluss(speaker, protocol) or "Unbekannt"
 
 
 def item_stats(item: dict[str, Any], protocol: dict[str, Any] | None = None) -> dict[str, Any]:

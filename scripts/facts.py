@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
+import derive
 from persist_dip_pulse_store import SYNTHETIC_REDE_ID_SEPARATOR
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
@@ -289,7 +290,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             LEAD_POSITION_CTE
             + "SELECT s.id, s.rede_id, s.page, s.page_quadrant, s.char_count AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       ai.heading, lp.title AS proceeding_title,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
@@ -368,7 +369,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             ")\n"
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant, 1 AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM first_speech fs\n"
             "JOIN speeches s ON s.id = fs.speech_id\n"
@@ -422,7 +423,7 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
             "       COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS group_id,\n"
             "       m.id AS tie_id, 1 AS value, s.char_count AS tie_value,\n"
             "       NULL AS denominator, m.display_name,\n"
-            "       COALESCE(NULLIF(s.fraktion, ''), pa.name) AS fraktion,\n"
+            f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
@@ -1514,7 +1515,7 @@ def _citation(metric: Mapping[str, Any], observation: Observation) -> dict[str, 
             {
                 "rede_id": row.get("rede_id"),
                 "display_name": row.get("display_name"),
-                "fraktion": speaker_party({"fraktion": row.get("fraktion")}),
+                "fraktion": speaker_party({"fraktion": row.get("fraktion"), "sprechrolle": row.get("sprechrolle")}),
                 "topic": agenda_topic(row.get("proceeding_title"), row.get("heading")),
             }
         )

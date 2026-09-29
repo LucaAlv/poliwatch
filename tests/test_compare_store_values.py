@@ -54,8 +54,9 @@ def make_output(
     conn = pulse_store.connect(root / "data" / "bundestag-pulse.sqlite")
     try:
         pulse_store.initialize(conn)
-        if sprechrolle:
-            conn.execute("ALTER TABLE speeches ADD COLUMN sprechrolle TEXT")
+        if not sprechrolle:
+            # An older schema: the store predates the column.
+            conn.execute("ALTER TABLE speeches DROP COLUMN sprechrolle")
         party_ids: dict[str, int] = {}
 
         def party(name: str) -> int:
@@ -185,8 +186,9 @@ class CompareStoreValuesTests(unittest.TestCase):
     def test_a_quantity_without_evidence_is_unavailable_never_zero(self) -> None:
         old, new = self.stores()
         _, out, _ = run(old, new)
-        # The old store has no sprechrolle column and no bills/ directory.
-        self.assertIn("(all) unavailable -> present", line_of(out, "(all)", "speeches per Sprechrolle") + "")
+        # The old store has no sprechrolle column and no bills/ directory; the new
+        # store's figures show against "unavailable", not against 0.
+        self.assertEqual(line_of(out, "bundesregierung", "speeches per Sprechrolle"), "bundesregierung unavailable -> 1")
         self.assertEqual(line_of(out, "bills/ pages", "generated pages"), "bills/ pages unavailable -> 3")
         self.assertEqual(
             line_of(out, "sum over protocols", "unattributed characters per protocol"),
@@ -235,6 +237,30 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "SPD: Reden", section), "SPD: Reden 1 -> 2 +1")
         # The old store has no MdB roster: unavailable, not 0.
         self.assertEqual(line_of(out, "SPD: MdB", section), "SPD: MdB unavailable -> 2")
+
+    def test_reden_without_a_zusammenschluss_are_counted_per_fallback(self) -> None:
+        old = make_output(
+            self.tmp / "o", protocols={"21/1": [("R1", None, 5, None), ("R2", None, 5, None), ("R3", "SPD", 5, None)]},
+            sprechrolle=False,
+        )
+        new = make_output(
+            self.tmp / "n",
+            protocols={"21/1": [("R1", None, 5, None), ("R2", None, 5, "bundesregierung"), ("R3", "SPD", 5, None)]},
+            sprechrolle=True,
+        )
+        _, out, _ = run(old, new)
+        section = "Reden with no Zusammenschluss in the Plenarprotokoll"
+        # An older store cannot tell a role speaker from one without a Fraktion.
+        self.assertEqual(line_of(out, "current party", section), "current party unavailable -> 1")
+        newer = make_output(
+            self.tmp / "n2",
+            protocols={"21/1": [("R1", None, 5, None), ("R2", None, 5, None), ("R3", "SPD", 5, None)]},
+            sprechrolle=True,
+        )
+        _, out, _ = run(newer, new)
+        # R1 has no party either? make_output gives every speaker an SPD row, so each
+        # of the two is counted for that current party; the role speaker no longer is.
+        self.assertEqual(line_of(out, "current party", section), "current party 2 -> 1 -1")
 
     def test_it_only_reads(self) -> None:
         old, new = self.stores()
