@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any, Callable
@@ -103,6 +103,16 @@ class RollCallCandidateFetch:
     list_html_seen: bool
     parsed_entry_count: int
     selector_warning: bool
+    # How the scan ended: "date_passed" (an entry older than the sitting was
+    # seen), "list_end" (the list ran out), "budget_exhausted" (all
+    # --vote-scan-pages used with neither: older votes may still be listed
+    # beyond the window) or "not_scanned". Only the first two prove that every
+    # candidate of the sitting's date was seen.
+    scan_end: str = "not_scanned"
+    pages_fetched: int = 0
+    pages_from_cache: int = 0
+    #: Date of the newest entry on the first page; None when there was none.
+    newest_entry_date: str | None = None
 
 
 def load_local_env(path: Path | None = None) -> None:
@@ -165,7 +175,10 @@ class ApiClient:
                     self._retry_delay(path, exc, attempt)
                     continue
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
-            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            except (OSError, http.client.HTTPException) as exc:
+                # URLError and timeouts are OSErrors, and so is a connection
+                # reset while the body is being read, which urlopen does not
+                # wrap: without it one reset ended a two-hour backfill.
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
@@ -190,22 +203,61 @@ class ApiClient:
         return documents
 
 
+ROLL_CALL_OUTAGE_KEY = "__outage__"
+#: After a network failure the rest of the build skips roll-call fetches for
+#: this long, then tries again (the site may have recovered).
+ROLL_CALL_OUTAGE_COOLDOWN_SECONDS = 300
+#: A sitting this recent with no candidate, on a list whose newest entry is
+#: older than the sitting, may just be ahead of the list.
+ROLL_CALL_LIST_LAG_DAYS = 14
+PAGE_FETCH_RETRIES = 2
+PAGE_FETCH_RETRY_DELAY_SECONDS = 1.5
+
+
+def _fetch_page(url: str, accept: str, kind: str) -> str:
+    """GET a page, retrying a transient network error like ApiClient does.
+
+    Roll-call pages go through here on every update now that votes are on by
+    default; without a retry one connection reset downgraded a whole sitting's
+    votes to partial.
+    """
+    req = urllib.request.Request(url, headers={"Accept": accept})
+    for attempt in range(PAGE_FETCH_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as res:
+                return res.read().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            # A 404 or 403 will not change on a retry; a busy or failing server might.
+            if exc.code in {429, 500, 502, 503, 504} and attempt < PAGE_FETCH_RETRIES:
+                time.sleep(PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1))
+                continue
+            failure = DipError(f"Failed to fetch {kind} {url}: {exc}")
+            failure.transient = exc.code in {429, 500, 502, 503, 504}  # type: ignore[attr-defined]
+            raise failure from exc
+        except (OSError, http.client.HTTPException) as exc:
+            if attempt < PAGE_FETCH_RETRIES:
+                delay = PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1)
+                print(
+                    f"warning: {kind} request failed for {url}: {exc}; retrying {attempt + 2}/{PAGE_FETCH_RETRIES + 1} in {delay:g}s.",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            failure = DipError(f"Failed to fetch {kind} {url}: {exc}")
+            failure.transient = True  # type: ignore[attr-defined]
+            raise failure from exc
+    raise AssertionError("unreachable")
+
+
 def fetch_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"Accept": "application/xml,text/xml,*/*"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return res.read().decode("utf-8")
-    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
-        raise DipError(f"Failed to fetch XML {url}: {exc}") from exc
+    return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
 
 
 def fetch_html(url: str) -> str:
-    req = urllib.request.Request(url, headers={"Accept": "text/html,*/*"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return res.read().decode("utf-8")
-    except (OSError, http.client.HTTPException, UnicodeDecodeError) as exc:
-        raise DipError(f"Failed to fetch HTML {url}: {exc}") from exc
+    return _fetch_page(url, "text/html,*/*", "HTML")
 
 
 def post_json(
@@ -942,7 +994,13 @@ def fetch_roll_call_vote_candidates(
     roll_call_list_id: str | None = None,
     *,
     include_diagnostics: bool = False,
+    page_cache: dict[str, str] | None = None,
 ) -> list[dict[str, Any]] | RollCallCandidateFetch:
+    """Scan the roll-call list, newest first, for votes dated ``protocol_date``.
+
+    ``page_cache`` maps a list URL to its HTML so the sittings of one build
+    share the pages instead of each re-reading them from the top.
+    """
     target_date = iso_date(protocol_date)
     if not target_date or scan_pages <= 0:
         result = RollCallCandidateFetch([], False, 0, False)
@@ -952,23 +1010,63 @@ def fetch_roll_call_vote_candidates(
     list_html_seen = False
     parsed_entry_count = 0
     page_size = 10
+    scan_end = "budget_exhausted"
+    pages_fetched = 0
+    pages_from_cache = 0
+    newest_entry_date: str | None = None
     for page_index in range(scan_pages):
-        html_text = fetch_html(roll_call_list_url(roll_call_list_id, page_index * page_size, page_size))
+        url = roll_call_list_url(roll_call_list_id, page_index * page_size, page_size)
+        if page_cache is not None and url in page_cache:
+            html_text = page_cache[url]
+            pages_from_cache += 1
+        else:
+            if page_cache is not None and ROLL_CALL_OUTAGE_KEY in page_cache:
+                # A list page already failed after its retries in this build:
+                # further uncached pages would spend the same minutes on the
+                # same outage, until the cooldown ends. Cached pages are served.
+                failed_at, _, message = page_cache[ROLL_CALL_OUTAGE_KEY].partition("|")
+                if time.monotonic() - float(failed_at) < ROLL_CALL_OUTAGE_COOLDOWN_SECONDS:
+                    raise DipError(f"roll-call list unavailable earlier in this build: {message}")
+                del page_cache[ROLL_CALL_OUTAGE_KEY]
+            try:
+                html_text = fetch_html(url)
+            except DipError as exc:
+                # Only a network or server failure says the site is down; a 404
+                # or 403 on one page says nothing about the next sitting's pages.
+                if page_cache is not None and getattr(exc, "transient", False):
+                    page_cache[ROLL_CALL_OUTAGE_KEY] = f"{time.monotonic()}|{exc}"
+                raise
+            pages_fetched += 1
+            # An empty page is not remembered: it may be a maintenance page,
+            # and every later sitting of the build would reuse it as the end.
+            if page_cache is not None and parse_roll_call_list_page(html_text):
+                page_cache[url] = html_text
         if html_text.strip():
             list_html_seen = True
         page_entries = parse_roll_call_list_page(html_text)
+        if page_index == 0:
+            first_dates = [entry.get("date") for entry in page_entries if entry.get("date")]
+            newest_entry_date = max(first_dates) if first_dates else None
         parsed_entry_count += len(page_entries)
         if not page_entries:
+            scan_end = "list_end"
             break
         candidates.extend(entry for entry in page_entries if entry.get("date") == target_date)
         dated = [entry.get("date") for entry in page_entries if entry.get("date")]
         if dated and min(dated) < target_date:
+            scan_end = "date_passed"
             break
     result = RollCallCandidateFetch(
         candidates=candidates,
         list_html_seen=list_html_seen,
         parsed_entry_count=parsed_entry_count,
-        selector_warning=list_html_seen and parsed_entry_count == 0,
+        # A blank page 1 is as unverifiable as a page whose markup changed: it
+        # must not read as "the list is empty, so this sitting had no votes".
+        selector_warning=parsed_entry_count == 0,
+        scan_end=scan_end,
+        pages_fetched=pages_fetched,
+        pages_from_cache=pages_from_cache,
+        newest_entry_date=newest_entry_date,
     )
     return result if include_diagnostics else result.candidates
 
@@ -1067,12 +1165,27 @@ def top_document_numbers(top: dict[str, Any], linked_drucksachen: list[dict[str,
     return numbers
 
 
+def _days_since(day: str) -> int | None:
+    """Whole days from an ISO date to today (UTC); None for a date that does not exist."""
+    try:
+        return (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
+    except ValueError:
+        return None
+
+
 def match_roll_call_votes(
     top: dict[str, Any],
     linked_drucksachen: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
     cache: dict[str, dict[str, Any]],
+    errors: list[DipError] | None = None,
 ) -> list[dict[str, Any]]:
+    """The roll-call votes whose Drucksachen overlap the TOP's.
+
+    With ``errors`` given, a failed detail fetch is appended there and the
+    votes fetched so far are still returned: a later failure must not discard
+    a vote that was fetched successfully. Without it the error propagates.
+    """
     top_numbers = top_document_numbers(top, linked_drucksachen)
     matches: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -1080,7 +1193,13 @@ def match_roll_call_votes(
         if top_numbers and vote_numbers and top_numbers & vote_numbers:
             vote_id = str(candidate["id"])
             if vote_id not in cache:
-                cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+                try:
+                    cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+                except DipError as exc:
+                    if errors is None:
+                        raise
+                    errors.append(exc)
+                    break
             matches.append(cache[vote_id])
     return matches
 
@@ -1537,6 +1656,7 @@ def enrich_with_api(
     vote_scan_pages: int = 30,
     roll_call_list_id: str | None = None,
     progress: Callable[[str], None] | None = None,
+    roll_call_page_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
@@ -1545,16 +1665,32 @@ def enrich_with_api(
     activities = client.list_all("/aktivitaet", {"f.plenarprotokoll": protocol_id})
     if progress:
         progress(f"Fetched {len(activities)} parliamentary activity record(s).")
-    roll_call_fetch = fetch_roll_call_vote_candidates(
-        protocol.get("datum"),
-        vote_scan_pages,
-        roll_call_list_id,
-        include_diagnostics=True,
-    )
+    # A failed roll-call fetch is a vote acquisition failure, not a reason to
+    # lose the whole dossier: the first error stops further vote requests and
+    # the state below records it.
+    vote_fetch_error: DipError | None = None
+    try:
+        roll_call_fetch = fetch_roll_call_vote_candidates(
+            protocol.get("datum"),
+            vote_scan_pages,
+            roll_call_list_id,
+            include_diagnostics=True,
+            page_cache=roll_call_page_cache,
+        )
+    except DipError as exc:
+        vote_fetch_error = exc
+        roll_call_fetch = RollCallCandidateFetch([], False, 0, False, scan_end="failed")
+        print(f"warning: roll-call list unavailable for {protocol.get('dokumentnummer') or protocol_id}: {exc}", file=sys.stderr)
     assert isinstance(roll_call_fetch, RollCallCandidateFetch)
     roll_call_candidates = roll_call_fetch.candidates
     if progress:
         progress(f"Found {len(roll_call_candidates)} roll-call vote candidate(s).")
+        if vote_scan_pages > 0:
+            progress(
+                f"Roll-call scan ended by {roll_call_fetch.scan_end}: "
+                f"{roll_call_fetch.pages_fetched} list page(s) fetched, "
+                f"{roll_call_fetch.pages_from_cache} reused from this build."
+            )
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
     positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
@@ -1623,7 +1759,18 @@ def enrich_with_api(
             linked_drucksachen.extend(linked_drucksachen_for_vorgang(vorgang_id))
 
         linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
-        votes = match_roll_call_votes(top, linked_drucksachen, roll_call_candidates, roll_call_cache)
+        votes = []
+        if vote_fetch_error is None:
+            match_errors: list[DipError] = []
+            votes = match_roll_call_votes(
+                top, linked_drucksachen, roll_call_candidates, roll_call_cache, match_errors
+            )
+            if match_errors:
+                vote_fetch_error = match_errors[0]
+                print(
+                    f"warning: roll-call vote details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {vote_fetch_error}",
+                    file=sys.stderr,
+                )
 
         enriched_tops.append(
             {
@@ -1706,8 +1853,43 @@ def enrich_with_api(
         warnings.append("Mindestens ein XML-TOP mit Reden hatte keine passenden DIP-Aktivitäten im Seitenbereich.")
     if len(activities) >= 100:
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
-    if roll_call_candidates and not roll_call_cache:
+    attached_vote_ids = {str(vote["id"]) for top in enriched_tops for vote in top["votes"]}
+    unmatched_candidates = [
+        candidate for candidate in roll_call_candidates if str(candidate["id"]) not in attached_vote_ids
+    ]
+    if progress and vote_scan_pages > 0:
+        # Every fetched vote costs two requests (detail page, member list); the
+        # Namenslisten page is one more per build, shared by all sittings.
+        progress(
+            f"Roll-call details: {len(roll_call_cache)} vote(s) fetched "
+            f"({2 * len(roll_call_cache)} requests), {len(unmatched_candidates)} candidate(s) matched no TOP."
+        )
+    if roll_call_candidates and not attached_vote_ids:
         warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
+    elif unmatched_candidates and vote_fetch_error is None:
+        warnings.append(
+            f"{len(unmatched_candidates)} von {len(roll_call_candidates)} namentlichen Abstimmungen dieses Sitzungsdatums "
+            "passten per Drucksachennummer zu keinem TOP."
+        )
+    if unmatched_candidates and vote_fetch_error is None:
+        for candidate in unmatched_candidates:
+            print(
+                f"warning: [{protocol.get('dokumentnummer') or protocol_id}] roll-call vote {candidate['id']} "
+                f"({candidate.get('title')!r}, {candidate.get('document_numbers') or 'no document numbers'}) "
+                "matched no TOP",
+                file=sys.stderr,
+            )
+    if roll_call_fetch.scan_end == "budget_exhausted":
+        message = (
+            f"warning: [{protocol.get('dokumentnummer') or protocol_id}] roll-call scan used all "
+            f"{vote_scan_pages} list page(s) without reaching {protocol.get('datum')}; older votes may be missing. "
+            "Fix: raise --vote-scan-pages."
+        )
+        warnings.append(
+            f"Die Suche in der Liste der namentlichen Abstimmungen endete nach {vote_scan_pages} Seiten, "
+            "bevor sie das Sitzungsdatum passierte; Abstimmungen können fehlen."
+        )
+        print(message, file=sys.stderr)
     if roll_call_fetch.selector_warning:
         warnings.append(ROLL_CALL_LIST_PARSE_WARNING)
         print(f"warning: {ROLL_CALL_LIST_PARSE_WARNING}", file=sys.stderr)
@@ -1720,7 +1902,7 @@ def enrich_with_api(
             f"{failed_ids}{suffix}."
         )
 
-    vote_records = len(roll_call_cache)
+    vote_records = len(attached_vote_ids)
     if vote_scan_pages <= 0:
         vote_facts = publication.DomainFacts(
             domain="votes",
@@ -1730,30 +1912,61 @@ def enrich_with_api(
         )
     else:
         attempted_at = utc_now()
+        # A complete acquisition needs full evidence: the scan reached the end
+        # of the list or passed the sitting's date, no request failed and every
+        # candidate found its TOP. Anything else is partial (some votes attached)
+        # or failed (none), with the reason named. Unmatched candidates are also
+        # logged above and counted in api_totals.
+        failure_reasons: list[str] = []
         if roll_call_fetch.selector_warning:
-            vote_state = (
-                publication.AcquisitionState.PARTIAL
-                if vote_records
-                else publication.AcquisitionState.FAILED
-            )
+            failure_reasons.append("source_changed")
+        if vote_fetch_error is not None:
+            failure_reasons.append("source_unavailable")
+        if roll_call_fetch.scan_end == "budget_exhausted":
+            failure_reasons.append("scan_budget_exhausted")
+        # A vote the list shows but no TOP claims is not in the store: the
+        # sitting's votes are known to be short, so they cannot be complete.
+        if unmatched_candidates and vote_fetch_error is None:
+            failure_reasons.append("unmatched_candidate")
+        # A recent sitting with no candidate on a list whose newest entry is
+        # older than the sitting: the list may simply not have caught up.
+        target_day = iso_date(protocol.get("datum"))
+        if (
+            not roll_call_candidates
+            and vote_fetch_error is None
+            and roll_call_fetch.scan_end == "date_passed"
+            and roll_call_fetch.newest_entry_date
+            and target_day
+            and roll_call_fetch.newest_entry_date < target_day
+            and _days_since(target_day) is not None
+            and 0 <= _days_since(target_day) <= ROLL_CALL_LIST_LAG_DAYS
+        ):
+            failure_reasons.append("source_stale")
+        if failure_reasons:
             vote_facts = publication.DomainFacts(
                 domain="votes",
-                acquisition_state=vote_state,
+                acquisition_state=(
+                    publication.AcquisitionState.PARTIAL
+                    if vote_records or failure_reasons in (["unmatched_candidate"], ["source_stale"])
+                    else publication.AcquisitionState.FAILED
+                ),
                 source="bundestag-roll-call",
                 records=vote_records,
-                rejected=1,
-                failure_reasons=("source_changed",),
+                rejected=1 if roll_call_fetch.selector_warning else 0,
+                failure_reasons=tuple(failure_reasons),
                 acquired_at=attempted_at if vote_records else None,
                 attempted_at=attempted_at,
                 attempted=True,
             )
         else:
+            # A verified zero-vote sitting is stamped too: acquired_at says
+            # the list was read to the end of the date, not that a vote exists.
             vote_facts = publication.DomainFacts(
                 domain="votes",
                 acquisition_state=publication.AcquisitionState.COMPLETE,
                 source="bundestag-roll-call",
                 records=vote_records,
-                acquired_at=attempted_at if vote_records else None,
+                acquired_at=attempted_at,
                 attempted_at=attempted_at,
                 attempted=True,
             )
@@ -1772,6 +1985,9 @@ def enrich_with_api(
             ),
             "roll_call_vote_candidate_count": len(roll_call_candidates),
             "matched_roll_call_vote_count": len(roll_call_cache),
+            "unmatched_roll_call_vote_count": len(unmatched_candidates),
+            "roll_call_scan_end": roll_call_fetch.scan_end,
+            "roll_call_scan_pages": vote_scan_pages,
         },
         "sampled_people": [compact_person(person) for person in person_records],
         "api_records": {
@@ -1782,6 +1998,7 @@ def enrich_with_api(
             "person_fetch_errors": person_fetch_errors,
             "roll_call_vote_candidates": roll_call_candidates,
             "matched_roll_call_votes": list(roll_call_cache.values()),
+            "unmatched_roll_call_vote_ids": [str(candidate["id"]) for candidate in unmatched_candidates],
         },
         "agenda_items": enriched_tops,
         "warnings": warnings,
@@ -1828,6 +2045,7 @@ def build_report(
         getattr(args, "vote_scan_pages", 30),
         getattr(args, "roll_call_list_id", None),
         progress=progress,
+        roll_call_page_cache=getattr(args, "roll_call_page_cache", None),
     )
 
     agenda_items = enrichment["agenda_items"]
@@ -1841,22 +2059,17 @@ def build_report(
     tops_with_api_drucksachen = sum(1 for top in enrichment["agenda_items"] if top["api"]["linked_drucksachen"])
     acquisition = enrichment.get("acquisition")
     if not acquisition:
-        vote_records = int((enrichment.get("api_totals") or {}).get("matched_roll_call_vote_count") or 0)
-        vote_requested = int(getattr(args, "vote_scan_pages", 30)) > 0
-        attempted_at = utc_now() if vote_requested else None
+        # enrich_with_api always reports its own vote acquisition. Without one,
+        # only "not requested" is a statement the caller can make; claiming a
+        # requested scan complete would be unsupported.
+        if int(getattr(args, "vote_scan_pages", 30)) > 0:
+            raise DipError("Vote acquisition was requested but the enrichment reported no vote acquisition state.")
         acquisition = {
             "votes": publication.DomainFacts(
                 domain="votes",
-                acquisition_state=(
-                    publication.AcquisitionState.COMPLETE
-                    if vote_requested
-                    else publication.AcquisitionState.NOT_REQUESTED
-                ),
+                acquisition_state=publication.AcquisitionState.NOT_REQUESTED,
                 source="bundestag-roll-call",
-                records=vote_records,
-                acquired_at=attempted_at if vote_records else None,
-                attempted_at=attempted_at,
-                attempted=vote_requested,
+                records=int((enrichment.get("api_totals") or {}).get("matched_roll_call_vote_count") or 0),
             ).as_dict()
         }
 

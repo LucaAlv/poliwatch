@@ -73,6 +73,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import re
 import shutil
 import sqlite3
@@ -318,15 +319,227 @@ def fetch_protocols(
     # is exhausted, which is the only reliable end-of-data signal.
     previous_cursor = None
     fetch_all = limit <= 0
+    num_found: int | None = None
     while fetch_all or len(protocols) < limit:
         page = client.get_json("/plenarprotokoll", params)
         protocols.extend(page.get("documents") or [])
+        if isinstance(page.get("numFound"), int) and not isinstance(page.get("numFound"), bool):
+            num_found = page["numFound"]
         cursor = page.get("cursor")
         if not cursor or cursor == previous_cursor:
             break
         previous_cursor = cursor
         params["cursor"] = cursor
+    unique_protocols = len({str(p.get("id") or p.get("dokumentnummer")) for p in protocols})
+    if fetch_all and num_found is not None and unique_protocols < num_found:
+        # The whole catalog is what completeness is judged against and what the
+        # store keeps dossiers for: a short fetch must stop the build, not
+        # become an "authoritative" catalog.
+        raise dip.DipError(
+            f"DIP returned {unique_protocols} of {num_found} protocols; the catalog is incomplete. "
+            "Fix: run the update again."
+        )
     return protocols if fetch_all else protocols[:limit]
+
+
+# Which sittings of the catalog this run acquires. --document-number and
+# --limit narrow the acquisition only: the catalog stays whole, because
+# completeness is judged against everything DIP lists and the store keeps every
+# cached dossier whatever this run refreshes.
+def select_acquisition_protocols(
+    catalog: list[dict[str, Any]],
+    document_numbers: list[str],
+    limit: int,
+    wahlperiode: int | None,
+) -> list[dict[str, Any]]:
+    ordered = sorted(catalog, key=protocol_sort_key, reverse=True)
+    if document_numbers:
+        by_number = {normalized_document_number(protocol.get("dokumentnummer")): protocol for protocol in ordered}
+        wanted = [normalized_document_number(number) for number in document_numbers]
+        missing = [number for number in wanted if number not in by_number]
+        if missing:
+            raise dip.DipError(f"No BT Plenarprotokoll found for {', '.join(missing)}")
+        return [protocol for protocol in ordered if normalized_document_number(protocol.get("dokumentnummer")) in wanted]
+    if limit > 0:
+        if wahlperiode:
+            prefix = f"{wahlperiode}/"
+            ordered = [
+                protocol
+                for protocol in ordered
+                if normalized_document_number(protocol.get("dokumentnummer")).startswith(prefix)
+            ]
+        return ordered[:limit]
+    return ordered
+
+
+# --backfill-incomplete: the sittings a facts period is waiting for. A sitting
+# counts when the catalog lists it and the cached dossiers do not cover it
+# (missing), or when its report says votes or speeches are not fully acquired.
+# Sittings DIP has published no XML for cannot be acquired yet and are
+# returned separately so the caller can say so instead of failing on them.
+_BUDGET_PAGES_RE = re.compile(r"scan_budget_exhausted after (\d+) pages")
+
+
+def _structural_vote_gap(gap: dict[str, Any], scan_pages: int | None = None) -> bool:
+    """A gap a rescan at the current settings reproduces exactly: votes the list
+    shows that no agenda item claims (only a better match rule closes it), or a
+    scan that ran out of pages at a budget no larger than the one asked for now.
+    ``scan_pages`` is the budget the next acquisition would use."""
+    reasons = gap["reasons"]
+    if set(reasons) != {"votes"}:
+        return False
+    text = reasons["votes"]
+    if text == "roll-call votes matched no TOP":
+        return True
+    listed = text[text.index("(") + 1 : text.rindex(")")].split(", ") if "(" in text and text.endswith(")") else []
+    tokens = {token.split(" after ")[0] for token in listed}
+    # Reproduced by a rescan whatever else is going on: the list shows votes no
+    # TOP claims.
+    if "unmatched_candidate" in tokens:
+        return True
+    if text == "votes partial (source_stale)":
+        # Only while the list may still be catching up; after that a rescan can
+        # settle it, so the backfill takes it again.
+        day = str(gap.get("date") or "")[:10]
+        try:
+            age = (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
+        except ValueError:
+            return False
+        return age <= dip.ROLL_CALL_LIST_LAG_DAYS
+    used = _BUDGET_PAGES_RE.search(text)
+    return bool(used) and bool(scan_pages) and scan_pages <= int(used.group(1))
+
+
+def incomplete_sitting_protocols(
+    entries: list[dict[str, Any]],
+    catalog: list[dict[str, Any]],
+    *,
+    votes: bool = True,
+    scan_pages: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    stored = []
+    for entry in entries:
+        protocol = (entry.get("report") or {}).get("protocol") or {}
+        stored.append(
+            {
+                "document_number": normalized_document_number(protocol.get("dokumentnummer")),
+                "date": str(protocol.get("datum") or "")[:10],
+            }
+        )
+    gaps = facts.sitting_gaps(
+        stored, facts.completeness_from_entries(entries), facts.sitting_catalog(catalog, authoritative=True)
+    )
+    acquirable: list[dict[str, Any]] = []
+    waiting: list[dict[str, Any]] = []
+    vote_only: list[dict[str, Any]] = []
+    structural: list[dict[str, Any]] = []
+    for protocol in sorted(catalog, key=protocol_sort_key, reverse=True):
+        gap = gaps.get(normalized_document_number(protocol.get("dokumentnummer")))
+        if gap is None:
+            continue
+        if _structural_vote_gap(gap, scan_pages):
+            structural.append(protocol)
+        elif not votes and set(gap["reasons"]) == {"votes"}:
+            # Votes are off, so re-acquiring this sitting would download it
+            # again and leave it exactly as incomplete as it is.
+            vote_only.append(protocol)
+        else:
+            (acquirable if protocol_xml_url(protocol) else waiting).append(protocol)
+    return acquirable, waiting, vote_only, structural
+
+
+def _first_numbers(numbers: list[str], limit: int = 3) -> str:
+    shown = ", ".join(numbers[:limit])
+    return f"{shown}, …" if len(numbers) > limit else shown
+
+
+# What keeps facts periods from being complete, printed on every build that
+# ran the engine: the periods, the sittings behind them, and the exact command
+# that acquires them.
+def format_incomplete_report(
+    report: dict[str, Any],
+    *,
+    output_dir: Path,
+    catalog_protocols: list[dict[str, Any]],
+    vote_scan_pages: int,
+    shown_periods: int = 6,
+) -> list[str]:
+    periods = report.get("incomplete_periods") or []
+    gaps = report.get("sitting_gaps") or {}
+    if not periods and not gaps:
+        return []
+    has_xml = {
+        normalized_document_number(protocol.get("dokumentnummer")): bool(protocol_xml_url(protocol))
+        for protocol in catalog_protocols
+    }
+    weeks = [period for period in periods if period["period_kind"] == "week"]
+    months = [period for period in periods if period["period_kind"] == "month"]
+    missing = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "not_persisted"]
+    waiting = [number for number in missing if not has_xml.get(number, True)]
+    partial = {number: gap for number, gap in gaps.items() if "dossier" not in gap["reasons"]}
+    redated = [number for number, gap in gaps.items() if gap["reasons"].get("dossier") == "date_changed"]
+    # A scan that ran out of pages is only fixed by a wider scan, so the fix
+    # below raises the budget and judges what it would reach at that budget.
+    exhausted = any("scan_budget_exhausted" in reason for gap in partial.values() for reason in gap["reasons"].values())
+    raised_pages = max(2 * vote_scan_pages, vote_scan_pages + 30) if exhausted and vote_scan_pages else vote_scan_pages
+    structural = [number for number, gap in gaps.items() if _structural_vote_gap(gap, raised_pages)]
+    no_xml = [number for number in gaps if not has_xml.get(number, True)]
+    acquirable = [number for number in gaps if number not in no_xml and number not in structural]
+    lines = [
+        f"warning: [facts] {len(weeks)} weeks and {len(months)} months are incomplete: "
+        "a Fakt needs every sitting DIP lists, fully acquired."
+    ]
+    if missing:
+        lines.append(f"  {len(missing)} listed sittings are not in the store: {_first_numbers(missing, 12)}")
+    if waiting:
+        lines.append(f"  not acquirable yet (DIP has no XML for them): {', '.join(waiting)}")
+    if structural:
+        lines.append(
+            f"  {len(structural)} sittings a backfill cannot fix now: roll-call votes no agenda item claims (they need "
+            f"a better match rule), a scan budget already used, or a list "
+            f"that may not have caught up yet ({_first_numbers(structural, 12)})"
+        )
+    if redated:
+        lines.append(f"  DIP dates {len(redated)} stored sittings differently now: {_first_numbers(redated, 12)}")
+    if partial:
+        counts = Counter(
+            f"{domain}: {reason}" for gap in partial.values() for domain, reason in sorted(gap["reasons"].items())
+        )
+        lines.append(f"  {len(partial)} sittings are in the store but not fully acquired:")
+        lines.extend(f"    {label} ({count}×)" for label, count in counts.most_common())
+    for label, group in (("weeks", weeks), ("months", months)):
+        if not group:
+            continue
+        newest = sorted(group, key=lambda period: period["period_key"], reverse=True)[:shown_periods]
+        rendered = []
+        for period in newest:
+            lost = [s["document_number"] for s in period["sittings"] if "dossier" in s["reasons"]]
+            weak = [s["document_number"] for s in period["sittings"] if "dossier" not in s["reasons"]]
+            detail = "; ".join(
+                part
+                for part in (
+                    f"missing {_first_numbers(lost)}" if lost else "",
+                    f"incomplete {_first_numbers(weak)}" if weak else "",
+                )
+                if part
+            )
+            rendered.append(f"{period['period_key']} ({detail})")
+        more = f" (newest {len(newest)} of {len(group)})" if len(group) > len(newest) else ""
+        lines.append(f"  incomplete {label}{more}: {'; '.join(rendered)}")
+    if acquirable:
+        command = f"python3 scripts/build_dip_pulse_site.py --output-dir {shlex.quote(str(output_dir))} --backfill-incomplete"
+        vote_gaps = any("votes" in gap["reasons"] for gap in gaps.values())
+        if vote_scan_pages == 0 and vote_gaps:
+            # Votes are switched off in this build's configuration; an
+            # explicit --enrich lifts a config veto (not --no-votes).
+            command += " --enrich votes"
+        elif exhausted:
+            command += f" --vote-scan-pages {raised_pages}"
+        lines.append(f"  Fix: {command}   (acquires {len(acquirable)} sittings; every other cached dossier is kept)")
+    else:
+        lines.append("  Fix: none available now; run an online update once DIP publishes the missing protocols")
+    lines.append("  Docs: README.md#backfill-incomplete-sittings")
+    return lines
 
 
 # Decide which of the fetched protocols get a full dossier page.
@@ -516,6 +729,14 @@ def add_explicit_dossier_protocols(
 # ---------------------------------------------------------------------------
 
 
+# A crash mid-write must never leave a truncated file where a cached report or
+# the catalog used to be: both are read back as evidence on the next build.
+def write_text_atomic(path: Path, text: str) -> None:
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
 def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
     slug = slugify_document_number(document_number)
     return (
@@ -541,7 +762,7 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     page_path.write_text(
         pulse_html.render_html(
             report,
@@ -577,10 +798,10 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
         return None
 
 
-# Collect cached dossiers from data/ for the given protocols (--preserve-existing-dossiers
-# and the offline render). Reports whose sitting is not part of this build's
-# catalog are ignored, and unreadable files are skipped with a warning instead
-# of failing the build.
+# Collect cached dossiers from data/ for the given protocols (every online build
+# keeps them all, and the offline render reads them). Reports whose sitting is
+# not part of this build's catalog are ignored, and unreadable files are skipped
+# with a warning instead of failing the build.
 def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any]]) -> list[dict[str, Any]]:
     protocol_numbers = {normalized_document_number(protocol.get("dokumentnummer")) for protocol in protocols}
     entries: list[dict[str, Any]] = []
@@ -615,13 +836,19 @@ def load_existing_detail_entries(output_dir: Path, protocols: list[dict[str, Any
 def load_cached_protocols(output_dir: Path) -> list[dict[str, Any]]:
     """Load the protocol catalog from disk, augmenting it with cached dossier
     reports so offline renders work even when the catalog was never written."""
-    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
+    catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
     protocols: list[dict[str, Any]] = []
     if catalog_path.exists():
         try:
             cached = json.loads(catalog_path.read_text(encoding="utf-8"))
-            if isinstance(cached, list):
-                protocols.extend(item for item in cached if isinstance(item, dict))
+            if isinstance(cached, dict) and isinstance(cached.get("protocols"), list):
+                protocols.extend(item for item in cached["protocols"] if isinstance(item, dict))
+            else:
+                print(
+                    f"warning: Ignoring cached protocol catalog {catalog_path}: it predates the catalog format "
+                    "completeness is judged against. Fix: run an online update.",
+                    file=sys.stderr,
+                )
         except (OSError, json.JSONDecodeError) as exc:
             print(f"warning: Could not read cached protocol catalog {catalog_path}: {exc}", file=sys.stderr)
 
@@ -1045,7 +1272,11 @@ def reuse_existing_dossier_enrichments(
         )
         if not previous:
             continue
-        if votes and not _iter_report_votes(item) and _iter_report_votes(previous):
+        # Cached votes are kept whole and only for an item the cache identifies
+        # unambiguously (equal top_id when both have one): an index match alone
+        # can be another TOP. Nothing is merged into a TOP that has votes.
+        top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
+        if votes and not _iter_report_votes(item) and _iter_report_votes(previous) and len(top_ids) <= 1:
             if previous.get("votes"):
                 item["votes"] = copy.deepcopy(previous["votes"])
             elif previous.get("vote"):
@@ -1112,6 +1343,31 @@ def _prior_acquired_at(existing_report: dict[str, Any] | None, domain: str) -> s
     )
 
 
+def _keep_prior_scan_end(report: dict[str, Any], existing_report: dict[str, Any] | None) -> None:
+    """Votes reused from the cache keep the evidence their scan recorded.
+
+    validation_summary.roll_call_scan_end says how the roll-call scan ended
+    (date_passed / list_end). A build that does not scan writes "not_scanned"
+    for itself, which must not erase what the reused votes were verified by.
+    A report cached before the field existed has none, and stays unverified.
+    """
+    prior_summary = (existing_report or {}).get("validation_summary") or {}
+    prior = prior_summary.get("roll_call_scan_end")
+    if prior:
+        summary = report.setdefault("validation_summary", {})
+        summary["roll_call_scan_end"] = prior
+        # The shortfall the scan recorded travels with the votes: a build that
+        # does not scan writes 0 for itself, which must not un-hold a sitting.
+        for counter in (
+            "unmatched_roll_call_vote_count",
+            "roll_call_vote_candidate_count",
+            "matched_roll_call_vote_count",
+            "roll_call_scan_pages",
+        ):
+            if counter in prior_summary:
+                summary[counter] = prior_summary[counter]
+
+
 def annotate_report_acquisition(
     report: dict[str, Any],
     existing_report: dict[str, Any] | None,
@@ -1126,19 +1382,50 @@ def annotate_report_acquisition(
     vote_records = sum(
         len(_iter_report_votes(item)) for item in report.get("agenda_items") or []
     )
+    prior_votes = ((existing_report or {}).get("acquisition") or {}).get("votes")
     if vote_scan_pages == 0:
-        acquisition["votes"] = publication.DomainFacts(
-            domain="votes",
-            acquisition_state=(
-                publication.AcquisitionState.COMPLETE
-                if vote_records
-                else publication.AcquisitionState.NOT_REQUESTED
-            ),
-            source="bundestag-roll-call",
-            records=vote_records,
-            reused=vote_records,
-            acquired_at=_prior_acquired_at(existing_report, "votes") if vote_records else None,
-        ).as_dict()
+        # No scan this run: the votes on the report are the cached ones, so
+        # they keep the state their acquisition recorded (partial and failed
+        # included). Only a report that never recorded one has nothing to keep;
+        # its votes are unknown provenance (no acquired_at), not "complete".
+        if prior_votes:
+            # The prior evidence vouches for the votes it verified. If a re-parse
+            # (different top_ids) left some of them without an item to sit on,
+            # it no longer does: the sitting reads as unverified and a backfill
+            # acquires it again.
+            unique_now = len(
+                {pulse_html.vote_key(v) for item in report.get("agenda_items") or [] for v in _iter_report_votes(item)}
+            )
+            if unique_now >= int(prior_votes.get("records") or 0):
+                _keep_prior_scan_end(report, existing_report)
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=prior_votes.get("acquisition_state") or "not_requested",
+                source="bundestag-roll-call",
+                records=vote_records,
+                reused=vote_records,
+                rejected=int(prior_votes.get("rejected") or 0),
+                failure_reasons=tuple(prior_votes.get("failure_reasons") or ()),
+                acquired_at=prior_votes.get("acquired_at"),
+                attempted_at=prior_votes.get("attempted_at"),
+                attempted=bool(prior_votes.get("attempted")),
+            ).as_dict()
+        else:
+            acquisition["votes"] = publication.DomainFacts(
+                domain="votes",
+                acquisition_state=(
+                    publication.AcquisitionState.COMPLETE
+                    if vote_records
+                    else publication.AcquisitionState.NOT_REQUESTED
+                ),
+                source="bundestag-roll-call",
+                records=vote_records,
+                reused=vote_records,
+            ).as_dict()
+    # With a scan the result of that scan stands as it is (enrich_with_api wrote
+    # its state): nothing is merged from the cache and no earlier verification
+    # is restored. A scan that failed for a transient reason never gets here
+    # when the cache holds votes (write_report_and_page keeps the cached dossier).
 
     profile_records, _profile_targets = _report_profile_counts(report)
     if profile_resolver is None:
@@ -1224,6 +1511,36 @@ def annotate_report_acquisition(
         ).as_dict()
 
 
+def keep_cached_dossier_when_votes_failed(
+    report: dict[str, Any], existing_report: dict[str, Any] | None, vote_scan_pages: int
+) -> None:
+    """A vote scan that failed for a transient reason must not replace a cached
+    dossier that holds votes.
+
+    The dossier is skipped like any dossier whose refresh failed (the build
+    keeps the cached one whole), so a network blip cannot turn verified votes
+    into a partial sitting. Without cached votes the failed scan stands.
+    """
+    if vote_scan_pages == 0 or existing_report is None:
+        return
+    fresh = (report.get("acquisition") or {}).get("votes") or {}
+    cached_votes = any(_iter_report_votes(item) for item in existing_report.get("agenda_items") or [])
+    if not cached_votes:
+        return
+    transient = {"source_unavailable", "source_changed"} & set(fresh.get("failure_reasons") or ())
+    if fresh.get("acquisition_state") in {"partial", "failed"} and transient:
+        raise dip.DipError(
+            f"Roll-call scan failed ({', '.join(sorted(transient))}); keeping the cached dossier with its votes."
+        )
+    # A scan that reads as complete but attaches no vote at all to a sitting whose
+    # cache holds some is more likely a shortened or stale list page than a
+    # sitting that lost its votes: keep the cached dossier and say so.
+    if fresh.get("acquisition_state") == "complete" and not int(fresh.get("records") or 0):
+        raise dip.DipError(
+            "Roll-call scan attached no vote although the cached dossier holds some; keeping the cached dossier."
+        )
+
+
 # Build one complete dossier for a single sitting and write both of its files.
 #
 # The heavy lifting (XML download, agenda/speech extraction, DIP lookups,
@@ -1251,6 +1568,7 @@ def write_report_and_page(
     summary_max_calls: int = 25,
     summary_timeout: float = 60,
     database_page_href: str | None = None,
+    roll_call_page_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -1278,10 +1596,13 @@ def write_report_and_page(
         # fail before making any provider calls when the budget cannot suffice.
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
+        roll_call_page_cache=roll_call_page_cache,
     )
     report = dip.build_report(args, protocol=protocol)
+    keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
     if summary_mode in {"auto", "required"}:
         reconcile_generated_and_cached_summaries(report, existing_report)
+    # Cached votes carry forward when this run did not scan.
     reuse_existing_dossier_enrichments(
         report,
         existing_report,
@@ -6722,14 +7043,18 @@ def _renderable_fact(conn: sqlite3.Connection, fact_row: dict[str, Any]) -> dict
     return row
 
 
-def _fact_status_text(row: dict[str, Any] | None) -> tuple[str, str | None, bool]:
+def _fact_status_text(row: dict[str, Any] | None, *, with_note: bool = True) -> tuple[str, str | None, bool]:
     """(cell text, in-page anchor or None, whether it is posted) for one
     metric's cell in a period. None row: the metric was not built this
-    update (e.g. --enrich without votes)."""
+    update (e.g. --enrich without votes). An incomplete period names the
+    sitting that keeps it incomplete when ``write_facts_pages`` attached a
+    ``gap_note`` (the archive table keeps the short text and puts the note in
+    a tooltip; the week page shows it)."""
     if row is None:
         return "–", None, False
     if not row.get("complete"):
-        return "unvollständig erfasst", None, False
+        note = row.get("gap_note") if with_note else None
+        return (f"unvollständig erfasst: {note}" if note else "unvollständig erfasst"), None, False
     if row.get("publishable"):
         return f"Platz {row['rank']}", row["metric_id"], True
     return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
@@ -6893,12 +7218,15 @@ def _render_facts_archive_table(
         cells = []
         any_posted = False
         for metric in registry:
-            text, anchor, posted = _fact_status_text(period_rows.get(metric["id"]))
+            cell_row = period_rows.get(metric["id"])
+            text, anchor, posted = _fact_status_text(cell_row, with_note=False)
             any_posted = any_posted or posted
             if posted:
                 cells.append(f'<td><a href="{pulse_html.esc(period_key)}.html#{pulse_html.esc(anchor)}">{pulse_html.esc(text)}</a></td>')
             else:
-                cells.append(f'<td class="muted">{pulse_html.esc(text)}</td>')
+                note = (cell_row or {}).get("gap_note") if cell_row and not cell_row.get("complete") else None
+                title = f' title="{pulse_html.esc(note)}"' if note else ""
+                cells.append(f'<td class="muted"{title}>{pulse_html.esc(text)}</td>')
         row_class = "archive-row" if any_posted else "archive-row greyed"
         rows_html.append(
             f'<tr class="{row_class}"><td><a href="{pulse_html.esc(period_key)}.html">{pulse_html.esc(period_text)}</a></td>'
@@ -7160,6 +7488,7 @@ def write_facts_pages(
     document_numbers: set[str],
     bill_slugs: set[str],
     features: Selection | None = None,
+    entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """fakt/index.html, fakt/<period_key>.html, fakt/<period_key>-<metric>.svg
     and fakt/methodik.html. Reads the three tables scripts/facts.py persisted;
@@ -7178,6 +7507,21 @@ def write_facts_pages(
         conn = facts.open_readonly(database_path)
         try:
             all_facts = facts.load_facts(conn)
+            # An incomplete period says which sitting keeps it incomplete. The
+            # store holds no acquisition state, so the reports the build is
+            # holding and the cached catalog are read again here, exactly as the
+            # engine judged them.
+            notes = facts.gap_notes(
+                facts.load_protocols(conn),
+                facts.completeness_from_entries(entries or []),
+                facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+            )
+            for row in all_facts:
+                if not row["complete"]:
+                    metric = facts.REGISTRY_BY_ID.get(row["metric_id"])
+                    note = notes.get((row["period_kind"], row["period_key"], (metric or {}).get("coverage")))
+                    if note:
+                        row["gap_note"] = note
             by_period = _facts_group_by_period(all_facts)
             by_metric, by_metric_index = _facts_group_by_metric(all_facts)
             _ensure_lead_position_tables(conn)
@@ -8655,7 +8999,9 @@ def build_publication_manifest(
     ))
 
     def optional_domain(domain: str, source: str, records: int, selected_id: str) -> publication.DomainFacts:
-        requested = selected_id in selected
+        # Selected is a configuration; requested is something this run did. An
+        # offline render selects the default enrichments too but fetches nothing.
+        requested = selected_id in selected and acquisition_attempted
         cached = records > 0 and not requested
         state = publication.AcquisitionState.COMPLETE if requested or cached else publication.AcquisitionState.NOT_REQUESTED
         return publication.DomainFacts(
@@ -8959,6 +9305,7 @@ def render_site(
     data_export_error: str | None = None,
     is_remote_manifest: bool = False,
     bill_slugs: set[str] | None = None,
+    authoritative_catalog: bool = False,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -9013,9 +9360,21 @@ def render_site(
         data_stand = f"Stand {stand_display} · {pulse_html.format_int(manifest['protocols']['count'])} Protokolle"
 
     # The raw catalog as JSON. It is also what load_cached_protocols() reads back
-    # for an --offline render.
-    catalog_path = output_dir / "data" / "plenarprotokoll-catalog.json"
-    catalog_path.write_text(json.dumps(protocols, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # for an --offline render, and what completeness is judged against. Only a
+    # build that fetched the whole DIP catalog may write it: an offline render
+    # holds the cache plus dossier-derived protocols, and rewriting the file
+    # from that would turn a partial list into an "authoritative" one.
+    catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
+    if authoritative_catalog:
+        write_text_atomic(
+            catalog_path,
+            json.dumps(
+                {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+        )
     components = {
         component.feature.id: component
         for component in feature_loader.load(features, include_dev_view=include_dev_view)
@@ -9222,12 +9581,29 @@ def _apply_features_file(path: Path, current: set[str], vetoes: set[str]) -> Non
             raise FeatureError(f"Unbekannte Anreicherung: {feature_id}. Verfügbar: {choices}, all")
 
 
+# Enrichments an online update acquires unless an operator vetoes them. Votes
+# are here because a build that silently skips them records every sitting as
+# "not requested" and leaves the store without the newest roll calls.
+DEFAULT_ENRICHMENTS: tuple[str, ...] = ("votes",)
+
+# Order in which sources speak, lowest first; shown by --explain-config.
+ENRICHMENT_PRECEDENCE = (
+    "built-in default < features.json < features.local.json < --features-file < "
+    "BUNDESTAG_PULSE_ENRICHMENTS < --enrich / --vote-scan-pages N > 0; "
+    "a veto (--no-votes, --vote-scan-pages 0, a '-votes' entry, legacy 'disable') "
+    "beats every default and every layer below it, and --no-votes beats all of them"
+)
+
+
 # Build the final Selection for this run, then let features.resolve() close it
 # over dependencies and validate it.
 def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSelection:
     """Resolve operator acquisition as one ordered, provenance-carrying stream."""
     current: set[str] = set()
     operations: list[tuple[str, str, str]] = []
+    # Ids an operator explicitly switched off. A default never re-adds one; a
+    # later explicit add lifts the veto again (later layers win).
+    vetoed: set[str] = set()
 
     def validate_id(value: str, source: str) -> tuple[str, ...]:
         if value == "all":
@@ -9241,6 +9617,12 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
             )
         return (value,)
 
+    def veto(token: str, source: str) -> None:
+        # A "-id" entry of an enrich list. Unlike the legacy disable key it is
+        # validated: a mistyped veto must not silently leave the default on.
+        for value in validate_id(token[1:], source):
+            remove([value], source)
+
     def replace(values: Any, source: str) -> None:
         tokens = _split_feature_tokens(values)
         previous = sorted(current)
@@ -9248,14 +9630,22 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
         for value in previous:
             operations.append(("overridden", value, source))
         for token in tokens:
+            if token.startswith("-"):
+                veto(token, source)
+                continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
+                vetoed.discard(value)
                 operations.append(("replace", value, source))
 
     def add(values: Any, source: str) -> None:
         for token in _split_feature_tokens(values):
+            if token.startswith("-"):
+                veto(token, source)
+                continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
+                vetoed.discard(value)
                 operations.append(("add", value, source))
 
     def remove(values: Any, source: str) -> None:
@@ -9264,6 +9654,7 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
             if raw not in ENRICHMENT_REGISTRY:
                 continue
             current.discard(raw)
+            vetoed.add(raw)
             operations.append(("remove", raw, source))
 
     def load_config(path: Path, *, replace_enrich: bool) -> None:
@@ -9309,8 +9700,21 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
         remove(("aw-profiles",), "--no-abgeordnetenwatch")
 
     add(getattr(args, "enrich", None), "--enrich")
-    if (getattr(args, "vote_scan_pages", None) or 0) > 0:
+    scan_pages = getattr(args, "vote_scan_pages", None)
+    if scan_pages is not None and scan_pages > 0:
         add(("votes",), "--vote-scan-pages")
+    elif scan_pages == 0:
+        remove(("votes",), "--vote-scan-pages 0")
+    # Defaults come last, so a config file that lists other enrichments (a
+    # replacement of the set) cannot silently turn them off. Only a veto can.
+    for default in DEFAULT_ENRICHMENTS:
+        if default not in current and default not in vetoed:
+            current.add(default)
+            operations.append(("add", default, "default"))
+    # --no-votes is the operator's last word: it beats --enrich votes and
+    # --vote-scan-pages N > 0 given on the same command line.
+    if getattr(args, "no_votes", False):
+        remove(("votes",), "--no-votes")
     return EnrichmentSelection(frozenset(current), tuple(operations))
 
 
@@ -9382,6 +9786,7 @@ def print_effective_config(selection: EnrichmentSelection, args: argparse.Namesp
     print("Effective operator configuration (no network or writes)")
     print(f"summary_mode={getattr(args, 'summary_mode', 'reuse')} source=--summary-mode/default")
     print(f"include_dev_view={str(bool(getattr(args, 'include_dev_view', False))).lower()} source=--include-dev-view/default")
+    print(f"precedence={ENRICHMENT_PRECEDENCE}")
     if not selection.ids:
         print("enrichments=(none) source=resolved configuration")
     else:
@@ -9519,13 +9924,21 @@ def parse_args() -> argparse.Namespace:
         metavar="ID",
         action="append",
         default=[],
-        help="Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable.",
+        help=(
+            "Update-time data enrichment: votes, aw-profiles, mp-roster, or all; repeatable. "
+            "votes is on by default (turn it off with --no-votes). A config file's enrich list "
+            "replaces earlier config layers but never removes a default; only a veto does "
+            "(see --explain-config for the precedence)."
+        ),
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=0,
-        help="Number of recent Bundestag protocols to include in the catalog. Use 0 for every available BT protocol.",
+        help=(
+            "Acquire only the newest N Bundestag protocols of --protocol-wahlperiode (0 = no cap). "
+            "The catalog itself is always fetched whole: completeness is judged against it."
+        ),
     )
     parser.add_argument(
         "--detail-limit",
@@ -9537,7 +9950,10 @@ def parse_args() -> argparse.Namespace:
         "--document-number",
         action="append",
         default=[],
-        help="Specific protocol document number to include, e.g. 21/84. Can be repeated.",
+        help=(
+            "Acquire only this protocol, e.g. 21/84 (repeatable). The catalog and every cached dossier "
+            "are kept; only the named sittings are refreshed."
+        ),
     )
     parser.add_argument(
         "--dossier-document-number",
@@ -9594,9 +10010,12 @@ def parse_args() -> argparse.Namespace:
         help="Skip writing the SQLite graph store.",
     )
     parser.add_argument(
-        "--preserve-existing-dossiers",
+        "--backfill-incomplete",
         action="store_true",
-        help="Load existing dossier JSON files from OUTPUT_DIR/data and keep them visible in the generated catalog.",
+        help=(
+            "Acquire exactly the sittings the last build left missing or not fully acquired (the list every build "
+            "prints under 'incomplete'), ignoring --limit and --detail-limit. Every other cached dossier is kept."
+        ),
     )
     parser.add_argument(
         "--person-limit",
@@ -9654,7 +10073,16 @@ def parse_args() -> argparse.Namespace:
         "--vote-scan-pages",
         type=int,
         default=None,
-        help="Roll-call list pages per sitting (default 30 with --enrich votes, otherwise 0).",
+        help=(
+            "Roll-call list pages scanned per sitting (default 30: votes are acquired by default). "
+            "0 turns vote acquisition off, like --no-votes. A sitting whose date lies beyond the "
+            "window is recorded as partial (scan_budget_exhausted); raise this to reach older sittings."
+        ),
+    )
+    parser.add_argument(
+        "--no-votes",
+        action="store_true",
+        help="Skip roll-call vote acquisition for this update (cached votes and their state are kept).",
     )
     parser.add_argument(
         "--roll-call-list-id",
@@ -9691,8 +10119,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=21,
         help=(
-            "Legislative period used to narrow limited protocol catalog fetches "
-            "(default 21; use 0 to query all periods before applying --limit)."
+            "Legislative period --limit counts the newest protocols of "
+            "(default 21; use 0 to count across all periods)."
         ),
     )
     parser.add_argument(
@@ -9737,6 +10165,12 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.force_export and args.no_persist:
         parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
+    if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
+        parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
+    if args.backfill_incomplete and args.document_number:
+        parser.error("--backfill-incomplete cannot be combined with --document-number: it acquires the sittings the last build listed as incomplete")
+    if args.backfill_incomplete and args.offline:
+        parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.offline and args.data_manifest and is_url(args.data_manifest):
         parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
     if args.no_persist and args.data_base_url:
@@ -9800,7 +10234,12 @@ def resolve_commit() -> str | None:
 # rebuild of an unchanged store leaves the store's mtime alone and the export's
 # skip rule still holds. A metric whose SQL raises a FactsError aborts the
 # build naming the metric (FactsError is a RuntimeError, which main() reports).
-def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+def run_facts_engine(
+    database_path: Path,
+    entries: list[dict[str, Any]],
+    catalog: facts.SittingCatalog | None,
+    today: date | None = None,
+) -> dict[str, Any]:
     store = pulse_store.connect(database_path)
     try:
         pulse_store.initialize(store)
@@ -9809,7 +10248,9 @@ def run_facts_engine(database_path: Path, entries: list[dict[str, Any]]) -> dict
             store,
             facts.ALL_REGISTRY,
             facts.completeness_from_entries(entries),
+            catalog=catalog,
             built=built,
+            today=today,
         )
     finally:
         store.close()
@@ -9831,6 +10272,7 @@ def run_data_pipeline(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, int],
     canonical_by_mp_id: dict[int, int],
+    catalog: facts.SittingCatalog | None,
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
@@ -9841,7 +10283,16 @@ def run_data_pipeline(
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
-        run_facts_engine(database_path, entries)
+        facts_report = run_facts_engine(
+            database_path, entries, catalog, today=resolve_today(getattr(args, "today", None))
+        )
+        for line in format_incomplete_report(
+            facts_report,
+            output_dir=output_dir,
+            catalog_protocols=protocols,
+            vote_scan_pages=30 if getattr(args, "vote_scan_pages", None) is None else int(args.vote_scan_pages),
+        ):
+            print(line, file=sys.stderr)
 
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
@@ -10017,6 +10468,10 @@ def main() -> int:
                 abg_mps=abg_mps,
                 mp_lookup=mp_lookup,
                 canonical_by_mp_id=canonical_by_mp_id,
+                # The cached catalog on its own, never the protocols above: those
+                # also hold dossier-derived entries, which prove nothing about
+                # what DIP lists.
+                catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
             )
         except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -10065,15 +10520,53 @@ def main() -> int:
         )
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    # One roll-call list page cache per build: every sitting reads the same
+    # pages from the top, so only the first one pays for them.
+    roll_call_page_cache: dict[str, str] = {}
     try:
         # Step 1: the catalog, then the subset of it that gets a dossier.
         # --dossier-document-number can add sittings to the dossier list without
         # changing the catalog; the second protocols_for_detail_pages() call
         # re-filters that combined list for a usable XML URL.
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
-        protocols = fetch_protocols(client, args.limit, args.document_number, protocol_wahlperiode)
-        detail_limit = None if args.document_number else args.detail_limit
-        detail_protocols = protocols_for_detail_pages(protocols, detail_limit)
+        # The whole catalog, whatever narrows the acquisition below.
+        protocols = fetch_protocols(client, 0, [], None)
+        if getattr(args, "backfill_incomplete", False):
+            acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
+                load_existing_detail_entries(output_dir, protocols),
+                protocols,
+                votes=args.vote_scan_pages != 0,
+                scan_pages=args.vote_scan_pages,
+            )
+            if structural:
+                print(
+                    f"[backfill] leaving {len(structural)} sitting(s) a rescan at these settings cannot fix: roll-call "
+                    "votes no agenda item claims (they need a better match rule), or a scan that already used "
+                    f"{args.vote_scan_pages} pages (raise --vote-scan-pages).",
+                    file=sys.stderr,
+                )
+            if vote_only:
+                print(
+                    f"[backfill] skipping {len(vote_only)} sitting(s) held back only by votes: votes are off "
+                    "(--no-votes, --vote-scan-pages 0 or a -votes entry). Fix: add --enrich votes.",
+                    file=sys.stderr,
+                )
+            print(
+                f"[backfill] {len(acquisition_scope)} incomplete or missing sitting(s) to acquire"
+                + (
+                    f"; {len(waiting)} not acquirable yet (DIP has no XML): "
+                    + ", ".join(normalized_document_number(p.get("dokumentnummer")) for p in waiting)
+                    if waiting
+                    else ""
+                ),
+                file=sys.stderr,
+            )
+        else:
+            acquisition_scope = select_acquisition_protocols(
+                protocols, args.document_number, args.limit, protocol_wahlperiode
+            )
+        detail_limit = None if (args.document_number or getattr(args, "backfill_incomplete", False)) else args.detail_limit
+        detail_protocols = protocols_for_detail_pages(acquisition_scope, detail_limit)
         protocols, detail_protocols = add_explicit_dossier_protocols(
             client,
             protocols,
@@ -10081,13 +10574,12 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
-        # With --preserve-existing-dossiers, dossiers from earlier builds stay
-        # visible in the catalog even when this run only regenerates a few.
-        existing_entries = (
-            load_existing_detail_entries(output_dir, protocols) if args.preserve_existing_dossiers else []
-        )
+        # What this run acquires is one scope; what the store keeps is another.
+        # Every cached dossier of the catalog stays, whatever the acquisition
+        # was narrowed to, and only the acquired sittings are refreshed.
+        existing_entries = load_existing_detail_entries(output_dir, protocols)
         # --week must name a week this build will actually hold; check it against
-        # the dossier catalog (plus the preserved dossiers that stay in the
+        # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.
         if reject_unknown_week(
             pulse_week,
@@ -10123,6 +10615,7 @@ def main() -> int:
                     features=features,
                     include_dev_view=args.include_dev_view,
                     database_page_href=dossier_database_page_href(args, database_path),
+                    roll_call_page_cache=roll_call_page_cache,
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -10212,6 +10705,7 @@ def main() -> int:
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
             canonical_by_mp_id=canonical_by_mp_id,
+            catalog=facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now()),
         )
     except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -10236,6 +10730,7 @@ def main() -> int:
         data_export_error=data_export_error,
         is_remote_manifest=is_remote_manifest,
         bill_slugs=bill_slugs,
+        authoritative_catalog=True,
     )
     print(index_path)
     return 0

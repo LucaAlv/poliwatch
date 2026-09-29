@@ -1156,6 +1156,25 @@ class DossierSourceLinkTests(unittest.TestCase):
         self.assertIn("Rede B", activities)
         self.assertEqual(activities.count("<a "), 1)
 
+    def test_a_drucksache_reference_with_a_foreign_host_loses_its_link_instead_of_aborting(self) -> None:
+        # Real case: 20/206's XML yields a "Drucksache" 88/739016 whose URL is a
+        # syriahr.com article, and one such reference used to abort the build.
+        item = {
+            "xml_drucksachen": [
+                {"dokumentnummer": "20/1", "url": "https://dserver.bundestag.de/btd/20/000/2000001.pdf"},
+                {"dokumentnummer": "88/739016", "url": "https://www.syriahr.com/artikel/739016/"},
+                {"dokumentnummer": "20/2", "url": "javascript:alert(1)"},
+                {"dokumentnummer": "20/3"},
+            ]
+        }
+        links = pulse_html.render_source_links(item)
+        self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/000/2000001.pdf">20/1</a>', links)
+        for number in ("88/739016", "20/2", "20/3"):
+            self.assertIn(f'<span class="doc-link muted">{number}</span>', links)
+        self.assertNotIn("syriahr", links)
+        self.assertNotIn("javascript:", links)
+        self.assertEqual(links.count("<a "), 1)
+
     def test_dev_details_pdf_source_links_only_to_http(self) -> None:
         def details(url: str) -> str:
             item = {"index": 1, "api": {"positions": [{"titel": "X", "source": {"pdf_url": url}}]}}

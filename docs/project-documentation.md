@@ -148,7 +148,7 @@ Important generated files:
 | `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
 | `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
-| `data/plenarprotokoll-catalog.json` | Cached protocol catalog |
+| `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
@@ -193,20 +193,20 @@ Votes, profile links, and the full roster have explicit acquisition states: `not
 
 AI summaries are controlled separately through `reuse`, `off`, `auto`, and `required` modes. A usable summary is expanded by default, permanently labelled `KI-generiert · nicht redaktionell geprüft`, and has 3–5 distinct resolvable citations. The browser stores only the global expanded/collapsed preference under `bundestag-pulse-ai-summaries-v1`.
 
-Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead.
+Online updates preserve previously cached votes, profiles, summaries, and roster rows when their enrichment is omitted. Selecting an enrichment refreshes that source instead. Votes are selected by default (`--no-votes` opts out): a vote scan's result replaces that sitting's cached votes, except that a scan failing for a network or server reason keeps the whole cached dossier when it holds votes.
 
 ```bash
 # Publish every experience from the current cache.
 scripts/preview_dip_pulse_site.sh
 
-# Acquire selected optional data during an online update.
-scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
+# Acquire selected optional data during an online update (votes are on by default).
+scripts/preview_dip_pulse_site.sh update --enrich aw-profiles
 
 # Acquire every non-LLM enrichment and explicitly regenerate summaries.
 scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 ```
 
-`features.json` is the committed enrichment default. Put personal enrichment defaults such as `{"enrich":["votes"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.5.x`, cannot remove published UI, and are scheduled for removal in `0.6.0`.
+`features.json` is the committed enrichment configuration (it lists none; the built-in default is `votes`). Put personal enrichment defaults such as `{"enrich":["aw-profiles"]}` in gitignored `features.local.json`, not `.context/`, because `.context/` contains generated output rather than operator configuration. Legacy feature-selection inputs remain accepted with warnings through `0.5.x`, cannot remove published UI, and are scheduled for removal in `0.6.0`.
 
 ### `scripts/validate_dip_protocol.py`
 
@@ -387,7 +387,8 @@ Common options:
 
 | Option | Default | Effect |
 |---|---:|---|
-| `--enrich ID` | none | Acquire `votes`, `aw-profiles`, `mp-roster`, or `all` during an online update; repeatable |
+| `--enrich ID` | `votes` | Acquire `votes`, `aw-profiles`, `mp-roster`, or `all` during an online update; repeatable. `votes` is on unless vetoed |
+| `--no-votes` | off | Skip the roll-call scan; beats `--enrich votes` and `--vote-scan-pages`. Cached votes and their state are kept |
 | `--features-file PATH` | none | Read `{"enrich":[...]}` from another JSON file; legacy selection keys are deprecated |
 | `--enable`, `--disable`, `--features` | deprecated | Accepted for one release; data selections map to enrichments but published UI is unaffected |
 | `--list-capabilities` | off | Print operator enrichments and summary/developer controls, then exit before build work |
@@ -396,9 +397,9 @@ Common options:
 | `--include-dev-view` | off | Include developer markup only in a separate, explicit output directory |
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
-| `--limit N` | `0` | Number of recent Bundestag protocols in the catalog; `0` means all available |
+| `--limit N` | `0` | Acquire only the newest N protocols of `--protocol-wahlperiode`; `0` means no cap. The catalog is always fetched whole |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
-| `--document-number NUM` | none | Restrict catalog/detail generation to one protocol; can be repeated |
+| `--document-number NUM` | none | Acquire only this protocol; can be repeated. The catalog and every cached dossier are kept |
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
@@ -406,9 +407,9 @@ Common options:
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
 | `--no-persist` | off | Skip SQLite graph-store generation |
-| `--preserve-existing-dossiers` | off | Keep cached dossier JSON files visible in the generated catalog |
+| `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit`; not combinable with `--document-number`. Every cached dossier is kept whatever an update acquires |
 | `--person-limit N` | `0` | Number of distinct person records fetched per dossier; `0` means all seen people |
-| `--vote-scan-pages N` | `0` / `30` | `0` normally; `30` with `--enrich votes`; an explicit positive value implies that enrichment |
+| `--vote-scan-pages N` | `30` | Roll-call list pages scanned per sitting. `0` turns votes off (like `--no-votes`); a sitting older than the window is `partial` (`scan_budget_exhausted`) |
 | `--roll-call-list-id ID` | `BT_ROLL_CALL_LIST_ID` or `484422-484422` | Bundestag roll-call vote filterlist id used for list-page scraping |
 | `--sleep SECONDS` | `0.0` | Delay between DIP API requests |
 | `--no-abgeordnetenwatch` | deprecated | Explicitly veto profile resolution during the compatibility window |
@@ -562,7 +563,7 @@ python3 scripts/build_dip_pulse_site.py --offline
 
 When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
 
-A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --dossier-document-number 21/90 --preserve-existing-dossiers --enrich votes` (see README §4b) — a plain `update --enrich votes` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
+A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --backfill-incomplete` (see README §4b) — a plain `update` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
 
 If no cached protocols exist, offline mode fails with:
 
@@ -573,7 +574,7 @@ error: No cached protocols found in .context/dip-pulse-site/data. Run an online 
 Online commands require `DIP_API_KEY` and can call several external services:
 
 - DIP API for Plenarprotokolle, Vorgangspositionen, Aktivitaeten, Personen, and Drucksachen links.
-- Bundestag web pages for roll-call vote list/detail pages, plus the Namenslisten (XLSX export) list page, only with `--enrich votes`.
+- Bundestag web pages for roll-call vote list/detail pages, plus the Namenslisten (XLSX export) list page, unless `--no-votes`.
 - abgeordnetenwatch.de API only with `--enrich aw-profiles`.
 - Anthropic or Gemini APIs only when summaries are generated/refreshed.
 
@@ -672,7 +673,7 @@ Useful speed levers:
 
 - `--document-number` instead of a broad catalog fetch.
 - `--detail-limit 1` or `--detail-limit 2`.
-- Omit `--enrich` to skip full-roster, profile, and vote acquisition.
+- Omit `--enrich` to skip full-roster and profile acquisition; add `--no-votes` to skip vote acquisition too.
 - Keep the default `--summary-mode reuse` to preserve cached summaries without making an LLM request.
 - Offline mode after a first successful update.
 
@@ -696,7 +697,6 @@ Try the current Bundestag filterlist id with either the CLI flag or environment 
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
-  --enrich votes \
   --roll-call-list-id NEW-ID
 
 BT_ROLL_CALL_LIST_ID=NEW-ID python3 scripts/validate_dip_protocol.py --document-number 21/87

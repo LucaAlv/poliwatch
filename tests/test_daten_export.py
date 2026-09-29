@@ -230,7 +230,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_nineteen_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
-        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
         self.assertEqual(len(csv_files), 19)
@@ -245,7 +245,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertNotIn("paragraphs_json", header)
 
     def test_facts_tables_get_real_captions_not_the_fallback(self) -> None:
-        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
         self.assertNotIn("Persistierte Tabelle aus dem Bundestag-Puls-Graph.", table_rows_html)
@@ -294,18 +294,27 @@ class ExportDistributionDataTests(unittest.TestCase):
             "report": {
                 "protocol": {"dokumentnummer": number},
                 "validation_summary": {"xml_speech_count": 3},
-                "acquisition": {"votes": {"acquisition_state": "complete"}},
+                "acquisition": {"votes": {"acquisition_state": "complete", "acquired_at": "2026-09-28T10:00:00Z"}},
             }
         }
         for number in ("20/100", "20/101")
     ]
 
+    def facts_catalog(self) -> facts.SittingCatalog:
+        """The catalog DIP would list for exactly the sittings this store holds."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            return facts.sitting_catalog(facts.load_protocols(conn), authoritative=True)
+        finally:
+            conn.close()
+
     def test_engine_twice_leaves_the_store_unchanged_and_the_export_reused(self) -> None:
-        first_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        first_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         self.assertTrue(first_run["written"])
         first = self.export()
         before = self.db_path.stat().st_mtime_ns
-        second_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        second_run = b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         self.assertFalse(second_run["written"])
         self.assertEqual(self.db_path.stat().st_mtime_ns, before)
         second = self.export()
@@ -313,7 +322,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
     def test_engine_output_is_exported_as_derived_data(self) -> None:
-        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES)
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         tables = {table["name"]: table for table in manifest["tables"]}
         self.assertLessEqual(set(facts.FACTS_TABLES), set(tables))

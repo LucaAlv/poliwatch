@@ -41,8 +41,9 @@ xml_redner_id: {alias: {"display_name":..., "party":..., "identity_key":...,
 "xml_redner_id":...}}.
 
 Returns the ids a test asserts against: protocol ids, agenda item ids, speech
-ids and vote ids per document number, the mps ids per alias or name, and the
-completeness map keyed by document number that facts.compute takes.
+ids and vote ids per document number, the mps ids per alias or name, the
+completeness map keyed by document number and the matching authoritative
+``catalog`` that facts.compute takes.
 """
 
 from __future__ import annotations
@@ -52,7 +53,13 @@ from pathlib import Path
 from typing import Any
 
 import _support  # noqa: F401
+import facts
 import persist_dip_pulse_store as pulse_store
+
+
+def catalog_for(sittings: list[dict[str, str]], *, authoritative: bool = True) -> facts.SittingCatalog:
+    """An (authoritative) DIP catalog listing exactly ``sittings``."""
+    return facts.sitting_catalog(sittings, authoritative=authoritative)
 
 
 DEFAULT_SPEAKER = "Ada Lovelace"
@@ -289,6 +296,14 @@ def seed_weeks(
                 result["speech_ids"][document_number] = speech_ids
                 result["vote_ids"][document_number] = vote_ids
                 result["completeness"][document_number] = complete
+        # E11: the sittings DIP would list for exactly these specs, so a test
+        # that seeds a week judges it against a matching authoritative catalog
+        # and keeps its intent. A test about a listed-but-missing sitting adds
+        # to ``catalog_sittings`` (see ``catalog_for``).
+        result["catalog_sittings"] = [
+            {"document_number": spec["document_number"], "date": spec["date"]} for spec in weeks
+        ]
+        result["catalog"] = catalog_for(result["catalog_sittings"])
         return result
     finally:
         conn.close()

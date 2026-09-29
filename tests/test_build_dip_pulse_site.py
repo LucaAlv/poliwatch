@@ -1003,13 +1003,36 @@ class CurrentPulseOrderTests(unittest.TestCase):
                 abg_mps=[],
                 mp_lookup={},
                 today=date(2026, 9, 15),
+                authoritative_catalog=True,
             )
 
             catalog = json.loads(
                 (output_dir / "data" / "plenarprotokoll-catalog.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual([item["dokumentnummer"] for item in catalog], ["21/84", "21/9", "20/100"])
+        self.assertTrue(catalog["authoritative"])
+        self.assertTrue(catalog["fetched_at"].endswith("Z"))
+        self.assertEqual([item["dokumentnummer"] for item in catalog["protocols"]], ["21/84", "21/9", "20/100"])
+
+    def test_render_site_never_writes_a_catalog_it_was_not_handed_whole(self) -> None:
+        # An offline render holds the cached catalog plus dossier-derived
+        # protocols. Rewriting the file from that would make a partial list
+        # look authoritative, so only a build that fetched the catalog writes it.
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._output_dir(tmp)
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            path.write_text('{"authoritative": true, "protocols": []}', encoding="utf-8")
+            build_dip_pulse_site.render_site(
+                output_dir=output_dir,
+                database_path=output_dir / "data" / "bundestag-pulse.sqlite",
+                no_persist=True,
+                protocols=[self._protocol("21/84", "5799", "2026-06-12")],
+                entries=[],
+                abg_mps=[],
+                mp_lookup={},
+                today=date(2026, 9, 15),
+            )
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"authoritative": true, "protocols": []}')
 
     def test_entry_sort_key_tolerates_incomplete_reports(self) -> None:
         # A truncated or hand-edited dossier JSON must sort last, not crash the build.
@@ -1254,16 +1277,25 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
 
     def test_enrichment_precedence_matrix(self) -> None:
         scenarios = (
-            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles"}),
-            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster"}),
+            # votes is a default, so a replacing config keeps it unless it vetoes it.
+            ("local replaces repository", {"repo": ["votes"], "local": ["aw-profiles"]}, {}, {"aw-profiles", "votes"}),
+            ("explicit file replaces local", {"local": ["votes"], "explicit": ["mp-roster"]}, {}, {"mp-roster", "votes"}),
             (
                 "canonical env follows legacy env",
                 {},
                 {"env": {"BUNDESTAG_PULSE_FEATURES": "votes", "BUNDESTAG_PULSE_ENRICHMENTS": "aw-profiles"}},
                 {"votes", "aw-profiles"},
             ),
-            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster"}),
-            ("empty local replacement clears repository", {"repo": ["votes"], "local": []}, {}, set()),
+            ("canonical CLI supersedes legacy negative", {}, {"args": {"no_roster": True, "enrich": ["mp-roster"]}}, {"mp-roster", "votes"}),
+            ("empty local replacement clears repository but not the default", {"repo": ["aw-profiles"], "local": []}, {}, {"votes"}),
+            ("config without votes keeps the default", {"local": ["aw-profiles"]}, {}, {"aw-profiles", "votes"}),
+            ("a -votes entry in a config vetoes the default", {"local": ["aw-profiles", "-votes"]}, {}, {"aw-profiles"}),
+            ("a -votes entry in the environment vetoes the default", {}, {"env": {"BUNDESTAG_PULSE_ENRICHMENTS": "-votes"}}, set()),
+            ("--no-votes vetoes the default", {}, {"args": {"no_votes": True}}, set()),
+            ("--no-votes beats --enrich votes", {}, {"args": {"no_votes": True, "enrich": ["votes"]}}, set()),
+            ("--no-votes beats --vote-scan-pages", {}, {"args": {"no_votes": True, "vote_scan_pages": 5}}, set()),
+            ("--vote-scan-pages 0 turns votes off", {}, {"args": {"vote_scan_pages": 0}}, set()),
+            ("--enrich votes lifts a config veto", {"local": ["-votes"]}, {"args": {"enrich": ["votes"]}}, {"votes"}),
             ("all and duplicates deduplicate", {}, {"args": {"enrich": ["all", "votes"]}}, {"votes", "aw-profiles", "mp-roster"}),
         )
         for label, files, inputs, expected in scenarios:
@@ -1321,21 +1353,76 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
         self.assertFalse(args.no_roster)
         self.assertTrue(args.no_abgeordnetenwatch)
 
-    def test_default_update_enrichments_do_not_make_network_side_jobs(self) -> None:
-        args = SimpleNamespace(
-            enrich=[],
-            enable=[],
-            disable=[],
-            features=None,
-            features_file=None,
-            vote_scan_pages=None,
-        )
+    def test_default_update_acquires_votes_and_nothing_else(self) -> None:
+        args = self._config_args(no_votes=False)
         with tempfile.TemporaryDirectory() as tmp:
             selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
         build_dip_pulse_site.apply_to_args(args, selection)
-        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertEqual(set(selection), {"votes"})
+        self.assertEqual(args.vote_scan_pages, 30)
         self.assertTrue(args.no_roster)
         self.assertTrue(args.no_abgeordnetenwatch)
+        self.assertIn(("add", "votes", "default"), selection.provenance)
+
+    def test_no_votes_turns_the_scan_off_and_keeps_the_rest(self) -> None:
+        args = self._config_args(no_votes=True, enrich=["mp-roster"])
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(set(selection), {"mp-roster"})
+        self.assertEqual(args.vote_scan_pages, 0)
+        self.assertFalse(args.no_roster)
+
+    def test_existing_config_that_omits_votes_still_acquires_votes(self) -> None:
+        # The repository's own features.json ships an empty enrich list, and an
+        # operator's features.local.json may list only other enrichments. Both
+        # replace the configured set; neither may switch the default off.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "features.json").write_text('{"enrich": []}', encoding="utf-8")
+            (root / "features.local.json").write_text('{"enrich": ["aw-profiles"]}', encoding="utf-8")
+            args = self._config_args(no_votes=False)
+            with mock.patch.dict("os.environ", {}, clear=True):
+                selection = build_dip_pulse_site.resolve_from_args(args, root=root)
+            build_dip_pulse_site.apply_to_args(args, selection)
+        self.assertEqual(set(selection), {"votes", "aw-profiles"})
+        self.assertEqual(args.vote_scan_pages, 30)
+
+    def test_a_mistyped_veto_fails_instead_of_leaving_the_default_on(self) -> None:
+        for source, kwargs in (
+            ("cli", {"enrich": ["-vote"]}),
+            ("config", {}),
+        ):
+            with self.subTest(source), tempfile.TemporaryDirectory() as tmp, mock.patch.dict("os.environ", {}, clear=True):
+                if source == "config":
+                    (Path(tmp) / "features.local.json").write_text('{"enrich": ["-vote"]}', encoding="utf-8")
+                with self.assertRaisesRegex(build_dip_pulse_site.FeatureError, "invalid-enrichment"):
+                    build_dip_pulse_site.resolve_from_args(self._config_args(**kwargs), root=Path(tmp))
+
+    def test_legacy_config_disable_still_vetoes_votes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "features.local.json").write_text('{"disable": ["votes"]}', encoding="utf-8")
+            with mock.patch.dict("os.environ", {}, clear=True):
+                selection = build_dip_pulse_site.resolve_from_args(self._config_args(), root=Path(tmp))
+        self.assertNotIn("votes", selection)
+
+    def test_explain_config_states_precedence_and_default_source(self) -> None:
+        args = self._config_args(no_votes=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            selection = build_dip_pulse_site.resolve_from_args(args, root=Path(tmp))
+        stdout = io.StringIO()
+        with mock.patch("sys.stdout", stdout):
+            build_dip_pulse_site.print_effective_config(selection, args)
+        output = stdout.getvalue()
+        self.assertIn("enrichment=votes source=default", output)
+        self.assertIn("precedence=built-in default < features.json", output)
+        self.assertIn("--no-votes beats all of them", output)
+
+    def test_no_votes_flag_is_documented_and_parsed(self) -> None:
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py", "--no-votes"]):
+            self.assertTrue(build_dip_pulse_site.parse_args().no_votes)
+        with mock.patch("sys.argv", ["build_dip_pulse_site.py"]):
+            self.assertFalse(build_dip_pulse_site.parse_args().no_votes)
 
     def test_positive_vote_scan_pages_implies_vote_enrichment(self) -> None:
         args = SimpleNamespace(
@@ -2741,7 +2828,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
             with (
                 mock.patch.object(
                     sys, "argv",
-                    self._online_argv(output_dir, "--week", "2026-21", "--detail-limit", "1", "--preserve-existing-dossiers"),
+                    self._online_argv(output_dir, "--week", "2026-21", "--detail-limit", "1"),
                 ),
                 mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
                 mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[preserved]),
@@ -2774,6 +2861,118 @@ class BuildClockAndWeekTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("--week 2026-21 ist nicht im Archiv; vorhanden: 2026-24 (Dossiers wurden bereits geschrieben", stderr.getvalue())
             render_site.assert_not_called()
+
+    def test_online_main_fetches_the_whole_catalog_whatever_narrows_the_acquisition(self) -> None:
+        # C1: completeness is judged against everything DIP lists, so
+        # --document-number/--limit narrow what is acquired, never the catalog.
+        catalog = [
+            self._catalog_protocol("21/84", "5799", "2026-06-12"),
+            self._catalog_protocol("21/83", "5798", "2026-06-11"),
+            self._catalog_protocol("21/70", "5780", "2026-05-20"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--document-number", "21/84")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog) as fetch,
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
+                mock.patch.object(build_dip_pulse_site, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
+                mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 0)
+            self.assertEqual(fetch.call_args.args[1:], (0, [], None))
+            self.assertEqual([p["dokumentnummer"] for p in build_dossiers.call_args.args[0]], ["21/84"])
+            self.assertEqual(len(render_site.call_args.kwargs["protocols"]), 3)
+            self.assertTrue(render_site.call_args.kwargs["authoritative_catalog"])
+            catalog_arg = pipeline.call_args.kwargs["catalog"]
+            self.assertTrue(catalog_arg.authoritative)
+            self.assertEqual(
+                [s["document_number"] for s in catalog_arg.sittings], ["21/70", "21/83", "21/84"]
+            )
+
+    def test_online_main_reports_a_missing_document_number_as_an_error(self) -> None:
+        catalog = [self._catalog_protocol("21/84", "5799", "2026-06-12")]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            with (
+                mock.patch.object(sys, "argv", self._online_argv(output_dir, "--document-number", "21/999")),
+                mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build_dip_pulse_site, "build_dossiers_with_progress") as build_dossiers,
+                mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = build_dip_pulse_site.main()
+            self.assertEqual(code, 1)
+            self.assertIn("No BT Plenarprotokoll found for 21/999", stderr.getvalue())
+            build_dossiers.assert_not_called()
+
+    def test_select_acquisition_protocols_narrows_only_the_acquisition(self) -> None:
+        catalog = [
+            self._catalog_protocol("20/213", "4000", "2025-02-10"),
+            self._catalog_protocol("21/84", "5799", "2026-06-12"),
+            self._catalog_protocol("21/83", "5798", "2026-06-11"),
+            self._catalog_protocol("21/70", "5780", "2026-05-20"),
+        ]
+        select = build_dip_pulse_site.select_acquisition_protocols
+        numbers = lambda rows: [p["dokumentnummer"] for p in rows]  # noqa: E731
+        self.assertEqual(numbers(select(catalog, [], 0, None)), ["21/84", "21/83", "21/70", "20/213"])
+        self.assertEqual(numbers(select(catalog, [], 2, 21)), ["21/84", "21/83"])
+        self.assertEqual(numbers(select(catalog, [], 2, None)), ["21/84", "21/83"])
+        self.assertEqual(numbers(select(catalog, [], 9, 20)), ["20/213"])
+        self.assertEqual(numbers(select(catalog, ["21/70", "20/213"], 1, 21)), ["21/70", "20/213"])
+        with self.assertRaises(build_dip_pulse_site.dip.DipError):
+            select(catalog, ["21/1"], 0, None)
+        self.assertEqual(len(catalog), 4)
+
+    def test_offline_main_judges_completeness_by_the_cached_authoritative_catalog_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "site"
+            (output_dir / "data").mkdir(parents=True)
+            entry = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
+            args = SimpleNamespace(
+                output_dir=output_dir, database_path=None, offline=True, no_persist=True, week=None, today=date(2026, 9, 15)
+            )
+            cached = [{"id": "5799", "datum": "2026-06-12", "dokumentnummer": "21/84"}]
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            outcomes = []
+            for label, payload in (
+                ("authoritative", {"authoritative": True, "fetched_at": "2026-09-28T10:00:00Z", "protocols": cached}),
+                ("older list-shaped cache", cached),
+            ):
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                with (
+                    mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                    mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=cached),
+                    mock.patch.object(build_dip_pulse_site, "load_existing_detail_entries", return_value=[entry]),
+                    mock.patch.object(build_dip_pulse_site, "rebuild_cached_detail_pages", return_value=[entry]),
+                    mock.patch.object(build_dip_pulse_site, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
+                    mock.patch.object(build_dip_pulse_site, "render_site", return_value=output_dir / "index.html") as render_site,
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO),
+                    mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+                ):
+                    self.assertEqual(build_dip_pulse_site.main(), 0)
+                outcomes.append((label, pipeline.call_args.kwargs["catalog"]))
+                # An offline render never rewrites the catalog it read.
+                self.assertFalse(render_site.call_args.kwargs.get("authoritative_catalog", False))
+        self.assertTrue(outcomes[0][1].authoritative)
+        self.assertEqual([s["document_number"] for s in outcomes[0][1].sittings], ["21/84"])
+        self.assertIsNone(outcomes[1][1])
+
+    def test_load_cached_protocols_reads_the_catalog_file_and_ignores_the_older_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "data").mkdir()
+            path = output_dir / "data" / "plenarprotokoll-catalog.json"
+            protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")
+            path.write_text(json.dumps({"authoritative": True, "protocols": [protocol]}), encoding="utf-8")
+            self.assertEqual([p["id"] for p in build_dip_pulse_site.load_cached_protocols(output_dir)], ["5799"])
+            path.write_text(json.dumps([protocol]), encoding="utf-8")
+            stderr = io.StringIO()
+            with mock.patch.object(sys, "stderr", stderr):
+                self.assertEqual(build_dip_pulse_site.load_cached_protocols(output_dir), [])
+            self.assertIn("predates the catalog format", stderr.getvalue())
 
     def test_online_main_without_week_skips_the_archive_check(self) -> None:
         protocol = self._catalog_protocol("21/84", "5799", "2026-06-12")

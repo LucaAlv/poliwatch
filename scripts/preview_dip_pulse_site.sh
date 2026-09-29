@@ -48,7 +48,8 @@ Examples:
   scripts/preview_dip_pulse_site.sh demo
   scripts/preview_dip_pulse_site.sh
   scripts/preview_dip_pulse_site.sh update --limit 2 --detail-limit 2
-  scripts/preview_dip_pulse_site.sh update --enrich votes --enrich aw-profiles
+  scripts/preview_dip_pulse_site.sh update --enrich aw-profiles
+  scripts/preview_dip_pulse_site.sh update --no-votes
   scripts/preview_dip_pulse_site.sh update --enrich all --summary-mode auto
 EOF
 }

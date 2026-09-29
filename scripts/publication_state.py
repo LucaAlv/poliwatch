@@ -39,6 +39,9 @@ FAILURE_CODES = {
     "empty_required_dataset",
     "source_changed",
     "summary_budget_exhausted",
+    "scan_budget_exhausted",
+    "unmatched_candidate",
+    "source_stale",
     "unsafe_url",
     "unsafe_output_path",
 }

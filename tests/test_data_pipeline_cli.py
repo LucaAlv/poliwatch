@@ -234,6 +234,7 @@ class RunDataPipelineTests(unittest.TestCase):
             abg_mps=self.mps,
             mp_lookup=self.lookup,
             canonical_by_mp_id=self.canonical_by_mp_id,
+            catalog=None,
         )
 
     def test_exports_when_the_store_exists_and_not_no_persist(self) -> None:
@@ -272,6 +273,7 @@ class RunDataPipelineTests(unittest.TestCase):
             abg_mps=self.mps,
             mp_lookup=self.lookup,
             canonical_by_mp_id=self.canonical_by_mp_id,
+            catalog=None,
         )
         conn = pulse_store.connect(self.database_path)
         try:
@@ -300,6 +302,7 @@ class RunDataPipelineTests(unittest.TestCase):
                         abg_mps=self.mps,
                         mp_lookup=self.lookup,
                         canonical_by_mp_id=self.canonical_by_mp_id,
+                        catalog=None,
                     )
                 export_mock.assert_not_called()
                 self.assertIsNone(manifest)

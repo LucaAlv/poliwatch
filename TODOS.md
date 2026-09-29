@@ -19,6 +19,66 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Priority:** P2
 **Depends on:** None
 
+### Credit a Rede's text only to its Redner (Sitzungsleitung and Zwischenfragen leak in)
+
+**What:** `speech_text_and_paragraphs()` (`scripts/validate_dip_protocol.py:365`) joins every direct `<p>` of a `<rede>` except the `klasse="redner"` marker lines, so the words of the Sitzungsleitung (after a `<name>` element) and of Zwischenfragen by other MdBs (after a `<p klasse="redner">` with a different `redner id`) are stored as the main Redner's text. Split the `<rede>` by current speaker, keep only the paragraphs spoken while the current speaker is the Rede's first `redner id`, and store the others separately or drop them. Also decide how to detect Gastansprachen (CONTEXT.md: shown with the Sitzung, never counted as a Rede) and keep them out of speech counts.
+
+**Why:** `speeches.text`, `char_count` and `paragraph_count` feed `laengste-rede` and every length metric. The inflation is uneven: a Rede with several Zwischenfragen grows, one without doesn't, so length rankings partly reward exchanges instead of long speeches. Measured on 21/84 (2026-09-25): 89 of 99 Reden contain text not by their Redner; counted text is 348,218 chars against 332,742 by the Redner, i.e. Sitzungsleitung +3.2% and other speakers +1.4%. The measurement is approximate: text after a `<name>` that the Redner resumes without a new `redner` marker was counted as Sitzungsleitung.
+
+**Context:** Found while settling Rede/Zwischenfrage/Sitzungsleitung in CONTEXT.md; the XML structure definition (bundestag.de/services/opendata, `dbtplenarprotokoll_kommentiert.pdf`) says a `<rede>` may end with words of the Präsident. A Zwischenfrage should eventually be credited to the MdB who asked it. Fixing this changes stored speech text, so past Fakten on `laengste-rede` may change winner on the next rebuild.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Say "nicht abgegeben", never "Abwesend", and stop inventing a Mehrheitsvotum
+
+**What:** Two small fixes to match CONTEXT.md (Stimme, nicht abgegeben, Mehrheitsvotum). (1) The Abgeordnete page labels an uncast Stimme "Abwesend" (`scripts/build_dip_pulse_site.py:5819`) while the vote panel says "nicht abg." (`scripts/render_dip_pulse_html.py:40`); use "nicht abgegeben" in both. (2) `leading_vote()` (`scripts/validate_dip_protocol.py:615`) returns `max()` over Ja/Nein/Enthaltung, so a tie yields "yes", and returns "absent" when nobody in the Zusammenschluss voted; both cases should yield no Mehrheitsvotum (NULL), and `scripts/features/votes.py:47` should stop falling back to "absent".
+
+**Why:** "Abwesend" claims an MdB was not in the room, which no published source supports (the Anwesenheitsliste under § 14 AbgG is not published). A tie reported as Ja invents a group position, and "absent" as a group position reads like a collective boycott.
+
+**Context:** Settled in /domain-modeling 2026-09-25. `vote_fractions.leading_vote` is persisted, so a rebuild is needed to clear stored values; anything reading it (vote panels, Fakten) must handle NULL.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### One Abweichung rule: exclude fraktionslose MdBs from `r3-abweichler`, drop "Linie" from the wording
+
+**What:** Two fixes to match CONTEXT.md (Abweichung, Abweichler). (1) The Daten recipe `r3-abweichler` (`scripts/build_dip_pulse_site.py:1486`) counts fraktionslose MdBs against the pseudo-Zusammenschluss "fraktionslos"; add the `parties.name <> 'fraktionslos'` exclusion that `meiste-abweichler` (`scripts/facts.py:184`) already has. (2) Replace "gegen die Linie ihrer Fraktion" (`scripts/facts.py:187` unit, `scripts/facts.py:1903` caption) and "gegen die eigene Fraktion" (`scripts/build_dip_pulse_site.py:1487` recipe title) with "anders als die Mehrheit der eigenen Fraktion oder Gruppe" or a short form of it.
+
+**Why:** Fraktionslose MdBs do not coordinate, so a "fraktionslos" majority is an artefact of the bucket, and the recipe ranks them as Abweichler for voting unlike unrelated colleagues (151 such Stimmen per the `facts.py` comment). The Daten and Fakten pages should not mean two things by one word. "Linie" claims a group decision the data cannot show (Gewissensfragen have none) and "Fraktion" leaves out the Gruppen the rule counts.
+
+**Context:** Settled in /domain-modeling 2026-09-26. The Enthaltung rule (an Enthaltung is never an Abweichung) is unchanged; the code already follows it. Changing the `meiste-abweichler` unit or caption text does not change its values, so no metric version bump is needed; check whether published Karten embed the old unit string. Once `leading_vote()` returns NULL for ties (item above), both queries already skip those votes via `leading_vote IN ('yes', 'no')`.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
+
+**What:** `parse_roll_call_list_page()` / `parse_fraction_votes()` (`scripts/validate_dip_protocol.py`) read `data-chart-values` from bundestag.de HTML: four numbers (Ja, Nein, Enthaltung, nicht abgegeben) summing to the seat count, and `vote_counts_from_csv` keeps only the first four numbers it finds. The Bundestag also publishes one XLSX per namentliche Abstimmung (list: `/ajax/filterlist/de/parlament/plenum/abstimmung/liste/462112-462112`, e.g. `https://www.bundestag.de/resource/blob/1217428/20260925_3-xls.xlsx`) with columns `Wahlperiode, Sitzungnr, Abstimmnr, Fraktion/Gruppe, Name, Vorname, Titel, ja, nein, Enthaltung, ungültig, nichtabgegeben, Bezeichnung, Bemerkung`. Ingest that instead (or alongside), store ungültig as its own Stimme value and keep Bemerkung.
+
+**Why:** Ungültig is an official Stimme value we cannot represent; if it ever occurs, the chart numbers either hide it or shift it into another category, silently. Bemerkung gives the stated reason for some uncast Stimmen (30 most recent votes, 2026-09-25: "gesetzlicher Mutterschutz" 42×, "Geburt eines Kindes" 1×), which the site could show next to "nicht abgegeben". The XLSX also carries Sitzungnr/Abstimmnr, a sturdier join to the Sitzung than matching by date.
+
+**Context:** Sample of 30 XLSX files (18,895 Stimmen) had zero ungültig, so today's counts are not wrong in practice; this is about not being able to tell. HTML scraping of the filterlist also breaks whenever bundestag.de changes its markup.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Parse the "Entschuldigte Abgeordnete" appendix of each Plenarprotokoll
+
+**What:** Every Plenarprotokoll XML has an `<anlage>` headed "Entschuldigte Abgeordnete" (confirmed in 21/84) listing the MdBs excused for that Sitzung. Parse it into a per-Sitzung, per-MdB table and show "entschuldigt" next to a Stimme "nicht abgegeben" where it applies.
+
+**Why:** It is the only published statement about an MdB's absence (CONTEXT.md: entschuldigt). Without it the site can only say "nicht abgegeben", which readers may still read as skipping the vote.
+
+**Context:** Needs the Person identity merge to map listed names to MdBs (the appendix gives names and Zusammenschluss, check whether it carries redner ids). Never derive "anwesend" from it: not being excused does not mean present.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
 ### Persist per-sitting acquisition state in the store (`protocol_acquisition`)
 
 **What:** A `protocol_acquisition(protocol_id, component, state, fetched_at)` table written at persist time from each report's acquisition states (votes: `acquisition_state` as consumed by `render_vote_summary`; XML parsed or not; AI summaries), exported with the Daten CSVs; the facts engine and the Daten page read it instead of re-deriving it.
@@ -31,21 +91,11 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Update 2026-09-24 (database state review):** raised to P2. Since A1 shipped, the facts engine publishes on every build, so this is now a live path to a wrong published card, not a hypothetical. A cheaper first slice than the full table: have `build_dossiers_with_progress` record the protocol ids it skipped on `dip.DipError`, and make `week_is_complete()` fail any week containing one.
 
+**Update 2026-09-29 (fix-votes-completeness):** the repro above is fixed. Facts periods are judged against the DIP catalog (`facts.sitting_gaps`, `period_gaps`), so a sitting whose dossier failed or was never built keeps its period incomplete, and reports without acquisition metadata count as unknown. What remains for this item is the duplicate derivation of "complete" (build entries vs the cached JSON) and the silent gap in the Daten download, so priority drops to P3.
+
 **Effort:** M
-**Priority:** P2
+**Priority:** P3
 **Depends on:** None (A1 works without it)
-
-### Check that roll-call votes are still being acquired after June 2026
-
-**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12. If it did, find why the vote scan missed them (`fetch_roll_call_vote_candidates`, `--vote-scan-pages`, `match_roll_call_votes` in `scripts/validate_dip_protocol.py`) and fix it.
-
-**Why:** On the 2026-09-19 store the latest vote is 2026-06-12 (217 votes in total), but sittings continue to 2026-09-11 (3 more in June, 1 in July, 4 in September). This may just be the summer break with no roll calls. If it isn't, the Fakten vote metrics and every MP's vote count are quietly stale. The store can't tell "no vote" from "not fetched" (see the `protocol_acquisition` item), so check against the source.
-
-**Context:** Found in the 2026-09-24 database state review. Start by comparing the bundestag.de Abstimmungen list page for June–September 2026 with `SELECT id, date FROM votes WHERE date >= '2026-06-01'` on a freshly updated store.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** A fresh online `update` of the store
 
 ### Roll-call member rows link to external profiles, never to our own MP pages
 
@@ -142,12 +192,91 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 **Depends on:** None
 
 
+### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
+
+### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+
+### Harden the vote acquisition and catalog completeness paths (open review findings)
+
+**What:** Findings from the /ship review rounds of fix-votes-completeness (2026-09-29) that were accepted, not fixed:
+(1) `source_stale` (`validate_dip_protocol.enrich_with_api`) holds a genuinely vote-free sitting of the last 14 days partial when the list head is older, delaying its week's and month's vote Fakt by up to two weeks; (2) the judged range starts at the earliest stored sitting, so one old cached dossier turns `--backfill-incomplete` into a job of hundreds of sittings and nothing prints the range; (3) the `numFound` check in `fetch_protocols` hard-stops every build if DIP's count ever includes unretrievable documents, with no override; (4) report JSON, SQLite and the catalog file are written at different points, so a build interrupted between them leaves `--offline` judging completeness from new reports against an old store; (5) a build whose every refresh was skipped exits 0; (6) the build-wide roll-call page cache is a snapshot, and list pagination can shift under a long build (duplicates a boundary entry); (7) `namenslisten_entries()` has no outage cooldown, so an outage costs about 3 minutes per vote; (8) an empty list page after page 1 counts as the end of the list; (9) catalog entries in range with no usable number or date only warn instead of failing closed, and duplicate document numbers keep the last; (10) `api_records.matched_roll_call_votes` and `roll_call_vote_candidates` describe the fresh scan while `agenda_items[].votes` may be cached after a no-scan run; (11) some date checks use the wall clock, not `--today`; (12) a failed vote-detail page stops matching for the rest of that sitting; (13) an uncaught `JSONDecodeError` from the DIP API aborts a build; (14) the offline build trusts the cached catalog with no age check; (15) the in-progress ISO week can be judged complete.
+
+**Why:** Each is a place where a build can publish a slightly stale fact, waste a long backfill, or stop. None was reproduced as a wrong published fact on the reference copy; they were found by reading the code. Codex adversarial and structured reviews of the final tree were unavailable (usage limit), so this list has Claude-only coverage.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Match roll-call votes to a TOP when Drucksache numbers fail
+
+**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) attaches a roll-call vote to a TOP only when their Drucksache numbers overlap. A candidate that matches none is logged, counted (`validation_summary.unmatched_roll_call_vote_count`) and, since fix-votes-completeness, makes the sitting's votes `partial` (`unmatched_candidate`). Match by title or vote date where numbers fail, or store the vote against the Sitzung without a TOP.
+
+**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, and those sittings, with the weeks and months holding them, stay incomplete until this is fixed.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### A Drucksache reference can be a URL fragment
+
+**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`); the reference itself is still stored and shown as a plain Drucksache number.
+
+**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Protokoll-Dossier
 
+### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
+
+**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
+
+**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+
+### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
+
+**What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
+
+**Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ## Puls
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
+
+### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
+
+**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
+
+**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
+
+**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Redeanteil je Zusammenschluss per ADR 0001 (puls.html and Daten recipes)
+
+**What:** puls.html's "Redeanteil der Fraktionen" card (`scripts/build_dip_pulse_site.py`, fed by `speaker_party()` in `scripts/render_dip_pulse_html.py`) puts every speaker with a `<rolle>` into one "Regierung" row among the Fraktionen, including Bundesrat members and the Wehrbeauftragte, and heads Gruppen as "Fraktionen". Show Bundesregierung, Bundesrat and weitere Sprechrolle as three separate rows outside the Zusammenschlüsse, fraktionslose MdBs as their own row, and head the card "Redeanteil der Fraktionen und Gruppen". Same rule for the Daten recipes r1 and r2 (`COALESCE(NULLIF(s.fraktion, ''), p.name)` falls back to a Partei name). Rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil and sort it by characters, not by Reden. Done when no public row is labelled "Regierung" and no share by characters is called Redeanteil.
+
+**Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25) and ADR 0001's consequence "never as a pseudo-Fraktion 'Regierung'", which the ADR itself records as not yet followed.
+
+**Context:** Needs the Sprechrolle to tell the three sides apart per Rede (the XML `<rolle>`); check what the store keeps. Rule (ADR 0001 amendment, 2026-09-26): Bundeskanzler, Bundesminister, Parl. Staatssekretäre, Staatsminister (Bund), Beauftragte and Koordinatoren der Bundesregierung → Bundesregierung. Land ministers, "Staatsminister (Hessen)" and the like → Bundesrat. Anything else (Wehrbeauftragte) → weitere Sprechrolle. `speaker_party_name` and `speaker_party` both need it. Related: `parties.name` item under Daten, Rede text attribution item.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
 
 ### "Nächste Sitzungswoche" in the puls.html header
 
@@ -197,6 +326,18 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
+### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
+
+**What:** `week_stats` (`scripts/render_dip_pulse_html.py`, `vorgangstyp_counts`) adds 1 per Vorgangsposition. Count each Tagesordnungspunkt once for each distinct Vorgangstyp among its positions instead, and compare against the Wochenvergleich week the same way. On the real store, TOP 7 of Sitzung 21/50 bundles 26 Petition positions with 1 Rede and currently adds 26 to "Petition". 70 TOPs carry 6 or more positions. Change the card note ("Vorgangspositionen nach Art") and the sources.html glossary intro ("zählt die Vorgangspositionen der Sitzungswoche") to say Tagesordnungspunkte and Kalenderwoche. Rename the card heading "Verfahren, die zurückkehren" to "Wieder auf der Tagesordnung" and drop "Verfahren" from its notes. The `returning_vorgaenge` rule itself already matches the glossary. Done when a bundled TOP adds at most 1 per Vorgangstyp and no Puls text says "Verfahren" for a Vorgang.
+
+**Why:** CONTEXT.md (Vorgangstyp, mitberatener Vorgang, Debattenprofil, wiederkehrender Vorgang, 2026-09-26).
+
+**Context:** Only the Puls card and its week view read `vorgangstyp_counts`; facts.py and the Daten page do not (checked 2026-09-26).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
@@ -223,6 +364,28 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
 
+### Fakt der Woche, copy fixes from the glossary review
+
+**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
+
+**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; (3) interacts with the publication ledger item
+
+### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
+
+**What:** `meistdiskutierter-vorgang` (`scripts/facts.py`) credits every speech of a Tagesordnungspunkt to its lead Vorgang (`LEAD_PROCEEDING_CTE`: first Gesetzgebung by `proceeding_positions.id`, else lowest id). Decide how the metric handles a Tagesordnungspunkt that deals with several Vorgänge: skip bundled TOPs, count per Tagesordnungspunkt instead, or count only TOPs whose Vorgang set is a single Vorgang. Done when no Vorgang can win on Reden given under a TOP it merely shares.
+
+**Why:** CONTEXT.md (Vorgang, Thema, 2026-09-25): a Rede addresses its Tagesordnungspunkt and is never attributed to a Vorgang; the lead Vorgang is a naming rule only. Example: a verbundene Beratung of two competing Anträge credits all its Reden to whichever Antrag DIP gave the lower position id.
+
+**Context:** The two lead rules disagree today. The Wochenradar (`topic_identity`, `scripts/render_dip_pulse_html.py`) also reads `mitberaten` twins and has no lead at all for `equal_weight` TOPs (Final Gate 2026-09-15); the SQL always picks one. Check whether `proceeding_positions` holds the twins; if not, the SQL also misses the 40 TOPs where the only Gesetzgebung is a twin. Any fix changes past monthly winners, so it needs a metric version bump.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Fakt der Woche, Approach B: site-wide facts layer (full implementation)
 
 **What:** On top of A1: MP-level metrics via `mp_canonical` (a TEMP table from the in-memory `canonical_by_mp_id`, as the export does, or persisted; B decides) (first speech in the Bundestag, longest speech of the WP, lone dissent against the own Fraktion; never attendance rankings), proceeding-level metrics (see Approach C), badge hooks in the dossier and MP renderers ("in dieser Woche: knappste Abstimmung der Wahlperiode", "hielt die längste Rede der 21. Wahlperiode") that read from `facts`, and an Open Discourse-compatible export view/CSV variant (their column names for `speeches`, `contributions`, `politicians`, `factions`, `electoral_terms`) so WP20/21 slots into existing notebooks. Done when every badge on a rebuilt site resolves to a `facts` row and the compatibility CSVs load in an Open Discourse notebook unchanged.
@@ -244,6 +407,44 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Effort:** L
 **Priority:** P3
 **Depends on:** Approach B; a bill/timeline page; the LLM topic-label item
+
+## Gesetzesvorhaben
+
+### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
+
+**What:** `bill_like` (`scripts/build_dip_pulse_site.py`) keeps any Vorgangsposition whose Vorgangstyp, title or linked Drucksachen contain the substring "gesetz". Replace that test with "the Vorgang's DIP Vorgangstyp is Gesetzgebung". On the real store (285 Dossiers) `collect_bill_pages` currently yields 839 pages, of which only 551 are Gesetzgebungen. The other 288 are 193 Entschließungsanträge, 76 Anträge, 5 Rechtsverordnungen and a tail that matches only through "Grundgesetz" or "gesetzliche Krankenversicherung": Wahl des Bundeskanzlers (Art. 63 GG), Scholz's Vertrauensfrage (Art. 68 GG), Aktuelle Stunden, Große Anfragen, Geschäftsordnungsänderungen. An accompanying Entschließungsantrag may still be listed as a related item on its Gesetzgebung's page, but it gets no page of its own. Rename the public labels "Gesetze verfolgen", "Alle Gesetze", "Aktuelle Gesetze", "Verfolgte Gesetze" and the "Gesetze" nav entry to use Gesetzesvorhaben (also update `tests/test_features.py`, `tests/test_global_header.py`). The `bills/` URL path can stay. Done when every page under `bills/` is a Gesetzgebung and no public label calls one a Gesetz.
+
+**Why:** CONTEXT.md (Gesetzgebung, Gesetzentwurf, Gesetz, 2026-09-26): only a Gesetzgebung is legislation, and a Gesetzgebung is not a Gesetz until it has been verkündet.
+
+**Context:** The "Verfolgte Gesetze" count also feeds `derive_feature_readiness` (`bill_count`) and the start page. It will drop by about a third. Stored bill slugs linked from elsewhere (`bill_slugs` in `run_data_pipeline`) will then stop resolving for non-Gesetzgebung Vorgänge. Check that those links fall back cleanly.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+## Abgeordnete
+
+### Make the Namensabgleich unique, and stop treating name-found ids as proof
+
+**What:** `collect_abgeordnete` (`scripts/build_dip_pulse_site.py`) pass 2 merges every record of a name+party bucket whose ids of the same kind don't contradict each other. Require exactly one candidate on each side, and leave a bucket of namesakes split. Two records with ids of different kinds (one DIP-Person-ID only, one Redner-ID only) currently merge with nothing to contradict them. Also record whether an `aw_politician_id` came from the exact `ext_id_bundestagsverwaltung` lookup or from the resolver's name-search fallback (`scripts/abgeordnetenwatch.py`); the latter must not act as a Personenkennung in pass 1. Normalise titles ("Dr.") consistently on both sides, since roster and speaker names may differ there (check). Done when no Personenseite joins two namesakes and every join by name is unique.
+
+**Why:** CONTEXT.md (Personenkennung, Namensabgleich, Zusammenführung, 2026-09-25): a split Person is preferable to two Persons shown as one.
+
+**Context:** Worth checking the Bundestag's MdB-Stammdaten as an official bridge. As far as known, they carry the same ID as the Plenarprotokoll's Redner-ID, plus name and Fraktion histories, and could replace most name matching between the DIP roster and the Reden. Related: `parties.name` spellings under Daten, which break name+party buckets.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Call only current MdBs "Abgeordnete" on the Personenseiten
+
+**What:** Every Person with a Mandat or at least one Rede gets a page under `abgeordnete/`, including members of the Bundesrat and the Bundesregierung without a Mandat. On the list and each page, show only Persons with a current Mandat as Abgeordnete; show everyone else as a Redner with the Sprechrolle they spoke in (and a former Mandat where one exists). Decide whether the list keeps them in one filterable list or a separate group. The URL path can stay.
+
+**Why:** CONTEXT.md (MdB, Personenseite, 2026-09-25): "Abgeordnete" for anyone who speaks is on the MdB entry's avoid list.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ## Design
 
@@ -590,3 +791,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **What:** Route public hrefs from DIP, Bundestag, and abgeordnetenwatch payloads through shared scheme-and-host validation, with safe omission or plain-text fallback for rejected links.
 
 **Completed:** v0.5.0.0 (2026-09-19)
+
+### Check that roll-call votes are still being acquired after June 2026
+
+**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12, and find why the vote scan missed them.
+
+**Completed:** v0.8.0.0 (2026-09-29). Cause: vote scraping was opt-in (`features.json` ships an empty `enrich` list), so every update since June recorded votes as `not_requested`. Votes are now a default enrichment (`--no-votes` opts out). Backfilled into a scratch copy of the reference store: votes 217 -> 232, newest 2026-06-12 -> 2026-09-25 (2026-06-25 1, 07-08 1, 07-09 1, 07-10 8, 09-24 1, 09-25 3).
+
