@@ -91,21 +91,11 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 
 **Update 2026-09-24 (database state review):** raised to P2. Since A1 shipped, the facts engine publishes on every build, so this is now a live path to a wrong published card, not a hypothetical. A cheaper first slice than the full table: have `build_dossiers_with_progress` record the protocol ids it skipped on `dip.DipError`, and make `week_is_complete()` fail any week containing one.
 
+**Update 2026-09-29 (fix-votes-completeness):** the repro above is fixed. Facts periods are judged against the DIP catalog (`facts.sitting_gaps`, `period_gaps`), so a sitting whose dossier failed or was never built keeps its period incomplete, and reports without acquisition metadata count as unknown. What remains for this item is the duplicate derivation of "complete" (build entries vs the cached JSON) and the silent gap in the Daten download, so priority drops to P3.
+
 **Effort:** M
-**Priority:** P2
+**Priority:** P3
 **Depends on:** None (A1 works without it)
-
-### Check that roll-call votes are still being acquired after June 2026
-
-**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12. If it did, find why the vote scan missed them (`fetch_roll_call_vote_candidates`, `--vote-scan-pages`, `match_roll_call_votes` in `scripts/validate_dip_protocol.py`) and fix it.
-
-**Why:** On the 2026-09-19 store the latest vote is 2026-06-12 (217 votes in total), but sittings continue to 2026-09-11 (3 more in June, 1 in July, 4 in September). This may just be the summer break with no roll calls. If it isn't, the Fakten vote metrics and every MP's vote count are quietly stale. The store can't tell "no vote" from "not fetched" (see the `protocol_acquisition` item), so check against the source.
-
-**Context:** Found in the 2026-09-24 database state review. Start by comparing the bundestag.de Abstimmungen list page for June–September 2026 with `SELECT id, date FROM votes WHERE date >= '2026-06-01'` on a freshly updated store.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** A fresh online `update` of the store
 
 ### Roll-call member rows link to external profiles, never to our own MP pages
 
@@ -205,6 +195,26 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
 
 ### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+
+### Roll-call votes that match no TOP are still counted as a complete acquisition
+
+**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) logs a roll-call candidate whose Drucksache numbers match no TOP, counts it (`validation_summary.unmatched_roll_call_vote_count`, ids in `api_records.unmatched_roll_call_vote_ids`) and still calls the acquisition `complete`, following E4's wording. Decide whether an unmatched vote should make it `partial`, and match by title or vote date where Drucksache numbers fail.
+
+**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, yet the sittings count as complete. Marking them partial would make 15 sittings, and their weeks, incomplete for good until the matching improves.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### A Drucksache reference can be a URL fragment
+
+**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`); the reference itself is still stored and shown as a plain Drucksache number.
+
+**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ## Protokoll-Dossier
 
@@ -770,3 +780,10 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **What:** Route public hrefs from DIP, Bundestag, and abgeordnetenwatch payloads through shared scheme-and-host validation, with safe omission or plain-text fallback for rejected links.
 
 **Completed:** v0.5.0.0 (2026-09-19)
+
+### Check that roll-call votes are still being acquired after June 2026
+
+**What:** Confirm whether bundestag.de published namentliche Abstimmungen after 2026-06-12, and find why the vote scan missed them.
+
+**Completed:** fix-votes-completeness (2026-09-29). Cause: vote scraping was opt-in (`features.json` ships an empty `enrich` list), so every update since June recorded votes as `not_requested`. Votes are now a default enrichment (`--no-votes` opts out). Backfilled into a scratch copy of the reference store: votes 217 -> 232, newest 2026-06-12 -> 2026-09-25 (2026-06-25 1, 07-08 1, 07-09 1, 07-10 8, 09-24 1, 09-25 3).
+

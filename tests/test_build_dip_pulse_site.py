@@ -1388,6 +1388,17 @@ class FeatureArgumentCompatibilityTests(unittest.TestCase):
         self.assertEqual(set(selection), {"votes", "aw-profiles"})
         self.assertEqual(args.vote_scan_pages, 30)
 
+    def test_a_mistyped_veto_fails_instead_of_leaving_the_default_on(self) -> None:
+        for source, kwargs in (
+            ("cli", {"enrich": ["-vote"]}),
+            ("config", {}),
+        ):
+            with self.subTest(source), tempfile.TemporaryDirectory() as tmp, mock.patch.dict("os.environ", {}, clear=True):
+                if source == "config":
+                    (Path(tmp) / "features.local.json").write_text('{"enrich": ["-vote"]}', encoding="utf-8")
+                with self.assertRaisesRegex(build_dip_pulse_site.FeatureError, "invalid-enrichment"):
+                    build_dip_pulse_site.resolve_from_args(self._config_args(**kwargs), root=Path(tmp))
+
     def test_legacy_config_disable_still_vetoes_votes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "features.local.json").write_text('{"disable": ["votes"]}', encoding="utf-8")

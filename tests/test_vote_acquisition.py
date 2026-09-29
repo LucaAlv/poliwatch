@@ -224,6 +224,23 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         self.assertEqual((votes["acquisition_state"], votes["records"]), ("partial", 1))
         self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
 
+    def test_the_progress_log_counts_the_requests_the_vote_scan_made(self) -> None:
+        pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "01.07.2026", "21/77"), ("3", "30.06.2026", "21/3"))]
+        lines: list[str] = []
+        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch.object(
+            dip, "fetch_roll_call_vote_detail", side_effect=fake_detail
+        ), mock.patch("sys.stderr", io.StringIO()):
+            dip.enrich_with_api(
+                FakeClient(),  # type: ignore[arg-type]
+                {"id": "p1", "dokumentnummer": "21/90", "datum": "2026-07-01"},
+                agenda("21/1"),
+                person_limit=0,
+                vote_scan_pages=30,
+                progress=lines.append,
+            )
+        self.assertIn("Roll-call scan ended by date_passed: 1 list page(s) fetched, 0 reused from this build.", lines)
+        self.assertIn("Roll-call details: 1 vote(s) fetched (2 requests), 1 candidate(s) matched no TOP.", lines)
+
     def test_no_scan_is_not_requested(self) -> None:
         enrichment, _ = self.enrich([], "2026-07-01", ("21/1",), scan_pages=0)
         self.assertEqual(enrichment["acquisition"]["votes"]["acquisition_state"], "not_requested")

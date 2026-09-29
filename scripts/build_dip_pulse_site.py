@@ -9480,6 +9480,12 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
             )
         return (value,)
 
+    def veto(token: str, source: str) -> None:
+        # A "-id" entry of an enrich list. Unlike the legacy disable key it is
+        # validated: a mistyped veto must not silently leave the default on.
+        for value in validate_id(token[1:], source):
+            remove([value], source)
+
     def replace(values: Any, source: str) -> None:
         tokens = _split_feature_tokens(values)
         previous = sorted(current)
@@ -9488,7 +9494,7 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
             operations.append(("overridden", value, source))
         for token in tokens:
             if token.startswith("-"):
-                remove([token], source)
+                veto(token, source)
                 continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
@@ -9498,7 +9504,7 @@ def resolve_from_args(args: argparse.Namespace, *, root: Path) -> EnrichmentSele
     def add(values: Any, source: str) -> None:
         for token in _split_feature_tokens(values):
             if token.startswith("-"):
-                remove([token], source)
+                veto(token, source)
                 continue
             for value in validate_id(token.lstrip("+"), source):
                 current.add(value)
