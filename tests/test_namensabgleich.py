@@ -101,7 +101,7 @@ class ZusammenfuehrungTests(unittest.TestCase):
         mps, lookup, canonical, stats = self.collect()
         self.assertEqual(canonical[a], canonical[b])
         self.assertEqual(len(mps), 1)
-        self.assertEqual(mps[0]["merges"], {"ext_id": 1, "unique_name": 0})
+        self.assertEqual(mps[0]["merges"], {"ext_id": 1, "corroborated_name": 0, "unique_name": 0})
         self.assertEqual(lookup["aw:5"], canonical[a])
         self.assertEqual((stats["merges_ext_id"], stats["merges_unique_name"]), (1, 0))
 
@@ -111,7 +111,7 @@ class ZusammenfuehrungTests(unittest.TestCase):
         mps, lookup, canonical, stats = self.collect()
         self.assertEqual(canonical[roster], canonical[speaker])
         self.assertEqual(len(mps), 1)
-        self.assertEqual(mps[0]["merges"], {"ext_id": 0, "unique_name": 1})
+        self.assertEqual(mps[0]["merges"], {"ext_id": 0, "corroborated_name": 0, "unique_name": 1})
         # Both records' keys reach the one page, so a speaker link resolves.
         self.assertEqual(lookup["dip:dip-7"], lookup["xml:77"])
         self.assertEqual(stats["merges_unique_name"], 1)
@@ -157,6 +157,44 @@ class ZusammenfuehrungTests(unittest.TestCase):
         self.assertNotEqual(canonical[roster], canonical[speaker])
         self.assertEqual(stats["buckets_split_namesakes"], 1)
 
+    def test_a_second_redner_id_with_a_corroborating_name_found_id_rejoins_the_person(self) -> None:
+        # Nancy Faeser: an MdB Redner-ID (aw found by ext_id) and a 99999xxxx id for
+        # her Reden as Ministerin, whose name search returned the same profile.
+        mdb = self.speaker("Nancy Faeser", "11005452", aw=135391, match="ext_id", page=True)
+        minister = self.speaker("Nancy Faeser", "999990119", aw=135391, match="name", party="Regierung", separate=True, page=True)
+        mps, lookup, canonical, stats = self.collect()
+        self.assertEqual(canonical[mdb], canonical[minister])
+        self.assertEqual(len(mps), 1)
+        self.assertEqual(mps[0]["merges"], {"ext_id": 0, "corroborated_name": 1, "unique_name": 0})
+        self.assertEqual(stats["merges_corroborated_name"], 1)
+        # Both Redner-IDs reach the one page.
+        self.assertEqual(lookup["xml:11005452"], lookup["xml:999990119"])
+
+    def test_a_namesakes_profile_is_no_corroboration(self) -> None:
+        # Sonja Lemke's name search returned Steffi Lemke's profile: the names differ.
+        steffi = self.speaker("Steffi Lemke", "11002720", aw=175323, match="ext_id", party="BÜNDNIS 90/DIE GRÜNEN")
+        sonja = self.speaker("Sonja Lemke", "11005518", aw=175323, match="name", party="Die Linke", separate=True)
+        mps, _, canonical, stats = self.collect()
+        self.assertNotEqual(canonical[steffi], canonical[sonja])
+        self.assertEqual(stats["merges_corroborated_name"], 0)
+
+    def test_a_name_found_id_nobody_holds_as_a_personenkennung_corroborates_nothing(self) -> None:
+        a = self.speaker("Peter Müller", "11", aw=99, match="name", separate=True)
+        b = self.speaker("Peter Müller", "22", aw=99, match="name", separate=True)
+        _, _, canonical, stats = self.collect()
+        self.assertNotEqual(canonical[a], canonical[b])
+        self.assertEqual(stats["merges_corroborated_name"], 0)
+
+    def test_a_contradicting_dip_id_blocks_the_corroboration(self) -> None:
+        trusted = self.roster("Ada Lovelace", "dip-1", aw=5, match="ext_id", separate=True)
+        named = pulse_store.upsert_mp(
+            self.conn, now=self.now, display_name="Ada Lovelace", party_id=self.party("SPD"), identity_key="xml:9",
+            xml_redner_id="9", dip_person_id="dip-2", aw_politician_id=5, aw_match="name",
+        )
+        _, _, canonical, stats = self.collect()
+        self.assertNotEqual(canonical[trusted], canonical[named])
+        self.assertEqual(stats["merges_corroborated_name"], 0)
+
     def test_a_different_party_is_not_the_same_person(self) -> None:
         roster = self.roster("Ada Lovelace", "dip-1", party="SPD")
         speaker = self.speaker("Ada Lovelace", "11", party="CDU/CSU")
@@ -190,6 +228,43 @@ class ZusammenfuehrungTests(unittest.TestCase):
         self.conn.execute("ALTER TABLE mps DROP COLUMN aw_match")
         _, _, canonical, _ = self.collect()
         self.assertNotEqual(canonical[a], canonical[b])  # unrecorded kind: found by name
+
+
+class PersonMetricsTests(unittest.TestCase):
+    """erste-reden counts Persons, not Redner-IDs."""
+
+    def test_a_person_with_two_redner_ids_debuts_once(self) -> None:
+        import facts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "store.sqlite")
+            try:
+                report = {
+                    "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
+                    "agenda_items": [
+                        {
+                            "index": 1, "top_id": "T1", "heading": "TOP",
+                            "xml_speakers": [
+                                {"rede_id": "R1", "speaker": {"xml_redner_id": "999990119", "display_name": "Nancy Faeser", "role": "Bundesministerin des Innern und für Heimat"},
+                                 "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
+                                {"rede_id": "R2", "speaker": {"xml_redner_id": "11005452", "display_name": "Nancy Faeser", "fraktion": "SPD"},
+                                 "char_count": 5, "text": "Hallo", "snippet": "Hallo"},
+                            ],
+                        }
+                    ],
+                }
+                pulse_store.persist_report(conn, report)
+                sql = facts.REGISTRY_BY_ID["erste-reden"]["sql"]
+                # Without a map the two Redner-IDs are two Persons...
+                facts.ensure_canonical(conn)
+                self.assertEqual(len(conn.execute(sql).fetchall()), 2)
+                # ...with the Zusammenführung's map they are one, debuting at the first Rede.
+                ids = [row["id"] for row in conn.execute("SELECT id FROM mps ORDER BY id")]
+                facts.ensure_canonical(conn, {ids[0]: ids[0], ids[1]: ids[0]})
+                rows = conn.execute(sql).fetchall()
+                self.assertEqual([row["rede_id"] for row in rows], ["R1"])
+            finally:
+                conn.close()
 
 
 class PersistTests(unittest.TestCase):

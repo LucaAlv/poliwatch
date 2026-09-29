@@ -6325,8 +6325,9 @@ def collect_abgeordnete(
     export's mp_canonical table, unconditioned by whether the person gets a page.
     One grouped query each avoids N+1.
 
-    Rows join by a shared Personenkennung (provenance ``ext_id``), otherwise by
-    Namensabgleich (``unique_name``): only when a name+party bucket holds exactly
+    Rows join by a shared Personenkennung (provenance ``ext_id``), by a name-found
+    abgeordnetenwatch id that a same-named record holds as a Personenkennung
+    (``corroborated_name``), otherwise by Namensabgleich (``unique_name``): only when a name+party bucket holds exactly
     one record from the roster/roll-call side and one from the protocol-speaker
     side, and no Personenkennung contradicts it. Namesakes, or three or more
     records, stay split: a Person shown twice beats two Persons shown as one.
@@ -6405,8 +6406,8 @@ def collect_abgeordnete(
     # Union-find: link rows that share any external id into one person.
     parent = {row["id"]: row["id"] for row in rows}
     #: merges of each provenance that went into the component rooted at a row id
-    provenance: dict[int, dict[str, int]] = {row["id"]: {"ext_id": 0, "unique_name": 0} for row in rows}
-    totals = {"ext_id": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
+    provenance: dict[int, dict[str, int]] = {row["id"]: {"ext_id": 0, "corroborated_name": 0, "unique_name": 0} for row in rows}
+    totals = {"ext_id": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
 
     def find(node: int) -> int:
         while parent[node] != node:
@@ -6433,6 +6434,32 @@ def collect_abgeordnete(
                 union(row["id"], first_for_key[key], "ext_id")
             else:
                 first_for_key[key] = row["id"]
+
+    # Pass 1b: a record whose abgeordnetenwatch id was found by name joins the
+    # record that holds the same id as a Personenkennung when both carry the same
+    # name (titles aside). This is how a Person with two Redner-IDs (an MdB id and
+    # one for a government role) is put back together: the name search returned
+    # the profile the Redner-ID lookup found for the other record. A different
+    # name is no corroboration (a namesake's profile), and a contradicting DIP or
+    # abgeordnetenwatch Personenkennung blocks it. Redner-IDs are not compared:
+    # two of them for one Person is exactly the case.
+    def strong_ids(root: int) -> dict[str, set[str]]:
+        ids = _merge_external_ids([member for member in rows if find(member["id"]) == root])
+        return {kind: ids[kind] for kind in ("aw", "dip")}
+
+    for row in rows:
+        aw_id = row.get("aw_politician_id")
+        if aw_id is None or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
+            continue
+        other = first_for_key.get(f"aw:{aw_id}")
+        name = _normalized_mp_name(row.get("display_name"))
+        if other is None or not name or find(other) == find(row["id"]):
+            continue
+        other_name = next(
+            (_normalized_mp_name(member.get("display_name")) for member in rows if member["id"] == other), ""
+        )
+        if name == other_name and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
+            union(row["id"], other, "corroborated_name")
 
     rows_of: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
@@ -6562,6 +6589,7 @@ def collect_abgeordnete(
             rows=len(rows),
             entries=len(mps),
             merges_ext_id=totals["ext_id"],
+            merges_corroborated_name=totals["corroborated_name"],
             merges_unique_name=totals["unique_name"],
             buckets_split_namesakes=totals["buckets_split_namesakes"],
             buckets_split_3plus=totals["buckets_split_3plus"],
@@ -10512,6 +10540,7 @@ def run_facts_engine(
     entries: list[dict[str, Any]],
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
+    canonical_by_mp_id: dict[int, int] | None = None,
 ) -> dict[str, Any]:
     store = pulse_store.connect(database_path)
     try:
@@ -10524,6 +10553,7 @@ def run_facts_engine(
             catalog=catalog,
             built=built,
             today=today,
+            canonical_by_mp_id=canonical_by_mp_id,
         )
     finally:
         store.close()
@@ -10557,7 +10587,11 @@ def run_data_pipeline(
     # export copies and hashes.
     if not args.no_persist and database_path.exists():
         facts_report = run_facts_engine(
-            database_path, entries, catalog, today=resolve_today(getattr(args, "today", None))
+            database_path,
+            entries,
+            catalog,
+            today=resolve_today(getattr(args, "today", None)),
+            canonical_by_mp_id=canonical_by_mp_id,
         )
         for line in format_incomplete_report(
             facts_report,

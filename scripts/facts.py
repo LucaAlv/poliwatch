@@ -344,17 +344,19 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
         "aggregation": "count",
-        # Grouped by the XML speaker id, not by mps.id: the live store splits
-        # one person across an "aw:" and an "xml:" mps row that share their
-        # xml_redner_id (314 display names on the 2026-09-19 store), and
-        # grouping by mps.id turned 4 debutants in 2026-W37 into 233. Every
-        # mps row that carries a speech has an xml_redner_id (0 without).
+        # Grouped by the Person (mp_canonical, the Zusammenführung of the mps
+        # rows), not by mps.id: the live store splits one person across an "aw:"
+        # and an "xml:" mps row that share their xml_redner_id (314 display names
+        # on the 2026-09-19 store), and grouping by mps.id turned 4 debutants in
+        # 2026-W37 into 233. Not by xml_redner_id either: a Person with two
+        # Redner-IDs (an MdB id and one for a government role) would debut twice.
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, p.date AS day,\n"
-            "         COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS person_key\n"
+            "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
             "  JOIN mps m ON m.id = s.mp_id\n"
+            "  JOIN mp_canonical mc ON mc.mp_id = m.id\n"
             "  JOIN protocols p ON p.id = s.protocol_id\n"
             "  WHERE s.mp_id IS NOT NULL\n"
             "),\n"
@@ -412,21 +414,22 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         # One row per speech, not per MP: aggregation "grouped_extreme" sums
         # "value" (1 per speech) per "group_id" across every protocol in the
         # month, so candidate_rows() stays a single, unmodified query keyed by
-        # protocol_id. group_id is xml_redner_id, not mps.id -- T10 found the
-        # live store splits one person across an "aw:" and an "xml:" mps row
-        # sharing xml_redner_id (314 display names), the same fix erste-reden
-        # needed. tie_value (char_count, summed the same way) breaks a speech
+        # protocol_id. group_id is the Person (mp_canonical), not mps.id -- T10
+        # found the live store splits one person across an "aw:" and an "xml:"
+        # mps row sharing xml_redner_id (314 display names), the same fix
+        # erste-reden needed. tie_value (char_count, summed the same way) breaks a speech
         # -count tie by who spoke longer, tie_id (mps.id) by the lowest of
         # those (D25A: "ties to most characters, then lowest mps.id").
         "sql": (
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant,\n"
-            "       COALESCE(NULLIF(m.xml_redner_id, ''), 'mp#' || m.id) AS group_id,\n"
+            "       'p#' || mc.canonical_id AS group_id,\n"
             "       m.id AS tie_id, 1 AS value, s.char_count AS tie_value,\n"
             "       NULL AS denominator, m.display_name,\n"
             f"       {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM speeches s\n"
             "JOIN mps m ON m.id = s.mp_id\n"
+            "JOIN mp_canonical mc ON mc.mp_id = m.id\n"
             "LEFT JOIN parties pa ON pa.id = m.party_id\n"
             "JOIN protocols p ON p.id = s.protocol_id\n"
             "WHERE s.mp_id IS NOT NULL"
@@ -1117,8 +1120,35 @@ def _id_sort_key(value: Any) -> tuple[int, Any]:
     return (0, int(text)) if text.isdigit() else (1, text)
 
 
+def ensure_canonical(conn: sqlite3.Connection, canonical_by_mp_id: Mapping[int, int] | None = None) -> None:
+    """The temp table ``mp_canonical`` (mp_id, canonical_id) the per-person metrics
+    join, the same shape as the Verteilkopie's, so a reader can run their SQL there.
+
+    The build passes the Zusammenführung's map. Without one (a store read on its
+    own, the tests) rows that share an xml_redner_id are one Person, the rule the
+    metrics used before the map existed. An existing table is kept unless a map is
+    given.
+    """
+    exists = conn.execute("SELECT 1 FROM sqlite_temp_master WHERE type = 'table' AND name = 'mp_canonical'").fetchone()
+    if exists and not canonical_by_mp_id:
+        return
+    conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
+    conn.execute("CREATE TEMP TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL)")
+    if canonical_by_mp_id:
+        conn.executemany(
+            "INSERT INTO mp_canonical(mp_id, canonical_id) VALUES (?, ?)", sorted(canonical_by_mp_id.items())
+        )
+    else:
+        conn.execute(
+            "INSERT INTO mp_canonical(mp_id, canonical_id) "
+            "SELECT m.id, COALESCE(CASE WHEN m.xml_redner_id <> '' THEN "
+            "(SELECT MIN(m2.id) FROM mps m2 WHERE m2.xml_redner_id = m.xml_redner_id) END, m.id) FROM mps m"
+        )
+
+
 def candidate_rows(conn: sqlite3.Connection, metric: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Run the metric's SQL once; rows keyed by protocol id."""
+    ensure_canonical(conn)
     try:
         rows = conn.execute(metric["sql"]).fetchall()
     except sqlite3.Error as exc:
@@ -2146,6 +2176,7 @@ def compute_and_store(
     no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
+    canonical_by_mp_id: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
@@ -2155,6 +2186,7 @@ def compute_and_store(
     metric, via FactsError.
     """
     registry = tuple(registry)
+    ensure_canonical(conn, canonical_by_mp_id)
     if catalog is None or not catalog.authoritative:
         print(
             "warning: [facts] no authoritative sitting catalog is cached, so no period can be judged complete "

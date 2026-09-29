@@ -550,6 +550,7 @@ def compare(
         ("rows", "mps rows"),
         ("entries", "Personen after Zusammenführung"),
         ("merges_ext_id", "merges by Personenkennung (ext_id)"),
+        ("merges_corroborated_name", "merges by corroborated name-found id (corroborated_name)"),
         ("merges_unique_name", "merges by unique name + party (unique_name)"),
         ("buckets_split_namesakes", "name buckets left split: two on one side"),
         ("buckets_split_3plus", "name buckets left split: 3+ records"),

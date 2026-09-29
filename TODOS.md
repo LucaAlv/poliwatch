@@ -373,18 +373,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Abgeordnete
 
-### Rejoin the six people who have two Redner-IDs (a corroborated name-found id)
-
-**What:** Nancy Faeser, Boris Pistorius, Clara Bünger, Daniel Rinkert, Alexander Bartz and Emily Vontz appear in the Plenarprotokolle under their MdB Redner-ID and under a 99999xxxx id for their Reden in a government role (Faeser: 11005452 and 999990119). The second record's abgeordnetenwatch id was found by name and equals the one the first record found by Redner-ID. Since name-found ids are no Personenkennung, the two records are two Personenseiten (two records on one side stay split): Faeser, Bartz and Vontz were one page and became two; Pistorius, Bünger and Rinkert already had two pages (split differently) and are re-partitioned by Redner-ID. Consider a rule that joins them: a name-found id equal to a trusted id of another record with the same normalised name and no contradicting Personenkennung, with its own provenance next to `ext_id` and `unique_name`. `erste-reden` counts a Redner-ID as a person, so each of the six has a second, false debut; grouping it by `mp_canonical` would fix that once the records are joined.
-
-**Why:** A Person shown twice is the accepted price of the Namensabgleich rule, but here the evidence for one Person is strong and repeated. Measured 2026-09-29 on the reference store, `erste-reden` moved in 15 weekly periods: 6 debut rows appeared for the six people's second ids (false; 2022-W36, 2023-W09, 2023-W13, 2025-W12, 2025-W21 twice) and 3 false rows vanished (2025-W45, 2026-W28, 2026-W37), so 6 false debutants now against 3 before. The five wrong-person fixes moved 5 debut rows to their true weeks and removed 3 wrong ones (2025-W20, W21, W23, W26, W28 and 2026-W26, W28). `publishable` flipped in 3 weeks: 2023-W25 and 2026-W24 through the changed baseline, 2026-W28 (3 debutants -> 0, all three rows were wrong).
-
-**Context:** The same measurement found five name-search matches that were the wrong person (Vinzenz/Albrecht Glaser, Nora/Thomas Seitz, Sonja/Steffi Lemke, Nicole/Martin Hess, Serdar/Gülistan Yüksel) and those are fixed. A corroboration rule must not rejoin them: there the names differ.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 
 **What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
@@ -791,7 +779,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### Make the Namensabgleich unique, and stop treating name-found ids as proof
 
-**Completed:** branch `fix-stored-values` (2026-09-29). Only an abgeordnetenwatch id looked up by the Redner-ID (`match` = ext_id) is a Personenkennung (`mps.aw_match`); Zusammenführung joins by shared Personenkennung (ext_id) or by a unique 1+1 name+party bucket (unique_name), titles ignored, and every Personenseite records its merges. Reference store: five wrong-person matches undone (92 Reden moved to their own Personenseite, 2 new pages), 640 ext_id and 861 unique_name merges, 322 + 397 name buckets left split; Personenseiten 1.040 -> 1.045. Follow-ups: the six double-ID people above and the shared Redner-ID 11005304.
+**Completed:** branch `fix-stored-values` (2026-09-29). Only an abgeordnetenwatch id looked up by the Redner-ID (`match` = ext_id) is a Personenkennung (`mps.aw_match`); Zusammenführung joins by shared Personenkennung (ext_id) or by a unique 1+1 name+party bucket (unique_name), titles ignored, and every Personenseite records its merges. Reference store: five wrong-person matches undone (92 Reden moved to their own Personenseite, 2 new pages), 640 ext_id and 861 unique_name merges, 322 + 397 name buckets left split; Personenseiten 1.040 -> 1.045. A name-found id equal to the trusted id of a same-named record joins the two (`corroborated_name`, 6 merges): the six people with two Redner-IDs are one Personenseite again and debut once in `erste-reden`; Personenseiten 1.039. Follow-up: the shared Redner-ID 11005304.
 
 ### Only Gesetzgebungen on the bills pages, and call them "Gesetzesvorhaben"
 
