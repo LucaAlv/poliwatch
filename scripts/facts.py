@@ -2035,7 +2035,9 @@ def _leads(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str, str]
     identity. A data correction can reattribute a published fact to a
     different speech or vote without changing its rank or value (a fixed
     mp_id, a corrected citation join); comparing this alongside them is what
-    makes that class of correction show up as a changed winner."""
+    makes that class of correction show up as a changed winner. A vote has no
+    rede_id or page, so its ``official_url`` is what tells two votes of one
+    sitting apart."""
     index = {column: position for position, column in enumerate(_SOURCE_KEY_COLUMNS)}
     leads: dict[tuple[str, str, str], tuple[Any, ...]] = {}
     for values in snapshot["fact_sources"]:
@@ -2048,7 +2050,9 @@ def _leads(snapshot: Mapping[str, list[list[Any]]]) -> dict[tuple[str, str, str]
         )
         leads[key] = tuple(
             values[index[column]]
-            for column in ("entity_kind", "document_number", "rede_id", "page", "page_quadrant")
+            for column in (
+                "entity_kind", "document_number", "rede_id", "page", "page_quadrant", "official_url"
+            )
         )
     return leads
 
@@ -2103,10 +2107,29 @@ def changed_winners(
     return lines
 
 
+def _lead_text(lead: Sequence[Any]) -> str:
+    """The lead receipt's identity as a reader can look it up: the vote's
+    official page, or the sitting plus Rede id and page."""
+    if not lead:
+        return ""
+    kind, document_number, rede_id, page, _quadrant, official_url = lead
+    parts = [str(kind), str(document_number)] if document_number else [str(kind)]
+    if rede_id:
+        parts.append(str(rede_id))
+    if page:
+        parts.append(f"S. {page}")
+    if official_url:
+        parts.append(str(official_url))
+    return " ".join(parts)
+
+
 def _posted_text(entries: Sequence[tuple[Any, ...]]) -> str:
     if not entries:
         return "kein Fakt"
-    return ", ".join(f"{metric_id} ({value:g})" for _, metric_id, value, _lead in entries)
+    return ", ".join(
+        f"{metric_id} ({value:g})" + (f" [{_lead_text(lead)}]" if lead else "")
+        for _, metric_id, value, lead in entries
+    )
 
 
 def compute_and_store(
