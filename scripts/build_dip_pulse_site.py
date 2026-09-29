@@ -1110,13 +1110,16 @@ def rebuild_database_from_entries(
                             aw_politician_id=row.get("aw_politician_id"),
                             aw_match=row.get("aw_match"),
                             dip_person_id=row.get("dip_person_id"),
-                            xml_redner_id=derive.first_redner_id(row.get("xml_redner_id")),
+                            # The roster never supplies a Redner-ID. A stored
+                            # one came from an old speaker merge and may name a
+                            # namesake; only the cached reports can restore it.
+                            xml_redner_id=None,
                             profile_url=row.get("profile_url"),
                             display_name=row.get("display_name"),
                             party_name=row.get("party_name"),
                         ),
                         dip_person_id=row.get("dip_person_id"),
-                        xml_redner_id=row.get("xml_redner_id"),
+                        xml_redner_id=None,
                         title=row.get("title"),
                         function=row.get("function"),
                         wahlperiode=row.get("wahlperiode"),

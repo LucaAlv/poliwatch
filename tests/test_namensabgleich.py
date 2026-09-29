@@ -357,6 +357,40 @@ class PersistTests(unittest.TestCase):
                 conn.close()
         self.assertEqual(keys, ["aw:77", "dip:dip-ada"])
 
+    def test_preserved_roster_cannot_reintroduce_a_namesakes_speaker_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Path(tmp) / "store.sqlite"
+            conn = pulse_store.connect(database)
+            pulse_store.initialize(conn)
+            now = pulse_store.utc_now()
+            with conn:
+                # Old identity rules merged a name-found speaker into this
+                # roster row, leaving the other person's XML identifier behind.
+                pulse_store.upsert_mp(
+                    conn, now=now, display_name="Steffi Lemke",
+                    party_id=pulse_store.upsert_party(conn, "BÜNDNIS 90/DIE GRÜNEN", now),
+                    identity_key="aw:175323", dip_person_id="steffi", xml_redner_id="11005518",
+                    aw_politician_id=175323, is_mdb=True,
+                )
+            conn.close()
+            entry = {
+                "report": self.report(
+                    {"xml_redner_id": "11005518", "display_name": "Sonja Lemke", "fraktion": "Die Linke",
+                     "abgeordnetenwatch": {"id": 175323, "match": "name"}}
+                ),
+                "report_path": Path(tmp) / "r.json",
+            }
+            build.rebuild_database_from_entries(database, [entry])
+            conn = pulse_store.connect(database)
+            try:
+                rows = {row["identity_key"]: dict(row) for row in conn.execute("SELECT * FROM mps")}
+                _, _, canonical = build.collect_abgeordnete(conn)
+                roster, speaker = rows["dip:steffi"], rows["xml:11005518"]
+                self.assertIsNone(roster["xml_redner_id"])
+                self.assertNotEqual(canonical[roster["id"]], canonical[speaker["id"]])
+            finally:
+                conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
