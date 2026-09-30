@@ -150,7 +150,7 @@ Important generated files:
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
-| `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch |
+| `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
 | `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, reverse-chronological and grouped by month, with a Fraktion filter |

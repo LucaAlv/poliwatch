@@ -1802,9 +1802,11 @@ KIND_MISMATCH_WARNING = "Die XML zählt "
 
 
 def kind_mismatch_warnings(mismatches: list[dict[str, Any]]) -> list[str]:
-    return [
-        f"{KIND_MISMATCH_WARNING}{m['xml']} Beiträge der Art {m['kind']}, DIP {m['dip']}." for m in mismatches
-    ]
+    def label(mismatch: dict[str, Any]) -> str:
+        singular, plural = speech_kinds.KIND_LABELS[mismatch["kind"]]
+        return singular if mismatch["xml"] == 1 else plural
+
+    return [f"{KIND_MISMATCH_WARNING}{m['xml']} {label(m)}, DIP {m['dip']}." for m in mismatches]
 
 
 def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:

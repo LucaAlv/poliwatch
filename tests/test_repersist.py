@@ -38,17 +38,34 @@ class ReparseCachedXmlTests(unittest.TestCase):
         xml = (FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").write_text(xml, encoding="utf-8")
         # The report as the parser of before A1 wrote it: every <rede> a Rede.
-        stale = {"rede_id": "OLD", "speaker": {"display_name": "Ada", "fraktion": "SPD"}, "char_count": 5, "text": "alt"}
+        # Dobrindt's opening report (Rede) carries the profile resolved online; Kraft's
+        # only sitting item in the report is a Rede of an older parse.
+        self.dobrindt = {"id": 4711, "url": "https://www.abgeordnetenwatch.de/profile/dobrindt", "match": "ext_id"}
+        self.kraft = {"id": 815, "url": "https://www.abgeordnetenwatch.de/profile/kraft", "match": "ext_id"}
+        stale = {
+            "rede_id": "OLD",
+            "speaker": {"xml_redner_id": "11003516", "first_name": "Alexander", "last_name": "Dobrindt",
+                        "display_name": "Alexander Dobrindt", "abgeordnetenwatch": self.dobrindt},
+            "char_count": 5,
+            "text": "alt",
+        }
+        stale_kraft = {
+            "rede_id": "OLDK",
+            "speaker": {"xml_redner_id": "11004792", "first_name": "Rainer", "last_name": "Kraft",
+                        "display_name": "Dr. Rainer Kraft", "abgeordnetenwatch": self.kraft},
+            "char_count": 5,
+            "text": "alt",
+        }
         self.report = {
             "protocol": {"id": "5709", "dokumentnummer": "21/6", "datum": "2025-05-14"},
             "validation_summary": {"xml_speech_count": 1},
-            "warnings": ["Die XML zählt 9 Beiträge der Art erwiderung, DIP 0.", "Anderes."],
+            "warnings": ["Die XML zählt 9 Erwiderungen, DIP 0.", "Anderes."],
             "api_records": {"aktivitaeten": [{"aktivitaetsart": "Kurzintervention"}]},
             "agenda_items": [
                 {"index": 1, "top_id": "Tagesordnungspunkt 1", "heading": "Befragung der Bundesregierung",
                  "xml_speech_count": 1, "xml_speakers": [stale], "xml_speakers_first": [stale]},
                 {"index": 2, "top_id": "Tagesordnungspunkt 2", "heading": "Fragestunde",
-                 "xml_speech_count": 0, "xml_speakers": []},
+                 "xml_speech_count": 1, "xml_speakers": [stale_kraft]},
             ],
         }
         (self.output_dir / "data" / "plenarprotokoll-21-6.json").write_text(json.dumps(self.report), encoding="utf-8")
@@ -75,8 +92,50 @@ class ReparseCachedXmlTests(unittest.TestCase):
         )
         self.assertEqual(
             report["warnings"],
-            ["Anderes.", "Die XML zählt 0 Beiträge der Art kurzintervention, DIP 1."],
+            ["Anderes.", "Die XML zählt 0 Kurzinterventionen, DIP 1."],
         )
+
+    def test_the_profiles_resolved_online_survive_the_reparse(self) -> None:
+        entries = self.entries()
+        build.reparse_cached_xml(self.output_dir, entries)
+        befragung, fragestunde = entries[0]["report"]["agenda_items"]
+        # Dobrindt's Reden and the Antworten he gives carry the profile ...
+        for speech in [*befragung["xml_speakers"], *befragung["xml_contributions"]]:
+            if speech["speaker"]["last_name"] == "Dobrindt":
+                self.assertEqual(speech["speaker"]["abgeordnetenwatch"], self.dobrindt)
+        # ... and so does a Fragestunde question of an MdB, by the Redner-ID.
+        kraft = [c for c in fragestunde["xml_contributions"] if c["speaker"]["last_name"] == "Kraft"]
+        self.assertTrue(kraft)
+        self.assertTrue(all(c["speaker"]["abgeordnetenwatch"] == self.kraft for c in kraft))
+        # A speaker nobody resolved stays unresolved.
+        curio = next(c for c in befragung["xml_contributions"] if c["speaker"]["last_name"] == "Curio")
+        self.assertNotIn("abgeordnetenwatch", curio["speaker"])
+
+    def test_the_xml_of_a_cached_report_can_be_fetched_and_a_missing_one_is_said(self) -> None:
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()
+        report_path = self.output_dir / "data" / "plenarprotokoll-21-6.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["protocol"]["xml_url"] = "https://www.bundestag.de/resource/blob/x/21006.xml"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stderr = io.StringIO()
+        with mock.patch.object(build.dip, "fetch_text", return_value="<dbtplenarprotokoll/>") as fetch, \
+                contextlib.redirect_stderr(stderr):
+            fetched, failed = build.fetch_missing_xml(self.output_dir, self.entries(), pause=0)
+            # Nothing is fetched twice.
+            self.assertEqual(build.fetch_missing_xml(self.output_dir, self.entries(), pause=0), (0, 0))
+        self.assertEqual((fetched, failed), (1, 0))
+        fetch.assert_called_once_with("https://www.bundestag.de/resource/blob/x/21006.xml")
+        self.assertEqual(
+            (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").read_text(encoding="utf-8"),
+            "<dbtplenarprotokoll/>",
+        )
+        # A repersist over a report with no cached XML says what that leaves behind.
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
+        self.assertIn("1 of 1 cached reports have no cached XML", stderr.getvalue())
+        self.assertIn("--fetch-xml", stderr.getvalue())
 
     def test_a_report_without_cached_xml_is_left_alone(self) -> None:
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()

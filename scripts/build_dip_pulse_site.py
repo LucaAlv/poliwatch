@@ -645,24 +645,71 @@ def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
 
 
+# Every list of an agenda item that holds speakers: Reden and Beiträge.
+SPEAKER_LISTS = ("xml_speakers", "xml_speakers_first", "xml_contributions")
+
+
+def speaker_identity(speaker: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(speaker.get("xml_redner_id") or ""),
+        str(speaker.get("first_name") or ""),
+        str(speaker.get("last_name") or ""),
+    )
+
+
+def speaker_profiles(item: dict[str, Any]) -> dict[tuple[str, str, str], Any]:
+    """The abgeordnetenwatch profiles an agenda item's speakers carry, by identity."""
+    profiles: dict[tuple[str, str, str], Any] = {}
+    for key in SPEAKER_LISTS:
+        for speech in item.get(key) or []:
+            speaker = speech.get("speaker")
+            if isinstance(speaker, dict) and "abgeordnetenwatch" in speaker:
+                profiles[speaker_identity(speaker)] = speaker["abgeordnetenwatch"]
+    return profiles
+
+
+def attach_speaker_profiles(
+    item: dict[str, Any],
+    profiles: dict[tuple[str, str, str], Any],
+    by_redner_id: dict[str, Any] | None = None,
+) -> None:
+    """Give the speakers of an agenda item the profile a cached one of the same
+    identity carried, where they have none yet; else the profile any cached report
+    resolved for the same Redner-ID (``by_redner_id``)."""
+    for key in SPEAKER_LISTS:
+        for speech in item.get(key) or []:
+            speaker = speech.get("speaker")
+            if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
+                continue
+            identity = speaker_identity(speaker)
+            if identity in profiles:
+                speaker["abgeordnetenwatch"] = copy.deepcopy(profiles[identity])
+            elif by_redner_id and derive.first_redner_id(speaker.get("xml_redner_id")) in by_redner_id:
+                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[derive.first_redner_id(speaker.get("xml_redner_id"))])
+
+
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
     """Attach abgeordnetenwatch profile links to speakers and vote members.
 
     Each speaker dict gains an ``abgeordnetenwatch`` key holding the resolved
     profile (or ``None`` when no confident match exists). xml_speakers and
     xml_speakers_first share speaker objects for the first speeches, so the
-    presence check keeps each speaker resolved at most once. Roll-call vote
+    presence check keeps each speaker resolved at most once. The speakers of
+    xml_contributions (Beiträge) are resolved the same way, so one Person's
+    Reden and Beiträge carry the same profile and so one identity. Roll-call vote
     members use the same name+party resolver path with a conservative surname
     heuristic because Bundestag vote data only exposes a display name.
     """
     if resolver is None:
         return
     for item in report.get("agenda_items") or []:
-        for key in ("xml_speakers", "xml_speakers_first"):
+        for key in SPEAKER_LISTS:
             for speech in item.get(key) or []:
                 speaker = speech.get("speaker")
                 if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
                     continue
+                if key == "xml_contributions" and not speaker.get("xml_redner_id"):
+                    continue  # a question whose asker never speaks: a name only
                 speaker["abgeordnetenwatch"] = resolver.resolve(
                     ext_id=speaker.get("xml_redner_id"),
                     first_name=speaker.get("first_name"),
@@ -1153,7 +1200,17 @@ def rebuild_database_from_entries(
 
 def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
     """Re-read Reden and Beiträge of every cached report from its cached XML,
-    where the XML exists. Returns how many reports it re-parsed."""
+    where the XML exists, keeping the abgeordnetenwatch profiles its speakers
+    carry. Returns how many reports it re-parsed."""
+    # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
+    # survive the re-parse, also for a Person who only asks a Frage in a sitting.
+    by_redner_id: dict[str, Any] = {}
+    for entry in entries:
+        for item in entry["report"].get("agenda_items") or []:
+            for identity, profile in speaker_profiles(item).items():
+                redner_id = derive.first_redner_id(identity[0])
+                if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
+                    by_redner_id.setdefault(redner_id, profile)
     reparsed = 0
     for entry in entries:
         report = entry["report"]
@@ -1161,9 +1218,41 @@ def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
         path = xml_cache_path(output_dir, document_number)
         if not document_number or not path.exists():
             continue
+        profiles = {item.get("index"): speaker_profiles(item) for item in report.get("agenda_items") or []}
         dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+        for item in report.get("agenda_items") or []:
+            attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
         reparsed += 1
     return reparsed
+
+
+def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25) -> tuple[int, int]:
+    """Download the Plenarprotokoll XML of every cached report that has none in
+    ``data/xml/`` (a public bundestag.de file, no API key). Returns (fetched,
+    failed). Older builds did not keep the XML."""
+    fetched = failed = 0
+    for entry in entries:
+        protocol = entry["report"].get("protocol") or {}
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        path = xml_cache_path(output_dir, document_number)
+        if not document_number or path.exists():
+            continue
+        if not protocol.get("xml_url"):
+            print(f"warning: {document_number} has no xml_url; its XML cannot be fetched.", file=sys.stderr)
+            failed += 1
+            continue
+        try:
+            text = dip.fetch_text(protocol["xml_url"])
+        except dip.DipError as exc:
+            print(f"warning: {document_number}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(path, text)
+        fetched += 1
+        if pause:
+            time.sleep(pause)
+    return fetched, failed
 
 
 def repersist_cached_reports(
@@ -1175,7 +1264,14 @@ def repersist_cached_reports(
     the store file was replaced. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
-    reparse_cached_xml(output_dir, cached)
+    reparsed = reparse_cached_xml(output_dir, cached)
+    if reparsed < len(cached):
+        print(
+            f"warning: {len(cached) - reparsed} of {len(cached)} cached reports have no cached XML in data/xml/ and keep "
+            "what they hold: every Kurzintervention, Frage and Antwort still counts as a Rede there. "
+            "Fix: run --fetch-xml, then this again.",
+            file=sys.stderr,
+        )
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
@@ -1423,27 +1519,7 @@ def reuse_existing_dossier_enrichments(
         if not profiles:
             continue
 
-        previous_speakers: dict[tuple[str, str, str], dict[str, Any]] = {}
-        for key in ("xml_speakers", "xml_speakers_first"):
-            for speech in previous.get(key) or []:
-                speaker = speech.get("speaker") or {}
-                identity = (
-                    str(speaker.get("xml_redner_id") or ""),
-                    str(speaker.get("first_name") or ""),
-                    str(speaker.get("last_name") or ""),
-                )
-                previous_speakers[identity] = speaker
-        for key in ("xml_speakers", "xml_speakers_first"):
-            for speech in item.get(key) or []:
-                speaker = speech.get("speaker") or {}
-                identity = (
-                    str(speaker.get("xml_redner_id") or ""),
-                    str(speaker.get("first_name") or ""),
-                    str(speaker.get("last_name") or ""),
-                )
-                cached = previous_speakers.get(identity)
-                if "abgeordnetenwatch" not in speaker and cached and "abgeordnetenwatch" in cached:
-                    speaker["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
+        attach_speaker_profiles(item, speaker_profiles(previous))
 
         previous_members = {
             (str(member.get("name") or ""), str(member.get("faction") or "")): member
@@ -10379,6 +10455,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fetch-xml",
+        action="store_true",
+        help=(
+            "Download the Plenarprotokoll XML of every cached report that has none in OUTPUT_DIR/data/xml/ "
+            "(public bundestag.de files, no API key), then exit. --offline --repersist re-reads Reden and "
+            "Beiträge from those files. Reports built before they were kept need this once."
+        ),
+    )
+    parser.add_argument(
         "--repersist",
         action="store_true",
         help=(
@@ -10754,6 +10839,13 @@ def main() -> int:
             return 1
         print(f"validated: {args.validate_publication}")
         return 0
+
+    if getattr(args, "fetch_xml", False):
+        output_dir = args.output_dir
+        entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        fetched, failed = fetch_missing_xml(output_dir, entries)
+        print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
+        return 1 if failed else 0
 
     # Resolve update-time enrichments before doing any network work.
     root = Path(__file__).resolve().parents[1]
