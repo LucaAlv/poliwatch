@@ -101,6 +101,7 @@ import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
 import derive
+import speech_kinds
 import publication_state as publication
 import facts
 # Public components are fixed product structure. EnrichmentSelection is the
@@ -131,7 +132,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
-    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere).",
+    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
+    "contributions": "Beiträge, die keine Rede sind: Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; eine Frage, die die Sitzungsleitung verliest und deren Fragesteller nicht spricht, hat keinen mp_id.",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
@@ -730,12 +732,13 @@ def add_explicit_dossier_protocols(
 # ---------------------------------------------------------------------------
 
 
-# A crash mid-write must never leave a truncated file where a cached report or
-# the catalog used to be: both are read back as evidence on the next build.
-def write_text_atomic(path: Path, text: str) -> None:
-    temp = path.with_name(f".{path.name}.tmp")
-    temp.write_text(text, encoding="utf-8")
-    os.replace(temp, path)
+write_text_atomic = dip.write_text_atomic
+
+
+# The sitting's Plenarprotokoll XML as fetched, kept so a rule change in the
+# parser needs --offline --repersist and no re-fetch.
+def xml_cache_path(output_dir: Path, document_number: str) -> Path:
+    return output_dir / "data" / "xml" / f"plenarprotokoll-{slugify_document_number(document_number)}.xml"
 
 
 def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
@@ -1148,6 +1151,21 @@ def rebuild_database_from_entries(
     return True
 
 
+def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
+    """Re-read Reden and Beiträge of every cached report from its cached XML,
+    where the XML exists. Returns how many reports it re-parsed."""
+    reparsed = 0
+    for entry in entries:
+        report = entry["report"]
+        document_number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        path = xml_cache_path(output_dir, document_number)
+        if not document_number or not path.exists():
+            continue
+        dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+        reparsed += 1
+    return reparsed
+
+
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True
 ) -> tuple[list[dict[str, Any]], bool]:
@@ -1157,6 +1175,7 @@ def repersist_cached_reports(
     the store file was replaced. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    reparse_cached_xml(output_dir, cached)
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
@@ -1717,6 +1736,7 @@ def write_report_and_page(
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
         roll_call_page_cache=roll_call_page_cache,
+        xml_cache_path=xml_cache_path(output_dir, normalized_document_number(protocol.get("dokumentnummer"))),
     )
     report = dip.build_report(args, protocol=protocol)
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
@@ -1895,6 +1915,11 @@ _COLUMN_SOURCE_DERIVED = {
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
     ("speeches", "unattributed_char_count"),
+    # The kind is decided by the parser from the sitting's wording and structure.
+    ("contributions", "kind"),
+    ("contributions", "parent_rede_id"),
+    ("contributions", "sprechrolle"),
+    ("contributions", "top_label"),
 }
 
 
@@ -1928,6 +1953,7 @@ STABLE_KEYS: dict[str, tuple[str, ...]] = {
 }
 PER_BUILD_KEYS: dict[str, tuple[str, ...]] = {
     "speeches": ("id",),
+    "contributions": ("id",),
     "mps": ("id", "identity_key"),
     "agenda_items": ("id",),
     "documents": ("id",),
@@ -4687,10 +4713,11 @@ def render_radar_also(radar: dict[str, Any]) -> str:
     formats = []
     for item in radar["formats"]:
         where = ", ".join(p for p in (pulse_html.format_sitting_date(item["datum"]), f"TOP {item['index']}") if p)
+        counts = pulse_html.format_question_counts(item["speech_count"], item["contribution_counts"])
+        share = f" · {pulse_html.format_percent(item['share'])}" if item["speech_count"] else ""
         formats.append(
             f'<a href="{esc(item["href"])}">{esc(item["heading"])}</a> · '
-            f"{pulse_html.format_count(item['speech_count'], 'Wortmeldung', 'Wortmeldungen')} · "
-            f"{pulse_html.format_percent(item['share'])} ({esc(where)})"
+            f"{counts}{share} ({esc(where)})"
         )
     remaining = ""
     if radar["remaining"]:
@@ -4733,11 +4760,14 @@ def render_radar_section(
             f"Anteil an allen {pulse_html.format_count(total, 'Rede', 'Reden')}"
         )
         if radar["formats"]:
-            biggest = max(radar["formats"], key=lambda item: item["speech_count"])
+            biggest = max(
+                radar["formats"],
+                key=lambda item: item["speech_count"] + sum(item["contribution_counts"].values()),
+            )
+            counts = pulse_html.format_question_counts(biggest["speech_count"], biggest["contribution_counts"])
             method += (
-                f"; Frageformate wie die {biggest['heading']} "
-                f"({pulse_html.format_count(biggest['speech_count'], 'Wortmeldung', 'Wortmeldungen')}) "
-                "zählen mit, werden aber nicht als Thema gerankt."
+                f"; Frageformate wie die {biggest['heading']} ({counts}) werden nicht als Thema gerankt, "
+                "und ihre Fragen und Antworten sind keine Reden."
             )
         else:
             method += "."
@@ -6318,6 +6348,12 @@ def _normalized_mp_party(party: Any) -> str:
     return "|".join(tokens) if tokens else normalized.casefold()
 
 
+def has_abgeordnete_page(mp: dict[str, Any]) -> bool:
+    """An MdB, or anyone who spoke or contributed in a sitting (so cross-links
+    from protocol and bill speaker lists never dangle, even for ministers)."""
+    return bool(mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0 or (mp.get("contribution_count") or 0) > 0)
+
+
 def collect_abgeordnete(
     conn: sqlite3.Connection,
     stats: dict[str, int] | None = None,
@@ -6385,6 +6421,14 @@ def collect_abgeordnete(
                 "item_index": row["item_index"],
             }
         )
+
+    # Beiträge that are no Rede (Kurzintervention, Frage, Antwort ...) per MP and
+    # kind: shown beside the Reden on a profile page, never added to them.
+    contributions_by_mp: dict[int, dict[str, int]] = {}
+    for row in conn.execute(
+        "SELECT mp_id, kind, COUNT(*) AS n FROM contributions WHERE mp_id IS NOT NULL GROUP BY mp_id, kind"
+    ).fetchall():
+        contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
@@ -6553,6 +6597,11 @@ def collect_abgeordnete(
             merged_speeches.extend(speeches_by_mp.get(r["id"], []))
         merged_speeches.sort(key=lambda s: (s.get("date") or ""), reverse=True)
 
+        contribution_counts: dict[str, int] = {}
+        for r in members:
+            for kind, n in contributions_by_mp.get(r["id"], {}).items():
+                contribution_counts[kind] = contribution_counts.get(kind, 0) + n
+
         # Pool votes, de-duplicated by vote id (the same vote can be reachable
         # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
@@ -6589,12 +6638,14 @@ def collect_abgeordnete(
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
+            "contribution_counts": dict(sorted(contribution_counts.items())),
+            "contribution_count": sum(contribution_counts.values()),
             "votes": merged_votes,
             "vote_tally": tally,
         }
         mps.append(mp)
         # Only persons that get a page contribute to the link lookup.
-        if mp["is_mdb"] or mp["speech_count"] > 0:
+        if has_abgeordnete_page(mp):
             for r in members:
                 for key in _mp_keys(r):
                     lookup[key] = cid
@@ -6832,6 +6883,26 @@ def render_abgeordnete_index(
 # The <id> in the file name is the canonical mps row id chosen by
 # collect_abgeordnete, which is also what mp_lookup maps every external id to,
 # so speaker links from dossier and bill pages resolve here.
+def render_contributions_panel(mp: dict[str, Any]) -> str:
+    """Beiträge that are no Rede, by kind. Never part of "Reden"."""
+    counts = mp.get("contribution_counts") or {}
+    if not counts:
+        return ""
+    fields = "".join(
+        f'<div class="field"><span>{pulse_html.esc(speech_kinds.KIND_LABELS[kind][1])}</span>'
+        f"<strong>{pulse_html.esc(counts[kind])}</strong></div>"
+        for kind in speech_kinds.CONTRIBUTION_KINDS
+        if counts.get(kind)
+    )
+    return (
+        '<section class="panel">'
+        "<h2>Weitere Beiträge (keine Reden)</h2>"
+        "<p>Kurzinterventionen, Erwiderungen sowie Fragen und Antworten in Befragung und Fragestunde zählen nicht als Reden.</p>"
+        f'<div class="field-grid">{fields}</div>'
+        "</section>"
+    )
+
+
 def render_abgeordnete_detail(
     mp: dict[str, Any],
     features: Selection | None = None,
@@ -6945,6 +7016,7 @@ def render_abgeordnete_detail(
           <h2>Reden im Bundestag</h2>
           <ul class="doc-list">{''.join(speeches) if speeches else '<li>In den bisher erfassten Plenarprotokollen wurden keine Reden erkannt.</li>'}</ul>
         </section>
+        {render_contributions_panel(mp)}
       </main>
       <aside>
         <section class="panel">
@@ -6974,7 +7046,7 @@ def write_abgeordnete_pages(
     abg_dir.mkdir(parents=True, exist_ok=True)
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
-    detail_mps = [mp for mp in mps if mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
+    detail_mps = [mp for mp in mps if has_abgeordnete_page(mp)]
     expected_pages = {f"{mp['id']}.html" for mp in detail_mps}
     for stale_page in abg_dir.glob("*.html"):
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
@@ -7730,6 +7802,11 @@ def render_facts_methodik(features: Selection | None = None) -> str:
         eine Anekdote, kein Fakt. „Die längste Debatte der Woche“ erscheint nur, wenn sich ihr
         Thema bestimmen lässt - sonst würde die Karte nur sagen, dass irgendein
         Tagesordnungspunkt lang war.</span></li>
+        <li><strong>Was als Rede zählt</strong><span>Alle Kennzahlen über Reden, Zeichen und Redner
+        zählen nur Reden. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der
+        Befragung der Bundesregierung und der Fragestunde sind keine Reden; sie werden als eigene
+        Beiträge erfasst und in keiner dieser Kennzahlen mitgezählt. Die Eingangsberichte einer
+        Befragung sind Reden.</span></li>
       </ol>
     </section>
     <section>
@@ -9169,7 +9246,8 @@ def render_sources_page(
         <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
-          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet.</span></li>
+          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
+          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet; Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>

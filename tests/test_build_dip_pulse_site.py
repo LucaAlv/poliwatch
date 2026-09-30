@@ -23,6 +23,14 @@ import render_dip_pulse_html as pulse_html
 from features import EnrichmentSelection, all_selection, default_selection
 
 
+
+def question_format_item(item: dict[str, Any], heading: str, questions: int, answers: int) -> dict[str, Any]:
+    """The item as the parser emits a Befragung: its opening reports stay Reden,
+    every Frage and Antwort is a Beitrag."""
+    contributions = [{"kind": "befragung_frage"}] * questions + [{"kind": "befragung_antwort"}] * answers
+    return {**item, "heading": heading, "question_formats": ["befragung"], "xml_contributions": contributions}
+
+
 class DossierProgressTests(unittest.TestCase):
     def test_reports_new_cached_and_completed_dossiers(self) -> None:
         protocols = [
@@ -1997,7 +2005,7 @@ class WeekTopicRowsTests(unittest.TestCase):
     def _week(self):
         """Wed/Thu/Fri sittings: a Befragung (most speeches), a bill, a 4-Antrag group, ties."""
         wed = self._entry("2026-06-10", "21/82", [
-            dict(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), heading="Befragung der Bundesregierung"),
+            question_format_item(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), "Befragung der Bundesregierung", 4, 3),
             self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
             self._item(3, [("CDU/CSU", 100)] * 3, [self._pos("W1", "Wohngeld retten")]),
         ])
@@ -3145,7 +3153,7 @@ class WeekRadarPageTests(unittest.TestCase):
         Fri: Freitag drei (3), an untitled TOP (2 speeches, one recorded speaker).
         """
         wed = self._entry("2026-06-10", "21/82", [
-            dict(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), heading="Befragung der Bundesregierung (einleitend BMJ)"),
+            question_format_item(self._item(1, [("Regierung", 50)] * 2 + [("SPD", 50)] * 4), "Befragung der Bundesregierung (einleitend BMJ)", 4, 3),
             self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
             self._item(3, [("CDU/CSU", 100)] * 3, [self._pos("W1", "Wohngeld retten")]),
         ])
@@ -3309,7 +3317,7 @@ class WeekRadarPageTests(unittest.TestCase):
     def test_rows_rank_across_the_three_sittings_with_one_denominator(self) -> None:
         markup = self._render()
         radar = self._section(markup, "radar")
-        self.assertIn("Anteil an allen 29 Reden; Frageformate wie die Befragung der Bundesregierung (einleitend BMJ) (6 Wortmeldungen) zählen mit, werden aber nicht als Thema gerankt.", radar)
+        self.assertIn("Anteil an allen 29 Reden; Frageformate wie die Befragung der Bundesregierung (einleitend BMJ) (6 Reden, 4 Fragen, 3 Antworten) werden nicht als Thema gerankt, und ihre Fragen und Antworten sind keine Reden.", radar)
         rows = self._rows(radar)
         self.assertEqual(len(rows), 5)
         self.assertEqual(
@@ -3431,18 +3439,23 @@ class WeekRadarPageTests(unittest.TestCase):
         radar = self._section(self._render(), "radar")
         self.assertIn(
             '<p class="radar-also">Außerdem, nicht als Thema gerankt: '
-            '<a href="protocols/plenarprotokoll-21-82.html#top-1">Befragung der Bundesregierung (einleitend BMJ)</a> · 6 Wortmeldungen · 20,7% (Mi 10.06., TOP 1) · '
+            '<a href="protocols/plenarprotokoll-21-82.html#top-1">Befragung der Bundesregierung (einleitend BMJ)</a> · 6 Reden, 4 Fragen, 3 Antworten · 20,7% (Mi 10.06., TOP 1) · '
             'Weitere 2 Tagesordnungspunkte: <a href="protocols/plenarprotokoll-21-83.html">21/83</a> (1) · <a href="protocols/plenarprotokoll-21-84.html">21/84</a> (1)</p>',
             radar,
         )
 
     def test_ausserdem_line_formats_only(self) -> None:
         entries = [self._entry("2026-06-10", "21/82", [
-            dict(self._item(1, [("SPD", 50)] * 2), heading="Fragestunde"),
+            {
+                **self._item(1, []),
+                "heading": "Fragestunde",
+                "question_formats": ["fragestunde"],
+                "xml_contributions": [{"kind": "fragestunde_frage"}] * 2 + [{"kind": "fragestunde_antwort"}] * 3,
+            },
             self._item(2, [("SPD", 100)] * 3, [self._pos("K1", "KI-Antrag")]),
         ])]
         radar = self._section(self._render(entries), "radar")
-        self.assertIn('<p class="radar-also">Außerdem, nicht als Thema gerankt: <a href="protocols/plenarprotokoll-21-82.html#top-1">Fragestunde</a> · 2 Wortmeldungen · 40,0% (Mi 10.06., TOP 1)</p>', radar)
+        self.assertIn('<p class="radar-also">Außerdem, nicht als Thema gerankt: <a href="protocols/plenarprotokoll-21-82.html#top-1">Fragestunde</a> · 2 Fragen, 3 Antworten (Mi 10.06., TOP 1)</p>', radar)
         self.assertNotIn("Weitere", radar)
 
     def test_ausserdem_line_remaining_only_and_singular(self) -> None:
@@ -3566,6 +3579,24 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertEqual(pulse_html.format_percent(0.0), "0,0%")
         self.assertEqual(pulse_html.format_percent(100.0), "100,0%")
 
+
+class ContributionsOnAbgeordnetePagesTests(unittest.TestCase):
+    """A Person's Beiträge (Kurzintervention, Frage, Antwort ...) are shown beside the
+    Reden, never in them, and are reason enough for a page."""
+
+    def test_a_person_who_only_contributed_gets_a_page(self) -> None:
+        self.assertTrue(build_dip_pulse_site.has_abgeordnete_page({"contribution_count": 3}))
+        self.assertTrue(build_dip_pulse_site.has_abgeordnete_page({"speech_count": 1}))
+        self.assertTrue(build_dip_pulse_site.has_abgeordnete_page({"is_mdb": True}))
+        self.assertFalse(build_dip_pulse_site.has_abgeordnete_page({"speech_count": 0, "contribution_count": 0}))
+
+    def test_the_panel_lists_kinds_and_stays_out_of_reden(self) -> None:
+        mp = {"speech_count": 4, "contribution_counts": {"kurzintervention": 2, "befragung_frage": 40}}
+        panel = build_dip_pulse_site.render_contributions_panel(mp)
+        self.assertIn("Weitere Beiträge (keine Reden)", panel)
+        self.assertIn("<span>Kurzinterventionen</span><strong>2</strong>", panel)
+        self.assertIn("<span>Fragen in der Befragung der Bundesregierung</span><strong>40</strong>", panel)
+        self.assertEqual(build_dip_pulse_site.render_contributions_panel({"contribution_counts": {}}), "")
 
 class DossierDatenLinkTests(unittest.TestCase):
     """Dossiers are written before the manifest exists, so their footer

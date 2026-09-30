@@ -10,7 +10,7 @@ Counting them would barely move shares per Zusammenschluss, because the coalitio
 
 ## Amendment 2026-09-26: Fragestunde and Befragung der Bundesregierung
 
-The same rule applies to the question formats. The XML records every Frage, Zusatzfrage and Antwort in the Fragestunde and the Befragung der Bundesregierung as a `<rede>` of its own. None of them is a Rede; only the opening report that starts a Befragung is. The reason is the definition of Rede itself: neither format has an Aussprache, so a Frage or an Antwort is not a contribution to a debate, while the opening report is a statement given the floor on its own. The Datenhandbuch supports this in part. Its count leaves out "Zusatzfragen in der Fragestunde und entsprechend alle Antworten von Regierungsmitgliedern oder Parlamentarischen Staatssekretären während der Fragestunde und der Regierungsbefragung". It does not mention MdBs' Fragen in the Befragung or the opening report.
+The same rule applies to the question formats. The XML records every Frage and Antwort of the Befragung der Bundesregierung as a `<rede>` of its own; the Fragestunde has no `<rede>` elements, each of its turns is a flat `<p klasse="redner">` marker (measured on WP 20 and 21, 2026-09-30). None of them is a Rede; only the opening report that starts a Befragung is. The reason is the definition of Rede itself: neither format has an Aussprache, so a Frage or an Antwort is not a contribution to a debate, while the opening report is a statement given the floor on its own. The Datenhandbuch supports this in part. Its count leaves out "Zusatzfragen in der Fragestunde und entsprechend alle Antworten von Regierungsmitgliedern oder Parlamentarischen Staatssekretären während der Fragestunde und der Regierungsbefragung". It does not mention MdBs' Fragen in the Befragung or the opening report.
 
 This one matters far more than Kurzinterventionen. In the store on 2026-09-26, 7,611 of 34,771 recorded `<rede>` elements (22 %) sit in 76 Befragungen, about 100 each. One minister was credited with 40 Reden in a single Befragung. Because most Antworten come from the Bundesregierung, today's shares per Zusammenschluss overstate the government side.
 
@@ -26,7 +26,8 @@ This one matters far more than Kurzinterventionen. In the store on 2026-09-26, 7
 
 - The XML does not type a `<rede>`, so Kurzinterventionen and Erwiderungen must be detected, from the Sitzungsleitung's wording or from DIP's Aktivität type. A detection error now changes counts, not just a label.
 - Published counts change, including Fakt der Woche history and Vergleichsbasis baselines built from past weeks.
-- The code does not follow this rule yet (GitHub issue #68). For the question formats it does not either: `QUESTION_FORMAT_PREFIXES` in `scripts/render_dip_pulse_html.py` keeps every Frage and Antwort in the week's Reden.
+- The code follows this rule since A1 (GitHub issues #68, #70). `speeches` holds Reden only; the other things are Beiträge in `contributions`, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde was dropped entirely before (75 of 76 Fragestunden stored no row); its turns are now parsed as Beiträge.
+- Detection is checked, never trusted: per Sitzung the parser compares its Kurzinterventionen and Erwiderungen with DIP's `aktivitaetsart` counts and warns on a difference (measured 2026-09-30, see the A1 pull request for the totals).
 
 ## Sources
 

@@ -207,6 +207,33 @@ def initialize(conn: sqlite3.Connection) -> None:
           UNIQUE(agenda_item_id, sequence)
         );
 
+        -- What is spoken in a sitting and is not a Rede (CONTEXT.md: Beitrag):
+        -- Kurzintervention, Erwiderung, Frage and Antwort of a Befragung or a
+        -- Fragestunde. speeches holds Reden only. A Fragestunde turn has no
+        -- rede_id and no page; a question read out by the Sitzungsleitung whose
+        -- asker never speaks has no mp_id and keeps the announced name.
+        CREATE TABLE IF NOT EXISTS contributions (
+          id INTEGER PRIMARY KEY,
+          protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          rede_id TEXT,
+          parent_rede_id TEXT,
+          sequence INTEGER NOT NULL,
+          mp_id INTEGER REFERENCES mps(id) ON DELETE SET NULL,
+          speaker_name TEXT,
+          fraktion TEXT,
+          sprechrolle TEXT,
+          page INTEGER,
+          char_count INTEGER NOT NULL DEFAULT 0,
+          text TEXT,
+          top_label TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(protocol_id, rede_id),
+          UNIQUE(agenda_item_id, sequence)
+        );
+
         CREATE TABLE IF NOT EXISTS votes (
           id TEXT PRIMARY KEY,
           date TEXT,
@@ -260,6 +287,8 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_agenda_items_protocol ON agenda_items(protocol_id);
         CREATE INDEX IF NOT EXISTS idx_speeches_mp ON speeches(mp_id);
         CREATE INDEX IF NOT EXISTS idx_speeches_agenda_item ON speeches(agenda_item_id);
+        CREATE INDEX IF NOT EXISTS idx_contributions_mp ON contributions(mp_id);
+        CREATE INDEX IF NOT EXISTS idx_contributions_agenda_item ON contributions(agenda_item_id);
         CREATE INDEX IF NOT EXISTS idx_positions_proceeding ON proceeding_positions(proceeding_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_mp ON vote_members(mp_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
@@ -636,6 +665,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
         raise ValueError("Report has no protocol.id")
 
     conn.execute("DELETE FROM agenda_items WHERE protocol_id = ?", (protocol_id,))
+    conn.execute("DELETE FROM contributions WHERE protocol_id = ?", (protocol_id,))
     conn.execute(
         """
         INSERT INTO protocols(
@@ -870,6 +900,44 @@ def synthetic_rede_id(protocol_id: Any, agenda_item_id: Any, sequence: Any) -> s
     return f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}{agenda_item_id}:{sequence}"
 
 
+def resolve_speaker(
+    conn: sqlite3.Connection,
+    speaker: dict[str, Any] | None,
+    now: str,
+    protocol: dict[str, Any] | None = None,
+) -> tuple[int | None, str | None, str | None]:
+    """The store row of the person a Rede or Beitrag names: ``(mp_id,
+    fraktion, sprechrolle)``. ``fraktion`` is the Zusammenschluss as the
+    protocol states it for this unit, normalised the same way parties.name is;
+    NULL when the XML names none (a minister speaking in role, or a merged record
+    naming two), and the reader then falls back to the MP's party."""
+    speaker = speaker or {}
+    profile = speaker.get("abgeordnetenwatch") or {}
+    party_name = speaker_party_name(speaker, protocol)
+    party_id = upsert_party(conn, party_name, now)
+    display_name = clean(derive.undouble(speaker.get("display_name"))) or "Unbekannt"
+    xml_redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
+    aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
+    mp_id = upsert_mp(
+        conn,
+        now=now,
+        display_name=display_name,
+        party_id=party_id,
+        identity_key=mp_identity(
+            aw_politician_id=aw_politician_id,
+            aw_match=profile.get("match"),
+            xml_redner_id=xml_redner_id,
+            display_name=display_name,
+            party_name=party_name,
+        ),
+        xml_redner_id=xml_redner_id,
+        profile_url=profile.get("url"),
+        aw_politician_id=aw_politician_id,
+        aw_match=profile.get("match"),
+    )
+    return mp_id, derive.speech_zusammenschluss(speaker, protocol), derive.sprechrolle(speaker)
+
+
 def persist_speeches(
     conn: sqlite3.Connection,
     protocol_id: str,
@@ -879,35 +947,7 @@ def persist_speeches(
     protocol: dict[str, Any] | None = None,
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-        speaker = speech.get("speaker") or {}
-        profile = speaker.get("abgeordnetenwatch") or {}
-        party_name = speaker_party_name(speaker, protocol)
-        party_id = upsert_party(conn, party_name, now)
-        # The Zusammenschluss as the protocol states it for this Rede, normalised
-        # the same way parties.name is. NULL when the XML names none (a minister
-        # speaking in role, or a merged record naming two); the reader then falls
-        # back to the MP's party.
-        speech_fraktion = derive.speech_zusammenschluss(speaker, protocol)
-        display_name = clean(derive.undouble(speaker.get("display_name"))) or "Unbekannt"
-        xml_redner_id = derive.first_redner_id(speaker.get("xml_redner_id"))
-        aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
-        mp_id = upsert_mp(
-            conn,
-            now=now,
-            display_name=display_name,
-            party_id=party_id,
-            identity_key=mp_identity(
-                aw_politician_id=aw_politician_id,
-                aw_match=profile.get("match"),
-                xml_redner_id=xml_redner_id,
-                display_name=display_name,
-                party_name=party_name,
-            ),
-            xml_redner_id=xml_redner_id,
-            profile_url=profile.get("url"),
-            aw_politician_id=aw_politician_id,
-            aw_match=profile.get("match"),
-        )
+        mp_id, speech_fraktion, sprechrolle = resolve_speaker(conn, speech.get("speaker"), now, protocol)
         page, quadrant = source_page_ref(speech.get("source_page"))
         conn.execute(
             """
@@ -936,7 +976,54 @@ def persist_speeches(
                 None
                 if speech.get("unattributed_char_count") is None
                 else int(speech["unattributed_char_count"]),
-                derive.sprechrolle(speaker),
+                sprechrolle,
+                now,
+                now,
+            ),
+        )
+
+
+def persist_contributions(
+    conn: sqlite3.Connection,
+    protocol_id: str,
+    item: dict[str, Any],
+    agenda_item_id: int,
+    now: str,
+    protocol: dict[str, Any] | None = None,
+) -> None:
+    for contribution in item.get("xml_contributions") or []:
+        speaker = contribution.get("speaker") or {}
+        # A question read out by the Sitzungsleitung whose asker never speaks
+        # names a person the XML has no id for: keep the announced name, no MP.
+        if speaker and speaker.get("xml_redner_id"):
+            mp_id, fraktion, sprechrolle = resolve_speaker(conn, speaker, now, protocol)
+        else:
+            mp_id, fraktion, sprechrolle = None, None, None
+        page, _quadrant = source_page_ref(contribution.get("source_page"))
+        conn.execute(
+            """
+            INSERT INTO contributions(
+              protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, mp_id,
+              speaker_name, fraktion, sprechrolle, page, char_count, text, top_label,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                protocol_id,
+                agenda_item_id,
+                contribution["kind"],
+                clean(contribution.get("rede_id")),
+                clean(contribution.get("parent_rede_id")),
+                int(contribution["sequence"]),
+                mp_id,
+                clean(derive.undouble(speaker.get("display_name"))),
+                fraktion,
+                sprechrolle,
+                page,
+                int(contribution.get("char_count") or 0),
+                clean(contribution.get("text")),
+                clean(contribution.get("top_label")),
                 now,
                 now,
             ),
@@ -1134,6 +1221,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
             persist_positions(conn, item, agenda_item_id, now)
             persist_agenda_documents(conn, item, agenda_item_id, now)
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
+            persist_contributions(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_votes(conn, item, agenda_item_id, now)
 
 

@@ -7,7 +7,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Tracks A and B can run in parallel. C waits for A, because every count A changes moves every series C draws. D has to be finished before anything goes public.
 
 **A. Get the counts right and the coverage in, in this order**
-1. What counts as a Rede: #68 (Kurzinterventionen), #70 (Befragung and Fragestunde), "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts", "Zu Protokoll gegebene Reden: decide what they are, then store them".
+1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). Still open: "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts" (PR 2), "Zu Protokoll gegebene Reden: decide what they are, then store them" (PR 3; decided 2026-09-30: a kind of their own, not a Rede).
 2. "Stable ids for every row a release publishes".
 3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
@@ -183,10 +183,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** M
 **Priority:** P1 (raised 2026-09-30: every series and release count depends on it)
 **Depends on:** None
-
-### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
-
-### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
 
 ### Harden the vote acquisition and catalog completeness paths (open review findings)
 
@@ -889,6 +885,18 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Depends on:** None; best started before the Analysen pages, so new pages are store-first from the start
 
 ## Completed
+
+### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68; Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+
+**Completed:** PR 1 of the A1 roadmap item, branch `a1-what-counts-as-rede` (2026-09-30), not yet released. `speeches` holds Reden only; every other unit is a Beitrag in the new `contributions` table, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde, which has no `<rede>` elements (75 of 76 Fragestunden stored no row), is parsed from its flat `<p klasse="redner">` turns. Every online update now keeps the sitting's XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it.
+
+Reference store (285 Sitzungen), the same cached reports parsed by the code before and after, so only this change moves:
+- Reden 34,775 -> 26,002 (-8,773, -25 %); DIP's own `Rede` count for the same sittings is 26,396 (our count is 1.5 % lower).
+- Beiträge 14,094: 631 Kurzinterventionen, 596 Erwiderungen, 3,784 Fragen and 3,762 Antworten of the Befragung, 2,667 Fragen and 2,654 Antworten of the Fragestunde.
+- `speeches.char_count` sum 114,848,500 -> 107,946,096 (-6.0 %).
+- Redeanteil: Bundesregierung 14.6 % -> 5.0 %, CDU/CSU 22.2 -> 24.7, SPD 17.7 -> 21.1, AfD 14.6 -> 15.2, Grüne 13.5 -> 14.5, FDP 7.4 -> 8.5, Linke 6.9 -> 7.3.
+- Kurzinterventionen 631 against DIP's 682 (92.5 %), Erwiderungen 596 against 646 (92.3 %); 4 sittings hold one more Kurzintervention than DIP, 44 hold fewer (55 in all). The detector reads the Sitzungsleitung's wording and prefers precision: it misses announcements that only refer back ("das Wort zu einer solchen"), that call it "Intervention" or that contain a negation ("der eine Kurzintervention bekommt, weil er keine Zwischenfrage stellen durfte"). DIP's `Frage`/`Antwort` counts are not comparable (DIP 6,884 + 633 Fragen and 4,198 Antworten against 6,451 and 6,416) and are not checked.
+- Not measured: the Fakt der Woche winners that changed. The reference tree has no cached DIP catalog, so the facts engine posts nothing offline; run an online update, then compare. The five speech metrics are at version 2.
 
 ### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
 

@@ -135,8 +135,10 @@ def agenda(*numbers: str) -> dict:
                 "top_id": f"TOP {index}",
                 "heading": f"Punkt {index}",
                 "page_range": None,
+                "question_formats": [],
                 "drucksachen": [{"dokumentnummer": number}],
                 "speeches": [],
+                "contributions": [],
             }
             for index, number in enumerate(numbers, start=1)
         ]
@@ -322,7 +324,7 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         # enrich_with_api always reports its own state; a caller that gets none
         # back must not turn "requested" into "complete".
         protocol = {"id": "5805", "dokumentnummer": "21/87", "fundstelle": {"xml_url": "https://example.test/p.xml"}}
-        args = mock.Mock(api_key="k", sleep=0, person_limit=0, vote_scan_pages=30, roll_call_list_id=None, limit_tops=None)
+        args = mock.Mock(api_key="k", sleep=0, person_limit=0, vote_scan_pages=30, roll_call_list_id=None, limit_tops=None, xml_cache_path=None)
         enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}}
         with mock.patch.object(dip, "fetch_text", return_value="<xml />"), mock.patch.object(
             dip, "parse_protocol_xml", return_value={"xml_protocol": {}, "agenda_items": []}

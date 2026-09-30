@@ -24,6 +24,92 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+class ReparseCachedXmlTests(unittest.TestCase):
+    """A rule change in the parser reaches the cached reports and the store from the
+    cached XML, with no re-fetch (A1)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.output_dir = Path(self._tmp.name) / "site"
+        (self.output_dir / "data" / "xml").mkdir(parents=True)
+        (self.output_dir / "protocols").mkdir()
+        self.database = self.output_dir / "data" / "bundestag-pulse.sqlite"
+        xml = (FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").write_text(xml, encoding="utf-8")
+        # The report as the parser of before A1 wrote it: every <rede> a Rede.
+        stale = {"rede_id": "OLD", "speaker": {"display_name": "Ada", "fraktion": "SPD"}, "char_count": 5, "text": "alt"}
+        self.report = {
+            "protocol": {"id": "5709", "dokumentnummer": "21/6", "datum": "2025-05-14"},
+            "validation_summary": {"xml_speech_count": 1},
+            "warnings": ["Die XML zählt 9 Beiträge der Art erwiderung, DIP 0.", "Anderes."],
+            "api_records": {"aktivitaeten": [{"aktivitaetsart": "Kurzintervention"}]},
+            "agenda_items": [
+                {"index": 1, "top_id": "Tagesordnungspunkt 1", "heading": "Befragung der Bundesregierung",
+                 "xml_speech_count": 1, "xml_speakers": [stale], "xml_speakers_first": [stale]},
+                {"index": 2, "top_id": "Tagesordnungspunkt 2", "heading": "Fragestunde",
+                 "xml_speech_count": 0, "xml_speakers": []},
+            ],
+        }
+        (self.output_dir / "data" / "plenarprotokoll-21-6.json").write_text(json.dumps(self.report), encoding="utf-8")
+
+    def entries(self) -> list[dict]:
+        return build.load_existing_detail_entries(self.output_dir, [{"dokumentnummer": "21/6"}])
+
+    def test_the_report_is_reparsed_from_its_cached_xml(self) -> None:
+        entries = self.entries()
+        self.assertEqual(build.reparse_cached_xml(self.output_dir, entries), 1)
+        report = entries[0]["report"]
+        befragung, fragestunde = report["agenda_items"]
+        self.assertEqual([s["speaker"]["display_name"] for s in befragung["xml_speakers"]], ["Alexander Dobrindt", "Verena Hubertz"])
+        self.assertEqual(befragung["xml_speech_count"], 2)
+        self.assertEqual(befragung["question_formats"], ["befragung"])
+        self.assertEqual(befragung["xml_contributions"][0]["kind"], "befragung_frage")
+        self.assertEqual(fragestunde["xml_contributions"][0]["kind"], "fragestunde_frage")
+        summary = report["validation_summary"]
+        self.assertEqual(summary["xml_speech_count"], 2)
+        self.assertGreater(summary["xml_contribution_counts"]["fragestunde_antwort"], 0)
+        # The DIP check is refreshed: the stale warning goes, the unrelated one stays.
+        self.assertEqual(
+            summary["contribution_dip_mismatches"], [{"kind": "kurzintervention", "xml": 0, "dip": 1}]
+        )
+        self.assertEqual(
+            report["warnings"],
+            ["Anderes.", "Die XML zählt 0 Beiträge der Art kurzintervention, DIP 1."],
+        )
+
+    def test_a_report_without_cached_xml_is_left_alone(self) -> None:
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()
+        entries = self.entries()
+        self.assertEqual(build.reparse_cached_xml(self.output_dir, entries), 0)
+        self.assertEqual(entries[0]["report"]["agenda_items"][0]["xml_speakers"][0]["rede_id"], "OLD")
+
+    def test_repersist_stores_reden_and_contributions_apart(self) -> None:
+        build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM speeches").fetchone()[0], 2)
+            kinds = dict(conn.execute("SELECT kind, COUNT(*) FROM contributions GROUP BY kind"))
+            self.assertGreater(kinds["befragung_frage"], 0)
+            self.assertGreater(kinds["fragestunde_antwort"], 0)
+            # A Beitrag names its speaker like a Rede does: MdB row, Fraktion, Sprechrolle.
+            row = conn.execute(
+                "SELECT c.speaker_name, c.fraktion, c.sprechrolle, c.mp_id, c.rede_id, c.page FROM contributions c "
+                "WHERE c.kind = 'befragung_antwort' ORDER BY c.sequence LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row[0], "Alexander Dobrindt")
+            self.assertEqual(row[2], "bundesregierung")
+            self.assertIsNotNone(row[3])
+            # A Fragestunde turn has neither a rede_id nor a page.
+            turn = conn.execute(
+                "SELECT rede_id, page, agenda_item_id FROM contributions WHERE kind = 'fragestunde_frage' LIMIT 1"
+            ).fetchone()
+            self.assertEqual((turn[0], turn[1]), (None, None))
+            self.assertIsNotNone(turn[2])
+        finally:
+            conn.close()
+
+
 class RepersistTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

@@ -150,6 +150,7 @@ Important generated files:
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
+| `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
 | `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, reverse-chronological and grouped by month, with a Fraktion filter |
@@ -428,7 +429,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 19 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 20 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -603,7 +604,8 @@ When persistence is enabled, the build rewrites `data/bundestag-pulse.sqlite` fr
 - `proceeding_positions`
 - `documents`
 - `agenda_item_documents`
-- `speeches`
+- `speeches` (Reden only)
+- `contributions` (Beiträge that are no Rede: Kurzintervention, Erwiderung, Frage and Antwort of a Befragung or Fragestunde, typed by `kind`; classified by `scripts/speech_kinds.py`)
 - `votes`
 - `agenda_item_votes`
 - `vote_documents`

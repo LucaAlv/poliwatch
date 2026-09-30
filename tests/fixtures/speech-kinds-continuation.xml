@@ -1,0 +1,348 @@
+<?xml version='1.0' encoding='utf-8'?>
+<dbtplenarprotokoll wahlperiode="20" sitzung-nr="209">
+  <sitzungsverlauf>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 2">
+      <p klasse="J">Ich rufe den Tagesordnungspunkt 2 auf: </p>
+      <p klasse="T_fett">		Befragung der Bundesregierung </p>
+      <p klasse="J">Die Bundesregierung hat für die heutige Befragung den Bundesminister für Ernährung und Landwirtschaft, Herrn Cem Özdemir, sowie die Bundesministerin für wirtschaftliche Zusammenarbeit und Entwicklung, Frau Svenja Schulze, benannt, die nun nacheinander Gelegenheit haben, ihre einleitenden Berichte abzugeben.</p>
+      <p klasse="J">Das Wort hat zuerst der Bundesminister für Ernährung und Landwirtschaft, Herr Cem Özdemir.</p>
+      <rede id="ID2020902200">
+        <p klasse="redner">
+          <a id="r22" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrte Kolleginnen und Kollegen! Die Legislatur war und ist von großen Herausforderungen geprägt. Der schreckliche Krieg in der Ukraine zeigt, wie eng Ernährungssicherheit und Friedenspolitik zusammenhängen. Extremwetter haben viele Betriebe nicht nur bei uns im Land an ihre Grenzen gebracht. Die Bauernproteste vor einem Jahr haben verdeutlicht, wie wichtig Verlässlichkeit in der Agrarpolitik ist.</p>
+        <p klasse="J">Derzeit fordert uns unter anderem die Maul- und Klauenseuche kräftig heraus. Zusammen mit Brandenburg und dem Friedrich-Loeffler-Institut arbeiten wir daran, eine Ausbreitung zu verhindern, Gott sei Dank bislang erfolgreich. Eines ist klar: Präventive Keulungen sind tragisch für die Tiere. Sie sind eine ökonomische, aber auch emotionale Belastung für die Tierhalter, aber leider notwendig, um die Risiken zu vermeiden.</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Vielen Dank. – Das Wort zum zweiten einleitenden Bericht hat die Bundesministerin für wirtschaftliche Zusammenarbeit und Entwicklung, Frau Svenja Schulze. Bitte schön.</p>
+      </rede>
+      <rede id="ID2020902300">
+        <p klasse="redner">
+          <a id="r23" />
+          <redner id="999990074">
+            <name>
+              <vorname>Svenja</vorname>
+              <nachname>Schulze</nachname>
+              <rolle>
+                <rolle_lang>Bundesministerin für wirtschaftliche Zusammenarbeit und Entwicklung</rolle_lang>
+                <rolle_kurz>Bundesministerin BMZ</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Svenja Schulze, Bundesministerin für wirtschaftliche Zusammenarbeit und Entwicklung:</p>
+        <p klasse="J_1">Frau Präsidentin, herzlichen Dank. – Wir haben hier gerade eine intensive Debatte um die Regierungserklärung des Bundeskanzlers hinter uns. Die grausame Gewalttat in Aschaffenburg ist wirklich furchtbar. Es ist furchtbar, wenn ein psychisch kranker Mensch ein Kind tötet, Yannis, und ein weiteres verletzt und wenn ein Mann bei dem Versuch stirbt, die Kinder zu retten. Das muss aufgeklärt werden, und es muss alles getan werden, dass solche Taten in der Zukunft verhindert werden.</p>
+        <p klasse="J">Ich finde es aber auch erschreckend, wie die Debatte insgesamt geführt wird. Wenn hier diese furchtbare Tat genutzt wird, um pauschal allen Menschen, die zu uns fliehen mussten, das Recht auf Asyl abzuerkennen, wenn Parteien grundsätzlich das Grundrecht auf Asyl infrage stellen, dann ist das wirklich geschichtsvergessen. Ich bin sehr froh, dass unser Bundeskanzler auch noch mal klargestellt hat, dass das Recht auf Asyl ein Teil unserer Werteordnung und ein Teil unserer historischen Erfahrung ist.</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Sie benennen jetzt bitte, an wen Sie Ihre jeweiligen Fragen stellen wollen. – Albert Stegemann ist für die Union der erste Fragesteller. Bitte schön.</p>
+      </rede>
+      <rede id="ID2020902400">
+        <p klasse="redner">
+          <a id="r24" />
+          <redner id="11004415">
+            <name>
+              <vorname>Albert</vorname>
+              <nachname>Stegemann</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Albert Stegemann (CDU/CSU):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. Ich möchte meine Frage an Cem Özdemir, unseren Bundeslandwirtschaftsminister, stellen. – Eine Sache haben wir ja gemeinsam: Wir waren auf der Grünen Woche unterwegs; wir haben dort viele Stände besucht – auch Friedrich Merz war an vielen Ständen zugegen –,</p>
+        <p klasse="O">und immer wieder kam das Thema „Mindestlohn 15 Euro“ auf.</p>
+      </rede>
+      <rede id="ID2020902500">
+        <p klasse="redner">
+          <a id="r25" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Wir sind beim Obst- und beim Gemüseanbau in Deutschland weit von der Selbstversorgung entfernt; das ist auch nicht erreichbar. Aber wir sollten aufpassen, dass wir nicht weiter runtergehen, und da spielen viele Faktoren eine Rolle. Dazu, dass bei uns die Kosten höher sind, trägt der Mindestlohn bei, viele andere Faktoren sicherlich auch.</p>
+        <p klasse="J">Ich glaube, dass wir aus übergeordneten Gründen uns ja zu Recht hier verständigt haben, dass wir einen Mindestlohn brauchen, dass eine Lohnuntergrenze Sinn macht, weil wir alle gemeinsam dafür sorgen wollen, dass Armut und Not bekämpft werden, dass Menschen von ihrer Arbeit menschenwürdig leben können.</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="redner">
+          <redner id="11004415">
+            <name>
+              <vorname>Albert</vorname>
+              <nachname>Stegemann</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Albert Stegemann (CDU/CSU):</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Bitte sehr.</p>
+      </rede>
+      <rede id="ID2020902600">
+        <p klasse="redner">
+          <a id="r26" />
+          <redner id="11004415">
+            <name>
+              <vorname>Albert</vorname>
+              <nachname>Stegemann</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Albert Stegemann (CDU/CSU):</p>
+        <p klasse="J_1">Also, das klingt jetzt erst mal interessant; denn ich habe doch vernommen, dass sowohl die Grünen als auch die SPD für einen politischen Mindestlohn von 15 Euro sind. Ich war damals selbst im Ausschuss für Arbeit und Soziales bei der Schaffung einer Mindestlohnkommission dabei, in der Arbeitgeber und Arbeitnehmer, aber auch die Wissenschaft mit am Tisch sind, damit eben kein politischer Überbietungswettbewerb stattfindet. Wie bringen Sie das jetzt mit Ihrer getätigten Aussage zusammen?</p>
+      </rede>
+      <rede id="ID2020902700">
+        <p klasse="redner">
+          <a id="r27" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Ganz so, wie ich es in meinem Eingangsstatement gesagt habe: Ich schaue mir immer erst mal die Probleme an und nicht die Parteiprogramme. Ich bin Landwirtschaftsminister des Landes. Sie haben den Landwirtschaftsminister gefragt, und ich antworte hier auf die Fragen wahrheitsgemäß. Und es ist nun mal so, dass wir es gerade ja auch mit Krankheiten zu tun haben – auch mit anderen Dingen –, aber was Sie sagen, ist ebenfalls ein Faktor.</p>
+        <p klasse="J">Gleichzeitig sind wir natürlich auch im Wettbewerb. Wir haben ein Interesse daran, dass wir Arbeitnehmer, Saisonarbeitskräfte bekommen. Auch da gab es Skandale in der Vergangenheit. Wir müssen also auch dafür sorgen, dass wir attraktiv sind. Das ist ein Spannungsverhältnis; ich will da gar nicht drum herumreden.</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Die zweite Frage kommt von Sanae Abdi.</p>
+      </rede>
+      <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+      <p klasse="J_1">Vielen Dank. – Ich sehe kein Mitglied des Hauses, das noch nicht an der namentlichen Abstimmung teilnehmen konnte. Mithin schließe ich die Abstimmung und bitte die Schriftführerinnen und Schriftführer, mit der Auszählung zu beginnen.</p>
+      <p klasse="J">Wir müssen jetzt einen ganz kleinen Moment warten, in dem die Urnen ausgetauscht werden, damit ich die nächste Abstimmung eröffnen kann. – Herzlichen Dank für die Schnelligkeit in der Lobby an diejenigen, die als Assistentinnen und Assistenten dafür gesorgt haben, dass die Urnen so schnell ausgetauscht worden sind!</p>
+      <p klasse="J">Damit können wir die zweite namentliche Abstimmung beginnen, und zwar über den Entschließungsantrag der Fraktion der CDU/CSU auf Drucksache 20/14699. Sie haben zur Abgabe Ihrer Stimme nach Eröffnung der Abstimmung 20 Minuten Zeit. – Die Schriftführerinnen und Schriftführer haben die vorgesehenen Plätze eingenommen. Ich eröffne hiermit die zweite namentliche Abstimmung, und zwar über den Entschließungsantrag der Fraktion der CDU/CSU auf Drucksache 20/14699. Wir beenden diese Abstimmung um 17.25 Uhr. </p>
+      <p klasse="J">Weil ich hier einige Meldungen sehe, weise ich darauf hin, dass wir noch in der ersten Runde der Befragung sind. Das heißt, dass ich noch keine Meldungen aus der Mitte des Hauses annehme.</p>
+      <p klasse="J">Damit hat Kathrin Henneberger das Wort für ihre Frage.</p>
+      <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+      <p klasse="J_1">Bevor ich der nächsten Fragestellerin das Wort gebe, mache ich darauf aufmerksam, dass wir in anderthalb Minuten die namentliche Abstimmung schließen werden. Sollte also noch jemand im Haus anwesend sein, die oder der die Stimme nicht abgegeben hat, dann wäre das jetzt der Moment.</p>
+      <p klasse="J">Die nächste Frage stellt die Kollegin Sthamer.</p>
+      <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+      <p klasse="J_1">Vielen Dank. – Ich sehe jetzt kein Mitglied des Hauses mehr, das seine Stimme noch nicht abgegeben hat. – Das ist der Fall. Dann schließe ich die Abstimmung und bitte die Schriftführerinnen und Schriftführer, mit der Auszählung zu beginnen. Das Ergebnis wird Ihnen später bekannt gegeben.<sup>1</sup>
+        <fussnote>
+          <p>Ergebnis auf Seite 27074 D</p>
+        </fussnote>
+      </p>
+      <p klasse="J">Ich habe jetzt eine Meldung von Herrn Stefinger. Ich würde Sie alle bitten, dass wir diejenigen, die sich zu Hauptfragen schon gemeldet haben, drankommen lassen, aber diejenigen, die die Hauptfrage gestellt haben, nicht noch mal. Jetzt habe ich noch eine Nachfrage von Frau Henneberger, und dann kommt die nächste Hauptfrage von Frau De Ridder. – Frau Henneberger, bitte.</p>
+      <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+      <p klasse="J_1">Vielen Dank.</p>
+      <p klasse="J">Ich würde jetzt zu dem vorherigen Tagesordnungspunkt zurückkommen und Ihnen die von den Schriftführerinnen und Schriftführern ermittelten Ergebnisse der namentlichen Abstimmungen über beide Entschließungsanträge gern bekannt geben: </p>
+      <p klasse="J">Entschließungsantrag zu der Abgabe einer Regierungserklärung durch den Bundeskanzler zu aktuellen innenpolitischen Themen auf Drucksache 20/14698. Es wurden abgegeben 703 Stimmen. Mit Ja haben gestimmt 348, mit Nein haben gestimmt 345, es gab 10 Enthaltungen. Damit ist der Entschließungsantrag angenommen.</p>
+      <kommentar>(Beifall bei der AfD – Unruhe bei der SPD und dem BÜNDNIS 90/DIE GRÜNEN – Felix Banaszak [BÜNDNIS 90/DIE GRÜNEN]: Unfassbar! – Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Die AfD feiert! – Zuruf von der SPD: Herr Merz, das ist Ihr Werk! – Katharina Dröge [BÜNDNIS 90/DIE GRÜNEN]: Das ist wirklich Ihr Werk, Herr Merz!)</kommentar>
+      <p klasse="p">Abgeordnete, die sich wegen gesetzlichen Mutterschutzes für ihre Abwesenheit entschuldigt haben oder an einer Parlamentarischen Versammlung teilnehmen, sind in der Liste der entschuldigten Abgeordneten (Anlage 1) aufgeführt.</p>
+      <p klasse="J">Ergebnis der zweiten namentlichen Abstimmung zu der Vorlage auf Drucksache 20/14699: Hier wurden 702 Stimmkarten abgegeben. Mit Ja haben gestimmt 190, mit Nein 509, es gab 3 Enthaltungen. Der Entschließungsantrag ist abgelehnt.</p>
+      <p klasse="p">Abgeordnete, die sich wegen gesetzlichen Mutterschutzes für ihre Abwesenheit entschuldigt haben oder an einer Parlamentarischen Versammlung teilnehmen, sind in der Liste der entschuldigten Abgeordneten (Anlage 1) aufgeführt.</p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Zur Geschäftsordnung">
+      <p klasse="J">Es gibt den Wunsch nach einer Unterbrechung der Sitzung, und ich gebe das Wort an den Kollegen Mützenich. </p>
+      <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+      <rede id="ID2020906800">
+        <p klasse="redner">
+          <a id="r68" />
+          <redner id="11003599">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Rolf</vorname>
+              <nachname>Mützenich</nachname>
+              <fraktion>SPD</fraktion>
+            </name>
+          </redner>Dr. Rolf Mützenich (SPD):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Im Namen der SPD-Fraktion und der Fraktion Bündnis 90/Die Grünen beantrage ich die Unterbrechung des Plenums.</p>
+        <p klasse="J">Wir sind der Überzeugung, Herr Kollege Merz, dass wir nicht so einfach zur Tagesordnung des Plenums übergehen können –</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Das Wort hat der Kollege Friedrich Merz.</p>
+        <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der AfD)</kommentar>
+      </rede>
+      <rede id="ID2020906900">
+        <p klasse="redner">
+          <a id="r69" />
+          <redner id="11002735">
+            <name>
+              <vorname>Friedrich</vorname>
+              <nachname>Merz</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Friedrich Merz (CDU/CSU):</p>
+        <p klasse="J_1">Frau Präsidentin! Liebe Kolleginnen und Kollegen!</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Ich bitte Sie um Ruhe. Danke sehr.</p>
+        <p klasse="redner">
+          <redner id="11002735">
+            <name>
+              <vorname>Friedrich</vorname>
+              <nachname>Merz</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Friedrich Merz (CDU/CSU):</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Ich bitte alle, sich so weit gegenseitig zuzuhören, dass alle verstehen können, was gesagt wird.</p>
+        <p klasse="J">Das Wort hat Britta Haßelmann für Bündnis 90/Die Grünen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD)</kommentar>
+      </rede>
+      <rede id="ID2020907000">
+        <p klasse="redner">
+          <a id="r70" />
+          <redner id="11003764">
+            <name>
+              <vorname>Britta</vorname>
+              <nachname>Haßelmann</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Britta Haßelmann (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Meine Damen und Herren! Heute ist ein historischer Tag,</p>
+        <p klasse="O">und zwar im negativen Sinne.</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="redner">
+          <redner id="11003764">
+            <name>
+              <vorname>Britta</vorname>
+              <nachname>Haßelmann</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Britta Haßelmann (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+        <p klasse="J_1">Dann kommt die FDP. – Bitte schön.</p>
+      </rede>
+      <name>Vizepräsidentin Katrin Göring-Eckardt:</name>
+      <p klasse="J_1">Ich unterbreche die Sitzung des Deutschen Bundestages etwa für eine halbe Stunde. Der Wiederbeginn wird Ihnen rechtzeitig bekannt gegeben.</p>
+      <p klasse="J">Vielen Dank.</p>
+      <kommentar>(Unterbrechung von 17.55 bis 18.41 Uhr)</kommentar>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 2">
+      <name>Vizepräsidentin Aydan Özoğuz:</name>
+      <p klasse="J_1">Liebe Kolleginnen und Kollegen, die unterbrochene Sitzung ist jetzt wieder eröffnet. </p>
+      <p klasse="J">Wir machen mit der Befragung der Bundesregierung weiter, und zwar an der Stelle, an der wir aufgehört hatten. Und da gerade ganz viele Fragezeichen auf vielen Stirnen zu sehen sind – das war bei mir auch so –: Es ging zuletzt um Bürokratieabbau und Tierhaltung. An dieser Stelle lasse ich jetzt die nächste Nachfrage zu, und die kommt von Renate Künast. Bitte schön.</p>
+      <rede id="ID2020907400">
+        <p klasse="redner">
+          <a id="r74" />
+          <redner id="11003576">
+            <name>
+              <vorname>Renate</vorname>
+              <nachname>Künast</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Renate Künast (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Danke, Frau Präsidentin, dass Sie uns alle noch mal verortet haben, wo wir sind und warum.</p>
+        <p klasse="J">Ich habe eine Frage an beide, an Herrn Minister Özdemir und an Frau Schulze. Ich möchte wissen – wir reden ja über Bürokratieabbau –, in welchen Bereichen es eigentlich die größten bürokratischen Belastungen für unsere Landwirte gibt. Zum Beispiel haben wir über das Düngerrecht geredet, was die CDU/CSU immer so kritisiert hat, und über Lieferkettenrechte auf europäischer Ebene. Im Zusammenhang mit Düngerecht ging es auch um die Frage: –</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="redner">
+          <redner id="11003576">
+            <name>
+              <vorname>Renate</vorname>
+              <nachname>Künast</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Renate Künast (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Bitte schön, Herr Minister.</p>
+      </rede>
+      <rede id="ID2020907500">
+        <p klasse="redner">
+          <a id="r75" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Vielen Dank. – Ich will dazu sagen: Entwaldungsfreie Lieferketten – das kommt ja aus Brüssel – sind grundsätzlich ein richtiges Anliegen, aber die Art, wie es gemacht war, war extrem bürokratisch. Das hat dazu geführt, dass ich als grüner Minister in einer überwiegend schwarzen Kommission dafür werben musste, dass man den Anwendungsstart verschiebt, eben weil das Vorhaben in der Form einfach extrem bürokratisch und umständlich war.</p>
+        <p klasse="J">Zum Düngegesetz will ich sagen: Ich bedaure es sehr, dass es uns nicht gelungen ist, eine vernünftige Lösung zu finden. Ein Kompromissangebot des SPD-Ministers aus Mecklenburg-Vorpommern lag vor. Ich weiß, dass viele in der CDU das annehmen wollten. Aber das ist aus parteipolitischen Gründen gescheitert – zum Nachteil der Landwirtschaft, zum Nachteil auch dessen, –</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="redner">
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Vielen Dank. – Dann gibt es eine weitere Nachfrage von Herrn Stier aus der CDU/CSU-Fraktion.</p>
+      </rede>
+      <rede id="ID2020907600">
+        <p klasse="redner">
+          <a id="r76" />
+          <redner id="11004168">
+            <name>
+              <vorname>Dieter</vorname>
+              <nachname>Stier</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Dieter Stier (CDU/CSU):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Meine Frage passt zum Thema Tierhaltung. Herr Minister, ich habe von der Bundestierschutzbeauftragten einen Brief mit dem Kopfbogen Ihres Hauses mit Empfehlungen zu den Wahlprogrammen erhalten. Ich würde Sie gerne fragen: An welche Parteien hat denn die Bundestierschutzbeauftragte Kari seit dem 3. Dezember – also seit dem Tag, als das Bundesministerium des Innern vom Beginn der Vorwahlzeit ausging – tierschutzpolitische Empfehlungen für die Wahlprogramme zur Bundestagswahl versendet?</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Kommen auch Sie bitte zum Schluss.</p>
+        <p klasse="redner">
+          <redner id="11004168">
+            <name>
+              <vorname>Dieter</vorname>
+              <nachname>Stier</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Dieter Stier (CDU/CSU):</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Herr Minister.</p>
+      </rede>
+      <rede id="ID2020907700">
+        <p klasse="redner">
+          <a id="r77" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Die Bundestierschutzbeauftragte ist unabhängig. Das heißt, ich gebe ihr keine Weisungen oder Aufträge. Sie kritisiert manchmal auch die Arbeit von mir. Das liegt an der Unabhängigkeit einer Beauftragten.</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Es gibt noch einen Fragesteller aus der CDU/CSU-Fraktion: Das ist Herr Auernhammer.</p>
+      </rede>
+      <rede id="ID2020907800">
+        <p klasse="redner">
+          <a id="r78" />
+          <redner id="11003706">
+            <name>
+              <vorname>Artur</vorname>
+              <nachname>Auernhammer</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Artur Auernhammer (CDU/CSU):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Herr Bundesminister, ich möchte zum Thema Bürokratieabbau nachfragen. Es gab einen einstimmigen Beschluss der Agrarministerkonferenz aus Oberhof in Thüringen, dass die sogenannte Stoffstrombilanz abgeschafft werden soll; auch Sie haben das begrüßt. Wir haben in einem Vermittlungsverfahren versucht, das auf den Weg zu bringen. Leider war Ihr Haus dann der Meinung, man müsse eine Nährstoffbilanz einführen; wahrscheinlich aufgrund der Initiative von Frau Künast. Dabei wäre das ursprüngliche Vorhaben ein großer Beitrag zur Entbürokratisierung in der Landwirtschaft gewesen.</p>
+      </rede>
+      <rede id="ID2020907900">
+        <p klasse="redner">
+          <a id="r79" />
+          <redner id="11002746">
+            <name>
+              <vorname>Cem</vorname>
+              <nachname>Özdemir</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung</rolle_lang>
+                <rolle_kurz>Bundesminister BMEL sowie BMBF</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Cem Özdemir, Bundesminister für Ernährung und Landwirtschaft sowie für Bildung und Forschung:</p>
+        <p klasse="J_1">Danke für diese Frage. Ich bin für die Frage wirklich dankbar, weil die Antwort mal so ein bisschen zeigt, was eigentlich auf dem Tisch lag. – Es geht um ein Verfahren aus Brüssel, im Zuge dessen uns Strafzahlungen von bis zu 1 Milliarde Euro drohten, weil die Vorgängerregierung das Thema nicht in Angriff genommen hatte.</p>
+        <p klasse="J">Wir sind das Thema in der Koalition angegangen. Und am Ende lag ein Angebot auf dem Tisch, das einen Kompromiss vorsah – ich habe das Angebot aus Mecklenburg-Vorpommern gerade angesprochen –, nämlich dass wir die Stoffstrombilanzverordnung zurücknehmen. Hätten sich alle Seiten etwas bewegt, hätten wir am Ende unsere Vertragstreue gegenüber Brüssel und unseren Willen zur Entbürokratisierung gezeigt. Und das ist doch auch, was Sie wollen: die einzelbetriebliche Prüfung. Der einzige Grund, warum es nicht dazu kam, ist der Wahlkampf: weil Sie nicht wollten, dass es einen Kompromiss gibt. Das ist sehr bedauerlich.</p>
+        <name>Vizepräsidentin Aydan Özoğuz:</name>
+        <p klasse="J_1">Zu dieser Frage sehe ich jetzt keine weiteren Nachfragen? – Doch. Bitte schön.</p>
+      </rede>
+      <name>Vizepräsidentin Aydan Özoğuz:</name>
+      <p klasse="J_1">Wenn es dazu keine Nachfragen gibt – ich sehe keine –, beenden wir hiermit die Fragen zu den Geschäftsbereichen der Regierungsmitglieder.</p>
+    </tagesordnungspunkt>
+  </sitzungsverlauf>
+</dbtplenarprotokoll>

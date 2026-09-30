@@ -271,7 +271,7 @@ def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str
     for report in reports:
         number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
         for item in report.get("agenda_items") or []:
-            for speech in item.get("xml_speakers") or []:
+            for speech in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])]:
                 text = role_text(speech.get("speaker"))
                 if text and side_of_role(text) is None:
                     unmapped.setdefault(text, []).append(f"{number} {speech.get('rede_id') or '?'}")

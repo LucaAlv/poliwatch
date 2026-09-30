@@ -11,7 +11,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 19 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 20 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 
@@ -251,7 +251,7 @@ python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .cont
 - an unreadable or malformed cached report, or a report that fails to persist, prints one `ERROR [repersist]:` line naming the file, exits 1, and leaves the previous database byte for byte as it was (it is opened read-only, so an older schema is not migrated either);
 - when the rebuilt content equals the current database apart from timestamps, the existing file is kept and the run says so, so running it twice changes nothing.
 
-It applies what is derived when persisting. It does not re-parse XML or re-resolve profiles; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
+It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A report with no cached XML keeps what it holds until an online update re-fetches it. It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 
 #### Validate a data correction
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import http.client
+import tempfile
 import unittest
 from argparse import Namespace
+from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
@@ -191,6 +193,36 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
 
         find_protocol.assert_not_called()
         self.assertEqual(report["protocol"]["id"], "5805")
+
+    def test_build_report_keeps_the_fetched_xml_for_a_rule_change_without_a_refetch(self) -> None:
+        protocol = {
+            "id": "5805",
+            "dokumentnummer": "21/87",
+            "fundstelle": {"xml_url": "https://example.test/protocol.xml"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "data" / "xml" / "plenarprotokoll-21-87.xml"
+            args = Namespace(
+                api_key="test-key",
+                sleep=0,
+                protocol_id="5805",
+                document_number=None,
+                person_limit=0,
+                vote_scan_pages=0,
+                roll_call_list_id=None,
+                limit_tops=None,
+                xml_cache_path=cache,
+            )
+            enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}}
+            with (
+                mock.patch.object(dip, "fetch_text", return_value="<dbtplenarprotokoll>ä</dbtplenarprotokoll>"),
+                mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
+                mock.patch.object(dip, "enrich_with_llm_summaries"),
+                mock.patch("sys.stderr"),
+            ):
+                dip.build_report(args, protocol=protocol)
+            self.assertEqual(cache.read_text(encoding="utf-8"), "<dbtplenarprotokoll>ä</dbtplenarprotokoll>")
+            self.assertEqual([p.name for p in cache.parent.iterdir()], ["plenarprotokoll-21-87.xml"])
 
     def test_vote_helpers(self) -> None:
         counts = dip.vote_counts_from_csv("10, 5, 2, 1")

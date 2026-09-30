@@ -35,6 +35,7 @@ from typing import Any, Callable, NamedTuple
 
 import derive
 import publication_state as publication
+import speech_kinds
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
@@ -499,6 +500,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         rid_pages.update(block["rid_pages"])
 
     agenda_items: list[dict[str, Any]] = []
+    seen_formats: dict[str, frozenset[str]] = {}
     for index, top in enumerate(root.findall("./sitzungsverlauf/tagesordnungspunkt"), start=1):
         heading_lines: list[str] = []
         transfer_lines: list[str] = []
@@ -513,35 +515,68 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 if text:
                     transfer_lines.append(text)
 
+        heading = clean_text(" ".join(heading_lines))
+        top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
+        redes = top.findall("rede")
+        labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
         speeches: list[dict[str, Any]] = []
+        contributions: list[dict[str, Any]] = []
         pages: list[dict[str, Any]] = []
-        for rede in top.findall("rede"):
+        for sequence, (rede, label) in enumerate(zip(redes, labels), start=1):
             rid = rede.attrib.get("id")
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
             text, paragraphs, unattributed_chars = speech_text_and_paragraphs(rede)
             page_ref = rid_pages.get(rid or "")
             if page_ref:
                 pages.append(page_ref)
-            speeches.append(
-                {
-                    "rede_id": rid,
-                    "source_page": page_ref,
-                    "speaker": redner,
-                    "paragraph_count": len(paragraphs),
-                    "char_count": len(text),
-                    "unattributed_char_count": unattributed_chars,
-                    "text": text,
-                    "paragraphs": paragraphs,
-                    "snippet": text[:240],
-                }
-            )
+            unit = {
+                "rede_id": rid,
+                "source_page": page_ref,
+                "speaker": redner,
+                "paragraph_count": len(paragraphs),
+                "char_count": len(text),
+                "unattributed_char_count": unattributed_chars,
+                "text": text,
+                "paragraphs": paragraphs,
+                "snippet": text[:240],
+            }
+            if label.kind is None:
+                speeches.append(unit)
+            else:
+                contributions.append(
+                    {**unit, "kind": label.kind, "parent_rede_id": label.parent_rede_id, "sequence": sequence}
+                )
+        if speech_kinds.FRAGESTUNDE in top_format.formats:
+            for flat_index, turn in enumerate(speech_kinds.fragestunde_turns(top), start=1):
+                text = clean_text(" ".join(turn.paragraphs))
+                if turn.redner is not None:
+                    speaker = parse_redner(turn.redner)
+                else:
+                    speaker = {"xml_redner_id": None, "display_name": turn.announced} if turn.announced else None
+                contributions.append(
+                    {
+                        "kind": turn.kind,
+                        "rede_id": None,
+                        "parent_rede_id": None,
+                        "sequence": len(redes) + flat_index,
+                        "source_page": None,
+                        "speaker": speaker,
+                        "paragraph_count": len(turn.paragraphs),
+                        "char_count": len(text),
+                        "unattributed_char_count": 0,
+                        "text": text,
+                        "paragraphs": turn.paragraphs,
+                        "snippet": text[:240],
+                    }
+                )
 
         sorted_pages = sorted(pages, key=page_sort_key)
         agenda_items.append(
             {
                 "index": index,
                 "top_id": top.attrib.get("top-id"),
-                "heading": clean_text(" ".join(heading_lines)),
+                "heading": heading,
+                "question_formats": sorted(top_format.formats),
                 "drucksachen": extract_drucksachen(top),
                 "ueberweisung": transfer_lines,
                 "page_range": {
@@ -549,6 +584,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                     "end": sorted_pages[-1] if sorted_pages else None,
                 },
                 "speeches": speeches,
+                "contributions": contributions,
             }
         )
 
@@ -1695,6 +1731,111 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
     ).as_dict()
 
 
+def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
+    """The keys of a report's agenda item that come from the parsed XML alone:
+    Reden (``xml_speakers``) and Beiträge (``xml_contributions``). Used when a
+    report is built and when a cached one is re-parsed from its cached XML."""
+    return {
+        "question_formats": top["question_formats"],
+        "xml_speech_count": len(top["speeches"]),
+        "xml_contributions": [
+            {
+                "kind": contribution["kind"],
+                "rede_id": contribution["rede_id"],
+                "parent_rede_id": contribution["parent_rede_id"],
+                "sequence": contribution["sequence"],
+                "source_page": contribution["source_page"],
+                "speaker": contribution["speaker"],
+                "paragraph_count": contribution["paragraph_count"],
+                "char_count": contribution["char_count"],
+                "text": contribution["text"],
+                "paragraphs": contribution["paragraphs"],
+                "snippet": contribution["snippet"],
+            }
+            for contribution in top["contributions"]
+        ],
+        "xml_speakers": [
+            {
+                "rede_id": speech["rede_id"],
+                "source_page": speech["source_page"],
+                "speaker": speech["speaker"],
+                "paragraph_count": speech["paragraph_count"],
+                "char_count": speech["char_count"],
+                "unattributed_char_count": speech["unattributed_char_count"],
+                "text": speech["text"],
+                "paragraphs": speech["paragraphs"],
+                "snippet": speech["snippet"],
+            }
+            for speech in top["speeches"]
+        ],
+        "xml_speakers_first": [
+            {
+                "rede_id": speech["rede_id"],
+                "source_page": speech["source_page"],
+                "speaker": speech["speaker"],
+                "char_count": speech["char_count"],
+                "snippet": speech["snippet"],
+            }
+            for speech in top["speeches"][:5]
+        ],
+    }
+
+
+def contribution_summary(agenda_items: list[dict[str, Any]]) -> dict[str, Any]:
+    """The ``validation_summary`` keys for Reden and Beiträge, over parsed
+    agenda items."""
+    contributions = [c for top in agenda_items for c in top["contributions"]]
+    return {
+        "xml_speech_count": sum(len(top["speeches"]) for top in agenda_items),
+        "xml_contribution_counts": speech_kinds.kind_counts(contributions),
+        "fragestunde_questions_without_person": sum(
+            1
+            for c in contributions
+            if c["kind"] == speech_kinds.FRAGESTUNDE_FRAGE
+            and c["rede_id"] is None
+            and not (c["speaker"] or {}).get("xml_redner_id")
+        ),
+    }
+
+
+KIND_MISMATCH_WARNING = "Die XML zählt "
+
+
+def kind_mismatch_warnings(mismatches: list[dict[str, Any]]) -> list[str]:
+    return [
+        f"{KIND_MISMATCH_WARNING}{m['xml']} Beiträge der Art {m['kind']}, DIP {m['dip']}." for m in mismatches
+    ]
+
+
+def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:
+    """Replace what a cached report holds of Reden and Beiträge with what the
+    current parser reads from the sitting's XML, leaving every DIP-derived field
+    alone. Agenda items pair up by ``index``; the XML is the same document, so
+    the numbering does not move."""
+    by_index = {top["index"]: top for top in parsed_xml["agenda_items"]}
+    for item in report.get("agenda_items") or []:
+        top = by_index.get(item.get("index"))
+        if top is not None:
+            item.update(xml_top_fields(top))
+    summary = report.setdefault("validation_summary", {})
+    summary.update(contribution_summary(parsed_xml["agenda_items"]))
+    mismatches = speech_kinds.dip_mismatches(
+        summary["xml_contribution_counts"], (report.get("api_records") or {}).get("aktivitaeten") or []
+    )
+    summary["contribution_dip_mismatches"] = mismatches
+    report["warnings"] = [
+        warning for warning in report.get("warnings") or [] if not warning.startswith(KIND_MISMATCH_WARNING)
+    ] + kind_mismatch_warnings(mismatches)
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """A crash mid-write must never leave a truncated file where a cached report,
+    the catalog or a cached XML used to be."""
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
 def enrich_with_api(
     client: ApiClient,
     protocol: dict[str, Any],
@@ -1826,31 +1967,7 @@ def enrich_with_api(
                 "heading": top["heading"],
                 "page_range": top["page_range"],
                 "xml_drucksachen": top["drucksachen"],
-                "xml_speech_count": len(top["speeches"]),
-                "xml_speakers": [
-                    {
-                        "rede_id": speech["rede_id"],
-                        "source_page": speech["source_page"],
-                        "speaker": speech["speaker"],
-                        "paragraph_count": speech["paragraph_count"],
-                        "char_count": speech["char_count"],
-                        "unattributed_char_count": speech["unattributed_char_count"],
-                        "text": speech["text"],
-                        "paragraphs": speech["paragraphs"],
-                        "snippet": speech["snippet"],
-                    }
-                    for speech in top["speeches"]
-                ],
-                "xml_speakers_first": [
-                    {
-                        "rede_id": speech["rede_id"],
-                        "source_page": speech["source_page"],
-                        "speaker": speech["speaker"],
-                        "char_count": speech["char_count"],
-                        "snippet": speech["snippet"],
-                    }
-                    for speech in top["speeches"][:5]
-                ],
+                **xml_top_fields(top),
                 "api": {
                     "positions": [compact_position(position) for position in matching_positions],
                     "activities_count": len(matching_activities),
@@ -1950,6 +2067,11 @@ def enrich_with_api(
             f"{failed_ids}{suffix}."
         )
 
+    kind_mismatches = speech_kinds.dip_mismatches(
+        speech_kinds.kind_counts(c for top in agenda_items for c in top["contributions"]), activities
+    )
+    warnings.extend(kind_mismatch_warnings(kind_mismatches))
+
     vote_records = len(attached_vote_ids)
     if vote_scan_pages <= 0:
         vote_facts = publication.DomainFacts(
@@ -2036,6 +2158,7 @@ def enrich_with_api(
             "unmatched_roll_call_vote_count": len(unmatched_candidates),
             "roll_call_scan_end": roll_call_fetch.scan_end,
             "roll_call_scan_pages": vote_scan_pages,
+            "contribution_dip_mismatches": kind_mismatches,
         },
         "sampled_people": [compact_person(person) for person in person_records],
         "api_records": {
@@ -2078,6 +2201,10 @@ def build_report(
 
     progress("Downloading XML transcript.")
     xml_text = fetch_text(xml_url)
+    xml_cache_path = getattr(args, "xml_cache_path", None)
+    if xml_cache_path is not None:
+        xml_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(xml_cache_path, xml_text)
     parsed_xml = parse_protocol_xml(xml_text)
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(
@@ -2100,7 +2227,6 @@ def build_report(
     if args.limit_tops is not None:
         agenda_items = agenda_items[: args.limit_tops]
 
-    xml_speech_count = parsed_speech_count
     xml_drucksache_count = sum(len(top["drucksachen"]) for top in parsed_xml["agenda_items"])
     tops_with_xml_drucksachen = sum(1 for top in parsed_xml["agenda_items"] if top["drucksachen"])
     tops_with_api_positions = sum(1 for top in enrichment["agenda_items"] if top["api"]["positions"])
@@ -2134,7 +2260,7 @@ def build_report(
         },
         "validation_summary": {
             "xml_top_count": len(parsed_xml["agenda_items"]),
-            "xml_speech_count": xml_speech_count,
+            **contribution_summary(parsed_xml["agenda_items"]),
             "xml_drucksache_count": xml_drucksache_count,
             "tops_with_xml_drucksachen": tops_with_xml_drucksachen,
             "tops_with_api_positions": tops_with_api_positions,

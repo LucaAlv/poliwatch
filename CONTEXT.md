@@ -101,8 +101,12 @@ A Sitzung this project has a Dossier for. Every count this project publishes —
 _Avoid_: erfasste Sitzung ("erfasst" already names Presentation states and incomplete Fakt periods), implying a count covers every Sitzung held
 
 **Rede**:
-One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung, although the Plenarprotokoll records each like one.
+One contribution to the debate for which a Redner is given the floor, as the Plenarprotokoll records it. It covers only that Redner's own words, not the Sitzungsleitung's words or Zwischenfragen recorded within it. A Kurzintervention and the Erwiderung to it are not Reden, and neither are the Fragen and Antworten of the Fragestunde and the Befragung der Bundesregierung; the Plenarprotokoll records the first three and the Befragung's Fragen and Antworten as `<rede>` elements like Reden, and the Fragestunde's as flat turns.
 _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
+
+**Beitrag**:
+Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde. Each has a Kind (`kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
+_Avoid_: Wortmeldung, counting a Beitrag as a Rede, adding Beiträge to a Person's Reden
 
 **Zwischenfrage**:
 A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner.
@@ -117,11 +121,11 @@ The brief reply of the Redner whose Rede a Kurzintervention referred to. Like th
 _Avoid_: counting it as a second Rede of the same Redner
 
 **Befragung der Bundesregierung**:
-A Tagesordnungspunkt in which someone speaking for the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede; each Frage and each Antwort after it is not, and is counted on its own.
+A Tagesordnungspunkt in which someone speaking for the Bundesregierung first reports on a subject and MdBs then put Fragen that the Bundesregierung answers. The opening report is a Rede (there can be two, when two members of the Bundesregierung report); each Frage and each Antwort after it is a Beitrag, counted on its own.
 _Avoid_: Regierungsbefragung (short form), counting each Frage and Antwort as a Rede
 
 **Fragestunde**:
-A Tagesordnungspunkt in which the Bundesregierung answers Fragen that MdBs submitted in advance, with Zusatzfragen from the floor. It holds no Rede: every Frage, Zusatzfrage and Antwort is counted on its own.
+A Tagesordnungspunkt in which the Bundesregierung answers Fragen that MdBs submitted in advance, with Zusatzfragen from the floor. It holds no Rede: every Frage, Zusatzfrage and Antwort is a Beitrag counted on its own. The Plenarprotokoll XML does not record its turns as `<rede>` elements: each turn is a flat `<p klasse="redner">` marker followed by paragraphs, and the Frage itself is read out by the Sitzungsleitung.
 _Avoid_: Zwischenfrage (asked during a Rede), counting its contributions as Reden
 
 **Zwischenruf**:
@@ -137,7 +141,7 @@ What the presiding Präsident or Vizepräsident says while chairing a Sitzung: g
 _Avoid_: attributing chairing remarks to the Redner or counting them as speeches
 
 **Gastansprache**:
-An address to the Bundestag by an invited guest, such as a foreign head of state or a speaker at a Gedenkstunde. It is shown with its Sitzung but is not a Rede: it counts toward no speech total and no Zusammenschluss.
+An address to the Bundestag by an invited guest, such as a foreign head of state or a speaker at a Gedenkstunde. It is not a Rede and counts toward no speech total and no Zusammenschluss. The Plenarprotokoll XML does not record it at all (checked in 20/21 and the 20/209 Gedenkstunde: every Redner there has a Fraktion or a Rolle), so there is nothing to exclude and nothing to show.
 _Avoid_: Gastrede, counting it as a Rede
 
 **Sitzungswoche**:
