@@ -26,6 +26,7 @@ The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP la
 ## What we changed (DIP no. 4b)
 
 - The protocol XML and DIP API records are extracted and split into tables. `speeches.text` is the speech text with whitespace normalised: the paragraphs of a Rede (without the speaker line) are joined with single spaces, non-breaking spaces become plain spaces, and runs of whitespace collapse to one space. Wording and punctuation are not edited, but paragraph breaks are not kept. The duplicate `paragraphs_json` column is dropped at export.
+- The parser classifies each turn of the protocol. `speeches` holds Reden only. Kurzinterventionen, Erwiderungen, and the Fragen and Antworten of a Befragung or Fragestunde are stored as Beiträge in `contributions` (`kind`, `parent_rede_id`, `sprechrolle`). The protocol does not label these kinds as data: the classification is ours, made from the wording and structure of the XML, and is not free of errors. A Beitrag the parser missed is still in `speeches`.
 - Fraktion spellings are normalised to one form per Fraktion (`parties.name`, `speeches.fraktion`).
   - `speeches.fraktion` is the Fraktion the protocol names for that Rede, i.e. the affiliation at the time of the speech.
   - `mps.party_id` is the affiliation as of the last build.
