@@ -487,6 +487,53 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertIs(entry, expected_entry)
         self.assertIs(build_report.call_args.kwargs["protocol"], protocol)
 
+    # Value: protects=the cached XML is replaced only when its report is accepted: a vote scan that fails keeps the cached dossier and the XML it was parsed from together;
+    #   fails_when=build_report (or write_report_and_page) caches the downloaded XML before keep_cached_dossier_when_votes_failed accepts the report, so --offline --repersist pairs revised Reden with the old agenda and votes;
+    #   why_new=the cache write sat inside build_report, before any acceptance check; seam=none
+    def test_the_fetched_xml_is_cached_only_with_an_accepted_report(self) -> None:
+        protocol = {"id": "5805", "dokumentnummer": "21/87", "fundstelle": {"xml_url": "https://example.test/p.xml"}}
+        report = {"protocol": {"id": "5805"}, "agenda_items": []}
+
+        def fake_build_report(args: argparse.Namespace, protocol: dict) -> dict:
+            args.xml_sink["text"] = "<revised/>"
+            return report
+
+        def run(tmp: str, *, accepted: bool) -> Path:
+            output_dir = Path(tmp)
+            path = build_dip_pulse_site.xml_cache_path(output_dir, "21/87")
+            path.parent.mkdir(parents=True)
+            path.write_text("<cached/>", encoding="utf-8")
+            verdict = {} if accepted else {"side_effect": build_dip_pulse_site.dip.DipError("scan failed")}
+            with (
+                mock.patch.object(build_dip_pulse_site.dip, "build_report", side_effect=fake_build_report),
+                mock.patch.object(build_dip_pulse_site, "keep_cached_dossier_when_votes_failed", **verdict),
+                mock.patch.object(build_dip_pulse_site, "write_report_files", return_value={"report": report}),
+            ):
+                try:
+                    build_dip_pulse_site.write_report_and_page(
+                        protocol=protocol,
+                        output_dir=output_dir,
+                        api_key="test-key",
+                        sleep=0,
+                        person_limit=0,
+                        vote_scan_pages=30,
+                        roll_call_list_id=None,
+                        summary_mode="off",
+                        summary_provider="auto",
+                        anthropic_api_key=None,
+                        gemini_api_key=None,
+                        summary_model=None,
+                        existing_report={"agenda_items": []},
+                    )
+                except build_dip_pulse_site.dip.DipError:
+                    pass
+            return path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(run(tmp, accepted=False).read_text(encoding="utf-8"), "<cached/>")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(run(tmp, accepted=True).read_text(encoding="utf-8"), "<revised/>")
+
     def test_required_summaries_use_valid_cache_after_provider_failure(self) -> None:
         speeches = [
             {
@@ -3337,6 +3384,25 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("radar-also", radar)
         self.assertIn("0 Reden in 2 Tagesordnungspunkten", markup)
         self.assertIn("warning: [puls] KW 24/2026: keine Reden extrahiert (leere Eingabe oder Extraktion), Abruf prüfen", stderr.getvalue())
+
+    # Value: protects=a week with only Fragestunde/Befragung turns and no Reden still lists those turns in the Außerdem line instead of saying only that nothing was extracted;
+    #   fails_when=render_radar_section's zero-Reden branch drops render_radar_also again, or keeps the "keine Reden" note without saying that questions and answers exist;
+    #   why_new=test_zero_speech_week only has items with no Beiträge, so the branch never met a question format; seam=none
+    def test_a_week_of_only_question_turns_lists_them_in_the_also_line(self) -> None:
+        item = dict(
+            self._item(1, []),
+            heading="Fragestunde",
+            question_formats=["fragestunde"],
+            xml_speech_count=0,
+            xml_contributions=[{"kind": "fragestunde_frage"}] * 2 + [{"kind": "fragestunde_antwort"}] * 3,
+        )
+        entries = [self._entry("2026-06-12", "21/84", [item])]
+        with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
+            markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
+        radar = self._section(markup, "radar")
+        self.assertIn("In dieser Sitzungswoche wurden keine Reden extrahiert, nur Fragen und Antworten aus Frageformaten.", radar)
+        self.assertIn("Fragestunde</a> · 2 Fragen, 3 Antworten", radar)
+        self.assertNotIn("radar-row", radar)
 
     # -- radar rows -------------------------------------------------------
 

@@ -144,6 +144,17 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertFalse(announces(text, "Bernhard", "AfD", 8000))  # too long for a Kurzintervention
         self.assertFalse(announces(text, "Bernhard", "SPD", 2119))
 
+    # Value: protects=a Kurzintervention asked for and granted with "Bitte schön" is stored as a Beitrag, and a remark that closes one does not turn the next Redner's Rede into one;
+    #   fails_when=INVITES or CLOSED is dropped from announces_kurzintervention, or "Bitte schön" after a refusal grants one;
+    #   why_new=the wording tests all use "Wort" or a name; 20/112 and the closing remark sit outside them; seam=none
+    def test_an_invitation_grants_and_a_closing_remark_does_not(self) -> None:
+        announces = sk.announces_kurzintervention
+        self.assertTrue(announces("Sie möchten eine Kurzintervention machen? – Bitte schön."))
+        self.assertFalse(announces("Sie möchten eine Kurzintervention machen? – Nein. – Bitte schön, Frau Meier."))
+        self.assertFalse(announces("Keine Kurzintervention? – Bitte schön."))
+        self.assertFalse(announces("Damit ist die Kurzintervention beendet. Das Wort hat als Nächste die Kollegin Meier.", "Meier"))
+        self.assertFalse(announces("Die Kurzintervention ist damit abgeschlossen. Kollegin Meier, Sie haben das Wort."))
+
     def test_rules_refusals_and_withdrawals_announce_none(self) -> None:
         announces = sk.announces_kurzintervention
         self.assertFalse(announces("Ab jetzt lasse ich keine Kurzinterventionen mehr zu. Das Wort hat Frau Wittmann.", "Wittmann"))
@@ -286,7 +297,7 @@ class FragestundeTests(unittest.TestCase):
             '<p klasse="J_1">Die Konzepte sind vielfältig.</p>'
             "</tagesordnungspunkt>"
         )
-        question, antwort = sk.fragestunde_turns(top)
+        (question, antwort), unplaced = sk.fragestunde_turns(top)
         self.assertIsNone(question.redner)
         self.assertEqual(question.announced, "Jan Köstering")
         self.assertEqual(question.paragraphs, ["Welche Konzepte gibt es?"])
@@ -321,7 +332,41 @@ class FragestundeTests(unittest.TestCase):
         self.assertNotIn("Gastbeitrag", antwort["text"])
         summary = dip.contribution_summary(parsed["agenda_items"])
         self.assertEqual(summary["fragestunde_questions_without_person"], 1)
+        # The Gastbeitrag is no Beitrag, but it is counted rather than silently gone.
+        self.assertEqual(summary["fragestunde_unplaced_turns"], 1)
         self.assertEqual(summary["xml_contribution_counts"], {"fragestunde_antwort": 1, "fragestunde_frage": 1})
+
+    # Value: protects=the question the Sitzungsleitung reads out is credited to the MdB the announcement names, never to another whose surname is merely contained in the asker's;
+    #   fails_when=names_asker matches a substring of the asker's name again;
+    #   why_new=the existing asker tests have one follower whose name is whole in the announcement; seam=none
+    def test_the_asker_is_matched_by_whole_name(self) -> None:
+        def top(follower: str) -> ET.Element:
+            return ET.fromstring(
+                "<tagesordnungspunkt>"
+                '<p klasse="T_fett">Fragestunde</p>'
+                "<name>Vizepräsident Omid Nouripour:</name>"
+                '<p klasse="J">Wir kommen zur Frage 7 des Abgeordneten Hans Müller-Rossbach von der SPD:</p>'
+                '<p klasse="p">Welche Konzepte gibt es?</p>'
+                '<p klasse="J">Frau Staatssekretärin, bitte.</p>'
+                '<p klasse="redner"><redner id="11003613"><name><vorname>Daniela</vorname><nachname>Ludwig</nachname>'
+                "<rolle><rolle_lang>Parl. Staatssekretärin</rolle_lang></rolle></name></redner>Daniela Ludwig:</p>"
+                '<p klasse="J_1">Die Konzepte sind vielfältig.</p>'
+                f'<p klasse="redner">{follower}Nachfrage:</p>'
+                '<p klasse="J_1">Und die Kosten?</p>'
+                "</tagesordnungspunkt>"
+            )
+
+        def nachfrage(vorname: str, nachname: str) -> str:
+            return (
+                f'<redner id="11001111"><name><vorname>{vorname}</vorname><nachname>{nachname}</nachname>'
+                "<fraktion>SPD</fraktion></name></redner>"
+            )
+
+        # "Müller" is only part of "Müller-Rossbach": the first Nachfrage is not the asker's.
+        (question, _, _), _ = sk.fragestunde_turns(top(nachfrage("Hans", "Müller")))
+        self.assertIsNone(question.redner)
+        (question, _, _), _ = sk.fragestunde_turns(top(nachfrage("Hans", "Müller-Rossbach")))
+        self.assertIsNotNone(question.redner)
 
     def test_announced_asker(self) -> None:
         cases = {

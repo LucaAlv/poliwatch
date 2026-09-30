@@ -1816,6 +1816,7 @@ def write_report_and_page(
     effective_summary_mode = "off" if summary_mode == "reuse" else (
         "auto" if summary_mode == "required" else summary_mode
     )
+    xml_sink: dict[str, str] = {}  # the downloaded XML, kept only with an accepted report
     args = argparse.Namespace(
         api_key=api_key,
         protocol_id=str(protocol["id"]),
@@ -1836,7 +1837,7 @@ def write_report_and_page(
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
         roll_call_page_cache=roll_call_page_cache,
-        xml_cache_path=xml_cache_path(output_dir, normalized_document_number(protocol.get("dokumentnummer"))),
+        xml_sink=xml_sink,
     )
     report = dip.build_report(args, protocol=protocol)
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
@@ -1897,6 +1898,10 @@ def write_report_and_page(
                 + ", ".join(missing)
                 + ". Fix: increase --summary-max-calls, provide provider credentials, or use --summary-mode auto."
             )
+    if "text" in xml_sink:
+        xml_path = xml_cache_path(output_dir, normalized_document_number(protocol.get("dokumentnummer")))
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        dip.write_text_atomic(xml_path, xml_sink["text"])
     return write_report_files(
         report,
         output_dir,
@@ -2038,7 +2043,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 1
+EXPORT_FORMAT = 2
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -4866,7 +4871,11 @@ def render_radar_section(
         '<h2 id="radar-h2">Wor&uuml;ber am meisten gesprochen wurde</h2>'
     )
     if not total:
-        body = '<p class="week-note">In dieser Sitzungswoche wurden keine Reden extrahiert.</p>'
+        # A week of Fragestunden only has no Reden but still has its questions and
+        # answers: the Außerdem line lists them.
+        note = "In dieser Sitzungswoche wurden keine Reden extrahiert"
+        note += ", nur Fragen und Antworten aus Frageformaten." if radar["formats"] else "."
+        body = f'<p class="week-note">{note}</p>' + render_radar_also(radar)
     else:
         method = (
             "Die Tagesordnungspunkte mit den meisten Reden der Woche. "

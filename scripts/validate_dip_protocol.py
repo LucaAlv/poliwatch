@@ -554,8 +554,10 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 contributions.append(
                     {**unit, "kind": label.kind, "parent_rede_id": label.parent_rede_id, "sequence": sequence}
                 )
+        unplaced_turn_count = 0
         if speech_kinds.FRAGESTUNDE in top_format.formats:
-            for flat_index, turn in enumerate(speech_kinds.fragestunde_turns(top), start=1):
+            turns, unplaced_turn_count = speech_kinds.fragestunde_turns(top)
+            for flat_index, turn in enumerate(turns, start=1):
                 text = clean_text(" ".join(turn.paragraphs))
                 if turn.redner is not None:
                     speaker = parse_redner(turn.redner)
@@ -593,6 +595,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 },
                 "speeches": speeches,
                 "contributions": contributions,
+                "unplaced_turn_count": unplaced_turn_count,
             }
         )
 
@@ -1886,6 +1889,9 @@ def contribution_summary(agenda_items: list[dict[str, Any]]) -> dict[str, Any]:
             and c["rede_id"] is None
             and not (c["speaker"] or {}).get("xml_redner_id")
         ),
+        # Fragestunde turns whose speaker marker names no MdB and no official: no
+        # Beitrag, but their text is counted here instead of vanishing.
+        "fragestunde_unplaced_turns": sum(top.get("unplaced_turn_count", 0) for top in agenda_items),
     }
 
 
@@ -1929,13 +1935,31 @@ def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> No
     Reden, Beiträge; see ``xml_top_fields``) with what the current parser reads
     from the sitting's XML, leaving every DIP-derived field
     alone. Agenda items pair up by ``index``; the XML is the same document, so
-    the numbering does not move."""
+    the numbering does not move.
+
+    An AI summary cites Reden of the old parse. One whose source no longer matches
+    the re-read Reden (a cited turn is now a Beitrag) is dropped: it would quote
+    that turn as evidence for a Rede that has no anchor any more."""
     by_index = {top["index"]: top for top in parsed_xml["agenda_items"]}
     check_xml_belongs_to_report(report, parsed_xml, by_index)
+    dropped = 0
     for item in report.get("agenda_items") or []:
         top = by_index.get(item.get("index"))
         if top is not None:
             item.update(xml_top_fields(top))
+            summary = item.get("llm_summary")
+            if summary and (
+                not isinstance(summary, dict)
+                or summary.get("source_fingerprint")
+                != summary_source_fingerprint(
+                    {"top_id": item.get("top_id"), "heading": item.get("heading"), "speeches": item["xml_speakers"]}
+                )
+            ):
+                del item["llm_summary"]
+                dropped += 1
+    generation = report.get("summary_generation")
+    if dropped and isinstance(generation, dict) and "available_top_count" in generation:
+        generation["available_top_count"] = sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary"))
     summary = report.setdefault("validation_summary", {})
     summary.update(contribution_summary(parsed_xml["agenda_items"]))
     mismatches = speech_kinds.dip_mismatches(
@@ -2401,10 +2425,11 @@ def build_report(
 
     progress("Downloading XML transcript.")
     xml_text = fetch_text(xml_url)
-    xml_cache_path = getattr(args, "xml_cache_path", None)
-    if xml_cache_path is not None:
-        xml_cache_path.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(xml_cache_path, xml_text)
+    # The caller decides whether to keep the report; only then does its XML become
+    # the cache, so a cached XML never outlives the report it was parsed into.
+    xml_sink = getattr(args, "xml_sink", None)
+    if isinstance(xml_sink, dict):
+        xml_sink["text"] = xml_text
     parsed_xml = parse_protocol_xml(xml_text)
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(

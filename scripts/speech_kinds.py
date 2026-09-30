@@ -185,7 +185,9 @@ def _redner_key(redner: ET.Element | None) -> str | None:
 # (NOT_GRANTED) and must grant the Wort, name the next Redner in it or in the two
 # sentences after it ("Die AfD-Fraktion hat eine Kurzintervention beantragt, die
 # ich zulasse. Der Kollege Stöber hat das Wort."), or name the next Redner's
-# Fraktion. Only that last, weakest signal is held to the length of a
+# Fraktion. A sentence that closes the Kurzintervention just held (CLOSED) grants
+# none; one that asks for it is granted by an immediate "Bitte schön" (INVITES).
+# Only the Fraktion, the weakest signal, is held to the length of a
 # Kurzintervention (two minutes, WEAK_MAX_CHARS).
 KURZINTERVENTION_WORDING = re.compile(r"Kurzintervention|Zwischenbemerkung|Zwischenintervention", re.IGNORECASE)
 GRANTS_WORT = re.compile(r"\bWort\b")
@@ -196,6 +198,13 @@ NOT_GRANTED = re.compile(r"\b(?:kein\w*|nicht|nie|ohne|weder|ablehn\w*|abgelehnt
 # Kurzintervention ("Nein, er zieht zurück") is none.
 CONDITIONAL = re.compile(r"\b(?:wenn|falls|ob|sofern)\b", re.IGNORECASE)
 WITHDRAWN = re.compile(r"zieht zurück|zurückgezogen|verzichtet", re.IGNORECASE)
+# A sentence that closes the Kurzintervention just held ("Damit ist die Kurzintervention
+# beendet. Das Wort hat als Nächste die Kollegin Meier.") grants nothing: the Redner
+# named after it speaks a Rede of their own.
+CLOSED = re.compile(r"\b(?:beendet|abgeschlossen|erledigt|vorbei)\b|zu Ende", re.IGNORECASE)
+# The Sitzungsleitung asks whether a Kurzintervention is wanted and the Redner says yes
+# by taking the floor: "Sie möchten eine Kurzintervention machen? – Bitte schön."
+INVITES = re.compile(r"^\W*(?:ja\W+)?bitte\s+(?:schön|sehr)\b", re.IGNORECASE)
 # A title is no sentence end ("Zu einer Kurzintervention hat die Kollegin Dr. Petra Sitte das Wort.").
 _SENTENCE_END = re.compile(r"(?<!Dr\.)(?<!Prof\.)(?<=[.!?])\s+")
 FRAKTION_WORDING = {
@@ -247,9 +256,12 @@ def announces_kurzintervention(
             not KURZINTERVENTION_WORDING.search(sentence)
             or NOT_GRANTED.search(sentence)
             or CONDITIONAL.search(sentence)
+            or CLOSED.search(sentence)
         ):
             continue
         if GRANTS_WORT.search(sentence):
+            return True
+        if index + 1 < len(sentences) and INVITES.match(sentences[index + 1]):
             return True
         if surname and any(surname in near.casefold() for near in sentences[index : index + 3]):
             return True
@@ -348,21 +360,38 @@ def announced_asker(announcement: str) -> str | None:
     return re.sub(r"^(?:Kolleg(?:in|en|e)|Abgeordnete[nr]?)\s+", "", name) or None
 
 
-def fragestunde_turns(top: ET.Element) -> list[Turn]:
-    """The Fragen and Antworten of a Fragestunde, in document order.
+def names_asker(redner: ET.Element | None, announcement: str) -> bool:
+    """Whether the Sitzungsleitung's announcement names this MdB as the asker:
+    their whole surname stands in it. "Müller" is not in "Müller-Rossbach" or
+    "Müllermann". A first name is not compared: the Sitzungsleitung misspeaks it
+    ("Stefan" for Stephan Brandner, "Rainer" for Reinhard Brandl), and a
+    transcript that did so is right about the person."""
+    surname = _last_name(redner)
+    return bool(surname) and re.search(rf"(?<![\w-]){re.escape(surname)}(?![\w-])", announcement, re.IGNORECASE) is not None
+
+
+def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
+    """The Fragen and Antworten of a Fragestunde, in document order, and the
+    number of turns left out because their marker names no one.
 
     Each ``<p klasse="redner">`` opens a turn that runs to the next marker or
     ``<name>`` (the Sitzungsleitung). An MdB's turn is a ``fragestunde_frage``
     (a Nachfrage), an official's a ``fragestunde_antwort``. The question itself
     is read out by the Sitzungsleitung as ``<p klasse="p">``: it is a
     ``fragestunde_frage`` of the MdB the announcement names, taken from the first
-    turn after it by an MdB whose surname the announcement contains.
+    turn after it by that MdB (``names_asker``).
+
+    A marker with neither ``<rolle>`` nor ``<fraktion>`` names no one the parser
+    can place (a guest, say): its paragraphs are no turn, and the caller reports
+    how many markers lost text this way so the omission is counted, not silent.
     """
     items: list[dict[str, Any]] = []  # question blocks and turns, in order
     speaker = "leadership"
     turn: dict[str, Any] | None = None
     question: dict[str, Any] | None = None
     announcement = ""
+    unplaced = 0
+    unplaced_open = False  # the last unplaced marker has not yet lost a paragraph
     for child in top:
         if child.tag == "name":
             speaker, turn, question = "leadership", None, None
@@ -372,7 +401,7 @@ def fragestunde_turns(top: ET.Element) -> list[Turn]:
             who = speaker_class(redner)
             question = None
             if who is None:
-                speaker, turn = "unplaced", None
+                speaker, turn, unplaced_open = "unplaced", None, True
                 continue
             speaker = "turn"
             turn = {
@@ -387,6 +416,8 @@ def fragestunde_turns(top: ET.Element) -> list[Turn]:
                 continue
             if speaker == "turn" and turn is not None:
                 turn["paragraphs"].append(text)
+            elif speaker == "unplaced" and unplaced_open:
+                unplaced, unplaced_open = unplaced + 1, False
             elif speaker == "leadership":
                 if child.attrib.get("klasse") == "p":
                     if question is None:
@@ -409,8 +440,8 @@ def fragestunde_turns(top: ET.Element) -> list[Turn]:
                 if "announcement" in follower:
                     break
                 if follower["kind"] == FRAGESTUNDE_FRAGE and _last_name(follower["redner"]):
-                    if _last_name(follower["redner"]).casefold() in item["announcement"].casefold():
+                    if names_asker(follower["redner"], item["announcement"]):
                         item["redner"] = follower["redner"]
                     break
         turns.append(Turn(item["kind"], item["redner"], item.get("announced"), item["paragraphs"]))
-    return [turn for turn in turns if turn.paragraphs]
+    return [turn for turn in turns if turn.paragraphs], unplaced

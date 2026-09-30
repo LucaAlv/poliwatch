@@ -137,6 +137,27 @@ class ReparseCachedXmlTests(unittest.TestCase):
             )
         self.assertEqual([item["heading"] for item in stale["agenda_items"]], ["Befragung der Bundesregierung", "Fragestunde"])
 
+    # Value: protects=a cached AI summary whose cited Rede the reparse turned into a Beitrag (or otherwise changed) is dropped, one whose source still matches is kept;
+    #   fails_when=reparse_report_xml keeps an llm_summary whose source_fingerprint no longer matches the re-read Reden, so a dossier or the week radar quotes a turn that has no speech anchor;
+    #   why_new=no repersist test carried an llm_summary through a parse-rule change; seam=none
+    def test_a_summary_whose_source_changed_is_dropped_by_the_reparse(self) -> None:
+        import validate_dip_protocol as dip
+
+        entries = self.entries()
+        build.reparse_cached_xml(self.output_dir, entries)
+        report = entries[0]["report"]
+        befragung, fragestunde = report["agenda_items"]
+        current = dip.summary_source_fingerprint(
+            {"top_id": befragung["top_id"], "heading": befragung["heading"], "speeches": befragung["xml_speakers"]}
+        )
+        befragung["llm_summary"] = {"text": "Bleibt.", "source_chunks": [{"id": "S1"}], "source_fingerprint": current}
+        fragestunde["llm_summary"] = {"text": "Geht.", "source_chunks": [{"id": "S1"}], "source_fingerprint": "old-parse"}
+        report["summary_generation"] = {"available_top_count": 2}
+        build.reparse_cached_xml(self.output_dir, entries)
+        self.assertEqual(befragung["llm_summary"]["text"], "Bleibt.")
+        self.assertNotIn("llm_summary", fragestunde)
+        self.assertEqual(report["summary_generation"]["available_top_count"], 1)
+
     def test_the_profiles_resolved_online_survive_the_reparse(self) -> None:
         entries = self.entries()
         build.reparse_cached_xml(self.output_dir, entries)
