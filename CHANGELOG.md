@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - A Befragung or Fragestunde whose heading the Bundestag XML sets in a different paragraph class (20/143, 20/159) is recognised: 212 Fragen and Antworten no longer count as Reden and 67 Fragestunde turns are stored.
+- `--offline --repersist` now also refreshes each agenda item's heading, Drucksachen and page range from the cached XML, so a repersisted store shows the same headings as an online build. Before, the 16 items whose heading sits in a `T_ZP_NaS` paragraph (Befragung, Fragestunde, an Eidesleistung and 12 Zusatzpunkte) kept an empty heading. On the cached sittings the only matching change is that the Eidesleistung of 20/159 now picks up its Wahl position.
 - A Rede after a Kurzintervention is an Erwiderung only when the same Redner gives it. Fifteen real Reden, including a maiden speech that the “erste Reden” Fakt needs, had been filed as Erwiderungen.
 - `--offline --repersist` refuses cached XML that is not the protocol of its sitting (a maintenance page, another sitting, no agenda items), names the file, and leaves the store untouched. It no longer marks such a report as current. The profiles resolved online survive the re-parse.
 

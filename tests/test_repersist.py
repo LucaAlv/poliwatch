@@ -103,6 +103,40 @@ class ReparseCachedXmlTests(unittest.TestCase):
             ["Anderes.", "Die XML zählt 0 Kurzinterventionen, DIP 1."],
         )
 
+    # Value: protects=a reparsed report holds exactly what a fresh build of the same XML holds, for every XML-derived key of an agenda item, the heading included (a T_ZP_NaS heading the parser learned to read reaches cached reports);
+    #   fails_when=enrich_with_api gains an XML-derived item key that reparse_report_xml does not refresh, or the reparse stops refreshing the heading, so a repersisted store and an online build disagree;
+    #   why_new=the heading fix of A1 reached question_formats but not the stored heading, and no test compared a reparse with a fresh build; seam=none
+    def test_a_reparse_leaves_every_xml_derived_key_as_a_fresh_build_writes_it(self) -> None:
+        import copy
+
+        import validate_dip_protocol as dip
+
+        class FakeClient:
+            def list_all(self, path: str, params: dict[str, str]) -> list:
+                return []
+
+        parsed = dip.parse_protocol_xml((self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").read_text(encoding="utf-8"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            fresh = dip.enrich_with_api(
+                FakeClient(),  # type: ignore[arg-type]
+                {"id": "5709", "dokumentnummer": "21/6", "datum": "2025-05-14"},
+                parsed, person_limit=0, vote_scan_pages=0,
+            )
+        dip_side = {"index", "api", "votes"}
+        stale = copy.deepcopy(fresh)
+        for item in stale["agenda_items"]:
+            for key in item:
+                if key not in dip_side:
+                    item[key] = "STALE"
+        stale["protocol"] = {"id": "5709", "dokumentnummer": "21/6", "datum": "2025-05-14"}
+        dip.reparse_report_xml(stale, parsed)
+        for refreshed, built in zip(stale["agenda_items"], fresh["agenda_items"]):
+            self.assertEqual(
+                {k: v for k, v in refreshed.items() if k not in dip_side},
+                {k: v for k, v in built.items() if k not in dip_side},
+            )
+        self.assertEqual([item["heading"] for item in stale["agenda_items"]], ["Befragung der Bundesregierung", "Fragestunde"])
+
     def test_the_profiles_resolved_online_survive_the_reparse(self) -> None:
         entries = self.entries()
         build.reparse_cached_xml(self.output_dir, entries)

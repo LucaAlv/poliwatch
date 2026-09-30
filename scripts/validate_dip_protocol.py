@@ -1815,10 +1815,17 @@ def enrich_with_llm_summaries(report: dict[str, Any], args: argparse.Namespace) 
 
 
 def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
-    """The keys of a report's agenda item that come from the parsed XML alone:
-    Reden (``xml_speakers``) and Beiträge (``xml_contributions``). Used when a
-    report is built and when a cached one is re-parsed from its cached XML."""
+    """Every key of a report's agenda item that comes from the parsed XML alone
+    (all but ``index``, which pairs the item with its XML, and the DIP-derived
+    ``api`` and ``votes``): heading, page range, Drucksachen, Reden
+    (``xml_speakers``) and Beiträge (``xml_contributions``). Used when a report is
+    built and when a cached one is re-parsed from its cached XML, so the two
+    cannot disagree."""
     return {
+        "top_id": top["top_id"],
+        "heading": top["heading"],
+        "page_range": top["page_range"],
+        "xml_drucksachen": top["drucksachen"],
         "question_formats": top["question_formats"],
         "xml_speech_count": len(top["speeches"]),
         "xml_contributions": [
@@ -1918,8 +1925,9 @@ def check_xml_belongs_to_report(
 
 
 def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:
-    """Replace what a cached report holds of Reden and Beiträge with what the
-    current parser reads from the sitting's XML, leaving every DIP-derived field
+    """Replace what a cached report holds of the XML-derived fields (heading,
+    Reden, Beiträge; see ``xml_top_fields``) with what the current parser reads
+    from the sitting's XML, leaving every DIP-derived field
     alone. Agenda items pair up by ``index``; the XML is the same document, so
     the numbering does not move."""
     by_index = {top["index"]: top for top in parsed_xml["agenda_items"]}
@@ -2102,10 +2110,6 @@ def enrich_with_api(
         enriched_tops.append(
             {
                 "index": top["index"],
-                "top_id": top["top_id"],
-                "heading": top["heading"],
-                "page_range": top["page_range"],
-                "xml_drucksachen": top["drucksachen"],
                 **xml_top_fields(top),
                 "api": {
                     "positions": [compact_position(position) for position in matching_positions],
