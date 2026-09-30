@@ -169,7 +169,10 @@ class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
     def enrich(self, pages: list[str], date: str):
         from test_vote_acquisition import FakeClient, agenda
 
-        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch("sys.stderr", io.StringIO()):
+        with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch.object(
+            dip, "fetch_roll_call_vote_detail",
+            side_effect=lambda candidate: {**candidate, "fractions": [], "members": [], "result_raw": None, "result_source": None},
+        ), mock.patch("sys.stderr", io.StringIO()):
             return dip.enrich_with_api(
                 FakeClient(), {"id": "p1", "dokumentnummer": "21/90", "datum": date}, agenda("21/9"), person_limit=0, vote_scan_pages=30
             )
@@ -197,7 +200,7 @@ class StaleListIsNotAVerifiedZeroVoteSittingTests(unittest.TestCase):
             [list_page(("1", recent.strftime("%d.%m.%Y"), "21/1"), ("2", (recent - _dt.timedelta(days=3)).strftime("%d.%m.%Y"), "21/2"))],
             recent.isoformat(),
         )
-        self.assertEqual(caught_up["acquisition"]["votes"]["acquisition_state"], "partial")  # candidate 21/1 is unmatched by agenda 21/9
+        self.assertEqual(caught_up["acquisition"]["votes"]["acquisition_state"], "complete")
         self.assertNotIn("source_stale", caught_up["acquisition"]["votes"]["failure_reasons"])
 
 

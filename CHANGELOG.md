@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0.0] - 2026-09-30
+
+### Added
+
+- See every fetched roll-call vote in its sitting, even when no agenda item can be assigned. Unambiguous title matches link votes to their topic; unmatched votes appear under “TOP nicht zugeordnet” and remain in the archive, member histories, facts, and data export.
+- Read the Antrag outcome and faction positions when a vote concerns a recommendation to reject it, with an explicit “Ja = Antrag ablehnen · Nein = Antrag annehmen” explanation and retained source evidence.
+
+### Changed
+
+- Special-majority procedures remain unknown without an attributable official result. Ordinary votes retain the Ja/Nein rule, and raw vote counts remain unchanged.
+- Vote acquisition completeness now measures scans and successful detail fetches independently of topic assignment. Existing stores migrate sitting links and interpretation fields without losing votes.
+
+### Fixed
+
+- Conflicting or negated recommendation evidence no longer reverses the displayed outcome. Results derived from counts use the voted proposition’s scope when official text cannot establish an outcome.
+- Fresh profile resolution updates vote members instead of silently keeping stale cached links.
+
 ## [0.9.0.0] - 2026-09-29
 
 ### Added

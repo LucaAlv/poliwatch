@@ -204,14 +204,13 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         enrichment, stderr = self.enrich(pages, "2026-07-01", ("21/1",))
         self.assertEqual(enrichment["api_totals"]["unmatched_roll_call_vote_count"], 1)
         self.assertEqual(enrichment["api_records"]["unmatched_roll_call_vote_ids"], ["2"])
+        self.assertEqual([vote["id"] for vote in enrichment["sitting_votes"]], ["2"])
         self.assertIn("roll-call vote 2", stderr)
         self.assertIn("matched no TOP", stderr)
         self.assertTrue(any("1 von 2" in warning for warning in enrichment["warnings"]))
-        # The vote is on the list but in no TOP, so it is not in the store: the
-        # sitting's votes are known to be short.
         votes = enrichment["acquisition"]["votes"]
-        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("partial", ["unmatched_candidate"]))
-        self.assertEqual(votes["records"], 1)
+        self.assertEqual((votes["acquisition_state"], votes["failure_reasons"]), ("complete", []))
+        self.assertEqual(votes["records"], 2)
         self.assertEqual(enrichment["api_totals"]["roll_call_scan_end"], "date_passed")
 
     def test_no_candidate_matching_any_top_keeps_the_existing_warning(self) -> None:
@@ -277,13 +276,15 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         self.assertEqual((votes["acquisition_state"], votes["records"]), ("partial", 1))
         self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
 
-    def test_a_failed_vote_request_does_not_blame_the_top_matching_for_the_votes_it_never_read(self) -> None:
+    def test_a_failed_vote_request_does_not_stop_later_candidate_fetches(self) -> None:
         pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "01.07.2026", "21/2"), ("3", "30.06.2026", "21/3"))]
         calls: list[str] = []
 
         def detail(candidate: dict) -> dict:
             calls.append(candidate["id"])
-            raise dip.DipError("timeout")
+            if candidate["id"] == "1":
+                raise dip.DipError("timeout")
+            return fake_detail(candidate)
 
         stderr = io.StringIO()
         with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch.object(
@@ -296,12 +297,15 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
                 person_limit=0,
                 vote_scan_pages=3,
             )
-        # The first failure stops further vote requests for this sitting.
-        self.assertEqual(len(calls), 1)
+        # Each candidate is attempted once even after the first detail failure,
+        # and the later successful detail is retained.
+        self.assertEqual(calls, ["1", "2"])
         votes = enrichment["acquisition"]["votes"]
-        self.assertEqual((votes["acquisition_state"], votes["records"]), ("failed", 0))
+        self.assertEqual((votes["acquisition_state"], votes["records"]), ("partial", 1))
         self.assertEqual(votes["failure_reasons"], ["source_unavailable"])
-        self.assertIn("vote details unavailable", stderr.getvalue())
+        self.assertIn("vote 1 details unavailable", stderr.getvalue())
+        self.assertEqual(enrichment["agenda_items"][1]["votes"][0]["id"], "2")
+        self.assertEqual(enrichment["api_totals"]["roll_call_vote_detail_fetch_error_count"], 1)
         self.assertNotIn("matched no TOP", stderr.getvalue())
         self.assertFalse(any("keinem TOP" in warning for warning in enrichment["warnings"]))
 
@@ -320,7 +324,7 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
                 progress=lines.append,
             )
         self.assertIn("Roll-call scan ended by date_passed: 1 list page(s) fetched, 0 reused from this build.", lines)
-        self.assertIn("Roll-call details: 1 vote(s) fetched (2 requests), 1 candidate(s) matched no TOP.", lines)
+        self.assertIn("Roll-call details: 2 vote(s) fetched (4 requests), 1 candidate(s) matched no TOP.", lines)
 
     def test_a_vote_without_an_xlsx_link_or_official_result_is_still_complete(self) -> None:
         # The Namenslisten endpoint only serves a rolling window, so an older
@@ -329,7 +333,7 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         enrichment, _ = self.enrich(pages, "2026-07-01", ("21/1",))
         vote = enrichment["agenda_items"][0]["votes"][0]
         self.assertIsNone(vote.get("xlsx_url"))
-        self.assertIsNone(vote.get("result_source"))
+        self.assertEqual(vote.get("result_source"), "derived")
         self.assertEqual(enrichment["acquisition"]["votes"]["acquisition_state"], "complete")
 
     def test_no_scan_is_not_requested(self) -> None:

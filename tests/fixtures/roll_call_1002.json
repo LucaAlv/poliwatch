@@ -1,0 +1,37 @@
+{
+  "id": "1002",
+  "date": "2026-04-24",
+  "title": "Ablehnung eines Antrags zur Übergewinnsteuer",
+  "description": "Beschlussempfehlung des Finanzausschusses (Drucksachen 21/5326 und 21/5546, Buchstabe d)",
+  "document_numbers": [
+    "21/5326",
+    "21/5546"
+  ],
+  "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1002",
+  "total": {
+    "yes": 449,
+    "no": 136,
+    "abstain": 0,
+    "absent": 45
+  },
+  "fractions": [
+    {
+      "name": "CDU/CSU",
+      "counts": {
+        "yes": 201,
+        "no": 0,
+        "abstain": 0,
+        "absent": 7
+      }
+    },
+    {
+      "name": "AfD",
+      "counts": {
+        "yes": 0,
+        "no": 135,
+        "abstain": 0,
+        "absent": 15
+      }
+    }
+  ]
+}

@@ -1285,13 +1285,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
                 vote_top_count += 1
                 if first_vote_index is None:
                     first_vote_index = item.get("index")
-                for vote in votes:
-                    sitting_vote_ids.add(vote_key(vote))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
                 if position.get("vorgang_id"):
                     vorgang_ids.add(str(position["vorgang_id"]))
+        for _, vote in derive.iter_report_votes(report):
+            sitting_vote_ids.add(vote_key(vote))
         if sitting_vote_ids:
             page_path = entry.get("page_path")
             label = document or (Path(page_path).stem if page_path else "")
@@ -2682,10 +2682,9 @@ def render_html(
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
-    total_votes = sum(
-        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
-        for item in items
-    )
+    report_votes = list(derive.iter_report_votes(report))
+    total_votes = len({vote_key(vote) for _, vote in report_votes})
+    sitting_votes = [vote for item, vote in report_votes if item is None]
 
     attention_rows = []
     for item in sorted(items, key=lambda x: stats_by_index[x["index"]]["speech_count"], reverse=True):
@@ -2762,6 +2761,7 @@ def render_html(
             if "votes" in components
             else ""
         )
+
         summary_sections = (
             "".join(
                 components["summaries"].dossier_sections(
@@ -2833,6 +2833,18 @@ def render_html(
               </section>
             </article>
             """
+        )
+
+    sitting_vote_section = ""
+    if sitting_votes and "votes" in components:
+        vote_sections = "".join(
+            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}})
+        )
+        sitting_vote_section = (
+            '<section class="top-card sitting-votes" id="sitting-votes">'
+            '<header class="top-head"><div><span class="eyebrow">Sitzung</span>'
+            '<h2>TOP nicht zugeordnet</h2></div></header>'
+            f"{vote_sections}</section>"
         )
 
     warnings = report.get("warnings") or []
@@ -3768,6 +3780,7 @@ def render_html(
         {warning_html}
         {profile_notice}
         {''.join(top_sections)}
+        {sitting_vote_section}
       </main>
     </div>
     {protocol_dev_sections}

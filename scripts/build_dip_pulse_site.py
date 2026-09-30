@@ -716,20 +716,20 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
                     last_name=speaker.get("last_name"),
                     fraktion=speaker.get("fraktion"),
                 )
-        for vote in _iter_report_votes(item):
-            for member in vote.get("members") or []:
-                if not isinstance(member, dict) or "abgeordnetenwatch" in member:
-                    continue
-                first_name, last_name = _vote_member_name_parts(member.get("name"))
-                member["abgeordnetenwatch"] = (
-                    resolver.resolve(
-                        first_name=first_name,
-                        last_name=last_name,
-                        fraktion=member.get("faction"),
-                    )
-                    if last_name
-                    else None
+    for _, vote in derive.iter_report_votes(report):
+        for member in vote.get("members") or []:
+            if not isinstance(member, dict) or "abgeordnetenwatch" in member:
+                continue
+            first_name, last_name = _vote_member_name_parts(member.get("name"))
+            member["abgeordnetenwatch"] = (
+                resolver.resolve(
+                    first_name=first_name,
+                    last_name=last_name,
+                    fraktion=member.get("faction"),
                 )
+                if last_name
+                else None
+            )
 
 
 # Handle --dossier-document-number: force these sittings to get a dossier even
@@ -1489,26 +1489,24 @@ def carry_forward_vote_provenance(report: dict[str, Any], existing_report: dict[
     overwritten by the stale cached "official" result.
     """
     previous_votes: dict[str, dict[str, Any]] = {}
-    for item in (existing_report or {}).get("agenda_items") or []:
-        for vote in _iter_report_votes(item):
-            previous_votes.setdefault(pulse_html.vote_key(vote), vote)
+    for _, vote in derive.iter_report_votes(existing_report or {}):
+        previous_votes.setdefault(pulse_html.vote_key(vote), vote)
     if not previous_votes:
         return
-    for item in report.get("agenda_items") or []:
-        for vote in _iter_report_votes(item):
-            previous = previous_votes.get(pulse_html.vote_key(vote))
-            if not previous:
-                continue
-            # The link was matched by (date, title); if either changed, the
-            # old match no longer vouches for this vote.
-            if (
-                not vote.get("xlsx_url")
-                and not vote.get("xlsx_ambiguous")
-                and previous.get("xlsx_url")
-                and vote.get("date") == previous.get("date")
-                and dip.title_match_key(vote.get("title")) == dip.title_match_key(previous.get("title"))
-            ):
-                vote["xlsx_url"] = previous["xlsx_url"]
+    for _, vote in derive.iter_report_votes(report):
+        previous = previous_votes.get(pulse_html.vote_key(vote))
+        if not previous:
+            continue
+        # The link was matched by (date, title); if either changed, the
+        # old match no longer vouches for this vote.
+        if (
+            not vote.get("xlsx_url")
+            and not vote.get("xlsx_ambiguous")
+            and previous.get("xlsx_url")
+            and vote.get("date") == previous.get("date")
+            and dip.title_match_key(vote.get("title")) == dip.title_match_key(previous.get("title"))
+        ):
+            vote["xlsx_url"] = previous["xlsx_url"]
 
 
 def reuse_existing_dossier_enrichments(
@@ -1520,6 +1518,8 @@ def reuse_existing_dossier_enrichments(
 ) -> None:
     """Carry cached optional data forward when this update does not refresh it."""
     carry_forward_vote_provenance(report, existing_report)
+    if votes and not report.get("sitting_votes") and (existing_report or {}).get("sitting_votes"):
+        report["sitting_votes"] = copy.deepcopy(existing_report["sitting_votes"])
     existing_by_key: dict[str, dict[str, Any]] = {}
     for item in (existing_report or {}).get("agenda_items") or []:
         for key in agenda_item_reuse_keys(item):
@@ -1546,18 +1546,21 @@ def reuse_existing_dossier_enrichments(
 
         attach_speaker_profiles(item, speaker_profiles(previous))
 
-        previous_members = {
-            (str(member.get("name") or ""), str(member.get("faction") or "")): member
-            for vote in _iter_report_votes(previous)
-            for member in (vote.get("members") or [])
-        }
-        for vote in _iter_report_votes(item):
-            for member in vote.get("members") or []:
-                cached = previous_members.get(
-                    (str(member.get("name") or ""), str(member.get("faction") or ""))
-                )
-                if "abgeordnetenwatch" not in member and cached and "abgeordnetenwatch" in cached:
-                    member["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
+    if not profiles:
+        return
+
+    previous_members = {
+        (str(member.get("name") or ""), str(member.get("faction") or "")): member
+        for _, vote in derive.iter_report_votes(existing_report or {})
+        for member in (vote.get("members") or [])
+    }
+    for _, vote in derive.iter_report_votes(report):
+        for member in vote.get("members") or []:
+            cached = previous_members.get(
+                (str(member.get("name") or ""), str(member.get("faction") or ""))
+            )
+            if "abgeordnetenwatch" not in member and cached and "abgeordnetenwatch" in cached:
+                member["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
 
 
 def _report_profile_counts(report: dict[str, Any]) -> tuple[int, int]:
@@ -1569,11 +1572,11 @@ def _report_profile_counts(report: dict[str, Any]) -> tuple[int, int]:
             targets += 1
             if (speaker.get("abgeordnetenwatch") or {}).get("url"):
                 records += 1
-        for vote in _iter_report_votes(item):
-            for member in vote.get("members") or []:
-                targets += 1
-                if (member.get("abgeordnetenwatch") or {}).get("url"):
-                    records += 1
+    for _, vote in derive.iter_report_votes(report):
+        for member in vote.get("members") or []:
+            targets += 1
+            if (member.get("abgeordnetenwatch") or {}).get("url"):
+                records += 1
     return records, targets
 
 
@@ -1619,9 +1622,7 @@ def annotate_report_acquisition(
     """Finalize report-level optional-domain provenance after reuse/enrichment."""
     acquisition = report.setdefault("acquisition", {})
 
-    vote_records = sum(
-        len(_iter_report_votes(item)) for item in report.get("agenda_items") or []
-    )
+    vote_records = len(list(derive.iter_report_votes(report)))
     prior_votes = ((existing_report or {}).get("acquisition") or {}).get("votes")
     if vote_scan_pages == 0:
         # No scan this run: the votes on the report are the cached ones, so
@@ -1633,9 +1634,7 @@ def annotate_report_acquisition(
             # (different top_ids) left some of them without an item to sit on,
             # it no longer does: the sitting reads as unverified and a backfill
             # acquires it again.
-            unique_now = len(
-                {pulse_html.vote_key(v) for item in report.get("agenda_items") or [] for v in _iter_report_votes(item)}
-            )
+            unique_now = len({pulse_html.vote_key(v) for _, v in derive.iter_report_votes(report)})
             if unique_now >= int(prior_votes.get("records") or 0):
                 _keep_prior_scan_end(report, existing_report)
             acquisition["votes"] = publication.DomainFacts(
@@ -1764,7 +1763,7 @@ def keep_cached_dossier_when_votes_failed(
     if vote_scan_pages == 0 or existing_report is None:
         return
     fresh = (report.get("acquisition") or {}).get("votes") or {}
-    cached_votes = any(_iter_report_votes(item) for item in existing_report.get("agenda_items") or [])
+    cached_votes = any(True for _ in derive.iter_report_votes(existing_report))
     if not cached_votes:
         return
     transient = {"source_unavailable", "source_changed"} & set(fresh.get("failure_reasons") or ())
@@ -2012,6 +2011,10 @@ _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 _COLUMN_SOURCE_DERIVED = {
     ("votes", "result_raw"),
     ("votes", "result_source"),
+    # Inferred rejection-recommendation semantics and their supporting evidence.
+    ("votes", "inverted"),
+    ("votes", "inversion_source"),
+    ("votes", "inversion_excerpt"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -2155,13 +2158,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r4-knappste-abstimmungen",
         "title": "Die knappsten namentlichen Abstimmungen",
         "sql": (
-            "SELECT MIN(p.document_number) AS document_number,\n"
+            "SELECT COALESCE(MIN(p.document_number),\n"
+            "              (SELECT p2.document_number FROM protocols p2 WHERE p2.id = v.protocol_id)) AS document_number,\n"
             "       v.date, v.title, v.yes_count AS ja, v.no_count AS nein,\n"
             "       ABS(v.yes_count - v.no_count) AS differenz\n"
             "FROM votes v\n"
             "LEFT JOIN agenda_item_votes aiv ON aiv.vote_id = v.id\n"
             "LEFT JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
-            "LEFT JOIN protocols p ON p.id = ai.protocol_id\n"
+            "LEFT JOIN protocols p ON p.id = COALESCE(ai.protocol_id, v.protocol_id)\n"
             "GROUP BY v.id\n"
             "ORDER BY differenz ASC, v.date DESC, v.id\n"
             "LIMIT 5;"
@@ -3913,7 +3917,8 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
         )
         rows = []
         for label, page_path, first_index, n in stats.get("vote_sittings") or []:
-            href = f"protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(first_index)}"
+            anchor = f"top-{pulse_html.esc(first_index)}" if first_index is not None else "sitting-votes"
+            href = f"protocols/{pulse_html.esc(Path(page_path).name)}#{anchor}"
             rows.append(
                 f'<li class="vote-row"><a href="{href}">{pulse_html.esc(label)} · '
                 f"{pulse_html.format_count(n, 'Abstimmung', 'Abstimmungen')}</a></li>"
@@ -3949,13 +3954,20 @@ def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
     return "–"
 
 
-def _fraction_position(fraction: dict[str, Any]) -> str | None:
+def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str | None:
     # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
     # (Ja + Nein + Enthaltung): a Mehrheitsvotum of Ja alone would also match a
     # plurality (40 Ja, 35 Nein, 25 Enthaltungen). That is a stricter test than
     # the Mehrheitsvotum, not a second definition of it: a Zusammenschluss with
     # no Mehrheitsvotum (a tie, or nobody voted) has no position and no chip.
+    # For rejection recommendations, Nein support uses the same >50% test.
     counts = fraction.get("counts") or {}
+    if inverted:
+        position = derive.fraction_position(counts, True)
+        if position == "für den Antrag":
+            yes, no, abstain = (int(counts.get(key) or 0) for key in derive.MAJORITY_KEYS)
+            return position if no > yes + abstain else "geteilt"
+        return position
     leading = derive.majority_vote(counts)
     if leading != "yes":
         return leading
@@ -3980,32 +3992,31 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
     for entry in entries:
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
-        for item in report.get("agenda_items") or []:
-            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
-            for vote in votes:
-                # persist_votes skips a vote without an id, so the archive does
-                # too: the row count must equal SELECT count(*) FROM votes.
-                if not vote.get("id"):
-                    continue
-                key = pulse_html.vote_key(vote)
-                if key in rows:
-                    continue
-                fraction_positions = {
-                    fraction["name"]: position
-                    for fraction in derive.merge_fractions(vote.get("fractions"))
-                    if (position := _fraction_position(fraction)) is not None
-                }
-                rows[key] = {
-                    "vote": vote,
-                    "document_links": votes_feature.document_source_links(item),
-                    "fraction_positions": fraction_positions,
-                    "procedure_type": _vote_procedure_type(vote, item),
-                    "href": (
-                        f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
-                        if page_path
-                        else None
-                    ),
-                }
+        for item, vote in derive.iter_report_votes(report):
+            # persist_votes skips a vote without an id, so the archive does
+            # too: the row count must equal SELECT count(*) FROM votes.
+            if not vote.get("id"):
+                continue
+            key = pulse_html.vote_key(vote)
+            if key in rows:
+                continue
+            fraction_positions = {
+                fraction["name"]: position
+                for fraction in derive.merge_fractions(vote.get("fractions"))
+                if (position := _fraction_position(fraction, vote.get("inverted") is True)) is not None
+            }
+            rows[key] = {
+                "vote": vote,
+                "document_links": votes_feature.document_source_links(item) if item else {},
+                "fraction_positions": fraction_positions,
+                "procedure_type": _vote_procedure_type(vote, item) if item else "–",
+                "href": (
+                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                     if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
+                    if page_path
+                    else None
+                ),
+            }
     return sorted(
         rows.values(),
         key=lambda row: (row["vote"].get("date") or "", _vote_id_sort_key(row["vote"].get("id"))),
@@ -4075,7 +4086,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
       </div>
     </header>
     <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
-    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><div class="chip-row">' + chips + '</div></section>' if chips else ''}
+    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><p>Zeigt Abstimmungen mit einer Ja-Mehrheit der gewählten Fraktion. Bei Ablehnungsempfehlungen zählt stattdessen die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Fraktion.</p>
@@ -4135,8 +4146,8 @@ def votes_archive_styles() -> str:
 
 
 # Inline script for votes/index.html: toggles Fraktion chips (multi-select)
-# and shows a row when any active Fraktion's leading vote on it was "yes" -
-# same interaction plenarwatch's own "Nach Fraktion:" archive filter offers.
+# and shows a row when an active Fraktion supported the Vorlage. For an
+# inverted recommendation, support for the Antrag comes from Nein.
 def render_votes_archive_script() -> str:
     return """
   <script>
@@ -4162,7 +4173,9 @@ def render_votes_archive_script() -> str:
         const visibleMonths = new Set();
         const activeList = Array.from(active);
         rows.forEach(({ row, positions, month }) => {
-          const show = activeList.length === 0 || activeList.some((name) => positions[name] === 'yes');
+          const show = activeList.length === 0 || activeList.some((name) =>
+            positions[name] === 'yes' || positions[name] === 'für den Antrag'
+          );
           row.hidden = !show;
           if (show) {
             visible += 1;
@@ -9456,7 +9469,7 @@ def build_publication_manifest(
                 )
             )
 
-    vote_records = sum(len(_iter_report_votes(item)) for item in agenda_items)
+    vote_records = sum(len(list(derive.iter_report_votes(report))) for report in reports)
     profile_targets = len(abg_mps) + sum(len(item.get("xml_speakers") or []) for item in agenda_items)
     profile_records = sum(1 for mp in abg_mps if mp.get("profile_url")) + sum(
         1
@@ -9464,6 +9477,12 @@ def build_publication_manifest(
         for speech in (item.get("xml_speakers") or [])
         if ((speech.get("speaker") or {}).get("abgeordnetenwatch") or {}).get("url")
     )
+    for report in reports:
+        for _, vote in derive.iter_report_votes(report):
+            for member in vote.get("members") or []:
+                profile_targets += 1
+                if (member.get("abgeordnetenwatch") or {}).get("url"):
+                    profile_records += 1
     roster_records = sum(1 for mp in abg_mps if mp.get("is_mdb"))
     summary_records = sum(1 for item in agenda_items if usable_llm_summary(item.get("llm_summary")))
     summary_eligible = max(summary_records, sum(
@@ -9673,7 +9692,7 @@ def derive_feature_readiness(
     """Summarize acquired coverage for export metadata, never for UI gating."""
     reports = [entry.get("report") or {} for entry in entries]
     agenda_items = [item for report in reports for item in (report.get("agenda_items") or [])]
-    vote_items = sum(1 for item in agenda_items if _iter_report_votes(item))
+    vote_items = sum(len(list(derive.iter_report_votes(report))) for report in reports)
     summary_items = sum(1 for item in agenda_items if usable_llm_summary(item.get("llm_summary")))
     profile_targets = len(abg_mps)
     profile_count = sum(1 for mp in abg_mps if mp.get("profile_url"))
@@ -9682,6 +9701,12 @@ def derive_feature_readiness(
             profile_targets += 1
             if ((speech.get("speaker") or {}).get("abgeordnetenwatch") or {}).get("url"):
                 profile_count += 1
+    for report in reports:
+        for _, vote in derive.iter_report_votes(report):
+            for member in vote.get("members") or []:
+                profile_targets += 1
+                if (member.get("abgeordnetenwatch") or {}).get("url"):
+                    profile_count += 1
 
     def coverage(present: int, total: int) -> str:
         if present <= 0:

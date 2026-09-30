@@ -2558,6 +2558,9 @@ class VotesArchiveTests(unittest.TestCase):
     def test_outcome_columns_are_labelled_derived_in_the_data_dictionary(self) -> None:
         self.assertEqual(build_dip_pulse_site.column_source("votes", "result_raw"), "derived")
         self.assertEqual(build_dip_pulse_site.column_source("votes", "result_source"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "inverted"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "inversion_source"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "inversion_excerpt"), "derived")
         self.assertEqual(build_dip_pulse_site.column_source("votes", "xlsx_url"), "bundestag.de")
 
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
