@@ -3960,7 +3960,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
       </div>
     </header>
     <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
-    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (für den zugrunde liegenden Antrag oder Gesetzentwurf)</span><p>Bei Ablehnungsempfehlungen zählt die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
+    {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><p>Zeigt Abstimmungen mit einer Ja-Mehrheit der gewählten Fraktion. Bei Ablehnungsempfehlungen zählt stattdessen die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
       <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Fraktion.</p>
