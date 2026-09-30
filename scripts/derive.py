@@ -312,3 +312,44 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     kind = match if match is not None else profile.get("match")
     value = profile.get("id")
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
+
+
+def iter_report_votes(report: Mapping[str, Any]):
+    """Yield (TOP or None, vote), once per vote identity across a sitting."""
+    seen = set()
+    for item in report.get("agenda_items") or []:
+        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+            key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+            if key not in seen:
+                seen.add(key)
+                yield item, vote
+    for vote in report.get("sitting_votes") or []:
+        key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+        if key not in seen:
+            seen.add(key)
+            yield None, vote
+
+
+def vote_outcome(vote: Mapping[str, Any]) -> str | None:
+    """Outcome of the Antrag, separately from the voted recommendation."""
+    result = vote.get("result_raw")
+    if result not in {"accepted", "rejected"}:
+        return None
+    if vote.get("inverted") and vote.get("result_scope") != "application":
+        return "rejected" if result == "accepted" else "accepted"
+    return result
+
+
+def fraction_position(counts: Mapping[str, Any] | None, inverted: bool | None = None) -> str | None:
+    leading = majority_vote(counts)
+    if inverted:
+        if leading == "yes":
+            return "gegen den Antrag"
+        if leading == "no":
+            return "für den Antrag"
+        if leading == "abstain":
+            return "Enthaltung"
+        if any(int((counts or {}).get(key) or 0) for key in MAJORITY_KEYS):
+            return "geteilt"
+        return None
+    return {"yes": "Ja", "no": "Nein", "abstain": "Enthaltung"}.get(leading)

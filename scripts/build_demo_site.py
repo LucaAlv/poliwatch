@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import derive
 import build_dip_pulse_site as site
 import publication_state as publication
 import validate_dip_protocol as dip
@@ -28,10 +29,7 @@ DEMO_ACQUIRED_AT = "2026-09-17T00:00:00Z"
 
 def demo_report(fixture: Path) -> dict[str, Any]:
     report = json.loads(fixture.read_text(encoding="utf-8"))
-    vote_records = sum(
-        len(item.get("votes") or ([item["vote"]] if item.get("vote") else []))
-        for item in report.get("agenda_items") or []
-    )
+    vote_records = len(list(derive.iter_report_votes(report)))
     eligible = sum(
         1
         for item in report.get("agenda_items") or []

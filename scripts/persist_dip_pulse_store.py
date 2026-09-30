@@ -21,7 +21,7 @@ from typing import Any
 import derive
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def dumps(value: Any) -> str:
@@ -209,6 +209,7 @@ def initialize(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS votes (
           id TEXT PRIMARY KEY,
+          protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL,
           date TEXT,
           topic TEXT,
           title TEXT,
@@ -220,6 +221,11 @@ def initialize(conn: sqlite3.Connection) -> None:
           absent_count INTEGER NOT NULL DEFAULT 0,
           result_raw TEXT,
           result_source TEXT,
+          result_scope TEXT,
+          procedure_type TEXT,
+          inverted INTEGER CHECK (inverted IN (0, 1) OR inverted IS NULL),
+          inversion_source TEXT,
+          inversion_excerpt TEXT,
           xlsx_url TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -268,6 +274,7 @@ def initialize(conn: sqlite3.Connection) -> None:
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
+    _migrate_vote_columns(conn)
     _migrate_speech_paragraphs(conn)
     _migrate_party_names(conn)
     now = utc_now()
@@ -305,6 +312,15 @@ _SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("sprechrolle", "TEXT"),
 )
 
+_VOTES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("protocol_id", "TEXT REFERENCES protocols(id) ON DELETE SET NULL"),
+    ("result_scope", "TEXT"),
+    ("procedure_type", "TEXT"),
+    ("inverted", "INTEGER CHECK (inverted IN (0, 1) OR inverted IS NULL)"),
+    ("inversion_source", "TEXT"),
+    ("inversion_excerpt", "TEXT"),
+)
+
 
 def _migrate_added_columns(
     conn: sqlite3.Connection, table: str, columns: tuple[tuple[str, str], ...]
@@ -334,6 +350,26 @@ def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
 
 def _migrate_speeches_columns(conn: sqlite3.Connection) -> None:
     _migrate_added_columns(conn, "speeches", _SPEECHES_ADDED_COLUMNS)
+
+
+def _migrate_vote_columns(conn: sqlite3.Connection) -> None:
+    _migrate_added_columns(conn, "votes", _VOTES_ADDED_COLUMNS)
+    # Existing stores predate votes.protocol_id. Recover it from the old TOP
+    # join so sitting-scoped queries continue to include those vote rows.
+    conn.execute(
+        """
+        UPDATE votes
+           SET protocol_id = (
+             SELECT ai.protocol_id
+               FROM agenda_item_votes AS aiv
+               JOIN agenda_items AS ai ON ai.id = aiv.agenda_item_id
+              WHERE aiv.vote_id = votes.id
+              ORDER BY ai.protocol_id, ai.item_index
+              LIMIT 1
+           )
+         WHERE protocol_id IS NULL
+        """
+    )
 
 
 # Before the list-repr fix below, persist_sampled_people wrote DIP's list-valued
@@ -945,75 +981,102 @@ def persist_speeches(
 
 def persist_votes(
     conn: sqlite3.Connection,
-    item: dict[str, Any],
-    agenda_item_id: int,
+    item: dict[str, Any] | None,
+    agenda_item_id: int | None,
+    protocol_id: str,
     now: str,
 ) -> None:
+    if item is None:
+        return
     for vote in item.get("votes") or ([] if not item.get("vote") else [item["vote"]]):
-        vote_id = clean(vote.get("id"))
-        if not vote_id:
-            continue
-        total = vote.get("total") or {}
-        result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
-        conn.execute(
-            """
-            INSERT INTO votes(
-              id, date, topic, title, description, detail_url, yes_count, no_count,
-              abstain_count, absent_count, result_raw, result_source, xlsx_url,
-              created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              date = excluded.date,
-              topic = excluded.topic,
-              title = excluded.title,
-              description = excluded.description,
-              detail_url = excluded.detail_url,
-              yes_count = excluded.yes_count,
-              no_count = excluded.no_count,
-              abstain_count = excluded.abstain_count,
-              absent_count = excluded.absent_count,
-              result_raw = excluded.result_raw,
-              result_source = excluded.result_source,
-              -- A copy of the vote without a link (e.g. the same vote attached to
-              -- a second agenda item) never erases one already stored, so a
-              -- missing link normally falls back to COALESCE. Two cases must
-              -- NOT fall back, though: an explicit ambiguous-match refusal
-              -- (xlsx_ambiguous) - COALESCE alone can't tell "no fresh data
-              -- this copy" from "fresh data explicitly rejected this match"
-              -- (Codex structured review, 2026-09-27) - and a changed date or
-              -- title, the same guard carry_forward_vote_provenance already
-              -- applies at the report layer: an old link was matched by
-              -- (date, title), so once either changes it no longer vouches
-              -- for this row (coverage audit, 2026-09-27). Across builds the
-              -- store is rebuilt, so ordinary carry-forward happens in the
-              -- report (build_dip_pulse_site.carry_forward_vote_provenance).
-              xlsx_url = CASE
-                WHEN ? THEN NULL
-                WHEN excluded.date IS NOT votes.date OR excluded.title IS NOT votes.title THEN excluded.xlsx_url
-                ELSE COALESCE(excluded.xlsx_url, votes.xlsx_url)
-              END,
-              updated_at = excluded.updated_at
-            """,
-            (
-                vote_id,
-                clean(vote.get("date")),
-                clean(vote.get("topic")),
-                clean(vote.get("title")),
-                clean(vote.get("description")),
-                clean(vote.get("detail_url")),
-                int(total.get("yes") or 0),
-                int(total.get("no") or 0),
-                int(total.get("abstain") or 0),
-                int(total.get("absent") or 0),
-                clean(result_raw),
-                clean(result_source),
-                clean(vote.get("xlsx_url")),
-                now,
-                now,
-                bool(vote.get("xlsx_ambiguous")),
-            ),
+        persist_vote(conn, vote, agenda_item_id, protocol_id, now)
+
+
+def persist_vote(
+    conn: sqlite3.Connection,
+    vote: dict[str, Any],
+    agenda_item_id: int | None,
+    protocol_id: str,
+    now: str,
+) -> None:
+    vote_id = clean(vote.get("id"))
+    if not vote_id:
+        return
+    total = vote.get("total") or {}
+    result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
+    conn.execute(
+        """
+        INSERT INTO votes(
+          id, protocol_id, date, topic, title, description, detail_url, yes_count, no_count,
+          abstain_count, absent_count, result_raw, result_source, result_scope, procedure_type,
+          inverted, inversion_source, inversion_excerpt, xlsx_url,
+          created_at, updated_at
         )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          protocol_id = excluded.protocol_id,
+          date = excluded.date,
+          topic = excluded.topic,
+          title = excluded.title,
+          description = excluded.description,
+          detail_url = excluded.detail_url,
+          yes_count = excluded.yes_count,
+          no_count = excluded.no_count,
+          abstain_count = excluded.abstain_count,
+          absent_count = excluded.absent_count,
+          result_raw = excluded.result_raw,
+          result_source = excluded.result_source,
+          result_scope = excluded.result_scope,
+          procedure_type = excluded.procedure_type,
+          inverted = excluded.inverted,
+          inversion_source = excluded.inversion_source,
+          inversion_excerpt = excluded.inversion_excerpt,
+          -- A copy of the vote without a link (e.g. the same vote attached to
+          -- a second agenda item) never erases one already stored, so a
+          -- missing link normally falls back to COALESCE. Two cases must
+          -- NOT fall back, though: an explicit ambiguous-match refusal
+          -- (xlsx_ambiguous) - COALESCE alone can't tell "no fresh data
+          -- this copy" from "fresh data explicitly rejected this match"
+          -- (Codex structured review, 2026-09-27) - and a changed date or
+          -- title, the same guard carry_forward_vote_provenance already
+          -- applies at the report layer: an old link was matched by
+          -- (date, title), so once either changes it no longer vouches
+          -- for this row (coverage audit, 2026-09-27). Across builds the
+          -- store is rebuilt, so ordinary carry-forward happens in the
+          -- report (build_dip_pulse_site.carry_forward_vote_provenance).
+          xlsx_url = CASE
+            WHEN ? THEN NULL
+            WHEN excluded.date IS NOT votes.date OR excluded.title IS NOT votes.title THEN excluded.xlsx_url
+            ELSE COALESCE(excluded.xlsx_url, votes.xlsx_url)
+          END,
+          updated_at = excluded.updated_at
+        """,
+        (
+            vote_id,
+            protocol_id,
+            clean(vote.get("date")),
+            clean(vote.get("topic")),
+            clean(vote.get("title")),
+            clean(vote.get("description")),
+            clean(vote.get("detail_url")),
+            int(total.get("yes") or 0),
+            int(total.get("no") or 0),
+            int(total.get("abstain") or 0),
+            int(total.get("absent") or 0),
+            clean(result_raw),
+            clean(result_source),
+            clean(vote.get("result_scope")),
+            clean(vote.get("procedure_type")),
+            None if vote.get("inverted") is None else int(bool(vote.get("inverted"))),
+            clean(vote.get("inversion_source")),
+            clean(vote.get("inversion_excerpt")),
+            clean(vote.get("xlsx_url")),
+            now,
+            now,
+            bool(vote.get("xlsx_ambiguous")),
+        ),
+    )
+    if agenda_item_id is not None:
         conn.execute(
             """
             INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id)
@@ -1021,84 +1084,83 @@ def persist_votes(
             """,
             (agenda_item_id, vote_id),
         )
-        conn.execute("DELETE FROM vote_fractions WHERE vote_id = ?", (vote_id,))
-        conn.execute("DELETE FROM vote_members WHERE vote_id = ?", (vote_id,))
-        conn.execute("DELETE FROM vote_documents WHERE vote_id = ?", (vote_id,))
+    conn.execute("DELETE FROM vote_fractions WHERE vote_id = ?", (vote_id,))
+    conn.execute("DELETE FROM vote_members WHERE vote_id = ?", (vote_id,))
+    conn.execute("DELETE FROM vote_documents WHERE vote_id = ?", (vote_id,))
 
-        for number in vote.get("document_numbers") or []:
-            document_id = upsert_document(conn, now=now, document_number=number)
-            if document_id:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO vote_documents(vote_id, document_id)
-                    VALUES (?, ?)
-                    """,
-                    (vote_id, document_id),
-                )
-
-        # Rows of one vote that name the same Zusammenschluss under two
-        # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
-        for merged in derive.merge_fractions(vote.get("fractions")):
-            party_name = merged["name"]
-            party_id = upsert_party(conn, party_name, now)
-            if party_id is None:
-                continue
+    for number in vote.get("document_numbers") or []:
+        document_id = upsert_document(conn, now=now, document_number=number)
+        if document_id:
             conn.execute(
                 """
-                INSERT INTO vote_fractions(
-                  vote_id, party_id, yes_count, no_count, abstain_count, absent_count,
-                  total_count, leading_vote
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO vote_documents(vote_id, document_id)
+                VALUES (?, ?)
                 """,
-                (
-                    vote_id,
-                    party_id,
-                    merged["counts"]["yes"],
-                    merged["counts"]["no"],
-                    merged["counts"]["abstain"],
-                    merged["counts"]["absent"],
-                    merged["total"],
-                    # Derived from the counts: a cached report's own
-                    # leading_vote is ignored, so a rule change applies on
-                    # re-persist (plan F1/E2).
-                    derive.majority_vote(merged["counts"]),
-                ),
+                (vote_id, document_id),
             )
 
-        for member in vote.get("members") or []:
-            party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
-            party_id = upsert_party(conn, party_name, now)
-            profile = member.get("abgeordnetenwatch") or {}
-            aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
-            profile_url = profile.get("url") or member.get("profile_url")
-            mp_id = upsert_mp(
-                conn,
-                now=now,
-                display_name=clean(member.get("name")) or "Unbekannt",
-                party_id=party_id,
-                identity_key=mp_identity(
-                    aw_politician_id=aw_politician_id,
-                    aw_match=profile.get("match"),
-                    profile_url=profile_url,
-                    display_name=member.get("name"),
-                    party_name=party_name,
-                ),
-                profile_url=profile_url,
+    # Rows of one vote that name the same Zusammenschluss under two
+    # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
+    for merged in derive.merge_fractions(vote.get("fractions")):
+        party_name = merged["name"]
+        party_id = upsert_party(conn, party_name, now)
+        if party_id is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO vote_fractions(
+              vote_id, party_id, yes_count, no_count, abstain_count, absent_count,
+              total_count, leading_vote
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                vote_id,
+                party_id,
+                merged["counts"]["yes"],
+                merged["counts"]["no"],
+                merged["counts"]["abstain"],
+                merged["counts"]["absent"],
+                merged["total"],
+                # Derived from the counts: a cached report's own
+                # leading_vote is ignored, so a rule change applies on
+                # re-persist (plan F1/E2).
+                derive.majority_vote(merged["counts"]),
+            ),
+        )
+
+    for member in vote.get("members") or []:
+        party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
+        party_id = upsert_party(conn, party_name, now)
+        profile = member.get("abgeordnetenwatch") or {}
+        aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
+        profile_url = profile.get("url") or member.get("profile_url")
+        mp_id = upsert_mp(
+            conn,
+            now=now,
+            display_name=clean(member.get("name")) or "Unbekannt",
+            party_id=party_id,
+            identity_key=mp_identity(
                 aw_politician_id=aw_politician_id,
                 aw_match=profile.get("match"),
-            )
-            conn.execute(
-                """
-                INSERT INTO vote_members(vote_id, mp_id, party_id, vote)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(vote_id, mp_id) DO UPDATE SET
-                  party_id = excluded.party_id,
-                  vote = excluded.vote
-                """,
-                (vote_id, mp_id, party_id, clean(member.get("vote")) or "unknown"),
-            )
-
+                profile_url=profile_url,
+                display_name=member.get("name"),
+                party_name=party_name,
+            ),
+            profile_url=profile_url,
+            aw_politician_id=aw_politician_id,
+            aw_match=profile.get("match"),
+        )
+        conn.execute(
+            """
+            INSERT INTO vote_members(vote_id, mp_id, party_id, vote)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(vote_id, mp_id) DO UPDATE SET
+              party_id = excluded.party_id,
+              vote = excluded.vote
+            """,
+            (vote_id, mp_id, party_id, clean(member.get("vote")) or "unknown"),
+        )
 
 def _warn_merged_redner_ids(report: dict[str, Any]) -> None:
     """A ``<redner id>`` with two ids is a merged record in the Bundestag XML;
@@ -1129,12 +1191,44 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     with conn:
         replace_protocol(conn, report, now)
         persist_sampled_people(conn, report, now)
+        # The report is a complete snapshot for this sitting. Remove old votes
+        # from the sitting that disappeared from the refreshed report; linked
+        # data is cascaded with them.
+        report_vote_pairs = list(derive.iter_report_votes(report))
+        current_vote_ids = {
+            clean(vote.get("id")) for _, vote in report_vote_pairs if clean(vote.get("id"))
+        }
+        old_vote_ids = [
+            row["id"] for row in conn.execute("SELECT id FROM votes WHERE protocol_id = ?", (protocol_id,))
+            if row["id"] not in current_vote_ids
+        ]
+        for old_vote_id in old_vote_ids:
+            conn.execute("DELETE FROM votes WHERE id = ?", (old_vote_id,))
+        agenda_ids: dict[int, int] = {}
         for item in report.get("agenda_items") or []:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
+            agenda_ids[int(item.get("index") or 0)] = agenda_item_id
             persist_positions(conn, item, agenda_item_id, now)
             persist_agenda_documents(conn, item, agenda_item_id, now)
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
-            persist_votes(conn, item, agenda_item_id, now)
+        for item, vote in report_vote_pairs:
+            agenda_item_id = None
+            if item is not None:
+                agenda_item_id = agenda_ids.get(int(item.get("index") or 0))
+            persist_vote(conn, vote, agenda_item_id, protocol_id, now)
+        # iter_report_votes deliberately yields one row per vote. A vote may
+        # still be cited under more than one TOP, so restore every source link.
+        for item in report.get("agenda_items") or []:
+            agenda_item_id = agenda_ids.get(int(item.get("index") or 0))
+            if agenda_item_id is None:
+                continue
+            for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+                vote_id = clean(vote.get("id"))
+                if vote_id:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
+                        (agenda_item_id, vote_id),
+                    )
 
 
 def persist_report_file(db_path: Path, report_path: Path) -> None:
