@@ -26,6 +26,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- preview_dip_pulse_site.sh
     |-- build_dip_pulse_site.py
     |-- validate_dip_protocol.py
+    |-- speech_kinds.py
     |-- render_dip_pulse_html.py
     |-- persist_dip_pulse_store.py
     |-- facts.py
@@ -216,7 +217,7 @@ Protocol extraction and enrichment engine. Given a DIP protocol id or document n
 - loads `.env.local` without overriding already-exported variables,
 - fetches the official DIP Plenarprotokoll metadata,
 - downloads the official XML transcript,
-- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen,
+- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen; `scripts/speech_kinds.py` decides what in the XML is a Rede and what is a Beitrag of another kind (Kurzintervention, Erwiderung, Frage or Antwort of a Befragung or Fragestunde), so only Reden land in `xml_speakers` and the rest in `xml_contributions`, compared per Sitzung with DIP's Kurzintervention and Erwiderung counts (a difference is a warning); the report's `validation_summary.speech_kinds_version` marks the counting rule it was parsed under,
 - fetches related DIP `/vorgangsposition`, `/aktivitaet`, and `/person` records,
 - scans Bundestag roll-call vote pages, first matches by same-day protocol plus Drucksachennummer, then tries an unambiguous title match against TOP headings and linked Vorgang titles; a fetched vote with no unique TOP remains attached to the Sitzung,
 - scrapes each vote's own detail page for bundestag.de's stated Beschluss result (falling back to a yes/no majority when none is stated) and for a link to that vote's XLSX Namensliste export on a separate Namenslisten list page, matched by date and normalized title,
@@ -244,7 +245,7 @@ The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is stick
 
 ### `scripts/persist_dip_pulse_store.py`
 
-SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches, votes, vote fractions, and individual vote members.
+SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches (Reden only), contributions (Beiträge), votes, vote fractions, and individual vote members.
 
 MP identity rows are consolidated from DIP roster IDs, XML speaker IDs, resolved abgeordnetenwatch IDs, and guarded name+party matches. This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
 
@@ -404,7 +405,8 @@ Common options:
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
-| `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; `--offline --repersist` re-reads Reden and Beiträge from those files |
+| `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
+| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), after re-reading Reden and Beiträge of each report from its cached XML in `OUTPUT_DIR/data/xml/` (a report with none keeps what it holds, with a warning). The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week and prints it as "Auswertung vom" |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
