@@ -48,6 +48,13 @@ class SittingVoteConsumerTests(unittest.TestCase):
         self.assertEqual(member["abgeordnetenwatch"], cached_profile)
         self.assertIsNot(member["abgeordnetenwatch"], cached_profile)
 
+    def test_inverted_archive_support_requires_absolute_majority(self):
+        for no, expected in ((40, 'geteilt'), (50, 'geteilt'), (51, 'für den Antrag')):
+            with self.subTest(no=no):
+                fraction = {'counts': {'no': no, 'yes': 35, 'abstain': 100 - no - 35,
+                                       'absent': 200}}
+                self.assertEqual(build._fraction_position(fraction, inverted=True), expected)
+
     def test_archive_keeps_sitting_vote_and_links_to_sitting_section(self):
         vote = {
             "id": 9012,

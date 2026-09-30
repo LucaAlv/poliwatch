@@ -1890,6 +1890,10 @@ _TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 _COLUMN_SOURCE_DERIVED = {
     ("votes", "result_raw"),
     ("votes", "result_source"),
+    # Inferred rejection-recommendation semantics and their supporting evidence.
+    ("votes", "inverted"),
+    ("votes", "inversion_source"),
+    ("votes", "inversion_excerpt"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -3830,9 +3834,14 @@ def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str 
     # plurality (40 Ja, 35 Nein, 25 Enthaltungen). That is a stricter test than
     # the Mehrheitsvotum, not a second definition of it: a Zusammenschluss with
     # no Mehrheitsvotum (a tie, or nobody voted) has no position and no chip.
+    # For rejection recommendations, Nein support uses the same >50% test.
     counts = fraction.get("counts") or {}
     if inverted:
-        return derive.fraction_position(counts, True)
+        position = derive.fraction_position(counts, True)
+        if position == "für den Antrag":
+            yes, no, abstain = (int(counts.get(key) or 0) for key in derive.MAJORITY_KEYS)
+            return position if no > yes + abstain else "geteilt"
+        return position
     leading = derive.majority_vote(counts)
     if leading != "yes":
         return leading

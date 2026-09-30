@@ -274,7 +274,6 @@ def initialize(conn: sqlite3.Connection) -> None:
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
-    _migrate_vote_columns(conn)
     _migrate_speech_paragraphs(conn)
     _migrate_party_names(conn)
     now = utc_now()
@@ -312,15 +311,6 @@ _SPEECHES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("sprechrolle", "TEXT"),
 )
 
-_VOTES_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("protocol_id", "TEXT REFERENCES protocols(id) ON DELETE SET NULL"),
-    ("result_scope", "TEXT"),
-    ("procedure_type", "TEXT"),
-    ("inverted", "INTEGER CHECK (inverted IN (0, 1) OR inverted IS NULL)"),
-    ("inversion_source", "TEXT"),
-    ("inversion_excerpt", "TEXT"),
-)
-
 
 def _migrate_added_columns(
     conn: sqlite3.Connection, table: str, columns: tuple[tuple[str, str], ...]
@@ -350,26 +340,6 @@ def _migrate_mps_columns(conn: sqlite3.Connection) -> None:
 
 def _migrate_speeches_columns(conn: sqlite3.Connection) -> None:
     _migrate_added_columns(conn, "speeches", _SPEECHES_ADDED_COLUMNS)
-
-
-def _migrate_vote_columns(conn: sqlite3.Connection) -> None:
-    _migrate_added_columns(conn, "votes", _VOTES_ADDED_COLUMNS)
-    # Existing stores predate votes.protocol_id. Recover it from the old TOP
-    # join so sitting-scoped queries continue to include those vote rows.
-    conn.execute(
-        """
-        UPDATE votes
-           SET protocol_id = (
-             SELECT ai.protocol_id
-               FROM agenda_item_votes AS aiv
-               JOIN agenda_items AS ai ON ai.id = aiv.agenda_item_id
-              WHERE aiv.vote_id = votes.id
-              ORDER BY ai.protocol_id, ai.item_index
-              LIMIT 1
-           )
-         WHERE protocol_id IS NULL
-        """
-    )
 
 
 # Before the list-repr fix below, persist_sampled_people wrote DIP's list-valued

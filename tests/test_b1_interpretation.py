@@ -45,9 +45,30 @@ class InterpretationTests(unittest.TestCase):
                 'official_result': 'rejected', 'result_scope': 'application'}
         for _ in range(2):
             dip.interpret_vote(vote)
-            self.assertEqual(vote['result_raw'], 'accepted')
+            self.assertEqual(vote['result_raw'], 'rejected')
+            self.assertEqual(vote['official_result'], 'rejected')
             self.assertEqual(derive.vote_outcome(vote), 'rejected')
-            self.assertEqual(vote['result_scope'], 'proposition')
+            self.assertEqual(vote['result_scope'], 'application')
+
+    def test_reinterpretation_preserves_official_application_outcome(self):
+        for outcome in ('accepted', 'rejected'):
+            for fallback in (False, True):
+                with self.subTest(outcome=outcome, fallback=fallback):
+                    vote = {'title': 'Ablehnung des Antrags', 'document_numbers': ['21/123'],
+                            'total': {'yes': 60, 'no': 40}, 'result_scope': 'application',
+                            'result_raw': outcome, 'result_source': 'official'}
+                    if not fallback:
+                        vote['official_result'] = outcome
+                    dip.interpret_vote(vote)
+                    dip.interpret_vote(vote, documents=[{
+                        'dokumentnummer': '21/123', 'titel': 'Den Antrag anzunehmen',
+                    }])
+                    self.assertIsNone(vote['inverted'])
+                    self.assertEqual(vote['result_raw'], outcome)
+                    self.assertEqual(vote['result_scope'], 'application')
+                    self.assertEqual(derive.vote_outcome(vote), outcome)
+                    if not fallback:
+                        self.assertEqual(vote['official_result'], outcome)
 
     def test_conflicting_matched_documents_stay_unknown_in_either_order(self):
         vote = {'title': 'Beschlussempfehlung', 'document_numbers': ['20/100', '20/200']}

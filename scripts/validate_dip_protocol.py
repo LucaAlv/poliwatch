@@ -804,11 +804,8 @@ def interpret_vote(vote: dict[str, Any], documents: list[dict[str, Any]] | None 
     official = vote.get("official_result")
     if official is None and vote.get("result_source") == "official":
         official = vote.get("result_raw")
-    # An official sentence naming the Antrag describes its outcome, not the recommendation.
-    if inverted and vote.get("result_scope") == "application" and official:
-        official = "rejected" if official == "accepted" else "accepted"
-        vote["official_result"] = official
-        vote["result_scope"] = "proposition"
+    # Preserve the official outcome and its scope across reinterpretation.
+    # Consumers already distinguish application outcomes from recommendations.
     counts = vote.get("total") or {}
     vote["result_raw"], vote["result_source"] = vote_result(
         official=official, yes_count=int(counts.get("yes") or 0), no_count=int(counts.get("no") or 0),

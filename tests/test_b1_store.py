@@ -71,7 +71,7 @@ class SittingVotePersistenceTests(unittest.TestCase):
         self.assertEqual(links, 2)
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0], 1)
 
-    def test_initialize_backfills_sitting_id_from_legacy_top_link(self):
+    def test_initialize_does_not_infer_sitting_id_from_top_link(self):
         pulse_store.persist_report(self.conn, self.report)
         vote_id = self.report["agenda_items"][0]["votes"][0]["id"]
         self.conn.execute("UPDATE votes SET protocol_id = NULL WHERE id = ?", (vote_id,))
@@ -81,9 +81,9 @@ class SittingVotePersistenceTests(unittest.TestCase):
         protocol_id = self.conn.execute(
             "SELECT protocol_id FROM votes WHERE id = ?", (vote_id,)
         ).fetchone()[0]
-        self.assertEqual(protocol_id, self.report["protocol"]["id"])
+        self.assertIsNone(protocol_id)
 
-    def test_initialize_migrates_vote_interpretation_and_protocol_columns(self):
+    def test_fresh_schema_has_vote_interpretation_and_protocol_columns(self):
         pulse_store.initialize(self.conn)
         columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(votes)")}
         self.assertTrue(
@@ -97,7 +97,7 @@ class SittingVotePersistenceTests(unittest.TestCase):
             }.issubset(columns)
         )
 
-    def test_initialize_migrates_a_v1_store_and_backfills_existing_votes(self):
+    def test_initialize_does_not_upgrade_legacy_vote_schema(self):
         # Recreate the relevant portion of schema v1, which had no sitting
         # foreign key or interpretation columns on votes.
         self.conn.executescript(
@@ -130,9 +130,8 @@ class SittingVotePersistenceTests(unittest.TestCase):
         row = self.conn.execute("SELECT * FROM votes WHERE id = 'legacy-vote'").fetchone()
         self.assertEqual(row["title"], "Preserved title")
         self.assertEqual(row["yes_count"], 42)
-        self.assertEqual(row["protocol_id"], "legacy-protocol")
-        self.assertIsNone(row["inverted"])
-        self.assertIsNone(row["result_scope"])
+        columns = {column["name"] for column in self.conn.execute("PRAGMA table_info(votes)")}
+        self.assertTrue({"protocol_id", "inverted", "result_scope"}.isdisjoint(columns))
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM agenda_item_votes").fetchone()[0], 1)
 
 
