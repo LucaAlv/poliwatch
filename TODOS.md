@@ -878,7 +878,7 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68; Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
 
-**Completed:** PR 1 of the A1 roadmap item, branch `a1-what-counts-as-rede` (2026-09-30), not yet released. `speeches` holds Reden only; every other unit is a Beitrag in the new `contributions` table, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde, which has no `<rede>` elements (75 of 76 Fragestunden stored no row), is parsed from its flat `<p klasse="redner">` turns. Every online update now keeps the sitting's XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it.
+**Completed:** v0.11.0.0 (2026-09-30), PR 1 of the A1 roadmap item, branch `a1-what-counts-as-rede`. `speeches` holds Reden only; every other unit is a Beitrag in the new `contributions` table, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde, which has no `<rede>` elements (75 of 76 Fragestunden stored no row), is parsed from its flat `<p klasse="redner">` turns. Every online update now keeps the sitting's XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it.
 
 Reference store (285 Sitzungen), the same cached reports parsed by the code before and after, so only this change moves:
 - Reden 34,775 -> 25,800 (-8,975, -26 %); DIP's own `Rede` count for the same sittings is 26,396 (our count is 2.3 % lower). The first measurement of this branch said 26,002; the /ship review found and fixed two classifier defects (below), which moved it by 202.

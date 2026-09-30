@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0.0] - 2026-09-30
+
+### Added
+
+- Kurzinterventionen, Erwiderungen, and the Fragen and Antworten of the Befragung der Bundesregierung and the Fragestunde are now stored as their own Beiträge, typed by kind, in a new `contributions` table and CSV (20 CSV files now). Each dossier shows them beside its Reden, a Person's page shows them apart from their Reden, and the week radar reads “2 Reden, 59 Fragen, 55 Antworten” for a Befragung. The Fragestunde, which has no `<rede>` elements and stored nothing for 75 of 76 sittings, is read from its flat turns.
+- Change what counts as a Rede without fetching anything again. Every online update now keeps the sitting's Plenarprotokoll XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it. `--fetch-xml` downloads the XML for sittings cached before this release (public bundestag.de files, about 0.3 s each).
+- Every build warns when a cached report predates this counting rule, names how many and prints the fix, so an old store cannot quietly mix with new numbers.
+
+### Changed
+
+- Only Reden count as Reden. On the 285 cached sittings the Reden count falls from 34,775 to 25,800 (DIP's own count is 26,396) and the characters of all Reden by 6.1 %. The Bundesregierung's Redeanteil falls from 14.6 % to 4.6 %; CDU/CSU 22.2 to 24.8, SPD 17.7 to 21.2, AfD 14.6 to 15.2, Grüne 13.5 to 14.5, FDP 7.4 to 8.5, Linke 6.9 to 7.4. The opening reports of a Befragung stay Reden. The five Fakt der Woche metrics that count Reden are at version 2.
+- Kurzinterventionen are detected from the Sitzungsleitung's wording, and the parser compares them and the Erwiderungen per sitting with DIP (636 of 682 and 581 of 646 overall, 59 of 285 sittings differ). Detection prefers precision, so some Kurzinterventionen still count as Reden.
+- A cached report with a Befragung or Fragestunde heading is never ranked as a week topic, also when the report was made before this release.
+
+### Fixed
+
+- A Befragung or Fragestunde whose heading the Bundestag XML sets in a different paragraph class (20/143, 20/159) is recognised: 212 Fragen and Antworten no longer count as Reden and 67 Fragestunde turns are stored.
+- A Rede after a Kurzintervention is an Erwiderung only when the same Redner gives it. Fifteen real Reden, including a maiden speech that the “erste Reden” Fakt needs, had been filed as Erwiderungen.
+- `--offline --repersist` refuses cached XML that is not the protocol of its sitting (a maintenance page, another sitting, no agenda items), names the file, and leaves the store untouched. It no longer marks such a report as current. The profiles resolved online survive the re-parse.
+
 ## [0.10.0.0] - 2026-09-30
 
 ### Added
