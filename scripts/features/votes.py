@@ -29,10 +29,16 @@ def render_result_badge(vote: dict[str, Any]) -> str:
     """The Angenommen/Abgelehnt pill for the dossier panel and the votes
     archive; a vote with no recorded result renders no badge.
     """
-    result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
+    result_raw, result_source = derive.vote_outcome(vote), vote.get("result_source")
     label = result_badge_label(result_raw)
     if not label:
-        return ""
+        reason = ("Zweidrittelmehrheit der Mitglieder erforderlich (Art. 79 Abs. 2 GG); kein amtliches Ergebnis gefunden"
+                  if vote.get("procedure_type") == "constitutional_amendment"
+                  else "Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
+                  if vote.get("procedure_type") else "Kein Ergebnis verfügbar")
+        return f'<span class="vote-state-note">{html.esc(reason)}</span>'
+    if vote.get("inverted"):
+        label = "Antrag: " + label
     if result_source == "official":
         return (
             f'<span class="vote-result vote-result-{html.esc(result_raw)}"'
@@ -129,9 +135,10 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             color = html.PARTY_COLORS.get(name, "#6b7280")
             # No Mehrheitsvotum (a tie, or nobody voted) is no pill, not a
             # "nicht abgegeben" one.
+            position = (derive.fraction_position(counts, True) if vote.get("inverted") else html.VOTE_LABELS.get(leading))
             pill = (
-                f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(html.VOTE_LABELS.get(leading, leading))}</em>'
-                if leading
+                f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(position)}</em>'
+                if position
                 else ""
             )
             fraction_rows.append(
@@ -188,13 +195,17 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         )
         detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
         result_badge = render_result_badge(vote)
+        explanation = ""
+        if vote.get("inverted"):
+            explanation = '<p class="vote-state-note">Abgestimmt wurde über die Empfehlung, den Antrag abzulehnen. Ja = Antrag ablehnen · Nein = Antrag annehmen</p>'
+
         panels.append(
             '<section class="vote-panel">'
             f'<div class="vote-head"><div><h3>Namentliche Abstimmung{result_badge}</h3>'
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'<div class="vote-fractions">{"".join(fraction_rows)}</div>'
+            f'{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{"".join(member_sections)}</div>'

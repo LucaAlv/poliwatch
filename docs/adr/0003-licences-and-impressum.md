@@ -36,7 +36,7 @@ DIP clause 5 and the duties to name the source and mark changes are conditions w
 | DIP and Plenarprotokoll extraction | every column tagged `dip` | Nutzungsbedingungen DIP; source line „Deutscher Bundestag/Bundesrat – DIP"; protocol citations as „BT-PlPr. 21/84" |
 | Roll-call votes | `votes`, `vote_fractions`, `vote_members`, `vote_documents`, `agenda_item_votes` (`bundestag.de`) | Source „Deutscher Bundestag". The Ja/Nein/Enthalten lists are also printed in the Plenarprotokoll (amtliches Werk, § 5 Abs. 2 UrhG), which is the basis we rely on. Non-voters and `xlsx_url` depend on the open follow-up (question 5) |
 | abgeordnetenwatch | `mps.aw_politician_id`, `profile_url`, `birth_year`, `gender`, `profession`, `wahlkreis`, `bundesland` | CC0 1.0 |
-| Our own work | everything tagged `derived` (`facts`, `fact_metrics`, `fact_sources`, `mp_canonical`, `datenstand`, `votes.result_raw`/`result_source`) | CC BY 4.0; DIP's source duty still applies to what they are computed from |
+| Our own work | everything tagged `derived` (`facts`, `fact_metrics`, `fact_sources`, `mp_canonical`, `datenstand`, `votes.inverted`/`inversion_source`/`inversion_excerpt`) | CC BY 4.0; DIP's source duty still applies to what they are computed from |
 
 **Change marking (DIP 4b).** The notice lists what we changed:
 - text and structure are extracted from the protocol XML and the DIP API into tables;

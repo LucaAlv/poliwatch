@@ -159,7 +159,7 @@ class VoteResultTests(unittest.TestCase):
         title = "Gesetz zur Änderung des Grundgesetzes"
         self.assertEqual(dip.vote_result(official=None, yes_count=400, no_count=200, title=title), (None, None))
         self.assertEqual(
-            dip.vote_result(official=None, yes_count=200, no_count=400, title=title), ("rejected", "derived")
+            dip.vote_result(official=None, yes_count=200, no_count=400, title=title), (None, None)
         )
         self.assertEqual(
             dip.vote_result(official="accepted", yes_count=400, no_count=200, title=title), ("accepted", "official")

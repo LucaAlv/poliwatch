@@ -13,7 +13,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
 
 **B. Abstimmungen (daily view), independent of A**
-1. "Inverted-vote reading for Beschlussempfehlungen" (the single most misleading state a vote panel can show), then "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
+1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. "Roll-call member rows link to external profiles, never to our own MP pages" (after A2, so the links last).
 3. "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
 4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters".
@@ -194,16 +194,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 (1) `source_stale` (`validate_dip_protocol.enrich_with_api`) holds a genuinely vote-free sitting of the last 14 days partial when the list head is older, delaying its week's and month's vote Fakt by up to two weeks; (2) the judged range starts at the earliest stored sitting, so one old cached dossier turns `--backfill-incomplete` into a job of hundreds of sittings and nothing prints the range; (3) the `numFound` check in `fetch_protocols` hard-stops every build if DIP's count ever includes unretrievable documents, with no override; (4) report JSON, SQLite and the catalog file are written at different points, so a build interrupted between them leaves `--offline` judging completeness from new reports against an old store; (5) a build whose every refresh was skipped exits 0; (6) the build-wide roll-call page cache is a snapshot, and list pagination can shift under a long build (duplicates a boundary entry); (7) `namenslisten_entries()` has no outage cooldown, so an outage costs about 3 minutes per vote; (8) an empty list page after page 1 counts as the end of the list; (9) catalog entries in range with no usable number or date only warn instead of failing closed, and duplicate document numbers keep the last; (10) `api_records.matched_roll_call_votes` and `roll_call_vote_candidates` describe the fresh scan while `agenda_items[].votes` may be cached after a no-scan run; (11) some date checks use the wall clock, not `--today`; (12) a failed vote-detail page stops matching for the rest of that sitting; (13) an uncaught `JSONDecodeError` from the DIP API aborts a build; (14) the offline build trusts the cached catalog with no age check; (15) the in-progress ISO week can be judged complete.
 
 **Why:** Each is a place where a build can publish a slightly stale fact, waste a long backfill, or stop. None was reproduced as a wrong published fact on the reference copy; they were found by reading the code. Codex adversarial and structured reviews of the final tree were unavailable (usage limit), so this list has Claude-only coverage.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
-### Match roll-call votes to a TOP when Drucksache numbers fail
-
-**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) attaches a roll-call vote to a TOP only when their Drucksache numbers overlap. A candidate that matches none is logged, counted (`validation_summary.unmatched_roll_call_vote_count`) and, since fix-votes-completeness, makes the sitting's votes `partial` (`unmatched_candidate`). Match by title or vote date where numbers fail, or store the vote against the Sitzung without a TOP.
-
-**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, and those sittings, with the weeks and months holding them, stay incomplete until this is fixed.
 
 **Effort:** M
 **Priority:** P2
@@ -533,30 +523,6 @@ Done when a new issue can only be opened through one of the two forms and `secur
 ## Plenarwatch-Lücken
 
 Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, München; 169 posts for WP 21 as of 2026-09-19). Their counting rules live on [/methodik/](https://plenarwatch.de/methodik/); read it before touching any item below rather than re-deriving the rule here. Coverage audit of our code on 2026-09-19: their vote tallies, per-sitting summaries, MP pages and bill tracking we already have (`scripts/features/votes.py`, `summaries.py`, `mp-pages`, `bills`); everything else in their nav (Feed, Zwischenrufe, Präsenz, Muster, Bundestag, Methodik) is a gap or partial. Excluded on purpose: Telegram/YouTube/Instagram and the "Unterstützen" page (distribution, not product).
-
-### Inverted-vote reading for Beschlussempfehlungen ("Ja = Antrag ablehnen")
-
-**What:** When the voted document is a committee recommendation to reject a motion, the panel states the reversal in one procedural sentence, prints the legend `Ja = Antrag ablehnen · Nein = Antrag annehmen`, and derives each fraction's position ("für den Antrag" / "gegen den Antrag" / "geteilt") from its `leading_vote`; raw counts stay untouched. Done when the Übergewinnsteuer-style case (plenarwatch post `ablehnung-eines-antrags-zur-uebergewinnsteuer-2026-04-24`) renders the derived positions and a test pins the inversion.
-
-**Why:** Without the inversion the outcome badge from the previous item reads "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the single most misleading state a vote panel can be in. "Beschlussempfehlung" appears in our code only as glossary prose (`scripts/render_dip_pulse_html.py:59-188`).
-
-**Context:** Detection signal: the DIP `vorgang`/Drucksache title of the voted document starts with "Beschlussempfehlung" and the recommendation text contains "abzulehnen"; DIP's `/drucksache` endpoint carries the title, so no PDF parsing. Store as a boolean on `votes`; render in `render_vote_summary`.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** Vote outcome badge
-
-### Majority rule for derived vote outcomes (Art. 79(2), 67, 68 GG)
-
-**What:** `validate_dip_protocol.vote_result` derives "Angenommen"/"Abgelehnt" from a plain yes>no majority of votes cast. A Grundgesetz amendment needs two thirds of the members (Art. 79(2) GG); Kanzlerwahl, konstruktives Misstrauensvotum and Vertrauensfrage need an absolute majority of the members (Art. 63, 67, 68 GG). Thread the applicable threshold (from the Vorgang/Drucksache type) into `vote_result`, or return unknown for those vote types when no official result was scraped. Done when a test pins a GG amendment with yes>no but below two thirds of members as "Abgelehnt".
-
-**Why:** Found by the /ship red-team review of the badge (2026-09-26). Latent: every Grundgesetz vote in the real store is labelled correctly today, but a high-absence sitting would mislabel one silently.
-
-**Context:** The official-result scrape already wins when bundestag.de states the outcome; the gap is only in the derived fallback.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** Vote outcome badge
 
 ### A tally-less neighboring decision with no document number of its own can still steal the official badge
 
@@ -889,6 +855,46 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Depends on:** None; best started before the Analysen pages, so new pages are store-first from the start
 
 ## Completed
+
+### Match roll-call votes to a TOP when Drucksache numbers fail
+
+**Completed:** v0.10.0.0 (2026-09-30). Uniquely matching titles can attach a candidate to a TOP; otherwise fetched candidates remain in `sitting_votes` and persist through `votes.protocol_id`. They appear under “TOP nicht zugeordnet”; acquisition completeness now tracks missing scans and failed fetches separately from missing TOP attribution.
+
+**What:** `enrich_with_api` (`scripts/validate_dip_protocol.py`) attaches a roll-call vote to a TOP only when their Drucksache numbers overlap. A candidate that matches none is logged, counted (`validation_summary.unmatched_roll_call_vote_count`) and, since fix-votes-completeness, makes the sitting's votes `partial` (`unmatched_candidate`). Match by title or vote date where numbers fail, or store the vote against the Sitzung without a TOP.
+
+**Why:** After the 2026-09-29 backfill of the reference copy, 23 candidates in 15 sittings (e.g. 21/83 vote 1008, 21/40 votes 977 and 978) matched no TOP, so those votes are in no dossier and not in the store, and those sittings, with the weeks and months holding them, stay incomplete until this is fixed.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Inverted-vote reading for Beschlussempfehlungen ("Ja = Antrag ablehnen")
+
+**Completed:** v0.10.0.0 (2026-09-30). Confirmed proposition-specific evidence is stored with its source and excerpt; raw vote totals and proposition result stay intact, while dossier and archive views derive the Antrag outcome and Fraktionsposition.
+
+**What:** When the voted document is a committee recommendation to reject a motion, the panel states the reversal in one procedural sentence, prints the legend `Ja = Antrag ablehnen · Nein = Antrag annehmen`, and derives each fraction's position ("für den Antrag" / "gegen den Antrag" / "geteilt") from its `leading_vote`; raw counts stay untouched. Done when the Übergewinnsteuer-style case (plenarwatch post `ablehnung-eines-antrags-zur-uebergewinnsteuer-2026-04-24`) renders the derived positions and a test pins the inversion.
+
+**Why:** Without the inversion the outcome badge from the previous item reads "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the single most misleading state a vote panel can be in. "Beschlussempfehlung" appears in our code only as glossary prose (`scripts/render_dip_pulse_html.py:59-188`).
+
+**Context:** Detection signal: the DIP `vorgang`/Drucksache title of the voted document starts with "Beschlussempfehlung" and the recommendation text contains "abzulehnen"; DIP's `/drucksache` endpoint carries the title, so no PDF parsing. Store as a boolean on `votes`; render in `render_vote_summary`.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** Vote outcome badge
+
+### Majority rule for derived vote outcomes (Art. 79(2), 67, 68 GG)
+
+**Completed:** v0.10.0.0 (2026-09-30). Official attributed results take precedence; without one, recognized special-majority procedures stay unknown. Ordinary votes retain the Ja/Nein rule.
+
+**What:** `validate_dip_protocol.vote_result` derives "Angenommen"/"Abgelehnt" from a plain yes>no majority of votes cast. A Grundgesetz amendment needs two thirds of the members (Art. 79(2) GG); Kanzlerwahl, konstruktives Misstrauensvotum and Vertrauensfrage need an absolute majority of the members (Art. 63, 67, 68 GG). Thread the applicable threshold (from the Vorgang/Drucksache type) into `vote_result`, or return unknown for those vote types when no official result was scraped. Validated with fixtures for each special-majority procedure: without an attributable official result the outcome is unknown, including Ja > Nein; no membership total is inferred.
+
+**Why:** Found by the /ship red-team review of the badge (2026-09-26). Latent: every Grundgesetz vote in the real store is labelled correctly today, but a high-absence sitting would mislabel one silently.
+
+**Context:** The official-result scrape already wins when bundestag.de states the outcome; the gap is only in the derived fallback.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Vote outcome badge
 
 ### Vote outcome badge, linked Drucksache and XLSX source on the vote panel
 

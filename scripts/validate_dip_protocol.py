@@ -230,7 +230,8 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
         except UnicodeDecodeError as exc:
             raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
         except urllib.error.HTTPError as exc:
-            exc.close()
+            if exc.fp is not None:
+                exc.close()
             # A 404 or 403 will not change on a retry; a busy or failing server might.
             if exc.code in {429, 500, 502, 503, 504} and attempt < PAGE_FETCH_RETRIES:
                 time.sleep(PAGE_FETCH_RETRY_DELAY_SECONDS * (attempt + 1))
@@ -725,34 +726,93 @@ def vote_total(counts: dict[str, int]) -> int:
     return sum(int(counts.get(key) or 0) for key in VOTE_KEYS)
 
 
-_CONSTITUTIONAL_TITLE_RE = re.compile(r"Grundgesetz", re.I)
+def special_majority_procedure(title: str | None = None, procedure_context: Any = None) -> str | None:
+    """Identify the procedure, not a mere reference to a constitutional article."""
+    text = " ".join(str(value or "") for value in (title, procedure_context))
+    patterns = {
+        # A reference such as "Antrag zur Änderung des Grundgesetzes" is
+        # not itself an amendment procedure. Require legislation/entwurf
+        # evidence as well as the constitutional subject.
+        "constitutional_amendment": r"(?:Änderung|Änderungen)\s+(?:des\s+)?Grundgesetz|Grundgesetzänderung|Verfassungsänderung",
+        "confidence": r"Vertrauensfrage|Vertrauensantrag|Vertrauen\s+auszusprechen",
+        "no_confidence": r"(?:konstruktiv\w*\s+)?Misstrauensvotum|Misstrauensantrag",
+        "chancellor_election": r"Kanzlerwahl|Wahl\s+(?:des|eines|der|einer)\s+Bundeskanzler",
+    }
+    for kind, pattern in patterns.items():
+        if not re.search(pattern, text, re.I):
+            continue
+        if kind == "constitutional_amendment" and not re.search(
+            r"\b(?:Gesetz|Gesetzentwurf|Gesetzgebung|Änderungsgesetz|Entwurf|Grundgesetzänderung|Verfassungsänderung)\b", text, re.I
+        ):
+            continue
+        return kind
+    return None
 
 
 def vote_result(
-    *, official: str | None, yes_count: int, no_count: int, title: str | None = None
+    *, official: str | None, yes_count: int, no_count: int, title: str | None = None,
+    procedure_context: Any = None,
 ) -> tuple[str | None, str | None]:
-    """Decide a roll-call vote's outcome: ``(result_raw, result_source)``.
-
-    The bundestag.de page wins when it states one (``official`` is "accepted"
-    or "rejected", scraped from its Beschluss text by
-    ``scrape_official_vote_result``); otherwise the result is derived from the
-    counts. A tie is rejected (GOBT Section 48 Abs. 2: at a tie the question is
-    answered no). No counts at all means unknown - never guess.
-
-    A Grundgesetz amendment needs two thirds of the Bundestag's members
-    (Art. 79 Abs. 2 GG), not a Ja > Nein majority, so more Ja than Nein cannot
-    be read as acceptance there: the derived result is unknown. Ja <= Nein is
-    still a certain rejection.
-    """
+    """Official proposition outcome wins; special procedures otherwise stay unknown."""
     if official in ("accepted", "rejected"):
         return official, "official"
+    if special_majority_procedure(title, procedure_context):
+        return None, None
     if yes_count == 0 and no_count == 0:
         return None, None
-    if yes_count > no_count:
-        if _CONSTITUTIONAL_TITLE_RE.search(title or ""):
-            return None, None
-        return "accepted", "derived"
-    return "rejected", "derived"
+    return ("accepted" if yes_count > no_count else "rejected"), "derived"
+
+
+def recommendation_inversion(vote: dict[str, Any], documents: list[dict[str, Any]] | None = None) -> tuple[bool | None, str | None, str | None]:
+    """Only vote-specific wording or an unambiguous matched DIP recommendation counts."""
+    reject = re.compile(r"Ablehnung\s+(?:eines|des|der)\s+(?:Antrag|Anträge)|(?:den|der|dem)\s+Antrag\b.{0,180}?(?:abzulehnen|ablehnen)", re.I)
+    accept = re.compile(r"Annahme\s+(?:eines|des|der)\s+Antrag|(?:den|der|dem)\s+Antrag\b.{0,180}?anzunehmen", re.I)
+    evidence = [("bundestag-roll-call", str(vote.get(field) or ""))
+                for field in ("title", "description", "vote_heading")]
+    numbers = set(vote.get("document_numbers") or [])
+    for doc in documents or []:
+        if doc.get("dokumentnummer") not in numbers:
+            continue
+        text = str(doc.get("titel") or "")
+        # A recommendation naming another document cannot establish this vote.
+        named = set(_DOCUMENT_NUMBER_RE.findall(text))
+        if named - numbers:
+            continue
+        evidence.append(("bundestag-dip", text))
+    rejection = None
+    negation = re.compile(r"\b(?:nicht|kein\w*|ohne)\b", re.I)
+    for source, text in evidence:
+        # All attributable evidence must agree, including across fields and
+        # documents. Negated wording never proves a recommendation to reject.
+        if accept.search(text):
+            return None, None, None
+        for match in reject.finditer(text):
+            clause_start = max(text.rfind(mark, 0, match.start()) for mark in (".", ";", "\n")) + 1
+            if negation.search(text[clause_start:match.end()]):
+                return None, None, None
+            if rejection is None:
+                rejection = (True, source, text)
+    if rejection is not None:
+        return rejection
+    return None, None, None
+
+
+def interpret_vote(vote: dict[str, Any], documents: list[dict[str, Any]] | None = None, procedure_context: Any = None) -> None:
+    inverted, source, excerpt = recommendation_inversion(vote, documents)
+    vote.update(inverted=inverted, inversion_source=source, inversion_excerpt=excerpt)
+    vote["procedure_type"] = special_majority_procedure(vote.get("title"), procedure_context)
+    official = vote.get("official_result")
+    if official is None and vote.get("result_source") == "official":
+        official = vote.get("result_raw")
+    # Preserve the official outcome and its scope across reinterpretation.
+    # Consumers already distinguish application outcomes from recommendations.
+    counts = vote.get("total") or {}
+    vote["result_raw"], vote["result_source"] = vote_result(
+        official=official, yes_count=int(counts.get("yes") or 0), no_count=int(counts.get("no") or 0),
+        title=vote.get("title"), procedure_context=procedure_context,
+    )
+    if vote["result_source"] != "official":
+        vote["result_scope"] = "proposition"
 
 
 _BESCHLUSS_SECTION_RE = re.compile(
@@ -785,7 +845,7 @@ def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
     return paragraphs
 
 
-def scrape_official_vote_result(
+def _official_vote_text(
     detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
 ) -> str | None:
     """bundestag.de states a vote's result only as prose in the page's
@@ -838,6 +898,15 @@ def scrape_official_vote_result(
         following = lines[index + 1]
         next_boundary = _NEXT_TALLY_RE.search(following)
         text = f"{text} {following[: next_boundary.start()] if next_boundary else following}"
+    return text
+
+
+def scrape_official_vote_result(
+    detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
+) -> str | None:
+    text = _official_vote_text(detail_html, yes_count, no_count, document_numbers)
+    if text is None:
+        return None
     words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
     # The negation check spans both lines: "ist nicht<br/>angenommen".
     if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
@@ -1174,6 +1243,9 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     detail_html = fetch_html(roll_call_vote_url(vote_id))
     member_html = fetch_html(f"{BT_BASE_URL}/apps/na/namensliste.form?id={urllib.parse.quote(vote_id)}&ajax=true")
     enriched_vote = dict(vote)
+    heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", detail_html, re.S | re.I)
+    if heading:
+        enriched_vote["vote_heading"] = strip_tags(heading.group(1))
     enriched_vote["fractions"] = parse_fraction_votes(detail_html)
     enriched_vote["members"] = parse_member_votes(member_html)
 
@@ -1181,11 +1253,15 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     yes_count = int(total.get("yes") or 0)
     no_count = int(total.get("no") or 0)
     official = scrape_official_vote_result(detail_html, yes_count, no_count, vote.get("document_numbers"))
+    outcome_text = _official_vote_text(detail_html, yes_count, no_count, vote.get("document_numbers")) or ""
+    enriched_vote["official_result"] = official
+    enriched_vote["result_scope"] = "application" if re.search(r"\bAntrag\b", outcome_text, re.I) and not re.search(r"Beschlussempfehlung", outcome_text, re.I) else "proposition"
     result_raw, result_source = vote_result(
         official=official, yes_count=yes_count, no_count=no_count, title=vote.get("title")
     )
     enriched_vote["result_raw"] = result_raw
     enriched_vote["result_source"] = result_source
+    interpret_vote(enriched_vote)
 
     # The XLSX link is optional provenance from a second page: a failed fetch
     # leaves it unknown rather than discarding the fractions/members/result
@@ -1790,6 +1866,10 @@ def enrich_with_api(
         return title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
+    linked_titles_by_top: list[list[str]] = []
+    vote_documents_by_top: list[list[dict[str, Any]]] = []
+    vote_procedure_context_by_top: list[list[tuple[str, str, set[str]]]] = []
+    top_candidate_ids: list[set[str]] = []
     agenda_items = parsed_xml["agenda_items"]
     for top_index, top in enumerate(agenda_items, start=1):
         matching_positions = [position for position in positions if position_matches_top(position, top)]
@@ -1806,18 +1886,42 @@ def enrich_with_api(
             linked_drucksachen.extend(linked_drucksachen_for_vorgang(vorgang_id))
 
         linked_drucksachen = unique_by(linked_drucksachen, ("vorgang_id", "dokumentnummer", "url"))
-        votes = []
-        if vote_fetch_error is None:
-            match_errors: list[DipError] = []
-            votes = match_roll_call_votes(
-                top, linked_drucksachen, roll_call_candidates, roll_call_cache, match_errors
-            )
-            if match_errors:
-                vote_fetch_error = match_errors[0]
-                print(
-                    f"warning: roll-call vote details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {vote_fetch_error}",
-                    file=sys.stderr,
-                )
+        linked_titles_by_top.append(
+            list(dict.fromkeys(
+                str(title)
+                for title in [*(position.get("titel") for position in matching_positions), *(
+                    linked.get("titel")
+                    for position in matching_positions
+                    for linked in (position.get("mitberaten") or [])
+                )]
+                if title
+            ))
+        )
+        vote_documents_by_top.append(linked_drucksachen)
+        procedure_evidence: list[tuple[str, str, set[str]]] = []
+        for position in matching_positions:
+            linked_numbers = position_drucksache_numbers(position)
+            if position.get("titel"):
+                procedure_evidence.append((str(position["titel"]), str(position.get("vorgangstyp") or ""), linked_numbers))
+            for linked in position.get("mitberaten") or []:
+                title = str(linked.get("titel") or "")
+                linked_type = str(linked.get("vorgangstyp") or linked.get("typ") or "")
+                if title or linked_type:
+                    linked_numbers_for_item = (
+                        {str(doc.get("dokumentnummer")) for doc in linked_drucksachen_for_vorgang(str(linked["id"]))
+                         if doc.get("dokumentnummer")} if linked.get("id") else linked_numbers
+                    )
+                    procedure_evidence.append((title, linked_type, linked_numbers_for_item))
+        vote_procedure_context_by_top.append(procedure_evidence)
+        xml_and_linked_numbers = top_document_numbers(top, linked_drucksachen)
+        candidate_ids = {
+            str(candidate["id"])
+            for candidate in roll_call_candidates
+            if xml_and_linked_numbers and set(candidate.get("document_numbers") or [])
+            and xml_and_linked_numbers & set(candidate.get("document_numbers") or [])
+        }
+        top_candidate_ids.append(candidate_ids)
+        votes: list[dict[str, Any]] = []
 
         enriched_tops.append(
             {
@@ -1901,10 +2005,65 @@ def enrich_with_api(
         warnings.append("Mindestens ein XML-TOP mit Reden hatte keine passenden DIP-Aktivitäten im Seitenbereich.")
     if len(activities) >= 100:
         warnings.append("Die Zahl der Aktivitäten überschritt eine API-Seite; Cursor-Paginierung wurde verwendet.")
-    attached_vote_ids = {str(vote["id"]) for top in enriched_tops for vote in top["votes"]}
-    unmatched_candidates = [
-        candidate for candidate in roll_call_candidates if str(candidate["id"]) not in attached_vote_ids
-    ]
+    # Some Bundestag list entries have no useful Drucksache reference. Try
+    # their existing title matcher against all TOPs and linked Vorgang titles,
+    # accepting only a unique result across the whole sitting.
+    candidate_by_id = {str(candidate["id"]): candidate for candidate in roll_call_candidates}
+    candidate_top_indices: dict[str, set[int]] = {
+        vote_id: {index for index, candidate_ids in enumerate(top_candidate_ids) if vote_id in candidate_ids}
+        for vote_id in candidate_by_id
+    }
+    for candidate in roll_call_candidates:
+        vote_id = str(candidate["id"])
+        if candidate_top_indices[vote_id]:
+            continue
+        matching_top_indices = [
+            index
+            for index, top in enumerate(enriched_tops)
+            if title_matches(top.get("heading"), candidate.get("title"))
+            or any(title_matches(title, candidate.get("title")) for title in linked_titles_by_top[index])
+        ]
+        if len(matching_top_indices) != 1:
+            continue
+        candidate_top_indices[vote_id].add(matching_top_indices[0])
+
+    # Fetch every candidate independently: one unavailable detail must not
+    # prevent later candidates in the sitting from being preserved.
+    vote_fetch_errors: list[tuple[str, DipError]] = []
+    for candidate in candidate_by_id.values():
+        vote_id = str(candidate["id"])
+        try:
+            roll_call_cache[vote_id] = fetch_roll_call_vote_detail(candidate)
+        except DipError as exc:
+            vote_fetch_errors.append((vote_id, exc))
+            if vote_fetch_error is None:
+                vote_fetch_error = exc
+            print(
+                f"warning: roll-call vote {vote_id} details unavailable for {protocol.get('dokumentnummer') or protocol_id}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        vote = roll_call_cache[vote_id]
+        vote["protocol_id"] = protocol_id
+        for top_index in sorted(candidate_top_indices[vote_id]):
+            enriched_tops[top_index]["votes"].append(vote)
+    for vote in roll_call_cache.values():
+        vote["protocol_id"] = protocol_id
+
+    attributed_vote_ids = {vote_id for vote_id, indices in candidate_top_indices.items() if indices}
+    unmatched_candidates = [candidate for candidate in candidate_by_id.values() if str(candidate["id"]) not in attributed_vote_ids]
+    sitting_votes = [roll_call_cache[str(candidate["id"])] for candidate in unmatched_candidates if str(candidate["id"]) in roll_call_cache]
+    # Interpret each vote once using only evidence attributable to its documents.
+    # A shared vote may have several TOP links; no later TOP can erase evidence.
+    all_vote_documents = [doc for docs in vote_documents_by_top for doc in docs]
+    all_vote_context = [item for contexts in vote_procedure_context_by_top for item in contexts]
+    for vote in roll_call_cache.values():
+        numbers = set(vote.get("document_numbers") or [])
+        documents = [doc for doc in all_vote_documents if doc.get("dokumentnummer") in numbers]
+        context = [f"{title} {vorgang_type}" for title, vorgang_type, linked_numbers
+                   in all_vote_context if numbers & linked_numbers]
+        context.extend(f"{doc.get('titel') or ''} {doc.get('drucksachetyp') or ''}" for doc in documents)
+        interpret_vote(vote, documents=documents, procedure_context=context)
     if progress and vote_scan_pages > 0:
         # Every fetched vote costs two requests (detail page, member list); the
         # Namenslisten page is one more per build, shared by all sittings.
@@ -1912,14 +2071,14 @@ def enrich_with_api(
             f"Roll-call details: {len(roll_call_cache)} vote(s) fetched "
             f"({2 * len(roll_call_cache)} requests), {len(unmatched_candidates)} candidate(s) matched no TOP."
         )
-    if roll_call_candidates and not attached_vote_ids:
-        warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer zu einem TOP.")
-    elif unmatched_candidates and vote_fetch_error is None:
+    if roll_call_candidates and not attributed_vote_ids:
+        warnings.append("Für dieses Sitzungsdatum wurden namentliche Abstimmungen gefunden, aber keine passte per Drucksachennummer oder Titel zu einem TOP.")
+    elif unmatched_candidates:
         warnings.append(
             f"{len(unmatched_candidates)} von {len(roll_call_candidates)} namentlichen Abstimmungen dieses Sitzungsdatums "
-            "passten per Drucksachennummer zu keinem TOP."
+            "passten per Drucksachennummer oder Titel zu keinem TOP."
         )
-    if unmatched_candidates and vote_fetch_error is None:
+    if unmatched_candidates:
         for candidate in unmatched_candidates:
             print(
                 f"warning: [{protocol.get('dokumentnummer') or protocol_id}] roll-call vote {candidate['id']} "
@@ -1950,7 +2109,7 @@ def enrich_with_api(
             f"{failed_ids}{suffix}."
         )
 
-    vote_records = len(attached_vote_ids)
+    vote_records = len(roll_call_cache)
     if vote_scan_pages <= 0:
         vote_facts = publication.DomainFacts(
             domain="votes",
@@ -1961,8 +2120,8 @@ def enrich_with_api(
     else:
         attempted_at = utc_now()
         # A complete acquisition needs full evidence: the scan reached the end
-        # of the list or passed the sitting's date, no request failed and every
-        # candidate found its TOP. Anything else is partial (some votes attached)
+        # of the list or passed the sitting's date, and no request failed.
+        # TOP attribution is optional because sitting_votes preserves the vote.
         # or failed (none), with the reason named. Unmatched candidates are also
         # logged above and counted in api_totals.
         failure_reasons: list[str] = []
@@ -1972,10 +2131,6 @@ def enrich_with_api(
             failure_reasons.append("source_unavailable")
         if roll_call_fetch.scan_end == "budget_exhausted":
             failure_reasons.append("scan_budget_exhausted")
-        # A vote the list shows but no TOP claims is not in the store: the
-        # sitting's votes are known to be short, so they cannot be complete.
-        if unmatched_candidates and vote_fetch_error is None:
-            failure_reasons.append("unmatched_candidate")
         # A recent sitting with no candidate on a list whose newest entry is
         # older than the sitting: the list may simply not have caught up.
         target_day = iso_date(protocol.get("datum"))
@@ -1995,7 +2150,7 @@ def enrich_with_api(
                 domain="votes",
                 acquisition_state=(
                     publication.AcquisitionState.PARTIAL
-                    if vote_records or failure_reasons in (["unmatched_candidate"], ["source_stale"])
+                    if vote_records or failure_reasons == ["source_stale"]
                     else publication.AcquisitionState.FAILED
                 ),
                 source="bundestag-roll-call",
@@ -2034,6 +2189,7 @@ def enrich_with_api(
             "roll_call_vote_candidate_count": len(roll_call_candidates),
             "matched_roll_call_vote_count": len(roll_call_cache),
             "unmatched_roll_call_vote_count": len(unmatched_candidates),
+            "roll_call_vote_detail_fetch_error_count": len(vote_fetch_errors),
             "roll_call_scan_end": roll_call_fetch.scan_end,
             "roll_call_scan_pages": vote_scan_pages,
         },
@@ -2046,9 +2202,14 @@ def enrich_with_api(
             "person_fetch_errors": person_fetch_errors,
             "roll_call_vote_candidates": roll_call_candidates,
             "matched_roll_call_votes": list(roll_call_cache.values()),
+            "sitting_votes": sitting_votes,
+            "roll_call_vote_detail_fetch_errors": [
+                {"vote_id": vote_id, "error": str(error)} for vote_id, error in vote_fetch_errors
+            ],
             "unmatched_roll_call_vote_ids": [str(candidate["id"]) for candidate in unmatched_candidates],
         },
         "agenda_items": enriched_tops,
+        "sitting_votes": sitting_votes,
         "warnings": warnings,
         "acquisition": {"votes": vote_facts.as_dict()},
     }
