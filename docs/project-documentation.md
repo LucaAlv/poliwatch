@@ -152,7 +152,7 @@ Important generated files:
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
-| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, reverse-chronological and grouped by month, with a Fraktion filter |
+| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
@@ -217,7 +217,7 @@ Protocol extraction and enrichment engine. Given a DIP protocol id or document n
 - downloads the official XML transcript,
 - parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen,
 - fetches related DIP `/vorgangsposition`, `/aktivitaet`, and `/person` records,
-- scans Bundestag roll-call vote pages and matches votes by same-day protocol plus Drucksachennummer,
+- scans Bundestag roll-call vote pages, first matches by same-day protocol plus Drucksachennummer, then tries an unambiguous title match against TOP headings and linked Vorgang titles; a fetched vote with no unique TOP remains attached to the Sitzung,
 - scrapes each vote's own detail page for bundestag.de's stated Beschluss result (falling back to a yes/no majority when none is stated) and for a link to that vote's XLSX Namensliste export on a separate Namenslisten list page, matched by date and normalized title,
 - optionally generates per-agenda-item LLM summaries.
 
@@ -563,7 +563,20 @@ python3 scripts/build_dip_pulse_site.py --offline
 
 When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
 
-A vote with no recorded `result_raw`/`result_source` renders no badge, and the store keeps it as `NULL`; there is no fallback for pre-badge reports. Rebuild the store and re-enrich cached dossiers to record one, e.g. `update --backfill-incomplete` (see README §4b) — a plain `update` only re-scrapes the `--detail-limit` newest sittings, not every cached one. A derived result (Ja gegen Nein) is left unknown for a Grundgesetz amendment with more Ja than Nein, which needs two thirds of the members (Art. 79 Abs. 2 GG).
+A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
+
+SQL users can derive the Antrag outcome without changing the source result:
+
+```sql
+CASE
+  WHEN result_raw IS NULL THEN NULL
+  WHEN inverted = 1 AND COALESCE(result_scope, '') <> 'application'
+    THEN CASE result_raw WHEN 'accepted' THEN 'rejected' WHEN 'rejected' THEN 'accepted' END
+  ELSE result_raw
+END AS application_result
+```
+
+A vote without an agenda-item assignment remains tied to its sitting through `votes.protocol_id`; `agenda_item_votes` is an optional topic link. The dossier lists these votes under “TOP nicht zugeordnet”, and the archive links to that sitting section. Sitting-wide counts, MP vote histories, and vote facts include them once; topic-dependent output has no inferred TOP.
 
 If no cached protocols exist, offline mode fails with:
 
