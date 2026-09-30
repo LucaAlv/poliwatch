@@ -20,6 +20,7 @@ import build_dip_pulse_site
 import facts
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as pulse_html
+import speech_kinds
 from features import EnrichmentSelection, all_selection, default_selection
 
 
@@ -3084,6 +3085,28 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             plain_dossier = (plain_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
             pinned_dossier = (first_dir / "protocols" / "plenarprotokoll-20-999.html").read_text(encoding="utf-8")
             self.assertEqual(plain_dossier, pinned_dossier)
+
+    # Value: protects=a plain --offline render warns once, naming '1 of 2', about a cached report from before the A1 Rede rule, and stays silent when all are stamped;
+    #   fails_when=the offline path stops calling warn_unparsed_reports, or warns for a stamped report or once per report;
+    #   why_new=the warning was tested as a function and inside --repersist, never on the plain offline render that reads the cache; seam=none
+    def test_offline_rebuild_warns_once_about_a_cached_report_from_before_the_a1_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._seed(tmp)
+            stamped = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+            stamped["protocol"].update({"id": "pp-test-2", "dokumentnummer": "20/998"})
+            stamped["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            path = output_dir / "data" / "plenarprotokoll-20-998.json"
+            path.write_text(json.dumps(stamped), encoding="utf-8")
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(stderr.count("predate the A1 Rede rule"), 1)
+            self.assertIn("1 of 2 cached reports predate", stderr)
+            old = json.loads((output_dir / "data" / "plenarprotokoll-20-999.json").read_text(encoding="utf-8"))
+            old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(old), encoding="utf-8")
+            code, stderr = self._build(output_dir)
+            self.assertEqual(code, 0, stderr)
+            self.assertNotIn("predate the A1 Rede rule", stderr)
 
     def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

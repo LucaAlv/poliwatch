@@ -151,6 +151,72 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         self.assertEqual(lookup["dip:dip-1"], matches[0]["id"])
         self.assertEqual(lookup["xml:xml-1"], matches[0]["id"])
 
+    # Value: protects=a Person's Beiträge resolve to the same profile as their Reden and count beside them on one Abgeordnete row; a Beitrag-only Person keeps a page;
+    #   fails_when=xml_contributions are skipped by profile enrichment, an id-less asker is resolved, or collect_abgeordnete folds Beiträge into speech_count;
+    #   why_new=no test runs enrich_report_with_profiles or collect_abgeordnete over xml_contributions; the render tests feed hand-made contribution_counts; seam=none
+    def test_a_persons_beitraege_share_their_identity_and_count_apart_from_reden(self) -> None:
+        report = report_with_speaker_and_vote()
+        erika = report["agenda_items"][0]["xml_speakers"][0]["speaker"]
+        report["agenda_items"][0]["xml_contributions"] = [
+            {
+                "kind": "kurzintervention",
+                "rede_id": "kurz-1",
+                "parent_rede_id": "rede-1",
+                "sequence": 1,
+                "source_page": {"page": 13},
+                "speaker": {**erika, "xml_redner_id": "xml-1"},
+                "char_count": 40,
+                "text": "Kurz.",
+            },
+            {
+                "kind": "befragung_frage",
+                "rede_id": "frage-1",
+                "parent_rede_id": None,
+                "sequence": 2,
+                "source_page": {"page": 14},
+                "speaker": {
+                    "xml_redner_id": "xml-9",
+                    "display_name": "Hans Frager",
+                    "first_name": "Hans",
+                    "last_name": "Frager",
+                    "fraktion": "AfD",
+                },
+                "char_count": 20,
+                "text": "Frage?",
+            },
+            {
+                "kind": "fragestunde_frage",
+                "rede_id": None,
+                "parent_rede_id": None,
+                "sequence": 3,
+                "source_page": None,
+                "speaker": {"xml_redner_id": None, "display_name": "Stille Fragerin"},
+                "char_count": 6,
+                "text": "Warum?",
+            },
+        ]
+        site.enrich_report_with_profiles(report, FakeResolver())
+        first, second, silent = report["agenda_items"][0]["xml_contributions"]
+        self.assertEqual(first["speaker"]["abgeordnetenwatch"]["id"], 42)
+        self.assertIsNone(second["speaker"]["abgeordnetenwatch"])
+        self.assertNotIn("abgeordnetenwatch", silent["speaker"])
+
+        conn = memory_conn()
+        store.persist_report(conn, report)
+        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
+        by_name = {mp["name"]: mp for mp in mps}
+
+        erika_row = by_name["Erika von Beispiel"]
+        self.assertEqual(len(mps), 2)
+        self.assertEqual((erika_row["speech_count"], erika_row["contribution_count"]), (1, 1))
+        self.assertEqual(erika_row["contribution_counts"], {"kurzintervention": 1})
+        # Hans Frager only asked: no Reden, but a page and a link target.
+        hans = by_name["Hans Frager"]
+        self.assertEqual((hans["speech_count"], hans["contribution_counts"]), (0, {"befragung_frage": 1}))
+        self.assertTrue(site.has_abgeordnete_page(hans))
+        self.assertEqual(lookup["xml:xml-9"], hans["id"])
+        self.assertNotIn("Stille Fragerin", by_name)
+
     def test_same_name_same_party_conflicting_external_ids_do_not_merge(self) -> None:
         conn = memory_conn()
         now = store.utc_now()

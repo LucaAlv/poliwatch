@@ -284,6 +284,17 @@ class UnmappedRoleTests(unittest.TestCase):
         # Nothing of the report was written.
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM speeches").fetchone()[0], 0)
 
+    # Value: protects=an unmapped role that speaks only in a Beitrag is still caught, not stored with a NULL Sprechrolle; fails_when=find_unmapped_sprechrollen drops xml_contributions; why_new=the other tests put roles in xml_speakers only; seam=none
+    def test_an_unmapped_role_only_in_a_contribution_is_listed(self) -> None:
+        contribution_only = report("21/9", ADA)
+        contribution_only["agenda_items"][0]["xml_contributions"] = [
+            {"rede_id": "ID21999", "speaker": self.ODD, "kind": "kurzintervention"}
+        ]
+        self.assertEqual(
+            derive.find_unmapped_sprechrollen([contribution_only]),
+            {"Präsident des Bundesrates": ["21/9 ID21999"]},
+        )
+
     def test_a_rebuild_lists_every_unmapped_role_at_once_and_keeps_the_old_store(self) -> None:
         tmp = Path(tempfile.mkdtemp())
         database = tmp / "store.sqlite"

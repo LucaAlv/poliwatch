@@ -160,7 +160,7 @@ Important generated files:
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 19 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 20 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -404,6 +404,7 @@ Common options:
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
+| `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; `--offline --repersist` re-reads Reden and Beiträge from those files |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week and prints it as "Auswertung vom" |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |

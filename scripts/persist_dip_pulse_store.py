@@ -227,7 +227,6 @@ def initialize(conn: sqlite3.Connection) -> None:
           page INTEGER,
           char_count INTEGER NOT NULL DEFAULT 0,
           text TEXT,
-          top_label TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(protocol_id, rede_id),
@@ -1004,10 +1003,10 @@ def persist_contributions(
             """
             INSERT INTO contributions(
               protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, mp_id,
-              speaker_name, fraktion, sprechrolle, page, char_count, text, top_label,
+              speaker_name, fraktion, sprechrolle, page, char_count, text,
               created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 protocol_id,
@@ -1023,7 +1022,6 @@ def persist_contributions(
                 page,
                 int(contribution.get("char_count") or 0),
                 clean(contribution.get("text")),
-                clean(contribution.get("top_label")),
                 now,
                 now,
             ),

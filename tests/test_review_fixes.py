@@ -497,11 +497,11 @@ class AtomicWriteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plenarprotokoll-21-1.json"
             path.write_text("old", encoding="utf-8")
-            with mock.patch.object(build.os, "replace", side_effect=OSError("disk")):
+            with mock.patch.object(dip.os, "replace", side_effect=OSError("disk")):
                 with self.assertRaises(OSError):
-                    build.write_text_atomic(path, "new")
+                    dip.write_text_atomic(path, "new")
             self.assertEqual(path.read_text(encoding="utf-8"), "old")
-            build.write_text_atomic(path, "new")
+            dip.write_text_atomic(path, "new")
             self.assertEqual(path.read_text(encoding="utf-8"), "new")
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["plenarprotokoll-21-1.json"])
 

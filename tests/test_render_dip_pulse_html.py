@@ -822,6 +822,33 @@ class WeekRadarHelperTests(unittest.TestCase):
         self.assertFalse(pulse_html.is_question_format({"question_formats": []}))
         self.assertFalse(pulse_html.is_question_format({}))
 
+    # Value: protects=a pre-A1 report (no question_formats key) keeps Befragung and Fragestunde out of the ranking by heading; the parser's key wins when present;
+    #   fails_when=the heading fallback is dropped, or the heading overrides an explicit empty question_formats;
+    #   why_new=the existing test only covers the key and the empty item, never the heading; seam=none
+    def test_question_format_falls_back_to_the_heading_only_without_the_parsers_key(self) -> None:
+        for heading in ("Befragung der Bundesregierung", "Fragestunde"):
+            with self.subTest(heading=heading):
+                self.assertTrue(pulse_html.is_question_format({"heading": heading}))
+        self.assertFalse(pulse_html.is_question_format({"heading": "Beratung des Antrags der Abgeordneten X"}))
+        self.assertFalse(pulse_html.is_question_format({}))
+        # The parser looked at the item (a continuation, say) and found no format: its key wins.
+        self.assertFalse(pulse_html.is_question_format({"heading": "Befragung der Bundesregierung", "question_formats": []}))
+
+    # Value: protects=an item with only Beiträge says so instead of claiming no speech content, and an item with nothing keeps the plain wording;
+    #   fails_when=the xml_contributions branch of render_speech_details is removed or applies to items without Beiträge;
+    #   why_new=no test rendered the no-cards text of render_speech_details; seam=none
+    def test_an_item_with_only_beitraege_says_so_and_an_empty_one_says_no_reden(self) -> None:
+        only_questions = {"index": 1, "heading": "Befragung der Bundesregierung",
+                          "xml_contributions": [{"kind": "befragung_frage"}]}
+        nothing = {"index": 2, "heading": "Aktuelle Stunde"}
+        self.assertIn(
+            "Keine Reden; nur Fragen und Antworten (siehe Beiträge)",
+            pulse_html.render_speech_details(only_questions, pulse_html.item_stats(only_questions)),
+        )
+        markup = pulse_html.render_speech_details(nothing, pulse_html.item_stats(nothing))
+        self.assertIn("Keine Reden im XML", markup)
+        self.assertNotIn("siehe Beiträge", markup)
+
     def test_a_top_says_what_was_said_there_that_is_no_rede(self) -> None:
         item = {"xml_contributions": [{"kind": "befragung_frage"}] * 2 + [{"kind": "befragung_antwort"}]}
         markup = pulse_html.render_top_contributions(item)

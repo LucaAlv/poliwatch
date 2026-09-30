@@ -25,7 +25,7 @@
 #      ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, 16 CSVs and five executed SQL
+#   6. Export a distribution copy of the store, one CSV per table and five executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -779,9 +779,6 @@ def add_explicit_dossier_protocols(
 # ---------------------------------------------------------------------------
 
 
-write_text_atomic = dip.write_text_atomic
-
-
 # The sitting's Plenarprotokoll XML as fetched, kept so a rule change in the
 # parser needs --offline --repersist and no re-fetch.
 def xml_cache_path(output_dir: Path, document_number: str) -> Path:
@@ -813,7 +810,7 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     page_path.write_text(
         pulse_html.render_html(
             report,
@@ -1198,6 +1195,25 @@ def rebuild_database_from_entries(
     return True
 
 
+def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
+    """Warn about cached reports made before A1: they carry no ``speech_kinds_version``,
+    so every Kurzintervention, Frage and Antwort in them still counts as a Rede
+    and the numbers built from them mix two rules. Returns how many there are."""
+    stale = [
+        entry
+        for entry in entries
+        if (entry["report"].get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION
+    ]
+    if stale:
+        print(
+            f"warning: {len(stale)} of {len(entries)} cached reports predate the A1 Rede rule and {keeping} "
+            "Kurzinterventionen, Fragen and Antworten counted as Reden, so Reden counts, Redeanteil and the "
+            "Fakten built from them mix two rules. Fix: run --fetch-xml, then --offline --repersist.",
+            file=sys.stderr,
+        )
+    return len(stale)
+
+
 def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
     """Re-read Reden and Beiträge of every cached report from its cached XML,
     where the XML exists, keeping the abgeordnetenwatch profiles its speakers
@@ -1219,7 +1235,12 @@ def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
         if not document_number or not path.exists():
             continue
         profiles = {item.get("index"): speaker_profiles(item) for item in report.get("agenda_items") or []}
-        dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+        try:
+            dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError) as exc:
+            raise CachedReportError(
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Delete it and run --fetch-xml again"
+            ) from exc
         for item in report.get("agenda_items") or []:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
         reparsed += 1
@@ -1243,12 +1264,21 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
             continue
         try:
             text = dip.fetch_text(protocol["xml_url"])
-        except dip.DipError as exc:
+            # An error or maintenance page served with HTTP 200 must not become the cache.
+            root = dip.ET.fromstring(text)
+            wahlperiode, _, sitzung = document_number.partition("/")
+            if (root.tag, root.attrib.get("wahlperiode"), root.attrib.get("sitzung-nr")) != (
+                "dbtplenarprotokoll",
+                wahlperiode,
+                sitzung,
+            ):
+                raise ValueError(f"it is not the Plenarprotokoll XML of {document_number}")
+        except (dip.DipError, dip.ET.ParseError, ValueError) as exc:
             print(f"warning: {document_number}: {exc}", file=sys.stderr)
             failed += 1
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(path, text)
+        dip.write_text_atomic(path, text)
         fetched += 1
         if pause:
             time.sleep(pause)
@@ -1260,18 +1290,13 @@ def repersist_cached_reports(
 ) -> tuple[list[dict[str, Any]], bool]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
-    persisted. Returns the loaded entries (the render reuses them) and whether
+    persisted. Reden and Beiträge are first re-read from each report's cached
+    XML where it exists. Returns the loaded entries (the render reuses them) and whether
     the store file was replaced. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
-    reparsed = reparse_cached_xml(output_dir, cached)
-    if reparsed < len(cached):
-        print(
-            f"warning: {len(cached) - reparsed} of {len(cached)} cached reports have no cached XML in data/xml/ and keep "
-            "what they hold: every Kurzintervention, Frage and Antwort still counts as a Rede there. "
-            "Fix: run --fetch-xml, then this again.",
-            file=sys.stderr,
-        )
+    reparse_cached_xml(output_dir, cached)
+    warn_unparsed_reports(cached, keeping="have no cached XML in data/xml/ and keep")
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
@@ -1995,7 +2020,6 @@ _COLUMN_SOURCE_DERIVED = {
     ("contributions", "kind"),
     ("contributions", "parent_rede_id"),
     ("contributions", "sprechrolle"),
-    ("contributions", "top_label"),
 }
 
 
@@ -2407,7 +2431,7 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
     return row_count, replacements
 
 
-# Build the distribution copy, the 16 CSVs and datenstand.json from the build
+# Build the distribution copy, the CSVs and datenstand.json from the build
 # store. Called once per build, from main(), after the store and the MP
 # identity mapping are final; render_site() and the page never open the build
 # store themselves (eng addendum: "the page ... never opens the build store").
@@ -9821,7 +9845,7 @@ def render_site(
     # from that would turn a partial list into an "authoritative" one.
     catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
     if authoritative_catalog:
-        write_text_atomic(
+        dip.write_text_atomic(
             catalog_path,
             json.dumps(
                 {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
@@ -10469,7 +10493,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "With --offline: persist every cached report into a fresh SQLite store (roster rows kept) and "
             "swap it in only when all of them persisted, so fixes that derive values at persist time apply "
-            "without a network. Any failure exits 1 and leaves the previous store untouched; a store whose "
+            "without a network. Reden and Beiträge are first re-read from the cached XML in OUTPUT_DIR/data/xml/ "
+            "(see --fetch-xml). Any failure exits 1 and leaves the previous store untouched; a store whose "
             "content would not change (timestamps aside) is left as it is."
         ),
     )
@@ -10652,6 +10677,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
+    if args.fetch_xml and (args.offline or args.repersist or args.backfill_incomplete):
+        parser.error(
+            "--fetch-xml downloads the missing XML files and exits; run --offline --repersist as a second command"
+        )
     if args.offline and args.data_manifest and is_url(args.data_manifest):
         parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
     if args.no_persist and args.data_base_url:
@@ -10845,6 +10874,8 @@ def main() -> int:
         entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
         fetched, failed = fetch_missing_xml(output_dir, entries)
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
+        if not failed:
+            print("fetch-xml: next, run --offline --repersist to re-read Reden and Beiträge from it.", file=sys.stderr)
         return 1 if failed else 0
 
     # Resolve update-time enrichments before doing any network work.
@@ -10967,6 +10998,7 @@ def main() -> int:
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
             cached_entries = load_existing_detail_entries(output_dir, protocols)
+            warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
@@ -11144,6 +11176,9 @@ def main() -> int:
             # a second time afterwards because mp_lookup only exists now, and it
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
+            # A sitting whose refresh failed keeps its cached report, so warn over the merged
+            # list: fresh reports carry the marker, kept pre-A1 ones do not.
+            warn_unparsed_reports(entries)
             # A dossier of the requested week can still have failed to build;
             # say so instead of letting the renderer's ValueError escape.
             if reject_unknown_week(

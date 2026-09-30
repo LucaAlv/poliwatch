@@ -27,7 +27,7 @@ This one matters far more than Kurzinterventionen. In the store on 2026-09-26, 7
 - The XML does not type a `<rede>`, so Kurzinterventionen and Erwiderungen must be detected, from the Sitzungsleitung's wording or from DIP's Aktivität type. A detection error now changes counts, not just a label.
 - Published counts change, including Fakt der Woche history and Vergleichsbasis baselines built from past weeks.
 - The code follows this rule since A1 (GitHub issues #68, #70). `speeches` holds Reden only; the other things are Beiträge in `contributions`, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde was dropped entirely before (75 of 76 Fragestunden stored no row); its turns are now parsed as Beiträge.
-- Detection is checked, never trusted: per Sitzung the parser compares its Kurzinterventionen and Erwiderungen with DIP's `aktivitaetsart` counts and warns on a difference (measured 2026-09-30, see the A1 pull request for the totals).
+- Detection is checked, never trusted: per Sitzung the parser compares its Kurzinterventionen and Erwiderungen with DIP's `aktivitaetsart` counts and warns on a difference (measured 2026-09-30 on 285 Sitzungen: 636 Kurzinterventionen against DIP's 682 and 581 Erwiderungen against 646, because the detector prefers precision; Reden 34,775 to 25,800).
 
 ## Sources
 

@@ -29,6 +29,20 @@ def kinds(top: dict) -> list[str]:
     return [contribution["kind"] for contribution in top["contributions"]]
 
 
+def synthetic_rede(rede_id: str, redner_id: str, name: str, *, fraktion: str = "", rolle: str = "", after: str = "") -> str:
+    """One ``<rede>`` as the XML writes it: the marker with the speaker's name, a
+    paragraph of speech, and, when given, the Sitzungsleitung's text after it."""
+    vorname, _, nachname = name.rpartition(" ")
+    tail = f'<name>Vizepräsident Test:</name><p klasse="J">{after}</p>' if after else ""
+    return (
+        f'<rede id="{rede_id}"><p klasse="redner"><redner id="{redner_id}"><name>'
+        f"<vorname>{vorname}</vorname><nachname>{nachname}</nachname>"
+        + (f"<fraktion>{fraktion}</fraktion>" if fraktion else "")
+        + (f"<rolle><rolle_lang>{rolle}</rolle_lang></rolle>" if rolle else "")
+        + f'</name></redner>{name}:</p><p klasse="J_1">Text von {nachname}.</p>{tail}</rede>'
+    )
+
+
 class KurzinterventionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.top = parse("kurzintervention")["agenda_items"][0]
@@ -45,6 +59,48 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertEqual(ki["parent_rede_id"], "ID216604600")
         self.assertEqual(erwiderung["parent_rede_id"], "ID216604600")
         self.assertEqual(ki["rede_id"], "ID216604700")
+
+    # Value: protects=an Erwiderung is the Rede of the person the Kurzintervention answered, never one the Sitzungsleitung's "antworten" or "Erwiderung" wording suggests;
+    #   fails_when=classify_reden reads the between-text wording again, so an unrelated Rede or a further Kurzintervention turns into an Erwiderung;
+    #   why_new=the fixture test only has the real same-person Erwiderung; the removed wording rule turned 10+ real Reden of WP 20 into Erwiderungen; seam=none
+    def test_the_erwiderung_is_the_same_persons_rede_and_no_wording_makes_another_one(self) -> None:
+        haupt = synthetic_rede(
+            "R1", "1001", "Anna Haupt", fraktion="SPD",
+            after="Zu einer Kurzintervention erteile ich dem Kollegen Müller das Wort.",
+        )
+        antworten = "Möchten Sie antworten? – Nein. Das Wort erhält jetzt Frau Schulz."
+        weitere = (
+            "Möchten Sie eine Erwiderung geben? – Nein. "
+            "Zu einer weiteren Kurzintervention erteile ich dem Kollegen Weber das Wort."
+        )
+        cases = {
+            "a different person after 'Möchten Sie antworten? - Nein' stays a Rede": (
+                [
+                    synthetic_rede("R2", "1002", "Max Müller", fraktion="AfD", after=antworten),
+                    synthetic_rede("R3", "1003", "Berta Schulz", fraktion="CDU/CSU"),
+                ],
+                [(None, None), (sk.KURZINTERVENTION, "R1"), (None, None)],
+            ),
+            "the same person right after is the Erwiderung, with the wording or without": (
+                [
+                    synthetic_rede("R2", "1002", "Max Müller", fraktion="AfD", after=antworten),
+                    synthetic_rede("R3", "1001", "Anna Haupt", fraktion="SPD"),
+                ],
+                [(None, None), (sk.KURZINTERVENTION, "R1"), (sk.ERWIDERUNG, "R1")],
+            ),
+            "a second announced Kurzintervention that mentions the Erwiderung is no Erwiderung": (
+                [
+                    synthetic_rede("R2", "1002", "Max Müller", fraktion="AfD", after=weitere),
+                    synthetic_rede("R3", "1004", "Kai Weber", fraktion="FDP"),
+                ],
+                [(None, None), (sk.KURZINTERVENTION, "R1"), (sk.KURZINTERVENTION, "R1")],
+            ),
+        }
+        for name, (following, expected) in cases.items():
+            with self.subTest(name):
+                top = ET.fromstring(f"<tagesordnungspunkt>{haupt}{''.join(following)}</tagesordnungspunkt>")
+                labels = sk.classify_reden(top, frozenset())
+                self.assertEqual([(label.kind, label.parent_rede_id) for label in labels], expected)
 
     def test_the_rede_after_an_erwiderung_is_a_rede_again(self) -> None:
         ids = [s["rede_id"] for s in self.top["speeches"]]
@@ -129,6 +185,48 @@ class BefragungTests(unittest.TestCase):
         self.assertEqual(geschaeftsordnung["contributions"], [])
         self.assertEqual(len(geschaeftsordnung["speeches"]), 3)
 
+    # Value: protects=a Befragung or Fragestunde whose only heading paragraph is T_ZP_NaS (20/143, 20/159) still gets its question format, Reden and Beitraege;
+    #   fails_when=parse_protocol_xml stops reading T_ZP_NaS as the heading, so the item has no format and every Frage counts as a Rede;
+    #   why_new=all fixtures head their Befragung with T_fett; the T_ZP_NaS-only shape is a separate parser branch measured on two real sittings; seam=none
+    def test_a_heading_only_in_a_zusatzpunkt_paragraph_still_names_the_format(self) -> None:
+        official = synthetic_rede("R1", "2001", "Karl Minister", rolle="Bundesminister")
+        member = synthetic_rede("R2", "2002", "Lena Fragerin", fraktion="CDU/CSU")
+        for heading, formats in (("Befragung der Bundesregierung", ["befragung"]), ("Fragestunde", ["fragestunde"])):
+            with self.subTest(heading):
+                parsed = dip.parse_protocol_xml(
+                    '<dbtplenarprotokoll wahlperiode="20" sitzung-nr="143"><sitzungsverlauf>'
+                    '<tagesordnungspunkt top-id="Tagesordnungspunkt 2">'
+                    '<p klasse="J">Ich rufe den Zusatzpunkt auf:</p>'
+                    f'<p klasse="T_ZP_NaS">{heading}</p>{official}{member}'
+                    "</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>"
+                )
+                top = parsed["agenda_items"][0]
+                self.assertEqual(top["heading"], heading)
+                self.assertEqual(top["question_formats"], formats)
+                if formats == ["befragung"]:
+                    self.assertEqual([s["rede_id"] for s in top["speeches"]], ["R1"])
+                    self.assertEqual(kinds(top), ["befragung_frage"])
+                    self.assertEqual(top["contributions"][0]["rede_id"], "R2")
+                else:
+                    # Flat turns are read only in a Fragestunde: <rede>s stay Reden here.
+                    self.assertEqual([s["rede_id"] for s in top["speeches"]], ["R1", "R2"])
+
+    # Value: protects=a headingless continuation inherits its top-id's question format however the XML spaces the id (21/5 mixes no-break and plain spaces);
+    #   fails_when=top_format stops normalising top_id whitespace, so the continuation loses its format and its Fragen count as Reden;
+    #   why_new=the continuation fixture has identical top-id strings on both items; spacing variants and the seen lookup were untested; seam=none
+    def test_a_continuation_finds_its_format_however_the_top_id_is_spaced(self) -> None:
+        plain, nbsp = "Tagesordnungspunkt 4", "Tagesordnungspunkt\u00a04"
+        for first, later in ((plain, plain), (plain, nbsp), (nbsp, plain)):
+            with self.subTest(first=first, later=later):
+                seen: dict[str, frozenset[str]] = {}
+                opening = sk.top_format("Fragestunde", first, seen)
+                self.assertEqual((opening.formats, opening.continuation), (frozenset({"fragestunde"}), False))
+                continuation = sk.top_format("", later, seen)
+                self.assertEqual((continuation.formats, continuation.continuation), (frozenset({"fragestunde"}), True))
+        # The spec case, directly: a seen plain key.
+        direct = sk.top_format("", "Tagesordnungspunkt 4", {"Tagesordnungspunkt 4": frozenset({"fragestunde"})})
+        self.assertEqual((direct.formats, direct.continuation), (frozenset({"fragestunde"}), True))
+
     def test_formats_of_a_heading(self) -> None:
         self.assertEqual(sk.heading_formats("  Befragung  der Bundesregierung (einleitend BMJ)"), {"befragung"})
         self.assertEqual(sk.heading_formats("Regierungsbefragung"), {"befragung"})
@@ -193,6 +291,37 @@ class FragestundeTests(unittest.TestCase):
         self.assertEqual(question.announced, "Jan Köstering")
         self.assertEqual(question.paragraphs, ["Welche Konzepte gibt es?"])
         self.assertEqual(antwort.kind, sk.FRAGESTUNDE_ANTWORT)
+
+    # Value: protects=a silent asker becomes an id-less speaker with the announced name, is counted as person-less, and an unplaced marker opens no turn;
+    #   fails_when=parse_protocol_xml drops the announced name, the person-less counter miscounts, or an unplaced speaker's paragraphs join the previous turn;
+    #   why_new=test_a_question_whose_asker_never_speaks stops at fragestunde_turns and never reaches the parsed contribution or the summary key; seam=none
+    def test_a_silent_asker_reaches_the_report_by_name_and_an_unplaced_marker_is_no_turn(self) -> None:
+        parsed = dip.parse_protocol_xml(
+            "<dbtplenarprotokoll><sitzungsverlauf>"
+            '<tagesordnungspunkt top-id="T1"><p klasse="T_fett">Fragestunde</p>'
+            "<name>Vizepräsident Omid Nouripour:</name>"
+            '<p klasse="J">Wir kommen zur Frage 7 des Abgeordneten Jan Köstering von der Linken:</p>'
+            '<p klasse="p">Welche Konzepte gibt es?</p>'
+            '<p klasse="J">Frau Staatssekretärin, bitte.</p>'
+            '<p klasse="redner"><redner id="11003613"><name><vorname>Daniela</vorname><nachname>Ludwig</nachname>'
+            "<rolle><rolle_lang>Parl. Staatssekretärin</rolle_lang></rolle></name></redner>Daniela Ludwig:</p>"
+            '<p klasse="J_1">Die Konzepte sind vielfältig.</p>'
+            # Neither a Fraktion nor a rolle: no one the parser can place. The marker
+            # ends the answer before it; what follows belongs to no one.
+            '<p klasse="redner"><redner id="11009999"><name><vorname>Gast</vorname><nachname>Unbekannt</nachname>'
+            "</name></redner>Gast Unbekannt:</p>"
+            '<p klasse="J_1">Ein Gastbeitrag ohne Zuordnung.</p>'
+            "</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>"
+        )
+        top = parsed["agenda_items"][0]
+        question, antwort = top["contributions"]
+        self.assertEqual((question["kind"], antwort["kind"]), ("fragestunde_frage", "fragestunde_antwort"))
+        self.assertEqual(question["speaker"], {"xml_redner_id": None, "display_name": "Jan Köstering"})
+        self.assertEqual(question["text"], "Welche Konzepte gibt es?")
+        self.assertNotIn("Gastbeitrag", antwort["text"])
+        summary = dip.contribution_summary(parsed["agenda_items"])
+        self.assertEqual(summary["fragestunde_questions_without_person"], 1)
+        self.assertEqual(summary["xml_contribution_counts"], {"fragestunde_antwort": 1, "fragestunde_frage": 1})
 
     def test_announced_asker(self) -> None:
         cases = {

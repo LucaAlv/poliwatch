@@ -1580,8 +1580,11 @@ def format_count(count: int, singular: str, plural: str) -> str:
 
 def is_question_format(item: dict[str, Any]) -> bool:
     """Befragung / Fragestunde / Regierungsbefragung: never ranked. The parser
-    decides (speech_kinds.top_format) so a continuation with no heading counts."""
-    return bool(item.get("question_formats"))
+    decides (speech_kinds.top_format) so a continuation with no heading counts;
+    a report parsed before A1 has no such key and falls back to its heading."""
+    if "question_formats" in item:
+        return bool(item["question_formats"])
+    return bool(speech_kinds.heading_formats(item.get("heading")))
 
 
 def render_top_contributions(item: dict[str, Any]) -> str:
@@ -2651,6 +2654,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
             """
         )
     if not cards:
+        if item.get("xml_contributions"):
+            return '<span class="muted">Keine Reden; nur Fragen und Antworten (siehe Beiträge)</span>'
         return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 

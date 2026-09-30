@@ -503,6 +503,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
     seen_formats: dict[str, frozenset[str]] = {}
     for index, top in enumerate(root.findall("./sitzungsverlauf/tagesordnungspunkt"), start=1):
         heading_lines: list[str] = []
+        zusatz_lines: list[str] = []
         transfer_lines: list[str] = []
         for paragraph in top.findall("p"):
             klass = paragraph.attrib.get("klasse", "")
@@ -510,12 +511,18 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 text = elem_text(paragraph)
                 if text:
                     heading_lines.append(text)
+            elif klass == "T_ZP_NaS":
+                text = elem_text(paragraph)
+                if text:
+                    zusatz_lines.append(text)
             elif klass == "T_Ueberweisung":
                 text = elem_text(paragraph)
                 if text:
                     transfer_lines.append(text)
 
-        heading = clean_text(" ".join(heading_lines))
+        # Some sittings put the heading of a Befragung or Fragestunde in a T_ZP_NaS paragraph
+        # (20/143, 20/159) and no T_NaS/T_fett one: it is the heading then.
+        heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
         redes = top.findall("rede")
         labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
@@ -1786,6 +1793,7 @@ def contribution_summary(agenda_items: list[dict[str, Any]]) -> dict[str, Any]:
     agenda items."""
     contributions = [c for top in agenda_items for c in top["contributions"]]
     return {
+        "speech_kinds_version": speech_kinds.VERSION,
         "xml_speech_count": sum(len(top["speeches"]) for top in agenda_items),
         "xml_contribution_counts": speech_kinds.kind_counts(contributions),
         "fragestunde_questions_without_person": sum(
@@ -1809,12 +1817,37 @@ def kind_mismatch_warnings(mismatches: list[dict[str, Any]]) -> list[str]:
     return [f"{KIND_MISMATCH_WARNING}{m['xml']} {label(m)}, DIP {m['dip']}." for m in mismatches]
 
 
+def check_xml_belongs_to_report(
+    report: dict[str, Any], parsed_xml: dict[str, Any], by_index: dict[Any, Any]
+) -> None:
+    """Raise ValueError unless the parsed XML is the protocol this report was built
+    from: same Wahlperiode and Sitzung, at least one agenda item, and an XML item for
+    every report item. A re-parse that stamps the marker over anything else would
+    hide a report that still holds the old rule."""
+    number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
+    wahlperiode, _, sitzung = number.partition("/")
+    xml_protocol = parsed_xml.get("xml_protocol") or {}
+    found = (str(xml_protocol.get("wahlperiode") or ""), str(xml_protocol.get("sitzung_nr") or ""))
+    if number and found != (wahlperiode, sitzung):
+        raise ValueError(f"it is the XML of {found[0]}/{found[1]}, not of {number}")
+    if not parsed_xml["agenda_items"]:
+        raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
+    missing = [
+        str(item.get("index"))
+        for item in report.get("agenda_items") or []
+        if item.get("index") not in by_index
+    ]
+    if missing:
+        raise ValueError(f"it has no agenda item {', '.join(missing)} that the report holds")
+
+
 def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:
     """Replace what a cached report holds of Reden and Beiträge with what the
     current parser reads from the sitting's XML, leaving every DIP-derived field
     alone. Agenda items pair up by ``index``; the XML is the same document, so
     the numbering does not move."""
     by_index = {top["index"]: top for top in parsed_xml["agenda_items"]}
+    check_xml_belongs_to_report(report, parsed_xml, by_index)
     for item in report.get("agenda_items") or []:
         top = by_index.get(item.get("index"))
         if top is not None:

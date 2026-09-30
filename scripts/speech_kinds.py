@@ -19,6 +19,10 @@ from typing import Any, NamedTuple
 
 import derive
 
+#: The counting rule a parsed report was made under. A report without it predates
+#: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
+VERSION = 1
+
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
 BEFRAGUNG_FRAGE = "befragung_frage"
@@ -121,6 +125,7 @@ def top_format(heading: str | None, top_id: str | None, seen: dict[str, frozense
     each top-id to the format of its first item and is updated here."""
     formats = heading_formats(heading)
     continuation = False
+    top_id = _clean(top_id)  # 21/5 writes "Tagesordnungspunkt 1" with and without a no-break space
     if not _clean(heading) and top_id and top_id in seen:
         formats, continuation = seen[top_id], True
     elif top_id and top_id not in seen:
@@ -204,9 +209,6 @@ FRAKTION_WORDING = {
     "BSW": re.compile(r"BSW"),
 }
 WEAK_MAX_CHARS = 5000
-# The word of the Erwiderung: only read from the text that follows a
-# Kurzintervention.
-ERWIDERUNG_WORDING = re.compile(r"Erwiderung|erwidern|antworten", re.IGNORECASE)
 
 
 class RedeLabel(NamedTuple):
@@ -263,8 +265,7 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
     are the opening reports and stay Reden; every later one is a Frage (MdB) or
     an Antwort (official). Elsewhere a ``<rede>`` is a Kurzintervention when the
     Sitzungsleitung announced one before it, and the Erwiderung when it follows a
-    Kurzintervention and comes from the Redner the Kurzintervention answered (or
-    is announced as one).
+    Kurzintervention and comes from the Redner the Kurzintervention answered.
     """
     labels: list[RedeLabel] = []
     befragung = BEFRAGUNG in formats
@@ -290,7 +291,10 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
                 label = RedeLabel({MEMBER: BEFRAGUNG_FRAGE, OFFICIAL: BEFRAGUNG_ANTWORT}.get(who or ""))
         else:
             same_person = main_key is not None and _redner_key(redner) == main_key
-            if previous == KURZINTERVENTION and (same_person or ERWIDERUNG_WORDING.search(between)):
+            # The Erwiderung is the Rede of the Redner the Kurzintervention answered. The
+            # Sitzungsleitung's wording is no signal: "Möchten Sie antworten? - Nein" is
+            # followed by an unrelated Rede (measured on WP 20/21: 10+ real Reden).
+            if previous == KURZINTERVENTION and same_person:
                 label = RedeLabel(ERWIDERUNG, main_id)
             elif main_id and announces_kurzintervention(
                 between, _last_name(redner), _fraktion(redner), len(_speech_chars(child))

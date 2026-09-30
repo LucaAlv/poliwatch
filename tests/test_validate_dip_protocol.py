@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import speech_kinds
 import validate_dip_protocol as dip
 from _support import FIXTURES
 
@@ -220,8 +221,10 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
                 mock.patch.object(dip, "enrich_with_llm_summaries"),
                 mock.patch("sys.stderr"),
             ):
-                dip.build_report(args, protocol=protocol)
+                report = dip.build_report(args, protocol=protocol)
             self.assertEqual(cache.read_text(encoding="utf-8"), "<dbtplenarprotokoll>ä</dbtplenarprotokoll>")
+            # A report an online update makes carries the current rule marker, so the A1 warning stays silent.
+            self.assertEqual(report["validation_summary"]["speech_kinds_version"], speech_kinds.VERSION)
             self.assertEqual([p.name for p in cache.parent.iterdir()], ["plenarprotokoll-21-87.xml"])
 
     def test_vote_helpers(self) -> None:
