@@ -67,7 +67,7 @@ ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 ```
 
-`.env.local` is gitignored. The preview script loads it, as do `build_dip_pulse_site.py` and `validate_dip_protocol.py` (the two scripts that make API calls); `persist_dip_pulse_store.py` and `render_dip_pulse_html.py` never read it. Precedence differs by entry point: the preview script sources the file, so `.env.local` overrides an already-exported variable; the Python scripts skip keys that are already exported, so there the environment wins.
+`.env.local` is gitignored. The preview script loads it, as do `build_dip_pulse_site.py` and `validate_dip_protocol.py` (the two scripts that make API calls); `render_dip_pulse_html.py` never reads it, nor does `persist_dip_pulse_store.py`, which is a library whose script mode only refuses. Precedence differs by entry point: the preview script sources the file, so `.env.local` overrides an already-exported variable; the Python scripts skip keys that are already exported, so there the environment wins.
 
 That asymmetry has one sharp edge worth knowing before it bites you. `.env.example` ships `DIP_API_KEY=` with an empty value, so a copied-but-unedited `.env.local` will wipe a key you passed on the command line, and the preview script then aborts with `DIP_API_KEY is not set`. Either fill the key in `.env.local` or delete the empty line before passing one from the environment.
 

@@ -27,7 +27,10 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- build_dip_pulse_site.py
     |-- validate_dip_protocol.py
     |-- render_dip_pulse_html.py
-    |-- persist_dip_pulse_store.py
+    |-- persist_dip_pulse_store.py   # library; run as a script it refuses
+    |-- person_registry.py
+    |-- stable_ids.py
+    |-- person_corrections.json
     |-- facts.py
     |-- abgeordnetenwatch.py
     `-- features/
@@ -59,7 +62,7 @@ scripts/abgeordnetenwatch.py
   v
 scripts/render_dip_pulse_html.py
   |
-  | optionally rebuilds graph store through
+  | optionally rebuilds graph store through (a library; the staged rebuild calls it)
   v
 scripts/persist_dip_pulse_store.py
 ```
