@@ -173,6 +173,8 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertFalse(
             announces("Nächster Redner ist der Kollege Meier. Die Kurzintervention kommt später. – Bitte schön.", "Meier", "SPD", 1500)
         )
+        # The adverb "lange" does not name Frau Lange.
+        self.assertTrue(announces("Das dauert nicht lange. Sie möchten eine Kurzintervention machen? – Bitte schön.", "Lange", "CDU/CSU", 851))
         # "Bitte schön, Herr Meier" addresses the Kurzintervention's own Redner.
         self.assertTrue(announces("Sie möchten eine Kurzintervention machen? – Bitte schön, Herr Meier.", "Meier", "SPD", 1500))
         # 20/119: the Redner is named in a sentence about the Kurzintervention itself.

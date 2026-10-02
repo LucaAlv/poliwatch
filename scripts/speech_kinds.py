@@ -257,8 +257,10 @@ def announces_kurzintervention(
         return False
     sentences = _SENTENCE_END.split(text)
     # The next Redner named where no Kurzintervention is was invited to a Rede.
-    announced_otherwise = bool(surname) and any(
-        surname in s.casefold() for s in sentences if not KURZINTERVENTION_WORDING.search(s) and not INVITES.match(s)
+    # Case-sensitive on word boundaries: "so lange" does not name Frau Lange.
+    named = re.compile(rf"\b{re.escape(next_surname)}\b") if next_surname else None
+    announced_otherwise = named is not None and any(
+        named.search(s) for s in sentences if not KURZINTERVENTION_WORDING.search(s) and not INVITES.match(s)
     )
     for index, sentence in enumerate(sentences):
         # Only what follows a closing remark can grant ("Die Kurzintervention ist

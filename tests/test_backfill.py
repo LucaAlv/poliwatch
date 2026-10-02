@@ -160,6 +160,32 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(self.database.read_bytes(), before)
         render_site.assert_not_called()
 
+    # Value: protects=an online build that keeps a cached report from before A1 re-reads it from its cached XML and persists the new counts;
+    #   fails_when=the online path skips the re-parse, or refuses a kept report it could re-read;
+    #   why_new=the refusal test covers a kept report without XML only; seam=none
+    def test_a_kept_report_from_before_a1_with_xml_is_re_read_and_persisted(self) -> None:
+        old = report_for(1, acquisition=COMPLETE_VOTES)
+        del old["validation_summary"]["speech_kinds_version"]
+        write_cached(self.output_dir, old)
+        xml = (_support.FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
+        (self.output_dir / "data" / "xml").mkdir(exist_ok=True)
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-1.xml").write_text(
+            xml.replace('sitzung-nr="6"', 'sitzung-nr="1"'), encoding="utf-8"
+        )
+        code, _fetch, _build_dossiers, render_site, stderr = self.run_main("--document-number", "21/2", generated=[])
+        self.assertEqual(code, 0, stderr)
+        self.assertNotIn("predate the A1 Rede rule", stderr)
+        kept = next(e["report"] for e in render_site.call_args.kwargs["entries"] if e["slug"] == "21-1")
+        self.assertEqual(kept["validation_summary"]["speech_kinds_version"], speech_kinds.VERSION)
+        conn = sqlite3.connect(self.database)
+        try:
+            contributions = conn.execute(
+                "SELECT COUNT(*) FROM contributions c JOIN protocols p ON p.id = c.protocol_id WHERE p.document_number = '21/1'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertGreater(contributions, 0)
+
 
 class BackfillSelectionTests(unittest.TestCase):
     def entries(self, *reports: dict) -> list[dict]:

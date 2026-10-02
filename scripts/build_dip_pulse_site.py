@@ -1234,14 +1234,17 @@ def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep
     return len(stale)
 
 
-def reparse_cached_xml(output_dir: Path, entries: list[dict[str, Any]]) -> int:
+def reparse_cached_xml(
+    output_dir: Path, entries: list[dict[str, Any]], profiles_from: list[dict[str, Any]] | None = None
+) -> int:
     """Re-read Reden and Beiträge of every cached report from its cached XML,
     where the XML exists, keeping the abgeordnetenwatch profiles its speakers
-    carry. Returns how many reports it re-parsed."""
+    carry or that ``profiles_from`` (default: ``entries``) holds for them.
+    Returns how many reports it re-parsed."""
     # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
     by_redner_id: dict[str, Any] = {}
-    for entry in entries:
+    for entry in entries if profiles_from is None else profiles_from:
         for item in entry["report"].get("agenda_items") or []:
             for identity, profile in speaker_profiles(item).items():
                 redner_id = derive.first_redner_id(identity[0])
@@ -11233,7 +11236,7 @@ def main() -> int:
             # A sitting whose refresh failed keeps its cached report: re-read a kept pre-A1
             # one from its cached XML, and persist none that is still pre-A1.
             try:
-                reparse_cached_xml(output_dir, unparsed_reports(entries))
+                reparse_cached_xml(output_dir, unparsed_reports(entries), profiles_from=entries)
                 if args.no_persist:
                     warn_unparsed_reports(entries)
                 else:
