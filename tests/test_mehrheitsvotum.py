@@ -117,11 +117,13 @@ class StaleCachedReportTests(unittest.TestCase):
                 pulse_store.initialize(conn)
                 now = pulse_store.utc_now()
                 keeper = conn.execute(
-                    "INSERT INTO parties(name, created_at, updated_at) VALUES ('CDU/CSU', ?, ?)", (now, now)
-                ).lastrowid
+                    "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('clean', 'CDU/CSU', ?, ?)", (now, now)
+                )
+                keeper = "clean"
                 duplicate = conn.execute(
-                    "INSERT INTO parties(name, created_at, updated_at) VALUES (\"['CDU/CSU']\", ?, ?)", (now, now)
-                ).lastrowid
+                    "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('dirty', \"['CDU/CSU']\", ?, ?)", (now, now)
+                )
+                duplicate = "dirty"
                 conn.execute("INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now))
                 for party_id, yes, no in ((keeper, 6, 0), (duplicate, 0, 6)):
                     conn.execute(
@@ -161,7 +163,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
 
     def r3_rows(self, conn: sqlite3.Connection) -> list[tuple]:
         conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
-        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, id AS canonical_id, 1 AS has_page FROM mps")
+        conn.execute("CREATE TEMP TABLE mp_canonical AS SELECT id AS mp_id, person_id AS canonical_id, 1 AS has_page FROM mps")
         sql = self.RECIPE["sql"].rstrip().removesuffix("LIMIT 5;")
         return [tuple(row) for row in conn.execute(sql)]
 

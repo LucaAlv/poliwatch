@@ -59,7 +59,8 @@ from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
 import derive
-from persist_dip_pulse_store import SYNTHETIC_REDE_ID_SEPARATOR
+from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, stable_key
+from persist_dip_pulse_store import require_current_schema
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
 
@@ -356,22 +357,29 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # Redner-IDs (an MdB id and one for a government role) would debut twice.
         "sql": (
             "WITH speaker AS (\n"
-            "  SELECT s.id AS speech_id, p.date AS day,\n"
+            "  SELECT s.id AS speech_id, p.date AS day, p.document_number AS document_number,\n"
+            "         ai.item_index AS item_index, s.sequence AS sequence,\n"
             "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
             "  JOIN mps m ON m.id = s.mp_id\n"
             "  JOIN mp_canonical mc ON mc.mp_id = m.id\n"
             "  JOIN protocols p ON p.id = s.protocol_id\n"
+            "  JOIN agenda_items ai ON ai.id = s.agenda_item_id\n"
             "  WHERE s.mp_id IS NOT NULL\n"
             "),\n"
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"
             "),\n"
+            # The debut Rede is the earliest one in the sitting (agenda item, then
+            # position in it), not the smallest speech key: keys are content hashes.
             "first_speech AS (\n"
-            "  SELECT sp.person_key AS person_key, MIN(sp.speech_id) AS speech_id\n"
-            "  FROM speaker sp\n"
-            "  JOIN first_day fd ON fd.person_key = sp.person_key AND fd.day = sp.day\n"
-            "  GROUP BY sp.person_key\n"
+            "  SELECT person_key, speech_id FROM (\n"
+            "    SELECT sp.person_key AS person_key, sp.speech_id AS speech_id,\n"
+            "           ROW_NUMBER() OVER (PARTITION BY sp.person_key\n"
+            "                              ORDER BY sp.document_number, sp.item_index, sp.sequence) AS rank\n"
+            "    FROM speaker sp\n"
+            "    JOIN first_day fd ON fd.person_key = sp.person_key AND fd.day = sp.day\n"
+            "  ) WHERE rank = 1\n"
             ")\n"
             "SELECT s.id, s.rede_id, s.page, s.page_quadrant, 1 AS value,\n"
             "       NULL AS denominator, m.display_name,\n"
@@ -464,7 +472,10 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         # metric's row-level tie uses.
         "sql": (
             LEAD_PROCEEDING_CTE
-            + "SELECT lp.proceeding_id AS id, lp.proceeding_id AS group_id,\n"
+            # MIN(item_index) makes SQLite take the bare columns (the receipt's agenda
+            # item and its page) from the Vorgang's first agenda item in the protocol.
+            + "SELECT lp.proceeding_id AS id, lp.proceeding_id AS group_id, ai.id AS source_entity_id,\n"
+            "       MIN(ai.item_index) AS first_item_index,\n"
             "       COUNT(DISTINCT s.id) AS value,\n"
             "       pr.title, pr.proceeding_type,\n"
             "       ai.page_start AS page, ai.page_start_quadrant AS page_quadrant,\n"
@@ -1124,30 +1135,16 @@ def _id_sort_key(value: Any) -> tuple[int, Any]:
     return (0, int(text)) if text.isdigit() else (1, text)
 
 
-def ensure_canonical(conn: sqlite3.Connection, canonical_by_mp_id: Mapping[int, int] | None = None) -> None:
-    """The temp table ``mp_canonical`` (mp_id, canonical_id) the per-person metrics
-    join, the same shape as the Verteilkopie's, so a reader can run their SQL there.
-
-    The build passes the Zusammenführung's map. Without one (a store read on its
-    own, the tests) rows that share an xml_redner_id are one Person, the rule the
-    metrics used before the map existed. An existing table is kept unless a map is
-    given.
-    """
-    exists = conn.execute("SELECT 1 FROM sqlite_temp_master WHERE type = 'table' AND name = 'mp_canonical'").fetchone()
-    if exists and not canonical_by_mp_id:
-        return
+def ensure_canonical(conn: sqlite3.Connection) -> None:
+    """Materialize the persisted source-record -> person map for metric SQL."""
+    require_current_schema(conn)
+    assignments = dict(conn.execute("SELECT id, person_id FROM mps"))
+    if conn.execute("SELECT 1 FROM sqlite_temp_master WHERE type='table' AND name='mp_canonical'").fetchone():
+        if dict(conn.execute("SELECT mp_id, canonical_id FROM temp.mp_canonical")) == assignments:
+            return
     conn.execute("DROP TABLE IF EXISTS temp.mp_canonical")
-    conn.execute("CREATE TEMP TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL)")
-    if canonical_by_mp_id:
-        conn.executemany(
-            "INSERT INTO mp_canonical(mp_id, canonical_id) VALUES (?, ?)", sorted(canonical_by_mp_id.items())
-        )
-    else:
-        conn.execute(
-            "INSERT INTO mp_canonical(mp_id, canonical_id) "
-            "SELECT m.id, COALESCE(CASE WHEN m.xml_redner_id <> '' THEN "
-            "(SELECT MIN(m2.id) FROM mps m2 WHERE m2.xml_redner_id = m.xml_redner_id) END, m.id) FROM mps m"
-        )
+    conn.execute("CREATE TEMP TABLE mp_canonical (mp_id TEXT PRIMARY KEY NOT NULL, canonical_id TEXT NOT NULL)")
+    conn.executemany("INSERT INTO mp_canonical VALUES (?, ?)", sorted(assignments.items()))
 
 
 def candidate_rows(conn: sqlite3.Connection, metric: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -1406,8 +1403,8 @@ def rank_period(
 
 
 def is_synthetic_rede_id(rede_id: Any, protocol_id: Any) -> bool:
-    """persist_dip_pulse_store.synthetic_rede_id() fills the rede_id when the
-    XML carries no rede id; recognized here by its shared prefix format."""
+    """stable_ids.speech_rede_id() fills the rede_id when the XML carries no
+    rede id; recognized here by its shared prefix format."""
     return not rede_id or str(rede_id).startswith(f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}")
 
 
@@ -1423,6 +1420,7 @@ def _receipt(
 ) -> dict[str, Any]:
     return {
         "entity_kind": entity_kind,
+        "source_entity_id": row.get("source_entity_id", row.get("id")),
         "document_number": row["document_number"],
         "rede_id": rede_id,
         "page": page,
@@ -1499,11 +1497,12 @@ def receipts(
     if kind != "vote":
         raise FactsError(f"facts: metric {metric['id']} has unknown receipt kind {kind!r}")
     result = [_receipt("vote", row, position=0, official_url=row.get("detail_url"))]
-    ordered = sorted(documents, key=lambda doc: int(doc["id"]))
+    ordered = sorted(documents, key=lambda doc: str(doc["id"]))
     for position, doc in enumerate(ordered, start=1):
         result.append(
             {
                 "entity_kind": "document",
+                "source_entity_id": doc["id"],
                 "document_number": doc["document_number"],
                 "rede_id": None,
                 "page": None,
@@ -1730,7 +1729,7 @@ def compute(
 # D1A/D14: the engine computes every row in memory on every build and writes
 # only when the three-table snapshot differs. That no-write guarantee is what
 # keeps an --offline rebuild from re-hashing a 291 MB store and re-exporting
-# 19 CSVs for nothing. The three tables change as one unit: any difference
+# the CSVs for nothing. The three tables change as one unit: any difference
 # replaces all three inside one transaction, so a crash mid-write leaves the
 # previous rows intact.
 # ---------------------------------------------------------------------------
@@ -1745,7 +1744,7 @@ FACTS_TABLES = ("fact_metrics", "facts", "fact_sources")
 FACTS_SCHEMA: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS fact_metrics (
-      id TEXT PRIMARY KEY,
+      id TEXT PRIMARY KEY NOT NULL,
       version INTEGER NOT NULL,
       title TEXT NOT NULL,
       unit TEXT NOT NULL,
@@ -1761,7 +1760,7 @@ FACTS_SCHEMA: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS facts (
-      id INTEGER PRIMARY KEY,
+      id TEXT PRIMARY KEY NOT NULL,
       metric_id TEXT NOT NULL REFERENCES fact_metrics(id) ON DELETE CASCADE,
       metric_version INTEGER NOT NULL,
       period_kind TEXT NOT NULL,
@@ -1788,7 +1787,9 @@ FACTS_SCHEMA: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS fact_sources (
-      fact_id INTEGER NOT NULL REFERENCES facts(id) ON DELETE CASCADE,
+      id TEXT PRIMARY KEY NOT NULL,
+      source_entity_id TEXT NOT NULL,
+      fact_id TEXT NOT NULL REFERENCES facts(id) ON DELETE CASCADE,
       entity_kind TEXT NOT NULL,
       document_number TEXT,
       rede_id TEXT,
@@ -1796,7 +1797,7 @@ FACTS_SCHEMA: tuple[str, ...] = (
       page_quadrant TEXT,
       official_url TEXT,
       position INTEGER NOT NULL,
-      PRIMARY KEY (fact_id, position)
+      UNIQUE (fact_id, source_entity_id)
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_facts_period ON facts(period_kind, period_key)",
@@ -1815,7 +1816,7 @@ _FACT_COLUMNS = (
 )
 _SOURCE_COLUMNS = (
     "entity_kind", "document_number", "rede_id", "page", "page_quadrant",
-    "official_url", "position",
+    "official_url", "source_entity_id", "position",
 )
 
 
@@ -1828,7 +1829,7 @@ def _quoted(columns: Sequence[str]) -> str:
 _EXPECTED_COLUMNS = {
     "fact_metrics": _METRIC_COLUMNS,
     "facts": ("id",) + _FACT_COLUMNS,
-    "fact_sources": ("fact_id",) + _SOURCE_COLUMNS,
+    "fact_sources": ("id", "fact_id") + _SOURCE_COLUMNS,
 }
 
 
@@ -1907,6 +1908,7 @@ def _source_values(receipt: Mapping[str, Any]) -> list[Any]:
         None if receipt.get("page") is None else int(receipt["page"]),
         None if receipt.get("page_quadrant") is None else str(receipt["page_quadrant"]),
         None if receipt.get("official_url") is None else str(receipt["official_url"]),
+        receipt.get("source_entity_id") or stable_key("source-reference", receipt["entity_kind"], receipt.get("document_number"), receipt.get("rede_id"), receipt.get("page"), receipt.get("page_quadrant"), receipt.get("official_url")),
         int(receipt["position"]),
     ]
 
@@ -1939,7 +1941,9 @@ def snapshot_from_rows(
 def read_snapshot(conn: sqlite3.Connection) -> dict[str, list[list[Any]]] | None:
     """The stored snapshot in the same shape, or None when the tables are
     missing (a fresh store, or one rebuilt by an online build)."""
-    if not tables_exist(conn):
+    # A superset is fine here (extra columns never hide a row); a missing column means another layout, which is not carried over.
+    expected_columns = {"fact_metrics": _METRIC_COLUMNS, "facts": ("id",) + _FACT_COLUMNS, "fact_sources": ("fact_id",) + _SOURCE_COLUMNS}
+    if not all(set(expected) <= (_columns_of(conn, table) or set()) for table, expected in expected_columns.items()):
         return None
     metrics = [
         list(row)
@@ -1951,20 +1955,17 @@ def read_snapshot(conn: sqlite3.Connection) -> dict[str, list[list[Any]]] | None
     kind_at = _FACT_COLUMNS.index("period_kind")
     key_at = _FACT_COLUMNS.index("period_key")
     facts_rows: list[list[Any]] = []
-    keys: dict[int, list[Any]] = {}
+    keys: dict[Any, list[Any]] = {}
     for row in conn.execute(f"SELECT id, {_quoted(_FACT_COLUMNS)} FROM facts").fetchall():
         values = list(row)[1:]
         facts_rows.append(values)
-        keys[int(list(row)[0])] = [
+        keys[list(row)[0]] = [
             str(values[kind_at]), str(values[key_at]), str(values[metric_id_at])
         ]
-    source_rows = [
-        keys[int(list(row)[0])] + list(row)[1:]
-        for row in conn.execute(
-            f"SELECT fact_id, {_quoted(_SOURCE_COLUMNS)} FROM fact_sources"
-        ).fetchall()
-        if int(list(row)[0]) in keys
-    ]
+    source_rows = []
+    for row in conn.execute(f"SELECT fact_id, {_quoted(_SOURCE_COLUMNS)} FROM fact_sources"):
+        if row[0] in keys:
+            source_rows.append(keys[row[0]] + list(row)[1:])
     facts_rows.sort(key=lambda values: (values[kind_at], values[key_at], str(values[metric_id_at])))
     source_rows.sort(key=lambda values: (values[0], values[1], values[2], int(values[-1])))
     return {"fact_metrics": metrics, "facts": facts_rows, "fact_sources": source_rows}
@@ -1996,16 +1997,17 @@ def write_snapshot(conn: sqlite3.Connection, snapshot: Mapping[str, list[list[An
         f"VALUES ({', '.join('?' * len(_METRIC_COLUMNS))})"
     )
     fact_sql = (
-        f"INSERT INTO facts({_quoted(_FACT_COLUMNS)}) "
-        f"VALUES ({', '.join('?' * len(_FACT_COLUMNS))})"
+        f"INSERT INTO facts(id, {_quoted(_FACT_COLUMNS)}) "
+        f"VALUES ({', '.join('?' * (len(_FACT_COLUMNS) + 1))})"
     )
     source_sql = (
-        f"INSERT INTO fact_sources(fact_id, {_quoted(_SOURCE_COLUMNS)}) "
-        f"VALUES ({', '.join('?' * (len(_SOURCE_COLUMNS) + 1))})"
+        f"INSERT INTO fact_sources(id, fact_id, {_quoted(_SOURCE_COLUMNS)}) "
+        f"VALUES ({', '.join('?' * (len(_SOURCE_COLUMNS) + 2))})"
     )
     metric_id_at = _FACT_COLUMNS.index("metric_id")
     kind_at = _FACT_COLUMNS.index("period_kind")
     key_at = _FACT_COLUMNS.index("period_key")
+    entity_at = _SOURCE_COLUMNS.index("source_entity_id")
     sources_by_key: dict[tuple[str, str, str], list[list[Any]]] = {}
     for values in snapshot["fact_sources"]:
         sources_by_key.setdefault(
@@ -2017,11 +2019,12 @@ def write_snapshot(conn: sqlite3.Connection, snapshot: Mapping[str, list[list[An
         conn.execute("DELETE FROM fact_metrics")
         conn.executemany(metric_sql, snapshot["fact_metrics"])
         for values in snapshot["facts"]:
-            cursor = conn.execute(fact_sql, values)
-            fact_id = cursor.lastrowid
+            fact_id = stable_key("fact", values[metric_id_at], values[kind_at], values[key_at])
+            conn.execute(fact_sql, [fact_id] + list(values))
             key = (str(values[kind_at]), str(values[key_at]), str(values[metric_id_at]))
             for source in sources_by_key.get(key, []):
-                conn.execute(source_sql, [fact_id] + source)
+                source_key = source[entity_at]
+                conn.execute(source_sql, [stable_key("fact-source", fact_id, source_key), fact_id] + source)
 
 
 def load_facts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -2040,13 +2043,13 @@ def load_facts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             'ORDER BY period_kind, iso_year, iso_week, period_key, "rank" IS NULL, "rank", metric_id'
         ).fetchall()
     ]
-    by_id = {int(row["id"]): row for row in rows}
+    by_id = {row["id"]: row for row in rows}
     for row in rows:
         row["receipts"] = []
     for source in conn.execute(
         f"SELECT fact_id, {_quoted(_SOURCE_COLUMNS)} FROM fact_sources ORDER BY fact_id, position"
     ).fetchall():
-        parent = by_id.get(int(source["fact_id"]))
+        parent = by_id.get(source["fact_id"])
         if parent is not None:
             parent["receipts"].append({key: source[key] for key in _SOURCE_COLUMNS})
     return rows
@@ -2180,7 +2183,6 @@ def compute_and_store(
     no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
-    canonical_by_mp_id: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
@@ -2190,7 +2192,7 @@ def compute_and_store(
     metric, via FactsError.
     """
     registry = tuple(registry)
-    ensure_canonical(conn, canonical_by_mp_id)
+    ensure_canonical(conn)
     if catalog is None or not catalog.authoritative:
         print(
             "warning: [facts] no authoritative sitting catalog is cached, so no period can be judged complete "

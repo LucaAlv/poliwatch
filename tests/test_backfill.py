@@ -129,6 +129,63 @@ class RetainedScopeTests(unittest.TestCase):
         for n in (1, 2, 3):
             self.assertTrue((self.output_dir / "data" / f"plenarprotokoll-21-{n}.json").exists())
 
+    # Value: protects=an online build whose staged rebuild is refused (here: another writer holds the store lock) exits 1 with an error line and leaves the store as it was; fails_when=main lets DatabaseRebuildError escape as a traceback (only SprechrolleError and DipError are caught around the rebuild); why_new=only the offline --repersist path and rebuild_database_from_entries itself were tested for rebuild failures; seam=none
+    def test_an_online_build_reports_a_refused_rebuild_instead_of_a_traceback(self) -> None:
+        import fcntl
+
+        before = self.database.read_bytes()
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        lock = self.database.with_suffix(self.database.suffix + ".writer.lock")
+        with lock.open("a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # a second open file description conflicts, in-process too
+            try:
+                code, _fetch, _build_dossiers, _render_site, stderr = self.run_main(
+                    "--document-number", "21/2", generated=[refreshed]
+                )
+            except build.DatabaseRebuildError as exc:
+                self.fail(f"main raised DatabaseRebuildError instead of reporting it: {exc}")
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("Another writer", stderr)
+        self.assertEqual(before, self.database.read_bytes())
+
+    # Value: protects=an online build with --enrich mp-roster ingests the roster into the staged store and hands the cached sitting catalog to the facts engine; fails_when=main drops roster_ingest or catalog= on the staged rebuild call, so no roster row or no Fakt is ever published online; why_new=the staged rebuild is tested through its function, and the only main()-level test stops at the writer lock; seam=none
+    def test_an_online_build_ingests_the_roster_into_the_staged_store_and_forwards_the_catalog(self) -> None:
+        (self.output_dir / "data" / facts.CATALOG_FILENAME).write_text(
+            json.dumps({"authoritative": True, "protocols": [{"dokumentnummer": "21/84", "datum": "2026-03-04"}]}),
+            encoding="utf-8",
+        )
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        seen = {}
+
+        def fake_ingest(_client, staged, **_kwargs):
+            seen["database"] = staged.execute("PRAGMA database_list").fetchone()[2]
+            return {"fetched": 0, "mdb": 0, "enriched": 0}
+
+        with (
+            mock.patch.object(build, "ingest_mdb_roster", side_effect=fake_ingest),
+            mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine,
+        ):
+            code, _fetch, _build_dossiers, _render_site, stderr = self.run_main(
+                "--document-number", "21/2", "--enrich", "mp-roster", generated=[refreshed]
+            )
+        self.assertEqual(code, 0, stderr)
+        self.assertNotEqual(Path(seen["database"]), self.database)  # the staged copy, not the published store
+        self.assertIn("roster: 0 MdBs", stderr)
+        self.assertTrue(engine.call_args.kwargs["catalog"].authoritative)
+
+    # Value: protects=a roster fetch that fails during an online build exits 1 with the staged-rebuild error, never swaps the store and names the roster; fails_when=the roster failure escapes as a traceback or is swallowed so protocols persist without the roster; why_new=the user confirmed the abort as intended, so the exit code, the message and the untouched store must be pinned at main(); seam=none
+    def test_an_online_build_aborts_cleanly_when_the_roster_fetch_fails(self) -> None:
+        before = self.database.read_bytes()
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        with mock.patch.object(build, "ingest_mdb_roster", side_effect=build.dip.DipError("DIP 503")):
+            code, _fetch, _build_dossiers, _render_site, stderr = self.run_main(
+                "--document-number", "21/2", "--enrich", "mp-roster", generated=[refreshed]
+            )
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("Abgeordnetenkader could not be fetched: DIP 503", stderr)
+        self.assertIn("previous store is untouched", stderr)
+        self.assertEqual(before, self.database.read_bytes())
+
     def test_the_catalog_is_fetched_whole_and_the_store_keeps_dossiers_cut_by_detail_limit(self) -> None:
         before = self.counts()
         code, fetch, build_dossiers, _render_site, stderr = self.run_main("--detail-limit", "1", generated=[])
@@ -363,7 +420,7 @@ class IncompleteReportTests(StoreCase):
         ):
             build.run_data_pipeline(
                 args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
-                abg_mps=[], mp_lookup={}, canonical_by_mp_id={}, catalog=seeded["catalog"],
+                abg_mps=[], mp_lookup={}, catalog=seeded["catalog"],
             )
         self.assertEqual(fmt.call_args.kwargs["vote_scan_pages"], 0)
 
@@ -409,7 +466,6 @@ class IncompleteReportTests(StoreCase):
                 protocols=catalog_protocols,
                 abg_mps=[],
                 mp_lookup={},
-                canonical_by_mp_id={},
                 catalog=_facts_fixture.catalog_for(listed),
             )
         output = stderr.getvalue()

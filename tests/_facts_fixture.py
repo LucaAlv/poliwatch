@@ -55,6 +55,7 @@ from typing import Any
 import _support  # noqa: F401
 import facts
 import persist_dip_pulse_store as pulse_store
+from stable_ids import stable_key, synthetic_rede_id
 
 
 def catalog_for(sittings: list[dict[str, str]], *, authoritative: bool = True) -> facts.SittingCatalog:
@@ -170,12 +171,12 @@ def seed_weeks(
                 for item_index, item in enumerate(items, start=1):
                     cursor = conn.execute(
                         """
-                        INSERT INTO agenda_items(protocol_id, item_index, top_id, heading,
+                        INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading,
                                                  page_start, page_start_quadrant, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 'A', ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, 'A', ?, ?)
                         """,
                         (
-                            protocol_id,
+                            stable_key("agenda", protocol_id, item_index), protocol_id,
                             item_index,
                             f"T{item_index}",
                             item.get("heading"),
@@ -184,7 +185,7 @@ def seed_weeks(
                             now,
                         ),
                     )
-                    agenda_item_id = cursor.lastrowid
+                    agenda_item_id = stable_key("agenda", protocol_id, item_index)
                     agenda_item_ids.append(agenda_item_id)
                     if item.get("proceeding_title"):
                         # "proceeding_id" lets two items in different protocols
@@ -232,19 +233,19 @@ def seed_weeks(
                     agenda_item_id = agenda_item_ids[speech["item"]]
                     sequence = sequence_by_item.get(agenda_item_id, 0) + 1
                     sequence_by_item[agenda_item_id] = sequence
-                    resolved_rede_id = speech["rede_id"] or pulse_store.synthetic_rede_id(
+                    resolved_rede_id = speech["rede_id"] or synthetic_rede_id(
                         protocol_id, agenda_item_id, sequence
                     )
                     cursor = conn.execute(
                         """
                         INSERT INTO speeches(
-                          protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
+                          id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
                           paragraph_count, char_count, text, snippet, created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                         """,
                         (
-                            protocol_id,
+                            stable_key("speech", protocol_id, resolved_rede_id), protocol_id,
                             agenda_item_id,
                             resolved_rede_id,
                             sequence,
@@ -258,7 +259,7 @@ def seed_weeks(
                             now,
                         ),
                     )
-                    speech_ids.append(cursor.lastrowid)
+                    speech_ids.append(stable_key("speech", protocol_id, resolved_rede_id))
 
                 votes = spec.get("votes")
                 if votes is None and spec.get("closest") is not None:

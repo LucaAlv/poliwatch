@@ -563,7 +563,7 @@ class LaengsteRedeTests(StoreCase):
             ]
         )
         rows = self.compute()
-        self.assertEqual(self.rows_for(rows, LAENGSTE)[0]["citation"]["id"], seeded["speech_ids"]["21/1"][0])
+        self.assertEqual(self.rows_for(rows, LAENGSTE)[0]["citation"]["id"], min(seeded["speech_ids"]["21/1"]))
         self.assertEqual(self.rows_for(rows, KNAPPSTE)[0]["citation"]["id"], seeded["vote_ids"]["21/1"][0])
 
 
@@ -636,12 +636,12 @@ class ErsteRedenTests(StoreCase):
         first, second = self.rows_for(self.compute(), ERSTE)
         self.assertEqual(first["value"], 2)
         self.assertEqual(first["week_n"], 2)
-        self.assertEqual(first["citation"]["speakers"], ["Dirk Wiese", "Karl Marx"])
+        self.assertEqual(first["citation"]["speakers"], ["Karl Marx", "Dirk Wiese"])
         self.assertEqual(
             [(r["entity_kind"], r["document_number"], r["rede_id"], r["position"]) for r in first["receipts"]],
-            [("speech", "21/1", "IDW1", 0), ("speech", "21/1", "IDK1", 1)],
+            [("speech", "21/1", "IDK1", 0), ("speech", "21/1", "IDW1", 1)],
         )
-        self.assertEqual(seeded["speech_ids"]["21/1"][0], first["citation"]["id"])
+        self.assertEqual(min(seeded["speech_ids"]["21/1"]), first["citation"]["id"])
         # Week 2 has no debutant: the second mps row is the same person. A
         # fully-measured zero is a real observation (0 Erste Reden), not
         # "unmeasured" - it must count toward the metric's history/baseline
@@ -784,8 +784,8 @@ class AktivsteAbgeordneteTests(StoreCase):
         )
         row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
         # One speech each, 100 characters each: the tie falls to whichever
-        # was seeded (and so got the lower mps.id) first, Ada Lovelace.
-        self.assertEqual(row["citation"]["display_name"], "Ada Lovelace")
+        # has the lower stable person key, Karl Marx.
+        self.assertEqual(row["citation"]["display_name"], "Karl Marx")
 
     def test_null_mp_id_speech_is_excluded(self) -> None:
         self.seed(
@@ -839,6 +839,33 @@ class MeistdiskutierterVorgangTests(StoreCase):
             [(r["entity_kind"], r["document_number"], r["position"]) for r in row["receipts"]],
             [("agenda_item", "21/1", 0), ("agenda_item", "21/2", 1)],
         )
+
+    # Value: protects=every (Vorgang, protocol) row cites the Vorgang's first agenda item (id and page), whatever the content hashes of the agenda items are; fails_when=the representative item goes back to MIN(ai.id), a content hash, so the cited page depends on the protocol's hash; why_new=every Vorgang test puts one agenda item of a Vorgang in a protocol; seam=none
+    def test_two_items_of_one_proceeding_cite_the_first_item(self) -> None:
+        speeches = [
+            {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA1", "item": 0},
+            {"char_count": 100, "speaker": "Karl Marx", "rede_id": "IDK1", "item": 1},
+            {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA2", "item": 1},
+        ]
+        self.seed(  # each protocol hashes its agenda items differently, so a hash-ordered pick differs between them
+            [
+                {
+                    "document_number": f"21/{number}",
+                    "date": f"2025-06-{number:02d}",
+                    "items": [
+                        {"heading": "TOP 1", "proceeding_title": f"Gesetz {number}", "proceeding_id": f"V{number}"},
+                        {"heading": "TOP 2", "proceeding_title": f"Gesetz {number}", "proceeding_id": f"V{number}"},
+                    ],
+                    "speeches": speeches,
+                }
+                for number in range(1, 9)
+            ]
+        )
+        sql = next(metric for metric in facts.MONTHLY_REGISTRY if metric["id"] == VORGANG)["sql"]
+        rows = self.conn.execute(sql).fetchall()
+        self.assertEqual(len(rows), 8)
+        first_item_page = 2001  # _facts_fixture: page_start = 2000 + item_index
+        self.assertEqual({row["page"] for row in rows}, {first_item_page})
 
     def test_a_different_proceeding_each_protocol_is_not_merged(self) -> None:
         self.seed(
@@ -2137,6 +2164,21 @@ class PageTests(StoreCase):
         self.assertIn('<section id="laengste-rede"', html)
         self.assertIn('<a href="../abgeordnete/7.html">Ada Lovelace</a>', html)
         self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">Plenarprotokoll 21/9</a>', html)
+
+    # Value: protects=a fact's speaker link resolves through the persisted person key even when no external id of the speaker is a page key; fails_when=_fact_speech_citation stops passing person_id to mp_page_href; why_new=the speech-receipt test only resolves through the legacy xml key; seam=none
+    def test_speech_receipt_links_the_speaker_through_the_persisted_person_key(self) -> None:
+        people = {"Ada Lovelace": {"display_name": "Ada Lovelace", "party": "SPD", "identity_key": "xml:ada", "xml_redner_id": "ada"}}
+        weeks = week_specs(9)
+        seeded = self.seed(weeks, people=people)
+        person_id = self.conn.execute("SELECT person_id FROM mps WHERE identity_key = 'xml:ada'").fetchone()[0]
+        conn = self.writable()
+        facts.compute_and_store(conn, facts.REGISTRY, seeded["completeness"], catalog=seeded["catalog"], built={"votes"}, out=quiet())
+        conn.close()
+        output_dir = Path(self.tmp.name) / "person-key-site"
+        output_dir.mkdir()
+        build.write_facts_pages(output_dir, self.path, False, {person_id: person_id}, {spec["document_number"] for spec in weeks}, set())
+        html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn(f'<a href="../abgeordnete/{person_id}.html">Ada Lovelace</a>', html)
 
     def test_agenda_item_receipt_resolves_by_page_start_and_names_its_topic(self) -> None:
         output_dir, _ = self.write_pages(week_specs(9))

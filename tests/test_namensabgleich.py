@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import _support  # noqa: F401
+import person_registry
 import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
@@ -72,8 +73,11 @@ class ZusammenfuehrungTests(unittest.TestCase):
         )
 
     def collect(self):
-        stats: dict[str, int] = {}
-        mps, lookup, canonical = build.collect_abgeordnete(self.conn, stats)
+        totals = person_registry.reconcile(self.conn)
+        mps, lookup = build.collect_abgeordnete(self.conn)
+        canonical = {row["id"]: row["person_id"] for row in self.conn.execute("SELECT id, person_id FROM mps")}
+        stats = {f"merges_{kind}": totals[kind] for kind in ("ext_id", "corroborated_name", "unique_name")}
+        stats.update(buckets_split_namesakes=totals["buckets_split_namesakes"], buckets_split_3plus=totals["buckets_split_3plus"])
         return mps, lookup, canonical, stats
 
     def test_queued_name_matches_cannot_bridge_conflicting_roster_ids(self) -> None:
@@ -118,7 +122,6 @@ class ZusammenfuehrungTests(unittest.TestCase):
         mps, lookup, canonical, stats = self.collect()
         self.assertEqual(canonical[a], canonical[b])
         self.assertEqual(len(mps), 1)
-        self.assertEqual(mps[0]["merges"], {"ext_id": 1, "corroborated_name": 0, "unique_name": 0})
         self.assertEqual(lookup["aw:5"], canonical[a])
         self.assertEqual((stats["merges_ext_id"], stats["merges_unique_name"]), (1, 0))
 
@@ -128,7 +131,6 @@ class ZusammenfuehrungTests(unittest.TestCase):
         mps, lookup, canonical, stats = self.collect()
         self.assertEqual(canonical[roster], canonical[speaker])
         self.assertEqual(len(mps), 1)
-        self.assertEqual(mps[0]["merges"], {"ext_id": 0, "corroborated_name": 0, "unique_name": 1})
         # Both records' keys reach the one page, so a speaker link resolves.
         self.assertEqual(lookup["dip:dip-7"], lookup["xml:77"])
         self.assertEqual(stats["merges_unique_name"], 1)
@@ -182,7 +184,6 @@ class ZusammenfuehrungTests(unittest.TestCase):
         mps, lookup, canonical, stats = self.collect()
         self.assertEqual(canonical[mdb], canonical[minister])
         self.assertEqual(len(mps), 1)
-        self.assertEqual(mps[0]["merges"], {"ext_id": 0, "corroborated_name": 1, "unique_name": 0})
         self.assertEqual(stats["merges_corroborated_name"], 1)
         # Both Redner-IDs reach the one page.
         self.assertEqual(lookup["xml:11005452"], lookup["xml:999990119"])
@@ -235,16 +236,37 @@ class ZusammenfuehrungTests(unittest.TestCase):
         trusted = {"xml_redner_id": "unknown", "abgeordnetenwatch": {"id": 99, "match": "ext_id"}}
         self.assertIsNone(html.mp_page_href(trusted, lookup))
 
-    def test_a_store_from_before_the_match_kind_was_kept_trusts_no_aw_id(self) -> None:
-        a = self.speaker("Ada Lovelace", "11", aw=5, match="ext_id", separate=True)
-        b = self.speaker("Ada Lovelace", "22", aw=5, match="ext_id", separate=True)
-        self.conn.commit()
-        self.assertTrue(any(row["name"] == "aw_match" for row in self.conn.execute("PRAGMA table_info(mps)")))
-        _, _, canonical, _ = self.collect()
-        self.assertEqual(canonical[a], canonical[b])  # trusted: they share a Personenkennung
-        self.conn.execute("ALTER TABLE mps DROP COLUMN aw_match")
-        _, _, canonical, _ = self.collect()
-        self.assertNotEqual(canonical[a], canonical[b])  # unrecorded kind: found by name
+    # Value: protects=a trusted external id held by two separate persons selects no page while each person's own keys still link; fails_when=the key_owners filter in collect_abgeordnete is dropped; why_new=only name-found ids were tested, which never reach the lookup; seam=none
+    def test_a_trusted_id_shared_by_two_persons_links_no_page(self) -> None:
+        a = self.speaker("Ada Lovelace", "11", aw=5, match="ext_id", separate=True, page=True)
+        b = self.speaker("Bea Babbage", "22", aw=5, match="ext_id", separate=True, page=True)
+        mps, lookup = build.collect_abgeordnete(self.conn)  # no reconcile: two persons keep the id
+        canonical = {row["id"]: row["person_id"] for row in self.conn.execute("SELECT id, person_id FROM mps")}
+        self.assertNotEqual(canonical[a], canonical[b])
+        self.assertEqual(len(mps), 2)
+        self.assertNotIn("aw:5", lookup)
+        self.assertEqual(lookup["xml:11"], canonical[a])
+        self.assertEqual(lookup["xml:22"], canonical[b])
+        self.assertIsNone(html.mp_page_href({"xml_redner_id": "unknown", "abgeordnetenwatch": {"id": 5, "match": "ext_id"}}, lookup))
+
+    # Value: protects=mp_page_href tries occurrence_id, person_id, trusted aw id, Redner-ID, DIP id in that order and returns None when none is known; fails_when=a candidate is dropped or reordered; why_new=only Redner-ID and aw links were asserted; seam=none
+    def test_mp_page_href_candidates_resolve_in_documented_order(self) -> None:
+        lookup = {"occ-1": "p-occ", "p-own": "p-own", "aw:7": "p-aw", "xml:11": "p-xml", "dip:d1": "p-dip"}
+        trusted = {"id": 7, "match": "ext_id"}
+        cases = [
+            ("occurrence_id beats everything", {"occurrence_id": "occ-1", "person_id": "p-own", "abgeordnetenwatch": trusted, "xml_redner_id": "11", "dip_person_id": "d1"}, "abgeordnete/p-occ.html"),
+            ("person_id beats external ids", {"person_id": "p-own", "abgeordnetenwatch": trusted, "xml_redner_id": "11", "dip_person_id": "d1"}, "abgeordnete/p-own.html"),
+            ("unknown occurrence falls through to person_id", {"occurrence_id": "occ-x", "person_id": "p-own"}, "abgeordnete/p-own.html"),
+            ("trusted aw id beats Redner-ID", {"abgeordnetenwatch": trusted, "xml_redner_id": "11", "dip_person_id": "d1"}, "abgeordnete/p-aw.html"),
+            ("name-found aw id is skipped for the Redner-ID", {"abgeordnetenwatch": {"id": 7, "match": "name"}, "xml_redner_id": "11", "dip_person_id": "d1"}, "abgeordnete/p-xml.html"),
+            ("Redner-ID beats DIP id", {"xml_redner_id": "11", "dip_person_id": "d1"}, "abgeordnete/p-xml.html"),
+            ("DIP id alone", {"dip_person_id": "d1"}, "abgeordnete/p-dip.html"),
+            ("nothing known", {"occurrence_id": "occ-x", "person_id": "p-x", "xml_redner_id": "99"}, None),
+        ]
+        for label, speaker, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(html.mp_page_href(speaker, lookup), expected)
+        self.assertEqual(html.mp_page_href({"person_id": "p-own"}, lookup, "../abgeordnete/"), "../abgeordnete/p-own.html")
 
 
 class PersonMetricsTests(unittest.TestCase):
@@ -275,11 +297,39 @@ class PersonMetricsTests(unittest.TestCase):
                 # Without a map the two Redner-IDs are two Persons...
                 facts.ensure_canonical(conn)
                 self.assertEqual(len(conn.execute(sql).fetchall()), 2)
-                # ...with the Zusammenführung's map they are one, debuting at the first Rede.
-                ids = [row["id"] for row in conn.execute("SELECT id FROM mps ORDER BY id")]
-                facts.ensure_canonical(conn, {ids[0]: ids[0], ids[1]: ids[0]})
+                # ...with an explicit persisted merge they are one Person.
+                persons = [row["person_id"] for row in conn.execute("SELECT person_id FROM mps")]
+                person_registry.merge(conn, persons)
+                facts.ensure_canonical(conn)
                 rows = conn.execute(sql).fetchall()
                 self.assertEqual([row["rede_id"] for row in rows], ["R1"])
+            finally:
+                conn.close()
+
+
+class DebutOrderTests(unittest.TestCase):
+    # Value: protects=erste-reden cites the Rede that comes first in the sitting (agenda item, then position in it) even when a later item holds a lower position number; fails_when=the debut ORDER BY puts sequence before item_index or falls back to the key hash; why_new=every debut test seeds one agenda item per sitting; seam=none
+    def test_the_debut_rede_is_the_first_in_the_sitting_across_agenda_items(self) -> None:
+        import facts
+
+        def speech(rede_id, name="Ada Example"):
+            return {"rede_id": rede_id, "speaker": {"xml_redner_id": "1" if name == "Ada Example" else "2", "display_name": name, "fraktion": "SPD"},
+                    "char_count": 5, "text": "Hallo", "snippet": "Hallo"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "store.sqlite")
+            try:
+                report = {
+                    "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
+                    "agenda_items": [
+                        {"index": 1, "top_id": "T1", "heading": "TOP 1", "xml_speakers": [speech("other-first-place", "Other Person"), speech("A-first-item-second-place")]},
+                        {"index": 2, "top_id": "T2", "heading": "TOP 2", "xml_speakers": [speech("B-second-item-first-place")]},
+                    ],
+                }
+                pulse_store.persist_report(conn, report)
+                facts.ensure_canonical(conn)
+                rows = conn.execute(facts.REGISTRY_BY_ID["erste-reden"]["sql"]).fetchall()
+                self.assertEqual(sorted(row["rede_id"] for row in rows), ["A-first-item-second-place", "other-first-place"])
             finally:
                 conn.close()
 
@@ -384,7 +434,9 @@ class PersistTests(unittest.TestCase):
             conn = pulse_store.connect(database)
             try:
                 rows = {row["identity_key"]: dict(row) for row in conn.execute("SELECT * FROM mps")}
-                _, _, canonical = build.collect_abgeordnete(conn)
+                person_registry.reconcile(conn)
+                _, _ = build.collect_abgeordnete(conn)
+                canonical = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
                 roster, speaker = rows["dip:steffi"], rows["xml:11005518"]
                 self.assertIsNone(roster["xml_redner_id"])
                 self.assertNotEqual(canonical[roster["id"]], canonical[speaker["id"]])

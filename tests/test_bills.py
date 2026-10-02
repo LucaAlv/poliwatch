@@ -11,6 +11,7 @@ from pathlib import Path
 import _support  # noqa: F401
 import build_dip_pulse_site as build
 import render_dip_pulse_html as html
+from stable_ids import speech_occurrence_id, synthetic_rede_id
 
 
 def position(vorgang_id: str, typ: str, title: str, number: str) -> dict:
@@ -65,6 +66,19 @@ class PredicateTests(unittest.TestCase):
 
 
 class CollectTests(unittest.TestCase):
+    # Value: protects=a bill page's speaker occurrence key equals the key the store bound, also for a speech with no rede_id; fails_when=the collector hashes the missing rede_id instead of the synthetic <protocol>:<item>:<sequence> id the store uses; why_new=no test collected bill pages from a speech without a rede_id; seam=none
+    def test_a_speaker_without_a_rede_id_gets_the_synthetic_occurrence_key(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": None, "speaker": {"display_name": "Ada Example", "fraktion": "SPD"}, "char_count": 10},
+            {"rede_id": "IDREAL", "speaker": {"display_name": "Bea Beispiel", "fraktion": "SPD"}, "char_count": 10},
+        ]
+        speakers = {row["name"]: row["occurrence_id"] for row in build.collect_bill_pages([bill_entry])[0]["speakers"]}
+        self.assertEqual(speakers["Ada Example"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
+        self.assertEqual(speakers["Bea Beispiel"], speech_occurrence_id("p1", "IDREAL"))
+
+
     def test_one_gesetzgebung_is_one_page_and_its_companions_are_listed_on_it(self) -> None:
         bills = build.collect_bill_pages([entry([GESETZ, ENTSCHLIESSUNG, ANTRAG, VERORDNUNG, WAHL], DOCS)])
         self.assertEqual([bill["vorgang_id"] for bill in bills], ["100"])

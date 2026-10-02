@@ -20,13 +20,12 @@ def build_manifest(tmp: Path) -> tuple[dict, dict]:
     ids = _daten_fixture.seed_store(db_path)
     conn = pulse_store.connect(db_path)
     try:
-        mps, lookup, canonical_by_mp_id = b.collect_abgeordnete(conn)
+        mps, lookup = b.collect_abgeordnete(conn)
     finally:
         conn.close()
     manifest = b.export_distribution_data(
         db_path,
         tmp / "exports",
-        canonical_by_mp_id=canonical_by_mp_id,
         mp_lookup=lookup,
         readiness=READINESS,
         catalog_count=2,

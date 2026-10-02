@@ -20,6 +20,8 @@ from typing import Any
 
 import _support  # noqa: F401
 import persist_dip_pulse_store as pulse_store
+from stable_ids import stable_key, synthetic_rede_id
+import person_registry
 
 
 def seed_store(path: Path) -> dict[str, Any]:
@@ -105,15 +107,15 @@ def seed_store(path: Path) -> dict[str, Any]:
             )
             conn.execute(
                 """
-                INSERT INTO agenda_items(protocol_id, item_index, top_id, heading, created_at, updated_at)
-                VALUES ('5801', 1, 'T1', 'TOP 1 Haushalt', ?, ?)
+                INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)
+                VALUES ('ai-5801', '5801', 1, 'T1', 'TOP 1 Haushalt', ?, ?)
                 """,
                 (now, now),
             )
             conn.execute(
                 """
-                INSERT INTO agenda_items(protocol_id, item_index, top_id, heading, created_at, updated_at)
-                VALUES ('5802', 1, 'T1', 'TOP 1 Zweite Sitzung', ?, ?)
+                INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)
+                VALUES ('ai-5802', '5802', 1, 'T1', 'TOP 1 Zweite Sitzung', ?, ?)
                 """,
                 (now, now),
             )
@@ -140,18 +142,18 @@ def seed_store(path: Path) -> dict[str, Any]:
             for index, (protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, snippet, fraktion) in enumerate(
                 speech_rows
             ):
-                resolved_rede_id = rede_id or pulse_store.synthetic_rede_id(protocol_id, agenda_item_id, sequence)
+                resolved_rede_id = rede_id or synthetic_rede_id(protocol_id, agenda_item_id, sequence)
                 conn.execute(
                     """
                     INSERT INTO speeches(
-                      protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
+                      id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
                       paragraph_count, char_count, text, snippet, fraktion,
                       created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        protocol_id,
+                        stable_key("speech", protocol_id, resolved_rede_id), protocol_id,
                         agenda_item_id,
                         resolved_rede_id,
                         sequence,
@@ -252,6 +254,8 @@ def seed_store(path: Path) -> dict[str, Any]:
                 """,
                 (agenda_item_2, now, now),
             )
+        person_registry.reconcile(conn)
+        conn.commit()
     finally:
         conn.close()
 
