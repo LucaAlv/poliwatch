@@ -185,10 +185,10 @@ def _redner_key(redner: ET.Element | None) -> str | None:
 # (NOT_GRANTED) and must grant the Wort, name the next Redner in it or in the two
 # sentences after it ("Die AfD-Fraktion hat eine Kurzintervention beantragt, die
 # ich zulasse. Der Kollege Stöber hat das Wort."), or name the next Redner's
-# Fraktion. A sentence that closes the Kurzintervention just held (CLOSED) grants
-# none; one that asks for it is granted by an immediate "Bitte schön" (INVITES).
-# Only the Fraktion, the weakest signal, is held to the length of a
-# Kurzintervention (two minutes, WEAK_MAX_CHARS).
+# Fraktion. Only the part of a sentence after a closing remark (CLOSED) can grant;
+# a sentence that names a Kurzintervention is granted by an immediate "Bitte schön"
+# (INVITES). The two signals that name no one, the Fraktion and "Bitte schön", are
+# held to the length of a Kurzintervention (two minutes, WEAK_MAX_CHARS).
 KURZINTERVENTION_WORDING = re.compile(r"Kurzintervention|Zwischenbemerkung|Zwischenintervention", re.IGNORECASE)
 GRANTS_WORT = re.compile(r"\bWort\b")
 NOT_GRANTED = re.compile(r"\b(?:kein\w*|nicht|nie|ohne|weder|ablehn\w*|abgelehnt|verwehr\w*|untersag\w*)\b", re.IGNORECASE)
@@ -252,16 +252,21 @@ def announces_kurzintervention(
         return False
     sentences = _SENTENCE_END.split(text)
     for index, sentence in enumerate(sentences):
+        # Only what follows a closing remark can grant ("Die Kurzintervention ist
+        # beendet; zu einer weiteren Kurzintervention erhält Frau Meier das Wort.").
+        closings = list(CLOSED.finditer(sentence))
+        if closings:
+            sentence = sentence[closings[-1].end() :]
         if (
             not KURZINTERVENTION_WORDING.search(sentence)
             or NOT_GRANTED.search(sentence)
             or CONDITIONAL.search(sentence)
-            or CLOSED.search(sentence)
         ):
             continue
         if GRANTS_WORT.search(sentence):
             return True
-        if index + 1 < len(sentences) and INVITES.match(sentences[index + 1]):
+        # "Bitte schön" names no one: it may invite an ordinary Redner.
+        if index + 1 < len(sentences) and INVITES.match(sentences[index + 1]) and next_chars <= WEAK_MAX_CHARS:
             return True
         if surname and any(surname in near.casefold() for near in sentences[index : index + 3]):
             return True

@@ -155,6 +155,21 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertFalse(announces("Damit ist die Kurzintervention beendet. Das Wort hat als Nächste die Kollegin Meier.", "Meier"))
         self.assertFalse(announces("Die Kurzintervention ist damit abgeschlossen. Kollegin Meier, Sie haben das Wort."))
 
+    def test_bitte_schoen_grants_only_to_a_rede_as_short_as_a_kurzintervention(self) -> None:
+        announces = sk.announces_kurzintervention
+        # "Bitte schön" after a remark about Kurzinterventionen invites the next ordinary Redner.
+        self.assertFalse(announces("Kurzinterventionen lasse ich am Ende der Debatte zu. – Bitte schön.", "Meier", "SPD", 8000))
+        self.assertFalse(announces("Sie möchten eine Kurzintervention machen? – Bitte schön.", "Meier", "SPD", 8000))
+        self.assertTrue(announces("Sie möchten eine Kurzintervention machen? – Bitte schön.", "Meier", "SPD", 1500))
+        # 20/119: a statement, not a question, answered by "Bitte schön".
+        self.assertTrue(announces("Aber erst einmal kommt natürlich die Kurzintervention. – Bitte schön.", "Gürpinar", "DIE LINKE", 1726))
+
+    def test_a_grant_after_a_closing_remark_in_the_same_sentence(self) -> None:
+        announces = sk.announces_kurzintervention
+        self.assertTrue(announces("Die Kurzintervention ist beendet; zu einer weiteren Kurzintervention erhält Frau Meier das Wort.", "Meier"))
+        self.assertTrue(announces("Die Kurzintervention ist beendet, und zu einer weiteren Kurzintervention hat Herr Fiedler das Wort."))
+        self.assertFalse(announces("Die Kurzintervention ist beendet; Frau Meier hat das Wort.", "Meier"))
+
     def test_rules_refusals_and_withdrawals_announce_none(self) -> None:
         announces = sk.announces_kurzintervention
         self.assertFalse(announces("Ab jetzt lasse ich keine Kurzinterventionen mehr zu. Das Wort hat Frau Wittmann.", "Wittmann"))
