@@ -151,7 +151,7 @@ Important generated files:
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
-| `abgeordnete/index.html` and `abgeordnete/<id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation |
+| `abgeordnete/index.html` and `abgeordnete/<person_id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation; a retired or guess-merged person key is a redirect page to the surviving person (see [docs/stable-ids.md](stable-ids.md)) |
 | `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
@@ -245,7 +245,7 @@ The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is stick
 
 SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches, votes, vote fractions, and individual vote members.
 
-MP identity rows are consolidated from DIP roster IDs, XML speaker IDs, resolved abgeordnetenwatch IDs, and guarded name+party matches. This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
+MP source records are bound to persons by `person_registry` (`bind` per occurrence, `reconcile` per build): merges that rest on a shared DIP, Redner-ID or abgeordnetenwatch id and reviewed corrections are durable, guarded name+party matches are recomputed on every reconcile; see [stable-ids.md](stable-ids.md). This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
 
 Direct usage:
 
@@ -428,7 +428,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 19 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `1`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 23 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `2`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -605,11 +605,12 @@ scripts/preview_dip_pulse_site.sh
 
 ## SQLite Store
 
-When persistence is enabled, the build rewrites `data/bundestag-pulse.sqlite` from the current detail entries. The schema is managed in `persist_dip_pulse_store.py` and currently includes:
+When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store from before schema 3 needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
 
 - `schema_migrations`
 - `parties`
-- `mps`
+- `mps` (one row per source record, with its current `person_id`)
+- `persons`, `person_aliases`, `person_records`, `person_bindings` (the durable person registry)
 - `protocols`
 - `agenda_items`
 - `proceedings`

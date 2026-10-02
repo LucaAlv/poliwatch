@@ -71,7 +71,7 @@ Joining records from different sources into one Person: by a shared Personenkenn
 _Avoid_: deduplication (the records are not copies), merging on a guess to fill a page
 
 **Personenseite**:
-The page for one Person who holds a current Mandat or has given at least one Rede. Only a Person with a current Mandat is shown as an Abgeordnete or Abgeordneter; everyone else is shown as a Redner, with the Sprechrolle they spoke in.
+The page for one Person who has given at least one Rede or has held a Mandat in any build (a page, once earned, stays available). Only a Person with a current Mandat is shown as an Abgeordnete or Abgeordneter; everyone else is shown as a Redner, with the Sprechrolle they spoke in.
 _Avoid_: calling every Personenseite an Abgeordnetenprofil, "Abgeordnete" as the heading for all Redner
 
 ### Sittings and their records
@@ -359,3 +359,8 @@ _Avoid_: card in public text, one Karte per period
 **Beleg**:
 One record a Fakt rests on: a Rede, Abstimmung, Tagesordnungspunkt, Plenarprotokoll or Drucksache. A Fakt about one record has it as its first Beleg, which Drucksachen may support; a Fakt that counts Reden or Tagesordnungspunkte rests on all of them equally.
 _Avoid_: Quelle (names this site's data sources), receipt in public text
+
+
+## Stable release identities (A.2)
+
+Build-store schema 3 / export format 2 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
