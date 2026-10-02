@@ -13,6 +13,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import build_dip_pulse_site as site  # noqa: E402
 import persist_dip_pulse_store as store  # noqa: E402
+import person_registry
 
 
 class FakeResolver:
@@ -104,7 +105,8 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         conn = memory_conn()
         store.persist_report(conn, report)
 
-        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
+        person_registry.reconcile(conn)
+        mps, lookup = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Erika von Beispiel"]
 
         self.assertEqual(len(matches), 1)
@@ -141,7 +143,8 @@ class AbgeordneteIdentityTests(unittest.TestCase):
         item["votes"] = []
         store.persist_report(conn, report)
 
-        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
+        person_registry.reconcile(conn)
+        mps, lookup = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Dr. Erika Beispiel"]
 
         self.assertEqual(len(matches), 1)
@@ -203,7 +206,9 @@ class AbgeordneteIdentityTests(unittest.TestCase):
 
         conn = memory_conn()
         store.persist_report(conn, report)
-        mps, lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
+
+        person_registry.reconcile(conn)
+        mps, lookup = site.collect_abgeordnete(conn)
         by_name = {mp["name"]: mp for mp in mps}
 
         erika_row = by_name["Erika von Beispiel"]
@@ -232,7 +237,8 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 is_mdb=True,
             )
 
-        mps, _lookup, _canonical_by_mp_id = site.collect_abgeordnete(conn)
+        person_registry.reconcile(conn)
+        mps, _lookup = site.collect_abgeordnete(conn)
         matches = [mp for mp in mps if mp["name"] == "Alex Beispiel" and mp["party"] == "SPD"]
 
         self.assertEqual(len(matches), 2)

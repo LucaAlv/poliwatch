@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 import derive
+from stable_ids import speech_occurrence_id, speech_rede_id
+import person_registry as registry
 import publication_state as publication
 import speech_kinds
 from features import (
@@ -2353,19 +2355,22 @@ def render_top_dev_details(item: dict[str, Any]) -> str:
 
 def mp_page_href(
     speaker: dict[str, Any],
-    mp_lookup: dict[str, int] | None,
+    mp_lookup: dict[str, str] | None,
     prefix: str = "abgeordnete/",
 ) -> str | None:
     """Internal Abgeordnete profile URL for a speaker, or None when the speaker
-    does not resolve to a known MP. Tries the Personenkennungen only: the
-    abgeordnetenwatch id when it was looked up by the Redner-ID (a name-found id
-    is a guess and could send the reader to a namesake), then the
-    Bundestagsverwaltung speaker id, then the DIP person id."""
+    does not resolve to a known MP. Tries the speech occurrence, then the
+    persisted person key, then the Personenkennungen: the abgeordnetenwatch id
+    when it was looked up by the Redner-ID (a name-found id is a guess and could
+    send the reader to a namesake), the Bundestagsverwaltung speaker id and the
+    DIP person id."""
     if not mp_lookup:
         return None
     aw_id = derive.trusted_aw_id(speaker.get("abgeordnetenwatch"))
     xml_id = derive.first_redner_id(speaker.get("xml_redner_id"))
     candidates = (
+        speaker.get("occurrence_id"),
+        speaker.get("person_id"),
         f"aw:{aw_id}" if aw_id else None,
         f"xml:{xml_id}" if xml_id else None,
         f"dip:{speaker.get('dip_person_id')}" if speaker.get("dip_person_id") else None,
@@ -2379,7 +2384,7 @@ def mp_page_href(
 def render_speakers(
     item: dict[str, Any],
     stats: dict[str, Any],
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     mp_href_prefix: str = "abgeordnete/",
     profiles_enabled: bool = True,
 ) -> str:
@@ -2663,7 +2668,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
 def render_html(
     report: dict[str, Any],
     features: Selection | None = None,
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     *,
     include_dev_view: bool = False,
     database_page_href: str | None = None,
@@ -2678,7 +2683,19 @@ def render_html(
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
-    items = report.get("agenda_items") or []
+    # The page shows the reviewed speaker; the caller's report is the cached source
+    # evidence and is written back to disk, so the correction goes on copies.
+    items = []
+    for item in report.get("agenda_items") or []:
+        speeches = []
+        for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
+            rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+            speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
+            speaker["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
+            speeches.append({**speech, "speaker": speaker})
+        items.append({**item, "xml_speakers": speeches} if "xml_speakers" in item else item)
+    if "agenda_items" in report:
+        report = {**report, "agenda_items": items}
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())

@@ -2,11 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.11.0.0] - 2026-09-30
+## [0.13.0.0] - 2026-10-03
 
 ### Added
 
-- Kurzinterventionen, Erwiderungen, and the Fragen and Antworten of the Befragung der Bundesregierung and the Fragestunde are now stored as their own Beiträge, typed by kind, in a new `contributions` table and CSV (20 CSV files now). Each dossier shows them beside its Reden, a Person's page shows them apart from their Reden, and the week radar reads “2 Reden, 59 Fragen, 55 Antworten” for a Befragung. The Fragestunde, which has no `<rede>` elements and stored nothing for 75 of 76 sittings, is read from its flat turns.
+- Kurzinterventionen, Erwiderungen, and the Fragen and Antworten of the Befragung der Bundesregierung and the Fragestunde are now stored as their own Beiträge, typed by kind, in a new `contributions` table and CSV (24 CSV files now; export format 3). Each Beitrag has a stable text id and its speaker is bound in the person registry like a Rede's. Each dossier shows them beside its Reden, a Person's page shows them apart from their Reden, and the week radar reads “2 Reden, 59 Fragen, 55 Antworten” for a Befragung. The Fragestunde, which has no `<rede>` elements and stored nothing for 75 of 76 sittings, is read from its flat turns.
 - Change what counts as a Rede without fetching anything again. Every online update now keeps the sitting's Plenarprotokoll XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it. `--fetch-xml` downloads the XML for sittings cached before this release (public bundestag.de files, about 0.3 s each).
 - A build that writes the store re-reads a cached report from before this counting rule from its cached XML, and refuses to persist one it cannot re-read, naming it and the fix, so old and new Reden counts never mix in the store. A build that persists nothing warns instead.
 
@@ -27,6 +27,26 @@ All notable changes to this project will be documented in this file.
 - `--offline --repersist` now also refreshes each agenda item's heading, Drucksachen and page range from the cached XML, so a repersisted store shows the same headings as an online build. Before, the 16 items whose heading sits in a `T_ZP_NaS` paragraph (Befragung, Fragestunde, an Eidesleistung and 12 Zusatzpunkte) kept an empty heading. On the cached sittings the only matching change is that the Eidesleistung of 20/159 now picks up its Wahl position.
 - A Rede after a Kurzintervention is an Erwiderung only when the same Redner gives it. Fifteen real Reden, including a maiden speech that the “erste Reden” Fakt needs, had been filed as Erwiderungen.
 - `--offline --repersist` refuses cached XML that is not the protocol of its sitting (a maintenance page, another sitting, no agenda items), names the file, and leaves the store untouched. It no longer marks such a report as current. The profiles resolved online survive the re-parse.
+
+## [0.12.0.0] - 2026-10-02
+
+### Added
+
+- Every published row has a stable, source-derived id, and every person a durable key that survives rebuilds: a link to a speech, a vote or a person page still points to the same thing after the next build.
+- Person pages at `abgeordnete/<person_id>.html`, with redirect pages for keys a merge retired, and dossier, bill and fact links that follow the speech occurrence to the right person.
+- Reviewed corrections in `scripts/person_corrections.json`: partitions for a Redner-ID that two people share, and merges with an optional survivor. Alexander Föhr and Dirk-Ulrich Mende, who share Redner-ID `11005304`, now have separate pages (13 speeches / 51,884 characters and 9 / 42,000, previously one person with 22 / 93,884). Protocol pages and bill tallies show the reviewed speaker; the cached dossier JSON keeps the printed one as source evidence.
+
+### Changed
+
+- Build-store schema 3 and export format 2 use text entity keys; facts and recipes read the persisted person of each record. Receipt identity no longer depends on presentation position.
+- Old stores are upgraded only by an explicit `--offline --repersist`. A rebuild carries the person registry forward, requires the cached evidence of every stored protocol, holds one writer lock, recomputes facts once and validates integrity and foreign keys before the database is swapped in atomically. A full 285-report rebuild takes about 150 s instead of about 300 s.
+- Name-based person matches are recomputed on every build, so an incremental and a fresh build group records identically (checked on the 285-report reference cache: grouping unchanged, 3,386 persons).
+- `--offline --no-persist` renders without reading the store, and a store that is not a database ends with an error line instead of a traceback.
+
+### Removed
+
+- `persist_dip_pulse_store.py` no longer writes a single report into an existing store; it names `--offline --repersist`, the one write path that reconciles persons correctly.
+- Occurrence assignments and splits in `person_corrections.json` are refused until they are redesigned; no shipped correction used them.
 
 ## [0.10.0.0] - 2026-09-30
 

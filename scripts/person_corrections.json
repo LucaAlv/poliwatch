@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "partitions": [
+    {
+      "xml_redner_id": "11005304",
+      "labels": {
+        "Alexander Föhr": "foehr",
+        "Dr. Alexander Föhr": "foehr",
+        "Dirk-Ulrich Mende": "mende",
+        "Dr. Dirk-Ulrich Mende": "mende"
+      },
+      "occurrences": {
+        "5570/ID2010305900": {
+          "display_name": "Alexander Föhr",
+          "source_url": "https://dserver.bundestag.de/btp/20/20103.xml"
+        },
+        "5583/ID2011411000": {
+          "display_name": "Alexander Föhr",
+          "source_url": "https://dserver.bundestag.de/btp/20/20114.xml"
+        },
+        "5585/ID2011606700": {
+          "display_name": "Dirk-Ulrich Mende",
+          "source_url": "https://dserver.bundestag.de/btp/20/20116.xml"
+        },
+        "5557/ID209110200": {
+          "display_name": "Alexander Föhr",
+          "source_url": "https://dserver.bundestag.de/btp/20/20091.xml"
+        },
+        "5560/ID209407600": {
+          "display_name": "Dirk-Ulrich Mende",
+          "source_url": "https://dserver.bundestag.de/btp/20/20094.xml"
+        },
+        "5563/ID209614200": {
+          "display_name": "Dirk-Ulrich Mende",
+          "source_url": "https://dserver.bundestag.de/btp/20/20096.xml"
+        }
+      },
+      "profile_owner": "foehr"
+    }
+  ],
+  "assignments": [],
+  "merges": [],
+  "splits": []
+}

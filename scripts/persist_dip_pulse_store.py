@@ -8,7 +8,6 @@ if __name__ == "__main__":
 
     require_supported_python()
 
-import argparse
 import ast
 import json
 import logging
@@ -19,9 +18,27 @@ from pathlib import Path
 from typing import Any
 
 import derive
+import person_registry as registry
+from stable_ids import (
+    contribution_occurrence_id, roster_occurrence_id, speech_occurrence_id, speech_rede_id, stable_key, vote_member_occurrence_id,
+)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
+
+def require_current_schema(conn):
+    columns = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(mps)")}
+    if columns and (columns.get("id") != "TEXT" or "person_id" not in columns):
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if columns:
+        # A store with current mps rows must carry its whole registry:
+        # require_current alone accepts a store with no registry tables at all.
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not set(registry.REGISTRY_TABLES) <= tables:
+            raise registry.RegistryError("Incomplete person registry; restore the build-store backup")
+        registry.require_current(conn)
+
 
 
 def dumps(value: Any) -> str:
@@ -69,23 +86,26 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def initialize(conn: sqlite3.Connection) -> None:
+    require_current_schema(conn)
+    registry.initialize(conn)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
-          version INTEGER PRIMARY KEY,
+          version INTEGER PRIMARY KEY NOT NULL,
           applied_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS parties (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           name TEXT NOT NULL UNIQUE,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS mps (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           identity_key TEXT NOT NULL UNIQUE,
+          person_id TEXT NOT NULL REFERENCES persons(id),
           dip_person_id TEXT UNIQUE,
           xml_redner_id TEXT,
           display_name TEXT NOT NULL,
@@ -93,7 +113,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           function TEXT,
           wahlperiode TEXT,
           profile_url TEXT,
-          party_id INTEGER REFERENCES parties(id) ON DELETE SET NULL,
+          party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           birth_year INTEGER,
           gender TEXT,
           profession TEXT,
@@ -108,7 +128,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS protocols (
-          id TEXT PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           document_number TEXT NOT NULL UNIQUE,
           date TEXT,
           title TEXT,
@@ -121,7 +141,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS agenda_items (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
           item_index INTEGER NOT NULL,
           top_id TEXT,
@@ -136,7 +156,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS proceedings (
-          id TEXT PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           title TEXT,
           proceeding_type TEXT,
           created_at TEXT NOT NULL,
@@ -144,9 +164,9 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS proceeding_positions (
-          id TEXT PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           proceeding_id TEXT REFERENCES proceedings(id) ON DELETE CASCADE,
-          agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL,
+          agenda_item_id TEXT REFERENCES agenda_items(id) ON DELETE SET NULL,
           position_type TEXT,
           proceeding_type TEXT,
           title TEXT,
@@ -164,7 +184,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS documents (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           document_number TEXT NOT NULL,
           url TEXT NOT NULL DEFAULT '',
           document_type TEXT,
@@ -177,8 +197,8 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS agenda_item_documents (
-          agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
-          document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
           source TEXT NOT NULL,
           proceeding_id TEXT REFERENCES proceedings(id) ON DELETE SET NULL,
           proceeding_position_id TEXT,
@@ -186,12 +206,12 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS speeches (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
-          agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+          agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
           rede_id TEXT,
           sequence INTEGER NOT NULL,
-          mp_id INTEGER REFERENCES mps(id) ON DELETE SET NULL,
+          mp_id TEXT REFERENCES mps(id) ON DELETE SET NULL,
           page INTEGER,
           page_quadrant TEXT,
           paragraph_count INTEGER NOT NULL DEFAULT 0,
@@ -213,14 +233,14 @@ def initialize(conn: sqlite3.Connection) -> None:
         -- rede_id and no page; a question read out by the Sitzungsleitung whose
         -- asker never speaks has no mp_id and keeps the announced name.
         CREATE TABLE IF NOT EXISTS contributions (
-          id INTEGER PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
-          agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE CASCADE,
+          agenda_item_id TEXT REFERENCES agenda_items(id) ON DELETE CASCADE,
           kind TEXT NOT NULL,
           rede_id TEXT,
           parent_rede_id TEXT,
           sequence INTEGER NOT NULL,
-          mp_id INTEGER REFERENCES mps(id) ON DELETE SET NULL,
+          mp_id TEXT REFERENCES mps(id) ON DELETE SET NULL,
           speaker_name TEXT,
           fraktion TEXT,
           sprechrolle TEXT,
@@ -234,7 +254,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS votes (
-          id TEXT PRIMARY KEY,
+          id TEXT PRIMARY KEY NOT NULL,
           protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL,
           date TEXT,
           topic TEXT,
@@ -258,20 +278,20 @@ def initialize(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS agenda_item_votes (
-          agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+          agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           PRIMARY KEY (agenda_item_id, vote_id)
         );
 
         CREATE TABLE IF NOT EXISTS vote_documents (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
-          document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
           PRIMARY KEY (vote_id, document_id)
         );
 
         CREATE TABLE IF NOT EXISTS vote_fractions (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
-          party_id INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+          party_id TEXT NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
           yes_count INTEGER NOT NULL DEFAULT 0,
           no_count INTEGER NOT NULL DEFAULT 0,
           abstain_count INTEGER NOT NULL DEFAULT 0,
@@ -283,13 +303,14 @@ def initialize(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS vote_members (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
-          mp_id INTEGER NOT NULL REFERENCES mps(id) ON DELETE CASCADE,
-          party_id INTEGER REFERENCES parties(id) ON DELETE SET NULL,
+          mp_id TEXT NOT NULL REFERENCES mps(id) ON DELETE CASCADE,
+          party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
           vote TEXT NOT NULL,
           PRIMARY KEY (vote_id, mp_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_agenda_items_protocol ON agenda_items(protocol_id);
+        CREATE INDEX IF NOT EXISTS idx_mps_person ON mps(person_id);
         CREATE INDEX IF NOT EXISTS idx_speeches_mp ON speeches(mp_id);
         CREATE INDEX IF NOT EXISTS idx_speeches_agenda_item ON speeches(agenda_item_id);
         CREATE INDEX IF NOT EXISTS idx_contributions_mp ON contributions(mp_id);
@@ -401,7 +422,7 @@ def _migrate_party_names(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _repoint_party(conn: sqlite3.Connection, old_id: int, new_id: int) -> None:
+def _repoint_party(conn: sqlite3.Connection, old_id: str, new_id: str) -> None:
     """Move every reference off ``old_id`` so the duplicate row can be deleted."""
     conn.execute("UPDATE mps SET party_id = ? WHERE party_id = ?", (new_id, old_id))
     conn.execute("UPDATE vote_members SET party_id = ? WHERE party_id = ?", (new_id, old_id))
@@ -470,7 +491,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | None:
+def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> str | None:
     # Every name enters parties through derive.zusammenschluss, so one
     # Zusammenschluss is one row whatever spelling its source used.
     name = derive.zusammenschluss(clean(name))
@@ -478,13 +499,13 @@ def upsert_party(conn: sqlite3.Connection, name: str | None, now: str) -> int | 
         return None
     conn.execute(
         """
-        INSERT INTO parties(name, created_at, updated_at)
-        VALUES (?, ?, ?)
+        INSERT INTO parties(id, name, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET updated_at = excluded.updated_at
         """,
-        (name, now, now),
+        (stable_key("party", name), name, now, now),
     )
-    return int(conn.execute("SELECT id FROM parties WHERE name = ?", (name,)).fetchone()["id"])
+    return conn.execute("SELECT id FROM parties WHERE name = ?", (name,)).fetchone()["id"]
 
 
 def speaker_party_name(speaker: dict[str, Any] | None, protocol: dict[str, Any] | None = None) -> str | None:
@@ -525,7 +546,7 @@ def upsert_mp(
     *,
     now: str,
     display_name: str | None,
-    party_id: int | None,
+    party_id: str | None,
     identity_key: str,
     dip_person_id: Any = None,
     xml_redner_id: Any = None,
@@ -542,17 +563,35 @@ def upsert_mp(
     aw_match: Any = None,
     person_roles_json: Any = None,
     is_mdb: bool = False,
-) -> int:
+    occurrence_id: str | None = None,
+) -> str:
+    if is_mdb and dip_person_id:
+        # A DIP roster row names its person by DIP id only. A Redner-ID inherited from
+        # a preserved or earlier row would let the roster record collide with a speaker
+        # record's hard id (and the rebind check) before any protocol says so.
+        xml_redner_id = None
+    evidence = dict(display_name=clean(display_name), xml_redner_id=clean(xml_redner_id),
+                    dip_person_id=clean(dip_person_id), aw_politician_id=aw_politician_id,
+                    aw_match=aw_match, profile_url=profile_url, is_mdb=is_mdb,
+                    party=(conn.execute("SELECT name FROM parties WHERE id=?", (party_id,)).fetchone()[0] if party_id else None),
+                    title=clean(title), function=clean(function), wahlperiode=clean(wahlperiode),
+                    birth_year=birth_year, gender=clean(gender), profession=clean(profession),
+                    wahlkreis=clean(wahlkreis), bundesland=clean(bundesland),
+                    person_roles_json=clean(person_roles_json))
+    record_id, person_id, identity_key, evidence = registry.bind(conn, identity_key, evidence, occurrence_id)
+    aw_match = evidence.get("aw_match")
+    if evidence.get("profile_blocked"):  # a partition record other than the profile owner carries no profile
+        aw_politician_id = profile_url = None
     conn.execute(
         """
         INSERT INTO mps(
-          identity_key, dip_person_id, xml_redner_id, display_name, title,
+          id, person_id, identity_key, dip_person_id, xml_redner_id, display_name, title,
           function, wahlperiode, profile_url, party_id,
           birth_year, gender, profession, wahlkreis, bundesland,
           aw_politician_id, aw_match, person_roles_json, is_mdb,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(identity_key) DO UPDATE SET
           dip_person_id = COALESCE(excluded.dip_person_id, mps.dip_person_id),
           xml_redner_id = COALESCE(excluded.xml_redner_id, mps.xml_redner_id),
@@ -574,7 +613,7 @@ def upsert_mp(
           updated_at = excluded.updated_at
         """,
         (
-            identity_key,
+            record_id, person_id, identity_key,
             clean(dip_person_id),
             clean(xml_redner_id),
             clean(display_name) or "Unbekannt",
@@ -596,7 +635,7 @@ def upsert_mp(
             now,
         ),
     )
-    return int(conn.execute("SELECT id FROM mps WHERE identity_key = ?", (identity_key,)).fetchone()["id"])
+    return record_id
 
 
 def upsert_document(
@@ -609,7 +648,7 @@ def upsert_document(
     date: Any = None,
     title: Any = None,
     origin: Any = None,
-) -> int | None:
+) -> str | None:
     number = clean(document_number)
     if not number:
         return None
@@ -625,13 +664,13 @@ def upsert_document(
             (number,),
         ).fetchone()
         if existing:
-            return int(existing["id"])
+            return existing["id"]
     conn.execute(
         """
         INSERT INTO documents(
-          document_number, url, document_type, date, title, origin_json, created_at, updated_at
+          id, document_number, url, document_type, date, title, origin_json, created_at, updated_at
         )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(document_number, url) DO UPDATE SET
           document_type = COALESCE(excluded.document_type, documents.document_type),
           date = COALESCE(excluded.date, documents.date),
@@ -643,7 +682,7 @@ def upsert_document(
           updated_at = excluded.updated_at
         """,
         (
-            number,
+            stable_key("document", number, normalized_url), number,
             normalized_url,
             clean(document_type),
             clean(date),
@@ -660,7 +699,7 @@ def upsert_document(
         """,
         (number, normalized_url),
     ).fetchone()
-    return int(row["id"]) if row else None
+    return row["id"] if row else None
 
 
 def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
@@ -715,6 +754,7 @@ def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now
             party_id=party_id,
             identity_key=mp_identity(dip_person_id=person.get("id")),
             dip_person_id=person.get("id"),
+            occurrence_id=roster_occurrence_id(person.get("id")),
             title=person.get("titel"),
             function=person.get("funktion"),
             wahlperiode=person.get("wahlperiode"),
@@ -726,21 +766,23 @@ def persist_agenda_item(
     protocol_id: str,
     item: dict[str, Any],
     now: str,
-) -> int:
+) -> str:
     page_range = item.get("page_range") or {}
     start_page, start_quadrant = source_page_ref(page_range.get("start"))
     end_page, end_quadrant = source_page_ref(page_range.get("end"))
+    item_index = int(item.get("index") or 0)
+    agenda_id = stable_key("agenda", protocol_id, item_index)
     conn.execute(
         """
         INSERT INTO agenda_items(
-          protocol_id, item_index, top_id, heading, page_start, page_start_quadrant,
+          id, protocol_id, item_index, top_id, heading, page_start, page_start_quadrant,
           page_end, page_end_quadrant, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            protocol_id,
-            int(item.get("index") or 0),
+            agenda_id, protocol_id,
+            item_index,
             clean(item.get("top_id")),
             clean(item.get("heading")),
             start_page,
@@ -751,13 +793,13 @@ def persist_agenda_item(
             now,
         ),
     )
-    return int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    return agenda_id
 
 
 def persist_agenda_documents(
     conn: sqlite3.Connection,
     item: dict[str, Any],
-    agenda_item_id: int,
+    agenda_item_id: str,
     now: str,
 ) -> None:
     for doc in item.get("xml_drucksachen") or []:
@@ -820,7 +862,7 @@ def persist_agenda_documents(
 def persist_positions(
     conn: sqlite3.Connection,
     item: dict[str, Any],
-    agenda_item_id: int,
+    agenda_item_id: str,
     now: str,
 ) -> None:
     for position in (item.get("api") or {}).get("positions") or []:
@@ -894,29 +936,22 @@ def persist_positions(
         )
 
 
-#: The separator between a synthetic rede_id's protocol_id and the rest.
-#: facts.is_synthetic_rede_id() checks for "<protocol_id>SYNTHETIC_REDE_ID_SEPARATOR"
-#: to recognize a row this module filled, so the two must stay in sync.
-SYNTHETIC_REDE_ID_SEPARATOR = ":"
-
-
-def synthetic_rede_id(protocol_id: Any, agenda_item_id: Any, sequence: Any) -> str:
-    """The rede_id persist_speeches fills when the XML carries no rede id."""
-    return f"{protocol_id}{SYNTHETIC_REDE_ID_SEPARATOR}{agenda_item_id}:{sequence}"
-
-
 def resolve_speaker(
     conn: sqlite3.Connection,
     speaker: dict[str, Any] | None,
     now: str,
+    protocol_id: str,
+    rede_id: str | None,
+    occurrence_id: str,
     protocol: dict[str, Any] | None = None,
-) -> tuple[int | None, str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
     """The store row of the person a Rede or Beitrag names: ``(mp_id,
-    fraktion, sprechrolle)``. ``fraktion`` is the Zusammenschluss as the
-    protocol states it for this unit, normalised the same way parties.name is;
-    NULL when the XML names none (a minister speaking in role, or a merged record
-    naming two), and the reader then falls back to the MP's party."""
-    speaker = speaker or {}
+    fraktion, sprechrolle)``, bound to the registry as ``occurrence_id``.
+    ``fraktion`` is the Zusammenschluss as the protocol states it for this unit,
+    normalised the same way parties.name is; NULL when the XML names none (a
+    minister speaking in role, or a merged record naming two), and the reader
+    then falls back to the MP's party."""
+    speaker = registry.corrected_speaker(speaker or {}, protocol_id, rede_id)
     profile = speaker.get("abgeordnetenwatch") or {}
     party_name = speaker_party_name(speaker, protocol)
     party_id = upsert_party(conn, party_name, now)
@@ -936,6 +971,7 @@ def resolve_speaker(
             party_name=party_name,
         ),
         xml_redner_id=xml_redner_id,
+        occurrence_id=occurrence_id,
         profile_url=profile.get("url"),
         aw_politician_id=aw_politician_id,
         aw_match=profile.get("match"),
@@ -947,26 +983,30 @@ def persist_speeches(
     conn: sqlite3.Connection,
     protocol_id: str,
     item: dict[str, Any],
-    agenda_item_id: int,
+    agenda_item_id: str,
     now: str,
     protocol: dict[str, Any] | None = None,
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-        mp_id, speech_fraktion, sprechrolle = resolve_speaker(conn, speech.get("speaker"), now, protocol)
+        rede_id = speech_rede_id(protocol_id, int(item.get("index") or 0), sequence, speech.get("rede_id"))
+        speech_id = speech_occurrence_id(protocol_id, rede_id)
+        mp_id, speech_fraktion, sprechrolle = resolve_speaker(
+            conn, speech.get("speaker"), now, protocol_id, rede_id, speech_id, protocol
+        )
         page, quadrant = source_page_ref(speech.get("source_page"))
         conn.execute(
             """
             INSERT INTO speeches(
-              protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
+              id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page, page_quadrant,
               paragraph_count, char_count, text, snippet, fraktion,
               unattributed_char_count, sprechrolle, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                protocol_id,
+                speech_id, protocol_id,
                 agenda_item_id,
-                clean(speech.get("rede_id")) or synthetic_rede_id(protocol_id, agenda_item_id, sequence),
+                rede_id,
                 sequence,
                 mp_id,
                 page,
@@ -992,33 +1032,40 @@ def persist_contributions(
     conn: sqlite3.Connection,
     protocol_id: str,
     item: dict[str, Any],
-    agenda_item_id: int,
+    agenda_item_id: str,
     now: str,
     protocol: dict[str, Any] | None = None,
 ) -> None:
     for contribution in item.get("xml_contributions") or []:
         speaker = contribution.get("speaker") or {}
+        rede_id = clean(contribution.get("rede_id"))
+        contribution_id = contribution_occurrence_id(
+            protocol_id, int(item.get("index") or 0), int(contribution["sequence"]), rede_id
+        )
         # A question read out by the Sitzungsleitung whose asker never speaks
         # names a person the XML has no id for: keep the announced name, no MP.
         if speaker and speaker.get("xml_redner_id"):
-            mp_id, fraktion, sprechrolle = resolve_speaker(conn, speaker, now, protocol)
+            mp_id, fraktion, sprechrolle = resolve_speaker(
+                conn, speaker, now, protocol_id, rede_id, contribution_id, protocol
+            )
         else:
             mp_id, fraktion, sprechrolle = None, None, None
         page, _quadrant = source_page_ref(contribution.get("source_page"))
         conn.execute(
             """
             INSERT INTO contributions(
-              protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, mp_id,
+              id, protocol_id, agenda_item_id, kind, rede_id, parent_rede_id, sequence, mp_id,
               speaker_name, fraktion, sprechrolle, page, char_count, text,
               created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                contribution_id,
                 protocol_id,
                 agenda_item_id,
                 contribution["kind"],
-                clean(contribution.get("rede_id")),
+                rede_id,
                 clean(contribution.get("parent_rede_id")),
                 int(contribution["sequence"]),
                 mp_id,
@@ -1037,7 +1084,7 @@ def persist_contributions(
 def persist_votes(
     conn: sqlite3.Connection,
     item: dict[str, Any] | None,
-    agenda_item_id: int | None,
+    agenda_item_id: str | None,
     protocol_id: str,
     now: str,
 ) -> None:
@@ -1050,7 +1097,7 @@ def persist_votes(
 def persist_vote(
     conn: sqlite3.Connection,
     vote: dict[str, Any],
-    agenda_item_id: int | None,
+    agenda_item_id: str | None,
     protocol_id: str,
     now: str,
 ) -> None:
@@ -1202,6 +1249,7 @@ def persist_vote(
                 display_name=member.get("name"),
                 party_name=party_name,
             ),
+            occurrence_id=vote_member_occurrence_id(vote_id, clean(member.get("name")), party_name),
             profile_url=profile_url,
             aw_politician_id=aw_politician_id,
             aw_match=profile.get("match"),
@@ -1259,7 +1307,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
         ]
         for old_vote_id in old_vote_ids:
             conn.execute("DELETE FROM votes WHERE id = ?", (old_vote_id,))
-        agenda_ids: dict[int, int] = {}
+        agenda_ids: dict[int, str] = {}
         for item in report.get("agenda_items") or []:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
             agenda_ids[int(item.get("index") or 0)] = agenda_item_id
@@ -1287,32 +1335,13 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
                     )
 
 
-def persist_report_file(db_path: Path, report_path: Path) -> None:
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    conn = connect(db_path)
-    try:
-        persist_report(conn, report)
-    finally:
-        conn.close()
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("report", type=Path, help="Validation JSON produced by validate_dip_protocol.py")
-    parser.add_argument(
-        "--database",
-        type=Path,
-        default=Path(".context/dip-pulse-site/data/bundestag-pulse.sqlite"),
-        help="SQLite database path to create or update.",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    persist_report_file(args.database, args.report)
-    print(args.database)
-    return 0
+    # Writing one report straight into a carried store bypassed the staged rebuild:
+    # it committed before the registry was reconciled and re-read each touched
+    # person record from that one report. Every write now goes through the build.
+    print("error: persisting a single report is not supported. Run python3 scripts/build_dip_pulse_site.py "
+          "--offline --repersist --output-dir <site-dir> to persist every cached report.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

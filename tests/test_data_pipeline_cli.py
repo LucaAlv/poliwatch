@@ -237,7 +237,7 @@ class RunDataPipelineTests(unittest.TestCase):
         _daten_fixture.seed_store(self.database_path)
         conn = pulse_store.connect(self.database_path)
         try:
-            self.mps, self.lookup, self.canonical_by_mp_id = b.collect_abgeordnete(conn)
+            self.mps, self.lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
 
@@ -251,7 +251,6 @@ class RunDataPipelineTests(unittest.TestCase):
             protocols=[],
             abg_mps=self.mps,
             mp_lookup=self.lookup,
-            canonical_by_mp_id=self.canonical_by_mp_id,
             catalog=None,
         )
 
@@ -290,7 +289,6 @@ class RunDataPipelineTests(unittest.TestCase):
             protocols=[],
             abg_mps=self.mps,
             mp_lookup=self.lookup,
-            canonical_by_mp_id=self.canonical_by_mp_id,
             catalog=None,
         )
         conn = pulse_store.connect(self.database_path)
@@ -319,7 +317,6 @@ class RunDataPipelineTests(unittest.TestCase):
                         protocols=[],
                         abg_mps=self.mps,
                         mp_lookup=self.lookup,
-                        canonical_by_mp_id=self.canonical_by_mp_id,
                         catalog=None,
                     )
                 export_mock.assert_not_called()
@@ -332,7 +329,7 @@ class RunDataPipelineTests(unittest.TestCase):
         # tag so the override is recognisable; shape-valid by construction.
         scratch = self.tmp / "scratch-exports"
         exported = b.export_distribution_data(
-            self.database_path, scratch, canonical_by_mp_id=self.canonical_by_mp_id, mp_lookup=self.lookup, tag="override"
+            self.database_path, scratch, mp_lookup=self.lookup, tag="override"
         )
         exported.update(changes)
         override_path = self.tmp / "override-manifest.json"

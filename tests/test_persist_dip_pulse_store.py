@@ -231,10 +231,10 @@ class PartyMigrationTests(unittest.TestCase):
         ids = {}
         for name in ("CDU/CSU", "['CDU/CSU']", "['DIE LINKE']", "['BSW (Gruppe)']"):
             conn.execute(
-                "INSERT INTO parties(name, created_at, updated_at) VALUES (?, ?, ?)",
-                (name, now, now),
+                "INSERT INTO parties(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (name, name, now, now),
             )
-            ids[name] = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+            ids[name] = name
         for index, name in enumerate(("CDU/CSU", "['CDU/CSU']", "['DIE LINKE']", "['BSW (Gruppe)']")):
             pulse_store.upsert_mp(
                 conn,
@@ -254,9 +254,7 @@ class PartyMigrationTests(unittest.TestCase):
                 """,
                 (ids[name], yes, yes),
             )
-        mp_id = int(
-            conn.execute("SELECT id FROM mps WHERE identity_key = 'dip:seed-1'").fetchone()["id"]
-        )
+        mp_id = conn.execute("SELECT id FROM mps WHERE identity_key = 'dip:seed-1'").fetchone()["id"]
         conn.execute(
             "INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'yes')",
             (mp_id, ids["['CDU/CSU']"]),
@@ -291,7 +289,7 @@ class PartyMigrationTests(unittest.TestCase):
                 )
 
                 # Both CDU/CSU MdBs now point at the surviving row.
-                kept = int(conn.execute("SELECT id FROM parties WHERE name = 'CDU/CSU'").fetchone()["id"])
+                kept = conn.execute("SELECT id FROM parties WHERE name = 'CDU/CSU'").fetchone()["id"]
                 self.assertEqual(kept, ids["CDU/CSU"])
                 self.assertEqual(
                     conn.execute(
@@ -338,15 +336,15 @@ class PartyMigrationTests(unittest.TestCase):
                 pulse_store.initialize(conn)
                 now = pulse_store.utc_now()
                 conn.execute(
-                    "INSERT INTO parties(name, created_at, updated_at) VALUES ('CDU/CSU', ?, ?)",
+                    "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('clean', 'CDU/CSU', ?, ?)",
                     (now, now),
                 )
-                canonical_id = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+                canonical_id = "clean"
                 conn.execute(
-                    "INSERT INTO parties(name, created_at, updated_at) VALUES (\"['CDU/CSU']\", ?, ?)",
+                    "INSERT INTO parties(id, name, created_at, updated_at) VALUES ('dirty', \"['CDU/CSU']\", ?, ?)",
                     (now, now),
                 )
-                duplicate_id = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+                duplicate_id = "dirty"
                 conn.execute("INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now))
                 # Canonical row: a lone "yes" (leading_vote "yes"). Duplicate:
                 # ten "no" votes (leading_vote "no"). Merged majority is "no".

@@ -6,7 +6,7 @@ from . import BaseComponent, REGISTRY
 
 class BillsComponent(BaseComponent):
     def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
-        bills = ctx["collect_bill_pages"](ctx["entries"])
+        bills = ctx["collect_bill_pages"](ctx["entries"], ctx.get("mp_lookup"))
         return ctx["write_bill_pages"](
             output_dir,
             bills,

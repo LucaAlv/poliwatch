@@ -557,7 +557,7 @@ class PeriodBoundaryTests(StoreCase):
         ):
             build.run_data_pipeline(
                 args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
-                abg_mps=[], mp_lookup={}, canonical_by_mp_id={}, catalog=None,
+                abg_mps=[], mp_lookup={}, catalog=None,
             )
         self.assertEqual(engine.call_args.kwargs["today"], facts.date(2026, 7, 1))
 

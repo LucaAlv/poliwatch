@@ -19,6 +19,7 @@ import _support  # noqa: F401
 import build_dip_pulse_site
 import facts
 import persist_dip_pulse_store as pulse_store
+import person_registry
 import render_dip_pulse_html as pulse_html
 import speech_kinds
 from features import EnrichmentSelection, all_selection, default_selection
@@ -130,7 +131,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
             finally:
                 conn.close()
 
-    def test_database_rebuild_carries_the_facts_tables_into_the_fresh_store(self) -> None:
+    def test_database_rebuild_hands_the_previous_facts_snapshot_to_the_engine(self) -> None:
         # An online build replaces the store file (rebuild_database_from_entries
         # writes a temp store and renames it over the old one). Without the
         # carry-over the engine would have nothing to diff against on the one
@@ -167,7 +168,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         ],
                         "fact_sources": [
                             ["week", "2026-W37", facts.REGISTRY[0]["id"],
-                             "vote", "21/94", None, None, None, "https://example.test/v", 0]
+                             "vote", "21/94", None, None, None, "https://example.test/v", "vote-1", 0]
                         ],
                     },
                 )
@@ -175,19 +176,10 @@ class CollectAbgeordneteTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+            with mock.patch.object(facts, "write_snapshot", wraps=facts.write_snapshot) as writes:
+                build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
+            self.assertEqual(writes.call_args_list[0].args[1], before)
 
-            conn = pulse_store.connect(database_path)
-            try:
-                self.assertEqual(facts.read_snapshot(conn), before)
-                stored = facts.load_facts(conn)
-                self.assertEqual(len(stored), 1)
-                self.assertEqual(stored[0]["period_key"], "2026-W37")
-                self.assertEqual(
-                    [r["document_number"] for r in stored[0]["receipts"]], ["21/94"]
-                )
-            finally:
-                conn.close()
 
     def test_rebuild_warns_and_continues_when_the_previous_stores_facts_are_unreadable(self) -> None:
         # The except sqlite3.Error branch around the carry-over read (D1A):
@@ -204,17 +196,24 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 conn.close()
 
             stderr = io.StringIO()
+            real_read_snapshot = facts.read_snapshot
+            calls = []
+
+            def read_snapshot(conn):
+                calls.append(conn)
+                if len(calls) == 1:  # the carry-over read of the previous store
+                    raise build_dip_pulse_site.sqlite3.OperationalError("disk I/O error")
+                return real_read_snapshot(conn)
+
             with mock.patch.object(
-                build_dip_pulse_site.facts,
-                "read_snapshot",
-                side_effect=build_dip_pulse_site.sqlite3.OperationalError("disk I/O error"),
+                build_dip_pulse_site.facts, "read_snapshot", side_effect=read_snapshot,
             ), mock.patch("sys.stderr", stderr):
                 build_dip_pulse_site.rebuild_database_from_entries(database_path, [])
 
             self.assertIn("previous facts unreadable", stderr.getvalue())
             conn = pulse_store.connect(database_path)
             try:
-                self.assertFalse(facts.tables_exist(conn))
+                self.assertTrue(facts.tables_exist(conn))
             finally:
                 conn.close()
 
@@ -391,7 +390,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
         self.assertEqual(vote["result_source"], "derived")
 
-    def test_offline_main_migrates_legacy_database_before_collecting_mps(self) -> None:
+    def test_offline_main_rejects_legacy_database_before_collecting_mps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
             database_path = output_dir / "data" / "bundestag-pulse.sqlite"
@@ -441,14 +440,14 @@ class CollectAbgeordneteTests(unittest.TestCase):
                     return_value=output_dir / "index.html",
                 ),
             ):
-                self.assertEqual(build_dip_pulse_site.main(), 0)
+                self.assertEqual(build_dip_pulse_site.main(), 1)
 
             conn = pulse_store.connect(database_path)
             try:
                 columns = {row["name"] for row in conn.execute("PRAGMA table_info(mps)")}
             finally:
                 conn.close()
-            self.assertIn("birth_year", columns)
+            self.assertNotIn("birth_year", columns)
 
     def test_write_report_reuses_catalog_protocol_metadata(self) -> None:
         protocol = {
@@ -695,8 +694,8 @@ class CollectAbgeordneteTests(unittest.TestCase):
                     )
                     conn.execute(
                         """
-                        INSERT INTO agenda_items(protocol_id, item_index, top_id, heading, created_at, updated_at)
-                        VALUES ('pp-test', 1, 'T1', 'TOP 1 Test', ?, ?)
+                        INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)
+                        VALUES ('ai-pp-test', 'pp-test', 1, 'T1', 'TOP 1 Test', ?, ?)
                         """,
                         (now, now),
                     )
@@ -704,29 +703,30 @@ class CollectAbgeordneteTests(unittest.TestCase):
                     conn.execute(
                         """
                         INSERT INTO speeches(
-                          protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
+                          id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
                           paragraph_count, char_count, text, snippet,
                           created_at, updated_at
                         )
-                        VALUES ('pp-test', ?, 'R1', 1, ?, 101, 1, 24, 'Rede text', 'Rede text', ?, ?)
+                        VALUES ('speech-pp-test', 'pp-test', ?, 'R1', 1, ?, 101, 1, 24, 'Rede text', 'Rede text', ?, ?)
                         """,
                         (agenda_item_id, speaker_mp_id, now, now),
                     )
 
-                mps, lookup, canonical_by_mp_id = build_dip_pulse_site.collect_abgeordnete(conn)
+                person_registry.reconcile(conn)
+                mps, lookup = build_dip_pulse_site.collect_abgeordnete(conn)
 
                 self.assertEqual(len(mps), 1)
                 mp = mps[0]
-                self.assertEqual(mp["id"], roster_mp_id)
+                person_id = conn.execute("SELECT person_id FROM mps WHERE id=?", (roster_mp_id,)).fetchone()[0]
+                self.assertEqual(mp["id"], person_id)
                 self.assertEqual(mp["name"], "Ada Lovelace")
                 self.assertEqual(mp["profession"], "Mathematician")
                 self.assertEqual(mp["speech_count"], 1)
                 self.assertEqual(mp["speeches"][0]["rede_id"], "R1")
-                self.assertEqual(lookup["aw:77"], roster_mp_id)
-                self.assertEqual(lookup["dip:dip-ada"], roster_mp_id)
-                self.assertEqual(lookup["xml:11001"], roster_mp_id)
-                self.assertEqual(canonical_by_mp_id[roster_mp_id], roster_mp_id)
-                self.assertEqual(canonical_by_mp_id[speaker_mp_id], roster_mp_id)
+                self.assertEqual(lookup["aw:77"], person_id)
+                self.assertEqual(lookup["dip:dip-ada"], person_id)
+                self.assertEqual(lookup["xml:11001"], person_id)
+                self.assertEqual(conn.execute("SELECT person_id FROM mps WHERE id=?", (speaker_mp_id,)).fetchone()[0], person_id)
             finally:
                 conn.close()
 

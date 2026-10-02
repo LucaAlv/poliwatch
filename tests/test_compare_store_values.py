@@ -65,9 +65,8 @@ def make_output(
 
         def party(name: str) -> int:
             if name not in party_ids:
-                party_ids[name] = conn.execute(
-                    "INSERT INTO parties(name, created_at, updated_at) VALUES (?, ?, ?)", (name, NOW, NOW)
-                ).lastrowid
+                party_ids[name] = f"party-{name}"
+                conn.execute("INSERT INTO parties(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)", (party_ids[name], name, NOW, NOW))
             return party_ids[name]
 
         items: dict[str, int] = {}
@@ -77,28 +76,21 @@ def make_output(
                 "INSERT INTO protocols(id, document_number, date, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (protocol_id, number, "2026-03-04", NOW, NOW),
             )
-            items[number] = conn.execute(
-                "INSERT INTO agenda_items(protocol_id, item_index, created_at, updated_at) VALUES (?, 0, ?, ?)",
-                (protocol_id, NOW, NOW),
-            ).lastrowid
+            items[number] = pulse_store.persist_agenda_item(conn, protocol_id, {"index": 0}, NOW)
             for sequence, (rede_id, fraktion, chars, role) in enumerate(speeches):
-                mp = conn.execute(
-                    "INSERT INTO mps(identity_key, display_name, party_id, is_mdb, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (f"mp-{rede_id}", f"MdB {rede_id}", party(fraktion or "SPD"), int(roster), NOW, NOW),
-                ).lastrowid
+                mp = pulse_store.upsert_mp(conn, now=NOW, identity_key=f"mp-{rede_id}", display_name=f"MdB {rede_id}", party_id=party(fraktion or "SPD"), is_mdb=roster)
                 conn.execute(
-                    "INSERT INTO speeches(protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, "
-                    "fraktion, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (protocol_id, items[number], rede_id, sequence, mp, chars, fraktion, NOW, NOW),
+                    "INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, "
+                    "fraktion, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (f"speech-{protocol_id}-{rede_id}", protocol_id, items[number], rede_id, sequence, mp, chars, fraktion, NOW, NOW),
                 )
                 if sprechrolle:
                     conn.execute("UPDATE speeches SET sprechrolle = ? WHERE rede_id = ?", (role, rede_id))
         for sequence, (number, kind) in enumerate(contributions or ()):
             conn.execute(
-                "INSERT INTO contributions(protocol_id, agenda_item_id, kind, rede_id, sequence, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (f"p-{number}", items[number], kind, f"C{sequence}", sequence, NOW, NOW),
+                "INSERT INTO contributions(id, protocol_id, agenda_item_id, kind, rede_id, sequence, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (f"contribution-p-{number}-C{sequence}", f"p-{number}", items[number], kind, f"C{sequence}", sequence, NOW, NOW),
             )
         for vote_id, date, number, leading, party_name in votes:
             if not conn.execute("SELECT 1 FROM votes WHERE id = ?", (vote_id,)).fetchone():
@@ -192,6 +184,44 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertEqual(line_of(out, "sum over protocols", "speeches.char_count sum"), "sum over protocols 600 -> 1.550 +950")
         self.assertEqual(line_of(out, "votes", "votes [all]"), "votes 2 -> 3 +1")
         self.assertEqual(line_of(out, "newest vote date", "votes [all]"), "newest vote date 2026-03-04 -> 2026-04-01")
+
+    # Value: protects=the Personenseiten count leaves out alias redirect files of merged persons and the index; fails_when=the person_aliases subtraction in measure is removed; why_new=no test writes abgeordnete/ pages or person_aliases rows; seam=none
+    def test_person_pages_exclude_alias_redirects_and_the_index(self) -> None:
+        old, new = self.stores()
+        for root, pages in ((old, ["p-1", "p-2"]), (new, ["p-1", "p-2", "p-gone"])):
+            (root / "abgeordnete").mkdir()
+            (root / "abgeordnete" / "index.html").write_text("index")
+            for page in pages:
+                (root / "abgeordnete" / f"{page}.html").write_text("page")
+        conn = pulse_store.connect(new / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.executemany("INSERT INTO persons(id, ordinal) VALUES (?, ?)", [("p-1", 901), ("p-gone", 902)])
+            conn.execute("INSERT INTO person_aliases(id, person_id) VALUES ('p-gone', 'p-1')")
+            conn.commit()
+        finally:
+            conn.close()
+        _, out, _ = run(old, new)
+        self.assertEqual(line_of(out, "abgeordnete/ pages", "generated pages"), "abgeordnete/ pages (Personenseiten) 2 -> 2 =")
+
+    # Value: protects=the Personenseiten count also leaves out redirect files of keys a name guess moved to another person (no alias row); fails_when=the home_person_id subtraction in measure is removed so guess redirects are counted as persons; why_new=the alias test never wrote a record whose home person differs from its current person; seam=none
+    def test_person_pages_exclude_redirects_of_guess_moved_keys(self) -> None:
+        old, new = self.stores()
+        for root, pages in ((old, ["p-1"]), (new, ["p-1", "p-moved"])):
+            (root / "abgeordnete").mkdir()
+            for page in pages:
+                (root / "abgeordnete" / f"{page}.html").write_text("page")
+        conn = pulse_store.connect(new / "data" / "bundestag-pulse.sqlite")
+        try:
+            conn.executemany("INSERT INTO persons(id, ordinal) VALUES (?, ?)", [("p-1", 901), ("p-moved", 902)])
+            conn.executemany(
+                "INSERT INTO person_records(id, identity_key, person_id, evidence_json, partition, home_person_id) VALUES (?, ?, 'p-1', '{}', NULL, ?)",
+                [("r1", "k1", "p-1"), ("r2", "k2", "p-moved")],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _, out, _ = run(old, new)
+        self.assertEqual(line_of(out, "abgeordnete/ pages", "generated pages"), "abgeordnete/ pages (Personenseiten) 1 -> 1 =")
 
     def test_a_quantity_without_evidence_is_unavailable_never_zero(self) -> None:
         old, new = self.stores()
