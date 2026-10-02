@@ -160,33 +160,29 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             self.rebuild([reviewed, unreviewed])
         self.assertEqual(before, self.db.read_bytes())
 
-    # Value: protects=persist_report_file and run_facts_engine honour the writer lock and persist_report_file issues and binds a person; fails_when=either path skips the lock or persists without issuing a bound person; why_new=only rebuild_database_from_entries was tested under lock contention; seam=none
-    def test_direct_persistence_paths_share_the_writer_lock_and_issue_persons(self):
+    # Value: protects=standalone fact computation honours the writer lock, and the standalone persist command refuses to write a single report outside the staged rebuild; fails_when=run_facts_engine skips the lock, or persist_dip_pulse_store main() writes into the store again; why_new=only rebuild_database_from_entries was tested under lock contention, and the removed single-report path half-updated stores; seam=none
+    def test_facts_share_the_writer_lock_and_single_report_persist_is_refused(self):
         r = report()
         path = self.root / "report.json"
         path.write_text(json.dumps(r))
         with self.held_lock():
             with self.assertRaisesRegex(registry.RegistryError, "Another writer"):
-                store.persist_report_file(self.db, path)
-            with self.assertRaisesRegex(registry.RegistryError, "Another writer"):
                 build.run_facts_engine(self.db, [{"report": r, "report_path": path}], None)
-        self.assertFalse(self.db.exists() and self.rows("protocols"))
-        store.persist_report_file(self.db, path)
-        persons = {p["id"] for p in self.rows("persons")}
-        self.assertEqual(len(persons), 1)
-        self.assertEqual({m["person_id"] for m in self.rows("mps")}, persons)
-        self.assertEqual({b["person_id"] for b in self.rows("person_bindings")}, persons)
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", ["persist_dip_pulse_store.py", str(path)]), contextlib.redirect_stderr(stderr):
+            self.assertEqual(store.main(), 2)
+        self.assertIn("--offline --repersist", stderr.getvalue())
+        self.assertFalse(self.db.exists())
 
-    # Value: protects=persist_report_file reconciles after persisting, so a record the name guess joins (a speaker without Redner-ID and the same-named speaker with one) shares one current person; fails_when=persist_report_file stops calling reconcile, leaving every record on its own issued person; why_new=the direct-persistence test counted one person for one speaker, which bind alone yields; seam=none
-    def test_persist_report_file_reconciles_name_guesses(self):
-        r = report()
-        r["agenda_items"][0]["xml_speakers"].append(
-            {"rede_id": "s1-x", "speaker": {"display_name": "Ada Example", "fraktion": "SPD"}, "char_count": 10, "text": "Text."})
-        path = self.root / "report.json"
-        path.write_text(json.dumps(r))
-        store.persist_report_file(self.db, path)
-        self.assertEqual(len(self.rows("persons")), 2)
-        self.assertEqual(len({m["person_id"] for m in self.rows("mps")}), 1)
+    # Value: protects=a DIP roster row without a person id binds no occurrence, so two such rows never share one roster binding key; fails_when=roster_occurrence_id hashes a missing id, giving every id-less row the key of None; why_new=every roster fixture carried a DIP id; seam=none
+    def test_a_roster_row_without_a_dip_id_binds_no_occurrence(self):
+        from stable_ids import roster_occurrence_id
+        self.assertIsNone(roster_occurrence_id(None))
+        self.assertIsNone(roster_occurrence_id(""))
+        conn = self.open_store()
+        now = store.utc_now()
+        store.persist_sampled_people(conn, {"sampled_people": [{"titel": "Ada Example"}, {"titel": "Bea Example"}]}, now)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_bindings").fetchone()[0], 0)
 
     # Value: protects=the dossier page prints the reviewed name of a shared-Redner-ID occurrence, not the garbled printed one; fails_when=render_html stops applying registry.corrected_speaker so the page shows a name the store has corrected; why_new=the shipped-partition test only checks the store rows; seam=none
     def test_render_prints_the_reviewed_name_of_a_partitioned_occurrence(self):
@@ -562,6 +558,14 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertNotIn("Traceback", done.stderr)
         self.assertIn("Incomplete person registry", done.stderr)
+        # Value: protects=--offline on a store that is not a database exits 1 with an error line, and --offline --no-persist renders without reading the store at all; fails_when=the precheck lets sqlite3.Error escape as a traceback or runs although --no-persist never opens the store; why_new=only a damaged registry inside a valid database was tested; seam=none
+        self.db.write_bytes(b"not a database, " * 64)
+        script = [sys.executable, str(_support.ROOT / "scripts/build_dip_pulse_site.py"), "--offline", "--output-dir", str(site)]
+        corrupt = subprocess.run(script, capture_output=True, text=True)
+        self.assertEqual(corrupt.returncode, 1)
+        self.assertNotIn("Traceback", corrupt.stderr)
+        rendered = subprocess.run([*script, "--no-persist"], capture_output=True, text=True)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
 
 
     # Value: protects=a durable alias whose survivor a name guess moved elsewhere still redirects to the current person's page; fails_when=aliases are resolved only through the durable chain so the retired key matches no page and its published file is deleted; why_new=the guess redirect test had no retired key behind the moved survivor; seam=none

@@ -8,7 +8,6 @@ if __name__ == "__main__":
 
     require_supported_python()
 
-import argparse
 import ast
 import json
 import logging
@@ -1237,35 +1236,13 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
                     )
 
 
-def persist_report_file(db_path: Path, report_path: Path) -> None:
-    with registry.writer_lock(db_path):
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        conn = connect(db_path)
-        try:
-            persist_report(conn, report)
-            registry.reconcile(conn)
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("report", type=Path, help="Validation JSON produced by validate_dip_protocol.py")
-    parser.add_argument(
-        "--database",
-        type=Path,
-        default=Path(".context/dip-pulse-site/data/bundestag-pulse.sqlite"),
-        help="SQLite database path to create or update.",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    persist_report_file(args.database, args.report)
-    print(args.database)
-    return 0
+    # Writing one report straight into a carried store bypassed the staged rebuild:
+    # it committed before the registry was reconciled and re-read each touched
+    # person record from that one report. Every write now goes through the build.
+    print("error: persisting a single report is not supported. Run python3 scripts/build_dip_pulse_site.py "
+          "--offline --repersist --output-dir <site-dir> to persist every cached report.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

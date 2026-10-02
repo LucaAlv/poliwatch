@@ -247,14 +247,7 @@ SQLite persistence layer. It turns a validation report JSON into a linked entity
 
 MP source records are bound to persons by `person_registry` (`bind` per occurrence, `reconcile` per build): merges that rest on a shared DIP, Redner-ID or abgeordnetenwatch id and reviewed corrections are durable, guarded name+party matches are recomputed on every reconcile; see [stable-ids.md](stable-ids.md). This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
 
-Direct usage:
-
-```bash
-python3 scripts/persist_dip_pulse_store.py .context/report.json \
-  --database .context/dip-pulse-site/data/bundestag-pulse.sqlite
-```
-
-`build_dip_pulse_site.py` normally handles this automatically unless `--no-persist` is passed.
+It is a library: `build_dip_pulse_site.py` persists every report through its staged rebuild unless `--no-persist` is passed. Run as a script it refuses and names `--offline --repersist`, because a single report written into an existing store bypassed that rebuild.
 
 ### `scripts/facts.py`
 
@@ -514,11 +507,10 @@ Render a single validation JSON to HTML:
 python3 scripts/render_dip_pulse_html.py .context/report.json .context/report.html
 ```
 
-Persist a single validation JSON to SQLite:
+Persist every cached report into the build store (the only supported write path):
 
 ```bash
-python3 scripts/persist_dip_pulse_store.py .context/report.json \
-  --database .context/dip-pulse-site/data/bundestag-pulse.sqlite
+python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/dip-pulse-site
 ```
 
 Resolve one speaker profile:

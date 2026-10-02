@@ -36,8 +36,10 @@ def speech_occurrence_id(protocol_id: Any, rede_id: str) -> str:
     return stable_key("speech", str(protocol_id), rede_id)
 
 
-def roster_occurrence_id(dip_person_id: Any) -> str:
-    return stable_key("roster", dip_person_id)
+def roster_occurrence_id(dip_person_id: Any) -> str | None:
+    """A roster row is an occurrence only through its DIP person id; rows without
+    one would otherwise all share the key of ``None``."""
+    return stable_key("roster", dip_person_id) if dip_person_id else None
 
 
 def vote_member_occurrence_id(vote_id: Any, name: Any, party: Any) -> str:

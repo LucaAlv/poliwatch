@@ -1173,7 +1173,7 @@ def _rebuild_database_from_entries(
                             party_name=row.get("party_name"),
                         ),
                         dip_person_id=row.get("dip_person_id"),
-                        occurrence_id=roster_occurrence_id(row.get("dip_person_id")) if row.get("dip_person_id") else None,
+                        occurrence_id=roster_occurrence_id(row.get("dip_person_id")),
                         xml_redner_id=None,
                         title=row.get("title"),
                         function=row.get("function"),
@@ -10664,11 +10664,12 @@ def main() -> int:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
-    if args.offline and not getattr(args, "repersist", False) and database_path.exists():
+    # --no-persist renders without reading the store, so an old store does not block it.
+    if args.offline and not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
         previous = facts.open_readonly(database_path)
         try:
             pulse_store.require_current_schema(previous)
-        except (RuntimeError, registry.RegistryError) as exc:
+        except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finally:

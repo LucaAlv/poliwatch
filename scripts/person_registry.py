@@ -606,7 +606,7 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
 
     ``full_build``: every live occurrence was bound again on this connection (the
     staged rebuild), so a record nothing touched is stale and is ignored by every
-    match; a direct single-report persist leaves it False."""
+    match. Without it (tests, a partial persist) liveness falls back to bound or never vacated."""
     validate(conn)
     data = corrections()
     touched = None
