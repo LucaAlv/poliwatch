@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Stable source-derived row IDs, durable person keys and occurrence bindings, with reviewed corrections, merge aliases and repeatable splits.
+- Person pages at `abgeordnete/<person_id>.html`, alias redirects, and separate Föhr/Mende attribution for shared Redner-ID `11005304`.
+
+### Changed
+
+- Build-store schema 3 and export format 2 use text entity keys; facts and recipes consume persisted person assignments. Receipt identity no longer depends on presentation position.
+- Old stores require explicit `--offline --repersist`. Rebuilds retain registry history, require complete cached evidence, hold one writer lock, recompute facts and validate integrity before atomic database replacement.
+
 ## [0.10.0.0] - 2026-09-30
 
 ### Added
