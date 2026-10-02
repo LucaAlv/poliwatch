@@ -29,7 +29,7 @@ class Client:
 def agenda(*headings: str) -> dict:
     return {"agenda_items": [
         {"index": i, "top_id": f"TOP {i}", "heading": heading, "page_range": None,
-         "drucksachen": [], "speeches": []}
+         "drucksachen": [], "speeches": [], "contributions": [], "question_formats": []}
         for i, heading in enumerate(headings, 1)
     ]}
 

@@ -116,6 +116,8 @@ class Measured:
     reden_by_group: dict[tuple[str, str], int] | None = None
     #: (document_number, sprechrolle) -> Reden.
     reden_by_sprechrolle: dict[tuple[str, str], int] | None = None
+    #: (document_number, kind) -> Beiträge (contributions): what is spoken and is no Rede.
+    contributions_by_kind: dict[tuple[str, str], int] | None = None
     #: (document_number, "current party" | "no Zusammenschluss") -> Reden that name
     #: none in the Plenarprotokoll and are no Rede in a Sprechrolle.
     reden_without_fraktion: dict[tuple[str, str], int] | None = None
@@ -221,6 +223,15 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
             for number, role, count in conn.execute(
                 "SELECT p.document_number, COALESCE(s.sprechrolle, 'keine'), COUNT(*) FROM speeches s "
                 "JOIN protocols p ON p.id = s.protocol_id GROUP BY p.document_number, 2"
+            )
+        }
+
+    if store.has("contributions", "kind"):
+        measured.contributions_by_kind = {
+            (str(number), str(kind)): int(count)
+            for number, kind, count in conn.execute(
+                "SELECT p.document_number, c.kind, COUNT(*) FROM contributions c "
+                "JOIN protocols p ON p.id = c.protocol_id GROUP BY p.document_number, c.kind"
             )
         }
 
@@ -543,6 +554,13 @@ def compare(
         report,
         _collapse(old.reden_by_sprechrolle, scope),
         _collapse(new.reden_by_sprechrolle, scope),
+    )
+
+    report.heading(f"contributions (Beiträge that are no Rede) per kind [{cohort}]")
+    _compare_maps(
+        report,
+        _collapse(old.contributions_by_kind, scope),
+        _collapse(new.contributions_by_kind, scope),
     )
 
     report.heading(f"Redeanteil: Reden and share per Zusammenschluss and Sprechrolle [{cohort}]")

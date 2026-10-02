@@ -40,6 +40,7 @@ DIP clause 5 and the duties to name the source and mark changes are conditions w
 
 **Change marking (DIP 4b).** The notice lists what we changed:
 - text and structure are extracted from the protocol XML and the DIP API into tables;
+- each turn of the protocol is classified: `speeches` holds Reden only, and Kurzinterventionen, Erwiderungen and the Fragen and Antworten of a Befragung or Fragestunde are stored as Beiträge in `contributions` (ADR 0002); the classification is ours, made from the wording and structure of the XML;
 - Fraktion spellings are normalised (`speeches.fraktion`, `parties.name`);
 - persons are consolidated across sources (`mp_canonical`);
 - the `derived` tables are computed by us.

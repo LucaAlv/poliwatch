@@ -7,7 +7,7 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Tracks A and B can run in parallel. C waits for A, because every count A changes moves every series C draws. D has to be finished before anything goes public.
 
 **A. Get the counts right and the coverage in, in this order**
-1. What counts as a Rede: #68 (Kurzinterventionen), #70 (Befragung and Fragestunde), "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts", "Zu Protokoll gegebene Reden: decide what they are, then store them".
+1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). Still open: "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts" (PR 2), "Zu Protokoll gegebene Reden: decide what they are, then store them" (PR 3; decided 2026-09-30: a kind of their own, not a Rede).
 2. "Stable ids for every row a release publishes" (done: A.2, see its Completed note).
 3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
@@ -184,9 +184,39 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P1 (raised 2026-09-30: every series and release count depends on it)
 **Depends on:** None
 
-### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68
+### A1 classifier precision: measure and tighten the Kurzintervention and Fragestunde rules
 
-### Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+**What:** Four open findings from the /ship review of PR 1 (2026-09-30), each reproduced on synthetic strings only. (1) `announces_kurzintervention` (`scripts/speech_kinds.py`) accepts the next Redner's surname in any of the three sentences after the Kurzintervention wording, so "Damit ist die Kurzintervention beendet. Das Wort hat als Nächste die Kollegin Meier." types Meier's Rede as a Kurzintervention (the Rede leaves `speeches`); the Fraktion branch has the same shape. Require the signal in the same sentence, or exclude closing forms (beendet, erledigt, beantwortet, möglich), with a word-boundary surname match. (2) The Fragestunde asker pairing uses a plain substring test, so 'Ott' matches 'Gottschalk'; use word boundaries, and try a name-plus-party lookup for a question whose asker has no Nachfrage instead of leaving `mp_id` NULL. (3) `announced_asker` keeps the party ("Dr. Gottfried Curio (AfD)", "..., CDU/CSU", "... von Bündnis 90/Die Grünen") in `contributions.speaker_name`, which the export publishes; cut it at the party. (4) A Fragestunde turn whose Redner has neither `<rolle>` nor `<fraktion>` is dropped with no warning or counter; keep it or count it into `validation_summary`.
+
+**Why:** A false-positive Kurzintervention removes a Rede from every count and gains a wrong `parent_rede_id`. The reference store already holds one Kurzintervention more than DIP in 4 sittings, so some exist. Measure before changing: parse the 285 cached XMLs (`data/xml/`) with old and new rules and report the moved counts per kind against DIP's `aktivitaetsart`.
+
+**Context:** The detector prefers precision (636 of DIP's 682 Kurzinterventionen, 581 of 646 Erwiderungen); tightening (1) lowers recall further, so tune both together. Also found by the adversarial review and not fixed in PR 1: (5) Kurzinterventionen the wording misses stay counted as Reden (68 sittings differed from DIP before the review fixes, 59 after), e.g. 20/112 "Sie möchten eine Kurzintervention machen? - Bitte schön.", and a warning on about one sitting in five on every build will be ignored, so decide what the warning threshold is; (6) the rules were tuned on WP 20 and 21 only: run the parser and the DIP comparison over WP 18 and 19 XML before the v1 backfill (the Regierungsbefragung exists since WP 19; the T_* paragraph classes and headings may differ); (7) `announced_asker` returned a garbage name ("Ihnen", 21/81 TOP 2), `KIND_LABELS[kind]` raises KeyError on an unknown kind in a cached report, `fetch_missing_xml` accepts any URL scheme, `reparse_cached_xml` lets exceptions other than ParseError/OSError/UnicodeDecodeError/ValueError escape as a traceback, and `--fetch-xml` counts a report with an empty document number as already cached. The unclassifiable-speaker question in a Befragung (no `<rolle>`, no `<fraktion>` stays a Rede) belongs here too: decide what such a turn is and pin it with a test.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Stale derived data after `--offline --repersist`
+
+**What:** Two findings from the same review. (1) `reparse_report_xml` (`scripts/validate_dip_protocol.py`) replaces `xml_speakers` but keeps the cached `llm_summary`, which cites chunks by `rede_id`; for a Befragung or a TOP with Kurzinterventionen the summary still shows 'Belegstellen' quoting turns that are now Beiträge, and the anchor link is silently dropped. Recompute `summary_source_fingerprint` over the new speeches and clear the summary when it no longer matches. (2) `build_report` writes `data/xml/<sitting>.xml` before the report is accepted; if `keep_cached_dossier_when_votes_failed` then keeps the old JSON, the XML is newer than the report it pairs with and a later repersist attaches Reden of one version to positions and votes of another. Write the XML next to the JSON, or store its sha256 in the report and skip the re-parse on a mismatch. Also pair agenda items by `top_id` and heading, not by `index` alone, and validate fetched XML before writing it. Fixed in PR 1 (final merge review): a reparse did not refresh `heading`; `xml_top_fields` now carries every XML-derived item key and a test compares a reparse with a fresh build. Two latent items from the same review (3): the rewritten vote queries in `scripts/facts.py` take `MIN(p.id)`, `MIN(p.document_number)` and `MIN(p.date)` separately (the old bare-column query took all three from one row, and the text minimum sorts "21/10" before "21/9"), harmless unless a vote is ever linked to agenda items of two protocols; and `persist_votes` (`scripts/persist_dip_pulse_store.py`) is dead since `persist_report` calls `persist_vote` directly, so drop it or keep the `ctx` hook in `scripts/features/votes.py` pointing at one entry point.
+
+**Why:** After a repersist the pages can show an AI summary that contradicts the counts on the same page. Rare (only a reissued protocol or a failed vote scan triggers (2)) but silent.
+
+**Context:** Found by the red team and the data-migration specialist; the stale-store guard itself shipped in PR 1 (`speech_kinds_version` on every parsed report, a warning in every build mode, a heading fallback for `is_question_format`). A hard refusal to export or post Fakten over an unparsed store was offered and not chosen; revisit it with A3. The marker lives on the report JSON only, not on the store or export: an online run that writes every report and then stops before the store rebuild, or `--no-persist`, leaves an old store next to all-fresh reports and nothing warns. Stamp `speech_kinds.VERSION` in the store (`PRAGMA user_version` or a `datenstand` row) and compare it in the offline path and the export step. Coverage caveat for the whole A1 branch: Codex adversarial and structured reviews were unavailable (usage limit), and the final tree (review fixes plus the merge of v0.10.0.0) had one Claude review of the merge only, so treat it as Claude-only coverage.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Regenerate the architecture diagram for the Rede/Beitrag split
+
+**What:** `docs/bundestag-puls-architecture.{html,json}` do not show `scripts/speech_kinds.py`, the `contributions` kinds, the `--fetch-xml` and `--repersist` re-parse path, or the `speech_kinds_version` stale-store warning. Add them to the parse and persist stages, the same way the Daten export step was added in v0.6.4.0.
+
+**Why:** The diagram is the one picture of the pipeline; today it shows the parser as one step that yields Reden only.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Harden the vote acquisition and catalog completeness paths (open review findings)
 
@@ -929,6 +959,19 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Depends on:** None
 
 ## Completed
+
+### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68; Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
+
+**Completed:** v0.13.0.0 (2026-10-03), PR 1 of the A1 roadmap item, branch `a1-what-counts-as-rede`. `speeches` holds Reden only; every other unit is a Beitrag in the new `contributions` table, typed by `kind` (`scripts/speech_kinds.py`). The Fragestunde, which has no `<rede>` elements (75 of 76 Fragestunden stored no row), is parsed from its flat `<p klasse="redner">` turns. Every online update now keeps the sitting's XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it.
+
+Reference store (285 Sitzungen), the same cached reports parsed by the code before and after, so only this change moves:
+- Reden 34,775 -> 25,800 (-8,975, -26 %); DIP's own `Rede` count for the same sittings is 26,396 (our count is 2.3 % lower). The first measurement of this branch said 26,002; the /ship review found and fixed two classifier defects (below), which moved it by 202.
+- Beiträge 14,363: 636 Kurzinterventionen, 581 Erwiderungen, 3,890 Fragen and 3,868 Antworten of the Befragung, 2,701 Fragen and 2,687 Antworten of the Fragestunde.
+- `speeches.char_count` sum 114,848,500 -> 107,813,062 (-6.1 %).
+- Redeanteil: Bundesregierung 14.6 % -> 4.6 %, CDU/CSU 22.2 -> 24.8, SPD 17.7 -> 21.2, AfD 14.6 -> 15.2, Grüne 13.5 -> 14.5, FDP 7.4 -> 8.5, Linke 6.9 -> 7.4.
+- Kurzinterventionen 636 against DIP's 682 (93.3 %), Erwiderungen 581 against 646 (89.9 %); 59 of 285 sittings differ from DIP in one of the two kinds, and in 6 sitting-kinds the XML holds more than DIP. The detector reads the Sitzungsleitung's wording and prefers precision: it misses announcements that only refer back ("das Wort zu einer solchen"), that call it "Intervention" or that contain a negation ("der eine Kurzintervention bekommt, weil er keine Zwischenfrage stellen durfte"). DIP's `Frage`/`Antwort` counts are not comparable (DIP 6,884 + 633 Fragen and 4,198 Antworten against 6,451 and 6,416) and are not checked.
+- Fixed in review, measured on the same 285 XMLs (17 sittings moved, nothing else): (1) three items whose heading sits in a `T_ZP_NaS` paragraph (20/143 TOP 2, 20/159 TOP 3 and 4) were not recognised as Befragung or Fragestunde, so 212 Befragung turns counted as Reden and 67 Fragestunde turns were stored nowhere; (2) the Erwiderung wording rule ("Möchten Sie antworten? - Nein") turned real Reden into Erwiderungen (15 Reden back, including Edis's maiden speech in 21/14, which the `erste-reden` Fakt needs); 5 announced Kurzinterventionen that had been read as Erwiderungen or Reden are now typed correctly. Sittings that differ from DIP: 68 -> 59; sitting-kinds where the XML holds more than DIP: 15 -> 6. The Erwiderung total moved away from DIP's 646 (596 -> 581) because the removed ones were false positives.
+- Not measured: the Fakt der Woche winners that changed. The reference tree has no cached DIP catalog, so the facts engine posts nothing offline; run an online update, then compare. The five speech metrics are at version 2.
 
 ### render_html mutates the report it renders
 

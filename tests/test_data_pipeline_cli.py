@@ -180,6 +180,24 @@ class ParseArgsValidationTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         self.assertIn("--force-export cannot be combined with --no-persist", stderr.getvalue())
 
+    # Value: protects=--fetch-xml downloads and exits, so it refuses --offline, --repersist and --backfill-incomplete with a parser error naming it, and alone it parses;
+    #   fails_when=parse_args drops one of the three refusals (the run would silently ignore the other flag) or also refuses --fetch-xml alone;
+    #   why_new=the fetch-xml tests call main() with --fetch-xml alone; the flag combinations are a separate parse_args branch; seam=none
+    def test_fetch_xml_cannot_be_combined_with_offline_repersist_or_backfill_incomplete(self) -> None:
+        for other in (["--offline"], ["--offline", "--repersist"], ["--backfill-incomplete"]):
+            with self.subTest(other=other):
+                with (
+                    mock.patch.object(sys, "argv", ["build", "--fetch-xml", *other]),
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    with self.assertRaises(SystemExit) as ctx:
+                        b.parse_args()
+                self.assertEqual(ctx.exception.code, 2)
+                # The usage line lists every option; the error itself names --fetch-xml.
+                self.assertIn("error: --fetch-xml downloads the missing XML files and exits", stderr.getvalue())
+        with mock.patch.object(sys, "argv", ["build", "--fetch-xml"]):
+            self.assertTrue(b.parse_args().fetch_xml)
+
     def test_offline_with_a_remote_data_manifest_is_rejected(self) -> None:
         with (
             mock.patch.object(

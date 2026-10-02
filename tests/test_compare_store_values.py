@@ -40,6 +40,7 @@ def make_output(
     protocols: dict[str, list[tuple[str, str | None, int, str | None]]],
     votes: list[tuple[str, str, str, str | None, str]] = (),
     sprechrolle: bool = False,
+    contributions: list[tuple[str, str]] | None = (),
     fact: dict | None = None,
     bills: int | None = None,
     roster: bool = True,
@@ -48,7 +49,8 @@ def make_output(
 
     ``protocols``: document number -> speeches as (rede_id, fraktion, chars,
     sprechrolle). ``votes``: (vote id, date, document number, leading_vote,
-    party) rows, one vote_fractions row each.
+    party) rows, one vote_fractions row each. ``contributions``: (document
+    number, kind) rows; ``None`` is an older schema: the store predates the table.
     """
     (root / "data").mkdir(parents=True)
     conn = pulse_store.connect(root / "data" / "bundestag-pulse.sqlite")
@@ -57,6 +59,8 @@ def make_output(
         if not sprechrolle:
             # An older schema: the store predates the column.
             conn.execute("ALTER TABLE speeches DROP COLUMN sprechrolle")
+        if contributions is None:
+            conn.execute("DROP TABLE contributions")
         party_ids: dict[str, int] = {}
 
         def party(name: str) -> int:
@@ -82,6 +86,12 @@ def make_output(
                 )
                 if sprechrolle:
                     conn.execute("UPDATE speeches SET sprechrolle = ? WHERE rede_id = ?", (role, rede_id))
+        for sequence, (number, kind) in enumerate(contributions or ()):
+            conn.execute(
+                "INSERT INTO contributions(id, protocol_id, agenda_item_id, kind, rede_id, sequence, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (f"contribution-p-{number}-C{sequence}", f"p-{number}", items[number], kind, f"C{sequence}", sequence, NOW, NOW),
+            )
         for vote_id, date, number, leading, party_name in votes:
             if not conn.execute("SELECT 1 FROM votes WHERE id = ?", (vote_id,)).fetchone():
                 conn.execute(
@@ -251,6 +261,39 @@ class CompareStoreValuesTests(unittest.TestCase):
         section = "Redeanteil"
         self.assertEqual(line_of(out, "Regierung (Reden)", section), "Regierung (Reden) 1 -> 0 -1")
         self.assertEqual(line_of(out, "Sprechrolle bundesregierung (Reden)", section), "Sprechrolle bundesregierung (Reden) 0 -> 1 +1")
+
+    # Value: protects=the per-kind Beiträge section reports old->new counts on the cohort and shows an older store without the table as unavailable; fails_when=measure or the section drops contributions; why_new=no test read the contributions table; seam=none
+    def test_contributions_per_kind_are_compared_and_an_older_store_is_unavailable(self) -> None:
+        heading = "== contributions (Beiträge that are no Rede) per kind"
+
+        def section(text: str) -> list[str]:
+            body = text.split(heading, 1)[1].split("\n== ", 1)[0]
+            return [re.sub(r"\s+", " ", line.strip()) for line in body.splitlines()[1:] if line.strip()]
+
+        protocols = {"21/1": [("R1", "SPD", 100, None)], "21/2": [("R2", "SPD", 100, None)]}
+        older = make_output(self.tmp / "o", protocols={"21/1": [("R1", "SPD", 100, None)]}, contributions=None)
+        old = make_output(
+            self.tmp / "p", protocols={"21/1": [("R1", "SPD", 100, None)]}, contributions=[("21/1", "kurzintervention")]
+        )
+        new = make_output(
+            self.tmp / "n",
+            protocols=protocols,
+            contributions=[
+                ("21/1", "kurzintervention"), ("21/1", "kurzintervention"), ("21/1", "erwiderung"),
+                ("21/2", "kurzintervention"),
+            ],
+        )
+        # No contributions table in the old store: the new figures show against "unavailable", not 0.
+        _, out, _ = run(older, new)
+        self.assertIn(f"{heading} [shared]", out)
+        self.assertEqual(section(out), ["erwiderung unavailable -> 1", "kurzintervention unavailable -> 2"])
+        _, out, _ = run(older, older)
+        self.assertEqual(section(out), ["(all) unavailable -> unavailable"])
+        # Both stores have the table: old -> new per kind; the shared cohort ignores 21/2.
+        _, out, _ = run(old, new)
+        self.assertEqual(section(out), ["erwiderung 0 -> 1 +1", "kurzintervention 1 -> 2 +1"])
+        _, out, _ = run(old, new, "--cohort", "all")
+        self.assertEqual(section(out), ["erwiderung 0 -> 1 +1", "kurzintervention 1 -> 3 +2"])
 
     def test_a_changed_winner_with_equal_value_is_reported_with_both_vote_identities(self) -> None:
         old, new = self.stores()

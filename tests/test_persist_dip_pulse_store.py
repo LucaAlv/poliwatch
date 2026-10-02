@@ -102,6 +102,61 @@ class PersistReportTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    # Value: protects=a Beitrag shares its speaker's mps row with that Person's Rede; a silent asker keeps the announced name with no mp; re-persist adds no rows;
+    #   fails_when=persist_contributions makes a second mps row, invents an mp for an id-less asker, or a second persist duplicates contributions/mps;
+    #   why_new=test_repersist asserts only counts by kind and that mp_id is set, not identity with the Rede's row, the NULL-asker branch or a same-store second persist; seam=none
+    def test_contributions_share_the_speakers_mp_and_a_silent_asker_has_none(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        item = report["agenda_items"][0]
+        ada = item["xml_speakers"][0]["speaker"]
+        item["xml_contributions"] = [
+            {
+                "kind": "kurzintervention",
+                "rede_id": "K1",
+                "parent_rede_id": "R1",
+                "sequence": 1,
+                "source_page": {"page": 102, "quadrant": "B"},
+                "speaker": json.loads(json.dumps(ada)),
+                "char_count": 12,
+                "text": "Kurz gesagt.",
+            },
+            {
+                "kind": "fragestunde_frage",
+                "rede_id": None,
+                "parent_rede_id": None,
+                "sequence": 2,
+                "source_page": None,
+                "speaker": {"xml_redner_id": None, "display_name": "Jan Köstering"},
+                "char_count": 4,
+                "text": "Wie?",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                mps_before = conn.execute("SELECT COUNT(*) FROM mps").fetchone()[0]
+                rede_mp = conn.execute("SELECT mp_id FROM speeches WHERE rede_id = 'R1'").fetchone()["mp_id"]
+                kurz, frage = conn.execute(
+                    "SELECT kind, rede_id, parent_rede_id, mp_id, speaker_name, fraktion, sprechrolle, page "
+                    "FROM contributions ORDER BY sequence"
+                ).fetchall()
+                self.assertEqual((kurz["mp_id"], kurz["parent_rede_id"], kurz["page"]), (rede_mp, "R1", 102))
+                self.assertEqual(kurz["fraktion"], "SPD")
+                self.assertEqual(
+                    (frage["mp_id"], frage["speaker_name"], frage["fraktion"], frage["sprechrolle"], frage["rede_id"], frage["page"]),
+                    (None, "Jan Köstering", None, None, None, None),
+                )
+                # The announced name makes no mps row.
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps WHERE display_name = 'Jan Köstering'").fetchone()[0], 0)
+
+                pulse_store.persist_report(conn, report)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM contributions").fetchone()[0], 2)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM mps").fetchone()[0], mps_before)
+            finally:
+                conn.close()
+
     def _counts(self, conn) -> dict[str, int]:
         tables = [
             "protocols",

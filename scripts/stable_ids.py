@@ -36,6 +36,14 @@ def speech_occurrence_id(protocol_id: Any, rede_id: str) -> str:
     return stable_key("speech", str(protocol_id), rede_id)
 
 
+def contribution_occurrence_id(protocol_id: Any, item_index: Any, sequence: Any, rede_id: Any) -> str:
+    """A Beitrag by its rede id; a Fragestunde turn has none and goes by its
+    source item index and sequence within the item."""
+    if rede_id:
+        return stable_key("contribution", str(protocol_id), str(rede_id))
+    return stable_key("contribution", str(protocol_id), int(item_index), int(sequence))
+
+
 def roster_occurrence_id(dip_person_id: Any) -> str | None:
     """A roster row is an occurrence only through its DIP person id; rows without
     one would otherwise all share the key of ``None``."""

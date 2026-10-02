@@ -104,6 +104,7 @@ import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
 import abgeordnetenwatch as aw
 import derive
+import speech_kinds
 import publication_state as publication
 import facts
 import person_registry as registry
@@ -136,7 +137,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
-    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere).",
+    "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
+    "contributions": "Beiträge, die keine Rede sind: Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; eine Frage, die die Sitzungsleitung verliest und deren Fragesteller nicht spricht, hat keinen mp_id.",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
@@ -145,7 +147,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "persons": "Dauerhafte Personenkennungen und Reihenfolge ihrer Vergabe.",
     "person_aliases": "Historische Personenkennungen und ihre gültigen Ziele.",
     "person_records": "Quellenidentitäten mit dauerhafter Personenzuordnung und Abgleichbelegen.",
-    "person_bindings": "Dauerhafte Zuordnung einzelner Reden, MdB-Einträge und Abstimmungsmitglieder.",
+    "person_bindings": "Dauerhafte Zuordnung einzelner Reden, Beiträge, MdB-Einträge und Abstimmungsmitglieder.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
     "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
@@ -652,24 +654,71 @@ def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
 
 
+# Every list of an agenda item that holds speakers: Reden and Beiträge.
+SPEAKER_LISTS = ("xml_speakers", "xml_speakers_first", "xml_contributions")
+
+
+def speaker_identity(speaker: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(speaker.get("xml_redner_id") or ""),
+        str(speaker.get("first_name") or ""),
+        str(speaker.get("last_name") or ""),
+    )
+
+
+def speaker_profiles(item: dict[str, Any]) -> dict[tuple[str, str, str], Any]:
+    """The abgeordnetenwatch profiles an agenda item's speakers carry, by identity."""
+    profiles: dict[tuple[str, str, str], Any] = {}
+    for key in SPEAKER_LISTS:
+        for speech in item.get(key) or []:
+            speaker = speech.get("speaker")
+            if isinstance(speaker, dict) and "abgeordnetenwatch" in speaker:
+                profiles[speaker_identity(speaker)] = speaker["abgeordnetenwatch"]
+    return profiles
+
+
+def attach_speaker_profiles(
+    item: dict[str, Any],
+    profiles: dict[tuple[str, str, str], Any],
+    by_redner_id: dict[str, Any] | None = None,
+) -> None:
+    """Give the speakers of an agenda item the profile a cached one of the same
+    identity carried, where they have none yet; else the profile any cached report
+    resolved for the same Redner-ID (``by_redner_id``)."""
+    for key in SPEAKER_LISTS:
+        for speech in item.get(key) or []:
+            speaker = speech.get("speaker")
+            if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
+                continue
+            identity = speaker_identity(speaker)
+            if identity in profiles:
+                speaker["abgeordnetenwatch"] = copy.deepcopy(profiles[identity])
+            elif by_redner_id and derive.first_redner_id(speaker.get("xml_redner_id")) in by_redner_id:
+                speaker["abgeordnetenwatch"] = copy.deepcopy(by_redner_id[derive.first_redner_id(speaker.get("xml_redner_id"))])
+
+
 def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) -> None:
     """Attach abgeordnetenwatch profile links to speakers and vote members.
 
     Each speaker dict gains an ``abgeordnetenwatch`` key holding the resolved
     profile (or ``None`` when no confident match exists). xml_speakers and
     xml_speakers_first share speaker objects for the first speeches, so the
-    presence check keeps each speaker resolved at most once. Roll-call vote
+    presence check keeps each speaker resolved at most once. The speakers of
+    xml_contributions (Beiträge) are resolved the same way, so one Person's
+    Reden and Beiträge carry the same profile and so one identity. Roll-call vote
     members use the same name+party resolver path with a conservative surname
     heuristic because Bundestag vote data only exposes a display name.
     """
     if resolver is None:
         return
     for item in report.get("agenda_items") or []:
-        for key in ("xml_speakers", "xml_speakers_first"):
+        for key in SPEAKER_LISTS:
             for speech in item.get(key) or []:
                 speaker = speech.get("speaker")
                 if not isinstance(speaker, dict) or "abgeordnetenwatch" in speaker:
                     continue
+                if key == "xml_contributions" and not speaker.get("xml_redner_id"):
+                    continue  # a question whose asker never speaks: a name only
                 speaker["abgeordnetenwatch"] = resolver.resolve(
                     ext_id=speaker.get("xml_redner_id"),
                     first_name=speaker.get("first_name"),
@@ -739,12 +788,10 @@ def add_explicit_dossier_protocols(
 # ---------------------------------------------------------------------------
 
 
-# A crash mid-write must never leave a truncated file where a cached report or
-# the catalog used to be: both are read back as evidence on the next build.
-def write_text_atomic(path: Path, text: str) -> None:
-    temp = path.with_name(f".{path.name}.tmp")
-    temp.write_text(text, encoding="utf-8")
-    os.replace(temp, path)
+# The sitting's Plenarprotokoll XML as fetched, kept so a rule change in the
+# parser needs --offline --repersist and no re-fetch.
+def xml_cache_path(output_dir: Path, document_number: str) -> Path:
+    return output_dir / "data" / "xml" / f"plenarprotokoll-{slugify_document_number(document_number)}.xml"
 
 
 def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, str]:
@@ -772,7 +819,7 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     page_path.write_text(
         pulse_html.render_html(
             report,
@@ -1233,16 +1280,132 @@ def _rebuild_database_from_entries(
     return True
 
 
+def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The cached reports made before A1: they carry no ``speech_kinds_version``,
+    so every Kurzintervention, Frage and Antwort in them still counts as a Rede."""
+    return [
+        entry
+        for entry in entries
+        if (entry["report"].get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION
+    ]
+
+
+def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
+    """Refuse to persist a report made before A1: its Reden counts would sit in the
+    store next to correctly classified ones. Raises CachedReportError naming them."""
+    stale = unparsed_reports(entries)
+    if stale:
+        numbers = ", ".join(
+            sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
+        )
+        raise CachedReportError(
+            f"{len(stale)} cached reports predate the A1 Rede rule and have no cached XML in data/xml/ to re-read "
+            f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
+            "fetched (no xml_url) must be deleted from data/"
+        )
+
+
+def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
+    """Warn about cached reports made before A1 (see unparsed_reports): the numbers
+    built from them mix two rules. Returns how many there are."""
+    stale = unparsed_reports(entries)
+    if stale:
+        print(
+            f"warning: {len(stale)} of {len(entries)} cached reports predate the A1 Rede rule and {keeping} "
+            "Kurzinterventionen, Fragen and Antworten counted as Reden, so Reden counts, Redeanteil and the "
+            "Fakten built from them mix two rules. Fix: run --fetch-xml, then --offline --repersist.",
+            file=sys.stderr,
+        )
+    return len(stale)
+
+
+def reparse_cached_xml(
+    output_dir: Path, entries: list[dict[str, Any]], profiles_from: list[dict[str, Any]] | None = None
+) -> int:
+    """Re-read Reden and Beiträge of every cached report from its cached XML,
+    where the XML exists, keeping the abgeordnetenwatch profiles its speakers
+    carry or that ``profiles_from`` (default: ``entries``) holds for them.
+    Returns how many reports it re-parsed."""
+    # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
+    # survive the re-parse, also for a Person who only asks a Frage in a sitting.
+    by_redner_id: dict[str, Any] = {}
+    for entry in entries if profiles_from is None else profiles_from:
+        for item in entry["report"].get("agenda_items") or []:
+            for identity, profile in speaker_profiles(item).items():
+                redner_id = derive.first_redner_id(identity[0])
+                if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
+                    by_redner_id.setdefault(redner_id, profile)
+    reparsed = 0
+    for entry in entries:
+        report = entry["report"]
+        document_number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+        path = xml_cache_path(output_dir, document_number)
+        if not document_number or not path.exists():
+            continue
+        profiles = {item.get("index"): speaker_profiles(item) for item in report.get("agenda_items") or []}
+        try:
+            dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError) as exc:
+            raise CachedReportError(
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Delete it and run --fetch-xml again"
+            ) from exc
+        for item in report.get("agenda_items") or []:
+            attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
+        reparsed += 1
+    return reparsed
+
+
+def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25) -> tuple[int, int]:
+    """Download the Plenarprotokoll XML of every cached report that has none in
+    ``data/xml/`` (a public bundestag.de file, no API key). Returns (fetched,
+    failed). Older builds did not keep the XML."""
+    fetched = failed = 0
+    for entry in entries:
+        protocol = entry["report"].get("protocol") or {}
+        document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        path = xml_cache_path(output_dir, document_number)
+        if not document_number or path.exists():
+            continue
+        if not protocol.get("xml_url"):
+            print(f"warning: {document_number} has no xml_url; its XML cannot be fetched.", file=sys.stderr)
+            failed += 1
+            continue
+        try:
+            text = dip.fetch_text(protocol["xml_url"])
+            # An error or maintenance page served with HTTP 200 must not become the cache.
+            root = dip.ET.fromstring(text)
+            wahlperiode, _, sitzung = document_number.partition("/")
+            if (root.tag, root.attrib.get("wahlperiode"), root.attrib.get("sitzung-nr")) != (
+                "dbtplenarprotokoll",
+                wahlperiode,
+                sitzung,
+            ):
+                raise ValueError(f"it is not the Plenarprotokoll XML of {document_number}")
+        except (dip.DipError, dip.ET.ParseError, ValueError) as exc:
+            print(f"warning: {document_number}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        dip.write_text_atomic(path, text)
+        fetched += 1
+        if pause:
+            time.sleep(pause)
+    return fetched, failed
+
+
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None, facts_report: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
-    persisted. Returns the loaded entries (the render reuses them) and whether
+    persisted. Reden and Beiträge are first re-read from each report's cached
+    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and whether
     the store file was replaced. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    reparse_cached_xml(output_dir, cached)
+    require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
@@ -1492,27 +1655,7 @@ def reuse_existing_dossier_enrichments(
         if not profiles:
             continue
 
-        previous_speakers: dict[tuple[str, str, str], dict[str, Any]] = {}
-        for key in ("xml_speakers", "xml_speakers_first"):
-            for speech in previous.get(key) or []:
-                speaker = speech.get("speaker") or {}
-                identity = (
-                    str(speaker.get("xml_redner_id") or ""),
-                    str(speaker.get("first_name") or ""),
-                    str(speaker.get("last_name") or ""),
-                )
-                previous_speakers[identity] = speaker
-        for key in ("xml_speakers", "xml_speakers_first"):
-            for speech in item.get(key) or []:
-                speaker = speech.get("speaker") or {}
-                identity = (
-                    str(speaker.get("xml_redner_id") or ""),
-                    str(speaker.get("first_name") or ""),
-                    str(speaker.get("last_name") or ""),
-                )
-                cached = previous_speakers.get(identity)
-                if "abgeordnetenwatch" not in speaker and cached and "abgeordnetenwatch" in cached:
-                    speaker["abgeordnetenwatch"] = copy.deepcopy(cached["abgeordnetenwatch"])
+        attach_speaker_profiles(item, speaker_profiles(previous))
 
     if not profiles:
         return
@@ -1784,6 +1927,7 @@ def write_report_and_page(
     effective_summary_mode = "off" if summary_mode == "reuse" else (
         "auto" if summary_mode == "required" else summary_mode
     )
+    xml_sink: dict[str, str] = {}  # the downloaded XML, kept only with an accepted report
     args = argparse.Namespace(
         api_key=api_key,
         protocol_id=str(protocol["id"]),
@@ -1804,6 +1948,7 @@ def write_report_and_page(
         summary_required_preflight=summary_mode == "required" and existing_report is None,
         sleep=sleep,
         roll_call_page_cache=roll_call_page_cache,
+        xml_sink=xml_sink,
     )
     report = dip.build_report(args, protocol=protocol)
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
@@ -1864,6 +2009,10 @@ def write_report_and_page(
                 + ", ".join(missing)
                 + ". Fix: increase --summary-max-calls, provide provider credentials, or use --summary-mode auto."
             )
+    if "text" in xml_sink:
+        xml_path = xml_cache_path(output_dir, normalized_document_number(protocol.get("dokumentnummer")))
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        dip.write_text_atomic(xml_path, xml_sink["text"])
     return write_report_files(
         report,
         output_dir,
@@ -1991,6 +2140,10 @@ _COLUMN_SOURCE_DERIVED = {
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
     ("speeches", "unattributed_char_count"),
+    # The kind is decided by the parser from the sitting's wording and structure.
+    ("contributions", "kind"),
+    ("contributions", "parent_rede_id"),
+    ("contributions", "sprechrolle"),
 }
 
 
@@ -2006,7 +2159,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 2
+EXPORT_FORMAT = 3
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -4791,10 +4944,11 @@ def render_radar_also(radar: dict[str, Any]) -> str:
     formats = []
     for item in radar["formats"]:
         where = ", ".join(p for p in (pulse_html.format_sitting_date(item["datum"]), f"TOP {item['index']}") if p)
+        counts = pulse_html.format_question_counts(item["speech_count"], item["contribution_counts"])
+        share = f" · {pulse_html.format_percent(item['share'])}" if item["speech_count"] else ""
         formats.append(
             f'<a href="{esc(item["href"])}">{esc(item["heading"])}</a> · '
-            f"{pulse_html.format_count(item['speech_count'], 'Wortmeldung', 'Wortmeldungen')} · "
-            f"{pulse_html.format_percent(item['share'])} ({esc(where)})"
+            f"{counts}{share} ({esc(where)})"
         )
     remaining = ""
     if radar["remaining"]:
@@ -4830,18 +4984,25 @@ def render_radar_section(
         '<h2 id="radar-h2">Wor&uuml;ber am meisten gesprochen wurde</h2>'
     )
     if not total:
-        body = '<p class="week-note">In dieser Sitzungswoche wurden keine Reden extrahiert.</p>'
+        # A week of Fragestunden only has no Reden but still has its questions and
+        # answers: the Außerdem line lists them.
+        note = "In dieser Sitzungswoche wurden keine Reden extrahiert"
+        note += ", nur Fragen und Antworten aus Frageformaten." if radar["formats"] else "."
+        body = f'<p class="week-note">{note}</p>' + render_radar_also(radar)
     else:
         method = (
             "Die Tagesordnungspunkte mit den meisten Reden der Woche. "
             f"Anteil an allen {pulse_html.format_count(total, 'Rede', 'Reden')}"
         )
         if radar["formats"]:
-            biggest = max(radar["formats"], key=lambda item: item["speech_count"])
+            biggest = max(
+                radar["formats"],
+                key=lambda item: item["speech_count"] + sum(item["contribution_counts"].values()),
+            )
+            counts = pulse_html.format_question_counts(biggest["speech_count"], biggest["contribution_counts"])
             method += (
-                f"; Frageformate wie die {biggest['heading']} "
-                f"({pulse_html.format_count(biggest['speech_count'], 'Wortmeldung', 'Wortmeldungen')}) "
-                "zählen mit, werden aber nicht als Thema gerankt."
+                f"; Frageformate wie die {biggest['heading']} ({counts}) werden nicht als Thema gerankt, "
+                "und ihre Fragen und Antworten sind keine Reden."
             )
         else:
             method += "."
@@ -6347,6 +6508,18 @@ def _parse_listish(value: Any) -> list[Any]:
     return [text]
 
 
+def has_abgeordnete_page(mp: dict[str, Any]) -> bool:
+    """An MdB, a person the registry gives a page, or anyone who spoke or
+    contributed in a sitting (so cross-links from protocol and bill speaker
+    lists never dangle, even for ministers)."""
+    return bool(
+        mp.get("is_mdb")
+        or mp.get("has_page")
+        or (mp.get("speech_count") or 0) > 0
+        or (mp.get("contribution_count") or 0) > 0
+    )
+
+
 def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
     pages. The store already settled who is the same Person (``mps.person_id``,
@@ -6402,6 +6575,14 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "item_index": row["item_index"],
             }
         )
+
+    # Beiträge that are no Rede (Kurzintervention, Frage, Antwort ...) per MP and
+    # kind: shown beside the Reden on a profile page, never added to them.
+    contributions_by_mp: dict[str, dict[str, int]] = {}
+    for row in conn.execute(
+        "SELECT mp_id, kind, COUNT(*) AS n FROM contributions WHERE mp_id IS NOT NULL GROUP BY mp_id, kind"
+    ).fetchall():
+        contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
@@ -6467,6 +6648,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             merged_speeches.extend(speeches_by_mp.get(r["id"], []))
         merged_speeches.sort(key=lambda s: (s.get("date") or ""), reverse=True)
 
+        contribution_counts: dict[str, int] = {}
+        for r in members:
+            for kind, n in contributions_by_mp.get(r["id"], {}).items():
+                contribution_counts[kind] = contribution_counts.get(kind, 0) + n
+
         # Pool votes, de-duplicated by vote id (the same vote can be reachable
         # through more than one row), then tally the directions for the header.
         merged_votes: list[dict[str, Any]] = []
@@ -6503,12 +6689,14 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
+            "contribution_counts": dict(sorted(contribution_counts.items())),
+            "contribution_count": sum(contribution_counts.values()),
             "votes": merged_votes,
             "vote_tally": tally,
         }
         mps.append(mp)
         # Only persons that get a page contribute to the link lookup.
-        if mp["is_mdb"] or mp["speech_count"] > 0 or mp["has_page"]:
+        if has_abgeordnete_page(mp):
             for r in members:
                 for key in registry.mp_keys(r):
                     lookup[key] = cid
@@ -6518,7 +6706,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         for key in registry.mp_keys(row):
             key_owners.setdefault(key, set()).add(assignments[row["id"]])
     lookup = {key: owner for key, owner in lookup.items() if len(key_owners[key]) == 1}
-    page_ids = {mp["id"] for mp in mps if mp["is_mdb"] or mp["speech_count"] or mp["has_page"]}
+    page_ids = {mp["id"] for mp in mps if has_abgeordnete_page(mp)}
     for binding in conn.execute("SELECT id, person_id FROM person_bindings"):
         if binding["person_id"] in page_ids:
             lookup[binding["id"]] = binding["person_id"]
@@ -6773,6 +6961,26 @@ def render_abgeordnete_index(
 # The <id> in the file name is the issued person key from the registry,
 # which is also what mp_lookup maps source occurrences and external ids to,
 # so speaker links from dossier and bill pages resolve here.
+def render_contributions_panel(mp: dict[str, Any]) -> str:
+    """Beiträge that are no Rede, by kind. Never part of "Reden"."""
+    counts = mp.get("contribution_counts") or {}
+    if not counts:
+        return ""
+    fields = "".join(
+        f'<div class="field"><span>{pulse_html.esc(speech_kinds.KIND_LABELS[kind][1])}</span>'
+        f"<strong>{pulse_html.esc(counts[kind])}</strong></div>"
+        for kind in speech_kinds.CONTRIBUTION_KINDS
+        if counts.get(kind)
+    )
+    return (
+        '<section class="panel">'
+        "<h2>Weitere Beiträge (keine Reden)</h2>"
+        "<p>Kurzinterventionen, Erwiderungen sowie Fragen und Antworten in Befragung und Fragestunde zählen nicht als Reden.</p>"
+        f'<div class="field-grid">{fields}</div>'
+        "</section>"
+    )
+
+
 def render_abgeordnete_detail(
     mp: dict[str, Any],
     features: Selection | None = None,
@@ -6886,6 +7094,7 @@ def render_abgeordnete_detail(
           <h2>Reden im Bundestag</h2>
           <ul class="doc-list">{''.join(speeches) if speeches else '<li>In den bisher erfassten Plenarprotokollen wurden keine Reden erkannt.</li>'}</ul>
         </section>
+        {render_contributions_panel(mp)}
       </main>
       <aside>
         <section class="panel">
@@ -6915,7 +7124,7 @@ def write_abgeordnete_pages(
     abg_dir.mkdir(parents=True, exist_ok=True)
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
-    detail_mps = [mp for mp in mps if mp.get("has_page") or mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
+    detail_mps = [mp for mp in mps if has_abgeordnete_page(mp)]
     expected_pages = {f"{key}.html" for mp in detail_mps for key in [mp["id"]] + mp.get("aliases", [])}
     for stale_page in abg_dir.glob("*.html"):
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
@@ -7676,6 +7885,11 @@ def render_facts_methodik(features: Selection | None = None) -> str:
         eine Anekdote, kein Fakt. „Die längste Debatte der Woche“ erscheint nur, wenn sich ihr
         Thema bestimmen lässt - sonst würde die Karte nur sagen, dass irgendein
         Tagesordnungspunkt lang war.</span></li>
+        <li><strong>Was als Rede zählt</strong><span>Alle Kennzahlen über Reden, Zeichen und Redner
+        zählen nur Reden. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der
+        Befragung der Bundesregierung und der Fragestunde sind keine Reden; sie werden als eigene
+        Beiträge erfasst und in keiner dieser Kennzahlen mitgezählt. Die Eingangsberichte einer
+        Befragung sind Reden.</span></li>
       </ol>
     </section>
     <section>
@@ -9115,7 +9329,8 @@ def render_sources_page(
         <h2>Wie die Seite sie nutzt</h2>
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
-          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet.</span></li>
+          <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
+          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet; Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
@@ -9625,7 +9840,7 @@ def render_site(
     # from that would turn a partial list into an "authoritative" one.
     catalog_path = output_dir / "data" / facts.CATALOG_FILENAME
     if authoritative_catalog:
-        write_text_atomic(
+        dip.write_text_atomic(
             catalog_path,
             json.dumps(
                 {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
@@ -10259,12 +10474,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fetch-xml",
+        action="store_true",
+        help=(
+            "Download the Plenarprotokoll XML of every cached report that has none in OUTPUT_DIR/data/xml/ "
+            "(public bundestag.de files, no API key), then exit. --offline --repersist re-reads Reden and "
+            "Beiträge from those files. Reports built before they were kept need this once."
+        ),
+    )
+    parser.add_argument(
         "--repersist",
         action="store_true",
         help=(
             "With --offline: persist every cached report into a fresh SQLite store (roster rows kept) and "
             "swap it in only when all of them persisted, so fixes that derive values at persist time apply "
-            "without a network. Any failure exits 1 and leaves the previous store untouched; a store whose "
+            "without a network. Reden and Beiträge are first re-read from the cached XML in OUTPUT_DIR/data/xml/ "
+            "(see --fetch-xml). Any failure exits 1 and leaves the previous store untouched; a store whose "
             "content would not change (timestamps aside) is left as it is."
         ),
     )
@@ -10447,6 +10672,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
+    if args.fetch_xml and (args.offline or args.repersist or args.backfill_incomplete):
+        parser.error(
+            "--fetch-xml downloads the missing XML files and exits; run --offline --repersist as a second command"
+        )
     if args.offline and args.data_manifest and is_url(args.data_manifest):
         parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
     if args.no_persist and args.data_base_url:
@@ -10634,6 +10863,15 @@ def main() -> int:
         print(f"validated: {args.validate_publication}")
         return 0
 
+    if getattr(args, "fetch_xml", False):
+        output_dir = args.output_dir
+        entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        fetched, failed = fetch_missing_xml(output_dir, entries)
+        print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
+        if not failed:
+            print("fetch-xml: next, run --offline --repersist to re-read Reden and Beiträge from it.", file=sys.stderr)
+        return 1 if failed else 0
+
     # Resolve update-time enrichments before doing any network work.
     root = Path(__file__).resolve().parents[1]
     try:
@@ -10775,6 +11013,7 @@ def main() -> int:
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
             cached_entries = load_existing_detail_entries(output_dir, protocols)
+            warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
@@ -10955,6 +11194,21 @@ def main() -> int:
             # a second time afterwards because mp_lookup only exists now, and it
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
+            # A sitting whose refresh failed keeps its cached report: re-read a kept pre-A1
+            # one from its cached XML, and persist none that is still pre-A1.
+            try:
+                reparse_cached_xml(output_dir, unparsed_reports(entries), profiles_from=entries)
+                if args.no_persist:
+                    warn_unparsed_reports(entries)
+                else:
+                    require_parsed_reports(entries)
+            except CachedReportError as exc:
+                print(
+                    f"ERROR [persist]: {exc}. The previous store is untouched "
+                    "(Dossiers wurden bereits geschrieben, puls.html nicht).",
+                    file=sys.stderr,
+                )
+                return 1
             # A dossier of the requested week can still have failed to build;
             # say so instead of letting the renderer's ValueError escape.
             if reject_unknown_week(

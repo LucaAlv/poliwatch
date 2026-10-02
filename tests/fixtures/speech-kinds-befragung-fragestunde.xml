@@ -1,0 +1,424 @@
+<?xml version='1.0' encoding='utf-8'?>
+<dbtplenarprotokoll wahlperiode="21" sitzung-nr="6">
+  <sitzungsverlauf>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 1">
+      <p klasse="J">Ich rufe auf den Tagesordnungspunkt 1: </p>
+      <p klasse="T_fett">		Befragung der Bundesregierung </p>
+      <p klasse="J">Die Bundesregierung hat für die heutige zweite Befragung in dieser Wahlperiode den Bundesminister des Innern, Alexander Dobrindt, sowie die Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen, Frau Verena Hubertz, benannt, die nun nacheinander die Gelegenheit haben, ihre einleitenden Berichte abzugeben. Hierfür ist eine Gesamtdauer – von beiden addiert – von acht Minuten vorgesehen. Direkt im Anschluss an die Berichte erläutere ich noch einmal in aller Kürze das Verfahren.</p>
+      <p klasse="J">Das Wort hat nun zuerst der Bundesminister des Innern, Herr Alexander Dobrindt. Bitte sehr.</p>
+      <rede id="ID21600100">
+        <p klasse="redner">
+          <a id="r1" />
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Verehrte Kolleginnen und Kollegen! Ich habe gestern im Rahmen einer Pressekonferenz mit dem Präsidenten des BKA, Herrn Münch, die Statistik über politisch motivierte Kriminalität in Deutschland vorgestellt. Ich will in diesem Zusammenhang auf einige Punkte eingehen.</p>
+        <p klasse="J">Die politisch motivierte Kriminalität in Deutschland hat im letzten Jahr einen Höchststand von über 84 000 registrierten Straftaten erreicht. Das ist eine enorme Steigerung zum Vorjahr und auch zu den Jahren davor. Wir stellen fest, dass bei den unterschiedlichen Phänomenbereichen, die identifiziert werden, der Phänomenbereich der politisch motivierten Kriminalität von rechts den wesentlichen Teil ausmacht, mit mehr als der Hälfte der registrierten Straftaten.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="redner">
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="redner">
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="redner">
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Die Frau Bundesministerin Hubertz hat jetzt noch zwei Minuten und zehn Sekunden. Bitte.</p>
+        <kommentar>(Beifall der Abg. Dr. Sandra Detzer [BÜNDNIS 90/DIE GRÜNEN – Zuruf von der SPD: Das ist so dreist!)</kommentar>
+      </rede>
+      <rede id="ID21600200">
+        <p klasse="redner">
+          <a id="r2" />
+          <redner id="11005089">
+            <name>
+              <vorname>Verena</vorname>
+              <nachname>Hubertz</nachname>
+              <rolle>
+                <rolle_lang>Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen</rolle_lang>
+                <rolle_kurz>Bundesministerin BMWSB</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Verena Hubertz, Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen:</p>
+        <p klasse="J_1">Verehrte Frau Präsidentin! Lieber Kollege Dobrindt! Liebe Kolleginnen und Kollegen! Als Start-up-Gründerin bin ich es gewohnt, ein bisschen schneller loszulegen, und fokussiere mich hier auf ein paar frische Denkansätze – auf Pragmatismus und Skalierung –, die wir auch im Baubereich brauchen.</p>
+        <p klasse="J">In meiner Rede zur Regierungserklärung habe ich über drei Ts gesprochen, nämlich Tempo, Technologie und Toleranz.</p>
+      </rede>
+      <name>Präsidentin Julia Klöckner:</name>
+      <p klasse="J_1">Wir bedanken uns. – Die gesamte Bundesregierung hat etwas mehr als acht Minuten Zeit gemeinsam bekommen. Jetzt beginnt der eigentliche Frageteil. Ich bitte, zunächst Fragen zu den beiden Berichten zu den Geschäftsbereichen der anwesenden Mitglieder der Bundesregierung zu stellen. Alle Fraktionen erhalten hierfür einmal das Wort, beginnend mit der größten Oppositionsfraktion. Für die Hauptfrage und die Antwort auf diese Hauptfrage ist jeweils eine Minute vorgesehen. Darauf werden wir sehr genau achten, damit möglichst viele Fragestellerinnen und Fragesteller drankommen.</p>
+      <p klasse="J">Dann ist eine Nachfrage durch den Fragesteller oder die Fragestellerin möglich – nicht durch andere –, und dafür gibt es 30 Sekunden Zeit. Das ist sportlich, aber es geht. Auch für die Antwort haben Sie 30 Sekunden Zeit. Darauf werden wir sehr genau achten. Weitere Nachfragen von anderen Abgeordneten sind in dieser Runde nicht möglich. Ich bitte alle, auch die Mitglieder der Bundesregierung, die vereinbarte Zeit einzuhalten. Wie gesagt, wir wollen möglichst viele Runden und Fragen zulassen.</p>
+      <p klasse="J">Ich bitte Herrn Gottfried Curio von der Fraktion der AfD, nun die erste Hauptfrage zu stellen.</p>
+      <rede id="ID21600300">
+        <p klasse="redner">
+          <a id="r3" />
+          <redner id="11004698">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Gottfried</vorname>
+              <nachname>Curio</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Dr. Gottfried Curio (AfD):</p>
+        <p klasse="J_1">Vielen Dank. – Herr Innenminister, eines der größten innenpolitischen Probleme ist ja die ausufernde Zahl illegaler Migranten, die an der Grenze um Asyl nachsuchen. Nun war die niedrigste Monatszahl an Asylbewerbern letzthin 9 000. Das macht circa 2 000 pro Woche – einerseits. Andererseits wird berichtet, es seien jetzt an der Grenze in einer Woche 32 Asylsuchende zurückgewiesen worden. Man hört aus Berichten, dass die Bundespolizei sich auf Stichproben beschränkt. Es sind also gut 30 von gut 2000 Asylsuchenden – das heißt gut 1 Prozent – zurückgewiesen worden bei knapp 99 Prozent anscheinend erst gar nicht Aufgegriffenen oder nicht Zurückgewiesenen.</p>
+        <p klasse="J">Meine Frage: Dürfen die Bürger in diesen Zahlen die Wende bei der Bewältigung der Asylmigration erkennen, so wie sie die Union versteht? Ist das die Einlösung von Merz’ Wahlversprechen „vom ersten Tag an ausnahmslos alle“?</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Sie sind jetzt nicht dran, sondern der Minister – Bitte, Herr Minister.</p>
+        <kommentar>(Stephan Brandner [AfD]: Da hat die Präsidentin recht! – Martin Hess [AfD]: Wir sind nicht im Kindergarten! Das ist der Deutsche Bundestag, Herr Kollege!)</kommentar>
+      </rede>
+      <rede id="ID21600400">
+        <p klasse="redner">
+          <a id="r4" />
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <p klasse="J_1">Das, was wir gerade beschreiben, ist die Asylwende mit mehreren Maßnahmen.</p>
+        <p klasse="O">Und dazu gehört eben auch die verstärkte Zurückweisung an den Grenzen. Diese verstärkte Zurückweisung passiert, indem wir das eingesetzte Personal der Bundespolizei deutlich erhöhen. Bisher sind rund 11 000 Polizistinnen und Polizisten an der Grenze im Einsatz; wir werden diese Zahl um weitere 3 000 auf 14 000 erhöhen, um noch mehr Zurückweisungen zu ermöglichen. Die Daten, die wir bisher haben, zeigen auch deutlich, dass die Zahl der Zurückweisungen ansteigt, und zwar erheblich. Und zum ersten Mal weisen wir auch Menschen zurück, die Asyl beantragen.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Ich bedanke mich für die zeitliche Präzision. – Und Sie haben die Möglichkeit für eine Nachfrage. Bitte.</p>
+      </rede>
+      <rede id="ID21600500">
+        <p klasse="redner">
+          <a id="r5" />
+          <redner id="11004698">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Gottfried</vorname>
+              <nachname>Curio</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Dr. Gottfried Curio (AfD):</p>
+        <p klasse="J_1">Herr Minister, ausgenommen von einer Zurückweisung sollen ja Angehörige vulnerabler Gruppen sein. Laut BAMF gibt es dazu ein Dutzend Unterkategorien. Wie wird die Zugehörigkeit an der Grenze rechtssicher festgestellt? Etwa Kranke: nur per Selbstauskunft oder per Attest? Von welcher vertrauenswürdigen Behörde? Etwa Minderjährige ohne Pass: per Selbstauskunft oder durch medizinische Altersfeststellung? Geschlechtsspezifisch Verfolgte? Wie geht das? Oder reicht generell schon die Behauptung, krank, minderjährig oder schwanger zu sein?</p>
+      </rede>
+      <rede id="ID21600600">
+        <p klasse="redner">
+          <a id="r6" />
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <p klasse="J_1">Vorausschickend noch mal: Die Polizistinnen und Polizisten, die heute an der Grenze ihren Dienst tun, leisten herausragende Arbeit, teilweise in Zwölfstundenschichten. Ich habe höchstes Vertrauen in diese Polizistinnen und Polizisten. Sie gehen mit der infrage stehenden Weisung des Bundesinnenministers sehr sorgfältig, genau und konsequent um. Deswegen: Weil ich Vertrauen in die Polizisten in Deutschland habe, weiß ich, dass sie an dieser Stelle das Richtige an der Grenze tun.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Danke für die Antwort. – Für die Fraktion der CDU/CSU hat nun der Abgeordnete Herr Josef Oster das Wort.</p>
+        <kommentar>(Stephan Brandner [AfD]: Jetzt kommen die guten Nachrichten!)</kommentar>
+      </rede>
+      <rede id="ID21600700">
+        <p klasse="redner">
+          <a id="r7" />
+          <redner id="11004845">
+            <name>
+              <vorname>Josef</vorname>
+              <nachname>Oster</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Josef Oster (CDU/CSU):</p>
+        <p klasse="J_1">Ich habe eine Frage an den Bundesinnenminister. Herr Minister, Sie haben in der letzten Woche, am 13. Mai, das sogenannte „Königreich Deutschland“ verboten. Als ich davon gelesen habe, war mein erster Gedanke: Da haben wohl einige zu viele alte Schlager gehört; wer wollte nicht schon mal König von Deutschland sein? Aber es ist kein Spaß, sondern es ist eine sehr ernste Sache. Und Sie haben sich dieser dann sehr konsequent angenommen. Was waren Ziel und Zweck dieser Maßnahme, Herr Minister?</p>
+      </rede>
+      <rede id="ID21600800">
+        <p klasse="redner">
+          <a id="r8" />
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <p klasse="J_1">Herr Kollege Oster, herzlichen Dank. – Die Reichsbürgervereinigung „Königreich Deutschland“ ist eine Vereinigung, die vom Umsturz geträumt hat, die einen Gegenstaat aufbauen wollte, die sich gegen die freiheitliche demokratische Grundordnung Deutschlands gestellt hat und nach eigenen Angaben 6 000 Anhänger hat. Nach unserer Einschätzung sind es erheblich weniger; aber um die 1 000 werden es wohl gewesen sein. Diese kriminelle Vereinigung war nach ihrer Organisation darauf angelegt, ihre Anhänger auf betrügerische Art und Weise um ihr Geld zu bringen. Es gab beispielsweise eine Reichsbank, in der man sein Geld anlegen konnte, und es gab auch eine Reichsversicherungsanstalt, die angebliche Versicherungen an die sogenannten Anhänger verkauft hat.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Danke für die Antwort.</p>
+        <p klasse="redner">
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Herr Oster, Sie haben die Möglichkeit für eine Nachfrage.</p>
+      </rede>
+      <rede id="ID21600900">
+        <p klasse="redner">
+          <a id="r9" />
+          <redner id="11004845">
+            <name>
+              <vorname>Josef</vorname>
+              <nachname>Oster</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Josef Oster (CDU/CSU):</p>
+        <p klasse="J_1">Sie haben in Ihrem Eingangsstatement die gestern von Ihnen vorgestellte Statistik der politisch motivierten Kriminalität erwähnt, die eine deutliche Zunahme dieser Kriminalität ausweist. Das ist besorgniserregend. Sie nehmen das sehr ernst. Was planen Sie, was plant Ihr Ministerium angesichts der Zunahme dieser Kriminalität?</p>
+      </rede>
+      <rede id="ID21601000">
+        <p klasse="redner">
+          <a id="r10" />
+          <redner id="11003516">
+            <name>
+              <vorname>Alexander</vorname>
+              <nachname>Dobrindt</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister des Innern</rolle_lang>
+                <rolle_kurz>Bundesminister BMI</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Alexander Dobrindt, Bundesminister des Innern:</p>
+        <p klasse="J_1">Wir haben es mit einer sehr vielfältigen Form der Kriminalität zu tun. Es sind leichte bis sehr schwere Straftaten zu verzeichnen. Und deswegen muss man auch mit verschiedenen Maßnahmen darauf reagieren. Uns geht es um eine Doppelstrategie.</p>
+        <p klasse="J">Wir wollen zum einen die Polizei mittels neuer Ermittlungsmöglichkeiten stärken, um dagegen vorzugehen. Zum anderen braucht es schlichtweg auch Strafverstärkungen an dieser Stelle. Wir müssen mit allem, was uns zur Verfügung steht, und mit maximaler Härte gegen Personen vorgehen, die sich schlichtweg gegen diesen Staat stellen. Dazu gehören auch alle neuen Möglichkeiten im Digitalbereich.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Danke schön. 30 Sekunden einzuhalten, ist anspruchsvoll. – Jetzt hat für die Fraktion Bündnis 90/Die Grünen Frau Abgeordnete Hanna Steinmüller das Wort.</p>
+      </rede>
+      <rede id="ID21601100">
+        <p klasse="redner">
+          <a id="r11" />
+          <redner id="11005230">
+            <name>
+              <vorname>Hanna</vorname>
+              <nachname>Steinmüller</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Hanna Steinmüller (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Danke, Frau Präsidentin. – Frau Ministerin Hubertz, wir hätten gern mehr von Ihnen gehört. Ich hoffe, das war jetzt kein schlechtes Omen für die Zusammenarbeit in der neuen Bundesregierung.</p>
+        <p klasse="J">Sie haben gerade das Thema „Bauen, bauen, bauen“ angesprochen. Doch während die Bagger rollen, steigen auch die Mieten. Das belastet vor allen Dingen einkommensschwache Haushalte. Immer mehr Menschen müssen einen immer größeren Beitrag ihres Haushaltseinkommens für die Miete aufwenden. Deswegen ist meine Frage an Sie: Was tun Sie neben dem Neubau gerade für einkommensschwache Haushalte, dass die Mieten nicht mehr so stark steigen, dass es wieder mehr bezahlbaren Wohnraum gibt und nicht immer mehr Menschen Angst vor Verdrängung haben müssen?</p>
+      </rede>
+      <rede id="ID21601200">
+        <p klasse="redner">
+          <a id="r12" />
+          <redner id="11005089">
+            <name>
+              <vorname>Verena</vorname>
+              <nachname>Hubertz</nachname>
+              <rolle>
+                <rolle_lang>Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen</rolle_lang>
+                <rolle_kurz>Bundesministerin BMWSB</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Verena Hubertz, Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen:</p>
+        <p klasse="J_1">Kollegin Steinmüller, vielen Dank für die Frage. – Bauen bedeutet ja nicht immer nur Neubau; es kann auch Umbau bedeuten. Leerstehende Büro- und Gewerbeflächen können zu Wohnraum umgebaut werden. Neubau wollen wir auch kostengünstiger hinbekommen. Penthäuser haben wir genug. Wir brauchen bezahlbaren Wohnraum. Aber natürlich müssen wir uns auch den Markt anschauen. Es braucht neue Antworten. Zum Beispiel haben wir die neue Wohngemeinnützigkeit schon in der letzten Legislatur gemeinsam vorangetrieben. Daran können wir anknüpfen.</p>
+        <p klasse="J">Das Thema Mietrecht ist ein großer Brocken. Neben der Mietpreisbremse ist aber der Markt auch ein bisschen differenzierter anzuschauen. Es wird gerade in Berlin viel Humbug betrieben – Ihr Wahlkreis ist davon betroffen –, wenn zum Beispiel jemand eine Couch in die Wohnung stellt und sie dann als möbliert für 30 Euro pro Quadratmeter vermietet. Diesen Missbrauch und Wucher müssen wir verhindern. Meine Kollegin, Justizministerin Stefanie Hubig, hat das alles schon in petto. Sie arbeitet daran mit Hochdruck. Da müssen wir den Instrumentenkasten in Gänze öffnen.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Sie haben die Chance für eine 30-sekündliche Nachfrage.</p>
+      </rede>
+      <rede id="ID21601300">
+        <p klasse="redner">
+          <a id="r13" />
+          <redner id="11005230">
+            <name>
+              <vorname>Hanna</vorname>
+              <nachname>Steinmüller</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Hanna Steinmüller (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Wir werden weiter darauf achten, dass im Mietrecht etwas passiert. Dafür sind Sie aber leider nicht zuständig. Von daher hake ich bei der neuen Wohngemeinnützigkeit nach, die Sie gerade erwähnt haben. In Ihrem Koalitionsvertrag steht, dass Investitionszuschüsse kommen sollen. Können Sie eine konkrete Aussage machen, wann sie kommen und in welcher Höhe, um gemeinnützigen Wohnungsunternehmen auch Planungssicherheit zu geben?</p>
+      </rede>
+      <rede id="ID21601400">
+        <p klasse="redner">
+          <a id="r14" />
+          <redner id="11005089">
+            <name>
+              <vorname>Verena</vorname>
+              <nachname>Hubertz</nachname>
+              <rolle>
+                <rolle_lang>Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen</rolle_lang>
+                <rolle_kurz>Bundesministerin BMWSB</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Verena Hubertz, Bundesministerin für Wohnen, Stadtentwicklung und Bauwesen:</p>
+        <p klasse="J_1">Die Investitionszuschüsse sind ein ganz zentraler Baustein, damit Bauen einfach auch attraktiv ist. Wir sind gerade in zwei sehr sportlichen Verfahren für den Haushalt 2025 und den Haushalt 2026. Die Gespräche dazu darf ich noch nicht vorwegnehmen. Aber ich habe das ganz oben auf meiner Liste. Damit wollen wir so schnell wie möglich loslegen. Wir kommen gern zu weiteren Beratungen in den Ausschuss und können uns dort alle miteinander noch mal konkret darüber unterhalten.</p>
+        <name>Präsidentin Julia Klöckner:</name>
+        <p klasse="J_1">Dann hat für die Fraktion der SPD Frau Abgeordnete Angelika Glöckner das Wort. Bitte.</p>
+      </rede>
+      <name>Präsidentin Julia Klöckner:</name>
+      <p klasse="J_1">Danke schön. – Ich muss etwas rigoroser sein. Sonst verschiebt sich alles nach hinten, und die 30-Sekunden-Regel ist dahin.</p>
+      <p klasse="J">Nach Abschluss dieser ersten Runde kommen wir zu Fragen zu den vorangegangenen Kabinettssitzungen, zu weiteren Geschäftsbereichen sowie zu allgemeinen Fragen. Die Regeln gleichen denen aus der ersten Runde. Es gibt jetzt aber zusätzlich die Möglichkeit, dass weitere Kolleginnen und Kollegen eine Nachfrage à 30 Sekunden zu einer aufgerufenen Hauptfrage stellen, sofern sich diese auf den gleichen Themenkomplex bezieht. Das ist wichtig.</p>
+      <p klasse="J">Das Wort hat nun von der AfD-Fraktion Herr Otto Strauß.</p>
+      <name>Präsidentin Julia Klöckner:</name>
+      <p klasse="J_1">Ich will das hier mal sagen: Auch wenn es für Unterhaltung sorgt, die einzelnen Fragen, die gestellt werden: Es gibt klare Regelungen, dass sich Nachfragen auf die Hauptfrage beziehen sollen.</p>
+      <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+      <p klasse="J">Herr Minister kann selbst entscheiden, ob er darauf antwortet.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Ich darf Sie darauf hinweisen: Das ist keine Nachfrage zu der Frage des Abgeordneten Seidler. Er hat konkret nach der Etatisierung von Minderheitenfragen gefragt. Deshalb müssen Sie nicht antworten, Herr Minister. – Vielleicht finden wir eine Gelegenheit, diese Frage an anderer Stelle zu stellen.</p>
+      <p klasse="J">Ich komme zur nächsten Hauptfrage. Diese obliegt Marc Henrichmann von der Union.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Vielen Dank, Herr Minister. – Die Befragung der Bundesregierung ist zeitlich zu ihrem Ende gekommen. Ich danke allen Mitgliedern der Bundesregierung, speziell der Bundesministerin und dem Bundesminister, die jetzt Rede und Antwort gestanden haben.</p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 2">
+      <p klasse="J">Ich rufe auf den Tagesordnungspunkt 2: </p>
+      <p klasse="T_fett">		Fragestunde </p>
+      <p klasse="T_Drs">		Drucksache <a href="https://dserver.bundestag.de/btd/21/001/2100167.pdf">21/167</a>
+      </p>
+      <p klasse="J">Die mündlichen Fragen auf Drucksache 21/167 werden in der üblichen Reihenfolge aufgerufen.</p>
+      <p klasse="J">Wir beginnen mit dem Geschäftsbereich des Bundesministeriums des Innern. Zur Beantwortung steht dankenswerterweise die Parlamentarische Staatssekretärin Frau Daniela Ludwig bereit, die noch ihren Platz einnehmen muss, sobald der Minister diesen geräumt hat.</p>
+      <p klasse="J">Wenn Sie so weit sind, Frau Staatssekretärin, rufe ich die Frage 1 des Abgeordneten Dr. Rainer Kraft von der AfD auf: </p>
+      <p klasse="p">Hat die Bundesregierung in Gestalt des Bundesministeriums des Innern bereits Untersuchungen wegen Verletzung des Dienstgeheimnisses aufgenommen oder bereits Erkenntnisse darüber, welche Person/Personen das Verfassungsschutzgutachten mit Bezug zur AfD an die Presse weitergegeben hat bzw. haben (<a href="http://www.spiegel.de/politik/deutschland/afd-gutachten-des-verfassungsschutzes-das-steht-drin-die-grosse-spiegel-auswertung-a-47a24040-5bdb-405d-9906-f7c23c6bcb4d">www.spiegel.de/politik/deutschland/afd-gutachten-des-verfassungsschutzes-das-steht-drin-die-grosse-spiegel-auswertung-a-47a24040-5bdb-405d-9906-f7c23c6bcb4d</a>)?</p>
+      <p klasse="redner">
+        <redner id="11003613">
+          <name>
+            <vorname>Daniela</vorname>
+            <nachname>Ludwig</nachname>
+            <rolle>
+              <rolle_lang>Parl. Staatssekretärin beim Bundesminister des Innern</rolle_lang>
+              <rolle_kurz>Parl. Staatssekretärin BMI</rolle_kurz>
+            </rolle>
+          </name>
+        </redner>Daniela Ludwig, Parl. Staatssekretärin beim Bundesminister des Innern:</p>
+      <p klasse="J_1">Herr Präsident, vielen herzlichen Dank. – Herr Kollege, zu Ihrer Frage: Wer in berechtigter Weise Zugang zu einer Verschlusssache erlangt, ist gemäß § 4 Absatz 3 des Sicherheitsüberprüfungsgesetzes selbstverständlich zur Verschwiegenheit verpflichtet. Wird bekannt oder besteht der Verdacht, dass diese Vorschrift oder andere Geheimschutzvorschriften verletzt wurden, stellen die Geheimschutzbeauftragten der betroffenen Behörden gemäß § 64 Absatz 1 der Verschlusssachenanweisung des Bundes den Sachverhalt fest und treffen danach erforderliche Maßnahmen.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Jetzt bitte Ihre erste Nachfrage.</p>
+      <p klasse="redner">
+        <redner id="11004792">
+          <name>
+            <titel>Dr.</titel>
+            <vorname>Rainer</vorname>
+            <nachname>Kraft</nachname>
+            <fraktion>AfD</fraktion>
+          </name>
+        </redner>Dr. Rainer Kraft (AfD):</p>
+      <p klasse="J_1">Vielen Dank. – Frau Staatssekretärin, Sie haben jetzt nicht beantwortet, ob das Ministerium bereits Untersuchungen eingeleitet hat. Wahrscheinlich werden Sie sagen, dass auch das geheim ist. Aber die Frage ist: Würden Sie sagen, dass solch ein illoyales Verhalten, das zur Preisgabe von Dienstgeheimnissen führt, ein reguläres Vorgehen eines Bundesamtes ist? Und da Sie erst kurz im Amt sind: Würden Sie sagen, dass das BMI das von der Vorgängerregierung geerbt hat?</p>
+      <p klasse="redner">
+        <redner id="11003613">
+          <name>
+            <vorname>Daniela</vorname>
+            <nachname>Ludwig</nachname>
+            <rolle>
+              <rolle_lang>Parl. Staatssekretärin beim Bundesminister des Innern</rolle_lang>
+              <rolle_kurz>Parl. Staatssekretärin BMI</rolle_kurz>
+            </rolle>
+          </name>
+        </redner>Daniela Ludwig, Parl. Staatssekretärin beim Bundesminister des Innern:</p>
+      <p klasse="J_1">Zunächst einmal sind natürlich Maßnahmen ergriffen worden, um festzustellen, wo der Geheimnisverrat stattgefunden hat. Diese erforderlichen Maßnahmen sind angelaufen, wo sie notwendig sind. Dieser Überprüfung der Beschäftigten möchte ich nicht vorgreifen.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Ihre zweite Nachfrage, bitte.</p>
+      <p klasse="redner">
+        <redner id="11004792">
+          <name>
+            <titel>Dr.</titel>
+            <vorname>Rainer</vorname>
+            <nachname>Kraft</nachname>
+            <fraktion>AfD</fraktion>
+          </name>
+        </redner>Dr. Rainer Kraft (AfD):</p>
+      <p klasse="J_1">Im aktuellen Fall verständlich. Deswegen die Frage: Wie viele Verstöße wegen Verletzung des Dienstgeheimnisses hat es in den vergangenen vier Jahren im Haus gegeben, und wie viele davon sind vom Dienstherrn, vom BMI, geahndet worden und haben zu einer disziplinarischen Maßnahme geführt?</p>
+      <p klasse="redner">
+        <redner id="11003613">
+          <name>
+            <vorname>Daniela</vorname>
+            <nachname>Ludwig</nachname>
+            <rolle>
+              <rolle_lang>Parl. Staatssekretärin beim Bundesminister des Innern</rolle_lang>
+              <rolle_kurz>Parl. Staatssekretärin BMI</rolle_kurz>
+            </rolle>
+          </name>
+        </redner>Daniela Ludwig, Parl. Staatssekretärin beim Bundesminister des Innern:</p>
+      <p klasse="J_1">Da ich dem Haus erst seit zwei Wochen angehöre, kann ich diese Frage leider nicht beantworten.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Die nächste Nachfrage hat der Kollege Karl Bär von Bündnis 90/Die Grünen.</p>
+      <p klasse="redner">
+        <redner id="11005017">
+          <name>
+            <vorname>Karl</vorname>
+            <nachname>Bär</nachname>
+            <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+          </name>
+        </redner>Karl Bär (BÜNDNIS 90/DIE GRÜNEN):</p>
+      <p klasse="J_1">Vielen Dank, Herr Vizepräsident. – Frau Ludwig, würden Sie davon ausgehen, dass, wenn öffentlich bekannt wird – darauf hat die Frage des Kollegen Kraft ja gezielt –, wer dieses Gutachten geleakt hat, diese Person in Gefahr gerät?</p>
+      <kommentar>(Stephan Brandner [AfD]: Dienstrechtlich!)</kommentar>
+      <p klasse="redner">
+        <redner id="11003613">
+          <name>
+            <vorname>Daniela</vorname>
+            <nachname>Ludwig</nachname>
+            <rolle>
+              <rolle_lang>Parl. Staatssekretärin beim Bundesminister des Innern</rolle_lang>
+              <rolle_kurz>Parl. Staatssekretärin BMI</rolle_kurz>
+            </rolle>
+          </name>
+        </redner>Daniela Ludwig, Parl. Staatssekretärin beim Bundesminister des Innern:</p>
+      <p klasse="J_1">Ich sage es noch mal: Die Überprüfungen sind angelaufen, und ich möchte diesen aus verständlichen Gründen nicht vorgreifen. Dafür bitte ich um Verständnis.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J">Wir kommen zur Frage 2 des Abgeordneten Bernd Schattner von der AfD-Fraktion: </p>
+      <p klasse="p">Hat die Bundesregierung Kenntnis darüber, wie momentan die Grenzkontrollen verlaufen?</p>
+      <p klasse="J">Frau Staatssekretärin, bitte.</p>
+      <p klasse="redner">
+        <redner id="11003613">
+          <name>
+            <vorname>Daniela</vorname>
+            <nachname>Ludwig</nachname>
+            <rolle>
+              <rolle_lang>Parl. Staatssekretärin beim Bundesminister des Innern</rolle_lang>
+              <rolle_kurz>Parl. Staatssekretärin BMI</rolle_kurz>
+            </rolle>
+          </name>
+        </redner>Daniela Ludwig, Parl. Staatssekretärin beim Bundesminister des Innern:</p>
+      <p klasse="J_1">Herr Kollege Schattner, vielen Dank für die Frage. – Seit der vorübergehenden Einführung der Binnengrenzkontrollen am 16. September 2024 bis zum 20. Mai 2025 hat die Bundespolizei an den deutschen Landgrenzen – das sind immer ungefähre Zahlen – 36 000 unerlaubte Einreisen, 4 800 Asylbegehren, 930 Schleuser, 22 600 Zurückweisungen und 800 aufenthaltsbeendende Maßnahmen festgestellt.</p>
+      <p klasse="J">Seit Beginn der intensiveren Binnengrenzkontrollen am 8. Mai 2025 bis zum 20. Mai 2025 stellte die Bundespolizei in diesem Rahmen 2 011 unerlaubte Einreisen fest. 1 410 Personen wurden an allen deutschen Landgrenzen zurückgewiesen. Davon erfolgten 72 Zurückweisungen bei Asylgesuch gemäß § 18 Absatz 2 Asylgesetz in Verbindung mit bilateralen Verträgen und Artikel 72 AEUV.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+      <p klasse="J_1">Ihre erste Nachfrage.</p>
+      <p klasse="redner">
+        <redner id="11005203">
+          <name>
+            <vorname>Bernd</vorname>
+            <nachname>Schattner</nachname>
+            <fraktion>AfD</fraktion>
+          </name>
+        </redner>Bernd Schattner (AfD):</p>
+      <p klasse="J_1">Vielen Dank, Herr Vizepräsident. – Frau Staatssekretärin, am 13. November 2017 wurde von der AfD-Bundestagsfraktion durch unseren heutigen Ehrenvorsitzenden Dr. Alexander Gauland der Antrag mit dem Titel „Umfassende Grenzkontrollen sofort einführen – Zurückweisung bei unberechtigtem Grenzübertritt“ eingebracht und natürlich von der damaligen GroKo unter Merkel abgelehnt.</p>
+      <p klasse="J">Rechnet man nur mit den durchschnittlichen potenziellen Zurückweisungen an den deutschen Grenzen, die die Polizei seit letzter Woche durchführt, wären das seit 2015 bis heute potenziell 364 000 Zurückweisungen illegaler Einwanderer, die jetzt die deutschen Sozialkassen massiv belasten. Dabei sind die deutlich höheren Zahlen aus 2015 und 2016 noch nicht mal berücksichtigt. Derzeit entstehen dadurch pro Jahr Kosten von rund 17,5 Milliarden Euro für illegal Eingereiste</p>
+      <kommentar>(Frauke Heiligenstadt [SPD]: Was sind denn das für selbsterdachte Zahlen!)</kommentar>
+      <p klasse="O">in den deutschen Sozialkassen, die uns diese von der AfD geforderten Grenzkontrollen erspart hätten.</p>
+      <p klasse="J">Wann und wie möchte die Bundesregierung anfangen, die aktuell über 1 Million abgelehnte Asylbewerber in ihre Heimatländer zu remigrieren? Wir haben ja nicht nur das Problem der reihenweise illegalen Einreisen. Wir haben auch das Problem, dass wir noch Millionen Menschen in Deutschland haben, die hier kein Aufenthaltsrecht haben.</p>
+      <name>Vizepräsident Omid Nouripour:</name>
+    </tagesordnungspunkt>
+  </sitzungsverlauf>
+</dbtplenarprotokoll>

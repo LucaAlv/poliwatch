@@ -16,11 +16,13 @@ import persist_dip_pulse_store as store
 import person_registry as registry
 import render_dip_pulse_html as render
 import facts
+import speech_kinds
 from stable_ids import stable_key
 
 
 def report(pid='s1', names=('Ada Example',)):
     return {'protocol': {'id':pid,'dokumentnummer':f'21/{pid[-1]}','datum':'2026-06-10'},
+            'validation_summary':{'speech_kinds_version':speech_kinds.VERSION},
             'agenda_items':[{'index':1,'heading':'Debatte','xml_speakers':[
                 {'rede_id':f'{pid}-r{index}', 'speaker':{'display_name':name,'xml_redner_id':str(index+1),'fraktion':'SPD'},
                  'char_count':20,'text':'Ein geprüfter Text.'} for index,name in enumerate(names)]}]}

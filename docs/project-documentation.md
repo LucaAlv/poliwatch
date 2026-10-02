@@ -26,6 +26,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- preview_dip_pulse_site.sh
     |-- build_dip_pulse_site.py
     |-- validate_dip_protocol.py
+    |-- speech_kinds.py
     |-- render_dip_pulse_html.py
     |-- persist_dip_pulse_store.py   # library; run as a script it refuses
     |-- person_registry.py
@@ -153,6 +154,7 @@ Important generated files:
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
+| `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<person_id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation; a retired or guess-merged person key is a redirect page to the surviving person (see [docs/stable-ids.md](stable-ids.md)) |
 | `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter |
@@ -162,7 +164,7 @@ Important generated files:
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 19 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 20 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -218,7 +220,7 @@ Protocol extraction and enrichment engine. Given a DIP protocol id or document n
 - loads `.env.local` without overriding already-exported variables,
 - fetches the official DIP Plenarprotokoll metadata,
 - downloads the official XML transcript,
-- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen,
+- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen; `scripts/speech_kinds.py` decides what in the XML is a Rede and what is a Beitrag of another kind (Kurzintervention, Erwiderung, Frage or Antwort of a Befragung or Fragestunde), so only Reden land in `xml_speakers` and the rest in `xml_contributions`, compared per Sitzung with DIP's Kurzintervention and Erwiderung counts (a difference is a warning); the report's `validation_summary.speech_kinds_version` marks the counting rule it was parsed under,
 - fetches related DIP `/vorgangsposition`, `/aktivitaet`, and `/person` records,
 - scans Bundestag roll-call vote pages, first matches by same-day protocol plus Drucksachennummer, then tries an unambiguous title match against TOP headings and linked Vorgang titles; a fetched vote with no unique TOP remains attached to the Sitzung,
 - scrapes each vote's own detail page for bundestag.de's stated Beschluss result (falling back to a yes/no majority when none is stated) and for a link to that vote's XLSX Namensliste export on a separate Namenslisten list page, matched by date and normalized title,
@@ -246,7 +248,7 @@ The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is stick
 
 ### `scripts/persist_dip_pulse_store.py`
 
-SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches, votes, vote fractions, and individual vote members.
+SQLite persistence layer. It turns a validation report JSON into a linked entity graph with tables for parties, MPs, protocols, agenda items, proceedings, documents, speeches (Reden only), contributions (Beiträge), votes, vote fractions, and individual vote members.
 
 MP source records are bound to persons by `person_registry` (`bind` per occurrence, `reconcile` per build): merges that rest on a shared DIP, Redner-ID or abgeordnetenwatch id and reviewed corrections are durable, guarded name+party matches are recomputed on every reconcile; see [stable-ids.md](stable-ids.md). This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
 
@@ -399,6 +401,8 @@ Common options:
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
+| `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
+| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), after re-reading Reden and Beiträge of each report from its cached XML in `OUTPUT_DIR/data/xml/` (a report with none keeps what it holds, with a warning). The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week and prints it as "Auswertung vom" |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
@@ -424,7 +428,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 23 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `2`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 24 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `3`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -612,7 +616,8 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `proceeding_positions`
 - `documents`
 - `agenda_item_documents`
-- `speeches`
+- `speeches` (Reden only)
+- `contributions` (Beiträge that are no Rede: Kurzintervention, Erwiderung, Frage and Antwort of a Befragung or Fragestunde, typed by `kind`; classified by `scripts/speech_kinds.py`)
 - `votes`
 - `agenda_item_votes`
 - `vote_documents`

@@ -156,6 +156,10 @@ _SITZUNG_END = "json_extract(p.xml_header_json, '$.sitzung_end')"
 # observes how many rows the period has). ``coverage`` names the completeness
 # domain a period must be complete for; ``depends_on`` the build component that
 # must exist for the metric to run at all; ``receipt`` the fact_sources shape.
+#
+# The metrics over speeches are at version 2 since A1 (2026-09-30): ``speeches``
+# holds Reden only, so Kurzinterventionen, Erwiderungen and the Fragen and
+# Antworten of a Befragung no longer count as Reden and their inputs changed.
 REGISTRY: tuple[dict[str, Any], ...] = (
     {
         "id": "knappste-abstimmung",
@@ -251,7 +255,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "laengste-debatte",
-        "version": 1,
+        "version": 2,
         "title": "Die längste Debatte der Woche",
         "unit": "Zeichen",
         "direction": "max",
@@ -286,7 +290,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "laengste-rede",
-        "version": 1,
+        "version": 2,
         "title": "Die längste Rede der Woche",
         "unit": "Zeichen",
         "direction": "max",
@@ -344,7 +348,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "erste-reden",
-        "version": 1,
+        "version": 2,
         "title": "Die meisten ersten Reden der Woche",
         "unit": "Abgeordnete mit ihrer ersten Rede",
         "direction": "max",
@@ -417,7 +421,7 @@ REGISTRY: tuple[dict[str, Any], ...] = (
 MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
     {
         "id": "aktivste-abgeordnete",
-        "version": 1,
+        "version": 2,
         "title": "Die aktivste Abgeordnete des Monats",
         "unit": "Reden",
         "direction": "max",
@@ -458,7 +462,7 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "meistdiskutierter-vorgang",
-        "version": 1,
+        "version": 2,
         "title": "Der meistdiskutierte Vorgang des Monats",
         "unit": "Reden",
         "direction": "max",

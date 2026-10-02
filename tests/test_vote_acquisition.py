@@ -123,8 +123,10 @@ class ScanEndTests(unittest.TestCase):
 
 
 class FakeClient:
+    activities: list[dict[str, str]] = []
+
     def list_all(self, path: str, params: dict[str, str]) -> list[dict[str, str]]:
-        return []
+        return list(self.activities) if path == "/aktivitaet" else []
 
 
 def agenda(*numbers: str) -> dict:
@@ -135,8 +137,10 @@ def agenda(*numbers: str) -> dict:
                 "top_id": f"TOP {index}",
                 "heading": f"Punkt {index}",
                 "page_range": None,
+                "question_formats": [],
                 "drucksachen": [{"dokumentnummer": number}],
                 "speeches": [],
+                "contributions": [],
             }
             for index, number in enumerate(numbers, start=1)
         ]
@@ -148,13 +152,15 @@ def fake_detail(candidate: dict) -> dict:
 
 
 class EnrichWithApiVoteStateTests(unittest.TestCase):
-    def enrich(self, pages: list[str], date: str, numbers: tuple[str, ...], scan_pages: int = 30):
+    def enrich(self, pages: list[str], date: str, numbers: tuple[str, ...], scan_pages: int = 30, activities=()):
         stderr = io.StringIO()
+        client = FakeClient()
+        client.activities = list(activities)
         with mock.patch.object(dip, "fetch_html", side_effect=paged(pages)), mock.patch.object(
             dip, "fetch_roll_call_vote_detail", side_effect=fake_detail
         ), mock.patch("sys.stderr", stderr):
             enrichment = dip.enrich_with_api(
-                FakeClient(),  # type: ignore[arg-type]
+                client,  # type: ignore[arg-type]
                 {"id": "p1", "dokumentnummer": "21/90", "datum": date},
                 agenda(*numbers),
                 person_limit=0,
@@ -173,6 +179,18 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         self.assertTrue(votes["acquired_at"])
         self.assertEqual(votes["failure_reasons"], [])
         self.assertEqual(enrichment["api_totals"]["roll_call_scan_end"], "date_passed")
+
+    # Value: protects=DIP activities of art Kurzintervention are cross-checked against the XML count and a gap surfaces as warning and mismatch record; fails_when=enrich_with_api stops running dip_mismatches or drops its warning; why_new=the mismatch was only tested offline via reparse; seam=none
+    def test_a_dip_kurzintervention_the_xml_lacks_is_a_warning_and_a_mismatch(self) -> None:
+        pages = [list_page(("1", "05.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
+        activities = [{"id": "a1", "aktivitaetsart": "Kurzintervention"}]
+        enrichment, _ = self.enrich(pages, "2026-07-01", ("21/9",), activities=activities)
+        self.assertIn("Die XML zählt 0 Kurzinterventionen, DIP 1.", enrichment["warnings"])
+        # build_report copies api_totals into the report's validation_summary.
+        self.assertEqual(
+            enrichment["api_totals"]["contribution_dip_mismatches"],
+            [{"kind": "kurzintervention", "xml": 0, "dip": 1}],
+        )
 
     def test_matched_votes_make_a_complete_acquisition(self) -> None:
         pages = [list_page(("1", "01.07.2026", "21/1"), ("2", "30.06.2026", "21/2"))]
@@ -326,7 +344,7 @@ class EnrichWithApiVoteStateTests(unittest.TestCase):
         # enrich_with_api always reports its own state; a caller that gets none
         # back must not turn "requested" into "complete".
         protocol = {"id": "5805", "dokumentnummer": "21/87", "fundstelle": {"xml_url": "https://example.test/p.xml"}}
-        args = mock.Mock(api_key="k", sleep=0, person_limit=0, vote_scan_pages=30, roll_call_list_id=None, limit_tops=None)
+        args = mock.Mock(api_key="k", sleep=0, person_limit=0, vote_scan_pages=30, roll_call_list_id=None, limit_tops=None, xml_cache_path=None)
         enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}}
         with mock.patch.object(dip, "fetch_text", return_value="<xml />"), mock.patch.object(
             dip, "parse_protocol_xml", return_value={"xml_protocol": {}, "agenda_items": []}

@@ -22,6 +22,7 @@ import derive
 from stable_ids import speech_occurrence_id, speech_rede_id
 import person_registry as registry
 import publication_state as publication
+import speech_kinds
 from features import (
     NAV_ITEMS,
     Selection,
@@ -1167,17 +1168,10 @@ RADAR_RECEIPTS = 4
 RADAR_SIBLINGS = 3
 RADAR_TOOLTIP_TITLES = 10
 
-# Question formats stay in the week's speech total but are never ranked as a
-# topic: every question and answer counts as a Rede, so "Befragung der
-# Bundesregierung" alone would top 74 of the 95 sitting weeks in the archive
-# (measured 2026-09-14) and say nothing about the week's subjects. Prefix match on
-# the whitespace-normalised heading; the cache also holds "Befragung der
-# Bundesregierung (einleitend BMJ)" and Antraege with "Befragung" mid-string.
-QUESTION_FORMAT_PREFIXES = (
-    "Befragung der Bundesregierung",
-    "Fragestunde",
-    "Regierungsbefragung",
-)
+# Question formats are never ranked as a topic: "Befragung der Bundesregierung"
+# alone would top most sitting weeks and say nothing about the week's subjects.
+# Their Fragen and Antworten are Beiträge, not Reden (speech_kinds.py); only the
+# opening reports of a Befragung are Reden and stay in the week's speech total.
 
 # Short fraktion labels for the radar legend only; the raw string stays in every
 # title attribute and in render_share_shift.
@@ -1587,9 +1581,47 @@ def format_count(count: int, singular: str, plural: str) -> str:
 
 
 def is_question_format(item: dict[str, Any]) -> bool:
-    """Befragung / Fragestunde / Regierungsbefragung: counted, never ranked."""
-    heading = " ".join(str(item.get("heading") or "").split())
-    return heading.startswith(QUESTION_FORMAT_PREFIXES)
+    """Befragung / Fragestunde / Regierungsbefragung: never ranked. The parser
+    decides (speech_kinds.top_format) so a continuation with no heading counts;
+    a report parsed before A1 has no such key and falls back to its heading."""
+    if "question_formats" in item:
+        return bool(item["question_formats"])
+    return bool(speech_kinds.heading_formats(item.get("heading")))
+
+
+def render_top_contributions(item: dict[str, Any]) -> str:
+    """The Beiträge of one agenda item by kind: what was said there that is no
+    Rede. Empty when there are none."""
+    counts = contribution_counts(item)
+    if not counts:
+        return ""
+    parts = [
+        f"{format_int(counts[kind])} {speech_kinds.KIND_LABELS[kind][0 if counts[kind] == 1 else 1]}"
+        for kind in speech_kinds.CONTRIBUTION_KINDS
+        if counts.get(kind)
+    ]
+    return (
+        '<p class="top-contributions">Weitere Beiträge, keine Reden und nicht mitgezählt: '
+        f"{esc(', '.join(parts))}.</p>"
+    )
+
+
+def contribution_counts(item: dict[str, Any]) -> dict[str, int]:
+    """The agenda item's Beiträge per kind."""
+    return speech_kinds.kind_counts(item.get("xml_contributions") or [])
+
+
+def format_question_counts(speech_count: int, counts: dict[str, int]) -> str:
+    """"2 Reden, 61 Fragen, 60 Antworten": the Reden of a question format and
+    its Beiträge; a zero is left out."""
+    questions = counts.get(speech_kinds.BEFRAGUNG_FRAGE, 0) + counts.get(speech_kinds.FRAGESTUNDE_FRAGE, 0)
+    answers = counts.get(speech_kinds.BEFRAGUNG_ANTWORT, 0) + counts.get(speech_kinds.FRAGESTUNDE_ANTWORT, 0)
+    parts = [
+        format_count(n, singular, plural)
+        for n, singular, plural in ((speech_count, "Rede", "Reden"), (questions, "Frage", "Fragen"), (answers, "Antwort", "Antworten"))
+        if n
+    ]
+    return ", ".join(parts)
 
 
 def safe_href(url: Any) -> str | None:
@@ -1903,9 +1935,9 @@ def week_topic_rows(
     the tied rows count towards `remaining`. When no full rank exists (the very
     first rows already tie beyond the cap) the first `rank_limit` rows are shown.
 
-    Returns {"rows", "formats", "remaining"}: `formats` are the excluded,
-    speech-bearing question formats as {heading, speech_count, share, href,
-    datum, index}; `remaining` counts the speech-bearing, unranked, non-format
+    Returns {"rows", "formats", "remaining"}: `formats` are the excluded
+    question formats that hold Reden or Beiträge as {heading, speech_count,
+    contribution_counts, share, href, datum, index}; `remaining` counts the speech-bearing, unranked, non-format
     items per sitting as (dokumentnummer, page_path, n).
     """
     candidates: list[dict[str, Any]] = []
@@ -1916,13 +1948,16 @@ def week_topic_rows(
         dossier_href = dossier_href_for(entry)
         for item in report.get("agenda_items") or []:
             speech_count = int(item_stats(item)["speech_count"])
-            if not speech_count:
+            counts = contribution_counts(item)
+            question_format = is_question_format(item)
+            if not speech_count and not (question_format and counts):
                 continue
-            if is_question_format(item):
+            if question_format:
                 formats.append(
                     {
                         "heading": " ".join(str(item.get("heading") or "").split()),
                         "speech_count": speech_count,
+                        "contribution_counts": counts,
                         "share": percent(speech_count, total),
                         "href": f"{dossier_href}#top-{item.get('index')}",
                         "datum": protocol.get("datum"),
@@ -2624,6 +2659,8 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
             """
         )
     if not cards:
+        if item.get("xml_contributions"):
+            return '<span class="muted">Keine Reden; nur Fragen und Antworten (siehe Beiträge)</span>'
         return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
@@ -2783,6 +2820,7 @@ def render_html(
                 </div>
               </div>
               {top_documents}
+              {render_top_contributions(item)}
               <div class="top-bars">
                 <div>
                   <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
@@ -3447,6 +3485,11 @@ def render_html(
       letter-spacing:.04em;
     }}
 {DOC_LINK_CSS}
+    .top-contributions {{
+      margin:12px 0 0;
+      color:var(--muted);
+      font-size:.9rem;
+    }}
     .top-documents {{
       display:flex;
       align-items:baseline;

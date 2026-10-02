@@ -11,7 +11,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 23 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 24 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 
@@ -235,7 +235,9 @@ An offline rebuild does *not* re-derive the rows in that store — it only re-re
 
 - **The update changed what gets persisted** (new columns filled during persist, values derived from the cached reports). Re-persist the cached reports without any network access, see [Re-persist the cached reports](#re-persist-the-cached-reports) below.
 
-- **The update changed fetching or extraction** (`validate_dip_protocol.py`, roll-call scraping, profile resolution). The cached reports predate the fix, so re-fetch with 4b.
+- **The update changed what is read from the Plenarprotokoll XML** (what counts as a Rede, Redner parsing in `validate_dip_protocol.py` and `speech_kinds.py`). The cached XML in `data/xml/` is re-read by `--offline --repersist` without a network, see [Re-persist the cached reports](#re-persist-the-cached-reports) below.
+
+- **The update changed fetching** (DIP records, roll-call scraping, profile resolution). The cached reports predate the fix, so re-fetch with 4b.
 
 Otherwise the offline rebuild is enough.
 
@@ -252,7 +254,7 @@ python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .cont
 
 Schema 3 / export format 2 uses stable text row IDs and issued person URLs. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
 
-It applies what is derived when persisting. It does not re-parse XML or re-resolve profiles; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
+It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A store built before A1 has no cached XML: run `python3 scripts/build_dip_pulse_site.py --fetch-xml --output-dir .context/dip-pulse-site` once (public bundestag.de files, no API key, about 0.3 s per sitting), then `--offline --repersist`. A report from before A1 with no cached XML stops the re-persist with the store untouched, so old Reden counts never sit next to new ones; a report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/` (an online update re-fetches it). It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 
 #### Validate a data correction
 
@@ -264,11 +266,12 @@ cp -cR .context/dip-pulse-site .context/baseline          # clone copy; use cp -
 
 # 2. Apply the change to a second copy, by the route it needs (4c)
 cp -cR .context/baseline .context/after
-#    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...):
+#    derived from the cached reports (Mehrheitsvotum, Zusammenschluss, Sprechrolle, ...), or from the cached
+#    Plenarprotokoll XML (what counts as a Rede, Redner parsing; run `--fetch-xml` first if data/xml/ is empty):
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/after
-#    needs the XML or a profile lookup again (Rede text, merged Redner records, match kinds): an online run into
+#    needs a fresh DIP or profile lookup (match kinds, abgeordnetenwatch profiles): an online run into
 #    the copy, e.g. `--document-number 21/84`, or `--backfill-incomplete` (see "Try a fetch or a backfill in a
-#    scratch directory"). To re-parse every cached sitting, name each one (about 30 s per sitting without votes,
+#    scratch directory"). To re-fetch every cached sitting, name each one (about 30 s per sitting without votes,
 #    so 2 to 3 hours for 300 sittings; `--no-votes` keeps the votes already cached):
 python3 scripts/build_dip_pulse_site.py --output-dir .context/after --no-votes \
   $(ls .context/after/data/plenarprotokoll-2*-*.json | sed -E 's#.*plenarprotokoll-([0-9]+)-([0-9]+)\.json#--document-number \1/\2#')
@@ -278,7 +281,7 @@ python3 scripts/compare_store_values.py .context/baseline .context/after        
 python3 scripts/compare_store_values.py .context/baseline .context/after --cohort all    # whole-store coverage
 ```
 
-Both arguments are output directories (the store plus the generated pages). The script only reads, and exits 0 once it compared, 2 for a directory that is not an output directory. It prints old, new and the delta for the row counts, `parties` (mps rows, MdB, Reden naming each name; a name that appears or disappears is listed), the Mehrheitsvotum distribution, votes and their newest date, the characters of all Reden (with the largest per-protocol moves and the characters no speaker could be found for), the Redeanteil per Zusammenschluss and Sprechrolle, the Reden that fall back to the speaker's party, the Zusammenführung (records, merges per provenance, name buckets left split), the `r3-abweichler` recipe, the generated pages, and the stored facts: publishable weeks and months, every period that stopped being complete with its reason, and every changed winner with the identity of the winning speech or vote.
+Both arguments are output directories (the store plus the generated pages). The script only reads, and exits 0 once it compared, 2 for a directory that is not an output directory. It prints old, new and the delta for the row counts, `parties` (mps rows, MdB, Reden naming each name; a name that appears or disappears is listed), the Mehrheitsvotum distribution, votes and their newest date, the characters of all Reden (with the largest per-protocol moves and the characters no speaker could be found for), the Beiträge per kind (`contributions`), the Redeanteil per Zusammenschluss and Sprechrolle, the Reden that fall back to the speaker's party, the Zusammenführung (records, merges per provenance, name buckets left split), the `r3-abweichler` recipe, the generated pages, and the stored facts: publishable weeks and months, every period that stopped being complete with its reason, and every changed winner with the identity of the winning speech or vote.
 
 - **Fixed cohort** (default) compares what is parsed from a protocol on the protocols both stores hold, so a sitting an online run acquired does not blur a value fix. **`--cohort all`** shows what a rebuild added or lost. Row counts, parties, pages and facts are always whole-store, and say so in their heading.
 - A quantity with no evidence in a store (an older schema without the column, a page directory that was not built, no MdB roster) prints `unavailable`, never 0. A one-sided quantity shows the other side's figures against `unavailable`.
@@ -403,6 +406,9 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | `ERROR [sprechrolle]: N speaker role(s) map to no Sprechrolle: …` | A speaker's `<rolle_lang>` in a cached protocol is one no rule in `SPRECHROLLE_RULES` maps. The message lists every such role with the protocol and Rede id; the store is left as it was. Add each role to the rules, see [Sprechrolle rules](#sprechrolle-rules), then re-run. |
+| `warning: N of M cached reports predate the A1 Rede rule …` | Those reports were parsed before Kurzinterventionen, Erwiderungen and the Fragen and Antworten of a Befragung or Fragestunde were kept out of the Reden, so Reden counts, Redeanteil and the Fakten built from them mix two rules. Printed by a render that persists nothing (`--offline` without `--repersist`, `--no-persist`). Run `build_dip_pulse_site.py --fetch-xml` once (it downloads the missing XML and exits), then `--offline --repersist` (§4c). |
+| `ERROR [repersist]` or `ERROR [persist]: N cached reports predate the A1 Rede rule and have no cached XML …` | A build that writes the store refuses reports from before A1 it cannot re-read, and names them; the store is left untouched. Run `--fetch-xml`, then `--offline --repersist`. A named report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/`. |
+| `ERROR [repersist]: … is not the Plenarprotokoll XML of …` | A file in `data/xml/` is not the protocol of its sitting (a maintenance page, another sitting, no agenda items). The store is left untouched. Delete the named file and run `--fetch-xml` again. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
 | `warning: [puls] N Sitzungen ohne Datum ausgeschlossen (21/82, …)` | Those cached dossiers carry no `datum`, so they cannot be placed in a sitting week; the radar renders from the dated ones and the page header notes the count. Re-fetch the named sittings with `update --document-number …`. With no dated sitting at all the page shows only "Die erzeugten Sitzungen tragen kein Datum". |

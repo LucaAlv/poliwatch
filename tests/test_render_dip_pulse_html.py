@@ -817,12 +817,50 @@ class WeekRadarHelperTests(unittest.TestCase):
         self.assertEqual(pulse_html.format_count(0, "Wortmeldung", "Wortmeldungen"), "0 Wortmeldungen")
 
     def test_question_format_is_a_prefix_match_on_the_normalised_heading(self) -> None:
-        self.assertTrue(pulse_html.is_question_format({"heading": "  Befragung  der Bundesregierung (einleitend BMJ)"}))
-        self.assertTrue(pulse_html.is_question_format({"heading": "Fragestunde"}))
-        self.assertTrue(pulse_html.is_question_format({"heading": "Regierungsbefragung"}))
-        self.assertFalse(pulse_html.is_question_format({"heading": "Beratung des Antrags: Befragung der Bundesregierung reformieren"}))
-        self.assertFalse(pulse_html.is_question_format({"heading": None}))
+        self.assertTrue(pulse_html.is_question_format({"question_formats": ["befragung"]}))
+        self.assertTrue(pulse_html.is_question_format({"question_formats": ["befragung", "fragestunde"]}))
+        self.assertFalse(pulse_html.is_question_format({"question_formats": []}))
         self.assertFalse(pulse_html.is_question_format({}))
+
+    # Value: protects=a pre-A1 report (no question_formats key) keeps Befragung and Fragestunde out of the ranking by heading; the parser's key wins when present;
+    #   fails_when=the heading fallback is dropped, or the heading overrides an explicit empty question_formats;
+    #   why_new=the existing test only covers the key and the empty item, never the heading; seam=none
+    def test_question_format_falls_back_to_the_heading_only_without_the_parsers_key(self) -> None:
+        for heading in ("Befragung der Bundesregierung", "Fragestunde"):
+            with self.subTest(heading=heading):
+                self.assertTrue(pulse_html.is_question_format({"heading": heading}))
+        self.assertFalse(pulse_html.is_question_format({"heading": "Beratung des Antrags der Abgeordneten X"}))
+        self.assertFalse(pulse_html.is_question_format({}))
+        # The parser looked at the item (a continuation, say) and found no format: its key wins.
+        self.assertFalse(pulse_html.is_question_format({"heading": "Befragung der Bundesregierung", "question_formats": []}))
+
+    # Value: protects=an item with only Beiträge says so instead of claiming no speech content, and an item with nothing keeps the plain wording;
+    #   fails_when=the xml_contributions branch of render_speech_details is removed or applies to items without Beiträge;
+    #   why_new=no test rendered the no-cards text of render_speech_details; seam=none
+    def test_an_item_with_only_beitraege_says_so_and_an_empty_one_says_no_reden(self) -> None:
+        only_questions = {"index": 1, "heading": "Befragung der Bundesregierung",
+                          "xml_contributions": [{"kind": "befragung_frage"}]}
+        nothing = {"index": 2, "heading": "Aktuelle Stunde"}
+        self.assertIn(
+            "Keine Reden; nur Fragen und Antworten (siehe Beiträge)",
+            pulse_html.render_speech_details(only_questions, pulse_html.item_stats(only_questions)),
+        )
+        markup = pulse_html.render_speech_details(nothing, pulse_html.item_stats(nothing))
+        self.assertIn("Keine Reden im XML", markup)
+        self.assertNotIn("siehe Beiträge", markup)
+
+    def test_a_top_says_what_was_said_there_that_is_no_rede(self) -> None:
+        item = {"xml_contributions": [{"kind": "befragung_frage"}] * 2 + [{"kind": "befragung_antwort"}]}
+        markup = pulse_html.render_top_contributions(item)
+        self.assertIn("Weitere Beiträge, keine Reden und nicht mitgezählt: ", markup)
+        self.assertIn("2 Fragen in der Befragung der Bundesregierung, 1 Antwort in der Befragung der Bundesregierung.", markup)
+        self.assertEqual(pulse_html.render_top_contributions({}), "")
+        self.assertEqual(pulse_html.render_top_contributions({"xml_contributions": []}), "")
+
+    def test_format_question_counts_leaves_out_zeros(self) -> None:
+        counts = {"befragung_frage": 61, "befragung_antwort": 60}
+        self.assertEqual(pulse_html.format_question_counts(2, counts), "2 Reden, 61 Fragen, 60 Antworten")
+        self.assertEqual(pulse_html.format_question_counts(0, {"fragestunde_frage": 1, "fragestunde_antwort": 1}), "1 Frage, 1 Antwort")
 
     def test_safe_href_allows_only_allowlisted_https_sources(self) -> None:
         self.assertEqual(pulse_html.safe_href("https://dserver.bundestag.de/x.pdf"), "https://dserver.bundestag.de/x.pdf")
