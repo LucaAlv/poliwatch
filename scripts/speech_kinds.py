@@ -187,9 +187,14 @@ def _redner_key(redner: ET.Element | None) -> str | None:
 # ich zulasse. Der Kollege Stöber hat das Wort."), or name the next Redner's
 # Fraktion. Only the part of a sentence after a closing remark (CLOSED) can grant;
 # a sentence that names a Kurzintervention is granted by an immediate "Bitte schön"
-# (INVITES). The two signals that name no one, the Fraktion and "Bitte schön", are
-# held to the length of a Kurzintervention (two minutes, WEAK_MAX_CHARS).
+# (INVITES) when it names one pending Kurzintervention, not Kurzinterventionen in
+# general ("Kurzinterventionen lasse ich am Ende zu. – Bitte schön."), and the
+# Sitzungsleitung did not announce the next Redner for something else ("Nächster
+# Redner ist Herr Meier."). The two signals that name no one, the Fraktion and
+# "Bitte schön", are held to the length of a Kurzintervention (two minutes,
+# WEAK_MAX_CHARS).
 KURZINTERVENTION_WORDING = re.compile(r"Kurzintervention|Zwischenbemerkung|Zwischenintervention", re.IGNORECASE)
+ONE_KURZINTERVENTION = re.compile(r"(?:Kurzintervention|Zwischenbemerkung|Zwischenintervention)(?!en)", re.IGNORECASE)
 GRANTS_WORT = re.compile(r"\bWort\b")
 NOT_GRANTED = re.compile(r"\b(?:kein\w*|nicht|nie|ohne|weder|ablehn\w*|abgelehnt|verwehr\w*|untersag\w*)\b", re.IGNORECASE)
 # A conditional or subordinate sentence states a rule or a possibility, not a grant
@@ -251,6 +256,10 @@ def announces_kurzintervention(
     if WITHDRAWN.search(text):
         return False
     sentences = _SENTENCE_END.split(text)
+    # The next Redner named where no Kurzintervention is was invited to a Rede.
+    announced_otherwise = bool(surname) and any(
+        surname in s.casefold() for s in sentences if not KURZINTERVENTION_WORDING.search(s) and not INVITES.match(s)
+    )
     for index, sentence in enumerate(sentences):
         # Only what follows a closing remark can grant ("Die Kurzintervention ist
         # beendet; zu einer weiteren Kurzintervention erhält Frau Meier das Wort.").
@@ -266,7 +275,13 @@ def announces_kurzintervention(
         if GRANTS_WORT.search(sentence):
             return True
         # "Bitte schön" names no one: it may invite an ordinary Redner.
-        if index + 1 < len(sentences) and INVITES.match(sentences[index + 1]) and next_chars <= WEAK_MAX_CHARS:
+        if (
+            index + 1 < len(sentences)
+            and INVITES.match(sentences[index + 1])
+            and ONE_KURZINTERVENTION.search(sentence)
+            and not announced_otherwise
+            and next_chars <= WEAK_MAX_CHARS
+        ):
             return True
         if surname and any(surname in near.casefold() for near in sentences[index : index + 3]):
             return True

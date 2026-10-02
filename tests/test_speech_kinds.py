@@ -164,6 +164,26 @@ class KurzinterventionTests(unittest.TestCase):
         # 20/119: a statement, not a question, answered by "Bitte schön".
         self.assertTrue(announces("Aber erst einmal kommt natürlich die Kurzintervention. – Bitte schön.", "Gürpinar", "DIE LINKE", 1726))
 
+    def test_bitte_schoen_after_a_rule_remark_or_a_redner_announcement_grants_none(self) -> None:
+        announces = sk.announces_kurzintervention
+        # A short ordinary Rede invited after a remark about Kurzinterventionen in general.
+        self.assertFalse(announces("Kurzinterventionen lasse ich am Ende der Debatte zu. – Bitte schön.", "Meier", "SPD", 1500))
+        self.assertFalse(announces("Zwischenbemerkungen gibt es heute erst am Schluss. – Bitte schön.", "Meier", "SPD", 1500))
+        # The next Redner was announced for a Rede before the remark.
+        self.assertFalse(
+            announces("Nächster Redner ist der Kollege Meier. Die Kurzintervention kommt später. – Bitte schön.", "Meier", "SPD", 1500)
+        )
+        # "Bitte schön, Herr Meier" addresses the Kurzintervention's own Redner.
+        self.assertTrue(announces("Sie möchten eine Kurzintervention machen? – Bitte schön, Herr Meier.", "Meier", "SPD", 1500))
+        # 20/119: the Redner is named in a sentence about the Kurzintervention itself.
+        self.assertTrue(
+            announces(
+                "Jetzt kann sich Frau Klein-Schmeink überlegen, ob sie auf die jetzt folgende Kurzintervention von Herrn "
+                "Gürpinar antworten möchte. Aber erst einmal kommt natürlich die Kurzintervention. – Bitte schön.",
+                "Gürpinar", "DIE LINKE", 1726,
+            )
+        )
+
     def test_a_grant_after_a_closing_remark_in_the_same_sentence(self) -> None:
         announces = sk.announces_kurzintervention
         self.assertTrue(announces("Die Kurzintervention ist beendet; zu einer weiteren Kurzintervention erhält Frau Meier das Wort.", "Meier"))
