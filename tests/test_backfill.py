@@ -25,6 +25,7 @@ import _support
 import build_dip_pulse_site as build
 import facts
 import persist_dip_pulse_store as pulse_store
+import speech_kinds
 from test_facts import StoreCase, week_specs
 
 STAMP = "2026-09-28T10:00:00Z"
@@ -49,7 +50,7 @@ def report_for(n: int, *, acquisition: dict | None = None, day: str | None = Non
         for vote in item.get("votes") or []:
             vote["id"] = f"{n}{vote['id']}"
             vote["detail_url"] = f"{vote['detail_url']}{n}"
-    report["validation_summary"] = {"xml_speech_count": 3}
+    report["validation_summary"] = {"xml_speech_count": 3, "speech_kinds_version": speech_kinds.VERSION}
     if acquisition is not None:
         report["acquisition"] = {"votes": acquisition}
         # The evidence a scan records (how it ended); a report cached before
@@ -143,6 +144,21 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.counts(), before)
         self.assertEqual(len(render_site.call_args.kwargs["entries"]), 3)
+
+    # Value: protects=an online build that keeps a cached report from before A1 with no cached XML persists nothing and names it;
+    #   fails_when=the online path warns and persists the old Reden counts next to correctly classified ones;
+    #   why_new=only --offline --repersist refused pre-A1 reports; the online merge kept them with a warning; seam=none
+    def test_a_kept_report_from_before_a1_without_xml_stops_the_persist(self) -> None:
+        old = report_for(1, acquisition=COMPLETE_VOTES)
+        del old["validation_summary"]["speech_kinds_version"]
+        write_cached(self.output_dir, old)
+        before = (self.database).read_bytes()
+        code, _fetch, _build_dossiers, render_site, stderr = self.run_main("--document-number", "21/2", generated=[])
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR [persist]: 1 cached reports predate the A1 Rede rule", stderr)
+        self.assertIn("(21/1)", stderr)
+        self.assertEqual(self.database.read_bytes(), before)
+        render_site.assert_not_called()
 
 
 class BackfillSelectionTests(unittest.TestCase):

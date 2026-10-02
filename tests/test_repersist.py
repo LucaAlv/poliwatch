@@ -268,13 +268,16 @@ class ReparseCachedXmlTests(unittest.TestCase):
             (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").read_text(encoding="utf-8"),
             protocol_xml("21/6"),
         )
-        # A repersist over a report with no cached XML says what that leaves behind.
+        # A repersist over a pre-A1 report with no cached XML refuses to persist its old
+        # counts, names it and the fix, and leaves the store as it was.
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
+        self.database.write_bytes(b"previous store")
+        with self.assertRaises(build.CachedReportError) as caught:
             build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
-        self.assertIn("1 of 1 cached reports predate the A1 Rede rule and have no cached XML", stderr.getvalue())
-        self.assertIn("--fetch-xml", stderr.getvalue())
+        self.assertIn("1 cached reports predate the A1 Rede rule and have no cached XML", str(caught.exception))
+        self.assertIn("(21/6)", str(caught.exception))
+        self.assertIn("--fetch-xml", str(caught.exception))
+        self.assertEqual(self.database.read_bytes(), b"previous store")
 
     # Value: protects=a cached report from before A1 is counted and named once with the two commands that fix it, and a current report stays silent;
     #   fails_when=the warning drops the count, --fetch-xml or --offline --repersist, fires for a marked report, or the return count is wrong;
@@ -458,6 +461,7 @@ class RepersistTests(unittest.TestCase):
         self.database = self.output_dir / "data" / "bundestag-pulse.sqlite"
         for fixture, slug in (("report.json", "20-999"), ("demo-report-21-84.json", "21-84")):
             report = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
+            report.setdefault("validation_summary", {})["speech_kinds_version"] = speech_kinds.VERSION
             (self.output_dir / "data" / f"plenarprotokoll-{slug}.json").write_text(
                 json.dumps(report), encoding="utf-8"
             )

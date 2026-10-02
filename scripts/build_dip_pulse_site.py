@@ -1195,15 +1195,35 @@ def rebuild_database_from_entries(
     return True
 
 
-def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
-    """Warn about cached reports made before A1: they carry no ``speech_kinds_version``,
-    so every Kurzintervention, Frage and Antwort in them still counts as a Rede
-    and the numbers built from them mix two rules. Returns how many there are."""
-    stale = [
+def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The cached reports made before A1: they carry no ``speech_kinds_version``,
+    so every Kurzintervention, Frage and Antwort in them still counts as a Rede."""
+    return [
         entry
         for entry in entries
         if (entry["report"].get("validation_summary") or {}).get("speech_kinds_version") != speech_kinds.VERSION
     ]
+
+
+def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
+    """Refuse to persist a report made before A1: its Reden counts would sit in the
+    store next to correctly classified ones. Raises CachedReportError naming them."""
+    stale = unparsed_reports(entries)
+    if stale:
+        numbers = ", ".join(
+            sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
+        )
+        raise CachedReportError(
+            f"{len(stale)} cached reports predate the A1 Rede rule and have no cached XML in data/xml/ to re-read "
+            f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
+            "fetched (no xml_url) must be deleted from data/"
+        )
+
+
+def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
+    """Warn about cached reports made before A1 (see unparsed_reports): the numbers
+    built from them mix two rules. Returns how many there are."""
+    stale = unparsed_reports(entries)
     if stale:
         print(
             f"warning: {len(stale)} of {len(entries)} cached reports predate the A1 Rede rule and {keeping} "
@@ -1291,12 +1311,12 @@ def repersist_cached_reports(
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
     persisted. Reden and Beiträge are first re-read from each report's cached
-    XML where it exists. Returns the loaded entries (the render reuses them) and whether
+    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and whether
     the store file was replaced. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
     reparse_cached_xml(output_dir, cached)
-    warn_unparsed_reports(cached, keeping="have no cached XML in data/xml/ and keep")
+    require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
@@ -11210,9 +11230,21 @@ def main() -> int:
             # a second time afterwards because mp_lookup only exists now, and it
             # is what makes speaker names in them link to MP profiles.
             entries = merge_detail_entries(protocols, existing_entries, generated_entries)
-            # A sitting whose refresh failed keeps its cached report, so warn over the merged
-            # list: fresh reports carry the marker, kept pre-A1 ones do not.
-            warn_unparsed_reports(entries)
+            # A sitting whose refresh failed keeps its cached report: re-read a kept pre-A1
+            # one from its cached XML, and persist none that is still pre-A1.
+            try:
+                reparse_cached_xml(output_dir, unparsed_reports(entries))
+                if args.no_persist:
+                    warn_unparsed_reports(entries)
+                else:
+                    require_parsed_reports(entries)
+            except CachedReportError as exc:
+                print(
+                    f"ERROR [persist]: {exc}. The previous store is untouched "
+                    "(Dossiers wurden bereits geschrieben, puls.html nicht).",
+                    file=sys.stderr,
+                )
+                return 1
             # A dossier of the requested week can still have failed to build;
             # say so instead of letting the renderer's ValueError escape.
             if reject_unknown_week(

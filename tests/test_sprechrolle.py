@@ -18,6 +18,7 @@ import derive
 import facts
 import persist_dip_pulse_store as pulse_store
 import render_dip_pulse_html as html
+import speech_kinds
 
 #: Every distinct <rolle_lang> in the 302 cached reports of the store (2026-09-29),
 #: and the side it counts for: the Bundesregierung side has 95 of them (5.394
@@ -185,6 +186,7 @@ class RoleTableTests(unittest.TestCase):
 def report(number: str, *speakers: dict) -> dict:
     return {
         "protocol": {"id": f"p-{number}", "dokumentnummer": number, "datum": "2026-01-01"},
+        "validation_summary": {"speech_kinds_version": speech_kinds.VERSION},
         "agenda_items": [
             {
                 "index": 1,

@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Kurzinterventionen, Erwiderungen, and the Fragen and Antworten of the Befragung der Bundesregierung and the Fragestunde are now stored as their own Beiträge, typed by kind, in a new `contributions` table and CSV (20 CSV files now). Each dossier shows them beside its Reden, a Person's page shows them apart from their Reden, and the week radar reads “2 Reden, 59 Fragen, 55 Antworten” for a Befragung. The Fragestunde, which has no `<rede>` elements and stored nothing for 75 of 76 sittings, is read from its flat turns.
 - Change what counts as a Rede without fetching anything again. Every online update now keeps the sitting's Plenarprotokoll XML in `data/xml/`, and `--offline --repersist` re-reads Reden and Beiträge from it. `--fetch-xml` downloads the XML for sittings cached before this release (public bundestag.de files, about 0.3 s each).
-- Every build warns when a cached report predates this counting rule, names how many and prints the fix, so an old store cannot quietly mix with new numbers.
+- A build that writes the store re-reads a cached report from before this counting rule from its cached XML, and refuses to persist one it cannot re-read, naming it and the fix, so old and new Reden counts never mix in the store. A build that persists nothing warns instead.
 
 ### Changed
 
