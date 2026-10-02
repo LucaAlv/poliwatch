@@ -431,7 +431,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 
-**Completed:** A.2 (2026-09-30). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
 
 **What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
 
@@ -724,7 +724,7 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 
 ### Stable ids for every row a release publishes
 
-**Completed:** A.2 (2026-09-30). Schema 3 / export format 2 supplies stable text row keys, a durable person/occurrence registry, corrections and resolvable aliases. Explicit offline replay upgrades old stores under a writer lock with staged integrity checks; facts, recipes and person URLs consume persisted assignments. All 997 tests pass (2 skipped); a 285-report reference replay preserves shared-source content, groups records identically for an incremental and a fresh replay, and reuses an unchanged replay. See [key and backup contract](docs/stable-ids.md) and [validation](docs/a2-validation.md).
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Schema 3 / export format 2 supplies stable text row keys, a durable person/occurrence registry, corrections and resolvable aliases. Explicit offline replay upgrades old stores under a writer lock with staged integrity checks; facts, recipes and person URLs consume persisted assignments. All 997 tests pass (2 skipped); a 285-report reference replay preserves shared-source content, groups records identically for an incremental and a fresh replay, and reuses an unchanged replay. See [key and backup contract](docs/stable-ids.md) and [validation](docs/a2-validation.md).
 
 **Pinned by tests:**
 - Two builds, one with one more Sitzung than the other, give the same id to every row they share.
@@ -856,18 +856,6 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Priority:** P3
 **Depends on:** None
 
-### render_html mutates the report it renders
-
-**What:** `render_dip_pulse_html.render_html` replaces each `speech["speaker"]` with the corrected speaker and adds `speaker["occurrence_id"]` in place. The online path then writes that report to the cached JSON in `write_report_files`, so the cache holds the correction instead of the raw XML evidence.
-
-**Why:** Raw evidence should stay raw. Today the mutation is idempotent, but removing a correction cannot restore the original names, and online and offline builds see slightly different inputs.
-
-**Context:** Deferred from the A.2 review (2026-10-01). Fix with a side map keyed by (item index, sequence) or a copy of the speakers, applied only at render and persist time.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** None
-
 ### A.2 test follow-ups
 
 **What:** Tests the A.2 reviews proposed and nobody wrote: the online `main()` roster wiring with `mp-roster` not selected; `rebuild_database_from_entries` forwarding the `built` set to the facts engine; page eligibility of persons with no current mps row (a former MdB whose roster row vanished, a vote-only historical record); arrival-order independence of `p-NNNNNN` allocation and of `_content_digests`; table-driven occurrence-id cases for vote members, sampled people and the preserved roster; `_inputs_hash` and `_zusammenfuehrung` numbers.
@@ -892,11 +880,23 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Priority:** P2
 **Depends on:** A real correction that needs it (none today)
 
+### A.2 third ship round: deferred findings
+
+**What:** Findings of the third A.2 ship round (2026-10-02) the user chose not to fix before release, none affecting today's data: (1) removing a partition from `person_corrections.json` leaves bound occurrences on the old partition records (documented as durable), while the evidence drops `partition`/`profile_blocked` and both records then carry the shared profile; decide re-key vs keep and pin it; (2) `corrected_speaker` compares the raw `xml_redner_id`, so a merged double id like `11005304 999990074` skips the reviewed occurrence override (use `derive.first_redner_id`); (3) `--offline` over a store path that cannot be opened (a directory, an unreadable file) still ends in a traceback, because `open_readonly` sits outside the `try`; (4) DIP roster rows without an id still collapse into one record through the `name-party:Unbekannt` identity (none in the cache); `roster_occurrence_id` hashes `7` and `"7"` differently; (5) `reconcile(full_build=False)`, the `vacated` evidence flag and the `bound` set in `_load_rows` now serve only tests, and the refusal stub in `persist_dip_pulse_store.py` could go; (6) `_first_touch` treats any `OperationalError` on its first insert as a missing temp table; `facts_report` is an out-parameter whose empty dict means "compute again"; (7) the export reads `person_by_mp_id` and backs up the store on separate connections, so a concurrent rebuild between them mixes two snapshots; (8) a corrected vote-member profile URL makes an incremental build issue a second record that a fresh build does not; (9) a name-guess group with one contradicting pair drops every merge in that group; a later occurrence can inherit an earlier one's `aw_match`; reviewed merges that name the same person as survivor resolve by file order; (10) a document id includes its URL, so a DIP URL rewrite changes vote-document ids and fact receipts; (11) the debut tie-break sorts document numbers as text; agenda indexes are `int()`-ed in persist but not in render/bills; the staged copy and writer lock live in the published data directory; (12) tests missing for the rebuild's `full_build=True` call, the offline facts hand-off, `compare_store_values._zusammenfuehrung` rows, the `mps` foreign-key arm, the end-of-rebuild foreign-key check and `today` forwarding.
+
+**Why:** (1), (2), (7) and (8) can make an incremental build differ from a fresh one or show the wrong name; the rest are robustness, cost or test gaps.
+
+**Context:** Deferred by decision in the third A.2 ship round after three review rounds converged and the 285-report reference replay stayed unchanged (grouping sha `6f877bf3d1e92af0`). Each item was reproduced or read by a reviewer; see the ship run record for the evidence.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### A.2 registry follow-ups from the third review pass
 
 **What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) a roster record the staged rebuild did not touch is stale and takes part in no name guess, so when the roster ingest stops listing a person (a former MdB outside the Wahlperiode of the default roster, a preserved roster replaced by an online one) a speaker + roster pair that an earlier build joined splits into two pages again; let a stale roster-side record join as a partner only, or keep carried is_mdb evidence live until the roster positively reports the person gone (reproduced); (2) a record's name and party in evidence are last-writer-wins across its occurrences, so the guess for a record whose occurrences print different names or parties (a Fraktion switcher, two Redner-IDs sharing an aw id) depends on persist order; keep the set of normalised (name, party) pairs per record or pick the newest deterministically (reproduced for two Redner-IDs on one aw id); (3) the coverage gaps left after the third ship round's generated tests, each an extension of an existing test: `_guess_merges` partitions from live rows only; the offline CLI with all four registry tables dropped; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (4) the vacated flag can go if `occurrence` becomes required in `bind`/`upsert_mp` (liveness is then "bound", plus the build's touched set).
 
-**Why:** (1) and (2) change which pages exist or how records group in rare, specific situations; (3) to (5) are hygiene and guards that no test pins.
+**Why:** (1) and (2) change which pages exist or how records group in rare, specific situations; (3) and (4) are hygiene and guards that no test pins.
 
 **Context:** Deferred from the third A.2 ship round by the three-fix-cycle cap; the coverage gate was resolved as "list the gaps" (generation allowance spent).
 
@@ -929,6 +929,20 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Depends on:** None
 
 ## Completed
+
+### render_html mutates the report it renders
+
+**Completed:** v0.12.0.0 (2026-10-02). `render_html` corrects copies of the speeches; the cached dossier JSON keeps the printed speaker (pinned by a test that writes a dossier twice).
+
+**What:** `render_dip_pulse_html.render_html` replaces each `speech["speaker"]` with the corrected speaker and adds `speaker["occurrence_id"]` in place. The online path then writes that report to the cached JSON in `write_report_files`, so the cache holds the correction instead of the raw XML evidence.
+
+**Why:** Raw evidence should stay raw. Today the mutation is idempotent, but removing a correction cannot restore the original names, and online and offline builds see slightly different inputs.
+
+**Context:** Deferred from the A.2 review (2026-10-01). Fix with a side map keyed by (item index, sequence) or a copy of the speakers, applied only at render and persist time.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
 
 ### Match roll-call votes to a TOP when Drucksache numbers fail
 

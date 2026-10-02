@@ -2,17 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [0.12.0.0] - 2026-10-02
 
 ### Added
 
-- Stable source-derived row IDs, durable person keys and occurrence bindings, with reviewed partitions and merges and resolvable merge aliases. Occurrence assignments and splits are refused until their redesign.
-- Person pages at `abgeordnete/<person_id>.html`, alias redirects, and separate Föhr/Mende attribution for shared Redner-ID `11005304`.
+- Every published row has a stable, source-derived id, and every person a durable key that survives rebuilds: a link to a speech, a vote or a person page still points to the same thing after the next build.
+- Person pages at `abgeordnete/<person_id>.html`, with redirect pages for keys a merge retired, and dossier, bill and fact links that follow the speech occurrence to the right person.
+- Reviewed corrections in `scripts/person_corrections.json`: partitions for a Redner-ID that two people share, and merges with an optional survivor. Alexander Föhr and Dirk-Ulrich Mende, who share Redner-ID `11005304`, now have separate pages (13 speeches / 51,884 characters and 9 / 42,000, previously one person with 22 / 93,884). Protocol pages and bill tallies show the reviewed speaker; the cached dossier JSON keeps the printed one as source evidence.
 
 ### Changed
 
-- Build-store schema 3 and export format 2 use text entity keys; facts and recipes consume persisted person assignments. Receipt identity no longer depends on presentation position.
-- Old stores require explicit `--offline --repersist`. Rebuilds retain registry history, require complete cached evidence, hold one writer lock, recompute facts and validate integrity before atomic database replacement.
+- Build-store schema 3 and export format 2 use text entity keys; facts and recipes read the persisted person of each record. Receipt identity no longer depends on presentation position.
+- Old stores are upgraded only by an explicit `--offline --repersist`. A rebuild carries the person registry forward, requires the cached evidence of every stored protocol, holds one writer lock, recomputes facts once and validates integrity and foreign keys before the database is swapped in atomically. A full 285-report rebuild takes about 150 s instead of about 300 s.
+- Name-based person matches are recomputed on every build, so an incremental and a fresh build group records identically (checked on the 285-report reference cache: grouping unchanged, 3,386 persons).
+- `--offline --no-persist` renders without reading the store, and a store that is not a database ends with an error line instead of a traceback.
+
+### Removed
+
+- `persist_dip_pulse_store.py` no longer writes a single report into an existing store; it names `--offline --repersist`, the one write path that reconciles persons correctly.
+- Occurrence assignments and splits in `person_corrections.json` are refused until they are redesigned; no shipped correction used them.
 
 ## [0.10.0.0] - 2026-09-30
 
