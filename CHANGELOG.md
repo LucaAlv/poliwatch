@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Stable source-derived row IDs, durable person keys and occurrence bindings, with reviewed corrections, merge aliases and repeatable splits.
+- Stable source-derived row IDs, durable person keys and occurrence bindings, with reviewed partitions and merges and resolvable merge aliases. Occurrence assignments and splits are refused until their redesign.
 - Person pages at `abgeordnete/<person_id>.html`, alias redirects, and separate Föhr/Mende attribution for shared Redner-ID `11005304`.
 
 ### Changed

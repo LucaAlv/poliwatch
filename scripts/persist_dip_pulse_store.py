@@ -553,7 +553,7 @@ def upsert_mp(
                     person_roles_json=clean(person_roles_json))
     record_id, person_id, identity_key, evidence = registry.bind(conn, identity_key, evidence, occurrence_id)
     aw_match = evidence.get("aw_match")
-    if evidence.get("profile_blocked"):  # a partitioned or assigned record carries no profile of its own
+    if evidence.get("profile_blocked"):  # a partition record other than the profile owner carries no profile
         aw_politician_id = profile_url = None
     conn.execute(
         """

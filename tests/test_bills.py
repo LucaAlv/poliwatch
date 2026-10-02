@@ -78,6 +78,19 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(speakers["Ada Example"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
         self.assertEqual(speakers["Bea Beispiel"], speech_occurrence_id("p1", "IDREAL"))
 
+    # Value: protects=a bill page tallies a reviewed occurrence of the shared Redner-ID 11005304 under its reviewed name, as the protocol page does; fails_when=the bill collector reads the raw printed speaker, so the garbled double name gets its own row and links to whichever occurrence came last; why_new=bill tests used clean names only; seam=none
+    def test_a_reviewed_occurrence_is_tallied_under_its_reviewed_name(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "5560"
+        garbled = "Dirk-UlrichAlexander Mende Föhr"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": "ID209407600", "speaker": {"display_name": garbled, "fraktion": "SPD", "xml_redner_id": "11005304"}, "char_count": 10},
+            {"rede_id": "ID209400000", "speaker": {"display_name": "Alexander Föhr", "fraktion": "CDU/CSU", "xml_redner_id": "11005304"}, "char_count": 10},
+        ]
+        speakers = {row["name"]: row["occurrence_id"] for row in build.collect_bill_pages([bill_entry])[0]["speakers"]}
+        self.assertEqual(speakers, {"Dirk-Ulrich Mende": speech_occurrence_id("5560", "ID209407600"),
+                                    "Alexander Föhr": speech_occurrence_id("5560", "ID209400000")})
+
 
     def test_one_gesetzgebung_is_one_page_and_its_companions_are_listed_on_it(self) -> None:
         bills = build.collect_bill_pages([entry([GESETZ, ENTSCHLIESSUNG, ANTRAG, VERORDNUNG, WAHL], DOCS)])

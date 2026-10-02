@@ -19,7 +19,7 @@ class RegistryFixture:
         self.builds = 0
 
     def correction_file(self, data):
-        # A distinct filename per call: corrections() caches on inode, mtime and size.
+        # A distinct filename per call: corrections() reads each path once per process.
         self.corrections_written += 1
         path = self.root / f"corrections-{self.corrections_written}.json"
         path.write_text(json.dumps({"version": 1, "partitions": [], "assignments": [], "merges": [], "splits": [], **data}))

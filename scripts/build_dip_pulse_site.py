@@ -1059,7 +1059,8 @@ def _entry_label(entry: dict[str, Any]) -> str:
     return f"{number} ({entry.get('report_path')})"
 
 
-def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None):
+def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
+                                  today=None, facts_report=None):
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1067,14 +1068,16 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     runs ``roster_ingest(staged_connection)``; reconciles persons; recomputes facts
     against ``catalog``; validates the registry and integrity; replaces the store
     only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
-    content changed). Returns whether the file was replaced. Any registry, SQLite,
+    content changed). ``today`` is the build date the facts are computed for; a
+    ``facts_report`` dict receives the engine's report, so the data pipeline need
+    not compute the facts a second time. Returns whether the file was replaced. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
     try:
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest)
+                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1087,6 +1090,8 @@ def _rebuild_database_from_entries(
     keep_if_unchanged: bool = False,
     catalog: facts.SittingCatalog | None = None,
     roster_ingest: Any = None,
+    today: date | None = None,
+    facts_report: dict[str, Any] | None = None,
 ) -> bool:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
     # Every cached role is checked first, so one error lists all of them and
@@ -1194,16 +1199,20 @@ def _rebuild_database_from_entries(
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
         built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog)
+        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog, today=today)
         registry.validate(store)
         if store.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise DatabaseRebuildError("Rebuilt database failed integrity_check")
+        if store.execute("PRAGMA foreign_key_check").fetchone():
+            raise DatabaseRebuildError("Rebuilt database failed foreign_key_check")
         store.commit()
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
     finally:
         store.close()
+    if facts_report is not None:
+        facts_report.update(report)
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
         return False
@@ -1214,7 +1223,8 @@ def _rebuild_database_from_entries(
 
 
 def repersist_cached_reports(
-    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True
+    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
+    today: date | None = None, facts_report: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -1225,7 +1235,8 @@ def repersist_cached_reports(
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
-        catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME)
+        catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+        today=today, facts_report=facts_report,
     )
     return cached, replaced
 
@@ -5603,7 +5614,10 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                 # the speaker to their Abgeordnete profile.
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-                    speaker = speech.get("speaker") or {}
+                    # The reviewed speaker, as on the protocol page: a shared
+                    # Redner-ID's occurrences are tallied under their own person.
+                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+                    speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
                     name = derive.speaker_display_name(speaker)
                     party = pulse_html.speaker_party(speaker, protocol)
                     speaker_key = f"{name}|{party}"
@@ -5611,7 +5625,6 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         speaker_key,
                         {"name": name, "party": party, "speech_count": 0, "char_count": 0},
                     )
-                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
                     entry_count["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
                     entry_count["speech_count"] += 1
                     entry_count["char_count"] += int(speech.get("char_count") or 0)
@@ -6322,7 +6335,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     Matching does not run here; see ``person_registry.reconcile`` for the join
     rules and which of them are durable."""
-    # One query per relation, then grouped in Python - three flat queries beat
+    # One query per relation, then grouped in Python - flat queries beat
     # a per-MP query (N+1) by a wide margin at roster size.
     base = conn.execute(
         f"""
@@ -6330,7 +6343,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
                m.aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, pr.partition,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
@@ -6400,7 +6413,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         if evidence.get("ever_mdb") or evidence.get("is_mdb"):
             page_eligible.add(person_id)
         if person_id not in current_person_ids:
-            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"], identity_key=record["identity_key"])
+            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
             assignments[record["id"]] = person_id
     rows.extend(row for row in historical if assignments[row["id"]] in page_eligible)
@@ -6414,8 +6427,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
         # Prefer the roster biography; the page key comes from the registry.
-        # A record an assignment placed here carries another person's name: it heads the page last.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1, registry.is_placed_identity(r.get("identity_key")), r["id"]))
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
@@ -10512,6 +10524,7 @@ def run_data_pipeline(
     abg_mps: list[dict[str, Any]],
     mp_lookup: dict[str, str],
     catalog: facts.SittingCatalog | None,
+    facts_report: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
@@ -10520,14 +10533,16 @@ def run_data_pipeline(
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
 
     # Before the export, so the three facts tables are part of the store the
-    # export copies and hashes.
+    # export copies and hashes. A rebuild in this build already computed them
+    # for the same entries, catalog and date and hands over its report.
     if not args.no_persist and database_path.exists():
-        facts_report = run_facts_engine(
-            database_path,
-            entries,
-            catalog,
-            today=resolve_today(getattr(args, "today", None)),
-        )
+        if not facts_report:
+            facts_report = run_facts_engine(
+                database_path,
+                entries,
+                catalog,
+                today=resolve_today(getattr(args, "today", None)),
+            )
         for line in format_incomplete_report(
             facts_report,
             output_dir=output_dir,
@@ -10676,10 +10691,12 @@ def main() -> int:
         # render alone never does). All or nothing: any failure leaves the
         # previous store untouched and the run stops before anything is rendered.
         cached_entries: list[dict[str, Any]] | None = None
+        rebuilt_facts: dict[str, Any] = {}
         if getattr(args, "repersist", False):
             try:
                 cached_entries, replaced = repersist_cached_reports(
-                    output_dir, database_path, protocols, preserve_roster=True
+                    output_dir, database_path, protocols, preserve_roster=True,
+                    today=resolve_today(getattr(args, "today", None)), facts_report=rebuilt_facts,
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -10755,6 +10772,7 @@ def main() -> int:
                 # also hold dossier-derived entries, which prove nothing about
                 # what DIP lists.
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+                facts_report=rebuilt_facts,
             )
         except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -10871,6 +10889,10 @@ def main() -> int:
             return 2
         abg_mps: list[dict[str, Any]] = []
         mp_lookup: dict[str, str] = {}
+        # One catalog for the staged rebuild's facts and the data pipeline, so the
+        # rebuild's facts report is handed over instead of computed twice.
+        catalog = facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now())
+        rebuilt_facts: dict[str, Any] = {}
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -10927,8 +10949,10 @@ def main() -> int:
                         database_path,
                         entries,
                         preserve_roster="mp-roster" not in enrichments,
-                        catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+                        catalog=catalog,
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
+                        today=resolve_today(getattr(args, "today", None)),
+                        facts_report=rebuilt_facts,
                     )
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
@@ -10989,7 +11013,8 @@ def main() -> int:
             protocols=protocols,
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
-            catalog=facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now()),
+            catalog=catalog,
+            facts_report=rebuilt_facts,
         )
     except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -2646,13 +2646,19 @@ def render_html(
     protocol = report.get("protocol") or {}
     summary = report.get("validation_summary") or {}
     summary_generation = report.get("summary_generation") or {}
-    items = report.get("agenda_items") or []
-    for item in items:
+    # The page shows the reviewed speaker; the caller's report is the cached source
+    # evidence and is written back to disk, so the correction goes on copies.
+    items = []
+    for item in report.get("agenda_items") or []:
+        speeches = []
         for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
             rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
             speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
-            speech["speaker"] = speaker
             speaker["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
+            speeches.append({**speech, "speaker": speaker})
+        items.append({**item, "xml_speakers": speeches} if "xml_speakers" in item else item)
+    if "agenda_items" in report:
+        report = {**report, "agenda_items": items}
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())

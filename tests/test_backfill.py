@@ -99,12 +99,13 @@ class RetainedScopeTests(unittest.TestCase):
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(build, "fetch_protocols", return_value=copy.deepcopy(self.catalog)) as fetch,
             mock.patch.object(build, "build_dossiers_with_progress", return_value=generated) as build_dossiers,
-            mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
+            mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
             mock.patch.object(build, "render_site", return_value=self.output_dir / "index.html") as render_site,
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),
         ):
             code = build.main()
+        self.pipeline = pipeline
         return code, fetch, build_dossiers, render_site, stderr.getvalue()
 
     def test_backfilling_one_sitting_keeps_every_other_protocol_speech_vote_and_page(self) -> None:
@@ -148,7 +149,7 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertIn("Another writer", stderr)
         self.assertEqual(before, self.database.read_bytes())
 
-    # Value: protects=an online build with --enrich mp-roster ingests the roster into the staged store and hands the cached sitting catalog to the facts engine; fails_when=main drops roster_ingest or catalog= on the staged rebuild call, so no roster row or no Fakt is ever published online; why_new=the staged rebuild is tested through its function, and the only main()-level test stops at the writer lock; seam=none
+    # Value: protects=an online build with --enrich mp-roster ingests the roster into the staged store and computes the facts once, against this build's authoritative sitting catalog; fails_when=main drops roster_ingest or catalog= on the staged rebuild call, or the data pipeline recomputes the facts the rebuild already computed; why_new=the staged rebuild is tested through its function, and the only main()-level test stops at the writer lock; seam=none
     def test_an_online_build_ingests_the_roster_into_the_staged_store_and_forwards_the_catalog(self) -> None:
         (self.output_dir / "data" / facts.CATALOG_FILENAME).write_text(
             json.dumps({"authoritative": True, "protocols": [{"dokumentnummer": "21/84", "datum": "2026-03-04"}]}),
@@ -171,7 +172,12 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertNotEqual(Path(seen["database"]), self.database)  # the staged copy, not the published store
         self.assertIn("roster: 0 MdBs", stderr)
+        self.assertEqual(engine.call_count, 1)
         self.assertTrue(engine.call_args.kwargs["catalog"].authoritative)
+        # The data pipeline gets the rebuild's catalog and facts report, so it does not compute the facts again.
+        handed = self.pipeline.call_args.kwargs
+        self.assertIs(handed["catalog"], engine.call_args.kwargs["catalog"])
+        self.assertTrue({"incomplete_periods", "sitting_gaps"} <= handed["facts_report"].keys())
 
     # Value: protects=a roster fetch that fails during an online build exits 1 with the staged-rebuild error, never swaps the store and names the roster; fails_when=the roster failure escapes as a traceback or is swallowed so protocols persist without the roster; why_new=the user confirmed the abort as intended, so the exit code, the message and the untouched store must be pinned at main(); seam=none
     def test_an_online_build_aborts_cleanly_when_the_roster_fetch_fails(self) -> None:
@@ -423,6 +429,26 @@ class IncompleteReportTests(StoreCase):
                 abg_mps=[], mp_lookup={}, catalog=seeded["catalog"],
             )
         self.assertEqual(fmt.call_args.kwargs["vote_scan_pages"], 0)
+
+    # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store); why_new=the main()-level test mocks the whole pipeline; seam=none
+    def test_run_data_pipeline_reuses_a_handed_over_facts_report(self) -> None:
+        args = SimpleNamespace(no_persist=False, vote_scan_pages=None, data_base_url=None, data_manifest=None,
+                               data_license=None, data_issues_url=None, force_export=False)
+        seeded = self.seed(week_specs(3))
+        handed = {"incomplete_periods": [], "sitting_gaps": {}}
+        with (
+            mock.patch.object(build, "export_distribution_data", return_value={}),
+            mock.patch.object(build, "collect_bill_pages", return_value=[]),
+            mock.patch.object(build, "derive_feature_readiness", return_value={}),
+            mock.patch.object(build, "run_facts_engine") as engine,
+            mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
+        ):
+            build.run_data_pipeline(
+                args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
+                abg_mps=[], mp_lookup={}, catalog=seeded["catalog"], facts_report=handed,
+            )
+        engine.assert_not_called()
+        self.assertIs(fmt.call_args.args[0], handed)
 
     def test_a_complete_store_prints_nothing(self) -> None:
         seeded = self.seed(week_specs(10))

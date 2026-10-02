@@ -431,7 +431,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 
-**Completed:** A.2 (2026-09-30). Version-controlled source partitions and six reviewed occurrence assignments separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
+**Completed:** A.2 (2026-09-30). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
 
 **What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
 
@@ -724,7 +724,7 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 
 ### Stable ids for every row a release publishes
 
-**Completed:** A.2 (2026-09-30). Schema 3 / export format 2 supplies stable text row keys, a durable person/occurrence registry, corrections and resolvable aliases. Explicit offline replay upgrades old stores under a writer lock with staged integrity checks; facts, recipes and person URLs consume persisted assignments. All 980 tests pass (2 skipped); a 285-report reference replay preserves shared-source content, groups records identically for an incremental and a fresh replay, and reuses an unchanged replay. See [key and backup contract](docs/stable-ids.md) and [validation](docs/a2-validation.md).
+**Completed:** A.2 (2026-09-30). Schema 3 / export format 2 supplies stable text row keys, a durable person/occurrence registry, corrections and resolvable aliases. Explicit offline replay upgrades old stores under a writer lock with staged integrity checks; facts, recipes and person URLs consume persisted assignments. All 997 tests pass (2 skipped); a 285-report reference replay preserves shared-source content, groups records identically for an incremental and a fresh replay, and reuses an unchanged replay. See [key and backup contract](docs/stable-ids.md) and [validation](docs/a2-validation.md).
 
 **Pinned by tests:**
 - Two builds, one with one more Sitzung than the other, give the same id to every row they share.
@@ -850,7 +850,7 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 **Why:** Roughly 5x the bind work of speeches on a full replay, and the rows are exported in a public table.
 
-**Context:** Deferred from the A.2 review (2026-10-01). Also: the facts engine runs once inside `_rebuild_database_from_entries` and again in `run_data_pipeline` -> `run_facts_engine`, with `today` unset in the first and set in the second; the outer run overwrites, so only the work is wasted. Compute once.
+**Context:** Deferred from the A.2 review (2026-10-01). The third A.2 ship round already made a repeat bind cheaper (one statement for the touched mark, no rewrite of an unchanged record) and computes the facts once per rebuild.
 
 **Effort:** M
 **Priority:** P3
@@ -870,19 +870,31 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 ### A.2 test follow-ups
 
-**What:** Tests the A.2 reviews proposed and nobody wrote: the online `main()` roster wiring with `mp-roster` not selected; `rebuild_database_from_entries` forwarding the `built` set to the facts engine; page eligibility of persons with no current mps row (a former MdB whose roster row vanished, a vote-only historical record); arrival-order independence of `p-NNNNNN` allocation and of `_content_digests`; table-driven occurrence-id cases for vote members, sampled people and the preserved roster; reconcile guard branches (split vs assignment conflict, a retired split owner naming an alias key); `_inputs_hash` and `_zusammenfuehrung` numbers; reviewed-owner precedence at both merge stages.
+**What:** Tests the A.2 reviews proposed and nobody wrote: the online `main()` roster wiring with `mp-roster` not selected; `rebuild_database_from_entries` forwarding the `built` set to the facts engine; page eligibility of persons with no current mps row (a former MdB whose roster row vanished, a vote-only historical record); arrival-order independence of `p-NNNNNN` allocation and of `_content_digests`; table-driven occurrence-id cases for vote members, sampled people and the preserved roster; `_inputs_hash` and `_zusammenfuehrung` numbers.
 
 **Why:** Each of these can be disabled today with the suite still green (checked by mutation in the A.2 review).
 
-**Context:** Deferred from the A.2 review (2026-10-01); the generation allowance of /ship was spent. The roster wiring on a selected `mp-roster` and its outage abort, the catalog hand-offs, the unreleased-draft registry and the retired split owner were covered in the second A.2 ship round.
+**Context:** Deferred from the A.2 review (2026-10-01); the generation allowance of /ship was spent. The roster wiring on a selected `mp-roster` and its outage abort, the catalog hand-offs and the unreleased-draft registry were covered in the second A.2 ship round.
 
 **Effort:** M
 **Priority:** P2
 **Depends on:** None
 
+### Reviewed reassignment of a source record
+
+**What:** Redesign the two corrections that place a source record on another person, occurrence `assignments` and `splits`, which `person_corrections.json` refuses since 2026-10-02. A placed record should be keyed by occurrence and owner (not by the printed speaker's identity, so a roster occurrence seen as `dip:` and as `aw:` lands on one record), contribute only its speeches and votes to the owner's page (never name, party, biography, `is_mdb` or profile), and leave the owner's partition and name guesses untouched (a partition record plus a reviewed record on one person is one owner, not two partitions). A split must refuse a `new_person_id` that is already issued to another person.
+
+**Why:** Seven consecutive review passes of the first design reproduced criticals here: a placed record heading or filling the owner's page, an assignment on the Föhr person splitting its roster record into a second page, a `mps.dip_person_id` UNIQUE abort, a split silently absorbing records into an unrelated person. No shipped correction used either feature, so they were cut instead of patched again.
+
+**Context:** Cut in the third A.2 ship round (decision 2026-10-02). The removed code and its tests are in commit history before the cut (`person_registry.bind`/`reconcile`, `ASSIGNMENT_PREFIX`, `_block_profile`, tests `test_an_owner_page_is_headed_by_its_own_record_not_the_assigned_one` and the split/assignment cases). Start with the invariants: a randomized check that adds assignments and splits must keep incremental == fresh, a fixed point, and owner pages built only from the owner's own records.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** A real correction that needs it (none today)
+
 ### A.2 registry follow-ups from the third review pass
 
-**What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) a roster record the staged rebuild did not touch is stale and takes part in no name guess, so when the roster ingest stops listing a person (a former MdB outside the Wahlperiode of the default roster, a preserved roster replaced by an online one) a speaker + roster pair that an earlier build joined splits into two pages again; let a stale roster-side record join as a partner only, or keep carried is_mdb evidence live until the roster positively reports the person gone (reproduced); (2) a record's name and party in evidence are last-writer-wins across its occurrences, so the guess for a record whose occurrences print different names or parties (a Fraktion switcher, two Redner-IDs sharing an aw id) depends on persist order; keep the set of normalised (name, party) pairs per record or pick the newest deterministically (reproduced for two Redner-IDs on one aw id); (3) an assignment whose owner is not issued yet allocates an orphan `p-NNNNNN` person that reconcile never removes; defer the home to reconcile; (4) the 12 coverage gaps of the Step 7 audit, each an extension of an existing test: `_guess_merges` partitions from live rows only; `_block_profile` for a reconcile-time assignment (assert mps and evidence); the "Contradictory assignments for <record>" raise; six nested corrections-field guards (partition owner, occurrences, display_name, new_person_id, assignment strings); `corrections()` missing-file, invalid JSON and in-place edit re-read; the offline CLI with all four registry tables dropped; the reserved `index` and case-collision key guards in `collect_abgeordnete`; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (5) the vacated flag can go if `occurrence` becomes required in `bind`/`upsert_mp` (liveness is then "bound", plus the build's touched set).
+**What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) a roster record the staged rebuild did not touch is stale and takes part in no name guess, so when the roster ingest stops listing a person (a former MdB outside the Wahlperiode of the default roster, a preserved roster replaced by an online one) a speaker + roster pair that an earlier build joined splits into two pages again; let a stale roster-side record join as a partner only, or keep carried is_mdb evidence live until the roster positively reports the person gone (reproduced); (2) a record's name and party in evidence are last-writer-wins across its occurrences, so the guess for a record whose occurrences print different names or parties (a Fraktion switcher, two Redner-IDs sharing an aw id) depends on persist order; keep the set of normalised (name, party) pairs per record or pick the newest deterministically (reproduced for two Redner-IDs on one aw id); (3) the coverage gaps left after the third ship round's generated tests, each an extension of an existing test: `_guess_merges` partitions from live rows only; the offline CLI with all four registry tables dropped; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (4) the vacated flag can go if `occurrence` becomes required in `bind`/`upsert_mp` (liveness is then "bound", plus the build's touched set).
 
 **Why:** (1) and (2) change which pages exist or how records group in rare, specific situations; (3) to (5) are hygiene and guards that no test pins.
 

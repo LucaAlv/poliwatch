@@ -1,7 +1,6 @@
 """Stable public references and durable registry contracts across rebuilds."""
 from __future__ import annotations
 import contextlib
-import copy
 import io
 import json
 import sqlite3
@@ -134,25 +133,6 @@ class StableIDsTests(unittest.TestCase):
         self.assertEqual({m['person_id'] for m in self.rows('mps')},{ids[1]})
         self.assertEqual(self.rows('person_aliases'),[{'id':ids[0],'person_id':ids[1]}])
 
-    def test_occurrence_assignment_partitions_before_source_identity_upsert(self):
-        r=report(names=('Ada Example','Bea Example'));self.rebuild([r]);people=sorted(self.rows('persons'),key=lambda row:row['ordinal'])
-        r['agenda_items'][0]['xml_speakers'].append(copy.deepcopy(r['agenda_items'][0]['xml_speakers'][0]))
-        r['agenda_items'][0]['xml_speakers'][-1]['rede_id']='corrected-r3'
-        occurrence=stable_key('speech','s1','corrected-r3')
-        with self.correction_file({'assignments':[{'occurrence_id':occurrence,'person_id':people[1]['id']}]}):
-            self.rebuild([r]);self.rebuild([r])
-        assignments={b['id']:b['person_id'] for b in self.rows('person_bindings')}
-        self.assertEqual(assignments[stable_key('speech','s1','s1-r0')],people[0]['id'])
-        self.assertEqual(assignments[occurrence],people[1]['id'])
-        speeches=self.rows('speeches');self.assertEqual(len({s['mp_id'] for s in speeches}),3)
-
-    def test_contradictory_occurrence_assignments_fail_safely(self):
-        r=report(names=('Ada Example','Bea Example'));self.rebuild([r]);before=self.db.read_bytes();people=self.rows('persons')
-        occurrence=stable_key('speech','s1','s1-r0')
-        with self.correction_file({'assignments':[{'occurrence_id':occurrence,'person_id':p['id']} for p in people]}):
-            with self.assertRaisesRegex(build.DatabaseRebuildError,'contradictory assignments'):self.rebuild([r])
-        self.assertEqual(before,self.db.read_bytes())
-
     def test_project_allocation_does_not_reuse_an_explicit_reserved_key(self):
         conn=store.connect(self.db)
         try:
@@ -160,30 +140,11 @@ class StableIDsTests(unittest.TestCase):
             self.assertNotEqual(first,second)
         finally:conn.close()
 
-    def test_split_designates_original_owner_and_is_repeatable(self):
-        r=report(names=('Ada Example','Bea Example'));self.rebuild([r]);records=self.rows('mps');old=records[0]['person_id']
-        with self.correction_file({'merges':[{'persons':[m['person_id'] for m in records],'survivor':old}]}):self.rebuild([r])
-        data={'splits':[{'person_id':old,'retain_records':[records[0]['id']],'new_records':[records[1]['id']]}]}
-        with self.correction_file(data):
-            self.rebuild([r]);first={m['id']:m['person_id'] for m in self.rows('mps')}
-            self.rebuild([r]);self.assertEqual(first,{m['id']:m['person_id'] for m in self.rows('mps')})
-        self.assertEqual(first[records[0]['id']],old);self.assertNotEqual(first[records[1]['id']],old)
-
     def test_invalid_corrections_preserve_database_bytes(self):
         r=report();self.rebuild([r]);before=self.db.read_bytes()
         with self.correction_file({'merges':[{'persons':['missing']}]}):
             with self.assertRaisesRegex(build.DatabaseRebuildError,'unknown persons'):self.rebuild([r])
         self.assertEqual(before,self.db.read_bytes())
-
-    def test_invalid_split_keys_preserve_store_and_public_path_safety(self):
-        r=report(names=('Ada Example','Bea Example'));self.rebuild([r]);records=self.rows('mps')
-        old=records[0]['person_id'];before=self.db.read_bytes()
-        for key,diagnostic in ((old,'different person key'),('../escaped','URL-safe filename')):
-            with self.subTest(key=key), self.correction_file({'splits':[{
-                'person_id':old,'retain_records':[records[0]['id']],
-                'new_records':[records[1]['id']],'new_person_id':key}]}):
-                with self.assertRaisesRegex(build.DatabaseRebuildError,diagnostic):self.rebuild([r])
-                self.assertEqual(before,self.db.read_bytes())
 
     def test_alias_cycle_and_unreadable_registry_fail_without_replacement(self):
         r=report(names=('Ada Example','Bea Example'));self.rebuild([r]);people=self.rows('persons')

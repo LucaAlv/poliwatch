@@ -92,7 +92,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(before, self.db.read_bytes())
         self.assertEqual(list(self.root.glob(".store.sqlite.*.tmp")), [])
 
-    # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only contradictory assignments, unknown merge persons and split keys were tested; seam=none
+    # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only unknown merge persons were tested; seam=none
     def test_invalid_corrections_abort_without_replacing_store(self):
         r = report(names=("Ada Example", "Bea Example"))
         self.rebuild([r])
@@ -104,21 +104,44 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             ("field not an array", {"merges": {}}, "merges must be an array"),
             ("missing required field", {"partitions": [{"labels": {"a": "b"}}]}, "requires xml_redner_id"),
             ("empty partition labels", {"partitions": [{"xml_redner_id": "9", "labels": {}}]}, "nonempty name-to-owner"),
-            ("unknown occurrence", {"assignments": [{"occurrence_id": "speech-v1-none", "person_id": people[0]}]}, "Unknown occurrence"),
-            ("unknown assignment person", {"assignments": [{"occurrence_id": first_speech, "person_id": "ghost"}]}, "Unknown assignment person"),
-            ("overlapping split", {"splits": [{"person_id": people[0], "retain_records": [records[0]], "new_records": [records[0]]}]}, "disjoint"),
-            ("unknown split record", {"splits": [{"person_id": people[0], "retain_records": [records[0]], "new_records": ["nope"]}]}, "unknown records"),
-            ("unknown split owner", {"splits": [{"person_id": "ghost", "retain_records": [records[0]], "new_records": [records[1]]}]}, "Split owner ghost is unknown"),
+            # Records placed on another person wait for their redesign (TODOS.md).
+            ("assignments disabled", {"assignments": [{"occurrence_id": first_speech, "person_id": people[0]}]}, "assignments are disabled"),
+            ("splits disabled", {"splits": [{"person_id": people[0], "retain_records": [records[0]], "new_records": [records[1]]}]}, "splits are disabled"),
             ("survivor outside the merge", {"merges": [{"persons": [people[0]], "survivor": people[1]}]}, "not a member"),
             ("partition occurrences not an object", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "occurrences": ["x"]}]}, "occurrences must be an object"),
             ("merge persons not an array", {"merges": [{"persons": "abc"}]}, "merge persons must be a nonempty array"),
             ("redner id not a string", {"partitions": [{"xml_redner_id": 11005304, "labels": {"a": "b"}}]}, "xml_redner_id must be a nonempty string"),
-            ("split records not an array", {"splits": [{"person_id": people[0], "retain_records": records[0], "new_records": [records[1]]}]}, "retain_records must be a nonempty array"),
+            # Value: protects=every nested corrections field is type-checked and a bad file aborts before any write; fails_when=any text()/texts() guard is dropped; why_new=only top-level shapes and a few nested ones were tabled; seam=none
+            ("occurrence entry not an object", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "occurrences": {"k": ["x"]}}]}, "partition occurrence 'k' must be an object"),
+            ("occurrence without display_name", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "occurrences": {"k": {}}}]}, "display_name of partition occurrence 'k' must be a nonempty string"),
+            ("profile_owner not a string", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "profile_owner": 5}]}, "partition profile_owner must be a nonempty string"),
+            ("partition owner not a string", {"partitions": [{"xml_redner_id": "9", "labels": {"a": 5}}]}, "partition owner of 'a' must be a nonempty string"),
+            ("merge survivor not a string", {"merges": [{"persons": [people[0]], "survivor": 5}]}, "merge survivor must be a nonempty string"),
+            ("merge person not a string", {"merges": [{"persons": [5]}]}, "merge persons must be a nonempty string"),
+            # Value: protects=a partition the consumers cannot read (null or [] occurrences, a profile owner outside its labels, a Redner-ID partitioned twice, one printed name for two owners) aborts the rebuild instead of crashing later or being silently ignored; fails_when=the loader accepts the shape and corrected_speaker/partition_identity misread it; why_new=only well-typed partitions were tabled; seam=none
+            ("null occurrences", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "occurrences": None}]}, "occurrences must be an object"),
+            ("empty-array occurrences", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "occurrences": []}]}, "occurrences must be an object"),
+            ("profile_owner outside labels", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}, "profile_owner": "c"}]}, "profile_owner 'c' is not one of its label owners"),
+            ("redner id partitioned twice", {"partitions": [{"xml_redner_id": "9", "labels": {"a": "b"}}, {"xml_redner_id": "9", "labels": {"c": "d"}}]}, "Redner-ID 9 is partitioned twice"),
+            ("one name for two owners", {"partitions": [{"xml_redner_id": "9", "labels": {"Ada Example": "ada-a", "Dr. Ada Example": "ada-b"}}]}, "labels for 'ada example' name two owners"),
         ]
         before = self.db.read_bytes()
         for label, data, diagnostic in cases:
             with self.subTest(label), self.correction_file(data):
                 with self.assertRaisesRegex(build.DatabaseRebuildError, diagnostic):
+                    self.rebuild([r])
+                self.assertEqual(before, self.db.read_bytes())
+
+    # Value: protects=a missing or unparseable corrections file aborts the rebuild with a registry error before any write; fails_when=the loader treats an unreadable file as empty or lets the OSError/JSON error escape unwrapped; why_new=the corrections table only varied well-formed JSON; seam=none
+    def test_an_unreadable_corrections_file_aborts_without_replacing_store(self):
+        r = report()
+        self.rebuild([r])
+        before = self.db.read_bytes()
+        broken = self.root / "broken.json"
+        broken.write_text("{not json")
+        for label, path in (("missing file", self.root / "absent.json"), ("invalid JSON", broken)):
+            with self.subTest(label), mock.patch.object(registry, "CORRECTIONS_PATH", path):
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "Unreadable person corrections"):
                     self.rebuild([r])
                 self.assertEqual(before, self.db.read_bytes())
 
@@ -136,7 +159,6 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         with self.assertRaisesRegex(build.DatabaseRebuildError, "Shared Redner-ID 11005304"):
             self.rebuild([reviewed, unreviewed])
         self.assertEqual(before, self.db.read_bytes())
-
 
     # Value: protects=persist_report_file and run_facts_engine honour the writer lock and persist_report_file issues and binds a person; fails_when=either path skips the lock or persists without issuing a bound person; why_new=only rebuild_database_from_entries was tested under lock contention; seam=none
     def test_direct_persistence_paths_share_the_writer_lock_and_issue_persons(self):
@@ -174,6 +196,23 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         markup = render.render_html(reviewed)
         self.assertIn("Alexander Föhr", markup)
         self.assertNotIn("Garbled Name", markup)
+
+    # Value: protects=the cached dossier JSON keeps the printed speaker after its page was rendered, so a second write (the online build writes every dossier twice) never turns the reviewed name and blanked profile into source evidence; fails_when=render_html writes the corrected speaker or occurrence_id back into the report it was given; why_new=the render test only checked the markup; seam=none
+    def test_writing_a_dossier_twice_keeps_the_printed_speaker_in_its_json(self):
+        reviewed = report("5560", names=("Garbled Name",), rede_ids={"Garbled Name": "ID209407600"})
+        speaker = reviewed["agenda_items"][0]["xml_speakers"][0]["speaker"]
+        speaker.update(xml_redner_id="11005304", abgeordnetenwatch={"id": 5, "match": "ext_id", "url": "https://aw.example/5"})
+        pristine = json.dumps(reviewed, sort_keys=True)
+        for folder in ("data", "protocols"):
+            (self.root / folder).mkdir(exist_ok=True)
+        first = build.write_report_files(reviewed, self.root, {})
+        written = first["report_path"].read_text(encoding="utf-8")
+        self.assertIn("Dirk-Ulrich Mende", first["page_path"].read_text(encoding="utf-8"))  # the page shows the review
+        build.write_report_files(reviewed, self.root, {})
+        self.assertEqual(json.dumps(reviewed, sort_keys=True), pristine)
+        self.assertEqual(first["report_path"].read_text(encoding="utf-8"), written)
+        self.assertIn("Garbled Name", written)
+        self.assertNotIn("occurrence_id", written)
 
     # Value: protects=a rebuild issues the same persons to the same names whatever order the cached reports arrive in; fails_when=the newest-first sort of the entries is dropped so name-only persons take p-NNNNNN ordinals in input order; why_new=the reordering tests use Redner-ID persons whose keys are content hashes and never touch ordinals; seam=none
     def test_a_rebuild_issues_the_same_persons_whatever_the_report_order(self):
@@ -240,9 +279,21 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                     self.rebuild([r])
                 self.assertEqual(damaged, self.db.read_bytes())
                 self.assertEqual(list(self.root.glob(".store.sqlite.*.tmp")), [])
+        # Value: protects=initialize refuses a store whose registry tables vanished instead of minting an empty registry; fails_when=require_current_schema skips the registry-tables check; why_new=copy_previous guards replay only, not a direct initialize of the build store; seam=none
+        with self.subTest("direct initialize without registry tables"):
+            self.db.write_bytes(pristine)
+            with contextlib.closing(sqlite3.connect(self.db)) as conn:
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.executescript("; ".join(f"DROP TABLE {table}" for table in registry.REGISTRY_TABLES))
+                conn.commit()
+            with contextlib.closing(store.connect(self.db)) as conn:
+                with self.assertRaisesRegex(registry.RegistryError, "Incomplete person registry"):
+                    store.initialize(conn)
+                names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertFalse(names & set(registry.REGISTRY_TABLES))
 
 
-    # Value: protects=a source that now names a different Redner-ID or DIP id moves the occurrence to that identity's record while enrichment keeps the pin; fails_when=bind keeps the bound record on a hard-ID conflict (Berta's data lands on Anna) or moves it on a name/party change; why_new=only partition and assignment moves were tested; seam=none
+    # Value: protects=a source that now names a different Redner-ID or DIP id moves the occurrence to that identity's record while enrichment keeps the pin; fails_when=bind keeps the bound record on a hard-ID conflict (Berta's data lands on Anna) or moves it on a name/party change; why_new=only partition moves were tested; seam=none
     def test_a_changed_hard_id_rebinds_the_occurrence_but_enrichment_keeps_it(self):
         conn = self.open_store()
         anna = self.up(conn, "occ-1", "xml:1", "Anna Alt", xml="1")
@@ -291,20 +342,6 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(self.grouping(second), self.grouping(fresh))
         self.assertEqual(len(self.grouping(second)), 3)
 
-    # Value: protects=an assignment naming a retired alias lands on its survivor instead of re-electing the alias; fails_when=reconcile writes the alias key as the record's owner so merge promotes it over the survivor; why_new=assignments were only tested against live person keys; seam=none
-    def test_an_assignment_to_a_retired_key_keeps_the_survivor(self):
-        conn = self.open_store()
-        a = self.up(conn, "occ-a", "xml:1", "Anna Eins", xml="1", aw=5, match="ext_id")
-        self.up(conn, "roster:2", "dip:2", "Anna Eins", dip="2", aw=5, match="ext_id", mdb=True)
-        c = self.up(conn, "occ-c", "xml:3", "Cara Drei", xml="3")
-        registry.reconcile(conn)  # the shared aw id merges the first two durably
-        (retired, keep), = [tuple(row) for row in conn.execute("SELECT id, person_id FROM person_aliases")]
-        with self.correction_file({"assignments": [{"occurrence_id": "occ-c", "person_id": retired}]}):
-            registry.reconcile(conn)
-        self.assertEqual(self.person_of_records(conn)[c], keep)
-        self.assertEqual(self.person_of_records(conn)[a], keep)
-        self.assertEqual([tuple(row) for row in conn.execute("SELECT id, person_id FROM person_aliases")], [(retired, keep)])
-
     # Value: protects=a partition correction added after a store exists moves the occurrences to new persons, keeps the old record and person, and a further replay changes nothing; fails_when=bind keeps the pre-partition binding or replay mints new keys each time; why_new=the shipped Foehr/Mende test only built from an empty store; seam=none
     def test_a_partition_added_to_an_existing_store_splits_it_and_replays_stably(self):
         r = report(names=("Alexander Föhr", "Dirk-Ulrich Mende"))
@@ -340,6 +377,30 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(evidence["mende"]["aw_match"], "partitioned")
         self.assertTrue(evidence["mende"]["profile_blocked"])
         self.assertEqual(evidence["foehr"]["aw_politician_id"], 123)
+        # Value: protects=a non-owner partition record never holds the shared aw id or profile even when corrected_speaker is bypassed; fails_when=bind infers profile_blocked from a missing aw id instead of profile_owner; why_new=corrected_speaker blanks the id first, so the report path never reaches bind with it; seam=none
+        conn = self.open_store("direct.sqlite")
+        store.upsert_mp(conn, now=store.utc_now(), party_id=None, display_name="Dirk-Ulrich Mende", identity_key="xml:11005304", xml_redner_id="11005304",
+                        aw_politician_id=123, aw_match="ext_id", profile_url="https://example.test/foehr", occurrence_id="occ-mende")
+        mende = conn.execute("SELECT aw_politician_id, profile_url FROM mps").fetchone()
+        self.assertEqual(tuple(mende), (None, None))
+        recorded = json.loads(conn.execute("SELECT evidence_json FROM person_records").fetchone()[0])
+        self.assertTrue(recorded["profile_blocked"])
+        self.assertIsNone(recorded.get("aw_politician_id"))
+        self.assertIsNone(recorded.get("profile_url"))
+        # Value: protects=a partition without profile_owner leaves no record that links the contaminated shared profile; fails_when=a missing profile_owner is read as no restriction, in corrected_speaker or in the record's profile_blocked; why_new=only the shipped file, which names an owner, was tested; seam=none
+        self.db = self.root / "ownerless.sqlite"
+        ownerless = {"partitions": [{"xml_redner_id": "11005304", "labels": {"Alexander Föhr": "foehr", "Dirk-Ulrich Mende": "mende"}}]}
+        with self.subTest("partition without profile_owner"), self.correction_file(ownerless):
+            self.rebuild([r])
+            self.assertEqual(len(self.rows("person_records")), 2)
+            for mp in self.rows("mps"):
+                self.assertIsNone(mp["aw_politician_id"], mp["display_name"])
+                self.assertIsNone(mp["profile_url"], mp["display_name"])
+            for rec in self.rows("person_records"):
+                evidence = json.loads(rec["evidence_json"])
+                self.assertTrue(evidence["profile_blocked"], rec["partition"])
+                self.assertIsNone(evidence.get("aw_politician_id"), rec["partition"])
+                self.assertIsNone(evidence.get("profile_url"), rec["partition"])
 
     # Value: protects=a person key may not be a reserved page name or differ only by case from an issued key; fails_when=allocate or validate accepts index or Foehr beside foehr so one page file overwrites another; why_new=the key regex was only tested for URL-unsafe characters; seam=none
     def test_reserved_and_case_colliding_person_keys_are_refused(self):
@@ -404,36 +465,10 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         # Value: protects=the page key a name guess keeps is the earlier issued person key, so the public URL does not depend on which record the guess names first; fails_when=the guess pass elects the later issued key (min ordinal becomes max); why_new=the test checked only that the other key redirects, not which key is the page; seam=none
         ordinals = dict(conn.execute("SELECT id, ordinal FROM persons"))
         self.assertEqual(mp["id"], min(homes, key=ordinals.get))
-        (self.root / "data").mkdir(exist_ok=True)
+        for folder in ("data", "protocols"):
+            (self.root / folder).mkdir(exist_ok=True)
         build.write_abgeordnete_pages(self.root, mps)
         self.assertIn(mp["id"], (self.root / "abgeordnete" / f"{loser}.html").read_text(encoding="utf-8"))
-
-    # Value: protects=a reviewed assignment of an occurrence whose speaker carries an aw id does not drag the original speaker's record onto the reviewed owner; fails_when=pass 1b treats the partitioned aw id as a name-found id and joins the assigned copy to the original; why_new=the assignment tests used speakers without aw ids; seam=none
-    def test_an_assignment_with_an_aw_id_does_not_drag_the_original_speaker(self):
-        conn = self.open_store()
-        ada = self.up(conn, "occ-a", "xml:1", "Ada Example", xml="1", aw=77, match="ext_id", party="SPD")
-        bea = self.up(conn, "occ-b", "xml:2", "Bea Example", xml="2", aw=78, match="ext_id", party="SPD")
-        registry.reconcile(conn)
-        ada_person, bea_person = self.person_of_records(conn)[ada], self.person_of_records(conn)[bea]
-        with self.correction_file({"assignments": [{"occurrence_id": "occ-x", "person_id": bea_person}]}):
-            self.up(conn, "occ-x", "xml:1", "Ada Example", xml="1", aw=77, match="ext_id", party="SPD")
-            registry.reconcile(conn)
-        after = self.person_of_records(conn)
-        self.assertEqual((after[ada], after[bea]), (ada_person, bea_person))
-
-    # Value: protects=assigning a roster occurrence to another person leaves the previous owner's person issued instead of folding it into the new owner; fails_when=the dip key ignores the partition so the assignment record re-links to the old dip record and a durable alias retires the previous owner; why_new=assignments were only tested on speaker occurrences; seam=none
-    def test_assigning_a_roster_occurrence_does_not_retire_its_previous_owner(self):
-        conn = self.open_store()
-        roster = self.up(conn, "roster:5", "dip:5", "Ada Example", dip="5", mdb=True)
-        speaker = self.up(conn, "occ-x", "xml:1", "Bea Beispiel", xml="1")
-        persons = self.person_of_records(conn)
-        next_build = self.next_build(conn)  # a replay: fresh mps rows, registry carried forward
-        with self.correction_file({"assignments": [{"occurrence_id": "roster:5", "person_id": persons[speaker]}]}):
-            self.up(next_build, "roster:5", "dip:5", "Ada Example", dip="5", mdb=True)
-            self.up(next_build, "occ-x", "xml:1", "Bea Beispiel", xml="1")
-            registry.reconcile(next_build)
-        self.assertEqual(next_build.execute("SELECT COUNT(*) FROM person_aliases").fetchone()[0], 0)
-        self.assertIsNotNone(next_build.execute("SELECT 1 FROM persons WHERE id=?", (persons[roster],)).fetchone())
 
     # Value: protects=a guess-merged pair that is not re-touched in the next build is split again when a namesake arrives; fails_when=reconcile stops resetting every record to its durable home before recomputing guesses; why_new=the arrival-order test re-persisted every record in the second build; seam=none
     def test_a_carried_guess_that_stops_holding_is_undone_for_untouched_records(self):
@@ -467,6 +502,48 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         with contextlib.closing(store.connect(self.db)) as conn:
             with self.assertRaisesRegex(registry.RegistryError, "Invalid person key"):
                 build.collect_abgeordnete(conn)
+        # Value: protects=collect_abgeordnete never writes index.html as a person, folds case collisions and lets a redirect overwrite no live page; fails_when=the reserved-name, casefold or page_ids guard is removed; why_new=only an unsafe-character key was tested; seam=none
+        def edited(damage, names=("Ada Example",)):
+            self.db.unlink()
+            self.rebuild([report(names=names)])
+            with contextlib.closing(sqlite3.connect(self.db)) as conn:
+                conn.execute("PRAGMA foreign_keys = OFF")
+                people = [row[0] for row in conn.execute("SELECT id FROM persons ORDER BY ordinal")]
+                damage(conn, *people)
+                conn.commit()
+            return people
+
+        def rename(new):
+            def apply(conn, old):
+                for table, column in (("persons", "id"), ("person_records", "person_id"), ("person_records", "home_person_id"), ("person_bindings", "person_id"), ("mps", "person_id")):
+                    conn.execute(f"UPDATE {table} SET {column} = ? WHERE {column} = ?", (new, old))
+            return apply
+
+        def aliased(*keys):
+            def apply(conn, person):
+                for number, key in enumerate(keys):
+                    conn.execute("INSERT INTO persons VALUES (?, ?)", (key, 90 + number))
+                    conn.execute("INSERT INTO person_aliases VALUES (?, ?)", (key, person))
+            return apply
+
+        for label, damage, diagnostic in (
+            ("a person keyed index", rename("index"), "Invalid person key 'index'"),
+            ("an alias keyed index", aliased("index"), "Invalid person key 'index'"),
+            ("two aliases differing only by case", aliased("Old1", "old1"), "differ only by case"),
+        ):
+            with self.subTest(label):
+                edited(damage)
+                with contextlib.closing(store.connect(self.db)) as conn:
+                    with self.assertRaisesRegex(registry.RegistryError, diagnostic):
+                        build.collect_abgeordnete(conn)
+        with self.subTest("an alias keyed like a live page"):
+            def retire_ada_into_bea(conn, ada, bea):
+                conn.execute("INSERT INTO person_aliases VALUES (?, ?)", (ada, bea))
+            ada, bea = edited(retire_ada_into_bea, names=("Ada Example", "Bea Example"))
+            with contextlib.closing(store.connect(self.db)) as conn:
+                mps, _ = build.collect_abgeordnete(conn)
+            self.assertEqual({mp["id"] for mp in mps if mp["has_page"]}, {ada, bea})
+            self.assertTrue(all(ada not in mp["aliases"] for mp in mps))
 
     # Value: protects=--offline on a store with a damaged registry exits 1 with an error line instead of a traceback; fails_when=main catches only RuntimeError so a RegistryError escapes; why_new=only the old-schema rejection was tested through the CLI; seam=none
     def test_offline_cli_reports_an_incomplete_registry_without_a_traceback(self):

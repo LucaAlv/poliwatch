@@ -21,11 +21,7 @@ REGISTRY_TABLES = ("persons", "person_aliases", "person_records", "person_bindin
 PERSON_KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 #: File stems under abgeordnete/ that belong to the site, not to a person.
 RESERVED_PERSON_KEYS = frozenset({"index"})
-#: Partition prefix of a record a reviewed assignment or split placed on a person.
-REVIEWED_PREFIX = "correction:"
-#: Identity-key prefix of a record an occurrence assignment created.
-ASSIGNMENT_PREFIX = "assignment:"
-#: aw_match value of a record whose profile must not link it to anything.
+#: aw_match value of a partition record: its profile is never a trusted join key.
 PARTITIONED = "partitioned"
 
 class RegistryError(ValueError):
@@ -72,16 +68,13 @@ def initialize(conn: sqlite3.Connection) -> None:
     """)
 
 def corrections() -> dict[str, Any]:
-    try:
-        stat = CORRECTIONS_PATH.stat()
-    except OSError as exc:
-        raise RegistryError(f"Unreadable person corrections {CORRECTIONS_PATH}: {exc}") from exc
-    return _load_corrections(CORRECTIONS_PATH, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    return _load_corrections(CORRECTIONS_PATH)
 
 
 @lru_cache(maxsize=8)
-def _load_corrections(path: Path, inode: int, mtime_ns: int, size: int) -> dict[str, Any]:
-    """Cache only a specific file revision; a corrected file is read afresh."""
+def _load_corrections(path: Path) -> dict[str, Any]:
+    """Read once per process: a build is one process, and bind() asks for the
+    corrections on every occurrence. An unreadable file is not cached."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("version") != 1:
@@ -89,7 +82,13 @@ def _load_corrections(path: Path, inode: int, mtime_ns: int, size: int) -> dict[
         for name in ("partitions", "assignments", "merges", "splits"):
             if not isinstance(data.get(name), list):
                 raise ValueError(f"{name} must be an array")
-        required = {"partitions": ("xml_redner_id", "labels"), "assignments": ("occurrence_id", "person_id"), "merges": ("persons",), "splits": ("person_id", "retain_records", "new_records")}
+        # Records placed on another person (occurrence assignments, splits) are
+        # disabled until their redesign (TODOS.md "Reviewed reassignment of a
+        # source record"); a partition or a merge covers today's corrections.
+        for name in ("assignments", "splits"):
+            if data[name]:
+                raise ValueError(f"{name} are disabled until the placed-record redesign; use a partition or a merge")
+        required = {"partitions": ("xml_redner_id", "labels"), "merges": ("persons",)}
         for kind, fields in required.items():
             for index, item in enumerate(data[kind]):
                 if not isinstance(item, dict) or any(field not in item for field in fields):
@@ -105,17 +104,27 @@ def _load_corrections(path: Path, inode: int, mtime_ns: int, size: int) -> dict[
             for item in value:
                 text(item, what)
 
+        partitioned_ids = set()
         for partition in data["partitions"]:
-            text(partition["xml_redner_id"], "partition xml_redner_id")
+            xml_id = text(partition["xml_redner_id"], "partition xml_redner_id")
+            if xml_id in partitioned_ids:
+                raise ValueError(f"Redner-ID {xml_id} is partitioned twice; use one entry")
+            partitioned_ids.add(xml_id)
             if not isinstance(partition["labels"], dict) or not partition["labels"]:
                 raise ValueError("partition labels must be a nonempty name-to-owner object")
+            owner_of_name: dict[str, str] = {}
             for label, owner in partition["labels"].items():
                 text(owner, f"partition owner of {label!r}")
-            occurrences = partition.get("occurrences") or {}
+                name = _normalized_mp_name(label)
+                if owner_of_name.setdefault(name, owner) != owner:
+                    raise ValueError(f"partition labels for {name!r} name two owners")
+            # Consumers read the normalised object, so null and [] are refused here.
+            occurrences = partition.setdefault("occurrences", {})
             if not isinstance(occurrences, dict):
                 raise ValueError("partition occurrences must be an object")
             if partition.get("profile_owner") is not None:
-                text(partition["profile_owner"], "partition profile_owner")
+                if text(partition["profile_owner"], "partition profile_owner") not in owner_of_name.values():
+                    raise ValueError(f"partition profile_owner {partition['profile_owner']!r} is not one of its label owners")
             for key, reviewed in occurrences.items():
                 if not isinstance(reviewed, dict):
                     raise ValueError(f"partition occurrence {key!r} must be an object")
@@ -124,28 +133,15 @@ def _load_corrections(path: Path, inode: int, mtime_ns: int, size: int) -> dict[
             texts(merge_["persons"], "merge persons")
             if merge_.get("survivor") is not None:
                 text(merge_["survivor"], "merge survivor")
-        for split in data["splits"]:
-            text(split["person_id"], "split person_id")
-            texts(split["retain_records"], "split retain_records")
-            texts(split["new_records"], "split new_records")
-            if split.get("new_person_id") is not None:
-                text(split["new_person_id"], "split new_person_id")
-        assigned = {}
-        for assignment in data["assignments"]:
-            occurrence, owner = text(assignment["occurrence_id"], "assignment occurrence_id"), text(assignment["person_id"], "assignment person_id")
-            if occurrence in assigned and assigned[occurrence] != owner:
-                raise ValueError(f"contradictory assignments for occurrence {occurrence}")
-            assigned[occurrence] = owner
-        data["assignment_of"] = assigned  # occurrence id -> owner, for bind()
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise RegistryError(f"Unreadable person corrections {CORRECTIONS_PATH}: {exc}") from exc
+        raise RegistryError(f"Unreadable person corrections {path}: {exc}") from exc
 
 def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -> dict[str, Any]:
     speaker = dict(speaker)
     for partition in corrections()["partitions"]:
         if str(speaker.get("xml_redner_id")) == partition["xml_redner_id"]:
-            reviewed = partition.get("occurrences", {}).get(f"{protocol_id}/{rede_id}")
+            reviewed = partition["occurrences"].get(f"{protocol_id}/{rede_id}")
             if reviewed:
                 speaker["display_name"] = reviewed["display_name"]
             name = _normalized_mp_name(speaker.get("display_name"))
@@ -201,9 +197,14 @@ def allocate(conn: sqlite3.Connection, preferred: str | None = None) -> str:
     conn.execute("INSERT INTO persons VALUES (?, ?)", (key, ordinal))
     return key
 
-def is_placed_identity(identity_key: Any) -> bool:
-    """True for the identity of a record an occurrence assignment created."""
-    return str(identity_key or "").startswith(ASSIGNMENT_PREFIX)
+def _first_touch(conn: sqlite3.Connection, record_id: str) -> bool:
+    """Mark a record as bound on this connection (a full build's live set, read
+    by reconcile); True the first time. The temp table is made on first use."""
+    try:
+        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
+    except sqlite3.OperationalError:
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL)")
+        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
 
 
 def _hard_id_conflict(old: dict[str, Any], new: dict[str, Any]) -> bool:
@@ -224,44 +225,31 @@ def bind(
 
     Returns ``(record_id, home_person_id, identity_key, evidence)``. An occurrence
     that is already bound keeps its record while the source only enriches it; it
-    moves to the record of the new identity on a reviewed assignment, a changed
-    partition or a different official id. Evidence is re-read from the source on
-    a record's first touch in this connection; only registry-owned evidence
-    survives from the earlier build."""
+    moves to the record of the new identity on a changed reviewed partition or a
+    different official id. Evidence is re-read from the source on a record's first
+    touch in this connection; only registry-owned evidence survives from the
+    earlier build."""
     evidence["ever_mdb"] = bool(evidence.get("is_mdb"))
     identity = partition_identity(identity, evidence)
-    assignment = corrections()["assignment_of"].get(occurrence)
-    if assignment:
-        # Reports arrive newest first, so the owner may not be issued yet; reconcile
-        # rejects an owner that is still unknown once every report is bound.
-        identity = f"{ASSIGNMENT_PREFIX}{identity}:{assignment}"
-        evidence["partition"] = f"{REVIEWED_PREFIX}{assignment}"
-        evidence["aw_match"] = PARTITIONED
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
     bound = conn.execute("SELECT record_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
     if bound:
         previous = conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
-        # A reviewed partition or occurrence correction, or a source that now
-        # names a different official id, moves a binding; otherwise the
-        # established source record wins over changing attributes.
+        # A reviewed partition, or a source that now names a different official
+        # id, moves a binding; otherwise the established source record wins over
+        # changing attributes.
         moved = (
-            assignment
-            or (evidence.get("partition") and evidence.get("partition") != previous["partition"])
+            (evidence.get("partition") and evidence.get("partition") != previous["partition"])
             or _hard_id_conflict(json.loads(previous["evidence_json"]), evidence)
         )
         if not moved:
             row = previous
             identity = row["identity_key"]
-    # An assignment record carries the printed speaker's profile, not its owner's, so
-    # it links nothing (also after the assignment leaves the file: the record stays).
-    if assignment or (row and is_placed_identity(row["identity_key"])):
-        evidence["profile_blocked"] = True
-    conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL)")
     if row:
         record_id, home = row["id"], resolve(conn, row["home_person_id"])
         previous = json.loads(row["evidence_json"])
         was_mdb = bool(previous.get("ever_mdb") or previous.get("is_mdb"))
-        if not conn.execute("SELECT 1 FROM registry_touched WHERE id = ?", (record_id,)).fetchone():
+        if _first_touch(conn, record_id):
             # First touch in this build: the source speaks again, so nothing but the
             # registry's own ever_mdb (re-derived below) survives from the earlier
             # build; an id the source stopped supplying cannot keep linking records.
@@ -275,12 +263,11 @@ def bind(
         xml = evidence.get("xml_redner_id")
         dip = evidence.get("dip_person_id")
         preferred = stable_key("person", "xml", xml) if xml and not evidence.get("partition") else stable_key("person", "dip", dip) if dip else None
-        owner_issued = assignment and conn.execute("SELECT 1 FROM persons WHERE id=?", (assignment,)).fetchone()
-        home = resolve(conn, assignment) if owner_issued else allocate(conn, preferred)
+        home = allocate(conn, preferred)
+        _first_touch(conn, record_id)
         evidence = {k: v for k, v in evidence.items() if v is not None}
     if evidence.get("profile_blocked"):
         evidence.update(aw_politician_id=None, aw_match=PARTITIONED, profile_url=None)
-    conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,))
     if bound and bound[0] != record_id:
         # The occurrence left its old record; once nothing is bound to it any more
         # that record is stale evidence, which reconcile no longer matches on.
@@ -288,9 +275,12 @@ def bind(
         conn.execute("UPDATE person_records SET evidence_json=? WHERE id=?",
                      (json.dumps({**json.loads(old[0]), "vacated": True}, ensure_ascii=False, sort_keys=True), bound[0]))
     # The current person restarts from the durable home on every touch; reconcile
-    # recomputes any guess merge.
-    conn.execute("INSERT INTO person_records VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json, person_id=excluded.person_id",
-                 (record_id, identity, home, json.dumps(evidence, ensure_ascii=False, sort_keys=True), evidence.get("partition"), home))
+    # recomputes any guess merge. A repeat touch that changes nothing (most vote
+    # members and speeches) skips the write.
+    evidence_json = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+    if not (row and row["id"] == record_id and row["evidence_json"] == evidence_json and row["person_id"] == home):
+        conn.execute("INSERT INTO person_records VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json, person_id=excluded.person_id",
+                     (record_id, identity, home, evidence_json, evidence.get("partition"), home))
     if occurrence:
         conn.execute("INSERT INTO person_bindings VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id, person_id=excluded.person_id", (occurrence, record_id, home))
     return record_id, home, identity, evidence
@@ -460,7 +450,7 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
 
     for row in rows:
         aw_id = row.get("aw_politician_id")
-        # A partitioned or reviewed record carries its profile only as an
+        # A partitioned record carries its profile only as an
         # attribute: it must not rejoin the record that holds the same id.
         if aw_id is None or row.get("partition") or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
             continue
@@ -536,9 +526,8 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     return components, totals
 
 def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> list[dict[str, Any]]:
-    """Every record's evidence with its current person, its partition (a reviewed
-    owner resolved through the alias chain, so a merged owner compares equal to
-    its survivor) and whether it is live. In a full build a record is live when
+    """Every record's evidence with its current person, its partition and whether
+    it is live. In a full build a record is live when
     this build touched it (``touched``); otherwise when it is bound, or was never
     vacated by an occurrence moving to another record. A record that is not live
     is stale evidence: it keeps its person but takes part in no match."""
@@ -546,35 +535,15 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> lis
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
-        partition = record["partition"]
-        if partition and partition.startswith(REVIEWED_PREFIX):
-            partition = REVIEWED_PREFIX + resolve(conn, partition[len(REVIEWED_PREFIX):])
-            evidence["aw_match"] = PARTITIONED  # a reviewed record's profile links nothing, as at bind time
         live = record["id"] in touched if touched is not None else record["id"] in bound or not evidence.get("vacated")
-        evidence.update(id=record["id"], person_id=record["person_id"], partition=partition, live=live)
+        evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live)
         rows.append(evidence)
     return rows
 
 
-def _block_profile(conn: sqlite3.Connection, record: str) -> None:
-    """Strip the profile of a record an assignment placed on another person."""
-    evidence = json.loads(conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (record,)).fetchone()[0])
-    evidence.update(profile_blocked=True, aw_politician_id=None, aw_match=PARTITIONED, profile_url=None)
-    conn.execute("UPDATE person_records SET evidence_json=? WHERE id=?", (json.dumps(evidence, ensure_ascii=False, sort_keys=True), record))
-    conn.execute("UPDATE mps SET aw_politician_id=NULL, aw_match=NULL, profile_url=NULL WHERE id=?", (record,))
-
-
-def _is_reviewed(row: dict[str, Any]) -> bool:
-    return str(row.get("partition") or "").startswith(REVIEWED_PREFIX)
-
-
-def _assign(conn: sqlite3.Connection, record: str, person: str, *, home: bool = False, partition: str | None = None) -> None:
+def _assign(conn: sqlite3.Connection, record: str, person: str) -> None:
     """Point a record, its occurrence bindings and its mps row at a person."""
     conn.execute("UPDATE person_records SET person_id=? WHERE id=? AND person_id != ?", (person, record, person))
-    if home:
-        conn.execute("UPDATE person_records SET home_person_id=? WHERE id=?", (person, record))
-    if partition is not None:
-        conn.execute("UPDATE person_records SET partition=? WHERE id=?", (partition, record))
     conn.execute("UPDATE mps SET person_id=? WHERE id=? AND person_id != ?", (person, record, person))
     conn.execute("UPDATE person_bindings SET person_id=? WHERE record_id=? AND person_id != ?", (person, record, person))
 
@@ -583,13 +552,12 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     """Apply the name-based guesses to the current persons, from the rows alone.
 
     A pure function of ``rows``: it reads no earlier guess, so a replay, an
-    incremental build and a fresh build agree. Only live, unreviewed records are
-    matched (a reviewed record is an explicit decision, a vacated one is stale
-    evidence), but whole persons move, so a guess can never tear a durable or
-    reviewed merge apart. A group that would join two reviewed owners, two
-    partitions, or persons whose official ids contradict stays split; a reviewed
-    owner keeps its key when a group has exactly one."""
-    components, totals = match_rows([row for row in rows if row["live"] and not _is_reviewed(row)])
+    incremental build and a fresh build agree. Only live records are matched (a
+    vacated one is stale evidence), but whole persons move, so a guess can never
+    tear a durable merge apart. A group that would join two partitions, or
+    persons whose official ids contradict, stays split; otherwise the person
+    issued first keeps its key."""
+    components, totals = match_rows([row for row in rows if row["live"]])
     parent: dict[str, str] = {}
 
     def find(person: str) -> str:
@@ -606,14 +574,11 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         groups.setdefault(find(row["person_id"]), []).append(row)
-    live = [row for row in rows if row["live"]]
-    reviewed_persons = {row["person_id"] for row in live if _is_reviewed(row)}
     ordinals = {row[0]: row[1] for row in conn.execute("SELECT id, ordinal FROM persons")}
     for members in groups.values():
         persons = {row["person_id"] for row in members}
-        reviewed = persons & reviewed_persons
         partitions = {row["partition"] for row in members if row["live"] and row.get("partition")}
-        if len(persons) < 2 or len(partitions) > 1:  # a reviewed owner has its own partition, so two of them never join
+        if len(persons) < 2 or len(partitions) > 1:
             continue
         by_person: dict[str, list[dict[str, Any]]] = {}
         for row in members:
@@ -624,7 +589,7 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
                  for person, ids in ((person, _merge_external_ids(rows_of)) for person, rows_of in by_person.items())}
         if any(_external_ids_conflict(known[a], known[b]) for a, b in itertools.combinations(known, 2)):
             continue
-        survivor = next(iter(reviewed)) if reviewed else min(persons, key=ordinals.get)
+        survivor = min(persons, key=ordinals.get)
         for row in members:
             if row["person_id"] != survivor:
                 _assign(conn, row["id"], survivor)
@@ -634,7 +599,7 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
 def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str, int]:
     """Settle which person every record belongs to.
 
-    Durable: the issued home key, reviewed corrections, and merges that rest on a
+    Durable: the issued home key, reviewed merges, and merges that rest on a
     shared Personenkennung (retired keys stay as aliases). Recomputed on every run: the name-based guesses
     (``_guess_merges``), which move a record's current person without retiring any
     key, so a guess that stops holding, or arrives in another order, leaves no trace.
@@ -652,56 +617,10 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     # Every record restarts from its durable home.
     for record in conn.execute("SELECT id, home_person_id FROM person_records").fetchall():
         _assign(conn, record["id"], resolve(conn, record["home_person_id"]))
-    rows = _load_rows(conn, touched)
-    # Explicit assignments/splits block automatic reconciliation across owners.
-    by_id = {row["id"]:row for row in rows}
-    assigned = {}
-    placed_records = set()  # records an occurrence assignment placed (their profile links nothing)
-    for assignment in data["assignments"]:
-        occurrence, owner = assignment["occurrence_id"], assignment["person_id"]
-        binding = conn.execute("SELECT record_id FROM person_bindings WHERE id=?", (occurrence,)).fetchone()
-        if binding is None:
-            raise RegistryError(f"Unknown occurrence {occurrence}")
-        record = binding[0]
-        placed_records.add(record)
-        if not conn.execute("SELECT 1 FROM persons WHERE id=?", (owner,)).fetchone():
-            raise RegistryError(f"Unknown assignment person {owner}")
-        owner = resolve(conn, owner)
-        if record in assigned and assigned[record] != owner:
-            raise RegistryError(f"Contradictory assignments for {record}; partition the source identity first")
-        assigned[record] = owner
-    for split in data["splits"]:
-        original, retained = split["person_id"], split["retain_records"]
-        moved = split["new_records"]
-        if not retained or not moved or set(retained) & set(moved):
-            raise RegistryError("Split must designate disjoint retained and new records")
-        if any(record not in by_id for record in retained + moved):
-            raise RegistryError(f"Split of {original} names unknown records")
-        if not conn.execute("SELECT 1 FROM persons WHERE id=?", (original,)).fetchone():
-            raise RegistryError(f"Split owner {original} is unknown")
-        # A shared Personenkennung may have merged the original into another
-        # person since the split was written; the retained records follow it.
-        current = resolve(conn, original)
-        new_id = allocate(conn, split.get("new_person_id") or stable_key("person-split", original, sorted(moved)))
-        if new_id in (original, current):
-            raise RegistryError(f"Split of {original} must issue a different person key")
-        for record in retained + moved:
-            owner = current if record in retained else new_id
-            if record in assigned and assigned[record] != owner:
-                raise RegistryError(f"Contradictory split assignment for {record}")
-            assigned[record] = owner
-    for record, owner in assigned.items():
-        _assign(conn, record, owner, home=True, partition=f"{REVIEWED_PREFIX}{owner}")
-    for record in placed_records:
-        _block_profile(conn, record)
     # Durable merges: records that share a Personenkennung, then reviewed merges.
-    # A person that holds a reviewed record keeps its key when it is merged.
     rows = _load_rows(conn, touched)
-    reviewed_persons = {row["person_id"] for row in rows if _is_reviewed(row)}
     for members in match_rows([row for row in rows if row["live"]], guesses=False)[0].values():
-        persons = {resolve(conn, row["person_id"]) for row in members}
-        owners = {resolve(conn, person) for person in persons & reviewed_persons}
-        merge(conn, sorted(persons), next(iter(owners)) if len(owners) == 1 else None)
+        merge(conn, sorted({resolve(conn, row["person_id"]) for row in members}))
     for correction in data["merges"]:
         merge(conn, correction["persons"], correction.get("survivor"))
     totals = _guess_merges(conn, _load_rows(conn, touched))
@@ -724,7 +643,11 @@ def validate(conn: sqlite3.Connection) -> None:
                 raise ValueError("expected object")
         except ValueError as exc:
             raise RegistryError(f"Unreadable registry evidence {row[0]}: {exc}") from exc
-    failures = conn.execute("PRAGMA foreign_key_check").fetchall()
+    # Only the tables that point into the registry: reconcile runs this twice per
+    # build, and the whole store is checked once at the end of a rebuild.
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    failures = [row for table in (*REGISTRY_TABLES, "mps") if table in tables
+                for row in conn.execute(f"PRAGMA foreign_key_check({table})").fetchall()]
     if failures:
         raise RegistryError(f"Registry foreign-key violations: {failures[:3]}")
 
