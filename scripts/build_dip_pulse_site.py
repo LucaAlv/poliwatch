@@ -21,11 +21,12 @@
 #      -> ``write_report_and_page``. Every dossier is written twice: as JSON under
 #      ``data/`` and as an HTML page under ``protocols/``.
 #   4. Rebuild the SQLite graph store from those dossiers
-#      -> ``rebuild_database_from_entries`` (schema and writes live in
-#      ``persist_dip_pulse_store``).
+#      -> ``rebuild_database_from_entries``: staged under the writer lock, with the
+#      optional roster ingest, ``person_registry.reconcile``, the facts engine and
+#      the integrity checks (schema and writes live in ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, 16 CSVs and five executed SQL
+#   6. Export a distribution copy of the store, its CSVs and five executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -69,6 +70,7 @@ import contextlib
 import copy
 import csv
 import gzip
+import glob
 import hashlib
 import io
 import json
@@ -78,6 +80,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import stat as stat_module
 import sys
 import tempfile
 import time
@@ -103,6 +106,8 @@ import abgeordnetenwatch as aw
 import derive
 import publication_state as publication
 import facts
+import person_registry as registry
+from stable_ids import KEY_VERSION, key_prefix, roster_occurrence_id, speech_occurrence_id, speech_rede_id
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -137,6 +142,10 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
+    "persons": "Dauerhafte Personenkennungen und Reihenfolge ihrer Vergabe.",
+    "person_aliases": "Historische Personenkennungen und ihre gültigen Ziele.",
+    "person_records": "Quellenidentitäten mit dauerhafter Personenzuordnung und Abgleichbelegen.",
+    "person_bindings": "Dauerhafte Zuordnung einzelner Reden, MdB-Einträge und Abstimmungsmitglieder.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
     "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
@@ -753,7 +762,7 @@ def report_paths(output_dir: Path, document_number: str) -> tuple[Path, Path, st
 def write_report_files(
     report: dict[str, Any],
     output_dir: Path,
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
     *,
     include_dev_view: bool = False,
@@ -903,7 +912,7 @@ def load_cached_protocols(output_dir: Path) -> list[dict[str, Any]]:
 def rebuild_cached_detail_pages(
     output_dir: Path,
     protocols: list[dict[str, Any]],
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
     cached_entries: list[dict[str, Any]] | None = None,
     *,
@@ -973,7 +982,9 @@ def merge_detail_entries(
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 class DatabaseRebuildError(Exception):
-    """A cached report that could not be persisted; the previous store stays."""
+    """The staged rebuild failed (an unpersistable report, a registry, facts or SQLite
+    error, missing cached evidence, a failed roster fetch or integrity check); the
+    previous store stays."""
 
 
 # Columns holding when a row was written, not what it says. A re-persist that
@@ -1021,12 +1032,13 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
             )
         ]
         for table in tables:
-            columns = [
-                row[1] for row in conn.execute(f'PRAGMA table_info("{table}")') if row[1] not in _TIMESTAMP_COLUMNS
-            ]
+            table_info = list(conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})"))
+            columns = [row[1] for row in table_info if row[1] not in _TIMESTAMP_COLUMNS]
             digest = hashlib.sha256(repr(columns).encode("utf-8"))
-            selected = ", ".join(f'"{column}"' for column in columns)
-            for row in conn.execute(f'SELECT {selected} FROM "{table}" ORDER BY rowid'):
+            selected = ", ".join(sqlite_identifier(column) for column in columns)
+            primary_keys = [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]]
+            order = ", ".join(sqlite_identifier(key) for key in primary_keys or columns)
+            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)} ORDER BY {order}"):
                 digest.update(repr(row).encode("utf-8"))
             digests[table] = digest.hexdigest()
         return digests
@@ -1047,16 +1059,52 @@ def _entry_label(entry: dict[str, Any]) -> str:
     return f"{number} ({entry.get('report_path')})"
 
 
-def rebuild_database_from_entries(
+def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
+                                  today=None, facts_report=None, upgrade=False):
+    """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
+
+    Holds the writer lock; carries the person registry and previous facts forward;
+    persists every report; re-applies the preserved roster (``preserve_roster``) or
+    runs ``roster_ingest(staged_connection)``; reconciles persons; recomputes facts
+    against ``catalog``; validates the registry and integrity; replaces the store
+    only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
+    content changed). ``today`` is the build date the facts are computed for; a
+    ``facts_report`` dict receives the engine's report, so the data pipeline need
+    not compute the facts a second time. Only ``upgrade`` (``--offline --repersist``)
+    accepts a store of an older schema; every other caller is refused, so the
+    registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
+    OS or facts failure, and missing cached evidence for a stored protocol, raise
+    DatabaseRebuildError with the previous store untouched."""
+    try:
+        with registry.writer_lock(database_path):
+            return _rebuild_database_from_entries(database_path, entries,
+                preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
+                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report, upgrade=upgrade)
+    except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
+        raise DatabaseRebuildError(str(exc)) from exc
+
+
+def _rebuild_database_from_entries(
     database_path: Path,
     entries: list[dict[str, Any]],
     *,
     preserve_roster: bool = True,
     keep_if_unchanged: bool = False,
+    catalog: facts.SittingCatalog | None = None,
+    roster_ingest: Any = None,
+    today: date | None = None,
+    facts_report: dict[str, Any] | None = None,
+    upgrade: bool = False,
 ) -> bool:
-    """Rebuild the store from ``entries`` and swap it in. Returns whether the
-    file was replaced: with ``keep_if_unchanged`` a rebuild whose content (leaving
-    timestamps out) equals the current store leaves that file alone."""
+    """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    if not upgrade and database_path.exists():
+        current = facts.open_readonly(database_path)
+        try:
+            pulse_store.require_current_schema(current)
+        except RuntimeError as exc:  # the old-schema refusal; RegistryError reaches the caller as it is
+            raise DatabaseRebuildError(str(exc)) from exc
+        finally:
+            current.close()
     # Every cached role is checked first, so one error lists all of them and
     # nothing is built or replaced (DX-E1).
     derive.check_sprechrollen(entry["report"] for entry in entries)
@@ -1082,13 +1130,30 @@ def rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    temp_path = database_path.with_name(f".{database_path.name}.tmp")
-    if temp_path.exists():
-        temp_path.unlink()
+    # Only the lock holder is here, so a staged copy that is still lying around
+    # is from a crashed run; it holds full speech text, so it must not pile up
+    # next to the published data.
+    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
+    for stale in database_path.parent.glob(f".{glob.escape(database_path.name)}.*.tmp*"):
+        stale.unlink(missing_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{database_path.name}.", suffix=".tmp", dir=database_path.parent)
+    os.close(fd)
+    temp_path = Path(temporary)
     store = pulse_store.connect(temp_path)
     try:
         pulse_store.initialize(store)
-        for entry in entries:
+        if database_path.exists():
+            previous = facts.open_readonly(database_path)
+            try:
+                previous_protocols = {row[0] for row in previous.execute("SELECT id FROM protocols")}
+                available = {str(entry["report"]["protocol"]["id"]) for entry in entries}
+                missing = previous_protocols - available
+                if missing:
+                    raise DatabaseRebuildError(f"Missing cached evidence for protocols {sorted(missing)}; restore their reports before --offline --repersist")
+                registry.copy_previous(previous, store)
+            finally:
+                previous.close()
+        for entry in sorted(entries, key=entry_sort_key, reverse=True):
             try:
                 pulse_store.persist_report(store, entry["report"])
             except Exception as exc:
@@ -1119,6 +1184,7 @@ def rebuild_database_from_entries(
                             party_name=row.get("party_name"),
                         ),
                         dip_person_id=row.get("dip_person_id"),
+                        occurrence_id=roster_occurrence_id(row.get("dip_person_id")),
                         xml_redner_id=None,
                         title=row.get("title"),
                         function=row.get("function"),
@@ -1134,22 +1200,42 @@ def rebuild_database_from_entries(
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
+        if roster_ingest is not None:
+            try:
+                roster_ingest(store)
+            except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
+                raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
+        registry.reconcile(store, full_build=True)
+        store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
+        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog, today=today)
+        registry.validate(store)
+        if store.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise DatabaseRebuildError("Rebuilt database failed integrity_check")
+        if store.execute("PRAGMA foreign_key_check").fetchone():
+            raise DatabaseRebuildError("Rebuilt database failed foreign_key_check")
+        store.commit()
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
     finally:
         store.close()
+    if facts_report is not None:
+        facts_report.update(report)
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
         return False
+    # mkstemp makes the staged copy private; the store keeps the mode it had.
+    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
     temp_path.replace(database_path)
     return True
 
 
 def repersist_cached_reports(
-    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True
+    output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
+    today: date | None = None, facts_report: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -1159,7 +1245,9 @@ def repersist_cached_reports(
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
     entries = merge_detail_entries(protocols, cached, [])
     replaced = rebuild_database_from_entries(
-        database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True
+        database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
+        catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+        today=today, facts_report=facts_report, upgrade=True,
     )
     return cached, replaced
 
@@ -1681,7 +1769,7 @@ def write_report_and_page(
     summary_model: str | None,
     existing_report: dict[str, Any] | None,
     profile_resolver: Any | None = None,
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
     include_dev_view: bool = False,
     summary_max_calls: int = 25,
@@ -1791,7 +1879,7 @@ def write_report_and_page(
 #
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
-# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 16
+# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
 # CSV.gz files, and five SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
@@ -1799,6 +1887,11 @@ def write_report_and_page(
 # built by export_distribution_data(). The page itself never opens the build
 # store.
 # ---------------------------------------------------------------------------
+
+
+def _prefix_range(prefix: str) -> tuple[str, str]:
+    """Bounds for ``id >= ? AND id < ?``: a prefix match the primary-key index can serve (LIKE cannot)."""
+    return prefix, prefix[:-1] + chr(ord(prefix[-1]) + 1)
 
 
 def sqlite_identifier(name: str) -> str:
@@ -1882,7 +1975,7 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
-_TABLE_SOURCE_DERIVED = {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
+_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
 
 
 # The outcome is mostly computed here from the counts (vote_result); only a
@@ -1913,28 +2006,12 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 1
+EXPORT_FORMAT = 2
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
-# Which identifiers a downstream consumer can rely on across releases, and
-# which ones are only guaranteed within a single build. Manifest honesty
-# (eng addendum "stable_keys lists only external identifiers"): mps.id and
-# mps.identity_key are per-build even though identity_key looks stable, because
-# a name-party fallback key can change if a person's name is corrected upstream.
-STABLE_KEYS: dict[str, tuple[str, ...]] = {
-    "protocols": ("id", "document_number"),
-    "votes": ("id",),
-    "proceedings": ("id",),
-    "mps": ("dip_person_id", "aw_politician_id"),
-    "speeches": ("rede_id",),
-}
-PER_BUILD_KEYS: dict[str, tuple[str, ...]] = {
-    "speeches": ("id",),
-    "mps": ("id", "identity_key"),
-    "agenda_items": ("id",),
-    "documents": ("id",),
-}
+# All exported primary keys identify stable source rows or issued registry keys.
+# The manifest derives their declared order directly from the table schema.
 
 # The five recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
@@ -1950,11 +2027,11 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r1-meiste-reden",
         "title": "Wer hielt die meisten Reden?",
         "sql": (
-            "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
+            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
             "FROM speeches s\n"
             "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
-            "JOIN mps m ON m.id = mc.canonical_id\n"
+            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
@@ -2004,12 +2081,12 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r3-abweichler",
         "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
-            "SELECT m.identity_key AS mp_id, m.display_name, p.name AS fraktion,\n"
+            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
             "FROM vote_members vm\n"
             "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
-            "JOIN mps m ON m.id = mc.canonical_id\n"
+            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
             "JOIN parties p ON p.id = vm.party_id\n"
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
@@ -2126,6 +2203,9 @@ def _inputs_hash(
         "source_sha256": source_sha256,
         "recipes_hash": recipes_hash,
         "export_format": export_format,
+        "store_schema": pulse_store.SCHEMA_VERSION,
+        "key_version": KEY_VERSION,
+        "stable_key_policy": "declared-primary-keys",
         "tag": tag,
         "license": license_text,
         "issues_url": issues_url,
@@ -2309,7 +2389,7 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
     return row_count, replacements
 
 
-# Build the distribution copy, the 16 CSVs and datenstand.json from the build
+# Build the distribution copy, the CSVs and datenstand.json from the build
 # store. Called once per build, from main(), after the store and the MP
 # identity mapping are final; render_site() and the page never open the build
 # store themselves (eng addendum: "the page ... never opens the build store").
@@ -2328,8 +2408,7 @@ def export_distribution_data(
     exports_dir: Path,
     *,
     recipes: tuple[dict[str, Any], ...] = RECIPES,
-    canonical_by_mp_id: dict[int, int] | None = None,
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     readiness: dict[str, str] | None = None,
     catalog_count: int = 0,
     dossier_count: int = 0,
@@ -2345,7 +2424,11 @@ def export_distribution_data(
             "upgrade Python or run the export on another machine"
         )
 
-    canonical_by_mp_id = canonical_by_mp_id or {}
+    source = facts.open_readonly(database_path)
+    try:
+        pulse_store.require_current_schema(source)
+    finally:
+        source.close()
     has_page_ids = set((mp_lookup or {}).values())
     readiness = readiness or {}
 
@@ -2389,7 +2472,6 @@ def export_distribution_data(
                 database_path=database_path,
                 gen_dir=gen_dir,
                 recipes=recipes,
-                canonical_by_mp_id=canonical_by_mp_id,
                 has_page_ids=has_page_ids,
                 readiness=readiness,
                 catalog_count=catalog_count,
@@ -2441,8 +2523,7 @@ def _run_export(
     database_path: Path,
     gen_dir: Path,
     recipes: tuple[dict[str, Any], ...],
-    canonical_by_mp_id: dict[int, int],
-    has_page_ids: set[int],
+    has_page_ids: set[str],
     readiness: dict[str, str],
     catalog_count: int,
     dossier_count: int,
@@ -2475,19 +2556,30 @@ def _run_export(
         raise
     finally:
         source_conn.close()
+    # The manifest's source hash was taken from the file as it was before the
+    # copy; a store swapped in meanwhile would be published under that hash.
+    after = database_path.stat()
+    if (after.st_ino, after.st_size, after.st_mtime_ns) != (source_stat.st_ino, source_stat.st_size, source_stat.st_mtime_ns):
+        dist_conn.close()
+        raise RuntimeError("export: the build store changed while it was copied; re-run the export")
 
     try:
         # Direct exports and older SQLite stores may not have been migrated.
         if "paragraphs_json" in {row["name"] for row in dist_conn.execute("PRAGMA table_info(speeches)")}:
             dist_conn.execute("ALTER TABLE speeches DROP COLUMN paragraphs_json")
         dist_conn.execute(
-            "CREATE TABLE mp_canonical (mp_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL, has_page INTEGER NOT NULL)"
+            "CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY NOT NULL REFERENCES mps(id), canonical_id TEXT NOT NULL REFERENCES persons(id), has_page INTEGER NOT NULL)"
         )
+        # Read from the copy, not the source: another build may have replaced
+        # the store since, and the mapping must match the rows it points at.
         mp_rows = [
             (mp_id, canonical_id, 1 if canonical_id in has_page_ids else 0)
-            for mp_id, canonical_id in sorted(canonical_by_mp_id.items())
+            for mp_id, canonical_id in dist_conn.execute("SELECT id, person_id FROM mps ORDER BY id")
         ]
         dist_conn.executemany("INSERT INTO mp_canonical(mp_id, canonical_id, has_page) VALUES (?, ?, ?)", mp_rows)
+        violations = dist_conn.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise RuntimeError(f"export: distribution copy has foreign-key violations: {[tuple(row) for row in violations[:3]]}")
         # Only the CREATE statements feed the hash; iter_tables() would also
         # COUNT(*) every table, which the final snapshot pass does once anyway.
         create_statements = sorted(
@@ -2498,7 +2590,7 @@ def _run_export(
         )
         schema_hash = hashlib.sha256("\n".join(create_statements).encode("utf-8")).hexdigest()
         dist_conn.execute(
-            "CREATE TABLE datenstand (tag TEXT, export_format INTEGER, license TEXT, schema_hash TEXT, source_sha256 TEXT)"
+            "CREATE TABLE datenstand (tag TEXT PRIMARY KEY NOT NULL, export_format INTEGER, license TEXT, schema_hash TEXT, source_sha256 TEXT)"
         )
         dist_conn.execute(
             "INSERT INTO datenstand(tag, export_format, license, schema_hash, source_sha256) VALUES (?, ?, ?, ?, ?)",
@@ -2610,8 +2702,7 @@ def _run_export(
                     for column in table["columns"]
                 ],
                 "foreign_keys": table["foreign_keys"],
-                "stable_keys": list(STABLE_KEYS.get(table["name"], ())),
-                "per_build_keys": list(PER_BUILD_KEYS.get(table["name"], ())),
+                "stable_keys": [column["name"] for column in sorted(table["columns"], key=lambda col: col["pk"]) if column["pk"]],
             }
             for table in tables_info
         ]
@@ -2752,7 +2843,7 @@ def resolve_entity_link(
     link_kind: str | None,
     value: Any,
     *,
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str | None:
@@ -2860,7 +2951,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
 def render_daten_recipes(
     manifest: dict[str, Any],
     *,
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str:
@@ -3274,7 +3365,7 @@ def render_database_page(
     manifest: dict[str, Any],
     *,
     data_base_url: str = "data/exports/",
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     document_numbers: set[str] | None = None,
     bill_slugs: set[str] | None = None,
     is_remote: bool = False,
@@ -3345,7 +3436,7 @@ print(conn.execute("SELECT COUNT(*) FROM protocols").fetchone())</code></pre>
         <pre><code>import pandas as pd, sqlite3
 conn = sqlite3.connect("bundestag-pulse.sqlite")
 speeches = pd.read_sql("SELECT * FROM speeches", conn)
-# CSV alternative: pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={{"mp_id": "Int64"}})</code></pre>
+# CSV alternative: pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={{"mp_id": "string"}})</code></pre>
         <p>SQLite ist die maßgebliche Quelle; die CSV-Dateien sind ein verbatim Export ohne Formel-Escaping &mdash; beim Import in Tabellenkalkulationen als Text behandeln.</p>
       </section>
       <section class="rule-section">
@@ -5392,7 +5483,7 @@ def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[s
 # Input: the dossier entries of this build. Output: one normalised bill record
 # per procedure, sorted newest activity first, ready for render_bills_index and
 # render_bill_detail.
-def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str, str] | None = None) -> list[dict[str, Any]]:
     bills: dict[str, dict[str, Any]] = {}
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
 
@@ -5537,19 +5628,27 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         }
                     )
 
-                # Tally who spoke about this bill and how much, keyed by
-                # name+party. External ids are kept so the detail page can link
+                # Tally who spoke about this bill and how much, keyed by the
+                # person the store bound the speech to, else by name+party (two
+                # namesakes of one party would otherwise share one row and one
+                # link). External ids are kept so the detail page can link
                 # the speaker to their Abgeordnete profile.
                 speaker_bucket = speaker_counts.setdefault(key, {})
-                for speech in item.get("xml_speakers") or []:
-                    speaker = speech.get("speaker") or {}
+                for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
+                    # The reviewed speaker, as on the protocol page: a shared
+                    # Redner-ID's occurrences are tallied under their own person.
+                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+                    speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
                     name = derive.speaker_display_name(speaker)
                     party = pulse_html.speaker_party(speaker, protocol)
-                    speaker_key = f"{name}|{party}"
+                    occurrence_id = speech_occurrence_id(protocol.get("id"), rede_id)
+                    person_id = (mp_lookup or {}).get(occurrence_id)
+                    speaker_key = f"person:{person_id}" if person_id else f"{name}|{party}"
                     entry_count = speaker_bucket.setdefault(
                         speaker_key,
                         {"name": name, "party": party, "speech_count": 0, "char_count": 0},
                     )
+                    entry_count["occurrence_id"] = occurrence_id
                     entry_count["speech_count"] += 1
                     entry_count["char_count"] += int(speech.get("char_count") or 0)
                     # Keep the speaker's external ids so the bill page can link to
@@ -5929,7 +6028,7 @@ def _bill_event_href(value: Any) -> str:
 
 def render_bill_detail(
     bill: dict[str, Any],
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
 ) -> str:
     features = features or publication_selection()
@@ -5992,6 +6091,7 @@ def render_bill_detail(
         mp_href = pulse_html.mp_page_href(
             {
                 "abgeordnetenwatch": {"id": speaker.get("aw_id"), "match": speaker.get("aw_match")},
+                "occurrence_id": speaker.get("occurrence_id"),
                 "xml_redner_id": speaker.get("xml_redner_id"),
             },
             mp_lookup,
@@ -6097,7 +6197,7 @@ def render_bill_detail(
 def write_bill_pages(
     output_dir: Path,
     bills: list[dict[str, Any]],
-    mp_lookup: dict[str, int] | None = None,
+    mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
 ) -> dict[str, Any]:
     features = features or publication_selection()
@@ -6124,10 +6224,11 @@ def write_bill_pages(
 #
 # The MP area is assembled in three steps:
 #   1. ingest_mdb_roster()    - pull the full MdB roster from DIP /person into
-#                               the SQLite store, so the list is complete rather
-#                               than limited to people seen in ingested sittings
-#   2. collect_abgeordnete()  - read the store back and consolidate rows that
-#                               describe the same person into one profile
+#                               the staged store (inside the rebuild, followed by
+#                               person_registry.reconcile), so the list is complete
+#                               rather than limited to people seen in sittings
+#   2. collect_abgeordnete()  - read the store back and pool the records of each
+#                               person (mps.person_id) into one profile
 #   3. render/write functions - emit the roster page and one profile per person
 #
 # MP pages are public; only full-roster acquisition is operator-controlled.
@@ -6204,6 +6305,7 @@ def ingest_mdb_roster(
                     aw_politician_id=aw_id, aw_match=aw_match, dip_person_id=compact.get("id")
                 ),
                 dip_person_id=compact.get("id"),
+                occurrence_id=roster_occurrence_id(compact.get("id")),
                 title=compact.get("titel"),
                 function=funktion,
                 wahlperiode=compact.get("wahlperiode"),
@@ -6226,7 +6328,8 @@ def ingest_mdb_roster(
 # The same person can arrive from three directions with different keys: the DIP
 # roster (dip_person_id), a protocol speaker (xml_redner_id) and an
 # abgeordnetenwatch profile (aw_politician_id). The store holds them as separate
-# mps rows; the helpers below decide which rows are the same human being.
+# mps rows; person_registry.reconcile decides which rows are the same human being
+# and writes the result to mps.person_id.
 
 
 def _parse_listish(value: Any) -> list[Any]:
@@ -6244,136 +6347,37 @@ def _parse_listish(value: Any) -> list[Any]:
     return [text]
 
 
-def _mp_keys(row: dict[str, Any]) -> list[str]:
-    """Personenkennungen of an MP row, used to link rows that describe the same
-    person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
-    id counts only when it was looked up by the Redner-ID (match kind ext_id); one
-    found by searching a name is a Namensabgleich and links nothing."""
-    keys: list[str] = []
-    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
-        keys.append(f"aw:{row['aw_politician_id']}")
-    if row.get("dip_person_id"):
-        keys.append(f"dip:{row['dip_person_id']}")
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
-        keys.append(f"xml:{xml_id}")
-    return keys
-
-
-# The external ids a row carries, bucketed by kind. Two rows may only be merged
-# by name+party when their id buckets do not contradict each other.
-def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
-    ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
-    if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
-        ids["aw"].add(str(row["aw_politician_id"]))
-    if row.get("dip_person_id"):
-        ids["dip"].add(str(row["dip_person_id"]))
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
-        ids["xml"].add(xml_id)
-    if row.get("profile_url"):
-        ids["profile"].add(str(row["profile_url"]))
-    return ids
-
-
-# Union of the id buckets across all rows already merged into one person.
-def _merge_external_ids(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
-    merged: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
-    for row in rows:
-        for kind, values in _mp_external_ids(row).items():
-            merged[kind].update(values)
-    return merged
-
-
-# True when both sides carry ids of the same kind and none of them overlap -
-# that is positive evidence of two different people, so no merge.
-def _external_ids_conflict(left: dict[str, set[str]], right: dict[str, set[str]]) -> bool:
-    for kind in left:
-        if left[kind] and right[kind] and not (left[kind] & right[kind]):
-            return True
-    return False
-
-
-def _clean_mp_name(name: Any) -> str:
-    # Roster display names are the verbose DIP "titel" ("Dr. Carolin Wagner, MdB,
-    # SPD"); trim the ", MdB…" tail for a clean profile heading. Speaker names
-    # (plain) pass through unchanged.
-    text = str(name or "").strip()
-    return text.split(", MdB")[0].strip() or text
-
-
-# Academic titles are written on one side and left off on the other ("Dr. Janosch
-# Dahmen" in a Redner line, "Janosch Dahmen" in a vote list), so they are not part of
-# the name a bucket is keyed by. Only leading ones go, and never the last two words.
-_MP_TITLE_WORDS = frozenset(
-    {"dr", "prof", "dipl", "ing", "med", "jur", "rer", "nat", "phil", "h", "c", "habil", "mult", "univ", "mag"}
-)
-
-
-# Casefolded, whitespace-collapsed, title-free name used as a merge bucket key.
-def _normalized_mp_name(name: Any) -> str:
-    words = re.sub(r"\s+", " ", _clean_mp_name(name).casefold()).strip().split(" ")
-    while len(words) > 2 and words[0].rstrip(".") in _MP_TITLE_WORDS:
-        words.pop(0)
-    return " ".join(word for word in words if word)
-
-
-# Party names differ in spelling between sources ("BÜNDNIS 90/DIE GRÜNEN" vs
-# "Grüne"), so compare the normalised token set instead of the raw string.
-def _normalized_mp_party(party: Any) -> str:
-    text = str(party or "").strip()
-    if not text:
-        return ""
-    normalized = derive.zusammenschluss(text)
-    if not normalized:
-        return ""
-    tokens = sorted(aw._party_tokens(normalized))
-    return "|".join(tokens) if tokens else normalized.casefold()
-
-
-def collect_abgeordnete(
-    conn: sqlite3.Connection,
-    stats: dict[str, int] | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, int], dict[int, int]]:
+def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Read MPs with party, speeches, and roll-call votes for the Abgeordnete
-    pages, consolidating rows that describe the same Person (Zusammenführung: the
-    DIP roster row carries the bio; the protocol-speaker row carries the
-    speeches). Returns the consolidated MPs, a lookup from every external id to
-    the page id (so speaker lists can link without dangling), and a map from
-    every mps.id to its canonical (page) id - the third value feeds the Daten
-    export's mp_canonical table, unconditioned by whether the person gets a page.
-    One grouped query each avoids N+1.
+    pages. The store already settled who is the same Person (``mps.person_id``,
+    written by ``registry.reconcile``): the DIP roster row carries the bio, the
+    protocol-speaker rows the speeches, and this pools every record of a person
+    into one entry. Returns the pooled MPs and a lookup from every occurrence
+    binding (speech, roster, roll-call vote member), person key and unambiguous external id to the page id, so
+    speaker lists can link without dangling. One grouped query each avoids N+1.
 
-    Rows join by a shared Personenkennung (provenance ``ext_id``), by a name-found
-    abgeordnetenwatch id that a same-named record holds as a Personenkennung
-    (``corroborated_name``), otherwise by Namensabgleich (``unique_name``): only when a name+party bucket holds exactly
-    one record from the roster/roll-call side and one from the protocol-speaker
-    side, and no Personenkennung contradicts it. Namesakes, or three or more
-    records, stay split: a Person shown twice beats two Persons shown as one.
-    Every returned MP records how many merges of each provenance built it
-    (``merges``); ``stats``, when given, is filled with the totals."""
-    # One query per relation, then grouped in Python - three flat queries beat
+    Matching does not run here; see ``person_registry.reconcile`` for the join
+    rules and which of them are durable."""
+    # One query per relation, then grouped in Python - flat queries beat
     # a per-MP query (N+1) by a wide margin at roster size.
-    # A store from before the match kind was kept has no aw_match: every id in it
-    # counts as found by name until it is resolved again.
-    has_aw_match = any(row["name"] == "aw_match" for row in conn.execute("PRAGMA table_info(mps)"))
     base = conn.execute(
         f"""
         SELECT m.id, m.display_name, m.title, m.function, m.wahlperiode,
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
-               {"m.aw_match" if has_aw_match else "NULL"} AS aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id,
+               m.aw_match, m.person_roles_json,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, pr.partition,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
+        LEFT JOIN person_records pr ON pr.id = m.id
         """
     ).fetchall()
     rows = [dict(r) for r in base]
 
     # All speeches with their protocol and agenda-item context, newest sitting
     # first. Feeds the "Reden im Bundestag" list on a profile page.
-    speeches_by_mp: dict[int, list[dict[str, Any]]] = {}
+    speeches_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         """
         SELECT s.mp_id, s.rede_id, s.page, s.char_count, s.snippet, s.sequence,
@@ -6401,7 +6405,7 @@ def collect_abgeordnete(
 
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
-    votes_by_mp: dict[int, list[dict[str, Any]]] = {}
+    votes_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
         """
         SELECT vm.mp_id, vm.vote, v.id AS vote_id, v.date, v.title, v.topic, v.detail_url
@@ -6422,137 +6426,34 @@ def collect_abgeordnete(
             }
         )
 
-    # Union-find: link rows that share any external id into one person.
-    parent = {row["id"]: row["id"] for row in rows}
-    #: merges of each provenance that went into the component rooted at a row id
-    provenance: dict[int, dict[str, int]] = {row["id"]: {"ext_id": 0, "corroborated_name": 0, "unique_name": 0} for row in rows}
-    totals = {"ext_id": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
-
-    def find(node: int) -> int:
-        while parent[node] != node:
-            parent[node] = parent[parent[node]]
-            node = parent[node]
-        return node
-
-    def union(a: int, b: int, kind: str) -> None:
-        ra, rb = find(a), find(b)
-        if ra == rb:
-            return
-        parent[ra] = rb
-        for name, count in provenance[ra].items():
-            provenance[rb][name] += count
-        provenance[rb][kind] += 1
-        totals[kind] += 1
-
-    # Pass 1: merge rows that share a Personenkennung (a Redner-ID, a DIP
-    # person id, an abgeordnetenwatch id looked up by Redner-ID).
-    first_for_key: dict[str, int] = {}
+    assignments = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
+    current_person_ids = set(assignments.values())
+    page_eligible = {row[0] for row in conn.execute("SELECT DISTINCT person_id FROM person_bindings WHERE id >= ? AND id < ?", _prefix_range(key_prefix("speech")))}
+    historical = []
+    for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
+        evidence = json.loads(record["evidence_json"])
+        person_id = registry.resolve(conn, record["person_id"])
+        if evidence.get("ever_mdb") or evidence.get("is_mdb"):
+            page_eligible.add(person_id)
+        # A record with no mps row keeps its evidence on the page: on its own
+        # person's page, or pooled into the person a stale roster record joined.
+        if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
+            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
+            historical.append(evidence)
+            assignments[record["id"]] = person_id
+    rows.extend(row for row in historical if assignments[row["id"]] in page_eligible)
+    components = {}
     for row in rows:
-        for key in _mp_keys(row):
-            if key in first_for_key:
-                union(row["id"], first_for_key[key], "ext_id")
-            else:
-                first_for_key[key] = row["id"]
-
-    # Pass 1b: a record whose abgeordnetenwatch id was found by name joins the
-    # record that holds the same id as a Personenkennung when both carry the same
-    # name (titles aside). This is how a Person with two Redner-IDs (an MdB id and
-    # one for a government role) is put back together: the name search returned
-    # the profile the Redner-ID lookup found for the other record. A different
-    # name is no corroboration (a namesake's profile), and a contradicting DIP or
-    # abgeordnetenwatch Personenkennung blocks it. Redner-IDs are not compared:
-    # two of them for one Person is exactly the case.
-    def strong_ids(root: int) -> dict[str, set[str]]:
-        ids = _merge_external_ids([member for member in rows if find(member["id"]) == root])
-        return {kind: ids[kind] for kind in ("aw", "dip")}
-
-    for row in rows:
-        aw_id = row.get("aw_politician_id")
-        if aw_id is None or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
-            continue
-        other = first_for_key.get(f"aw:{aw_id}")
-        name = _normalized_mp_name(row.get("display_name"))
-        if other is None or not name or find(other) == find(row["id"]):
-            continue
-        other_name = next(
-            (_normalized_mp_name(member.get("display_name")) for member in rows if member["id"] == other), ""
-        )
-        if name == other_name and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
-            union(row["id"], other, "corroborated_name")
-
-    rows_of: dict[int, list[dict[str, Any]]] = {}
-    for row in rows:
-        rows_of.setdefault(find(row["id"]), []).append(row)
-
-    def sides(root: int) -> set[str]:
-        # "speaker": a Plenarprotokoll named this record as a Redner. "roster":
-        # everything else (a DIP person, a roll-call member).
-        return {"speaker" if member.get("xml_redner_id") else "roster" for member in rows_of[root]}
-
-    # Pass 2: Namensabgleich on the records pass 1 left. A name+party bucket
-    # merges only when it holds exactly two records, one on each side, and no
-    # Personenkennung of one contradicts one of the other. It is a guess, so
-    # any other shape stays split. Buckets are judged on the pass-1 records and
-    # the unions applied afterwards.
-    buckets: dict[tuple[str, str], set[int]] = {}
-    for row in rows:
-        name_key = _normalized_mp_name(row.get("display_name"))
-        party_key = _normalized_mp_party(row.get("party"))
-        if name_key and party_key:
-            buckets.setdefault((name_key, party_key), set()).add(find(row["id"]))
-
-    pending: list[tuple[int, int]] = []
-    for records in buckets.values():
-        if len(records) < 2:
-            continue
-        ordered = sorted(records)
-        speaker = [root for root in ordered if "speaker" in sides(root)]
-        roster = [root for root in ordered if "roster" in sides(root)]
-        if (
-            len(ordered) == 2
-            and len(speaker) == 1
-            and len(roster) == 1
-            and speaker[0] != roster[0]
-            and not _external_ids_conflict(
-                _merge_external_ids(rows_of[speaker[0]]), _merge_external_ids(rows_of[roster[0]])
-            )
-        ):
-            pending.append((speaker[0], roster[0]))
-        elif len(ordered) >= 3:
-            totals["buckets_split_3plus"] += 1
-        else:
-            totals["buckets_split_namesakes"] += 1
-    for left, right in pending:
-        left_root, right_root = find(left), find(right)
-        if left_root == right_root:
-            continue
-        # Earlier queued joins can add identifiers to either component. Check
-        # the current components so aliases cannot bridge two different people.
-        if _external_ids_conflict(
-            _merge_external_ids(rows_of[left_root]), _merge_external_ids(rows_of[right_root])
-        ):
-            totals["buckets_split_namesakes"] += 1
-            continue
-        union(left, right, "unique_name")
-        rows_of[right_root].extend(rows_of.pop(left_root))
-
-    # Group the merged rows back into one bucket per person.
-    components: dict[int, list[dict[str, Any]]] = {}
-    for row in rows:
-        components.setdefault(find(row["id"]), []).append(row)
+        components.setdefault(assignments[row["id"]], []).append(row)
 
     mps: list[dict[str, Any]] = []
-    lookup: dict[str, int] = {}
-    canonical_by_mp_id: dict[int, int] = {}
+    lookup: dict[str, str] = {}
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Canonical row: prefer an MdB (roster) row, then lowest id, for a stable
-        # page id shared by the list and the profile.
+        # Prefer the roster biography; the page key comes from the registry.
         members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
-        cid = members[0]["id"]
-        for r in members:
-            canonical_by_mp_id[r["id"]] = cid
+        cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
             for r in members:
@@ -6584,7 +6485,8 @@ def collect_abgeordnete(
 
         mp = {
             "id": cid,
-            "name": _clean_mp_name(first("display_name")),
+            "has_page": cid in page_eligible,
+            "name": registry.clean_mp_name(first("display_name")),
             "party": first("party"),
             "title": first("title"),
             "function": _parse_listish(first("function")),
@@ -6598,7 +6500,6 @@ def collect_abgeordnete(
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
-            "merges": dict(provenance[find(cid)]),
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -6607,24 +6508,51 @@ def collect_abgeordnete(
         }
         mps.append(mp)
         # Only persons that get a page contribute to the link lookup.
-        if mp["is_mdb"] or mp["speech_count"] > 0:
+        if mp["is_mdb"] or mp["speech_count"] > 0 or mp["has_page"]:
             for r in members:
-                for key in _mp_keys(r):
+                for key in registry.mp_keys(r):
                     lookup[key] = cid
 
+    key_owners = {}
+    for row in rows:
+        for key in registry.mp_keys(row):
+            key_owners.setdefault(key, set()).add(assignments[row["id"]])
+    lookup = {key: owner for key, owner in lookup.items() if len(key_owners[key]) == 1}
+    page_ids = {mp["id"] for mp in mps if mp["is_mdb"] or mp["speech_count"] or mp["has_page"]}
+    for binding in conn.execute("SELECT id, person_id FROM person_bindings"):
+        if binding["person_id"] in page_ids:
+            lookup[binding["id"]] = binding["person_id"]
+    for person_id in page_ids:
+        lookup[person_id] = person_id
+    # Every retired or moved key resolves to the person its records are on now:
+    # first through the durable alias chain, then through the guess that may have
+    # moved that survivor's records.
+    current = {registry.resolve(conn, row["home_person_id"]): row["person_id"]
+               for row in conn.execute("SELECT DISTINCT home_person_id, person_id FROM person_records")}
+    aliases = {}
+    for row in conn.execute("SELECT id FROM person_aliases"):
+        survivor = registry.resolve(conn, row["id"])
+        aliases[row["id"]] = current.get(survivor, survivor)
+    for home, person in current.items():
+        if home != person:
+            aliases.setdefault(home, person)
+    # Person keys become file names under abgeordnete/; a store edited or damaged
+    # since its last validation must not write outside it or over the index.
+    aliases = {key: target for key, target in aliases.items() if key not in page_ids}  # a live page is never overwritten by a redirect
+    folded: dict[str, str] = {}
+    for key in (*page_ids, *aliases):
+        if not registry.PERSON_KEY_RE.fullmatch(key) or key.casefold() in registry.RESERVED_PERSON_KEYS:
+            raise registry.RegistryError(f"Invalid person key {key!r} in the build store; restore the build-store backup")
+        if folded.setdefault(key.casefold(), key) != key:
+            raise registry.RegistryError(f"Person keys {folded[key.casefold()]!r} and {key!r} differ only by case; restore the build-store backup")
+    aliases_of: dict[str, list[str]] = {}
+    for alias, target in aliases.items():
+        aliases_of.setdefault(target, []).append(alias)
+    for mp in mps:
+        mp["aliases"] = sorted(aliases_of.get(mp["id"], ()))
     # Stable, useful order: most speeches first, then alphabetical.
     mps.sort(key=lambda mp: (-(mp["speech_count"] or 0), str(mp["name"]).lower()))
-    if stats is not None:
-        stats.update(
-            rows=len(rows),
-            entries=len(mps),
-            merges_ext_id=totals["ext_id"],
-            merges_corroborated_name=totals["corroborated_name"],
-            merges_unique_name=totals["unique_name"],
-            buckets_split_namesakes=totals["buckets_split_namesakes"],
-            buckets_split_3plus=totals["buckets_split_3plus"],
-        )
-    return mps, lookup, canonical_by_mp_id
+    return mps, lookup
 
 
 # The MP pages reuse the bill stylesheet and add the roster table, the party
@@ -6842,8 +6770,8 @@ def render_abgeordnete_index(
 
 # PAGE: abgeordnete/<id>.html - one MP profile.
 #
-# The <id> in the file name is the canonical mps row id chosen by
-# collect_abgeordnete, which is also what mp_lookup maps every external id to,
+# The <id> in the file name is the issued person key from the registry,
+# which is also what mp_lookup maps source occurrences and external ids to,
 # so speaker links from dossier and bill pages resolve here.
 def render_abgeordnete_detail(
     mp: dict[str, Any],
@@ -6987,8 +6915,8 @@ def write_abgeordnete_pages(
     abg_dir.mkdir(parents=True, exist_ok=True)
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
-    detail_mps = [mp for mp in mps if mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
-    expected_pages = {f"{mp['id']}.html" for mp in detail_mps}
+    detail_mps = [mp for mp in mps if mp.get("has_page") or mp.get("is_mdb") or (mp.get("speech_count") or 0) > 0]
+    expected_pages = {f"{key}.html" for mp in detail_mps for key in [mp["id"]] + mp.get("aliases", [])}
     for stale_page in abg_dir.glob("*.html"):
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
             stale_page.unlink()
@@ -6997,6 +6925,10 @@ def write_abgeordnete_pages(
             render_abgeordnete_detail(mp, features, publication_domains),
             encoding="utf-8",
         )
+    for mp in detail_mps:
+        for alias in mp.get("aliases", []):
+            target = pulse_html.esc(f"{mp['id']}.html")
+            (abg_dir / f"{alias}.html").write_text(f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>', encoding="utf-8")
     (abg_dir / "index.html").write_text(
         render_abgeordnete_index(mps, features, publication_domains),
         encoding="utf-8",
@@ -7155,7 +7087,7 @@ def _fact_speech_citation(
         f"""
         SELECT s.id, s.rede_id, s.page, s.page_quadrant, m.display_name,
                {derive.ZUSAMMENSCHLUSS_SQL} AS fraktion, s.sprechrolle AS sprechrolle,
-               m.xml_redner_id, m.aw_politician_id, m.aw_match, m.dip_person_id,
+               m.person_id, m.xml_redner_id, m.aw_politician_id, m.aw_match, m.dip_person_id,
                ai.heading, lp.title AS proceeding_title, p.document_number
         FROM speeches s
         JOIN mps m ON m.id = s.mp_id
@@ -7416,7 +7348,7 @@ def _render_fact_series(
 def _render_fact_sources(
     row: dict[str, Any],
     *,
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str:
@@ -7454,6 +7386,7 @@ def _render_fact_sources(
                     "abgeordnetenwatch": (
                         {"id": mp.get("aw_politician_id"), "match": mp.get("aw_match")} if mp.get("aw_politician_id") else {}
                     ),
+                    "person_id": mp.get("person_id"),
                     "xml_redner_id": mp.get("xml_redner_id"),
                     "dip_person_id": mp.get("dip_person_id"),
                 },
@@ -7480,7 +7413,7 @@ def _render_fact_section(
     series: list[dict[str, Any]],
     series_index: dict[str, int],
     *,
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
 ) -> str:
@@ -7598,7 +7531,7 @@ def render_facts_week(
     metric_series_index: dict[str, dict[str, int]],
     resolved_by_id: dict[Any, dict[str, Any] | None],
     *,
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
     features: Selection | None = None,
@@ -7798,7 +7731,7 @@ def write_facts_pages(
     output_dir: Path,
     database_path: Path,
     no_persist: bool,
-    mp_lookup: dict[str, int] | None,
+    mp_lookup: dict[str, str] | None,
     document_numbers: set[str],
     bill_slugs: set[str],
     features: Selection | None = None,
@@ -9618,7 +9551,7 @@ def render_site(
     protocols: list[dict[str, Any]],
     entries: list[dict[str, Any]],
     abg_mps: list[dict[str, Any]],
-    mp_lookup: dict[str, int],
+    mp_lookup: dict[str, str],
     features: Selection | None = None,
     enrichments: EnrichmentSelection | None = None,
     summary_mode: str = "reuse",
@@ -10582,23 +10515,22 @@ def run_facts_engine(
     entries: list[dict[str, Any]],
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
-    canonical_by_mp_id: dict[int, int] | None = None,
 ) -> dict[str, Any]:
-    store = pulse_store.connect(database_path)
-    try:
-        pulse_store.initialize(store)
-        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        return facts.compute_and_store(
-            store,
-            facts.ALL_REGISTRY,
-            facts.completeness_from_entries(entries),
-            catalog=catalog,
-            built=built,
-            today=today,
-            canonical_by_mp_id=canonical_by_mp_id,
-        )
-    finally:
-        store.close()
+    with registry.writer_lock(database_path):
+        store = pulse_store.connect(database_path)
+        try:
+            pulse_store.initialize(store)
+            built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+            return facts.compute_and_store(
+                store,
+                facts.ALL_REGISTRY,
+                facts.completeness_from_entries(entries),
+                catalog=catalog,
+                built=built,
+                today=today,
+            )
+        finally:
+            store.close()
 
 
 # Runs the export step (unless --no-persist, or the store does not exist) and
@@ -10615,26 +10547,27 @@ def run_data_pipeline(
     entries: list[dict[str, Any]],
     protocols: list[dict[str, Any]],
     abg_mps: list[dict[str, Any]],
-    mp_lookup: dict[str, int],
-    canonical_by_mp_id: dict[int, int],
+    mp_lookup: dict[str, str],
     catalog: facts.SittingCatalog | None,
+    facts_report: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
-    bills = collect_bill_pages(entries)
+    bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
 
     # Before the export, so the three facts tables are part of the store the
-    # export copies and hashes.
+    # export copies and hashes. A rebuild in this build already computed them
+    # for the same entries, catalog and date and hands over its report.
     if not args.no_persist and database_path.exists():
-        facts_report = run_facts_engine(
-            database_path,
-            entries,
-            catalog,
-            today=resolve_today(getattr(args, "today", None)),
-            canonical_by_mp_id=canonical_by_mp_id,
-        )
+        if not facts_report:
+            facts_report = run_facts_engine(
+                database_path,
+                entries,
+                catalog,
+                today=resolve_today(getattr(args, "today", None)),
+            )
         for line in format_incomplete_report(
             facts_report,
             output_dir=output_dir,
@@ -10656,7 +10589,6 @@ def run_data_pipeline(
             manifest = export_distribution_data(
                 database_path,
                 exports_dir,
-                canonical_by_mp_id=canonical_by_mp_id,
                 mp_lookup=mp_lookup,
                 readiness=readiness,
                 catalog_count=len(protocols),
@@ -10757,6 +10689,19 @@ def main() -> int:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
+    # Only --offline --repersist upgrades an old store; an online update would
+    # otherwise fetch everything and then be refused by the rebuild. --no-persist
+    # renders without reading the store, so an old store does not block it.
+    if not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
+        previous = facts.open_readonly(database_path)
+        try:
+            pulse_store.require_current_schema(previous)
+        except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            previous.close()
+
     # --- offline render ----------------------------------------------------
     # Re-render every page from what is already on disk. Useful for iterating on
     # the HTML/CSS in this file without spending API calls or waiting on DIP.
@@ -10774,19 +10719,29 @@ def main() -> int:
         # render alone never does). All or nothing: any failure leaves the
         # previous store untouched and the run stops before anything is rendered.
         cached_entries: list[dict[str, Any]] | None = None
+        rebuilt_facts: dict[str, Any] = {}
         if getattr(args, "repersist", False):
             try:
                 cached_entries, replaced = repersist_cached_reports(
-                    output_dir, database_path, protocols, preserve_roster=True
+                    output_dir, database_path, protocols, preserve_roster=True,
+                    today=resolve_today(getattr(args, "today", None)), facts_report=rebuilt_facts,
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
                 return 1
-            except (CachedReportError, DatabaseRebuildError) as exc:
+            except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
                     "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
                     "Docs: README.md#re-persist-the-cached-reports",
+                    file=sys.stderr,
+                )
+                return 1
+            except DatabaseRebuildError as exc:
+                print(
+                    f"ERROR [repersist]: {exc}. The previous store is untouched. "
+                    "Fix: resolve the cause named above (a missing cached report is restored, not deleted), then re-run. "
+                    "Docs: docs/stable-ids.md",
                     file=sys.stderr,
                 )
                 return 1
@@ -10797,8 +10752,7 @@ def main() -> int:
             )
 
         abg_mps: list[dict[str, Any]] = []
-        mp_lookup: dict[str, int] = {}
-        canonical_by_mp_id: dict[int, int] = {}
+        mp_lookup: dict[str, str] = {}
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
@@ -10813,7 +10767,6 @@ def main() -> int:
                     components["mp-pages"].after_persist(store, component_context)
                     abg_mps = component_context["abg_mps"]
                     mp_lookup = component_context["mp_lookup"]
-                    canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
             finally:
                 store.close()
 
@@ -10843,11 +10796,11 @@ def main() -> int:
                 protocols=protocols,
                 abg_mps=abg_mps,
                 mp_lookup=mp_lookup,
-                canonical_by_mp_id=canonical_by_mp_id,
                 # The cached catalog on its own, never the protocols above: those
                 # also hold dossier-derived entries, which prove nothing about
                 # what DIP lists.
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
+                facts_report=rebuilt_facts,
             )
         except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -10963,8 +10916,11 @@ def main() -> int:
         ):
             return 2
         abg_mps: list[dict[str, Any]] = []
-        mp_lookup: dict[str, int] = {}
-        canonical_by_mp_id: dict[int, int] = {}
+        mp_lookup: dict[str, str] = {}
+        # One catalog for the staged rebuild's facts and the data pipeline, so the
+        # rebuild's facts report is handed over instead of computed twice.
+        catalog = facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now())
+        rebuilt_facts: dict[str, Any] = {}
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -11008,38 +10964,39 @@ def main() -> int:
             ):
                 return 2
             if not args.no_persist:
+                def ingest_roster(staged: sqlite3.Connection) -> None:
+                    stats = ingest_mdb_roster(client, staged, wahlperiode=args.roster_wahlperiode, profile_resolver=profile_resolver)
+                    print(
+                        f"roster: {stats['mdb']} MdBs of {stats['fetched']} persons "
+                        f"(WP{args.roster_wahlperiode}), {stats['enriched']} enriched",
+                        file=sys.stderr,
+                    )
+
                 try:
                     rebuild_database_from_entries(
                         database_path,
                         entries,
                         preserve_roster="mp-roster" not in enrichments,
+                        catalog=catalog,
+                        roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
+                        today=resolve_today(getattr(args, "today", None)),
+                        facts_report=rebuilt_facts,
                     )
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
+                    return 1
+                except DatabaseRebuildError as exc:
+                    print(
+                        f"ERROR [rebuild]: {exc}. The previous store is untouched and nothing was persisted. "
+                        "Fix: resolve the cause named above (after a roster outage, re-run once the API answers).",
+                        file=sys.stderr,
+                    )
                     return 1
                 store = pulse_store.connect(database_path)
                 try:
                     pulse_store.initialize(store)
                     if "mp-pages" in features:
-                        component_context = {
-                            "selection": enrichments,
-                            "client": client,
-                            "roster_wahlperiode": args.roster_wahlperiode,
-                            "profile_resolver": profile_resolver,
-                            "ingest_mdb_roster": ingest_mdb_roster,
-                            "collect_abgeordnete": collect_abgeordnete,
-                        }
-                        components["mp-pages"].after_persist(store, component_context)
-                        roster_stats = component_context.get("roster_stats")
-                        if roster_stats:
-                            print(
-                                f"roster: {roster_stats['mdb']} MdBs of {roster_stats['fetched']} persons "
-                                f"(WP{args.roster_wahlperiode}), {roster_stats['enriched']} enriched",
-                                file=sys.stderr,
-                            )
-                        abg_mps = component_context["abg_mps"]
-                        mp_lookup = component_context["mp_lookup"]
-                        canonical_by_mp_id = component_context.get("canonical_by_mp_id", {})
+                        abg_mps, mp_lookup = collect_abgeordnete(store)
                 finally:
                     store.close()
                 database_page_href = dossier_database_page_href(args, database_path)
@@ -11084,8 +11041,8 @@ def main() -> int:
             protocols=protocols,
             abg_mps=abg_mps,
             mp_lookup=mp_lookup,
-            canonical_by_mp_id=canonical_by_mp_id,
-            catalog=facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now()),
+            catalog=catalog,
+            facts_report=rebuilt_facts,
         )
     except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -8,7 +8,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **A. Get the counts right and the coverage in, in this order**
 1. What counts as a Rede: #68 (Kurzinterventionen), #70 (Befragung and Fragestunde), "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts", "Zu Protokoll gegebene Reden: decide what they are, then store them".
-2. "Stable ids for every row a release publishes".
+2. "Stable ids for every row a release publishes" (done: A.2, see its Completed note).
 3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
 
@@ -79,7 +79,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Roll-call member rows link to external profiles, never to our own MP pages
 
-**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup`/`canonical_by_mp_id` resolves them. Fall back to the external `profile_url` only when no page exists.
+**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup` resolves them. Fall back to the external `profile_url` only when no page exists.
 
 **Why:** Today the member name always links to `member["profile_url"]` (bundestag.de or abgeordnetenwatch), even though `upsert_mp` resolves every vote member to an internal `mp_id` at persist time. A reader on a vote panel can't reach the site's own MP page, which is the page that pools that person's speeches and votes.
 
@@ -405,7 +405,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ### Fakt der Woche, Approach B: site-wide facts layer (full implementation)
 
-**What:** On top of A1: MP-level metrics via `mp_canonical` (a TEMP table from the in-memory `canonical_by_mp_id`, as the export does, or persisted; B decides) (first speech in the Bundestag, longest speech of the WP, lone dissent against the own Fraktion; never attendance rankings), proceeding-level metrics (see Approach C), badge hooks in the dossier and MP renderers ("in dieser Woche: knappste Abstimmung der Wahlperiode", "hielt die längste Rede der 21. Wahlperiode") that read from `facts`, and an Open Discourse-compatible export view/CSV variant (their column names for `speeches`, `contributions`, `politicians`, `factions`, `electoral_terms`) so WP20/21 slots into existing notebooks. Done when every badge on a rebuilt site resolves to a `facts` row and the compatibility CSVs load in an Open Discourse notebook unchanged.
+**What:** On top of A1: MP-level metrics via `mp_canonical` (a TEMP table `facts.ensure_canonical` fills from the persisted `mps.person_id`) (first speech in the Bundestag, longest speech of the WP, lone dissent against the own Fraktion; never attendance rankings), proceeding-level metrics (see Approach C), badge hooks in the dossier and MP renderers ("in dieser Woche: knappste Abstimmung der Wahlperiode", "hielt die längste Rede der 21. Wahlperiode") that read from `facts`, and an Open Discourse-compatible export view/CSV variant (their column names for `speeches`, `contributions`, `politicians`, `factions`, `electoral_terms`) so WP20/21 slots into existing notebooks. Done when every badge on a rebuilt site resolves to a `facts` row and the compatibility CSVs load in an Open Discourse notebook unchanged.
 
 **Why:** A0/A1 prove the rule on a side page; B is the distinguishing feature on every page ("every number on this site knows how unusual it is") and the "build on my work" surface. Decided at office hours 2026-09-19: A is the test run, B is the full implementation, not discarded.
 
@@ -430,6 +430,8 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 ## Abgeordnete
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
+
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
 
 **What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
 
@@ -716,33 +718,21 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 
 ## Zitierfähiger Datensatz
 
-PRODUCT.md (2026-09-30) makes the dataset a product in its own right: a source researchers and journalists cite. Citable means a reader can name a version, get exactly those rows back later, and look up what changed since. None of the pieces below exist yet. Order: stable ids, then the release script, then the changelog and DOI with the first release. The licence files and the roll-call redistribution question (both under Plenarwatch-Lücken) block any public release that contains votes.
+PRODUCT.md (2026-09-30) makes the dataset a product in its own right: a source researchers and journalists cite. Citable means a reader can name a version, get exactly those rows back later, and look up what changed since. Stable ids are complete; the release script, release changelog and DOI remain. The licence files and the roll-call redistribution question (both under Plenarwatch-Lücken) block any public release that contains votes.
 
 When the first release goes out, the "Project stage: pre-release" section of CLAUDE.md has to become a stability policy: what may change between releases, and how a change is recorded.
 
 ### Stable ids for every row a release publishes
 
-**What:** Give every table in the release a key derived from the source, and use it in exports and page URLs. Today `mps.id`, `parties.id`, `agenda_items.id`, `documents.id` and `speeches.id` are `INTEGER PRIMARY KEY` surrogates. They are assigned in insert order during `rebuild_database_from_entries` (`scripts/build_dip_pulse_site.py`), which runs newest Sitzung first, so every new Sitzung renumbers them (checked 2026-09-30). The natural keys already exist as UNIQUE columns: `(protocol_id, rede_id)`, `(protocol_id, item_index)`, `(document_number, url)` and `parties.name`. Publish those, or a deterministic id derived from them, as the key in the SQLite and CSV release. Also:
-- `synthetic_rede_id` embeds the surrogate `agenda_item_id`. Base it on `(protocol_id, item_index, sequence)` instead.
-- MP pages live at `abgeordnete/<mps.id>.html`, a surrogate. Move them to the stable person key below.
-- **Persons need their own key; `mps.identity_key` is not one.** `mp_identity` (`scripts/persist_dip_pulse_store.py`) picks the first available of `aw:`, `dip:`, `xml:`, `profile:` and `name-party:`. That breaks in three ways:
-  - A fallback key is built from mutable values. Correcting a name, a party or a profile URL gives the same person a new key.
-  - The tier changes as enrichment improves. The same MdB is `dip:…` in one build and `aw:…` in the next, once an abgeordnetenwatch match becomes trusted.
-  - One person can hold several `mps` rows, merged only at read time (`canonical_by_mp_id`).
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Schema 3 / export format 2 supplies stable text row keys, a durable person/occurrence registry, corrections and resolvable aliases. Explicit offline replay upgrades old stores under a writer lock with staged integrity checks; facts, recipes and person URLs consume persisted assignments. All 997 tests pass (2 skipped); a 285-report reference replay preserves shared-source content, groups records identically for an incremental and a fresh replay, and reuses an unchanged replay. See [key and backup contract](docs/stable-ids.md) and [validation](docs/a2-validation.md).
 
-  Mix in the reference store (2026-09-30): 2,159 `profile:`, 1,050 `dip:`, 1,042 `xml:`.
-
-  Instead, publish a `persons` table whose key is minted once and never derived again. Where a person has the Bundestag's Redner-ID (`xml_redner_id`, the MdB-Stammdaten id) or a DIP person id, derive the key from it deterministically. Every other person gets a project id (e.g. `p:000123`) the first time they are seen. That id is stored in an append-only id registry which every rebuild carries over, the way the roster already is (`preserve_roster`). Official ids, abgeordnetenwatch ids, names and parties are attributes of the person, never the key. When a correction merges two persons, the merged-away key stays as an alias pointing to the survivor, never deleted. When a correction splits one, the key stays with one person and the other gets a new key. Keep the shared Redner-ID 11005304 (Föhr/Mende, under Abgeordnete) in mind: an official id is the key only while it names one person.
-
-Protocols, Vorgänge, Vorgangspositionen and votes already use DIP ids, and protocol, bill and vote page paths are already stable.
-
-Done when tests pin these cases:
+**Pinned by tests:**
 - Two builds, one with one more Sitzung than the other, give the same id to every row they share.
-- Correcting a person's name, party or profile URL keeps their person key.
+- Correcting a person's name, party or profile URL keeps their person key; a source that names a different Redner-ID or DIP id moves the occurrence instead.
 - A person whose abgeordnetenwatch match turns trusted in a later build keeps their person key.
-- Merging two persons leaves the merged-away key resolvable as an alias.
+- Merging two persons leaves the merged-away key resolvable as an alias. Only merges that rest on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed, so an incremental and a fresh replay group records identically.
 
-**Why:** A paper that cites "speech 18234" or links to an MP page must still point to the same thing next month. Today it does not.
+**Why:** A paper that cites "speech 18234" or links to an MP page must still point to the same thing next month. Before A.2 it did not: ids were insertion-order surrogates.
 
 **Effort:** L (the person registry is most of it)
 **Priority:** P1
@@ -854,7 +844,105 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Priority:** P2
 **Depends on:** None; best started before the Analysen pages, so new pages are store-first from the start
 
+### Vote-member occurrence bindings: cost and use
+
+**What:** `persist_vote` binds every roll-call vote member to a durable occurrence (`vote-member` key), about 154k `person_bindings` rows on top of the 35k speech bindings, each through the full `registry.bind` path. Check whether anything needs vote-member bindings (nothing looks them up as link keys; page eligibility uses speech bindings only) and, if not, bind once per distinct member identity per rebuild or skip the binding.
+
+**Why:** Roughly 5x the bind work of speeches on a full replay, and the rows are exported in a public table.
+
+**Context:** Deferred from the A.2 review (2026-10-01). The third A.2 ship round already made a repeat bind cheaper (one statement for the touched mark, no rewrite of an unchanged record) and computes the facts once per rebuild.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### A.2 test follow-ups
+
+**What:** Tests the A.2 reviews proposed and nobody wrote: the online `main()` roster wiring with `mp-roster` not selected; `rebuild_database_from_entries` forwarding the `built` set to the facts engine; page eligibility of persons with no current mps row (a former MdB whose roster row vanished, a vote-only historical record); arrival-order independence of `p-NNNNNN` allocation and of `_content_digests`; table-driven occurrence-id cases for vote members, sampled people and the preserved roster; `_inputs_hash` and `_zusammenfuehrung` numbers.
+
+**Why:** Each of these can be disabled today with the suite still green (checked by mutation in the A.2 review).
+
+**Context:** Deferred from the A.2 review (2026-10-01); the generation allowance of /ship was spent. The roster wiring on a selected `mp-roster` and its outage abort, the catalog hand-offs and the unreleased-draft registry were covered in the second A.2 ship round.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Reviewed reassignment of a source record
+
+**What:** Redesign the two corrections that place a source record on another person, occurrence `assignments` and `splits`, which `person_corrections.json` refuses since 2026-10-02. A placed record should be keyed by occurrence and owner (not by the printed speaker's identity, so a roster occurrence seen as `dip:` and as `aw:` lands on one record), contribute only its speeches and votes to the owner's page (never name, party, biography, `is_mdb` or profile), and leave the owner's partition and name guesses untouched (a partition record plus a reviewed record on one person is one owner, not two partitions). A split must refuse a `new_person_id` that is already issued to another person.
+
+**Why:** Seven consecutive review passes of the first design reproduced criticals here: a placed record heading or filling the owner's page, an assignment on the Föhr person splitting its roster record into a second page, a `mps.dip_person_id` UNIQUE abort, a split silently absorbing records into an unrelated person. No shipped correction used either feature, so they were cut instead of patched again.
+
+**Context:** Cut in the third A.2 ship round (decision 2026-10-02). The removed code and its tests are in commit history before the cut (`person_registry.bind`/`reconcile`, `ASSIGNMENT_PREFIX`, `_block_profile`, tests `test_an_owner_page_is_headed_by_its_own_record_not_the_assigned_one` and the split/assignment cases). Start with the invariants: a randomized check that adds assignments and splits must keep incremental == fresh, a fixed point, and owner pages built only from the owner's own records.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** A real correction that needs it (none today)
+
+### A.2 third ship round: deferred findings
+
+**What:** Findings of the third A.2 ship round (2026-10-02) the user chose not to fix before release, none affecting today's data: (1) removing a partition from `person_corrections.json` leaves bound occurrences on the old partition records (documented as durable), while the evidence drops `partition`/`profile_blocked` and both records then carry the shared profile; decide re-key vs keep and pin it; (2) `corrected_speaker` compares the raw `xml_redner_id`, so a merged double id like `11005304 999990074` skips the reviewed occurrence override (use `derive.first_redner_id`); (3) `--offline` over a store path that cannot be opened (a directory, an unreadable file) still ends in a traceback, because `open_readonly` sits outside the `try`; (4) DIP roster rows without an id still collapse into one record through the `name-party:Unbekannt` identity (none in the cache); `roster_occurrence_id` hashes `7` and `"7"` differently; (5) `reconcile(full_build=False)`, the `vacated` evidence flag and the `bound` set in `_load_rows` now serve only tests, and the refusal stub in `persist_dip_pulse_store.py` could go; (6) `_first_touch` treats any `OperationalError` on its first insert as a missing temp table; `facts_report` is an out-parameter whose empty dict means "compute again"; (7) the export reads `person_by_mp_id` and backs up the store on separate connections, so a concurrent rebuild between them mixes two snapshots; (8) a corrected vote-member profile URL makes an incremental build issue a second record that a fresh build does not; (9) a name-guess group with one contradicting pair drops every merge in that group; a later occurrence can inherit an earlier one's `aw_match`; reviewed merges that name the same person as survivor resolve by file order; (10) a document id includes its URL, so a DIP URL rewrite changes vote-document ids and fact receipts; (11) the debut tie-break sorts document numbers as text; agenda indexes are `int()`-ed in persist but not in render/bills; the staged copy and writer lock live in the published data directory; (12) tests missing for the rebuild's `full_build=True` call, the offline facts hand-off, `compare_store_values._zusammenfuehrung` rows, the `mps` foreign-key arm, the end-of-rebuild foreign-key check and `today` forwarding.
+
+**Why:** (1), (2), (7) and (8) can make an incremental build differ from a fresh one or show the wrong name; the rest are robustness, cost or test gaps.
+
+**Context:** Deferred by decision in the third A.2 ship round after three review rounds converged and the 285-report reference replay stayed unchanged (grouping sha `6f877bf3d1e92af0`). Each item was reproduced or read by a reviewer; see the ship run record for the evidence.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### A.2 registry follow-ups from the third review pass
+
+**What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) done 2026-10-02: a stale roster record joins a live speaker as a partner only (`person_registry._stale_roster_partners`); (2) a record's name and party in evidence are last-writer-wins across its occurrences, so the guess for a record whose occurrences print different names or parties (a Fraktion switcher, two Redner-IDs sharing an aw id) depends on persist order; keep the set of normalised (name, party) pairs per record or pick the newest deterministically (reproduced for two Redner-IDs on one aw id); (3) the coverage gaps left after the third ship round's generated tests, each an extension of an existing test: `_guess_merges` partitions from live rows only; the offline CLI with all four registry tables dropped; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (4) the vacated flag can go if `occurrence` becomes required in `bind`/`upsert_mp` (liveness is then "bound", plus the build's touched set).
+
+**Why:** (1) and (2) change which pages exist or how records group in rare, specific situations; (3) and (4) are hygiene and guards that no test pins.
+
+**Context:** Deferred from the third A.2 ship round by the three-fix-cycle cap; the coverage gate was resolved as "list the gaps" (generation allowance spent).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### A.2 second-round review leftovers
+
+**What:** Findings of the second A.2 ship round that were deferred by decision (2026-10-01): (1) the r1/r3 Daten recipes choose each person's representative record with a correlated subquery (`JOIN mps m ON m.id = (SELECT m2.id ... ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)`), about 15x slower than a plain join (r3 1.61 s against 0.11 s on the reference store), run at every export and again in `compare_store_values`; precompute a representative column in `mp_canonical` and join on it (the `m2.id` tie-break is now a hash, so choose by a content key); (2) `_content_digests` orders every table by its text primary key, about 3 s more per store and 6-7 s per rebuild than rowid order; fold per-row hashes with a commutative sum instead; (3) advisory simplifications: drop `AbgeordneteComponent.after_persist` and call `collect_abgeordnete` directly, build the `collect_abgeordnete` lookup in one pass, replace the `ensure_canonical` temp copy by a view over `mps(id, person_id)`, drop the `mp_canonical` table if it is not a published contract, one `has_page` predicate instead of three, one `valid_person_key` helper for the three key checks; (4) `write_abgeordnete_pages` trusts its caller to have validated keys and follows an existing symlink at the target; re-check keys there and unlink before writing; (5) a person whose only occurrence moved to another identity loses its page without a redirect (decided: accepted, see docs/stable-ids.md).
+
+**Why:** None changes a published figure; (1) and (2) cost seconds per build, (3) to (5) are readability and defence in depth.
+
+**Context:** The user deferred these to keep the final review on code with mutation-checked tests.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### A.2 review leftovers
+
+**What:** Small cleanups the A.2 review found and nobody asked for yet: `person_registry.mp_keys` and `_mp_external_ids` repeat the same three-way id extraction; `_load_corrections` uses an `lru_cache` for one file; `rebuild_database_from_entries` forwards every argument to `_rebuild_database_from_entries` only to take the lock and translate errors; the `built = {"votes"} if ... else set()` expression exists in three places; the offline path reaches `collect_abgeordnete` through the mp-pages component's `after_persist` while the online path calls it directly; `tests/test_facts.py` goldens that depend on sha256-ordered ids (derive them from the data); `person_registry.merge` and `reconcile` write into the `mps` table whose schema lives in `persist_dip_pulse_store`.
+
+**Why:** Less to read, fewer places to drift.
+
+**Context:** Deferred from the A.2 review (2026-10-01); none changes behaviour.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None
+
 ## Completed
+
+### render_html mutates the report it renders
+
+**Completed:** v0.12.0.0 (2026-10-02). `render_html` corrects copies of the speeches; the cached dossier JSON keeps the printed speaker (pinned by a test that writes a dossier twice).
+
+**What:** `render_dip_pulse_html.render_html` replaces each `speech["speaker"]` with the corrected speaker and adds `speaker["occurrence_id"]` in place. The online path then writes that report to the cached JSON in `write_report_files`, so the cache holds the correction instead of the raw XML evidence.
+
+**Why:** Raw evidence should stay raw. Today the mutation is idempotent, but removing a correction cannot restore the original names, and online and offline builds see slightly different inputs.
+
+**Context:** Deferred from the A.2 review (2026-10-01). Fix with a side map keyed by (item index, sequence) or a copy of the speakers, applied only at render and persist time.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
 
 ### Match roll-call votes to a TOP when Drucksache numbers fail
 

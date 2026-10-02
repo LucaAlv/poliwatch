@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import person_registry
 import _daten_fixture
 import build_dip_pulse_site as b
 import facts
@@ -64,13 +65,13 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.ids = _daten_fixture.seed_store(self.db_path)
         conn = pulse_store.connect(self.db_path)
         try:
-            self.mps, self.lookup, self.canonical_by_mp_id = b.collect_abgeordnete(conn)
+            person_registry.reconcile(conn)
+            self.mps, self.lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
 
     def export(self, **overrides):
         kwargs = dict(
-            canonical_by_mp_id=self.canonical_by_mp_id,
             mp_lookup=self.lookup,
             readiness=READINESS,
             catalog_count=2,
@@ -147,26 +148,27 @@ class ExportDistributionDataTests(unittest.TestCase):
                 (now, now),
             )
             conn.execute(
-                """INSERT INTO agenda_items(protocol_id, item_index, top_id, heading, created_at, updated_at)
-                   VALUES ('5900', 1, 'T1', 'TOP', ?, ?)""",
+                """INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)
+                   VALUES ('ai-5900', '5900', 1, 'T1', 'TOP', ?, ?)""",
                 (now, now),
             )
             ai = conn.execute("SELECT id FROM agenda_items").fetchone()["id"]
             conn.execute(
-                """INSERT INTO speeches(protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
+                """INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, page,
                    paragraph_count, char_count, text, snippet, created_at, updated_at)
-                   VALUES ('5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
+                   VALUES ('speech-5900', '5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                 (ai, mp_id, now, now),
             )
         conn.close()
 
         no_votes_conn = pulse_store.connect(no_votes_db)
-        mps, lookup, canonical_by_mp_id = b.collect_abgeordnete(no_votes_conn)
+        person_registry.reconcile(no_votes_conn)
+        mps, lookup = b.collect_abgeordnete(no_votes_conn)
         no_votes_conn.close()
         readiness = {**READINESS, "votes": "unavailable"}
         manifest = b.export_distribution_data(
             no_votes_db, self.tmp / "no-votes-exports",
-            canonical_by_mp_id=canonical_by_mp_id, mp_lookup=lookup,
+            mp_lookup=lookup,
             readiness=readiness, catalog_count=1, dossier_count=1,
         )
         r3 = next(r for r in manifest["recipes"] if r["id"] == "r3-abweichler")
@@ -227,13 +229,13 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_nineteen_csvs_named_and_headered(self) -> None:
+    def test_all_twenty_three_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 19)
+        self.assertEqual(len(csv_files), 23)
         for name in ("fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz"):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -337,7 +339,7 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_skip_rule_reexports_when_store_changes(self) -> None:
         first = self.export()
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE mps SET display_name = 'Ada Lovelace Renamed' WHERE id = 1")
+            conn.execute("UPDATE mps SET display_name = 'Ada Lovelace Renamed' WHERE id = ?", (self.ids["roster_mp"],))
         # Push the mtime a full second ahead so the (mtime, size) rehash guard
         # trips on every filesystem, including ones with 1 s resolution.
         stat = self.db_path.stat()
@@ -361,6 +363,16 @@ class ExportDistributionDataTests(unittest.TestCase):
             second = self.export()
         self.assertNotEqual(first["generation"], second["generation"])
         self.assertEqual(second["export_format"], first["export_format"] + 1)
+
+    # Value: protects=the export regenerates when the store schema or the key version changes while the source bytes stay equal; fails_when=store_schema or key_version is dropped from _inputs_hash so a key-format change reuses stale CSVs; why_new=the skip tests vary only export_format, recipes and store content; seam=none
+    def test_skip_rule_reexports_when_store_schema_or_key_version_changes(self) -> None:
+        first = self.export()
+        with mock.patch.object(b.pulse_store, "SCHEMA_VERSION", b.pulse_store.SCHEMA_VERSION + 1):
+            schema = self.export()
+        self.assertNotEqual(first["generation"], schema["generation"])
+        with mock.patch.object(b, "KEY_VERSION", b.KEY_VERSION + 1):
+            keys = self.export()
+        self.assertNotEqual(first["generation"], keys["generation"])
 
     def test_force_reexports_even_when_unchanged(self) -> None:
         first = self.export()

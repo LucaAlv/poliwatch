@@ -155,7 +155,7 @@ SCHULZE = {
     "fraktion": "SPDSPD",
 }
 FOEHR_CACHED = {
-    "xml_redner_id": "11005304",
+    "xml_redner_id": "fixture-unreviewed-merged-id",
     "display_name": "Dirk-UlrichAlexander Mende Föhr",
     "fraktion": "SPDCDU/CSU",
 }

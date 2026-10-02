@@ -11,6 +11,7 @@ from pathlib import Path
 import _support  # noqa: F401
 import build_dip_pulse_site as build
 import render_dip_pulse_html as html
+from stable_ids import speech_occurrence_id, synthetic_rede_id
 
 
 def position(vorgang_id: str, typ: str, title: str, number: str) -> dict:
@@ -65,6 +66,46 @@ class PredicateTests(unittest.TestCase):
 
 
 class CollectTests(unittest.TestCase):
+    # Value: protects=a bill page's speaker occurrence key equals the key the store bound, also for a speech with no rede_id; fails_when=the collector hashes the missing rede_id instead of the synthetic <protocol>:<item>:<sequence> id the store uses; why_new=no test collected bill pages from a speech without a rede_id; seam=none
+    def test_a_speaker_without_a_rede_id_gets_the_synthetic_occurrence_key(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": None, "speaker": {"display_name": "Ada Example", "fraktion": "SPD"}, "char_count": 10},
+            {"rede_id": "IDREAL", "speaker": {"display_name": "Bea Beispiel", "fraktion": "SPD"}, "char_count": 10},
+        ]
+        speakers = {row["name"]: row["occurrence_id"] for row in build.collect_bill_pages([bill_entry])[0]["speakers"]}
+        self.assertEqual(speakers["Ada Example"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
+        self.assertEqual(speakers["Bea Beispiel"], speech_occurrence_id("p1", "IDREAL"))
+
+    # Value: protects=a bill page tallies a reviewed occurrence of the shared Redner-ID 11005304 under its reviewed name, as the protocol page does; fails_when=the bill collector reads the raw printed speaker, so the garbled double name gets its own row and links to whichever occurrence came last; why_new=bill tests used clean names only; seam=none
+    def test_a_reviewed_occurrence_is_tallied_under_its_reviewed_name(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "5560"
+        garbled = "Dirk-UlrichAlexander Mende Föhr"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": "ID209407600", "speaker": {"display_name": garbled, "fraktion": "SPD", "xml_redner_id": "11005304"}, "char_count": 10},
+            {"rede_id": "ID209400000", "speaker": {"display_name": "Alexander Föhr", "fraktion": "CDU/CSU", "xml_redner_id": "11005304"}, "char_count": 10},
+        ]
+        speakers = {row["name"]: row["occurrence_id"] for row in build.collect_bill_pages([bill_entry])[0]["speakers"]}
+        self.assertEqual(speakers, {"Dirk-Ulrich Mende": speech_occurrence_id("5560", "ID209407600"),
+                                    "Alexander Föhr": speech_occurrence_id("5560", "ID209400000")})
+
+
+    # Value: protects=two persons who share a display name and party keep their own bill-page row, count and link; fails_when=the tally is keyed by name+party only, so their speeches are summed and linked to whichever spoke last; why_new=bill tests had one person per name; seam=none
+    def test_namesakes_of_one_party_keep_their_own_rows(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": rede_id, "speaker": {"display_name": "Max Müller", "fraktion": "SPD", "xml_redner_id": xml}, "char_count": 10}
+            for rede_id, xml in (("ID1", "1"), ("ID2", "2"), ("ID3", "1"))
+        ]
+        lookup = {speech_occurrence_id("p1", "ID1"): "max-a", speech_occurrence_id("p1", "ID3"): "max-a",
+                  speech_occurrence_id("p1", "ID2"): "max-b"}
+        speakers = build.collect_bill_pages([bill_entry], lookup)[0]["speakers"]
+        rows = sorted((lookup[row["occurrence_id"]], row["speech_count"]) for row in speakers)
+        self.assertEqual(rows, [("max-a", 2), ("max-b", 1)])
+
     def test_one_gesetzgebung_is_one_page_and_its_companions_are_listed_on_it(self) -> None:
         bills = build.collect_bill_pages([entry([GESETZ, ENTSCHLIESSUNG, ANTRAG, VERORDNUNG, WAHL], DOCS)])
         self.assertEqual([bill["vorgang_id"] for bill in bills], ["100"])

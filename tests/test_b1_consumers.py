@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from pathlib import Path
 
 import _support  # noqa: F401
+import person_registry
 import build_dip_pulse_site as build
 import derive
 import facts
@@ -118,7 +119,8 @@ class SittingVoteConsumerTests(unittest.TestCase):
             self.assertEqual(conn.execute(sql).fetchone()["id"], str(vote["id"]))
         r4 = next(recipe["sql"] for recipe in build.RECIPES if recipe["id"] == "r4-knappste-abstimmungen")
         self.assertEqual(conn.execute(r4).fetchone()["document_number"], report["protocol"]["dokumentnummer"])
-        mps, _, _ = build.collect_abgeordnete(conn)
+        person_registry.reconcile(conn)
+        mps, _ = build.collect_abgeordnete(conn)
         histories = [entry for mp in mps for entry in mp.get("votes", [])]
         self.assertTrue(any(str(entry.get("vote_id")) == str(vote["id"]) for entry in histories))
 

@@ -283,29 +283,38 @@ def measure(store: Store, *, recipes: bool = True) -> Measured:
     measured.zusammenfuehrung = _zusammenfuehrung(store)
     measured.bill_pages = _count_pages(store.directory, "bills")
     measured.person_pages = _count_pages(store.directory, "abgeordnete")
+    if measured.person_pages is not None and store.has("person_aliases"):
+        # Redirect pages: retired keys, and keys a name-based guess moved elsewhere.
+        redirects = {row[0] for row in store.conn.execute("SELECT id FROM person_aliases")}
+        if store.has("person_records", "home_person_id"):
+            redirects |= {row[0] for row in store.conn.execute("SELECT DISTINCT home_person_id FROM person_records WHERE home_person_id != person_id")}
+        measured.person_pages -= sum((store.directory / "abgeordnete" / f"{key}.html").is_file() for key in redirects)
     if recipes:
         measured.r3_rows = _recipe_rows(store, "r3-abweichler")
     return measured
 
 
 def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
-    """Run this tree's Zusammenführung over the store's mps rows and return its
-    statistics. A store from before ``aw_match`` was kept counts every
-    abgeordnetenwatch id as found by name (the rule for an unrecorded kind)."""
-    if not (store.has("mps", "id", "display_name") and store.has("speeches") and store.has("vote_members")):
+    """Re-run this tree's matching rules over the store's mps rows and return the
+    statistics (rows, entries, merges per provenance, name buckets left split).
+    A simulation on raw rows: it ignores reviewed corrections and the registry's
+    durable/recomputed split, so its person count can differ from the stored one."""
+    if not (store.has("mps", "id", "display_name") and store.has("parties")):
         return None
-    import build_dip_pulse_site as build
+    import person_registry as registry
 
     conn = store.conn
     conn.row_factory = sqlite3.Row
-    stats: dict[str, int] = {}
     try:
-        build.collect_abgeordnete(conn, stats)
+        rows = [dict(row) for row in conn.execute("SELECT m.*, p.name AS party FROM mps m LEFT JOIN parties p ON p.id=m.party_id")]
+        components, totals = registry.match_rows(rows)
+        return dict(rows=len(rows), entries=len(components), merges_ext_id=totals["ext_id"],
+                    merges_corroborated_name=totals["corroborated_name"], merges_unique_name=totals["unique_name"],
+                    buckets_split_namesakes=totals["buckets_split_namesakes"], buckets_split_3plus=totals["buckets_split_3plus"])
     except sqlite3.Error:
         return None
     finally:
         conn.row_factory = None
-    return stats
 
 
 def _recipe_rows(store: Store, recipe_id: str) -> int | None:
