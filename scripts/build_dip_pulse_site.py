@@ -1060,7 +1060,7 @@ def _entry_label(entry: dict[str, Any]) -> str:
 
 
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, facts_report=None):
+                                  today=None, facts_report=None, upgrade=False):
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1070,14 +1070,16 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
     content changed). ``today`` is the build date the facts are computed for; a
     ``facts_report`` dict receives the engine's report, so the data pipeline need
-    not compute the facts a second time. Returns whether the file was replaced. Any registry, SQLite,
+    not compute the facts a second time. Only ``upgrade`` (``--offline --repersist``)
+    accepts a store of an older schema; every other caller is refused, so the
+    registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
     try:
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report)
+                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report, upgrade=upgrade)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1092,8 +1094,17 @@ def _rebuild_database_from_entries(
     roster_ingest: Any = None,
     today: date | None = None,
     facts_report: dict[str, Any] | None = None,
+    upgrade: bool = False,
 ) -> bool:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    if not upgrade and database_path.exists():
+        current = facts.open_readonly(database_path)
+        try:
+            pulse_store.require_current_schema(current)
+        except RuntimeError as exc:  # the old-schema refusal; RegistryError reaches the caller as it is
+            raise DatabaseRebuildError(str(exc)) from exc
+        finally:
+            current.close()
     # Every cached role is checked first, so one error lists all of them and
     # nothing is built or replaced (DX-E1).
     derive.check_sprechrollen(entry["report"] for entry in entries)
@@ -1236,7 +1247,7 @@ def repersist_cached_reports(
     replaced = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, facts_report=facts_report,
+        today=today, facts_report=facts_report, upgrade=True,
     )
     return cached, replaced
 
@@ -2416,7 +2427,6 @@ def export_distribution_data(
     source = facts.open_readonly(database_path)
     try:
         pulse_store.require_current_schema(source)
-        person_by_mp_id = {row[0]: row[1] for row in source.execute("SELECT id, person_id FROM mps")}
     finally:
         source.close()
     has_page_ids = set((mp_lookup or {}).values())
@@ -2462,7 +2472,6 @@ def export_distribution_data(
                 database_path=database_path,
                 gen_dir=gen_dir,
                 recipes=recipes,
-                person_by_mp_id=person_by_mp_id,
                 has_page_ids=has_page_ids,
                 readiness=readiness,
                 catalog_count=catalog_count,
@@ -2514,7 +2523,6 @@ def _run_export(
     database_path: Path,
     gen_dir: Path,
     recipes: tuple[dict[str, Any], ...],
-    person_by_mp_id: dict[str, str],
     has_page_ids: set[str],
     readiness: dict[str, str],
     catalog_count: int,
@@ -2548,6 +2556,12 @@ def _run_export(
         raise
     finally:
         source_conn.close()
+    # The manifest's source hash was taken from the file as it was before the
+    # copy; a store swapped in meanwhile would be published under that hash.
+    after = database_path.stat()
+    if (after.st_ino, after.st_size, after.st_mtime_ns) != (source_stat.st_ino, source_stat.st_size, source_stat.st_mtime_ns):
+        dist_conn.close()
+        raise RuntimeError("export: the build store changed while it was copied; re-run the export")
 
     try:
         # Direct exports and older SQLite stores may not have been migrated.
@@ -2556,11 +2570,16 @@ def _run_export(
         dist_conn.execute(
             "CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY NOT NULL REFERENCES mps(id), canonical_id TEXT NOT NULL REFERENCES persons(id), has_page INTEGER NOT NULL)"
         )
+        # Read from the copy, not the source: another build may have replaced
+        # the store since, and the mapping must match the rows it points at.
         mp_rows = [
             (mp_id, canonical_id, 1 if canonical_id in has_page_ids else 0)
-            for mp_id, canonical_id in sorted(person_by_mp_id.items())
+            for mp_id, canonical_id in dist_conn.execute("SELECT id, person_id FROM mps ORDER BY id")
         ]
         dist_conn.executemany("INSERT INTO mp_canonical(mp_id, canonical_id, has_page) VALUES (?, ?, ?)", mp_rows)
+        violations = dist_conn.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise RuntimeError(f"export: distribution copy has foreign-key violations: {[tuple(row) for row in violations[:3]]}")
         # Only the CREATE statements feed the hash; iter_tables() would also
         # COUNT(*) every table, which the final snapshot pass does once anyway.
         create_statements = sorted(
@@ -5464,7 +5483,7 @@ def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[s
 # Input: the dossier entries of this build. Output: one normalised bill record
 # per procedure, sorted newest activity first, ready for render_bills_index and
 # render_bill_detail.
-def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str, str] | None = None) -> list[dict[str, Any]]:
     bills: dict[str, dict[str, Any]] = {}
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
 
@@ -5609,8 +5628,10 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                         }
                     )
 
-                # Tally who spoke about this bill and how much, keyed by
-                # name+party. External ids are kept so the detail page can link
+                # Tally who spoke about this bill and how much, keyed by the
+                # person the store bound the speech to, else by name+party (two
+                # namesakes of one party would otherwise share one row and one
+                # link). External ids are kept so the detail page can link
                 # the speaker to their Abgeordnete profile.
                 speaker_bucket = speaker_counts.setdefault(key, {})
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
@@ -5620,12 +5641,14 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]]) -> list[dict[str, A
                     speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
                     name = derive.speaker_display_name(speaker)
                     party = pulse_html.speaker_party(speaker, protocol)
-                    speaker_key = f"{name}|{party}"
+                    occurrence_id = speech_occurrence_id(protocol.get("id"), rede_id)
+                    person_id = (mp_lookup or {}).get(occurrence_id)
+                    speaker_key = f"person:{person_id}" if person_id else f"{name}|{party}"
                     entry_count = speaker_bucket.setdefault(
                         speaker_key,
                         {"name": name, "party": party, "speech_count": 0, "char_count": 0},
                     )
-                    entry_count["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
+                    entry_count["occurrence_id"] = occurrence_id
                     entry_count["speech_count"] += 1
                     entry_count["char_count"] += int(speech.get("char_count") or 0)
                     # Keep the speaker's external ids so the bill page can link to
@@ -10528,7 +10551,7 @@ def run_data_pipeline(
 ) -> tuple[dict[str, Any] | None, str | None, set[str], str, bool]:
     base_url_raw, manifest_raw, license_text, issues_url = resolve_data_export_options(args)
     data_base_url = resolve_data_base_url(base_url_raw)
-    bills = collect_bill_pages(entries)
+    bills = collect_bill_pages(entries, mp_lookup)
     bill_slugs = {bill["slug"] for bill in bills}
     readiness = derive_feature_readiness(entries, abg_mps, bill_count=len(bills))
 
@@ -10664,8 +10687,10 @@ def main() -> int:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
-    # --no-persist renders without reading the store, so an old store does not block it.
-    if args.offline and not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
+    # Only --offline --repersist upgrades an old store; an online update would
+    # otherwise fetch everything and then be refused by the rebuild. --no-persist
+    # renders without reading the store, so an old store does not block it.
+    if not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
         previous = facts.open_readonly(database_path)
         try:
             pulse_store.require_current_schema(previous)

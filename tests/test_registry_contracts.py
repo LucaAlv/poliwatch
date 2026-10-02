@@ -359,6 +359,27 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             self.rebuild([r])
             self.assertEqual(self.rows("persons"), persons)
 
+    # Value: protects=only the --offline --repersist replay upgrades an old-schema store; fails_when=an online rebuild accepts the schema 2 store and silently mints a fresh registry; why_new=only the offline render and the export were gated; seam=none
+    def test_only_the_upgrade_rebuild_accepts_an_old_schema_store(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.executescript("CREATE TABLE parties(id INTEGER PRIMARY KEY,name TEXT); CREATE TABLE mps(id INTEGER PRIMARY KEY,display_name TEXT); CREATE TABLE protocols(id TEXT PRIMARY KEY,document_number TEXT);")
+            conn.execute("INSERT INTO protocols VALUES ('s1','21/1')")
+        before = self.db.read_bytes()
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "--offline --repersist"):
+            self.rebuild([report()])
+        self.assertEqual(self.db.read_bytes(), before)
+        self.assertTrue(self.rebuild([report()], upgrade=True))
+        self.assertEqual(len(self.rows("persons")), 1)
+
+    # Value: protects=a merged XML record's combined Redner-ID ("11005304 999990074") still meets its partition and reviewed name; fails_when=corrected_speaker or partition_identity compares the raw attribute instead of its first id; why_new=partition tests used single ids only; seam=none
+    def test_a_combined_redner_id_meets_its_partition(self):
+        combined = "11005304 999990074"
+        speaker = registry.corrected_speaker({"display_name": "Dirk-UlrichAlexander Mende Föhr", "xml_redner_id": combined}, 5560, "ID209407600")
+        self.assertEqual(speaker["display_name"], "Dirk-Ulrich Mende")
+        evidence = {"display_name": "Dirk-Ulrich Mende", "xml_redner_id": combined}
+        self.assertEqual(registry.partition_identity("xml:11005304", evidence), "partition:11005304:mende")
+        self.assertEqual(evidence["partition"], "mende")
+
     # Value: protects=the Foehr/Mende shared ext-ID profile belongs to the profile owner only; fails_when=corrected_speaker or bind stops blanking the shared profile so the other partition gets aw id and profile link; why_new=the shipped test asserted two persons and links, which the partition guard alone already guarantees; seam=none
     def test_the_shared_profile_stays_with_its_owner_only(self):
         r = report(names=("Alexander Föhr", "Dirk-Ulrich Mende"))

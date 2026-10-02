@@ -92,6 +92,20 @@ class CollectTests(unittest.TestCase):
                                     "Alexander Föhr": speech_occurrence_id("5560", "ID209400000")})
 
 
+    # Value: protects=two persons who share a display name and party keep their own bill-page row, count and link; fails_when=the tally is keyed by name+party only, so their speeches are summed and linked to whichever spoke last; why_new=bill tests had one person per name; seam=none
+    def test_namesakes_of_one_party_keep_their_own_rows(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": rede_id, "speaker": {"display_name": "Max Müller", "fraktion": "SPD", "xml_redner_id": xml}, "char_count": 10}
+            for rede_id, xml in (("ID1", "1"), ("ID2", "2"), ("ID3", "1"))
+        ]
+        lookup = {speech_occurrence_id("p1", "ID1"): "max-a", speech_occurrence_id("p1", "ID3"): "max-a",
+                  speech_occurrence_id("p1", "ID2"): "max-b"}
+        speakers = build.collect_bill_pages([bill_entry], lookup)[0]["speakers"]
+        rows = sorted((lookup[row["occurrence_id"]], row["speech_count"]) for row in speakers)
+        self.assertEqual(rows, [("max-a", 2), ("max-b", 1)])
+
     def test_one_gesetzgebung_is_one_page_and_its_companions_are_listed_on_it(self) -> None:
         bills = build.collect_bill_pages([entry([GESETZ, ENTSCHLIESSUNG, ANTRAG, VERORDNUNG, WAHL], DOCS)])
         self.assertEqual([bill["vorgang_id"] for bill in bills], ["100"])

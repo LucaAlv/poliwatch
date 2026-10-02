@@ -6,7 +6,7 @@ Build-store schema **3** and export format **2** replace insertion-order IDs wit
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir>
 ```
 
-Plain offline rendering and direct export reject the old schema with that instruction. A registry written by an unreleased A.2 draft (no `person_records.home_person_id`) cannot be carried forward: replay a schema 2 backup to re-mint it. Online updates use the same staged rebuild, including roster ingestion and fact recomputation. A missing report for a protocol already in the store, invalid JSON, invalid corrections, corrupt registry, failed persistence, failed facts or failed integrity checks stops replacement. Restore missing evidence rather than deleting its protocol from the store.
+Plain offline rendering, online updates and direct export reject the old schema with that instruction; only the replay re-mints the registry. A registry written by an unreleased A.2 draft (no `person_records.home_person_id`) cannot be carried forward: replay a schema 2 backup to re-mint it. Online updates use the same staged rebuild, including roster ingestion and fact recomputation. A missing report for a protocol already in the store, invalid JSON, invalid corrections, corrupt registry, failed persistence, failed facts or failed integrity checks stops replacement. Restore missing evidence rather than deleting its protocol from the store.
 
 ## Key dictionary
 

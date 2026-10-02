@@ -140,7 +140,7 @@ def _load_corrections(path: Path) -> dict[str, Any]:
 def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -> dict[str, Any]:
     speaker = dict(speaker)
     for partition in corrections()["partitions"]:
-        if str(speaker.get("xml_redner_id")) == partition["xml_redner_id"]:
+        if derive.first_redner_id(speaker.get("xml_redner_id")) == partition["xml_redner_id"]:
             reviewed = partition["occurrences"].get(f"{protocol_id}/{rede_id}")
             if reviewed:
                 speaker["display_name"] = reviewed["display_name"]
@@ -153,7 +153,7 @@ def corrected_speaker(speaker: dict[str, Any], protocol_id: Any, rede_id: Any) -
 
 def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
     for partition in corrections()["partitions"]:
-        if str(evidence.get("xml_redner_id")) != partition["xml_redner_id"]:
+        if derive.first_redner_id(evidence.get("xml_redner_id")) != partition["xml_redner_id"]:
             continue
         name = _normalized_mp_name(evidence.get("display_name"))
         choices = {owner for part, owner in partition["labels"].items() if _normalized_mp_name(part) == name}
