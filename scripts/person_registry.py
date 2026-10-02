@@ -548,12 +548,65 @@ def _assign(conn: sqlite3.Connection, record: str, person: str) -> None:
     conn.execute("UPDATE person_bindings SET person_id=? WHERE record_id=? AND person_id != ?", (person, record, person))
 
 
+def is_stale_roster_partner(evidence: dict[str, Any]) -> bool:
+    """A former roster (DIP person) record this build did not list again: its
+    biography stays published, so it may still join the speaker it belongs to.
+    A vacated record is not one: the source said its evidence was someone else's."""
+    return bool((evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("xml_redner_id")
+                and not evidence.get("vacated"))
+
+
+def _stale_roster_partners(
+    rows: list[dict[str, Any]], components: dict[str, list[dict[str, Any]]],
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Stale roster records that join a live person as a partner only.
+
+    A stale record takes no part in ``match_rows``, so it cannot split a live
+    bucket or bridge two live persons. It joins when it is the only stale roster
+    record of its name+party, exactly one live person holds that name+party, that
+    person has a speaker side but no live roster record of its own, and no
+    official id or partition of the two contradicts."""
+    def key(row: dict[str, Any]) -> tuple[str, str] | None:
+        name, party = _normalized_mp_name(row.get("display_name")), _normalized_mp_party(row.get("party"))
+        return (name, party) if name and party else None
+
+    live_by_key: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
+    component_of_person: dict[str, int] = {}
+    for members in components.values():
+        for row in members:
+            component_of_person.setdefault(row["person_id"], id(members))
+        for k in {key(row) for row in members} - {None}:
+            live_by_key.setdefault(k, []).append(members)
+    stale_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        if not row["live"] and is_stale_roster_partner(row) and key(row):
+            stale_by_key.setdefault(key(row), []).append(row)
+    partners = []
+    for k, stale in stale_by_key.items():
+        targets = live_by_key.get(k, [])
+        if len(stale) != 1 or len(targets) != 1:
+            continue
+        row, members = stale[0], targets[0]
+        if component_of_person.get(row["person_id"], id(members)) != id(members):
+            continue  # its person already lives in another live person
+        if not any(member.get("xml_redner_id") for member in members):
+            continue
+        if any((member.get("ever_mdb") or member.get("is_mdb")) and not member.get("xml_redner_id") for member in members):
+            continue  # the person was listed again under another roster record
+        partitions = {member.get("partition") for member in [*members, row] if member.get("partition")}
+        if len(partitions) > 1 or _external_ids_conflict(_merge_external_ids([row]), _merge_external_ids(members)):
+            continue
+        partners.append((row, members))
+    return partners
+
+
 def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[str, int]:
     """Apply the name-based guesses to the current persons, from the rows alone.
 
     A pure function of ``rows``: it reads no earlier guess, so a replay, an
     incremental build and a fresh build agree. Only live records are matched (a
-    vacated one is stale evidence), but whole persons move, so a guess can never
+    vacated one is stale evidence); a stale roster record joins afterwards as a
+    partner only (``_stale_roster_partners``). Whole persons move, so a guess can never
     tear a durable merge apart. A group that would join two partitions, or
     persons whose official ids contradict, stays split; otherwise the person
     issued first keeps its key."""
@@ -571,19 +624,23 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
         first = find(members[0]["person_id"])
         for row in members[1:]:
             parent[find(row["person_id"])] = first
+    partners = _stale_roster_partners(rows, components)
+    for row, members in partners:
+        parent[find(row["person_id"])] = find(members[0]["person_id"])
+    joined = {row["id"] for row, _ in partners}
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         groups.setdefault(find(row["person_id"]), []).append(row)
     ordinals = {row[0]: row[1] for row in conn.execute("SELECT id, ordinal FROM persons")}
     for members in groups.values():
         persons = {row["person_id"] for row in members}
-        partitions = {row["partition"] for row in members if row["live"] and row.get("partition")}
+        matched = [row for row in members if row["live"] or row["id"] in joined]
+        partitions = {row["partition"] for row in matched if row.get("partition")}
         if len(persons) < 2 or len(partitions) > 1:
             continue
         by_person: dict[str, list[dict[str, Any]]] = {}
-        for row in members:
-            if row["live"]:
-                by_person.setdefault(row["person_id"], []).append(row)
+        for row in matched:
+            by_person.setdefault(row["person_id"], []).append(row)
         # Redner-IDs are left out: one person can hold two of them (match_rows, pass 1b).
         known = {person: {kind: ids[kind] for kind in ("aw", "dip")}
                  for person, ids in ((person, _merge_external_ids(rows_of)) for person, rows_of in by_person.items())}

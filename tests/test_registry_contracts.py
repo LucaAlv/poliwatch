@@ -92,6 +92,32 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(before, self.db.read_bytes())
         self.assertEqual(list(self.root.glob(".store.sqlite.*.tmp")), [])
 
+    # Value: protects=a member the refreshed roster no longer lists keeps one page with biography and speeches; fails_when=a stale roster record takes part in no match, or collect_abgeordnete skips its evidence once it shares a current person; why_new=staged roster tests always list the same members; seam=none
+    def test_member_dropped_from_roster_keeps_one_page_with_biography_and_speeches(self):
+        ada = {"id": "dip-7", "titel": "Ada Example", "vorname": "Ada", "nachname": "Example",
+               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+        bea = {"id": "dip-9", "titel": "Bea Other", "vorname": "Bea", "nachname": "Other",
+               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+        def ingest_with(persons):
+            client = mock.Mock()
+            client.list_all.return_value = persons
+            return lambda staged: build.ingest_mdb_roster(client, staged, wahlperiode=21)
+        r = report()
+        self.rebuild([r], preserve_roster=False, roster_ingest=ingest_with([ada, bea]))
+        speech = stable_key("speech", "s1", "s1-r0")
+        person = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}[speech]
+        self.rebuild([r], preserve_roster=False, roster_ingest=ingest_with([bea]))
+        bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
+        self.assertEqual(bindings[speech], person)
+        self.assertEqual(bindings[stable_key("roster", "dip-7")], person)
+        with sqlite3.connect(self.db) as conn:
+            conn.row_factory = sqlite3.Row
+            mps, lookup = build.collect_abgeordnete(conn)
+        adas = [mp for mp in mps if mp["name"] == "Ada Example"]
+        self.assertEqual(len(adas), 1)
+        self.assertEqual((adas[0]["id"], adas[0]["speech_count"], adas[0]["wahlperioden"]), (person, 1, [21]))
+        self.assertEqual(lookup["dip:dip-7"], person)
+
     # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only unknown merge persons were tested; seam=none
     def test_invalid_corrections_abort_without_replacing_store(self):
         r = report(names=("Ada Example", "Bea Example"))

@@ -6435,7 +6435,9 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         person_id = registry.resolve(conn, record["person_id"])
         if evidence.get("ever_mdb") or evidence.get("is_mdb"):
             page_eligible.add(person_id)
-        if person_id not in current_person_ids:
+        # A record with no mps row keeps its evidence on the page: on its own
+        # person's page, or pooled into the person a stale roster record joined.
+        if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
             evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
             assignments[record["id"]] = person_id
