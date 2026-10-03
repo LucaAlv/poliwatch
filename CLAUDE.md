@@ -30,3 +30,15 @@ Default five labels. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+## graphify
+
+This project can have a local knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships. The directory is gitignored and must be initialized on each machine.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when `command -v graphify` succeeds and graphify-out/graph.json exists; otherwise use source search. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` only when the CLI is available and the graph is initialized: `if command -v graphify >/dev/null 2>&1 && [ -f graphify-out/graph.json ]; then graphify update .; fi` (AST-only, no API cost). Otherwise skip graph maintenance.
+
+To initialize on another machine, install the CLI with `uv tool install graphifyy` (or `pipx install graphifyy`; Python 3.10+ required), ensure `graphify` is on PATH, then run `graphify extract . --code-only` from the repository root. This creates graphify-out/graph.json using local AST extraction without an API key. For a full graph including documentation and semantic relationships, follow the [graphify setup guide](https://github.com/Graphify-Labs/graphify#install) and run `/graphify .` in your configured AI assistant.
