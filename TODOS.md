@@ -429,6 +429,8 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **Context:** The two lead rules disagree today. The Wochenradar (`topic_identity`, `scripts/render_dip_pulse_html.py`) also reads `mitberaten` twins and has no lead at all for `equal_weight` TOPs (Final Gate 2026-09-15); the SQL always picks one. Check whether `proceeding_positions` holds the twins; if not, the SQL also misses the 40 TOPs where the only Gesetzgebung is a twin. Any fix changes past monthly winners, so it needs a metric version bump.
 
+**Update 2026-10-03 (architecture review):** fix the duplicated rule along with the metric. Compute a Tagesordnungspunkt's Thema/lead Vorgang once, at persist time, with `topic_identity`'s full rule (twins, `equal_weight`), and store it. `LEAD_POSITION_CTE`, `LEAD_PROCEEDING_CTE` and the TEMP tables in `build_dip_pulse_site._ensure_lead_position_tables` then read the stored value instead of re-implementing it in SQL. The CTE comment says "same rule topic_identity uses", and that is false. Until the rule exists once, the Wochenradar and a Fakt card can name different Themen for the same TOP.
+
 **Effort:** S
 **Priority:** P2
 **Depends on:** None
@@ -520,6 +522,8 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Depends on:** A concrete deployment/serving lifecycle
 
 ### Global header nav links to a page a build didn't write when its feature is off
+
+**Update 2026-10-03:** superseded if "Delete the feature-selection axis" (Architektur) lands. Without a feature to switch off, there is no dead link to filter.
 
 **What:** `render_global_header` (`scripts/render_dip_pulse_html.py`) accepts a `features: Selection` parameter but never uses it to filter `NAV_ITEMS` — every nav item renders unconditionally. `bills`, `abgeordnete`/`mp-pages`, `fakten`/`facts`, `database`/`store`, and now `votes` all skip writing their page when their feature is deselected (`write_pages`/`write_*_pages` returning early), so a build that deselects any of them still links every page's header to a file that was never written — a sitewide dead link for that nav entry.
 
@@ -870,6 +874,8 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 **Context:** Do it in slices, one page type at a time, behind a comparison test (old output vs. new output). The votes archive is the easiest first slice, because the `votes`, `vote_fractions` and `vote_members` tables already exist. Overlaps with `protocol_acquisition` (Daten), which moves acquisition states into the store.
 
+**Update 2026-10-03 (architecture review):** the Daten export is one slice of this split. It is about 1,600 lines inside `build_dip_pulse_site.py`: export machinery, recipe SQL, and the Daten page HTML and styles. `_run_export` takes 16 keyword arguments, and `export_distribution_data` takes `mp_lookup` and `readiness` from page building. Move it into its own module, `export(store, out_dir) -> manifest`, after "One module that counts Reden and Beiträge" and "One Persons module over the person registry" land. Recipes should call those modules, and nothing in the export should read a render artifact. Moving it earlier would only relocate the code.
+
 **Effort:** L
 **Priority:** P2
 **Depends on:** None; best started before the Analysen pages, so new pages are store-first from the start
@@ -957,6 +963,109 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Effort:** S
 **Priority:** P4
 **Depends on:** None
+
+### One module that counts Reden and Beiträge
+
+**What:** Give the counting of Reden one module. It should own which XML records count as a Rede and which are Beiträge (ADR 0001, ADR 0002), with attribution to Zusammenschluss, Sprechrolle and Person. It returns counted rows or aggregates per period and grouping. Today `derive.py` owns attribution but nobody owns counting. Five places count on their own:
+- `render_dip_pulse_html.item_stats` and `week_stats` use the parser's `xml_speech_count` (falling back to `len(speakers)`).
+- `build_dip_pulse_site` counts in three spots: the bills tally in `collect_bill_pages`, `speech_count` in `collect_abgeordnete`, and Daten recipes r1, r2 and r5.
+- `facts.py` has six speech queries.
+- `compare_store_values.py`.
+
+The "corrected speaker, `rede_id`, `occurrence_id` of a Rede" recipe is copied in render, build and `persist_report`. Done when every page, Kennzahl and recipe reads Reden through this module, and no other module decides what a Rede is.
+
+**Why:** Puls counts from the report JSON (`xml_speech_count`) and Fakten count the rows `persist_report` inserted from `xml_speakers`, so a published Puls figure and a Fakt can disagree. The next change to what counts as a Rede (Zwischenfrage credit, Zu Protokoll gegebene Reden, roadmap A1) has to be made in five places.
+
+**Context:** Found by the architecture review of 2026-10-03 (origin/main 2801f1c). This is the read path that "Split the dataset from the site: the site builds from a release alone" needs: once renderers read the store, they should read Reden through this module rather than writing new SQL. Recipe r2 hard-codes the Sprechrolle labels and the Zusammenschluss COALESCE instead of using `derive.SPRECHROLLE_LABELS` and `ZUSAMMENSCHLUSS_SQL`, and `compare_store_values._redeanteil_group_sql` is a third copy. Tests can then seed store rows and assert counts through one interface, instead of building a report, a store and a page.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** Best done with or right after the A1 PRs still open, so the counting rule moves once
+
+### Typed completeness gaps instead of reason strings
+
+**What:** Make a Sitzung's acquisition gaps a typed value with an enum reason and structured detail (scan pages used, date), owned by `publication_state.py`. Today the reasons pass through these steps:
+- `validate_dip_protocol` creates them as `failure_reasons` and `roll_call_scan_end`.
+- `build_dip_pulse_site.annotate_report_acquisition` rewrites them.
+- `facts.completeness_from_reports` flattens them into display text ("votes partial (source_stale)", "scan_budget_exhausted after N pages").
+- `build_dip_pulse_site._structural_vote_gap` parses that text back with `text.index("(")` and `_BUDGET_PAGES_RE` to decide whether `--backfill-incomplete` rescans a Sitzung.
+- `build_publication_manifest` and `features/votes.py` read the raw dicts again.
+
+Done when the backfill decision, the Completeness basis and the manifest consume the typed gap, and text is produced only for display.
+
+**Why:** Rewording a reason in `facts.py` silently changes which Sitzungen the backfill takes. `publication_state.AcquisitionState` is already typed, but these paths bypass it. The default vote scan budget (`30`) is repeated in `main()` and in the backfill path.
+
+**Context:** Found by the architecture review of 2026-10-03. Overlaps "Persist per-sitting acquisition state in the store (`protocol_acquisition`)". The typed gap is the vocabulary that table would store, so do this first. Several items in "Harden the vote acquisition and catalog completeness paths" ((1), (11), (15)) touch the same code.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### One Persons module over the person registry
+
+**What:** Put `person_registry.py` behind one interface that the rest of the code uses for Namensabgleich, Zusammenführung, Personenseite eligibility, page links and the mp-to-Person map. Registry tables become private to it. Today this logic is spread out:
+- **Personenkennung keys** (`aw:`, `xml:`, `dip:`) and the trusted-aw rule are built in `persist_dip_pulse_store.mp_identity`, `person_registry.mp_keys`/`_mp_external_ids`, `render_dip_pulse_html.mp_page_href` and `build_dip_pulse_site.speaker_identity`.
+- **The mp-to-Person map** is built three times: `facts.ensure_canonical` (a TEMP table), `_run_export`'s `mp_canonical`, and `collect_abgeordnete`.
+- **`collect_abgeordnete`** (about 225 lines in the build file) queries `person_records`, `person_bindings` and `person_aliases` directly and parses `evidence_json`.
+- **The `mp_lookup` dict** mixes four key namespaces and is threaded through about 50 build call sites.
+
+**Why:** The data export's `mp_canonical.has_page` comes from `mp_lookup`, an HTML link map, so the dataset depends on what the renderer produced. Identity bugs (see the Abgeordnete merge-gap history) have to be fixed in every copy.
+
+**Context:** Found by the architecture review of 2026-10-03. It subsumes the identity items already deferred: "A.2 review leftovers" (`mp_keys`/`_mp_external_ids` duplication, `merge`/`reconcile` writing into `mps`) and "A.2 second-round review leftovers" (3) (one `has_page` predicate instead of three, the `ensure_canonical` temp copy, dropping `mp_canonical` unless it is a published contract). Close those parts there when this lands.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### The store owns its schema and its rebuild
+
+**What:** Make `persist_dip_pulse_store.py` the one module that owns the SQLite store, with a small interface: open, rebuild from entries, persist a report. Today:
+- **Table definitions live in four modules:** `persist.initialize` and its migrations, `person_registry.initialize`, `facts.py`, and the export tables in `build_dip_pulse_site._run_export`.
+- **The rebuild lifecycle lives in the build file:** `rebuild_database_from_entries` stages the store, copies the registry, restores the roster through about 25 keyword arguments to `upsert_mp`, reconciles, computes facts, validates and swaps. `repersist_cached_reports` and `ingest_mdb_roster` are there too.
+- **The facts engine runs from three call sites:** the rebuild, `run_facts_engine`, and the fallback in `run_data_pipeline`.
+- **Test fixtures are a third writer:** `tests/_facts_fixture.seed_weeks` and `tests/_daten_fixture.seed_store` write rows through `upsert_*` and have to follow every schema change.
+
+**Why:** A schema change touches four files plus the fixtures. Store tests sit in `test_build_dip_pulse_site.py` only because the rebuild lives there.
+
+**Context:** Found by the architecture review of 2026-10-03. Candidates for the same pass: the "`persist_votes` is dead" note in "Stale derived data after `--offline --repersist`", and `rebuild_database_from_entries` forwarding to `_rebuild_database_from_entries` ("A.2 review leftovers"). This is the foundation for the Reden and Persons modules above, and for "Split the dataset from the site". Fixtures should then build stores through `persist(report)`, the path production uses.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** None
+
+### Delete the feature-selection axis
+
+**What:** `features.publication_selection()` always returns every component, and `render_site`, `write_report_and_page` and `render_html` overwrite their `features` argument with it. Even so, `features: Selection` is threaded through about 28 build signatures and 2 render signatures, and `if "bills" in features` guards are always true. Remove all of it:
+- the Selection parameter;
+- `features/loader.py`;
+- the pass-through adapters `features/bills.py`, `features/facts.py` and `features/abgeordnete.py`, which call back into build functions through an untyped `ctx` dict;
+- the deprecated `--features`, `--enable`, `--disable` and `--list-features` flags with `resolve_from_args` and `warn_deprecated_feature_configuration`.
+
+`render_site` calls its page builders directly. `votes`, `summaries` and `aw_profiles` do real work and stay as plain modules without `ctx`.
+
+**Why:** It is a seam with only one adapter: nothing varies across it, and every signature pays for it. CLAUDE.md's pre-release rule says to drop compatibility shims rather than carry them.
+
+**Context:** Found by the architecture review of 2026-10-03. This makes "Global header nav links to a page a build didn't write when its feature is off" (Publication) moot: there will be no feature to switch off. Close it when this lands. Also check the `AbgeordneteComponent.after_persist` path that "A.2 second-round review leftovers" (3) proposes to drop.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### A build pipeline module behind `main()`
+
+**What:** Replace the 480-line `main()` in `build_dip_pulse_site.py` with `build(config, source, clock) -> BuildResult` (pages written, manifest, gaps). DIP access goes behind a source seam with two adapters: HTTP for online builds, and cached reports for `--offline` and tests. Today:
+- The offline and online branches repeat the same tail: `run_data_pipeline` returns a 5-tuple that is unpacked into `render_site`'s roughly 20 keyword arguments, in both branches.
+- `write_report_and_page` takes 21 parameters, builds a fake `argparse.Namespace` for `dip.build_report`, and returns XML through an out-parameter dict.
+- `getattr(args, ...)` appears about 40 times.
+- `resolve_today` is called five times while other clocks bypass it, including some in `facts.py`.
+
+**Why:** Orchestration can only be tested by patching module globals: `test_build_dip_pulse_site.py` has about 123 `patch()` calls and 16 full `main()` runs. "Some date checks use the wall clock, not `--today`" (item (11) of "Harden the vote acquisition…") is a symptom.
+
+**Context:** Found by the architecture review of 2026-10-03. Easier after "The store owns its schema and its rebuild" and "Delete the feature-selection axis", which remove most of the parameters threaded through `main()`. `validate_dip_protocol.py` (2.6k lines, imported as `dip`: HTTP client, XML parser, roll-call scraping, three LLM providers, report assembly) is the natural home for the source adapter. `enrich_with_llm_summaries` taking the CLI namespace and the `global _namenslisten_entries` cache should go in the same pass.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** Best after the store and feature-axis items above
 
 ## Completed
 
