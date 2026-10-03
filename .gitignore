@@ -16,3 +16,6 @@ IDEAS.md
 
 # personal skill guide
 docs/agents/skill-guidance.md
+
+# graphify knowledge graph (local, rebuilt by git hooks)
+graphify-out/
