@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import re
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -165,6 +166,41 @@ class CompareStoreValuesTests(unittest.TestCase):
             bills=3,
         )
         return old, new
+
+    # Value: protects=the comparison diagnostic keeps same-roll-call namesakes split; fails_when=vote_members stop populating vote_ids on rows passed to match_rows; why_new=identity integration tests cover production reconciliation but not this separate comparison path; seam=none
+    def test_reconciliation_diagnostic_keeps_same_vote_namesakes_split(self) -> None:
+        root = make_output(
+            self.tmp / "diagnostic",
+            protocols={"21/1": [("R1", "SPD", 100, None)]},
+            votes=[("v1", "2026-03-04", "21/1", "yes", "SPD")],
+            roster=False,
+        )
+        path = root / "data" / "bundestag-pulse.sqlite"
+        conn = pulse_store.connect(path)
+        try:
+            conn.row_factory = sqlite3.Row
+            speaker = conn.execute("SELECT id, party_id FROM mps").fetchone()
+            conn.execute("UPDATE mps SET display_name='Alex Beispiel', xml_redner_id='xml-1' WHERE id=?", (speaker["id"],))
+            voter = pulse_store.upsert_mp(
+                conn,
+                now=NOW,
+                display_name="Alex Beispiel",
+                party_id=speaker["party_id"],
+                identity_key="vote-only:alex",
+            )
+            conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'yes')", (speaker["id"], speaker["party_id"]))
+            conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'no')", (voter, speaker["party_id"]))
+            conn.commit()
+        finally:
+            conn.close()
+
+        store = compare.open_store(root)
+        try:
+            result = compare._zusammenfuehrung(store)
+            self.assertEqual(result["entries"], 2)
+            self.assertEqual(result["merges_unique_name"], 0)
+        finally:
+            store.close()
 
     def test_fixed_cohort_prints_old_new_and_delta_on_shared_protocols_only(self) -> None:
         old, new = self.stores()

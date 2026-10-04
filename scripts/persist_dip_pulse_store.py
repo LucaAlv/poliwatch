@@ -20,7 +20,7 @@ from typing import Any
 import derive
 import person_registry as registry
 from stable_ids import (
-    contribution_occurrence_id, roster_occurrence_id, speech_occurrence_id, speech_rede_id, stable_key, vote_member_occurrence_id,
+    contribution_occurrence_id, roster_occurrence_id, speech_occurrence_id, speech_rede_id, stable_key,
 )
 
 
@@ -1249,7 +1249,7 @@ def persist_vote(
                 display_name=member.get("name"),
                 party_name=party_name,
             ),
-            occurrence_id=vote_member_occurrence_id(vote_id, clean(member.get("name")), party_name),
+            occurrence_id=derive.vote_member_key(vote_id, member),
             profile_url=profile_url,
             aw_politician_id=aw_politician_id,
             aw_match=profile.get("match"),

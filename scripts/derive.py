@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping
 
+from stable_ids import vote_member_occurrence_id
+
 #: The Stimmen a Mehrheitsvotum is chosen among. "nicht abgegeben" (key
 #: "absent") is not a Stimme.
 MAJORITY_KEYS = ("yes", "no", "abstain")
@@ -69,6 +71,16 @@ _KNOWN = frozenset(
 
 def _clean(value: Any) -> str:
     return " ".join(str(value if value is not None else "").replace("\xa0", " ").split())
+
+
+def vote_member_key(vote_id: Any, member: Mapping[str, Any]) -> str | None:
+    """Stable occurrence key for one member row in a roll-call vote."""
+    vote_id_clean = _clean(vote_id) or None
+    if vote_id_clean is None:
+        return None
+    name = _clean(member.get("name")) or None
+    faction = zusammenschluss(member.get("faction")) or "Unbekannt"
+    return vote_member_occurrence_id(vote_id_clean, name, faction)
 
 
 def _known(text: str) -> str | None:

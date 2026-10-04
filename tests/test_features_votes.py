@@ -183,3 +183,66 @@ class RenderVoteSummaryFractionTests(unittest.TestCase):
         self.assertEqual(panel.count("Gruppe BSW"), 1)
         self.assertEqual(panel.count('<em class="vote-pill vote-no">'), 1)
         self.assertNotIn('<em class="vote-pill vote-yes">', panel)
+
+
+class VoteMemberProfileLinkTests(unittest.TestCase):
+    def _item(self, member: dict[str, object], vote_id: str | None = "vote-1") -> dict[str, object]:
+        vote = _vote(members=[member])
+        if vote_id is None:
+            vote.pop("id", None)
+        else:
+            vote["id"] = vote_id
+        return {"votes": [vote]}
+
+    def test_occurrence_key_resolves_to_internal_profile(self) -> None:
+        from stable_ids import vote_member_occurrence_id
+        key = vote_member_occurrence_id("vote-1", "Ada Beispiel", "SPD")
+        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={key: "ada-beispiel"})
+        self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
+
+    def test_only_trusted_aw_id_resolves_internally(self) -> None:
+        member = {"name": "Ada Beispiel", "faction": "SPD", "abgeordnetenwatch": {"id": 42, "match": "ext_id"}}
+        markup = render_vote_summary(self._item(member), mp_lookup={"aw:42": "ada-beispiel"})
+        self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
+
+    def test_unresolved_member_falls_back_to_external_profile(self) -> None:
+        member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.bundestag.de/abgeordnete/ada-beispiel"}
+        markup = render_vote_summary(self._item(member), mp_lookup={"other": "other-person"})
+        self.assertIn('<a href="https://www.bundestag.de/abgeordnete/ada-beispiel">Ada Beispiel</a>', markup)
+
+    def test_member_without_any_profile_is_plain_text(self) -> None:
+        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={})
+        self.assertIn("<strong>Ada Beispiel</strong>", markup)
+        self.assertNotIn('<strong><a href=', markup)
+
+    def test_missing_lookup_preserves_current_markup(self) -> None:
+        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.abgeordnetenwatch.de/profile/ada-beispiel"}))
+        self.assertIn(
+            '<li class="member-vote-row"><strong><a href="https://www.abgeordnetenwatch.de/profile/ada-beispiel">Ada Beispiel</a></strong>'
+            '<span class="vote-pill vote-"></span></li>',
+            markup,
+        )
+
+    def test_missing_vote_id_does_not_create_internal_occurrence_link(self) -> None:
+        member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.bundestag.de/abgeordnete/ada-beispiel"}
+        markup = render_vote_summary(self._item(member, vote_id=None), mp_lookup={"other": "other-person"})
+        self.assertIn('<a href="https://www.bundestag.de/abgeordnete/ada-beispiel">Ada Beispiel</a>', markup)
+        self.assertNotIn('../abgeordnete/', markup)
+
+    def test_vote_member_key_preserves_persisted_key_for_numeric_and_cleaned_values(self) -> None:
+        import derive
+        from stable_ids import vote_member_occurrence_id
+
+        vectors = [
+            (42, {"name": "Ada Beispiel", "faction": "SPD"}, "42", "Ada Beispiel", "SPD"),
+            ("  vote  ", {"name": "  Ada   Beispiel ", "faction": "SPD"}, "vote", "Ada Beispiel", "SPD"),
+            ("vote", {"name": "  ", "faction": ""}, "vote", None, "Unbekannt"),
+        ]
+        for vote_id, member, clean_id, clean_name, party in vectors:
+            with self.subTest(vote_id=vote_id, member=member):
+                self.assertEqual(derive.vote_member_key(vote_id, member), vote_member_occurrence_id(clean_id, clean_name, party))
+
+    def test_vote_member_key_is_none_without_vote_id(self) -> None:
+        import derive
+
+        self.assertIsNone(derive.vote_member_key("  ", {"name": "Ada Beispiel", "faction": "SPD"}))

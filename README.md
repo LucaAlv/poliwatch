@@ -301,6 +301,8 @@ scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 
 Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.5.x`; old `bundestag-pulse-features` browser data is inert.
 
+In sitting dossiers, names in roll-call member lists link to the matching Personenseite when the identity is unambiguous. Otherwise the row keeps its Bundestag profile link, or shows a plain name when no profile is available.
+
 AI summaries are visible when a usable, structurally validated summary exists. The exact label is `KI-generiert · nicht redaktionell geprüft`. Visitors can expand or collapse all summaries with one control; that single preference uses `bundestag-pulse-ai-summaries-v1`. Structural citation validation proves that cited targets resolve, not that every claim is factually supported or balanced.
 
 Operators control only optional acquisition work. List those controls and their effective provenance without network or build work with:
@@ -416,7 +418,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 
 ### Sprechrolle rules
 
-A Rede in a Sprechrolle (CONTEXT.md; `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
+A Rede in a Sprechrolle ([CONTEXT.md](CONTEXT.md); `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
 
 - A role that names a Land in brackets ("Ministerpräsident (Bayern)", "Staatsminister (Hessen)") is the Bundesrat.
 - The Bundeskanzler, Bundesminister, Parlamentarische Staatssekretäre, Staatsminister beim Bund, Beauftragte and Koordinatoren der Bundesregierung are the Bundesregierung.

@@ -2774,7 +2774,7 @@ def render_html(
             for party, count in stats["party_counts"].most_common()
         ]
         vote_sections = (
-            "".join(components["votes"].dossier_sections(report, {"item": item}))
+            "".join(components["votes"].dossier_sections(report, {"item": item, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"}))
             if "votes" in components
             else ""
         )
@@ -2855,7 +2855,7 @@ def render_html(
     sitting_vote_section = ""
     if sitting_votes and "votes" in components:
         vote_sections = "".join(
-            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}})
+            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"})
         )
         sitting_vote_section = (
             '<section class="top-card sitting-votes" id="sitting-votes">'
