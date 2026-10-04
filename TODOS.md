@@ -14,7 +14,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **B. Abstimmungen (daily view), independent of A**
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
-2. "Roll-call member rows link to external profiles, never to our own MP pages" (after A2, so the links last).
+2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
 4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters".
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
@@ -76,18 +76,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** M
 **Priority:** P3
 **Depends on:** None (A1 works without it)
-
-### Roll-call member rows link to external profiles, never to our own MP pages
-
-**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup` resolves them. Fall back to the external `profile_url` only when no page exists.
-
-**Why:** Today the member name always links to `member["profile_url"]` (bundestag.de or abgeordnetenwatch), even though `upsert_mp` resolves every vote member to an internal `mp_id` at persist time. A reader on a vote panel can't reach the site's own MP page, which is the page that pools that person's speeches and votes.
-
-**Context:** Speaker names in dossiers already link internally via `mp_lookup` (rerun of `write_report_files` after the roster step in `main()`), so reuse that path. Found in the 2026-09-24 database state review. Not previously tracked.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None (better after the `parties.name` item, which improves how many vote members merge)
 
 ### Document `--protocol-wahlperiode` in the README
 
@@ -882,7 +870,7 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 ### Vote-member occurrence bindings: cost and use
 
-**What:** `persist_vote` binds every roll-call vote member to a durable occurrence (`vote-member` key), about 154k `person_bindings` rows on top of the 35k speech bindings, each through the full `registry.bind` path. Check whether anything needs vote-member bindings (nothing looks them up as link keys; page eligibility uses speech bindings only) and, if not, bind once per distinct member identity per rebuild or skip the binding.
+**What:** `persist_vote` binds every roll-call vote member to a durable occurrence (`vote-member` key), about 154k `person_bindings` rows on top of the 35k speech bindings, each through the full `registry.bind` path. Measure and reduce repeat-bind cost while preserving every occurrence binding: B.2 now uses those keys to link dossier member rows to their Personenseite. Page eligibility still comes from MdB status or speaking contributions.
 
 **Why:** Roughly 5x the bind work of speeches on a full replay, and the rows are exported in a public table.
 
@@ -1068,6 +1056,13 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Roll-call member rows link to external profiles, never to our own MP pages
+
+**Completed:** v0.14.0.0 (2026-10-04), B.2. Dossier member rows resolve the shared, normalized vote-member occurrence key through `mp_lookup`, then fall back to the external profile or a plain name. TOP and sitting votes use the same member renderer. The T0 gate required widening scope: surname-first vote names are normalized for matching, roster/speaker pairs settle first, then vote records join one unambiguous person. Conflicting ids, ambiguous namesakes and distinct records present in one roll call stay split. MP pages prefer roster/speaker biography and correctly label a Bundestag profile fallback.
+
+**Measured:** 285-report scratch replay: internal lookup coverage **0 → 147,971 / 154,015 stored member rows (96.08%)**; split-bucket misses **147,971 → 0**; vote-only misses remain **6,044 rows**. All 154,078 vote-member occurrence keys stay byte-identical. Current person groups **3,386 → 1,294** because duplicate vote-source records now join their roster/speaker person. D3 collisions: **0** (no namesake-key TODO needed). Rendered member links: **0 → 166,656 internal**, **173,407 → 6,751 Bundestag** (965 persons); every internal href exists. Browser click-through reaches the matching vote on the Personenseite. Full unittest suite passes.
+
 
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68; Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
 

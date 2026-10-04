@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.0.0] - 2026-10-04
+
+### Added
+
+- Names in dossier roll-call member lists now link to their Personenseite, where you can follow the person's votes and speeches. Members without an internal match keep their Bundestag profile link, or their plain name when no profile is available.
+
+### Fixed
+
+- Vote records printed surname-first now join their roster or speaker identity when the match is unambiguous. Conflicting ids, ambiguous namesakes and distinct people in the same roll call remain separate; vote-member occurrence ids stay unchanged. On the 285 cached sittings, 147,971 of 154,015 stored member rows now resolve internally, producing 166,656 working member links.
+- Personenseiten prefer roster and speaker biography over vote-list attributes, and correctly label a Bundestag profile fallback.
+
 ## [0.13.0.0] - 2026-10-03
 
 ### Added
