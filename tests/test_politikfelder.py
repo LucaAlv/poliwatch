@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site as build
@@ -333,6 +334,7 @@ class FetchTests(unittest.TestCase):
         ]
 
     def run_refresh(self, client: FakeClient, cache: dict[str, Any]):
+        self.enterContext(mock.patch.object(build, "NUMBER_LOOKUP_PAUSE", 0))
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()) as err:
             stats = build.refresh_vorgang_cache(client, self.entries, cache, Path(tmp))
             saved = pf.load_cache(tmp)

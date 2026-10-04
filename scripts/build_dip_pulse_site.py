@@ -1454,6 +1454,11 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
 
 #: Failed DIP calls in a row after which the Vorgang fetch stops for this build.
 VORGANG_FETCH_MAX_FAILURES = 5
+#: Seconds between two Drucksache-number lookups (one call per number). At about 4
+#: calls a second DIP's edge answered 400 with a bot challenge to the whole API for
+#: over half an hour (2026-10-04), so the first full fill (about 2,400 numbers)
+#: takes 20 minutes; later builds fetch only new numbers.
+NUMBER_LOOKUP_PAUSE = 0.5
 
 
 def refresh_vorgang_cache(
@@ -1493,6 +1498,7 @@ def refresh_vorgang_cache(
         if failures >= VORGANG_FETCH_MAX_FAILURES:
             stats["nummern_failed"] += 1
             continue
+        time.sleep(NUMBER_LOOKUP_PAUSE)
         try:
             documents = dip.resolve_dokumentnummer(client, number)
         except dip.DipError as exc:
