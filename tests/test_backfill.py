@@ -101,6 +101,7 @@ class RetainedScopeTests(unittest.TestCase):
             mock.patch.object(build, "fetch_protocols", return_value=copy.deepcopy(self.catalog)) as fetch,
             mock.patch.object(build, "build_dossiers_with_progress", return_value=generated) as build_dossiers,
             mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
+            mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
             mock.patch.object(build, "render_site", return_value=self.output_dir / "index.html") as render_site,
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),

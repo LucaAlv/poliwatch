@@ -257,6 +257,50 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
     raise AssertionError("unreachable")
 
 
+#: Vorgang ids per ``/vorgang?f.id=`` request. DIP answered 400 ids in one call
+#: (measured 2026-10-04, paginated by list_all in pages of 100); 100 keeps one
+#: request to one page.
+VORGANG_BATCH = 100
+
+
+def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
+    """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` is
+    not used by the Politikfelder; the later topic pages read it."""
+    descriptors = [
+        str(d.get("name"))
+        for d in document.get("deskriptor") or []
+        if isinstance(d, dict) and d.get("typ") == "Sachbegriffe" and d.get("name")
+    ]
+    return {
+        "sachgebiet": [str(label) for label in document.get("sachgebiet") or []],
+        "deskriptor_sachbegriffe": descriptors,
+        "abstract": document.get("abstract"),
+        "vorgangstyp": document.get("vorgangstyp"),
+        "aktualisiert": document.get("aktualisiert"),
+    }
+
+
+def fetch_vorgaenge(client: ApiClient, ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Cache records of the Vorgänge ``ids``, batched. An id DIP does not return
+    gets an empty record (fetched, nothing known). A failed batch raises DipError
+    before any of its ids is recorded."""
+    records: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(ids), VORGANG_BATCH):
+        batch = [str(i) for i in ids[start : start + VORGANG_BATCH]]
+        found = {str(d.get("id")): d for d in client.list_all("/vorgang", {"f.id": batch})}
+        for vorgang_id in batch:
+            document = found.get(vorgang_id)
+            records[vorgang_id] = vorgang_cache_record(document) if document else vorgang_cache_record({})
+    return records
+
+
+def resolve_dokumentnummer(client: ApiClient, number: str) -> list[dict[str, Any]]:
+    """The Vorgänge a Drucksache number belongs to, as raw DIP records. One call
+    per number: a repeated ``f.dokumentnummer`` returns one deduplicated union, so
+    a batch cannot say which number belongs to which Vorgang."""
+    return client.list_all("/vorgang", {"f.dokumentnummer": number})
+
+
 def fetch_text(url: str) -> str:
     return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
 
@@ -1328,7 +1372,7 @@ _NEXT_TALLY_RE = re.compile(r"Gesamt|Ja:\s*\d")
 # A Drucksache number's shape, e.g. "21/6561". Shared with
 # parse_roll_call_list_page, which populates the document_numbers this
 # function cross-checks against.
-_DOCUMENT_NUMBER_RE = re.compile(r"\b\d{1,2}/\d{1,6}\b")
+_DOCUMENT_NUMBER_RE = derive.DOCUMENT_NUMBER_RE
 
 
 def _beschluss_paragraphs(section_html: str) -> list[list[str]]:

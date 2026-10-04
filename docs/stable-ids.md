@@ -35,7 +35,7 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | `mp_canonical.mp_id` | Source-record key referencing `mps.id`; `canonical_id` references `persons.id`; `has_page` is 1 when that person has a page |
 | `datenstand.tag` | Release metadata's primary key |
 
-Protocols, proceedings, proceeding positions and votes keep their source IDs. Junction tables keep composite keys made from stable foreign keys. Schema migration versions and metric IDs are natural keys. Every text primary key is explicitly `NOT NULL`. CSV IDs must be read as strings. `source_entity_id` is polymorphic: use `entity_kind` and the citation columns to identify its source table or official reference.
+Protocols, proceedings, proceeding positions and votes keep their source IDs. Junction tables keep composite keys made from stable foreign keys: `agenda_item_politikfelder` is keyed by `(agenda_item_id, politikfeld)` and `vote_politikfelder` by `(vote_id, politikfeld)`, where `politikfeld` is one of the 13 labels or `untagged`. Schema migration versions and metric IDs are natural keys. Every text primary key is explicitly `NOT NULL`. CSV IDs must be read as strings. `source_entity_id` is polymorphic: use `entity_kind` and the citation columns to identify its source table or official reference.
 
 ## Registry and matching
 

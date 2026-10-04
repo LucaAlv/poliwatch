@@ -202,6 +202,10 @@ _Avoid_: Gesetz for a Gesetzgebung still underway or failed
 What a Tagesordnungspunkt is about, in readers' words: the title of the Vorgang it chiefly deals with, preferring a Gesetzgebung, else its heading in the Plenarprotokoll without procedural boilerplate. Where it deals with several Vorgänge of equal weight, all their titles name it alike. Thema only names a Tagesordnungspunkt; it never decides which Vorgang a Rede counts for.
 _Avoid_: topic as a counting unit, "lead Vorgang" as an attribution rule
 
+**Politikfeld**:
+One of the 13 policy areas the site files Tagesordnungspunkte and votes under (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie). A Tagesordnungspunkt or vote has one to three, derived by a fixed rule from the Sachgebiet labels DIP gives the Vorgänge it deals with (then the vote's own Drucksachen, then a Haushalts-Einzelplan heading), or the explicit `untagged` when no such data exists. It describes what an item is about; it never decides which Vorgang a Rede counts for.
+_Avoid_: Sachgebiet (DIP's own 28 labels, which the 13 Politikfelder fold together), `votes.topic` (the Dachzeile bundestag.de prints over a vote), Thema (the title of a Tagesordnungspunkt), category, tag for the field itself
+
 ### Votes
 
 **Abstimmung**:

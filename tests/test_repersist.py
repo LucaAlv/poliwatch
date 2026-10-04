@@ -613,10 +613,10 @@ class RepersistTests(unittest.TestCase):
         before = sha(self.database)
         real = pulse_store.persist_report
 
-        def failing(store, report):
+        def failing(store, report, *args):
             if (report.get("protocol") or {}).get("dokumentnummer") == "21/84":
                 raise ValueError("boom")
-            return real(store, report)
+            return real(store, report, *args)
 
         with mock.patch.object(pulse_store, "persist_report", side_effect=failing):
             with self.assertRaises(build.DatabaseRebuildError) as caught:

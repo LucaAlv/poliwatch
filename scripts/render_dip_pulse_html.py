@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import derive
+import politikfelder
 from stable_ids import speech_occurrence_id, speech_rede_id
 import person_registry as registry
 import publication_state as publication
@@ -419,6 +420,34 @@ VOTE_RESULT_BADGE_CSS = """
     :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
     :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
 """
+
+
+# The Politikfeld chips on a dossier TOP, a radar row and an archive row. Static
+# labels: only the filter rows on the archive and the radar are buttons.
+POLITIKFELD_CHIP_CSS = """
+    .pf-tags { display:inline-flex; flex-wrap:wrap; gap:6px; margin:8px 0 0; padding:0; list-style:none; }
+    .pf-tag {
+      display:inline-block;
+      padding:2px 9px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:var(--panel);
+      color:var(--muted);
+      font-size:12px;
+      font-weight:650;
+      white-space:nowrap;
+    }
+"""
+
+
+def render_politikfeld_tags(tags: list[str] | None) -> str:
+    """Static chips for a TOP's or vote's Politikfelder; nothing for no tag or for
+    the explicit ``untagged`` row, which is a filter option, not a label."""
+    labels = [tag for tag in tags or [] if tag != politikfelder.UNTAGGED]
+    if not labels:
+        return ""
+    chips = "".join(f'<li class="pf-tag">{esc(label)}</li>' for label in labels)
+    return f'<ul class="pf-tags" aria-label="Politikfelder">{chips}</ul>'
 
 
 # Drucksache pills, shared by the dossier (TOP documents, vote panel) and
@@ -1924,6 +1953,7 @@ def topic_row(
     total: int,
     occurrences: dict[str, list[dict[str, Any]]],
     dossier_href: str,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One radar row: what the TOP is, how much of the week it took, who spoke."""
     protocol = _entry_protocol(entry)
@@ -1956,6 +1986,11 @@ def topic_row(
     if not (summary.get("text") and summary.get("source_chunks")):
         summary = None
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    tags, _source = politikfelder.tags_for_agenda_item(
+        item,
+        vorgang_cache or politikfelder.empty_cache(),
+        wahlperiode=derive.report_wahlperiode(entry.get("report") or {}),
+    )
 
     return {
         "page_path": entry.get("page_path"),
@@ -1975,6 +2010,7 @@ def topic_row(
         "trace": trace,
         "summary": summary,
         "has_votes": bool(votes),
+        "politikfelder": tags,
         "item": item,
         "stats": stats,
     }
@@ -1988,6 +2024,7 @@ def week_topic_rows(
     dossier_href_for: Callable[[dict[str, Any]], str],
     rank_limit: int = RADAR_ROWS,
     hard_cap: int = RADAR_ROWS_MAX,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The week's radar: ranked debate rows, the question formats, the rest.
 
@@ -2029,7 +2066,12 @@ def week_topic_rows(
                     }
                 )
                 continue
-            candidates.append(topic_row(item, entry, total=total, occurrences=occurrences, dossier_href=dossier_href))
+            candidates.append(
+                topic_row(
+                    item, entry, total=total, occurrences=occurrences, dossier_href=dossier_href,
+                    vorgang_cache=vorgang_cache,
+                )
+            )
 
     # Count desc; within a count the newest sitting first, then agenda order.
     candidates.sort(key=lambda row: (-row["speech_count"], -(_parse_datum(row["datum"]) or date.min).toordinal(), row["index"] or 0))
@@ -2736,6 +2778,7 @@ def render_html(
     *,
     include_dev_view: bool = False,
     database_page_href: str | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> str:
     features = publication_selection()
     from features.loader import load as load_components
@@ -2760,6 +2803,8 @@ def render_html(
         items.append({**item, "xml_speakers": speeches} if "xml_speakers" in item else item)
     if "agenda_items" in report:
         report = {**report, "agenda_items": items}
+    # Tags are derived here, never read from or written into the report.
+    item_politikfelder, _ = politikfelder.report_politikfelder(report, vorgang_cache or politikfelder.empty_cache())
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
@@ -2827,7 +2872,7 @@ def render_html(
     )
 
     top_sections = []
-    for item in items:
+    for item_position, item in enumerate(items):
         stats = stats_by_index[item["index"]]
         party_total = sum(stats["party_counts"].values())
         speech_share = percent(stats["speech_count"], total_speeches)
@@ -2877,6 +2922,7 @@ def render_html(
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>
                   {back_to_rank}
                   <h2>{esc(item.get('heading'))}</h2>
+                  {render_politikfeld_tags(item_politikfelder[item_position][0])}
                 </div>
                 <div class="score">
                   <strong>{stats['speech_count']}</strong>
@@ -3446,6 +3492,7 @@ def render_html(
     .vote-head h3 {{ margin-bottom:5px; color:#0f5f59; }}
     .vote-head p {{ margin:0; font-size:13px; }}
 {VOTE_RESULT_BADGE_CSS}
+{POLITIKFELD_CHIP_CSS}
     .vote-total {{ display:grid; gap:8px; }}
     .vote-stack {{
       display:flex;

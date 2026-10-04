@@ -388,6 +388,42 @@ def agenda_procedures(item: Mapping[str, Any]) -> tuple[list[dict[str, str]], di
     return procedures, lead
 
 
+#: A Drucksache number's shape, e.g. "21/6561".
+DOCUMENT_NUMBER_RE = re.compile(r"\b\d{1,2}/\d{1,6}\b")
+
+
+def report_wahlperiode(report: Mapping[str, Any]) -> str:
+    """The Wahlperiode of a sitting, from its protocol number "20/194" ("" if unknown)."""
+    number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
+    return number.split("/")[0] if "/" in number else ""
+
+
+def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str]:
+    """Drucksache numbers an agenda item names, in first-seen order.
+
+    The XML parser's ``xml_drucksachen`` and the API's ``linked_drucksachen``
+    (the numbers ``validate_dip_protocol.top_document_numbers`` reads), then
+    numbers in the heading. A heading also carries case numbers of other
+    shapes ("10/21", "1/22" in Streitsachen lists), so a heading number counts
+    only when its prefix is the sitting's Wahlperiode.
+    """
+    numbers: list[str] = []
+
+    def add(number: Any) -> None:
+        text = str(number or "").strip()
+        if text and text not in numbers:
+            numbers.append(text)
+
+    for doc in item.get("xml_drucksachen") or []:
+        add(doc.get("dokumentnummer"))
+    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+        add(doc.get("dokumentnummer"))
+    for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
+        if wahlperiode and number.split("/")[0] == wahlperiode:
+            add(number)
+    return numbers
+
+
 def vote_outcome(vote: Mapping[str, Any]) -> str | None:
     """Outcome of the Antrag, separately from the voted recommendation."""
     result = vote.get("result_raw")
