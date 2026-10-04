@@ -1730,10 +1730,6 @@ def safe_href(url: Any) -> str | None:
         return None
 
 
-def _normalised_title(title: Any) -> str:
-    return " ".join(str(title or "").split())
-
-
 # Agenda headings are procedure-first: "Beratung des Antrags der Abgeordneten
 # <fifteen names> und der Fraktion X <the actual subject>". Of the 2.727 headings
 # in the archive (measured 2026-09-22) 2.238 open with one of the forms below, so
@@ -1854,39 +1850,12 @@ def topic_identity(item: dict[str, Any]) -> dict[str, Any]:
     title and renders every title alike (Final Gate decision, 2026-09-15). Items
     without any title fall back to the XML heading, then the TOP id.
     """
-    positions = (item.get("api") or {}).get("positions") or []
-    procedures: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-
-    def add(record: dict[str, Any], vorgang_id: Any) -> None:
-        key = str(vorgang_id or "")
-        if not key or key in seen_ids:
-            return
-        seen_ids.add(key)
-        procedures.append(
-            {
-                "vorgang_id": key,
-                "titel": _normalised_title(record.get("titel")),
-                "vorgangstyp": str(record.get("vorgangstyp") or ""),
-                "vorgangsposition": str(record.get("vorgangsposition") or ""),
-            }
-        )
-
-    for position in positions:
-        add(position, position.get("vorgang_id"))
-    for position in positions:
-        for twin in position.get("mitberaten") or []:
-            add(twin, twin.get("id"))
-
+    procedures, lead = derive.agenda_procedures(item)
     titles: list[str] = []
     for procedure in procedures:
         if procedure["titel"] and procedure["titel"] not in titles:
             titles.append(procedure["titel"])
     type_counts: Counter[str] = Counter(p["vorgangstyp"] for p in procedures if p["vorgangstyp"])
-
-    lead = next((p for p in procedures if p["vorgangstyp"] == "Gesetzgebung"), None)
-    if lead is None and procedures:
-        lead = procedures[0]
 
     equal_weight = lead is not None and lead["vorgangstyp"] != "Gesetzgebung" and len(titles) > 1
     if equal_weight:

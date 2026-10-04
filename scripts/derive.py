@@ -344,6 +344,50 @@ def iter_report_votes(report: Mapping[str, Any]):
             yield None, vote
 
 
+def _normalised_title(title: Any) -> str:
+    return " ".join(str(title or "").split())
+
+
+def agenda_procedures(item: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, str] | None]:
+    """The DIP procedures of one agenda item, and the lead among them.
+
+    Procedures come from ``api.positions`` in DIP order, then from each position's
+    ``mitberaten`` twins (they carry id, titel, vorgangstyp and vorgangsposition;
+    in 40 TOPs of the archive the only Gesetzgebung procedure is a twin). Dedup is
+    first-seen by id; titles are whitespace-normalised.
+
+    Lead = the first Gesetzgebung procedure, else the first procedure, else None.
+    """
+    positions = (item.get("api") or {}).get("positions") or []
+    procedures: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+
+    def add(record: Mapping[str, Any], vorgang_id: Any) -> None:
+        key = str(vorgang_id or "")
+        if not key or key in seen_ids:
+            return
+        seen_ids.add(key)
+        procedures.append(
+            {
+                "vorgang_id": key,
+                "titel": _normalised_title(record.get("titel")),
+                "vorgangstyp": str(record.get("vorgangstyp") or ""),
+                "vorgangsposition": str(record.get("vorgangsposition") or ""),
+            }
+        )
+
+    for position in positions:
+        add(position, position.get("vorgang_id"))
+    for position in positions:
+        for twin in position.get("mitberaten") or []:
+            add(twin, twin.get("id"))
+
+    lead = next((p for p in procedures if p["vorgangstyp"] == "Gesetzgebung"), None)
+    if lead is None and procedures:
+        lead = procedures[0]
+    return procedures, lead
+
+
 def vote_outcome(vote: Mapping[str, Any]) -> str | None:
     """Outcome of the Antrag, separately from the voted recommendation."""
     result = vote.get("result_raw")
