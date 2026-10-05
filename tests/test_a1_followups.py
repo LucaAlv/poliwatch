@@ -89,6 +89,145 @@ class SourceRecoveryTests(unittest.TestCase):
 
 
 class ContributionTests(unittest.TestCase):
+    def test_nested_remark_keeps_grant_across_same_speaker_resumption(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage von Gast?</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Gerne.</p>'
+               '<name>Präsident:</name><p>Herr Kollege.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Ich möchte anmerken, dass ...</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['kind'], 'zwischenfrage')
+        self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['speaker']['last_name'], 'Gast')
+
+    def test_main_speaker_grant_after_generic_chair_question_is_evidence(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Gestatten Sie eine Frage oder Bemerkung von Gast?</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Ja, ich lasse die Zwischenfrage sehr gerne zu.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Meine Frage ohne Satzzeichen</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['speaker']['last_name'], 'Gast')
+
+    def test_nested_speaker_acknowledgement_is_grant_evidence(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p>'
+               '<p>Herzlichen Dank, dass Sie die Frage zulassen. Ich wollte Sie fragen, ob ...</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['kind'], 'zwischenfrage')
+
+    def test_explicit_refusal_is_not_a_main_speaker_grant(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Ich lasse keine Zwischenfrage zu.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Eine Bemerkung.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            dip.parse_protocol_xml(xml)
+
+    def test_multi_speaker_grant_applies_only_to_named_askers(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage des Kollegen Erster und der Kollegin Zweite?</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Erster</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Eine Bemerkung.</p>'
+               '<name>Präsident:</name><p>Jetzt die Kollegin Zweite.</p>'
+               '<p klasse="redner"><redner id="C"><name><nachname>Zweite</nachname>'
+               '<fraktion>FDP</fraktion></name></redner></p><p>Eine weitere Bemerkung.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        self.assertEqual([c['speaker']['last_name'] for c in parsed['agenda_items'][0]['contributions']],
+                         ['Erster', 'Zweite'])
+
+    def test_grant_does_not_authorize_a_second_unrelated_nested_speaker(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage von Gast?</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Gerne.</p>'
+               '<name>Präsident:</name><p>Herr Kollege.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Ich möchte anmerken.</p>'
+               '<p klasse="redner"><redner id="C"><name><nachname>Andere</nachname>'
+               '<fraktion>FDP</fraktion></name></redner></p><p>Eine Mitteilung.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 4'):
+            dip.parse_protocol_xml(xml)
+
+    def test_same_nested_speaker_can_resume_after_the_main_speaker_replies(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="20" sitzung-nr="101"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>CDU/CSU</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Herr Haupt, lassen Sie eine Zwischenfrage zu?</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Eine Bemerkung ohne Fragezeichen.</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>CDU/CSU</fraktion></name></redner></p><p>Was meinen Sie?</p>'
+               '<name>Präsident:</name><p>Kommen Sie bitte zum Schluss Ihrer Frage.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Erklären Sie uns doch mal.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        nested = parsed['agenda_items'][0]['contributions']
+        self.assertEqual([c['rede_id'] for c in nested], ['nested:R:2', 'nested:R:4'])
+
+    def test_question_mark_evidence_carries_through_chair_interruption(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1"><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Was meinen Sie?</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Ich antworte darauf.</p>'
+               '<name>Präsident:</name><p>Kommen Sie bitte zum Schluss Ihrer Frage.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Das war der Punkt.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        parsed = dip.parse_protocol_xml(xml)
+        self.assertEqual([c['rede_id'] for c in parsed['agenda_items'][0]['contributions']],
+                         ['nested:R:2', 'nested:R:4'])
+
+    def test_nested_grant_does_not_cross_rede_boundary(self):
+        xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
+               '<tagesordnungspunkt top-id="T1">'
+               '<rede id="R1"><p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname>'
+               '<fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage von Gast?</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Bemerkung.</p></rede>'
+               '<rede id="R2"><p klasse="redner"><redner id="C"><name><nachname>Andere</nachname>'
+               '<fraktion>FDP</fraktion></name></redner></p><p>Neue Rede.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
+               '<fraktion>Grüne</fraktion></name></redner></p><p>Weitere Bemerkung.</p></rede>'
+               '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R2 marker 2'):
+            dip.parse_protocol_xml(xml)
+
     def test_nested_non_questions_reject_instead_of_becoming_zwischenfragen(self):
         for role, text in [
             ('<rolle><rolle_lang>Bundesminister</rolle_lang></rolle>', 'Meine Antwort.'),
