@@ -86,6 +86,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -6632,8 +6633,9 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Prefer the roster biography; the page key comes from the registry.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
+        # Prefer roster, then speaker biography over roll-call attributes.
+        # The page key still comes from the registry.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["id"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
@@ -6987,12 +6989,15 @@ def render_abgeordnete_detail(
     publication_domains: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
-    # Header link out to the abgeordnetenwatch.de profile, when one was resolved.
+    # Joined roll-call records may supply a Bundestag profile when no
+    # abgeordnetenwatch profile exists. Keep the link's source label accurate.
     profile_link = ""
     if mp.get("profile_url"):
+        profile_href = pulse_html.source_url(mp["profile_url"], "public-profile")
+        profile_source = "abgeordnetenwatch.de" if (urlparse(profile_href).hostname or "").endswith("abgeordnetenwatch.de") else "Bundestag"
         profile_link = (
-            f'<a class="source-link" href="{pulse_html.esc(pulse_html.source_url(mp["profile_url"], "abgeordnetenwatch"))}" target="_blank" rel="noopener">'
-            "abgeordnetenwatch.de-Profil ↗</a>"
+            f'<a class="source-link" href="{pulse_html.esc(profile_href)}" target="_blank" rel="noopener">'
+            f"{profile_source}-Profil ↗</a>"
         )
 
     # "Überblick" grid: only fields that actually exist in the data are shown -

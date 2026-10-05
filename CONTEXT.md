@@ -63,7 +63,7 @@ An identifier a source assigns to exactly one Person and keeps for them, such as
 _Avoid_: treating a name, a Zusammenschluss or a profile link as proof of identity
 
 **Namensabgleich**:
-Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. It may join records only when exactly one record on each side matches and no Personenkennung contradicts it.
+Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. Roster and speaker records may join only when exactly one component on each side matches and no Personenkennung contradicts it. Roll-call records form a third source: surname-first names are compared in given-name order, and vote records may join exactly one unambiguous roster/speaker component. Different profile versions may join it, but distinct records present in the same roll call, conflicting Personenkennungen and ambiguous namesakes stay separate.
 _Avoid_: name match as identity, merging every record in a group of namesakes
 
 **Zusammenführung**:

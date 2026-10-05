@@ -94,7 +94,12 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
 
 
 
-def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None = None) -> str:
+def render_vote_summary(
+    item: dict[str, Any],
+    acquisition: dict[str, Any] | None = None,
+    mp_lookup: dict[str, str] | None = None,
+    mp_prefix: str = "../abgeordnete/",
+) -> str:
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
     acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
     status_copy = {
@@ -158,12 +163,17 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             for member in sorted(member_groups[faction], key=lambda value: str(value.get("name") or "")):
                 vote_key = str(member.get("vote") or "")
                 name = html.esc(member.get("name"))
-                url = member.get("profile_url")
-                name_html = (
-                    f'<a href="{html.esc(html.source_url(url, "public-profile"))}">{name}</a>'
-                    if url
-                    else name
+                occurrence_id = derive.vote_member_key(vote.get("id"), member)
+                internal_href = html.mp_page_href(
+                    {**member, "occurrence_id": occurrence_id}, mp_lookup, mp_prefix
                 )
+                href = internal_href
+                if not href and member.get("profile_url"):
+                    try:
+                        href = html.source_url(member["profile_url"], "public-profile")
+                    except (html.publication.PublicationStateError, ValueError):
+                        href = None
+                name_html = f'<a href="{html.esc(href)}">{name}</a>' if href else name
                 rows.append(
                     '<li class="member-vote-row">'
                     f"<strong>{name_html}</strong>"
@@ -222,7 +232,7 @@ class VotesComponent(BaseComponent):
 
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
-        return [render_vote_summary(ctx["item"], acquisition)]
+        return [render_vote_summary(ctx["item"], acquisition, ctx.get("mp_lookup"), ctx.get("mp_prefix", "../abgeordnete/"))]
 
     def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
         selection = ctx.get("selection")
