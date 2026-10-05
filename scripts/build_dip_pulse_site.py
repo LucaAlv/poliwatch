@@ -883,7 +883,7 @@ def load_existing_detail_entries(
                 raise ValueError("the top-level JSON value is not an object")
             if not isinstance(report.get("protocol") or {}, dict):
                 raise ValueError("protocol must be an object")
-            items = report.get("agenda_items") or []
+            items = report.get("agenda_items", [])
             if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
                 raise ValueError("agenda_items must contain objects with integer source indices")
             for item in [report, *items]:

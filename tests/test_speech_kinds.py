@@ -192,6 +192,27 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertTrue(announces("Die Kurzintervention ist beendet, und zu einer weiteren Kurzintervention hat Herr Fiedler das Wort."))
         self.assertFalse(announces("Die Kurzintervention ist beendet; Frau Meier hat das Wort.", "Meier"))
 
+    def test_thanks_for_a_previous_kurzintervention_do_not_grant_the_next_one(self) -> None:
+        for announcement in (
+            "Danke für die Kurzintervention von Frau Meier; nun spricht Frau Schmidt",
+            "Danke für die Kurzintervention von Frau Meier. Nun hat Frau Schmidt das Wort.",
+            "Danke für die Kurzintervention von Frau Meier; nun hat Frau Schmidt das Wort.",
+        ):
+            with self.subTest(announcement=announcement):
+                xml = (
+                    '<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt>'
+                    + synthetic_rede("R1", "1001", "Anna Haupt", fraktion="SPD", after=announcement)
+                    + synthetic_rede("R2", "1002", "Anna Schmidt", fraktion="SPD")
+                    + '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>'
+                )
+                top = dip.parse_protocol_xml(xml)["agenda_items"][0]
+                self.assertEqual([s["rede_id"] for s in top["speeches"]], ["R1", "R2"])
+                self.assertEqual(top["contributions"], [])
+        self.assertTrue(sk.announces_kurzintervention(
+            "Danke für die Kurzintervention von Frau Meier; zu einer weiteren Kurzintervention spricht Frau Schmidt.",
+            "Schmidt",
+        ))
+
     def test_rules_refusals_and_withdrawals_announce_none(self) -> None:
         announces = sk.announces_kurzintervention
         self.assertFalse(announces("Ab jetzt lasse ich keine Kurzinterventionen mehr zu. Das Wort hat Frau Wittmann.", "Wittmann"))

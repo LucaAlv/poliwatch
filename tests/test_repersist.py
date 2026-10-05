@@ -586,6 +586,19 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(before, sha(self.database))
         self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
 
+    def test_null_agenda_items_with_current_rules_and_no_xml_leaves_the_store_alone(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        report_path = self.output_dir / "data" / "plenarprotokoll-21-84.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["agenda_items"] = None
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        with self.assertRaises(build.CachedReportError) as caught:
+            self.repersist()
+        self.assertIn("agenda_items must contain objects", str(caught.exception))
+        self.assertEqual(before, sha(self.database))
+        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+
     def test_a_report_that_fails_to_persist_leaves_an_old_schema_store_byte_identical(self) -> None:
         # An older schema: a column the current initialize() would add is
         # missing. The source must be read as it is, not migrated, so even a

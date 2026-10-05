@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 2
+VERSION = 3
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -237,7 +237,12 @@ WITHDRAWN = re.compile(r"zieht zurück|zurückgezogen|verzichtet", re.IGNORECASE
 # A sentence that closes the Kurzintervention just held ("Damit ist die Kurzintervention
 # beendet. Das Wort hat als Nächste die Kollegin Meier.") grants nothing: the Redner
 # named after it speaks a Rede of their own.
-CLOSED = re.compile(r"\b(?:beendet|abgeschlossen|erledigt|vorbei)\b|zu Ende", re.IGNORECASE)
+CLOSED = re.compile(
+    r"\b(?:beendet|abgeschlossen|erledigt|vorbei)\b|zu Ende"
+    r"|\b(?:Danke|Dank)\b[^;!?]*\bfür\b[^;!?]*"
+    r"\b(?:Kurzintervention|Zwischenbemerkung|Zwischenintervention)\b[^;!?]*",
+    re.IGNORECASE,
+)
 # The Sitzungsleitung asks whether a Kurzintervention is wanted and the Redner says yes
 # by taking the floor: "Sie möchten eine Kurzintervention machen? – Bitte schön."
 INVITES = re.compile(r"^\W*(?:ja\W+)?bitte\s+(?:schön|sehr)\b", re.IGNORECASE)
@@ -322,7 +327,7 @@ def announces_kurzintervention(
         # A pending intervention can name its recipient in the following
         # chair sentence. Require an explicit pending/grant signal, excluding
         # retrospective explanations and an announcement of the next Rede.
-        near = " ".join(sentences[index:index + 4])
+        near = " ".join([sentence, *sentences[index + 1:index + 4]])
         if re.search(r"\bkeine?\s+Kurzintervention(?:en)?\b[^.]*\b(?:zulassen|zulasse|mehr)\b", near, re.IGNORECASE):
             continue
         pending = re.search(

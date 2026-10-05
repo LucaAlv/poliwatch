@@ -469,17 +469,21 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
     segment = None
     unattributed = 0
     marker = 0
+    chair_text = ""
     for child in rede:
         if child.tag == "name":
             speaker, segment = _SITZUNGSLEITUNG, None
+            chair_text = ""
         elif child.tag == "p":
             if child.get("klasse") == "redner":
                 marker += 1
                 redner = child.find("redner")
                 speaker, segment = redner_key(redner), None
                 if speaker is not None and speaker != own:
-                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": []}
+                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": [],
+                               "announcement": chair_text}
                     nested.append(segment)
+                chair_text = ""
                 if not inline and segment is None:
                     continue
                 # Written annexes can start the entire first paragraph in the
@@ -491,6 +495,8 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                 continue
             if speaker is None:
                 unattributed += len(text)
+            elif speaker is _SITZUNGSLEITUNG:
+                chair_text += " " + text
             elif speaker == own:
                 paragraphs.append(text)
             elif segment is not None:
@@ -515,16 +521,14 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                          rid_pages: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Only explicitly typed written submissions; an uncertain TOP stays null."""
     unassigned = []
+    tops_by_id: dict[str, list[dict[str, Any]]] = {}
+    for top in agenda_items:
+        tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
     for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
         if clean_text(block.get("anlagen-typ") or "").casefold() not in {
             "zu protokoll gegebene reden", "zu protokoll gegebene rede"
         }:
             continue
-        evidence = " ".join(elem_text(p) for p in block.findall("p"))
-        refs = re.findall(r"\(Tagesordnungspunkt\s+([^()]+)\)", evidence)
-        candidates = [top for top in agenda_items if len(refs) == 1 and
-                      clean_text(top.get("top_id") or "") == "Tagesordnungspunkt " + clean_text(refs[0])]
-        target = candidates[0] if len(candidates) == 1 else None
         annex_pages = {}
         current_page = None
         for node in block.iter():
@@ -532,14 +536,34 @@ def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
                 current_page = page_number(re.sub(r"^S", "", node.get("id") or ""))
             elif node.tag == "rede" and current_page is not None:
                 annex_pages[node.get("id")] = {"page": current_page, "quadrant": None}
-        for sequence, rede in enumerate(block.findall("rede"), 1):
-            rid = rede.get("id") or f"annex:{annex_index}:{sequence}"
-            own, _nested = speech_segments(rede, inline=True)
+
+        target = None
+        association_evidence = ""
+        sequence = 0
+        for child in block:
+            if child.tag == "p":
+                text = elem_text(child)
+                refs = re.findall(r"\(Tagesordnungspunkt\s+([^()]+)\)", text)
+                if refs:
+                    association_evidence = text
+                    candidates = tops_by_id.get("Tagesordnungspunkt " + clean_text(refs[0]), []) if len(refs) == 1 else []
+                    target = candidates[0] if len(candidates) == 1 else None
+                elif child.get("klasse") in {"Anlage_2", "Anlage_3", "Anlage_Strich"}:
+                    # A new annex heading starts a new local context; a later TOP
+                    # reference must not reach back across it.
+                    target = None
+                    association_evidence = text
+                continue
+            if child.tag != "rede":
+                continue
+            sequence += 1
+            rid = child.get("id") or f"annex:{annex_index}:{sequence}"
+            own, _nested = speech_segments(child, inline=True)
             unit = contribution_unit(speech_kinds.ZU_PROTOKOLL, rid, None, sequence,
-                                     parse_redner(rede.find("./p[@klasse='redner']/redner")),
+                                     parse_redner(child.find("./p[@klasse='redner']/redner")),
                                      own.paragraphs, rid_pages.get(rid) or annex_pages.get(rid))
             unit["annex_type"] = block.get("anlagen-typ")
-            unit["top_association_evidence"] = evidence
+            unit["top_association_evidence"] = association_evidence
             if target is not None:
                 unit["sequence"] = max((c["sequence"] for c in target["contributions"]), default=0) + 1
                 target["contributions"].append(unit)
@@ -627,11 +651,15 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
             for segment in nested:
                 nested_kind = speech_kinds.ZWISCHENFRAGE
+                side = derive.sprechrolle(segment["speaker"])
                 if speech_kinds.BEFRAGUNG in top_format.formats:
-                    side = derive.sprechrolle(segment["speaker"])
                     if not side and not (segment["speaker"] or {}).get("fraktion"):
                         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested question-format speaker at {rid} marker {segment['marker']}")
                     nested_kind = speech_kinds.BEFRAGUNG_ANTWORT if side else speech_kinds.BEFRAGUNG_FRAGE
+                elif (side or not (segment["speaker"] or {}).get("fraktion")
+                      or not (any("?" in p for p in segment["paragraphs"])
+                              or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE))):
+                    raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
                 nested_units.append(contribution_unit(
                     nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                     segment["speaker"], segment["paragraphs"], page_ref))
