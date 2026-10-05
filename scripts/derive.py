@@ -216,6 +216,8 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     (r"Bundeskanzler(in)?", "bundesregierung"),
     (r"Bundesminister(in)?( .+)?", "bundesregierung"),
     (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
+    # Explicit historical government role in 19/13, Redner 999990013.
+    (r"Staatssekretär(in)? im Bundeskanzleramt", "bundesregierung"),
     (r"Staatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),
     (r"Beauftragte[r]? (der Bundesregierung|des Bundesministeriums) .+", "bundesregierung"),
     (r"Koordinator(in)? der Bundesregierung .+", "bundesregierung"),
@@ -282,7 +284,7 @@ def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str
     unmapped: dict[str, list[str]] = {}
     for report in reports:
         number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
-        for item in report.get("agenda_items") or []:
+        for item in [report, *(report.get("agenda_items") or [])]:
             for speech in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])]:
                 text = role_text(speech.get("speaker"))
                 if text and side_of_role(text) is None:

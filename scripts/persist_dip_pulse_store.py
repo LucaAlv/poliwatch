@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import speech_kinds
 import derive
 import person_registry as registry
 from stable_ids import (
@@ -38,6 +39,22 @@ def require_current_schema(conn):
         if not set(registry.REGISTRY_TABLES) <= tables:
             raise registry.RegistryError("Incomplete person registry; restore the build-store backup")
         registry.require_current(conn)
+
+
+
+def require_current_speech_rules(conn: sqlite3.Connection) -> None:
+    """Certify persisted inputs, independently of report files and schema IDs."""
+    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='speech_rule_inputs'").fetchone()
+    invalid = not exists
+    if exists:
+        invalid = bool(conn.execute(
+            "SELECT 1 FROM protocols p LEFT JOIN speech_rule_inputs r ON r.protocol_id=p.id "
+            "WHERE r.version IS NULL OR r.version != ? LIMIT 1", (speech_kinds.VERSION,)
+        ).fetchone())
+    if invalid:
+        raise RuntimeError(f"Missing/stale persisted speech rules (required {speech_kinds.VERSION}). "
+                           "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
+
 
 
 
@@ -232,6 +249,11 @@ def initialize(conn: sqlite3.Connection) -> None:
         -- Fragestunde. speeches holds Reden only. A Fragestunde turn has no
         -- rede_id and no page; a question read out by the Sitzungsleitung whose
         -- asker never speaks has no mp_id and keeps the announced name.
+        CREATE TABLE IF NOT EXISTS speech_rule_inputs (
+          protocol_id TEXT PRIMARY KEY NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          version INTEGER
+        );
+
         CREATE TABLE IF NOT EXISTS contributions (
           id TEXT PRIMARY KEY NOT NULL,
           protocol_id TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
@@ -1032,11 +1054,12 @@ def persist_contributions(
     conn: sqlite3.Connection,
     protocol_id: str,
     item: dict[str, Any],
-    agenda_item_id: str,
+    agenda_item_id: str | None,
     now: str,
     protocol: dict[str, Any] | None = None,
 ) -> None:
     for contribution in item.get("xml_contributions") or []:
+        speech_kinds.validate_kind(contribution["kind"])
         speaker = contribution.get("speaker") or {}
         rede_id = clean(contribution.get("rede_id"))
         contribution_id = contribution_occurrence_id(
@@ -1079,19 +1102,6 @@ def persist_contributions(
                 now,
             ),
         )
-
-
-def persist_votes(
-    conn: sqlite3.Connection,
-    item: dict[str, Any] | None,
-    agenda_item_id: str | None,
-    protocol_id: str,
-    now: str,
-) -> None:
-    if item is None:
-        return
-    for vote in item.get("votes") or ([] if not item.get("vote") else [item["vote"]]):
-        persist_vote(conn, vote, agenda_item_id, protocol_id, now)
 
 
 def persist_vote(
@@ -1293,7 +1303,10 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
     _warn_merged_redner_ids(report)
     with conn:
         replace_protocol(conn, report, now)
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs(protocol_id, version) VALUES (?, ?)",
+                     (protocol_id, (report.get("validation_summary") or {}).get("speech_kinds_version")))
         persist_sampled_people(conn, report, now)
+        persist_contributions(conn, protocol_id, {"index": 0, "xml_contributions": report.get("xml_contributions") or []}, None, now, protocol)
         # The report is a complete snapshot for this sitting. Remove old votes
         # from the sitting that disappeared from the refreshed report; linked
         # data is cascaded with them.

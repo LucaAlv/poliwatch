@@ -230,6 +230,9 @@ class RetainedScopeTests(unittest.TestCase):
         old = report_for(1, acquisition=COMPLETE_VOTES)
         del old["validation_summary"]["speech_kinds_version"]
         write_cached(self.output_dir, old)
+        old["agenda_items"][0]["top_id"] = "Tagesordnungspunkt 1"
+        old["agenda_items"][1].update(top_id="Tagesordnungspunkt 2", heading="Fragestunde")
+        write_cached(self.output_dir, old)
         xml = (_support.FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
         (self.output_dir / "data" / "xml").mkdir(exist_ok=True)
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-1.xml").write_text(

@@ -225,11 +225,6 @@ def render_vote_summary(
 
 
 class VotesComponent(BaseComponent):
-    def persist(self, conn: Any, report: dict[str, Any], ctx: dict[str, Any]) -> None:
-        callback = ctx.get("persist_votes")
-        if callback:
-            callback(conn, report, ctx)
-
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
         return [render_vote_summary(ctx["item"], acquisition, ctx.get("mp_lookup"), ctx.get("mp_prefix", "../abgeordnete/"))]

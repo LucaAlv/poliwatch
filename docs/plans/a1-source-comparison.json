@@ -1,0 +1,452 @@
+{
+  "base": "4818b4c",
+  "speech_kinds_version": 2,
+  "sources": 311,
+  "baseline_seconds": 37.53357517699624,
+  "current_seconds": 39.544324849004624,
+  "counts": {
+    "baseline": {
+      "befragung_antwort": 4056,
+      "befragung_frage": 4101,
+      "erwiderung": 610,
+      "fragestunde_antwort": 3205,
+      "fragestunde_frage": 3468,
+      "kurzintervention": 672,
+      "rede": 27165
+    },
+    "current": {
+      "befragung_antwort": 4131,
+      "befragung_frage": 4200,
+      "erwiderung": 610,
+      "fragestunde_antwort": 3339,
+      "fragestunde_frage": 3345,
+      "kurzintervention": 666,
+      "rede": 27122,
+      "zu_protokoll": 894,
+      "zwischenfrage": 1505
+    }
+  },
+  "changed_native_kinds": [
+    {
+      "source": "plenarprotokoll-21-30.xml",
+      "id": "ID213016900",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "plenarprotokoll-21-4.xml",
+      "id": "ID21406800",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "plenarprotokoll-21-43.xml",
+      "id": "ID214307100",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "plenarprotokoll-21-47.xml",
+      "id": "ID214715100",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "plenarprotokoll-21-65.xml",
+      "id": "ID216502300",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "plenarprotokoll-21-94.xml",
+      "id": "ID219400400",
+      "before": "kurzintervention",
+      "after": "rede"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801300100",
+      "before": "befragung_frage",
+      "after": "rede"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801300300",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801300500",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801300700",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801300900",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801301100",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801301300",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801301500",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801301700",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801301900",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801302100",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801302300",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801302500",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-13.xml",
+      "id": "ID1801302700",
+      "before": "befragung_frage",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400200",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400300",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400400",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400500",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400700",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400600",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400800",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808400900",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401000",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401100",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401200",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401300",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401400",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401500",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401600",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401700",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401800",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808401900",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402000",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402100",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402200",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402300",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402400",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402500",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402600",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402700",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402800",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808402900",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403000",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403100",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403200",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403300",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403400",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403500",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403600",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403700",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403800",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808403900",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404000",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404100",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404200",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404300",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404400",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404500",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404600",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404700",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404800",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808404900",
+      "before": "rede",
+      "after": "befragung_antwort"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808405000",
+      "before": "rede",
+      "after": "befragung_frage"
+    },
+    {
+      "source": "18-84.xml",
+      "id": "ID1808405100",
+      "before": "rede",
+      "after": "befragung_antwort"
+    }
+  ],
+  "changed_native_text_lengths": []
+}

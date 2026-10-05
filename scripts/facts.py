@@ -60,7 +60,7 @@ from xml.sax.saxutils import escape
 
 import derive
 from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, stable_key
-from persist_dip_pulse_store import require_current_schema
+from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
 
@@ -172,13 +172,13 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "SELECT v.id, v.title, v.date, v.yes_count, v.no_count, v.detail_url,\n"
             "       ABS(v.yes_count - v.no_count) * 1.0 / (v.yes_count + v.no_count) AS value,\n"
             "       v.yes_count + v.no_count AS denominator,\n"
-            "       COALESCE(MIN(p.id), v.protocol_id) AS protocol_id,\n"
-            "       COALESCE(MIN(p.document_number), (SELECT p2.document_number FROM protocols p2 WHERE p2.id = v.protocol_id)) AS document_number,\n"
-            "       COALESCE(MIN(p.date), (SELECT p2.date FROM protocols p2 WHERE p2.id = v.protocol_id)) AS protocol_date\n"
+            "       p.id AS protocol_id,\n"
+            "       p.document_number AS document_number,\n"
+            "       p.date AS protocol_date\n"
             "FROM votes v\n"
-            "LEFT JOIN agenda_item_votes aiv ON aiv.vote_id = v.id\n"
-            "LEFT JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
-            "LEFT JOIN protocols p ON p.id = COALESCE(ai.protocol_id, v.protocol_id)\n"
+            "LEFT JOIN protocols p ON p.id = COALESCE((SELECT id FROM protocols WHERE id=v.protocol_id), (\n"
+            "  SELECT ai.protocol_id FROM agenda_item_votes aiv JOIN agenda_items ai ON ai.id=aiv.agenda_item_id\n"
+            "  WHERE aiv.vote_id=v.id ORDER BY ai.protocol_id, ai.id LIMIT 1))\n"
             "WHERE v.yes_count + v.no_count > 0\n"
             "GROUP BY v.id"
         ),
@@ -224,13 +224,13 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "       ) END AS value,\n"
             "       (SELECT COUNT(*) FROM vote_members vm3\n"
             "         WHERE vm3.vote_id = v.id AND vm3.vote IN ('yes', 'no')) AS denominator,\n"
-            "       COALESCE(MIN(p.id), v.protocol_id) AS protocol_id,\n"
-            "       COALESCE(MIN(p.document_number), (SELECT p2.document_number FROM protocols p2 WHERE p2.id = v.protocol_id)) AS document_number,\n"
-            "       COALESCE(MIN(p.date), (SELECT p2.date FROM protocols p2 WHERE p2.id = v.protocol_id)) AS protocol_date\n"
+            "       p.id AS protocol_id,\n"
+            "       p.document_number AS document_number,\n"
+            "       p.date AS protocol_date\n"
             "FROM votes v\n"
-            "LEFT JOIN agenda_item_votes aiv ON aiv.vote_id = v.id\n"
-            "LEFT JOIN agenda_items ai ON ai.id = aiv.agenda_item_id\n"
-            "LEFT JOIN protocols p ON p.id = COALESCE(ai.protocol_id, v.protocol_id)\n"
+            "LEFT JOIN protocols p ON p.id = COALESCE((SELECT id FROM protocols WHERE id=v.protocol_id), (\n"
+            "  SELECT ai.protocol_id FROM agenda_item_votes aiv JOIN agenda_items ai ON ai.id=aiv.agenda_item_id\n"
+            "  WHERE aiv.vote_id=v.id ORDER BY ai.protocol_id, ai.id LIMIT 1))\n"
             "GROUP BY v.id"
         ),
         "min_history_weeks": MIN_HISTORY_WEEKS,
@@ -1629,6 +1629,10 @@ def compute(
     judged and every one is incomplete (fail closed); pass
     ``SittingCatalog((), False)`` to say so explicitly.
     """
+    try:
+        require_current_speech_rules(conn)
+    except RuntimeError as exc:
+        raise FactsError(str(exc)) from exc
     registry = tuple(registry)
     validate_registry(registry)
     built_set = set(built)
