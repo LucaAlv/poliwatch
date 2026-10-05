@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.1.0] - 2026-10-05
+
+### Fixed
+
+- Offline replay retains nested Zwischenfragen when the main speaker or chair interrupts, or when an explicit grant or acknowledgement supplies the evidence. Multi-speaker grants apply only to the named askers; refusals and unrelated later speakers do not inherit consent.
+- Cached reports and stores made under earlier counting rules require a fresh `--offline --repersist` rebuild before their counts are used. Stale-rule diagnostics describe older classifications accurately and request `--fetch-xml` only when XML is missing.
+
 ## [0.15.0.0] - 2026-10-05
 
 ### Added
