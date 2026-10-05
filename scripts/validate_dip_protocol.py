@@ -502,6 +502,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                                           and candidate["last_name"].casefold() in pending_nested_names)
                         if pending_nested_names is not None and not named_in_grant:
                             grant_context = ""
+                            chair_text = ""
                         else:
                             grant_context = pending_nested_announcement
                         segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
@@ -540,16 +541,20 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
             elif speaker == own:
                 paragraphs.append(text)
                 grant = NESTED_GRANT_EVIDENCE.search(text)
-                if grant and grant.group("grant") and not speech_kinds.NOT_GRANTED.search(grant.group("grant")):
-                    pending_nested_announcement = " ".join(filter(None, (preceding_chair_text, text)))
-                    group = _NESTED_GROUP_GRANT.search(pending_nested_announcement)
-                    pending_nested_names = {name.casefold() for name in group.groups()} if group else None
+                if grant and grant.group("grant"):
+                    if speech_kinds.NOT_GRANTED.search(grant.group("grant")):
+                        pending_nested_announcement = ""
+                        pending_nested_names = None
+                    else:
+                        pending_nested_announcement = " ".join(filter(None, (preceding_chair_text, text)))
+                        group = _NESTED_GROUP_GRANT.search(pending_nested_announcement)
+                        pending_nested_names = {name.casefold() for name in group.groups()} if group else None
             elif segment is not None:
                 segment["paragraphs"].append(text)
     for nested_segment in nested:
         text = " ".join(nested_segment["paragraphs"])
         evidence = NESTED_GRANT_EVIDENCE.search(text)
-        if evidence and evidence.group("ack"):
+        if evidence and evidence.group("ack") and not speech_kinds.NOT_GRANTED.search(evidence.group("ack")):
             nested_segment["announcement"] = " ".join(filter(None, (nested_segment["announcement"], evidence.group("ack"))))
     return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
 

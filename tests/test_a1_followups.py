@@ -130,6 +130,9 @@ class ContributionTests(unittest.TestCase):
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         parsed = dip.parse_protocol_xml(xml)
         self.assertEqual(parsed['agenda_items'][0]['contributions'][0]['kind'], 'zwischenfrage')
+        refused = xml.replace('die Frage zulassen', 'die Frage nicht zulassen')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            dip.parse_protocol_xml(refused)
 
     def test_explicit_refusal_is_not_a_main_speaker_grant(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -143,6 +146,14 @@ class ContributionTests(unittest.TestCase):
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
             dip.parse_protocol_xml(xml)
+        for pending in [
+            '<name>Präsident:</name><p>Gestatten Sie eine Zwischenfrage von Gast?</p>',
+            '<p>Ich lasse die Zwischenfrage zu.</p>',
+        ]:
+            with self.subTest(pending=pending):
+                refused = xml.replace('<p>Rede.</p>', '<p>Rede.</p>' + pending)
+                with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+                    dip.parse_protocol_xml(refused)
 
     def test_multi_speaker_grant_applies_only_to_named_askers(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -159,6 +170,10 @@ class ContributionTests(unittest.TestCase):
         parsed = dip.parse_protocol_xml(xml)
         self.assertEqual([c['speaker']['last_name'] for c in parsed['agenda_items'][0]['contributions']],
                          ['Erster', 'Zweite'])
+        # Value: protects=named grants reject unrelated askers; fails_when=chair text bypasses the name guard; why_new=existing case names both granted askers; seam=none
+        unrelated = xml.replace('<nachname>Erster</nachname>', '<nachname>Andere</nachname>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            dip.parse_protocol_xml(unrelated)
 
     def test_grant_does_not_authorize_a_second_unrelated_nested_speaker(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
