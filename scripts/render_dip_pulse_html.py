@@ -1589,10 +1589,52 @@ def is_question_format(item: dict[str, Any]) -> bool:
     return bool(speech_kinds.heading_formats(item.get("heading")))
 
 
+def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], mp_lookup: dict[str, str] | None = None) -> str:
+    cards = []
+    from stable_ids import contribution_occurrence_id
+    for c in item.get("xml_contributions") or []:
+        speech_kinds.validate_kind(c["kind"])
+        key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, c["sequence"], c.get("rede_id"))
+        speaker = c.get("speaker") or {}
+        name = esc(derive.speaker_display_name(speaker) or "Nicht zugeordnet")
+        # The registry lookup keys occurrences; never guess a person from a name.
+        person = (mp_lookup or {}).get(key)
+        if person:
+            name = f'<a href="../abgeordnete/{esc(person)}.html">{name}</a>'
+        label = esc(speech_kinds.KIND_LABELS[c["kind"]][0])
+        page = (c.get("source_page") or {}).get("page")
+        pdf = safe_href(protocol.get("pdf_url"))
+        start_page = (protocol.get("xml_header") or {}).get("start_page")
+        physical_page = int(page) - int(start_page) + 1 if page and start_page else None
+        href = pdf + f"#page={physical_page}" if pdf and physical_page and physical_page > 0 else pdf
+        source_label = f"Originalprotokoll · S. {page}" if page else "Originalprotokoll"
+        source = f'<a href="{esc(href)}">{esc(source_label)}</a>' if href else ""
+        parent = c.get("parent_rede_id")
+        containing = ""
+        if parent:
+            for i, speech in enumerate(item.get("xml_speakers") or []):
+                if speech.get("rede_id") == parent:
+                    parent_label = "Enthaltende Rede" if c["kind"] == speech_kinds.ZWISCHENFRAGE or str(c.get("rede_id") or "").startswith("nested:") else "Bezugsrede"
+                    containing = f'<a href="#{esc(speech_anchor(item, speech, i))}">{parent_label}</a>'
+                    break
+            if not containing:
+                for other in item.get("xml_contributions") or []:
+                    if other.get("rede_id") == parent:
+                        parent_key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, other["sequence"], parent)
+                        containing = f'<a href="#contribution-{esc(parent_key)}">Enthaltender Beitrag</a>'
+                        break
+        paragraphs = c.get("paragraphs") or ([c["text"]] if c.get("text") else [])
+        body = "".join(f'<p>{esc(text)}</p>' for text in paragraphs)
+        cards.append(f'<details class="speech-card" id="contribution-{esc(key)}"><summary><span class="party-dot"></span><strong>{name}</strong><em>{label}</em></summary><div class="speech-text">{source} {containing}{body}</div></details>')
+    return '<div class="speech-cards contribution-cards">' + "".join(cards) + '</div>' if cards else ""
+
+
 def render_top_contributions(item: dict[str, Any]) -> str:
     """The Beiträge of one agenda item by kind: what was said there that is no
     Rede. Empty when there are none."""
     counts = contribution_counts(item)
+    for kind in counts:
+        speech_kinds.validate_kind(kind)
     if not counts:
         return ""
     parts = [
@@ -2660,7 +2702,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
         )
     if not cards:
         if item.get("xml_contributions"):
-            return '<span class="muted">Keine Reden; nur Fragen und Antworten (siehe Beiträge)</span>'
+            return '<span class="muted">Keine Reden; weitere Beiträge siehe oben</span>'
         return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
@@ -2821,6 +2863,7 @@ def render_html(
               </div>
               {top_documents}
               {render_top_contributions(item)}
+              {render_contribution_details(item, protocol, mp_lookup)}
               <div class="top-bars">
                 <div>
                   <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
@@ -2889,6 +2932,11 @@ def render_html(
     ]
     footer_nav = " · ".join(link for link in footer_links if link)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
+    sitting_contributions_html = (
+        '<section class="top-card"><h2>Schriftliche Beiträge ohne gesicherte TOP-Zuordnung</h2>'
+        + render_top_contributions(report) + render_contribution_details(report, protocol, mp_lookup) + '</section>'
+        if report.get("xml_contributions") else ""
+    )
     protocol_dev_sections = (
         "".join(components["dev-view"].dossier_sections(report, {"scope": "protocol"}))
         if "dev-view" in components
@@ -3800,7 +3848,8 @@ def render_html(
         {sitting_vote_section}
       </main>
     </div>
-    {protocol_dev_sections}
+    {sitting_contributions_html}
+      {protocol_dev_sections}
     <footer>
       <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
     </footer>

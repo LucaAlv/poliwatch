@@ -842,7 +842,7 @@ class WeekRadarHelperTests(unittest.TestCase):
                           "xml_contributions": [{"kind": "befragung_frage"}]}
         nothing = {"index": 2, "heading": "Aktuelle Stunde"}
         self.assertIn(
-            "Keine Reden; nur Fragen und Antworten (siehe Beiträge)",
+            "Keine Reden; weitere Beiträge siehe oben",
             pulse_html.render_speech_details(only_questions, pulse_html.item_stats(only_questions)),
         )
         markup = pulse_html.render_speech_details(nothing, pulse_html.item_stats(nothing))

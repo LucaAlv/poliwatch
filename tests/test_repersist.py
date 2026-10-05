@@ -31,7 +31,7 @@ def protocol_xml(number: str) -> str:
     """The smallest download --fetch-xml accepts for a sitting: a Plenarprotokoll root
     carrying that sitting's Wahlperiode and Sitzungsnummer."""
     wahlperiode, _, sitzung = number.partition("/")
-    return f'<dbtplenarprotokoll wahlperiode="{wahlperiode}" sitzung-nr="{sitzung}"/>'
+    return f'<dbtplenarprotokoll wahlperiode="{wahlperiode}" sitzung-nr="{sitzung}"><sitzungsverlauf><tagesordnungspunkt top-id="TOP1"/></sitzungsverlauf></dbtplenarprotokoll>'
 
 
 class ReparseCachedXmlTests(unittest.TestCase):
@@ -125,10 +125,11 @@ class ReparseCachedXmlTests(unittest.TestCase):
                 parsed, person_limit=0, vote_scan_pages=0,
             )
         dip_side = {"index", "api", "votes"}
+        source_identity = {"top_id"}
         stale = copy.deepcopy(fresh)
         for item in stale["agenda_items"]:
             for key in item:
-                if key not in dip_side:
+                if key not in dip_side | source_identity:
                     item[key] = "STALE"
         stale["protocol"] = {"id": "5709", "dokumentnummer": "21/6", "datum": "2025-05-14"}
         dip.reparse_report_xml(stale, parsed)
@@ -210,8 +211,8 @@ class ReparseCachedXmlTests(unittest.TestCase):
     def test_fetch_xml_counts_failures_and_the_command_exits_1_on_any(self) -> None:
         entries = [
             {"report": {"protocol": {"dokumentnummer": "21/1"}}},
-            {"report": {"protocol": {"dokumentnummer": "21/2", "xml_url": "https://example.test/2.xml"}}},
-            {"report": {"protocol": {"dokumentnummer": "21/3", "xml_url": "https://example.test/3.xml"}}},
+            {"report": {"protocol": {"dokumentnummer": "21/2", "xml_url": "https://dserver.bundestag.de/2.xml"}}},
+            {"report": {"protocol": {"dokumentnummer": "21/3", "xml_url": "https://dserver.bundestag.de/3.xml"}}},
         ]
 
         def fetch(url: str) -> str:
@@ -231,7 +232,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
         # whose protocol names an xml_url.
         report_path = self.output_dir / "data" / "plenarprotokoll-21-6.json"
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        report["protocol"]["xml_url"] = "https://example.test/6.xml"
+        report["protocol"]["xml_url"] = "https://dserver.bundestag.de/6.xml"
         report_path.write_text(json.dumps(report), encoding="utf-8")
         (xml_dir / "plenarprotokoll-21-6.xml").unlink()
         for name, side_effect, code, said in (
@@ -396,7 +397,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
     def test_a_well_formed_download_of_the_wrong_document_is_counted_failed_and_never_cached(self) -> None:
         xml_dir = self.output_dir / "data" / "xml"
         (xml_dir / "plenarprotokoll-21-6.xml").unlink()
-        entries = [{"report": {"protocol": {"dokumentnummer": "21/6", "xml_url": "https://example.test/6.xml"}}}]
+        entries = [{"report": {"protocol": {"dokumentnummer": "21/6", "xml_url": "https://dserver.bundestag.de/6.xml"}}}]
         for name, text in (
             ("not a protocol", "<html><body>Wartung</body></html>"),
             ("another sitting", protocol_xml("21/7")),
@@ -414,7 +415,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
     #   why_new=the fetch tests only return valid XML or raise DipError; a 200 with a non-XML body is a separate branch; seam=none
     def test_a_download_that_is_not_xml_is_counted_failed_and_never_cached(self) -> None:
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-6.xml").unlink()
-        entries = [{"report": {"protocol": {"dokumentnummer": "21/6", "xml_url": "https://example.test/6.xml"}}}]
+        entries = [{"report": {"protocol": {"dokumentnummer": "21/6", "xml_url": "https://dserver.bundestag.de/6.xml"}}}]
         stderr = io.StringIO()
         with mock.patch.object(build.dip, "fetch_text", return_value="<html>maintenance"), contextlib.redirect_stderr(stderr):
             self.assertEqual(build.fetch_missing_xml(self.output_dir, entries, pause=0), (0, 1))
@@ -582,6 +583,19 @@ class RepersistTests(unittest.TestCase):
         with self.assertRaises(build.CachedReportError) as caught:
             self.repersist()
         self.assertIn("top-level JSON value is not an object", str(caught.exception))
+        self.assertEqual(before, sha(self.database))
+        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+
+    def test_null_agenda_items_with_current_rules_and_no_xml_leaves_the_store_alone(self) -> None:
+        self.repersist()
+        before = sha(self.database)
+        report_path = self.output_dir / "data" / "plenarprotokoll-21-84.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["agenda_items"] = None
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        with self.assertRaises(build.CachedReportError) as caught:
+            self.repersist()
+        self.assertIn("agenda_items must contain objects", str(caught.exception))
         self.assertEqual(before, sha(self.database))
         self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
 

@@ -33,3 +33,9 @@ This one matters far more than Kurzinterventionen. In the store on 2026-09-26, 7
 
 - § 27a GO-BT: https://www.gesetze-im-internet.de/btgo_2025/__27a.html
 - Datenhandbuch Kap. 7.6, "Reden im Plenum" (what the count of Redebeiträge leaves out): https://www.bundestag.de/resource/blob/196278/Kapitel_07_06_Redner_im_Plenum.pdf
+
+## A1 follow-ups (2026-10-05)
+
+The existing Rede/Beitrag boundary also covers nested Zwischenfragen and explicitly typed written submissions (`zu_protokoll`, decision 2026-09-30). Both are stored and displayed separately. §31 declarations are excluded from written-submission ingestion. Source roles belong to the speaker occurrence; historical printed roles receive the same classification and persisted Sprechrolle as structured roles. After explicit recovery, an unresolved question-format turn rejects the sitting (approved D4).
+
+Rule version 3 is recorded for every persisted protocol in `speech_rule_inputs`. Facts, exports and store-consuming rendering refuse missing or stale versions and require explicit `--offline --repersist` (approved D3). This certifies the persisted rule inputs, not identical report/store snapshots or whole-site atomic publication. The schema and existing identity key version remain unchanged. See [source validation](../plans/a1-validation.md) and [A1/A2 contract](../plans/a1-a2-contract.md).

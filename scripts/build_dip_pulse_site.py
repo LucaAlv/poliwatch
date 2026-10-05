@@ -139,7 +139,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
-    "contributions": "Beiträge, die keine Rede sind: Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; eine Frage, die die Sitzungsleitung verliest und deren Fragesteller nicht spricht, hat keinen mp_id.",
+    "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
+    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
@@ -256,6 +257,8 @@ def build_dossiers_with_progress(
         try:
             entry = build_dossier(protocol, existing_report)
         except dip.DipError as exc:
+            if exc.source_rejected:
+                raise  # D4: no staged store may replace accepted data after source refusal.
             elapsed = time.monotonic() - started
             protocol["dossier_failure_reasons"] = ["source_unavailable"]
             print(
@@ -712,7 +715,7 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
     """
     if resolver is None:
         return
-    for item in report.get("agenda_items") or []:
+    for item in [report, *(report.get("agenda_items") or [])]:
         for key in SPEAKER_LISTS:
             for speech in item.get(key) or []:
                 speaker = speech.get("speaker")
@@ -820,17 +823,12 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    page_path.write_text(
-        pulse_html.render_html(
-            report,
-            features=features,
-            mp_lookup=mp_lookup,
-            include_dev_view=include_dev_view,
-            database_page_href=database_page_href,
-        ),
-        encoding="utf-8",
+    rendered = pulse_html.render_html(
+        report, features=features, mp_lookup=mp_lookup,
+        include_dev_view=include_dev_view, database_page_href=database_page_href,
     )
+    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    dip.write_text_atomic(page_path, rendered)
     return {
         "report": report,
         "report_path": report_path,
@@ -883,6 +881,16 @@ def load_existing_detail_entries(
             report = json.loads(report_path.read_text(encoding="utf-8"))
             if not isinstance(report, dict):
                 raise ValueError("the top-level JSON value is not an object")
+            if not isinstance(report.get("protocol") or {}, dict):
+                raise ValueError("protocol must be an object")
+            items = report.get("agenda_items", [])
+            if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
+                raise ValueError("agenda_items must contain objects with integer source indices")
+            for item in [report, *items]:
+                for key in SPEAKER_LISTS:
+                    units = item.get(key) or []
+                    if not isinstance(units, list) or any(not isinstance(unit, dict) for unit in units):
+                        raise ValueError(f"{key} must be a list of source units")
         except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
             if strict:
                 raise CachedReportError(f"{report_path} is unreadable: {exc}") from exc
@@ -890,6 +898,8 @@ def load_existing_detail_entries(
             continue
         protocol = report.get("protocol") or {}
         document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if strict and not document_number:
+            raise CachedReportError(f"{report_path} has no document number; restore source identity before replay")
         if not document_number or document_number not in protocol_numbers:
             continue
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
@@ -1253,6 +1263,10 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
+        try:
+            pulse_store.require_current_speech_rules(store)
+        except RuntimeError as exc:
+            raise DatabaseRebuildError(str(exc)) from exc
         registry.reconcile(store, full_build=True)
         store.commit()
         if facts_snapshot is not None:
@@ -1331,7 +1345,7 @@ def reparse_cached_xml(
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
     by_redner_id: dict[str, Any] = {}
     for entry in entries if profiles_from is None else profiles_from:
-        for item in entry["report"].get("agenda_items") or []:
+        for item in [entry["report"], *(entry["report"].get("agenda_items") or [])]:
             for identity, profile in speaker_profiles(item).items():
                 redner_id = derive.first_redner_id(identity[0])
                 if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
@@ -1343,14 +1357,14 @@ def reparse_cached_xml(
         path = xml_cache_path(output_dir, document_number)
         if not document_number or not path.exists():
             continue
-        profiles = {item.get("index"): speaker_profiles(item) for item in report.get("agenda_items") or []}
+        profiles = {item.get("index"): speaker_profiles(item) for item in [report, *(report.get("agenda_items") or [])]}
         try:
             dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
-        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError) as exc:
+        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
-                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Delete it and run --fetch-xml again"
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again"
             ) from exc
-        for item in report.get("agenda_items") or []:
+        for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
         reparsed += 1
     return reparsed
@@ -1365,13 +1379,18 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         protocol = entry["report"].get("protocol") or {}
         document_number = normalized_document_number(protocol.get("dokumentnummer"))
         path = xml_cache_path(output_dir, document_number)
-        if not document_number or path.exists():
+        if not document_number:
+            print("warning: cached report has no document number; XML acquisition failed.", file=sys.stderr)
+            failed += 1
+            continue
+        if path.exists():
             continue
         if not protocol.get("xml_url"):
             print(f"warning: {document_number} has no xml_url; its XML cannot be fetched.", file=sys.stderr)
             failed += 1
             continue
         try:
+            publication.validate_external_url(protocol["xml_url"], "bundestag-xml")
             text = dip.fetch_text(protocol["xml_url"])
             # An error or maintenance page served with HTTP 200 must not become the cache.
             root = dip.ET.fromstring(text)
@@ -1382,7 +1401,9 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
                 sitzung,
             ):
                 raise ValueError(f"it is not the Plenarprotokoll XML of {document_number}")
-        except (dip.DipError, dip.ET.ParseError, ValueError) as exc:
+            if not root.findall("./sitzungsverlauf/tagesordnungspunkt"):
+                raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
+        except (dip.DipError, dip.ET.ParseError, ValueError, publication.PublicationStateError) as exc:
             print(f"warning: {document_number}: {exc}", file=sys.stderr)
             failed += 1
             continue
@@ -1392,6 +1413,37 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         if pause:
             time.sleep(pause)
     return fetched, failed
+
+
+def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
+    for entry in entries:
+        report = entry["report"]
+        kinds = [c.get("kind") for item in [report, *(report.get("agenda_items") or [])]
+                 for c in item.get("xml_contributions") or []]
+        kinds += [m.get("kind") for m in (report.get("validation_summary") or {}).get("contribution_dip_mismatches") or []]
+        try:
+            for kind in kinds:
+                speech_kinds.validate_kind(kind)
+        except ValueError as exc:
+            raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
+
+
+def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    details = []
+    for entry in entries:
+        report = entry["report"]
+        for mismatch in (report.get("validation_summary") or {}).get("contribution_dip_mismatches") or []:
+            speech_kinds.validate_kind(mismatch["kind"])
+            details.append({"document_number": (report.get("protocol") or {}).get("dokumentnummer"), **mismatch})
+    details.sort(key=lambda row: (row["document_number"] or "", row["kind"]))
+    audit = {"speech_kinds_version": speech_kinds.VERSION, "mismatches": details}
+    path = output_dir / "data" / "a1-classification-diagnostics.json"
+    dip.write_text_atomic(path, json.dumps(audit, ensure_ascii=False, indent=2) + "\n")
+    if details:
+        sittings = len({row["document_number"] for row in details})
+        print(f"warning: [classification] {len(details)} sitting/kind differences against DIP across {sittings} sittings. "
+              f"Inspect source turns in {path}; disagreement alone does not reject a parse.", file=sys.stderr)
+    return audit
 
 
 def repersist_cached_reports(
@@ -1413,6 +1465,7 @@ def repersist_cached_reports(
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, facts_report=facts_report, upgrade=True,
     )
+    write_classification_diagnostics(output_dir, cached)
     return cached, replaced
 
 
@@ -2125,7 +2178,7 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
-_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
+_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand", "speech_rule_inputs"} | set(facts.FACTS_TABLES)
 
 
 # The outcome is mostly computed here from the counts (vote_result); only a
@@ -2581,6 +2634,7 @@ def export_distribution_data(
     source = facts.open_readonly(database_path)
     try:
         pulse_store.require_current_schema(source)
+        pulse_store.require_current_speech_rules(source)
     finally:
         source.close()
     has_page_ids = set((mp_lookup or {}).values())
@@ -4112,7 +4166,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
         for item, vote in derive.iter_report_votes(report):
-            # persist_votes skips a vote without an id, so the archive does
+            # persist_vote skips a vote without an id, so the archive does
             # too: the row count must equal SELECT count(*) FROM votes.
             if not vote.get("id"):
                 continue
@@ -6585,6 +6639,14 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     ).fetchall():
         contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
+    contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
+    for row in conn.execute(
+        "SELECT c.id, c.mp_id, c.kind, p.document_number, p.date "
+        "FROM contributions c JOIN protocols p ON p.id=c.protocol_id "
+        "WHERE c.mp_id IS NOT NULL ORDER BY p.date DESC, c.sequence, c.id"
+    ):
+        contribution_links_by_mp.setdefault(row["mp_id"], []).append(dict(row))
+
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
     votes_by_mp: dict[str, list[dict[str, Any]]] = {}
@@ -6610,7 +6672,10 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     assignments = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
     current_person_ids = set(assignments.values())
-    page_eligible = {row[0] for row in conn.execute("SELECT DISTINCT person_id FROM person_bindings WHERE id >= ? AND id < ?", _prefix_range(key_prefix("speech")))}
+    page_eligible = set()
+    for namespace in ("speech", "contribution"):
+        page_eligible.update(row[0] for row in conn.execute(
+            "SELECT DISTINCT person_id FROM person_bindings WHERE id >= ? AND id < ?", _prefix_range(key_prefix(namespace))))
     historical = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
@@ -6692,6 +6757,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
             "contribution_counts": dict(sorted(contribution_counts.items())),
+            "contribution_links": [c for r in members for c in contribution_links_by_mp.get(r["id"], [])],
             "contribution_count": sum(contribution_counts.values()),
             "votes": merged_votes,
             "vote_tally": tally,
@@ -6968,17 +7034,24 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     counts = mp.get("contribution_counts") or {}
     if not counts:
         return ""
+    for kind in counts:
+        speech_kinds.validate_kind(kind)
     fields = "".join(
         f'<div class="field"><span>{pulse_html.esc(speech_kinds.KIND_LABELS[kind][1])}</span>'
         f"<strong>{pulse_html.esc(counts[kind])}</strong></div>"
         for kind in speech_kinds.CONTRIBUTION_KINDS
         if counts.get(kind)
     )
+    links = "".join(
+        f'<li><a href="../protocols/plenarprotokoll-{slugify_document_number(c["document_number"])}.html#contribution-{pulse_html.esc(c["id"])}">'
+        f'{pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
+        for c in mp.get("contribution_links") or []
+    )
     return (
         '<section class="panel">'
         "<h2>Weitere Beiträge (keine Reden)</h2>"
-        "<p>Kurzinterventionen, Erwiderungen sowie Fragen und Antworten in Befragung und Fragestunde zählen nicht als Reden.</p>"
-        f'<div class="field-grid">{fields}</div>'
+        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen sowie Fragen und Antworten zählen gesondert.</p>"
+        f'<div class="field-grid">{fields}</div><ul>{links}</ul>'
         "</section>"
     )
 
@@ -10932,13 +11005,15 @@ def main() -> int:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
-    # Only --offline --repersist upgrades an old store; an online update would
-    # otherwise fetch everything and then be refused by the rebuild. --no-persist
-    # renders without reading the store, so an old store does not block it.
-    if not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
+    # Explicit replay upgrades an old schema. Store consumers, including
+    # no-persist rendering, require current persisted rules; an online rebuild
+    # can repair the rules from accepted source inputs.
+    if not getattr(args, "repersist", False) and database_path.exists():
         previous = facts.open_readonly(database_path)
         try:
             pulse_store.require_current_schema(previous)
+            if args.offline or args.no_persist:
+                pulse_store.require_current_speech_rules(previous)
         except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -11022,6 +11097,13 @@ def main() -> int:
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
+        try:
+            validate_cached_kinds(cached_entries)
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}", file=sys.stderr)
+            return 1
+        if not getattr(args, "repersist", False):
+            write_classification_diagnostics(output_dir, cached_entries)
         entries = rebuild_cached_detail_pages(
             output_dir,
             protocols,
@@ -11289,6 +11371,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    write_classification_diagnostics(output_dir, entries)
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
     try:

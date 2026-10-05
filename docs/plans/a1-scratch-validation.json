@@ -1,0 +1,362 @@
+{
+  "snapshot": "/tmp/poliwatch-a1-work/combined",
+  "site": "/tmp/poliwatch-a1-work/site",
+  "started_at": "2026-10-05T12:52:01Z",
+  "checks": {
+    "reparse_reports": 290,
+    "half_vs_fresh_identity_grouping_equal": true,
+    "unchanged_rebuild_not_replaced": true,
+    "sqlite_integrity_ok": true,
+    "foreign_key_violations": 0,
+    "render_samples_have_cards": true,
+    "render_samples_page_source_ok": true,
+    "render_samples_cover_requested": true,
+    "distribution_integrity_ok": true,
+    "distribution_foreign_keys_ok": true,
+    "distribution_provenance_retained": true,
+    "no_dangling_mp_references": true,
+    "render_exact_anchor_ids": true,
+    "render_person_eligibility_and_links": true,
+    "render_categories_complete": true,
+    "sitting_unassigned_sample_correct": true,
+    "all_scoped_checks_passed": true
+  },
+  "input": {
+    "protocols": 290,
+    "entries": 290,
+    "xml_files": 290
+  },
+  "timings_seconds": {
+    "total": 794.118,
+    "reparse": 39.824,
+    "half_build": 72.244,
+    "incremental_full_build": 203.998,
+    "fresh_build": 164.546,
+    "unchanged_rebuild": 208.184,
+    "export": 84.593
+  },
+  "identity_grouping": {
+    "groups": 3370,
+    "records": 4263,
+    "group_fingerprint": "24791838f6ff23d902d87390b205bdbacba797071feb9e9cca295416e97dfce3"
+  },
+  "counts": {
+    "protocols": 290,
+    "agenda_items": 2912,
+    "mps": 4263,
+    "speeches": 26271,
+    "contributions": 16799,
+    "person_records": 4263,
+    "person_bindings": 198200
+  },
+  "contribution_kinds": {
+    "befragung_antwort": 3901,
+    "befragung_frage": 3961,
+    "erwiderung": 596,
+    "fragestunde_antwort": 2687,
+    "fragestunde_frage": 2701,
+    "kurzintervention": 646,
+    "zu_protokoll": 859,
+    "zwischenfrage": 1448
+  },
+  "unattributed_contribution_chars": 2515,
+  "provenance": {
+    "contributions_with_rede_id": 11411,
+    "with_parent_rede_id": 2794,
+    "with_page": 11280,
+    "source_occurrence_bindings": 16792,
+    "source_occurrence_binding_prefix": "contribution-v1-"
+  },
+  "people": {
+    "records": 3370,
+    "lookup_keys": 47854,
+    "eligible_pages": 1039,
+    "contribution_pages": 871
+  },
+  "render_samples": {
+    "written": {
+      "sample_basis": "synthetic renderer payload from a real persisted contribution row",
+      "persisted_contribution_id": "contribution-v1-9868303a390389483cd242e65da752f26bf97c63b9342cb0319705abd6300840",
+      "expected_occurrence_id": "contribution-v1-9868303a390389483cd242e65da752f26bf97c63b9342cb0319705abd6300840",
+      "persisted_id_matches_occurrence_id": true,
+      "rendered_anchor_exact": true,
+      "source_page_retained": true,
+      "persisted_mp_id": "mp-v1-91c8e217eea506df8dd9783b1062a7163333849c22666fbb748f857feb7bde16",
+      "lookup_person_id": "person-v1-f384528b5be814de5832ef711f5ea3405f827a1cf1545a57b99e8a9415a24390",
+      "person_page_eligible": true,
+      "person_link_rendered": true,
+      "agenda_item_id": "agenda-v1-dc2e03c7f2426974acb512178d5bbe47b0f85a476530669ce6e2fa3a81b973de",
+      "is_sitting_level": false,
+      "kind": "zu_protokoll",
+      "rede_id": "ID2010015700",
+      "parent_rede_id": null
+    },
+    "nested": {
+      "sample_basis": "synthetic renderer payload from a real persisted contribution row",
+      "persisted_contribution_id": "contribution-v1-0484adc20a2f0d79638bf82343fbef5c19d034a02ebfe945cb12d9aa76a36adb",
+      "expected_occurrence_id": "contribution-v1-0484adc20a2f0d79638bf82343fbef5c19d034a02ebfe945cb12d9aa76a36adb",
+      "persisted_id_matches_occurrence_id": true,
+      "rendered_anchor_exact": true,
+      "source_page_retained": true,
+      "persisted_mp_id": "mp-v1-24ad3216e92aa6b3c00cf21e2425001f07b73a24b587ba88ff1b010ff1103d68",
+      "lookup_person_id": "person-v1-4c85747a220e41f6dcbdff6cf4d533510cbcfe7098bd5979b8bb9a5c17e48c97",
+      "person_page_eligible": true,
+      "person_link_rendered": true,
+      "agenda_item_id": "agenda-v1-a097585d9ce9b224da88cdea83a90aa3e65fc567c0aafc5eb9298a032e2b34e6",
+      "is_sitting_level": false,
+      "kind": "zwischenfrage",
+      "rede_id": "nested:ID2010011400:4",
+      "parent_rede_id": "ID2010011400"
+    },
+    "flat": {
+      "sample_basis": "synthetic renderer payload from a real persisted contribution row",
+      "persisted_contribution_id": "contribution-v1-792b90a965ff02d7a9405210cf7dbd1b5c326f816256ec650504f7e00efa9c14",
+      "expected_occurrence_id": "contribution-v1-792b90a965ff02d7a9405210cf7dbd1b5c326f816256ec650504f7e00efa9c14",
+      "persisted_id_matches_occurrence_id": true,
+      "rendered_anchor_exact": true,
+      "source_page_retained": true,
+      "persisted_mp_id": "mp-v1-85b3700657d74011388bf500a0481d03235a982416f3128d5f8b459a1e28a783",
+      "lookup_person_id": "person-v1-b5bf7570cb2e09f2ecba382f93d592b91a60461ea47c6334a8a3de6ebda940b1",
+      "person_page_eligible": true,
+      "person_link_rendered": true,
+      "agenda_item_id": "agenda-v1-c7761e0670f71c66874732dfc50884f932d78c317d31d587db3b90fa17c559e2",
+      "is_sitting_level": false,
+      "kind": "fragestunde_frage",
+      "rede_id": null,
+      "parent_rede_id": null
+    },
+    "native": {
+      "sample_basis": "synthetic renderer payload from a real persisted contribution row",
+      "persisted_contribution_id": "contribution-v1-10023fce73d8a28ff0825cf8d1be31963a5a62c4dc6ee7c352877f316d691859",
+      "expected_occurrence_id": "contribution-v1-10023fce73d8a28ff0825cf8d1be31963a5a62c4dc6ee7c352877f316d691859",
+      "persisted_id_matches_occurrence_id": true,
+      "rendered_anchor_exact": true,
+      "source_page_retained": true,
+      "persisted_mp_id": "mp-v1-c3f1b8bb2066aa95ddc6d1c3af247ab03c2b5a4334e6482eb888ec27d52a73f0",
+      "lookup_person_id": "person-v1-828ab1b40cb573cd95f166c072c90e73377327b545b13cb47b58a9b02633f294",
+      "person_page_eligible": true,
+      "person_link_rendered": true,
+      "agenda_item_id": "agenda-v1-08d96186a3ad927aa5d9e5df97a5f79ccadc170db54f29f925a2889ee1cfc570",
+      "is_sitting_level": false,
+      "kind": "befragung_frage",
+      "rede_id": "ID2010200300",
+      "parent_rede_id": null
+    },
+    "sitting_unassigned": {
+      "sample_basis": "synthetic renderer payload from a real persisted contribution row",
+      "persisted_contribution_id": "contribution-v1-3ebea68d030993ec6a5e6f505f64071dc6dd6766a492bc7214f56292bacd473f",
+      "expected_occurrence_id": "contribution-v1-3ebea68d030993ec6a5e6f505f64071dc6dd6766a492bc7214f56292bacd473f",
+      "persisted_id_matches_occurrence_id": true,
+      "rendered_anchor_exact": true,
+      "source_page_retained": true,
+      "persisted_mp_id": "mp-v1-9be7e7d5156f328c5110f988a586cfa9450e39fce7699c4a47504d2fdf33c1c7",
+      "lookup_person_id": "person-v1-ab0d5660a6b05b91fb008ce9342caba9c715c838a4bb2b5182bdde37f13d7bed",
+      "person_page_eligible": true,
+      "person_link_rendered": true,
+      "agenda_item_id": null,
+      "is_sitting_level": true,
+      "kind": "zu_protokoll",
+      "rede_id": "ID2010920400",
+      "parent_rede_id": null
+    }
+  },
+  "distribution": {
+    "manifest_generation": "g-e890c6b5b5a4",
+    "manifest_integrity": null,
+    "manifest_files": [
+      "bundestag-pulse-validation.sqlite.gz",
+      "agenda_item_documents-validation.csv.gz",
+      "agenda_item_votes-validation.csv.gz",
+      "agenda_items-validation.csv.gz",
+      "contributions-validation.csv.gz",
+      "datenstand-validation.csv.gz",
+      "documents-validation.csv.gz",
+      "fact_metrics-validation.csv.gz",
+      "fact_sources-validation.csv.gz",
+      "facts-validation.csv.gz",
+      "mp_canonical-validation.csv.gz",
+      "mps-validation.csv.gz",
+      "parties-validation.csv.gz",
+      "person_aliases-validation.csv.gz",
+      "person_bindings-validation.csv.gz",
+      "person_records-validation.csv.gz",
+      "persons-validation.csv.gz",
+      "proceeding_positions-validation.csv.gz",
+      "proceedings-validation.csv.gz",
+      "protocols-validation.csv.gz",
+      "speech_rule_inputs-validation.csv.gz",
+      "speeches-validation.csv.gz",
+      "vote_documents-validation.csv.gz",
+      "vote_fractions-validation.csv.gz",
+      "vote_members-validation.csv.gz",
+      "votes-validation.csv.gz"
+    ],
+    "db_path": "/tmp/poliwatch-a1-work/combined-validation/exports/g-e890c6b5b5a4/bundestag-pulse-validation.sqlite.gz",
+    "path": "/tmp/poliwatch-a1-work/combined-validation/distribution.sqlite",
+    "compressed_path": "/tmp/poliwatch-a1-work/combined-validation/exports/g-e890c6b5b5a4/bundestag-pulse-validation.sqlite.gz",
+    "integrity": "ok",
+    "foreign_key_violations": 0,
+    "tables": [
+      "agenda_item_documents",
+      "agenda_item_votes",
+      "agenda_items",
+      "contributions",
+      "datenstand",
+      "documents",
+      "fact_metrics",
+      "fact_sources",
+      "facts",
+      "mp_canonical",
+      "mps",
+      "parties",
+      "person_aliases",
+      "person_bindings",
+      "person_records",
+      "persons",
+      "proceeding_positions",
+      "proceedings",
+      "protocols",
+      "schema_migrations",
+      "speech_rule_inputs",
+      "speeches",
+      "vote_documents",
+      "vote_fractions",
+      "vote_members",
+      "votes"
+    ],
+    "contribution_rows": 16799,
+    "contribution_provenance_columns": [
+      "kind",
+      "mp_id",
+      "page",
+      "parent_rede_id",
+      "rede_id"
+    ],
+    "person_records": 4263,
+    "person_bindings": 198200,
+    "manifest_sqlite_sha256": "a18219a5eb1f56f7dab66e75f54bcf5f15ef83e443ddc7cc602110102f740195",
+    "manifest_unpacked_sha256": "de9c9fa25c44295901531819d3778d5b50bbd47d9b66b2a5572270993b2d1d25",
+    "persisted_rule_inputs": {
+      "version": 2,
+      "protocols": 290
+    }
+  },
+  "finished_at": "2026-10-05T13:05:16Z",
+  "unattributed_contributions": 7,
+  "dangling_mp_references": 0,
+  "finalized_at": "2026-10-05T13:10:32Z",
+  "classification_diagnostics": {
+    "path": "/tmp/poliwatch-a1-work/combined-validation/data/a1-classification-diagnostics.json",
+    "speech_kinds_version": 2,
+    "mismatch_rows": 93,
+    "mismatch_kinds": {
+      "erwiderung": 51,
+      "kurzintervention": 42
+    },
+    "mismatch_sittings": 57
+  },
+  "harness_initial_error": {
+    "type": "DatabaseError",
+    "message": "initial export validation opened the compressed .sqlite.gz directly. Corrected by selecting the manifest SQLite artifact and decompressing it into scratch before SQLite checks; corrected validation passed."
+  },
+  "code_hash_scope": "SHA-256 of combined/scripts/*.py and combined/tests/*.py captured at end of validation, not a start-of-run immutable checkout digest.",
+  "sitting_level_written_contributions": 301,
+  "harness_initial_errors": [
+    {
+      "type": "DatabaseError",
+      "message": "file is not a database",
+      "traceback": "Traceback (most recent call last):\n  File \"/tmp/poliwatch-a1-work/combined-validation/run_validation.py\", line 93, in <module>\n    res['distribution']['integrity']=d.execute('PRAGMA integrity_check').fetchone()[0]\n                                     ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^\nsqlite3.DatabaseError: file is not a database\n"
+    }
+  ],
+  "errors": [],
+  "status": "passed_after_harness_corrections",
+  "code_hashes_at_end": {},
+  "initial_major_module_hashes": {
+    "scripts/person_registry.py": "aa0d4794aa99cfcff91c08b9be2f3ac5da6f75d3f4ab17f179a618e1cddf828f",
+    "scripts/persist_dip_pulse_store.py": "535f9eb7b3b4574cca563d0fe610be8f83558f966a80067ae6139f764157aecb",
+    "scripts/stable_ids.py": "2c24a257b3d2276860b3e5280138ddb994722ba6e093a0a6a122827eaa6fb557",
+    "scripts/speech_kinds.py": "d45e46f79b4deaf7b433dc641d5440bcc09d6110673cd7a55d29745ea762ffd6",
+    "scripts/validate_dip_protocol.py": "604b4bd51220b776242bd8d2de779b58bafeaf8c567135240b531fdaad490c79"
+  },
+  "snapshot_binding_note": "The main replay process imported the snapshot before later CSS, valid-primary-receipt, historical-role and canonical-line-ending changes. Those do not change the 290-source identity inputs; final full suite, real page audit and final 311-source semantic equality separately validate the final files. Initial hashes cover only the listed major modules; end hashes must not be read as start hashes.",
+  "primary_final_output_checks": {
+    "html_pages": 2223,
+    "checked_links": 90540,
+    "failures": [],
+    "contribution_anchors": 16799,
+    "expected_contribution_anchors": 16799,
+    "anchors_equal": true,
+    "vote_query_plans": {
+      "knappste-abstimmung": {
+        "rows": 217,
+        "seconds": 0.001961394998943433,
+        "plan": [
+          "SCAN v USING INDEX sqlite_autoindex_votes_1",
+          "SEARCH p USING INDEX sqlite_autoindex_protocols_1 (id=?) LEFT-JOIN",
+          "CORRELATED SCALAR SUBQUERY 1",
+          "SEARCH protocols USING COVERING INDEX sqlite_autoindex_protocols_1 (id=?)",
+          "CORRELATED SCALAR SUBQUERY 2",
+          "SCAN aiv",
+          "SEARCH ai USING INDEX sqlite_autoindex_agenda_items_1 (id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ]
+      },
+      "meiste-abweichler": {
+        "rows": 217,
+        "seconds": 0.31867926900304155,
+        "plan": [
+          "SCAN v USING INDEX sqlite_autoindex_votes_1",
+          "SEARCH p USING INDEX sqlite_autoindex_protocols_1 (id=?) LEFT-JOIN",
+          "CORRELATED SCALAR SUBQUERY 4",
+          "SEARCH protocols USING COVERING INDEX sqlite_autoindex_protocols_1 (id=?)",
+          "CORRELATED SCALAR SUBQUERY 5",
+          "SCAN aiv",
+          "SEARCH ai USING INDEX sqlite_autoindex_agenda_items_1 (id=?)",
+          "USE TEMP B-TREE FOR ORDER BY",
+          "CORRELATED SCALAR SUBQUERY 1",
+          "SEARCH vm0 USING COVERING INDEX sqlite_autoindex_vote_members_1 (vote_id=?)",
+          "CORRELATED SCALAR SUBQUERY 2",
+          "SEARCH vm USING INDEX sqlite_autoindex_vote_members_1 (vote_id=?)",
+          "SEARCH vf USING INDEX sqlite_autoindex_vote_fractions_1 (vote_id=? AND party_id=?)",
+          "SEARCH pa USING INDEX sqlite_autoindex_parties_1 (id=?)",
+          "CORRELATED SCALAR SUBQUERY 3",
+          "SEARCH vm3 USING INDEX sqlite_autoindex_vote_members_1 (vote_id=?)"
+        ]
+      }
+    },
+    "historical_enriched": {
+      "protocols": 2,
+      "speeches": 87,
+      "contributions": 343,
+      "positions": 2,
+      "integrity": "ok",
+      "fk": 0
+    }
+  },
+  "final_source_snapshot_equal": true,
+  "final_production_sha256": {
+    "scripts/build_dip_pulse_site.py": "88346bcd3688bd04932414e6b66e57b9b7b06a30d1590403bbcd17abe5e38f35",
+    "scripts/derive.py": "3ff44466da0724cae4229a2fddb1a8a2a31096bdcfa3114c091ef8ad6b82dc2c",
+    "scripts/facts.py": "ca2aaf27aeb7a1d78820fe4c92708969055ba35c5b30f7761e72758eba6cbce4",
+    "scripts/features/votes.py": "f8aa771a2673288a05ffaf191d01829e8256da43be2004f84fbcc3bccc37b376",
+    "scripts/persist_dip_pulse_store.py": "0a243fc1968c1f04750e1e59fc3f753dba9582f355d74a94ccd38abdb2468be1",
+    "scripts/render_dip_pulse_html.py": "7237e9c506314210c9a5aa2f0a7ad929c013d195196f242f08ec7b10e71c7573",
+    "scripts/speech_kinds.py": "d45e46f79b4deaf7b433dc641d5440bcc09d6110673cd7a55d29745ea762ffd6",
+    "scripts/validate_dip_protocol.py": "2811acc551a0a015c373c14e0231783df7dd878c7c4cdd80af9ba42ca1980876"
+  },
+  "final_tests": {
+    "a1": {
+      "tests": 1082,
+      "passed": true,
+      "skipped": 0,
+      "log_sha256": "8d68622d0063ad5aef3f00eacf7f8e67bc2f567363818a477f7b2f88944efb50"
+    },
+    "a1_a2_snapshot": {
+      "tests": 1099,
+      "passed": true,
+      "skipped": 1,
+      "log_sha256": "5a2f5c1f2c21274dfcdb1f9471a8c9506de6a98c8c17d18ee49c570ee15c7aa5"
+    }
+  },
+  "final_merged_a2_gate": "Deferred by user on 2026-10-05; P1 TODO before A3."
+}

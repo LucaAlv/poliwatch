@@ -192,6 +192,27 @@ class KurzinterventionTests(unittest.TestCase):
         self.assertTrue(announces("Die Kurzintervention ist beendet, und zu einer weiteren Kurzintervention hat Herr Fiedler das Wort."))
         self.assertFalse(announces("Die Kurzintervention ist beendet; Frau Meier hat das Wort.", "Meier"))
 
+    def test_thanks_for_a_previous_kurzintervention_do_not_grant_the_next_one(self) -> None:
+        for announcement in (
+            "Danke für die Kurzintervention von Frau Meier; nun spricht Frau Schmidt",
+            "Danke für die Kurzintervention von Frau Meier. Nun hat Frau Schmidt das Wort.",
+            "Danke für die Kurzintervention von Frau Meier; nun hat Frau Schmidt das Wort.",
+        ):
+            with self.subTest(announcement=announcement):
+                xml = (
+                    '<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt>'
+                    + synthetic_rede("R1", "1001", "Anna Haupt", fraktion="SPD", after=announcement)
+                    + synthetic_rede("R2", "1002", "Anna Schmidt", fraktion="SPD")
+                    + '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>'
+                )
+                top = dip.parse_protocol_xml(xml)["agenda_items"][0]
+                self.assertEqual([s["rede_id"] for s in top["speeches"]], ["R1", "R2"])
+                self.assertEqual(top["contributions"], [])
+        self.assertTrue(sk.announces_kurzintervention(
+            "Danke für die Kurzintervention von Frau Meier; zu einer weiteren Kurzintervention spricht Frau Schmidt.",
+            "Schmidt",
+        ))
+
     def test_rules_refusals_and_withdrawals_announce_none(self) -> None:
         announces = sk.announces_kurzintervention
         self.assertFalse(announces("Ab jetzt lasse ich keine Kurzinterventionen mehr zu. Das Wort hat Frau Wittmann.", "Wittmann"))
@@ -343,35 +364,25 @@ class FragestundeTests(unittest.TestCase):
     # Value: protects=a silent asker becomes an id-less speaker with the announced name, is counted as person-less, and an unplaced marker opens no turn;
     #   fails_when=parse_protocol_xml drops the announced name, the person-less counter miscounts, or an unplaced speaker's paragraphs join the previous turn;
     #   why_new=test_a_question_whose_asker_never_speaks stops at fragestunde_turns and never reaches the parsed contribution or the summary key; seam=none
-    def test_a_silent_asker_reaches_the_report_by_name_and_an_unplaced_marker_is_no_turn(self) -> None:
-        parsed = dip.parse_protocol_xml(
-            "<dbtplenarprotokoll><sitzungsverlauf>"
-            '<tagesordnungspunkt top-id="T1"><p klasse="T_fett">Fragestunde</p>'
-            "<name>Vizepräsident Omid Nouripour:</name>"
-            '<p klasse="J">Wir kommen zur Frage 7 des Abgeordneten Jan Köstering von der Linken:</p>'
-            '<p klasse="p">Welche Konzepte gibt es?</p>'
-            '<p klasse="J">Frau Staatssekretärin, bitte.</p>'
-            '<p klasse="redner"><redner id="11003613"><name><vorname>Daniela</vorname><nachname>Ludwig</nachname>'
-            "<rolle><rolle_lang>Parl. Staatssekretärin</rolle_lang></rolle></name></redner>Daniela Ludwig:</p>"
-            '<p klasse="J_1">Die Konzepte sind vielfältig.</p>'
-            # Neither a Fraktion nor a rolle: no one the parser can place. The marker
-            # ends the answer before it; what follows belongs to no one.
-            '<p klasse="redner"><redner id="11009999"><name><vorname>Gast</vorname><nachname>Unbekannt</nachname>'
-            "</name></redner>Gast Unbekannt:</p>"
-            '<p klasse="J_1">Ein Gastbeitrag ohne Zuordnung.</p>'
-            "</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>"
-        )
-        top = parsed["agenda_items"][0]
-        question, antwort = top["contributions"]
-        self.assertEqual((question["kind"], antwort["kind"]), ("fragestunde_frage", "fragestunde_antwort"))
-        self.assertEqual(question["speaker"], {"xml_redner_id": None, "display_name": "Jan Köstering"})
-        self.assertEqual(question["text"], "Welche Konzepte gibt es?")
-        self.assertNotIn("Gastbeitrag", antwort["text"])
-        summary = dip.contribution_summary(parsed["agenda_items"])
-        self.assertEqual(summary["fragestunde_questions_without_person"], 1)
-        # The Gastbeitrag is no Beitrag, but it is counted rather than silently gone.
-        self.assertEqual(summary["fragestunde_unplaced_turns"], 1)
-        self.assertEqual(summary["xml_contribution_counts"], {"fragestunde_antwort": 1, "fragestunde_frage": 1})
+    def test_unresolved_fragestunde_rejects_the_sitting(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unresolved Fragestunde marker redner 11009999"):
+            dip.parse_protocol_xml(
+                "<dbtplenarprotokoll><sitzungsverlauf>"
+                '<tagesordnungspunkt top-id="T1"><p klasse="T_fett">Fragestunde</p>'
+                "<name>Vizepräsident Omid Nouripour:</name>"
+                '<p klasse="J">Wir kommen zur Frage 7 des Abgeordneten Jan Köstering von der Linken:</p>'
+                '<p klasse="p">Welche Konzepte gibt es?</p>'
+                '<p klasse="J">Frau Staatssekretärin, bitte.</p>'
+                '<p klasse="redner"><redner id="11003613"><name><vorname>Daniela</vorname><nachname>Ludwig</nachname>'
+                "<rolle><rolle_lang>Parl. Staatssekretärin</rolle_lang></rolle></name></redner>Daniela Ludwig:</p>"
+                '<p klasse="J_1">Die Konzepte sind vielfältig.</p>'
+                # Neither a Fraktion nor a rolle: no one the parser can place. The marker
+                # ends the answer before it; what follows belongs to no one.
+                '<p klasse="redner"><redner id="11009999"><name><vorname>Gast</vorname><nachname>Unbekannt</nachname>'
+                "</name></redner>Gast Unbekannt:</p>"
+                '<p klasse="J_1">Ein Gastbeitrag ohne Zuordnung.</p>'
+                "</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>"
+            )
 
     # Value: protects=the question the Sitzungsleitung reads out is credited to the MdB the announcement names, never to another whose surname is merely contained in the asker's;
     #   fails_when=names_asker matches a substring of the asker's name again;

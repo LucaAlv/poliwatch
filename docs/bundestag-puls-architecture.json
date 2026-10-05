@@ -5,10 +5,6 @@
     "title": "Bundestag-Puls — Runtime Architecture",
     "locale": "en",
     "quality_profile": "showcase",
-    "repository": {
-      "url": "https://github.com/LucaAlv/poliwatch",
-      "revision": "5a0fa498edb6277cf2b4eb574991e1a457f6ba04"
-    },
     "viewBox": [
       1350,
       550
@@ -133,14 +129,6 @@
       "size": [
         175,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/preview_dip_pulse_site.sh",
-          "line": 1,
-          "end_line": 118,
-          "label": "entry point"
-        }
       ]
     },
     {
@@ -148,7 +136,7 @@
       "type": "backend",
       "label": "Site Builder",
       "sublabel": "build_dip_pulse_site.py",
-      "tag": "orchestrator + publication state",
+      "tag": "--fetch-xml | --offline --repersist",
       "pos": [
         300,
         175
@@ -156,21 +144,14 @@
       "size": [
         190,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 9419,
-          "label": "main()"
-        }
       ]
     },
     {
       "id": "fetcher",
       "type": "backend",
       "label": "Fetch & Extract",
-      "sublabel": "validate_dip_protocol.py",
-      "tag": "XML parse + HTML scrape",
+      "sublabel": "validator + speech_kinds.py",
+      "tag": "Recover roles; split Rede / Beitrag",
       "pos": [
         555,
         175
@@ -178,13 +159,6 @@
       "size": [
         195,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/validate_dip_protocol.py",
-          "line": 1247,
-          "label": "build_report()"
-        }
       ]
     },
     {
@@ -192,7 +166,7 @@
       "type": "database",
       "label": "SQLite Store",
       "sublabel": "bundestag-pulse.sqlite",
-      "tag": "rebuilt per build",
+      "tag": "Staged rebuild; speech_rule_inputs",
       "pos": [
         810,
         175
@@ -200,13 +174,6 @@
       "size": [
         170,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/persist_dip_pulse_store.py",
-          "line": 53,
-          "label": "initialize()"
-        }
       ]
     },
     {
@@ -222,13 +189,6 @@
       "size": [
         195,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 8491,
-          "label": "render_site()"
-        }
       ]
     },
     {
@@ -281,7 +241,7 @@
       "type": "backend",
       "label": "Fakten Engine",
       "sublabel": "run_facts_engine()",
-      "tag": "before export",
+      "tag": "Refuse missing / stale rules",
       "pos": [
         1065,
         175
@@ -289,13 +249,6 @@
       "size": [
         195,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 9333,
-          "label": "compute facts"
-        }
       ]
     },
     {
@@ -303,7 +256,7 @@
       "type": "backend",
       "label": "Daten Export",
       "sublabel": "export_distribution_data()",
-      "tag": "SQLite copy + CSV + recipes",
+      "tag": "Guard rules; SQLite + CSV + recipes",
       "pos": [
         1065,
         310
@@ -311,13 +264,6 @@
       "size": [
         230,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 1806,
-          "label": "export"
-        }
       ]
     },
     {
@@ -333,13 +279,6 @@
       "size": [
         230,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 1861,
-          "label": "atomic manifest"
-        }
       ]
     },
     {
@@ -355,13 +294,6 @@
       "size": [
         230,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 9377,
-          "label": "override path"
-        }
       ]
     },
     {
@@ -377,13 +309,6 @@
       "size": [
         195,
         72
-      ],
-      "sources": [
-        {
-          "path": "scripts/build_dip_pulse_site.py",
-          "line": 2658,
-          "label": "page renderer"
-        }
       ]
     }
   ],
@@ -594,29 +519,29 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Build path",
+      "title": "Reden and Beiträge",
       "items": [
-        "Per sitting: XML transcript, DIP joins, roll-call scrape, then data/*.json and SQLite.",
-        "Fakten runs before the distribution export and static page render.",
-        "--offline reuses cached JSON; an unchanged export reuses its generation."
+        "speech_kinds.py classifies source turns; occurrence roles and historical headings are recovered before counting.",
+        "speeches holds Reden; contributions holds Kurzintervention, Erwiderung, question-format turns, Zwischenfrage and zu_protokoll.",
+        "Nested questions link to their container; unassigned written annex submissions stay at sitting level."
       ]
     },
     {
       "dot": "amber",
-      "title": "Sources and failure modes",
+      "title": "Explicit replay and refusal",
       "items": [
-        "DIP uses an API key and cursor paging; roll calls use Bundestag HTML.",
-        "abgeordnetenwatch throttles; optional LLM summaries send excerpts out.",
-        "Public components are fixed; optional acquisitions report their state."
+        "--fetch-xml validates public XML; report/XML SHA-256 detects interrupted or mismatched pairs.",
+        "--offline --repersist proves TOP association, invalidates stale summaries and stages a complete store.",
+        "Unresolved question-format turns reject the sitting; speech_rule_inputs certifies actually persisted report versions."
       ]
     },
     {
       "dot": "rose",
-      "title": "Trust boundaries",
+      "title": "Output boundaries",
       "items": [
-        "Keys stay in gitignored .env.local; the preview binds 127.0.0.1 by default.",
-        "datenstand.json selects g-<hash>/; --data-manifest can select a local file or URL.",
-        "data/ ships with the pages, including the cached DIP JSON and SQLite store — hosting the output makes the whole cache public."
+        "Missing/stale persisted rules stop offline output, facts and exports; repair requires explicit replay.",
+        "DIP mismatches remain structured diagnostics; disagreement alone does not reject a parse.",
+        "Distribution copies retain rule provenance and their separate distribution sentinel; only successful stages are promoted."
       ]
     }
   ]

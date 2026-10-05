@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.0.0] - 2026-10-05
+
+### Added
+
+- Read nested Zwischenfragen and explicitly written submissions as separate Beiträge, with their own text, speaker and source links. Written submissions without a proven Tagesordnungspunkt appear with the sitting; they do not count as delivered Reden.
+- Rebuild cached reports with `--offline --repersist` under the current counting rules. Facts, exports and store-backed pages refuse older rule provenance and name the rebuild needed to refresh it.
+
+### Fixed
+
+- Historical Befragung and Fragestunde sources now use the role printed on each occurrence, recognised headings and explicit question/answer evidence. Unresolved or contradictory source evidence rejects the affected sitting instead of silently counting it as a Rede.
+- Kurzintervention classification distinguishes grants from refusals and closing announcements, while read-out questions receive an asker only when the sitting's source evidence identifies one uniquely.
+- Cached replay proves each TOP association before carrying votes or enrichment forward, checks paired XML hashes, and leaves accepted outputs intact when source matching fails.
+- Vote receipts take their sitting id, document number and date from one authoritative source row, including when duplicate or stale links exist.
+
 ## [0.14.0.0] - 2026-10-04
 
 ### Added

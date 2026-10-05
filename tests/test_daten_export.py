@@ -159,6 +159,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                    VALUES ('speech-5900', '5900', ?, 'R1', 1, ?, 1, 1, 50, 'x', 'x', ?, ?)""",
                 (ai, mp_id, now, now),
             )
+        conn.execute("INSERT INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        conn.commit()
         conn.close()
 
         no_votes_conn = pulse_store.connect(no_votes_db)
@@ -229,13 +231,13 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_four_csvs_named_and_headered(self) -> None:
+    def test_all_twenty_five_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 24)
+        self.assertEqual(len(csv_files), 25)
         for name in ("fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz"):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)

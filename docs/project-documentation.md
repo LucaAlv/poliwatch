@@ -220,7 +220,7 @@ Protocol extraction and enrichment engine. Given a DIP protocol id or document n
 - loads `.env.local` without overriding already-exported variables,
 - fetches the official DIP Plenarprotokoll metadata,
 - downloads the official XML transcript,
-- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen; `scripts/speech_kinds.py` decides what in the XML is a Rede and what is a Beitrag of another kind (Kurzintervention, Erwiderung, Frage or Antwort of a Befragung or Fragestunde), so only Reden land in `xml_speakers` and the rest in `xml_contributions`, compared per Sitzung with DIP's Kurzintervention and Erwiderung counts (a difference is a warning); the report's `validation_summary.speech_kinds_version` marks the counting rule it was parsed under,
+- parses agenda items, page ranges, speeches, speakers, and XML-linked Drucksachen; `scripts/speech_kinds.py` decides what in the XML is a Rede and what is a Beitrag of another kind (Zwischenfrage, explicitly typed written submission, Kurzintervention, Erwiderung, or a question/answer of a Befragung or Fragestunde), so only Reden land in `xml_speakers` and the rest in `xml_contributions`; explicitly typed written submissions without a source-supported TOP remain at sitting level. DIP kind differences are retained in a diagnostic artifact and summarized by a warning. The report's `validation_summary.speech_kinds_version` records its parsed rule, while `speech_rule_inputs` records the rule version actually persisted for each protocol,
 - fetches related DIP `/vorgangsposition`, `/aktivitaet`, and `/person` records,
 - scans Bundestag roll-call vote pages, first matches by same-day protocol plus Drucksachennummer, then tries an unambiguous title match against TOP headings and linked Vorgang titles; a fetched vote with no unique TOP remains attached to the Sitzung,
 - scrapes each vote's own detail page for bundestag.de's stated Beschluss result (falling back to a yes/no majority when none is stated) and for a link to that vote's XLSX Namensliste export on a separate Namenslisten list page, matched by date and normalized title,
@@ -402,7 +402,7 @@ Common options:
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
 | `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
-| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), after re-reading Reden and Beiträge of each report from its cached XML in `OUTPUT_DIR/data/xml/` (a report with none keeps what it holds, with a warning). The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
+| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week and prints it as "Auswertung vom" |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
@@ -617,7 +617,8 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `documents`
 - `agenda_item_documents`
 - `speeches` (Reden only)
-- `contributions` (Beiträge that are no Rede: Kurzintervention, Erwiderung, Frage and Antwort of a Befragung or Fragestunde, typed by `kind`; classified by `scripts/speech_kinds.py`)
+- `contributions` (Beiträge that are no Rede: Zwischenfragen, explicitly typed written submissions, Kurzinterventionen, Erwiderungen, and questions/answers of a Befragung or Fragestunde, typed by `kind`; classified by `scripts/speech_kinds.py`)
+- `speech_rule_inputs` (the counting-rule version actually persisted for each protocol; consumers reject missing or stale versions)
 - `votes`
 - `agenda_item_votes`
 - `vote_documents`
