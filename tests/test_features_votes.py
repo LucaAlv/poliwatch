@@ -210,6 +210,23 @@ class VoteMemberProfileLinkTests(unittest.TestCase):
         markup = render_vote_summary(self._item(member), mp_lookup={"other": "other-person"})
         self.assertIn('<a href="https://www.bundestag.de/abgeordnete/ada-beispiel">Ada Beispiel</a>', markup)
 
+    def test_invalid_profile_fallback_keeps_member_and_vote_unlinked(self) -> None:
+        for profile_url in ("https://evil.example/profile/ada", "javascript:alert(1)", "https://[invalid"):
+            with self.subTest(profile_url=profile_url):
+                member = {"name": "Ada Beispiel", "faction": "SPD", "vote": "yes", "profile_url": profile_url}
+                markup = render_vote_summary(self._item(member), mp_lookup={})
+                self.assertIn('<li class="member-vote-row"><strong>Ada Beispiel</strong>', markup)
+                self.assertIn('<span class="vote-pill vote-yes">ja</span>', markup)
+                self.assertNotIn('<strong><a href=', markup)
+                self.assertNotIn(profile_url, markup)
+
+    def test_internal_profile_wins_over_invalid_external_url(self) -> None:
+        from stable_ids import vote_member_occurrence_id
+        key = vote_member_occurrence_id("vote-1", "Ada Beispiel", "SPD")
+        member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://evil.example/profile/ada"}
+        markup = render_vote_summary(self._item(member), mp_lookup={key: "ada-beispiel"})
+        self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
+
     def test_member_without_any_profile_is_plain_text(self) -> None:
         markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={})
         self.assertIn("<strong>Ada Beispiel</strong>", markup)

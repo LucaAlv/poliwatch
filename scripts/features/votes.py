@@ -169,7 +169,10 @@ def render_vote_summary(
                 )
                 href = internal_href
                 if not href and member.get("profile_url"):
-                    href = html.source_url(member["profile_url"], "public-profile")
+                    try:
+                        href = html.source_url(member["profile_url"], "public-profile")
+                    except (html.publication.PublicationStateError, ValueError):
+                        href = None
                 name_html = f'<a href="{html.esc(href)}">{name}</a>' if href else name
                 rows.append(
                     '<li class="member-vote-row">'

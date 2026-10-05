@@ -532,9 +532,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
 
     # Pass 3: a roll-call record is a third source, not another roster person.
     # Attach it only to one unambiguous roster/speaker component of its name
-    # and party. Multiple Bundestag profile versions may describe that person;
-    # their URLs are attributes, not conflicting Personenkennungen. Distinct
-    # records voting in the same roll call cannot be guessed to be one person.
+    # and party. The anchor's profile may come from a different source, but
+    # conflicting voter profiles make the bucket ambiguous even when those
+    # voters appear in different roll calls. Distinct records voting in the
+    # same roll call cannot be guessed to be one person either.
     for records in buckets.values():
         roots = {find(root) for root in records}
         voters = sorted(root for root in roots if vote_only(root))
@@ -547,8 +548,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
             continue
         groups = [rows_of[root] for root in [anchor, *voters]]
         votes = [set().union(*(member.get("vote_ids", set()) for member in group)) for group in groups]
-        ids = [{kind: values for kind, values in _merge_external_ids(group).items() if kind != "profile"}
-               for group in groups]
+        ids = [_merge_external_ids(group) for group in groups]
+        # Compare profile URLs between voters only: a speaker may have an
+        # abgeordnetenwatch profile while a voter has a Bundestag profile.
+        ids[0]["profile"] = set()
         partitions = {member.get("partition") for group in groups for member in group if member.get("partition")}
         if len(partitions) > 1 or any(
             votes[a] & votes[b] or _external_ids_conflict(ids[a], ids[b])

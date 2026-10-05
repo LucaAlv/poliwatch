@@ -155,13 +155,12 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 _, replay_lookup = site.collect_abgeordnete(conn)
                 self.assertEqual(replay_lookup, lookup)
 
-    def test_vote_records_join_one_speaker_across_bundestag_profile_versions(self) -> None:
+    def test_vote_records_with_a_shared_profile_join_one_speaker(self) -> None:
         report = report_with_speaker_and_vote()
         member = report["agenda_items"][0]["votes"][0]["members"][0]
         member["name"] = "von Beispiel, Erika"
         second = copy.deepcopy(report["agenda_items"][0]["votes"][0])
         second["id"] = "vote-2"
-        second["members"][0]["profile_url"] += "-new"
         report["sitting_votes"] = [second]
         conn = memory_conn()
         self.addCleanup(conn.close)
@@ -228,7 +227,8 @@ class AbgeordneteIdentityTests(unittest.TestCase):
             self.assertEqual(groups(incremental), before)
 
     def test_vote_name_guesses_refuse_ambiguous_or_conflicting_people(self) -> None:
-        for case in ("two speakers", "two roster persons", "trusted id conflict", "same vote namesakes", "different party"):
+        for case in ("two speakers", "two roster persons", "trusted id conflict", "same vote namesakes",
+                     "different vote namesakes with speaker", "different vote namesakes with roster", "different party"):
             with self.subTest(case=case):
                 conn = memory_conn()
                 self.addCleanup(conn.close)
@@ -253,6 +253,17 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 elif case == "same vote namesakes":
                     other = {**member, "name": "Dr. Erika von Beispiel", "profile_url": member["profile_url"]+"-other"}
                     item["votes"][0]["members"].append(other)
+                elif case.startswith("different vote namesakes"):
+                    second = copy.deepcopy(item["votes"][0])
+                    second["id"] = "vote-2"
+                    second["members"][0]["profile_url"] += "-other"
+                    report["sitting_votes"] = [second]
+                    if case.endswith("with roster"):
+                        item["xml_speakers"] = []
+                        now = store.utc_now()
+                        store.upsert_mp(conn, now=now, display_name="Erika von Beispiel", is_mdb=True,
+                                        party_id=store.upsert_party(conn, "SPD", now), identity_key="dip:d1",
+                                        dip_person_id="d1", occurrence_id=roster_occurrence_id("d1"))
                 else:
                     member["faction"] = "FDP"
                 store.persist_report(conn, report)
@@ -260,9 +271,15 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 _, lookup = site.collect_abgeordnete(conn)
                 key = vote_member_occurrence_id("vote-1", store.clean(member["name"]), member["faction"])
                 self.assertNotIn(key, lookup)
-                speaker_person = lookup["xml:xml-1"]
+                anchor_key = "dip:d1" if case.endswith("with roster") else "xml:xml-1"
+                speaker_person = lookup[anchor_key]
                 vote_person = conn.execute("SELECT person_id FROM person_bindings WHERE id=?", (key,)).fetchone()[0]
                 self.assertNotEqual(vote_person, speaker_person)
+                if case.startswith("different vote namesakes"):
+                    second_key = vote_member_occurrence_id("vote-2", member["name"], "SPD")
+                    self.assertNotIn(second_key, lookup)
+                    second_person = conn.execute("SELECT person_id FROM person_bindings WHERE id=?", (second_key,)).fetchone()[0]
+                    self.assertEqual(len({speaker_person, vote_person, second_person}), 3)
 
     def test_speaker_and_vote_member_merge_with_vote_tally(self) -> None:
         report = report_with_speaker_and_vote()
