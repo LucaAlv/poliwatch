@@ -1,6 +1,673 @@
 <?xml version='1.0' encoding='utf-8'?>
 <dbtplenarprotokoll vertrieb="Bundesanzeiger Verlag GmbH, Postfach 1 0 05 34, 50445 Köln, Telefon (02 21) 97 66 83 40, Fax (02 21) 97 66 83 44, www.bundesanzeiger-verlag.de" herstellung="H. Heenemann GmbH  Co. KG, Buch- und Offsetdruckerei, Bessemerstraße 83–91, 12103 Berlin, www.heenemann-druck.de" sitzung-ort="Berlin" herausgeber="Deutscher Bundestag" issn="0722-7980" wahlperiode="20" sitzung-nr="144" sitzung-datum="14.12.2023" sitzung-start-uhrzeit="9:00" sitzung-ende-uhrzeit="21:31" sitzung-naechste-datum="15.12.2023" start-seitennr="18215">
   <sitzungsverlauf>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 9">
+      <p klasse="J">Ich rufe auf die Tagesordnungspunkte 9 a bis 9 c:</p>
+      <p klasse="T_NaS">
+        <a id="t1" />		a)	–	Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur Beschleunigung der Digitalisierung des Gesundheitswesens (Digital-Gesetz – DigiG) </p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/090/2009048.pdf">20/9048</a>
+      </p>
+      <p klasse="T_NaS">				Beschlussempfehlung und Bericht des Ausschusses für Gesundheit (14. Ausschuss)</p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/097/2009788.pdf">20/9788</a>
+      </p>
+      <p klasse="T_NaS">
+        <a id="t2" />			–	Bericht des Haushaltsausschusses (8. Ausschuss) gemäß § 96 der Geschäftsordnung </p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/097/2009789.pdf">20/9789</a>
+      </p>
+      <p klasse="T_NaS">
+        <a id="t3" />		b)	Beratung der Beschlussempfehlung und des Berichts des Ausschusses für Gesundheit (14. Ausschuss) zu dem Antrag der Abgeordneten Martin Sichert, Jörg Schneider, Dr. Christina Baum, weiterer Abgeordneter und der Fraktion der AfD </p>
+      <p klasse="T_fett">			Medizinbürokratismus stoppen – Behandeln statt verwalten</p>
+      <p klasse="T_Drs">			Drucksachen <a href="https://dserver.bundestag.de/btd/20/046/2004670.pdf">20/4670</a>, <a href="https://dserver.bundestag.de/btd/20/097/2009788.pdf">20/9788</a>
+      </p>
+      <p klasse="T_NaS">
+        <a id="t4" />		c)	–	Zweite und dritte Beratung des von der Bundesregierung eingebrachten Entwurfs eines Gesetzes zur verbesserten Nutzung von Gesundheitsdaten (Gesundheitsdatennutzungsgesetz – GDNG) </p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/090/2009046.pdf">20/9046</a>
+      </p>
+      <p klasse="T_NaS">				Beschlussempfehlung und Bericht des Ausschusses für Gesundheit (14. Ausschuss)</p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/097/2009785.pdf">20/9785</a>
+      </p>
+      <p klasse="T_NaS">
+        <a id="t5" />			–	Bericht des Haushaltsausschusses (8. Ausschuss) gemäß § 96 der Geschäftsordnung </p>
+      <p klasse="T_Drs">				Drucksache <a href="https://dserver.bundestag.de/btd/20/097/2009786.pdf">20/9786</a>
+      </p>
+      <p klasse="J">Zu dem Gesetzentwurf der Bundesregierung zur Beschleunigung der Digitalisierung des Gesundheitswesens liegt ein Entschließungsantrag der Fraktion der CDU/CSU vor.</p>
+      <p klasse="J">Für die Aussprache wurde eine Dauer von 68 Minuten vereinbart.</p>
+      <p klasse="J">Ich eröffne die Aussprache. Zuerst hat das Wort für die Bundesregierung Dr. Karl Lauterbach, Bundesminister für Gesundheit.</p>
+      <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+      <rede id="ID2014400100">
+        <p klasse="redner">
+          <a id="r1" />
+          <redner id="11003797">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Karl</vorname>
+              <nachname>Lauterbach</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Gesundheit</rolle_lang>
+                <rolle_kurz>Bundesminister BMG</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Dr. Karl Lauterbach, Bundesminister für Gesundheit:</p>
+        <p klasse="J_1">Frau Präsidentin! Meine sehr verehrten Kolleginnen und Kollegen! Der Deutsche Bundestag stimmt heute über zwei sehr wichtige Gesetze ab: das Digital-Gesetz und das Gesundheitsdatennutzungsgesetz. Um im Bild der Digitalisierung zu bleiben: Dies ist für die Digitalisierung in Deutschland und im Gesundheitssystem insgesamt ein Quantensprung.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Diese Gesetze gehen auf Grundlagen zurück, die wir schon vor 20 Jahren geschaffen haben. Vor 20 Jahren wurde der Einstieg in die damals noch sogenannte elektronische Patientenkarte gesucht. Das Ziel war damals, dass die Daten, die für die Behandlung eines Patienten notwendig sind, auch am Platz sind, wenn die Behandlung stattfindet. Das war nicht der Fall.</p>
+        <p klasse="J">Heute, 20 Jahre später, Milliarden Euro später, müssen wir einräumen: Es ist nach wie vor genauso wie vor 20 Jahren. Das kann nicht so bleiben. Wir können es nicht so lassen. Wir müssen endlich den Anschluss finden, nach vorne gehen, die Digitalisierung in unserem Gesundheitssystem ermöglichen.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Diese Gesetze haben einen ganz konkreten Nutzen für den Patienten. Versetzen Sie sich in die Situation: Sie sind als chronisch kranker Patient bei einem Facharzt neu einbestellt. Dann ist es die Regel, dass zu dem Zeitpunkt, an dem man dem Arzt begegnet, ein Teil der Befunde nicht da ist, die Röntgenbilder nicht da sind, ein Teil der Laborwerte nicht da ist. Das ist Alltag. Wo sind diese Daten? Sie sind verteilt auf die Server der Praxen und der Krankenhäuser, in denen der Patient in der Vergangenheit behandelt wurde.</p>
+        <p klasse="J">Wie geht es dann weiter? Ein Teil dieser Daten wird durch unnötige Doppeluntersuchungen gewonnen. Oft findet die Behandlung aber dann auch ohne diese Daten statt. Das führt zu Fehldiagnosen, zu Behandlungsfehlern, in jedem Fall zu einer suboptimalen Therapie. Das Geld wurde ausgegeben, aber die Daten sind nicht da, wo man sie braucht, und die Behandlung ist deutlich schlechter, als sie sein könnte. Das darf nicht mehr so sein. Jetzt werden die Daten da sein. Das ist eine deutliche Verbesserung aus der Perspektive der Patienten.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Auch für einen Arzt oder eine Ärztin wird es bei der Behandlung natürlich sehr viel besser. Denn wenn sie die Befunde vorliegen haben, können sie natürlich auch ganz anders mit dem Patienten sprechen. Das ganze Gespräch ist besser. Sie wissen, was in der Vergangenheit stattgefunden hat. Sie haben die Daten zeitnah vorliegen. Auch die veranlassten Laborwerte sind da. Sie können die eigenen Daten über das PVS-System in Zukunft ökonomisch, schnell und simpel in die elektronische Patientenakte eingeben. Eine viel bessere Medizin, viel weniger Dokumentation, mehr Daten, mehr Sicherheit! Gleichzeitig werden diese Daten auf Vollständigkeit elektronisch überprüft. Viel weniger Fehler! Einfach in einem Satz gesagt: Eine bessere, effizientere Medizin, die anderswo schon praktiziert wird, die wir kennen, über die wir Jahre geredet haben, wird jetzt für 80 Prozent der Versicherten voraussichtlich schon 2025 die Basis sein. Das ist ein wichtiger Schritt nach vorne.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Wir ermöglichen auch Medizin, die es bisher gar nicht gab. Die Telemedizin zum Beispiel wird deutlich ausgedehnt, Telemedizin in Hochschulambulanzen, in der Psychotherapie. Wir entlasten die Praxen, sorgen aber für mehr und bessere Versorgung. Telemedizin ist für den Patienten eine neue Möglichkeit.</p>
+        <p klasse="J">Digitale Gesundheitsanwendungen verbessern – das ist belegt – die Versorgung von chronisch Kranken, zum Beispiel bei Diabetes, bei Herzinsuffizienz, bei Krebserkrankungen. Diese digitalen Anwendungen werden mit der elektronischen Patientenakte verknüpft, sodass auch diese Daten nutzbar gemacht werden. Eine neue Medizin, beschleunigt und besser, wird durch digitale Anwendungen, Telemedizin und das E-Rezept, ermöglicht.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Das Gesundheitsdatennutzungsgesetz greift wie ein Zahnrad in das Gesetz zur digitalen Patientenakte; denn mit der digitalen Nutzung der Gesundheitsdaten werden wir diese so aufbereiten, dass sie für die Forschung verwendet werden können. Nach dem GDNG, dem Gesundheitsdatennutzungsgesetz, können die Daten aus der ePA, Daten aus den Abrechnungen der Krankenkassen, Registerdaten, zum Beispiel Daten aus den Krebsregistern, Genomdaten zusammengeführt werden in einer vertraulichen Arbeitsumgebung, in einem datengeschützten Raum – pseudonymisiert –, sodass diese Daten für Studien ausgewertet werden können. Sie können ausgewertet werden für das Trainieren von künstlicher Intelligenz. Sie können genutzt werden für die verbesserte Behandlung des Patienten im Rahmen der personalisierten Medizin. Gendaten, Studiendaten, Abrechnungsdaten, ePA-Daten kommen zusammen, werden ausgewertet und werden dann genutzt, um die Versorgung des Patienten zu verbessern. Das ist eine ganz andere Medizin, die wir hier machen. Das ist ein Durchbruch, der überall erwartet wird.</p>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Herr Lauterbach, gestatten Sie? – Ich habe schon zwei Meldungen von Kollegen gesehen, die gerne eine Zwischenfrage stellen oder eine Zwischenbemerkung machen möchten, einmal von der Abgeordneten Vogler. Gestatten Sie das?</p>
+        <p klasse="redner">
+          <redner id="11003797">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Karl</vorname>
+              <nachname>Lauterbach</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Gesundheit</rolle_lang>
+                <rolle_kurz>Bundesminister BMG</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Dr. Karl Lauterbach, Bundesminister für Gesundheit:</p>
+        <p klasse="J_1">Ja, gerne.</p>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Frau Vogler.</p>
+        <p klasse="redner">
+          <a id="r2" />
+          <redner id="11004181">
+            <name>
+              <vorname>Kathrin</vorname>
+              <nachname>Vogler</nachname>
+              <fraktion>fraktionslos</fraktion>
+            </name>
+          </redner>Kathrin Vogler (fraktionslos):</p>
+        <p klasse="J_1">Vielen Dank. – Herr Minister, Sie loben jetzt Ihre Gesetze zur Digitalisierung des Gesundheitswesens und insbesondere, dass Sie einen geschützten Datenraum herstellen. Haben Sie eigentlich zur Kenntnis genommen, dass es in der Vergangenheit schon erfolgreiche Angriffe auf das Forschungsdatenzentrum Gesundheit und auf die Krankenkassen gab, wo Patientinnendaten gespeichert sind? Haben Sie auch zur Kenntnis genommen, dass es einen offenen Brief von vielen zivilgesellschaftlichen Organisationen, darunter wichtige wie der Verbraucherzentrale Bundesverband, die Deutsche Aidshilfe und der Chaos Computer Club, gibt, die Ihre Digitalisierungsgesetze als nicht vertrauenswürdig beschrieben?</p>
+        <p klasse="J">Glauben Sie, dass das Vertrauen der Patientinnen und Patienten in die elektronische Patientenakte, deren Nutzen ja offenbar bisher nur 1 Prozent der Patientinnen und Patienten für sich entdeckt hat, gesteigert wird, wenn die Gefahr besteht, dass ihre Daten für alles Mögliche verwendet werden können, ohne dass sie extra zustimmen? Das ist ja die Konsequenz aus der Opt-out-Lösung, die Sie beschreiben.</p>
+        <p klasse="J">Wie definieren Sie eigentlich den Begriff der gemeinwohlorientierten Forschung oder der gemeinwohlorientierten Nutzung dieser Daten? Im Gesundheitsdatennutzungsgesetz ist alles Mögliche definiert. Aber genau dieser Begriff, der so zentral ist, der beschreibt, –</p>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Frau Vogler, kommen Sie zum Punkt.</p>
+        <p klasse="redner">
+          <redner id="11004181">
+            <name>
+              <vorname>Kathrin</vorname>
+              <nachname>Vogler</nachname>
+              <fraktion>fraktionslos</fraktion>
+            </name>
+          </redner>Kathrin Vogler (fraktionslos):</p>
+        <p klasse="J_1">– wofür diese Daten eigentlich genutzt werden können, ist überhaupt nicht definiert. Wie beschreiben Sie das?</p>
+        <p klasse="redner">
+          <redner id="11003797">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Karl</vorname>
+              <nachname>Lauterbach</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Gesundheit</rolle_lang>
+                <rolle_kurz>Bundesminister BMG</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Dr. Karl Lauterbach, Bundesminister für Gesundheit:</p>
+        <p klasse="J_1">Vielen Dank für diese Frage. – Ich möchte sie konkret und unpolemisch beantworten. Ich will aber auch darauf hinweisen, dass es genau diese Haltung gewesen ist, die dafür gesorgt hat, dass wir zehn Jahre lang keinen Fortschritt gehabt haben.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="O">Hier werden Ängste geschürt, die wissenschaftlich nicht begründet sind. Die vertrauenswürdige Umgebung dieses Systems, von dem Sie sagen, das habe in der Vergangenheit nicht funktioniert, gibt es ja erst seit ganz kurzer Zeit. Das Confidential Computing, das durch Hardware- und Softwarestruktur abgesichert ist – ein solches System konnte bisher noch nie gehackt werden –, gibt es noch nicht lange. Das nutzen wir. Wir nutzen die modernste Technologie.</p>
+        <p klasse="J">Trotzdem ist es wichtig, dass wir jeden mitnehmen. Es muss hier ganz klar gesagt werden: Derjenige, der nicht will, dass seine Daten zum Beispiel für die Pharmaforschung genutzt werden – nennen wir es doch beim Namen; das wird wahrscheinlich auch der Hintergrund Ihrer Frage sein –, der kann das abwählen; dann werden sie dafür nicht verwendet. Die Zwecke bestimmt der Patient selbst. Aber die Mehrheit der Patienten wird wünschen, dass wir ihre Daten verwenden, zum Beispiel für eine bessere Krebsbehandlung.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="O">Die Mehrheit der Menschen wird wünschen, dass wir ihre Daten nutzen, um ihre Kinder besser behandeln zu können. Somit gehen wir hier mit der Mehrheit, die sich das genau anschaut und uns vertraut und den vielen Wissenschaftlern und den Fachgesellschaften vertraut, die sich für ein solches Gesetz viele Jahre vergeblich eingesetzt haben.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Herr Lauterbach, gestatten Sie eine zweite Frage, diesmal vom Kollegen Tino Sorge von der CDU/CSU-Fraktion?</p>
+        <p klasse="redner">
+          <redner id="11003797">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Karl</vorname>
+              <nachname>Lauterbach</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Gesundheit</rolle_lang>
+                <rolle_kurz>Bundesminister BMG</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Dr. Karl Lauterbach, Bundesminister für Gesundheit:</p>
+        <p klasse="J_1">Die würde ich dann auch zulassen.</p>
+        <p klasse="redner">
+          <a id="r3" />
+          <redner id="11004409">
+            <name>
+              <vorname>Tino</vorname>
+              <nachname>Sorge</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Tino Sorge (CDU/CSU):</p>
+        <p klasse="J_1">Vielen Dank. – Herr Gesundheitsminister, ich unterstreiche – da sind wir uns einig –, dass wir aufgrund der Debatten in den letzten Jahren in der Digitalisierung nicht vorangekommen sind und eher risikogetrieben waren. Der Ansatz, chancengetrieben die Digitalisierung voranzubringen, ist völlig richtig. Das gilt auch für das Thema Datennutzung. Es gilt: „Daten retten leben“, nicht: „Datennutzung tötet Menschen“.</p>
+        <p klasse="J">Ein anderer Punkt interessiert mich ganz konkret. In der letzten Legislatur waren Sie federführend für die Gesundheitspolitik der SPD verantwortlich. Wir waren in einer Koalition und haben auch im Digitalisierungsbereich gemeinsam viele sehr gute Dinge auf den Weg gebracht. Ich kann mich daran erinnern: In der Diskussion zum Forschungsdatenzentrum, wo Abrechnungsdaten, Versorgungsdaten und perspektivisch weitere wichtige Daten gesammelt werden, ging es damals um die Frage, ob auch private Unternehmen, die ja einen Großteil der Innovationen im Gesundheitswesen generieren, eine Antragsbefugnis bekommen, um auf die Daten mit Einwilligung der Patienten zuzugreifen und so überhaupt erst in die Lage versetzt zu werden, neue Gentherapien, Krebstherapien und Behandlungsansätze zu entwickeln. Da waren Sie es, der federführend für Ihre Fraktion gesagt hat – es tut mir leid, dass ich Ihnen das so vorwerfen muss –: Nein, wir wollen das nicht. – Ich kann mich daran erinnern: Beim Patientendatenschutzgesetz haben wir als Union zweimal den Anlauf unternommen, für Patientinnen und Patienten diese Daten nutzbar zu machen.</p>
+        <p klasse="J">Vor diesem Hintergrund interessiert mich, wie dieser Sinneswandel bei Ihnen zustande gekommen ist und warum wir das nicht schon in der letzten Legislatur gemeinsam hinbekommen haben.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <p klasse="redner">
+          <redner id="11003797">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Karl</vorname>
+              <nachname>Lauterbach</nachname>
+              <rolle>
+                <rolle_lang>Bundesminister für Gesundheit</rolle_lang>
+                <rolle_kurz>Bundesminister BMG</rolle_kurz>
+              </rolle>
+            </name>
+          </redner>Dr. Karl Lauterbach, Bundesminister für Gesundheit:</p>
+        <p klasse="J_1">Vielen Dank für diese Frage. – Ich muss korrigieren: Ich war, als dieses Gesetz damals besprochen wurde, nicht federführend für die Digitalisierung in meiner Fraktion zuständig.</p>
+        <kommentar>(Tino Sorge [CDU/CSU]: Sie waren doch für Gesundheit zuständig!)</kommentar>
+        <p klasse="O">Ich persönlich habe es nie falsch gefunden, dass Wissenschaftler, Pharmafirmen und Medizinproduktehersteller gemeinsam forschen, wenn der Zweck klar definiert ist. Diese Vorbehalte habe ich nicht. Vielmehr ist ganz klar: Es ist kein Problem darin zu sehen, wenn Firmen – Pharmafirmen, Digitalfirmen, KI-Firmen, Medizinproduktefirmen – gute Produkte entwickeln mit diesen Daten, solange das Gemeinwohl dabei im Vordergrund steht und nicht der Profit. Das sichern wir durch dieses Gesetz.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Die Versorgung wird für den Einzelnen besser werden. Die Deutsche Krebsgesellschaft verlangt nach einer solchen Regelung seit langer Zeit, aber auch viele andere wissenschaftliche Fachgesellschaften. Wir können es uns auch nicht leisten, dass wichtige Unternehmen in der Krebsforschung wie zum Beispiel BioNTech ihre Forschung nach England verlegen. BioNTech hat die Forschung zu Krebs in einem wichtigen Bereich nach England verlegt, weil man dort bessere Daten hat. Wir werden durch diese Gesetze in Zukunft Daten haben, die besser sind als die in England, und zwar deshalb, weil unser Datenschatz größer ist – wir sind ein größeres Land – und weil unsere Krankenkassen die Daten deutschlandweit auswerten lassen, nicht auf Regionen beschränkt, wie das beim NHS der Fall ist. Somit werden wir langfristig in Europa das interessanteste Land sein, in dem Wissenschaftler solche Studien überhaupt machen können. Wir schaffen eine besonders moderne Struktur.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Ich möchte hier auch sagen: Ich halte es für richtig, wenn wir in diesen Bereichen neue Arbeitsplätze schaffen. Das muss ja auch mitbedacht werden. Wir müssen neue Arbeitsplätze aufbauen, damit wir unsere Kernkompetenzen in der Grundlagenforschung nutzen können, um den nächsten Schritt in die klinische Forschung, in die Produktentwicklung zu gehen. Was ist falsch daran, wenn Gewinne gemacht werden und Arbeitsplätze geschaffen werden im Zusammenhang mit einer besseren Medizin in der Krebsbehandlung zum Beispiel, die dann zum Schluss der ganzen Welt zugutekommen könnte? Das ist nicht unethisch, sondern das, was wir lange Zeit benötigt haben.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP – Tino Sorge [CDU/CSU]: Das sind ja ganz neue Töne!)</kommentar>
+        <p klasse="J">Wir werden diese Gesetze mit einem Medizinforschungsgesetz begleiten, damit die Medizinforschung als Standortvorteil in Deutschland deutlich ausgebaut wird. Wir werden auch die gematik als die zentrale Struktur der Weiterentwicklung der Technologie vereinfachen und in eine digitale Netzagentur überführen, über die der Bund dann die Fachaufsicht hat. Wir werden die Projekte, die wir heute angestoßen haben, weiterführen.</p>
+        <p klasse="J">Aber insgesamt muss hier in den Vordergrund gestellt werden: Das ist keine abstrakte Angelegenheit, sondern etwas, was die tägliche Arbeit von Ärztinnen und Ärzten verändern, verbessern und vereinfachen wird. Die Daten werden schnell und zuverlässig da sein. Das wird in Deutschland eine Medizin ermöglichen, auf die wir warten. Es ist bei Wissenschaftlern unstrittig, dass künstliche Intelligenz und große Datenanalysen die Medizin mehr verändern werden als jede andere wissenschaftliche Errungenschaft, die wir derzeit beobachten. An diesem Fortschritt soll Deutschland, sollen auch die deutschen Patientinnen und Patienten teilhaben. Daher bitte ich Sie um Zustimmung zu diesen beiden wichtigen Gesetzen.</p>
+        <p klasse="J">Ich danke Ihnen für die Aufmerksamkeit.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die CDU/CSU-Fraktion Erwin Rüddel.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+      </rede>
+      <rede id="ID2014400200">
+        <p klasse="redner">
+          <a id="r4" />
+          <redner id="11004139">
+            <name>
+              <vorname>Erwin</vorname>
+              <nachname>Rüddel</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Erwin Rüddel (CDU/CSU):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrte Damen und Herren! Grundsätzlich unterstützt die CDU/CSU-Fraktion die Intentionen dieser beiden Gesetzesinitiativen, des Digital-Gesetzes und des Gesundheitsdatennutzungsgesetzes. Beide Gesetze weisen in die richtige Richtung.</p>
+        <kommentar>(Maria Klein-Schmeink [BÜNDNIS 90/DIE GRÜNEN]: Wenn es schon so anfängt!)</kommentar>
+        <p klasse="O">Die Notwendigkeit einer digitalen Transformation im Gesundheitswesen wird endlich anerkannt und angegangen. Die in der letzten Wahlperiode begonnene Arbeit wird somit fortgesetzt.</p>
+        <p klasse="J">Eine gut gemachte Digitalisierung bietet eine Vielzahl von Chancen im Gesundheitswesen. Darüber sind wir uns alle einig. Dennoch sehen wir uns aufgrund einiger inhaltlicher Schwächen gezwungen, uns zu enthalten.</p>
+        <p klasse="J">Die Digitalisierung im Gesundheitswesen birgt zweifellos das Potenzial für verbesserte Patientenversorgung, Effizienzsteigerungen und Fortschritte in der medizinischen Forschung. Die Schaffung digitaler Strukturen ist ein notwendiger Schritt, um mit den Herausforderungen der Medizin Schritt zu halten. Allerdings sehe ich auch Mängel. Kritisch sehe ich beispielsweise die geplante Aufnahme unstrukturierter Daten in die ePA auf Wunsch des Versicherten. Diese Daten können nicht systematisch durchsucht, ausgewertet und genutzt werden.</p>
+        <p klasse="J">Auch hätten wir uns gewünscht, dass Sie noch einen Schritt weitergehen und Anwendungsmöglichkeiten wie Telemonitoring, Telediagnostik und Telekonsile noch stärker ausgebaut hätten. Es müsste sichergestellt werden, dass die ePA stärker auf den jeweiligen Nutzen der verschiedenen Anwender ausgerichtet wird und das E-Rezept für alle Beteiligten praxistauglich, effizient und zeitsparend wird. Hier bleiben Sie hinter Ihren Möglichkeiten zurück.</p>
+        <p klasse="J">Dass bei mehreren Punkten das Gesundheitsministerium mittels Rechtsverordnung Näheres und Weiteres ohne Parlament regeln darf, sehen wir ebenfalls kritisch.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <p klasse="J">Es ist darüber hinaus Ihre Aufgabe, sicherzustellen, dass die Leistungserbringer in die Lage versetzt werden, die Aufgaben, die Sie ihnen übertragen, auch zu erfüllen. Ich würde mir wünschen, dass die niedergelassenen Ärzte mit wachsenden Aufgaben auch wachsende Unterstützung bekommen, zum Beispiel in Form eines Praxiszukunftsgesetzes. So wie wir Krankenhäuser mit einem Reifegradmodell in ihrem Digitalisierungsprozess unterstützen, so sollten wir auch die Ärzte im ambulanten Bereich unterstützen. Wir sind vom Mehrwert der Nutzung von Gesundheitsdaten für Forschungszwecke überzeugt. Die Möglichkeit, aus der Analyse großer Datensätze medizinische Erkenntnisse zu gewinnen, ist vielversprechend.</p>
+        <p klasse="J">Beim Gesundheitsdatennutzungsgesetz gilt allerdings das Gleiche wie beim Digital-Gesetz: Die Richtung ist richtig, aber es gibt inhaltliche Schwächen. So halten wir beispielsweise den Begriff der Gemeinwohlorientierung für falsch. Da es keine klare Definition dieses Begriffes gibt, besteht aus unserer Sicht die Gefahr einer politisch motivierten Interpretation.</p>
+        <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="O">Allen Akteuren mit einem legitimen Nutzungszweck müssen gleichberechtigte Datenzugänge und Nutzungsrechte gewährt werden. Das haben wir so auch in unserem Entschließungsantrag formuliert.</p>
+        <p klasse="J">Wir werden uns bei beiden Gesetzen enthalten. Denn wir hätten uns gewünscht, dass die Potenziale der Digitalisierung, die wir dringend benötigen, noch stärker genutzt werden, um damit den Weg für eine moderne, sichere und effektive Gesundheitsversorgung in der digitalen Ära zu ebnen.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die Fraktion Bündnis 90/Die Grünen Dr. Janosch Dahmen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+      </rede>
+      <rede id="ID2014400300">
+        <p klasse="redner">
+          <a id="r5" />
+          <redner id="11004962">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Janosch</vorname>
+              <nachname>Dahmen</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Dr. Janosch Dahmen (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrte Kolleginnen und Kollegen der demokratischen Fraktionen! Heute ist ein guter, ein wichtiger Tag für die Patientinnen und Patienten und das gesamte Gesundheitswesen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="O">Wir beschließen heute zwei wichtige Gesetze, die ein zentrales, umfassendes und grundsätzliches Update für die Digitalisierung unseres Gesundheitswesens bedeuten. Wir holen damit den Rückstand von 15 Jahren</p>
+        <kommentar>(Julia Klöckner [CDU/CSU]: 16 Jahren!)</kommentar>
+        <p klasse="O">verpasster Digitalisierungsbemühungen endlich auf und bringen das System auf den aktuellen Stand der Gegenwart. Damit stellen wir die Sicherheit für Patientinnen und Patienten, bessere Versorgung, Effizienz und Qualität in den Mittelpunkt der Digitalisierungsstrategie und der Modernisierung unseres Landes.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="J">Ich will auf einige der in den vorangegangenen Minuten geäußerten Einwände vonseiten der Union, warum sie sich bei diesem Gesetz enthalten will, eingehen.</p>
+        <p klasse="J">Wie ist denn der Istzustand? Bevor ich in den Bundestag eingezogen bin, war ich als Notarzt tätig. Aus dieser Zeit möchte ich Ihnen einen Alltagsfall konkret schildern: Man kommt in die Wohnung einer schwer erkrankten Patientin mit einer längeren Krankengeschichte. Dort finden sich unterschiedliche Aktenordner, einzelne Zettel, veraltete Medikamentenlisten. Innerhalb kürzester Zeit muss man sich ein Bild von der akuten Situation, in der sich die Patientin befindet, und ihrer Krankengeschichte machen. Man sucht in den Zetteln die wichtigsten Informationen zur medikamentösen Behandlung zusammen und tippt sie ab, um später, nachdem man die Patientin ins Krankenhaus gebracht hat, dort die entsprechenden Befunde wieder auszudrucken. Diese werden dann im Krankenhaus wieder eingescannt; denn es besteht keine Schnittstelle, an der die Informationen in einheitlicher Sprache an einem Ort zusammengeführt werden. Am Ende des Tages und des Krankenhausaufenthalts wird der Entlassbrief wiederum ausgedruckt, in den Aktenordner der Patientin geheftet und per Fax in die Hausarztpraxis geschickt. Diese Zustände sind unhaltbar, ineffizient und vor allem gefährlich für Patientinnen und Patienten. Wir machen heute Schluss damit.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN und bei der FDP sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="J">Wir legen ein Gesetz vor, das die Daten an einem Ort zusammenführt, damit die Gesundheitsberufe, die für das Wohlergehen und die Genesung der Patientinnen und Patienten arbeiten, an einem Ort mit standardisierten Schnittstellen – zentral und übersichtlich – alle vorhandenen Befunde abrufen können und wissen, worauf es ankommt. Vom Kollegen Rüddel aus der Unionsfraktion kommt nun der Einwand, dass es doch besser sei, noch ein paar Jahre zu warten, weil noch nicht alle Informationen als strukturierte Daten zur Verfügung stehen. Genau das ist der Fehler. Wir haben seit Jahren immer auf irgendetwas gewartet, obwohl die nutzenbringenden Effekte so klar auf der Hand lagen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN und bei der FDP sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="O">Ein Röntgenbild, das heute noch nicht als strukturierter Datensatz vorliegt, hilft der Ärztin oder dem Arzt nach der Entlassung aus dem Krankenhaus, also in der Nachbehandlung sehr wohl und ganz konkret im Sinne der Patientinnen und Patienten.</p>
+        <p klasse="J">Sie haben die Telemedizin angesprochen und darauf verwiesen, dass Ihnen unser Gesetzentwurf in diesem Punkt nicht weit genug geht. Haben Sie den Gesetzentwurf denn nicht gelesen? Wir heben den Deckel von 30 Prozent auf und lassen 100 Prozent Telemedizin im gesamten Gesundheitswesen zu. Mehr geht nicht.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="O">Stattdessen wollen Sie lieber noch einmal abwarten, gucken und sich enthalten. Genau das ist die falsche Politik; denn diese Politik hat Deutschland in einen solchen Rückstand getrieben.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN und bei der FDP sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="J">Sie werfen die Frage auf, ob es denn richtig sei, all diese Daten an einem Ort zusammenzuführen. Ich sage ausdrücklich: Ja. Dieses Gesetz ist ein Datenschutz- und Patientenrecht-Empowerment. Bisher sind doch all diese Daten fragmentiert an unterschiedlichsten Stellen im Gesundheitswesen gespeichert. Die einzigen Menschen, die diese Daten nicht sehen können, sind die Patientinnen und Patienten selbst. Das ist nicht richtig. Und deswegen machen wir damit Schluss.</p>
+        <kommentar>(Beifall bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN, der SPD und der FDP)</kommentar>
+        <p klasse="O">Wir setzen den Betroffenen eine Brille auf, mit deren Hilfe sie erstmals selbst entscheiden können, welche Daten wer sehen soll und mit wem sie sie teilen möchten, und vor allem selbst sehen, was über sie gespeichert ist.</p>
+        <p klasse="J">Mit dem Gesundheitsdatennutzungsgesetz regeln wir noch etwas ganz Entscheidendes. In Deutschland gibt es viel Wissenschaft. Aber in der Art und Weise, wie gerade in der Medizinforschung Innovation betrieben wird, profitieren nicht alle Gruppen in unserer Gesellschaft gleichermaßen von der Forschung. Kinder, Frauen und andere marginalisierte Gruppen profitieren nicht, weil sie nicht repräsentativ in Studien einbezogen werden. Wir sorgen mit dem Gesundheitsdatennutzungsgesetz erstmals im größten Land in Europa dafür, dass repräsentative Daten für alle Bevölkerungsgruppen vorliegen und sie als Grundlage für wichtige Entwicklungen dienen. Jeder zweite Mensch in unserem Land wird im Lauf seines Lebens an Krebs erkranken. Jeder in dieser Situation wird dann hoffen, die beste Diagnostik und Therapie zu bekommen. Das geht nur mit Datensolidarität. Das Gesundheitsdatennutzungsgesetz ist Ausdruck gelebter Datensolidarität für Innovation und für Deutschland. Wir freuen uns sehr, dass wir mit diesem Gesetz die Voraussetzungen schaffen, den entstandenen Rückstand aufzuholen.</p>
+        <p klasse="J">Ich danke ausdrücklich dem Bundesgesundheitsminister und den Berichterstattern Maximilian Funke-Kaiser, der wegen anstehender Vaterschaft vor dem Kreißsaal auf das hoffentlich bald eintretende freudige Ereignis wartet und deswegen nicht hier sein kann,</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN, bei der SPD und der FDP sowie bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="O">sowie Matthias Mieves von der SPD-Fraktion, die im parlamentarischen Verfahren geholfen haben, dieses wichtige Gesetz zu dem zu machen, was es ist. Es ist ein gutes Gesetz für die Patientinnen und Patienten, und es ist ein gutes Gesetz für Deutschland. Lasst es uns gemeinsam beschließen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die AfD-Fraktion Kay-Uwe Ziegler.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+      </rede>
+      <rede id="ID2014400400">
+        <p klasse="redner">
+          <a id="r6" />
+          <redner id="11005265">
+            <name>
+              <vorname>Kay-Uwe</vorname>
+              <nachname>Ziegler</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Kay-Uwe Ziegler (AfD):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Werte Kolleginnen und Kollegen! Heute stehen wir vor einem kritischen Wendepunkt in der deutschen Gesundheitspolitik. Nicht nur das Gesundheitsdatennutzungsgesetz, sondern auch die Einführung der elektronischen Patientenakte bergen über die von Ihnen dargestellten Chancen hinaus auch erhebliche Risiken. Wie wichtig Ihnen nämlich die Gesundheitsdaten und damit das Wohl der Patienten wirklich sind, möchte ich nachfolgend an einigen Beispielen aufzeigen.</p>
+        <p klasse="J">In der Coronazeit kam es zu eklatantem Missbrauch und einer permanenten Unterschlagung von Daten. Die Gesundheitsämter und Landesregierungen haben in gigantischem Ausmaß weggeschaut, und das, während sich Meldeverstöße 100 000-fach häuften. Allein im Jahr 2022 wurden laut InEK die Impfstatusangaben von über 75 Prozent aller Coronahospitalisierten in den Krankenhäusern einfach nicht erfasst und damit unterschlagen, und das genau dort, wo wir die Daten dringend benötigten, um überhaupt die Wirksamkeit der Impfkampagne bewerten zu können.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="J">So geht es weiter, meine Damen und Herren. Dass wir 2022 und 2023 eine Übersterblichkeit verzeichnen, ist ein Fakt. Auch hier liegen Ihnen die Daten vor. Eine von unserer Fraktion im Oktober beantragte Anhörung im Gesundheitsausschuss zur möglichen Ursachenanalyse wird abgelehnt und auf unbestimmte Zeit verschoben.</p>
+        <p klasse="J">Und ein letztes Beispiel: In der Bundeswehr hatten wir im Jahr 2022 93 000 coronaerkrankte Soldaten, und das bei einer nahezu 100 Prozent durchgeimpften Truppe. Im Jahr 2020 – ohne Impfung – waren es nur etwa 3 000. Auch diese Daten liegen Ihnen vor. Die nun einzig mögliche Schlussfolgerung wäre: Die Duldungspflicht für unsere Soldaten müsste sofort aufgehoben werden.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="O">Aber weder von Gesundheitsminister Lauterbach noch von Verteidigungsminister Pistorius kommt auch nur die kleinste Reaktion in diesem Bereich.</p>
+        <p klasse="J">Was kann man aus all diesen Beispielen schlussfolgern? Man darf Ihnen keine Gesundheitsdaten anvertrauen; denn die Daten, die zum Schutz der Menschen gebraucht werden, die werden regelmäßig verschleiert, unterdrückt oder gar nicht erst erfasst.</p>
+        <kommentar>(Heike Baehrens [SPD]: Dummes Zeug!)</kommentar>
+        <p klasse="O">Daten, die Sie für Ihre ideologischen Projekte benötigen – die sommerlichen Hitzetoten, um der Klimawandelhysterie zu huldigen oder um andererseits der Pharmaindustrie Milliardengeschäfte zu ermöglichen –, werden erhoben und propagiert. In dem hier vorliegenden Gesundheitsdatennutzungsgesetz heißt das natürlich beschönigend, dass die Gesundheitsdaten der Bürger insbesondere für gemeinwohlorientierte Zwecke leichter und schneller nutzbar gemacht werden sollen.</p>
+        <kommentar>(Dr. Christina Baum [AfD]: Das ist sehr spannend!)</kommentar>
+        <p klasse="O">Wie diese gemeinwohlorientierten Zwecke aussehen, bleibt in Ihrem Gesetz bewusst im Nebel. Ein Schelm, wer Böses dabei denkt.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="J">Darüber hinaus sollten die Bürger in Deutschland vielleicht noch folgende „Kleinigkeit“ erfahren: Die persönliche Widerspruchsmöglichkeit zur Datennutzung, in Ihrem Gesetz „Opt-out-Lösung“ genannt, kann durch die aktuelle EU-Verordnung zum Europäischen Gesundheitsdatenraum im Handstreich einfach außer Kraft gesetzt werden.</p>
+        <p klasse="J">Aus all diesen Gründen, meine Damen und Herren, wird unsere Fraktion mit Sicherheit nicht für ein System stimmen, das so anfällig für Missbrauch und Fehlmanagement ist. Deshalb lehnen wir dieses Gesundheitsdatennutzungsgesetz und die damit einhergehende Einführung einer verpflichtenden elektronischen Patientenakte ab.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die FDP-Fraktion Dr. Andrew Ullmann.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+      </rede>
+      <rede id="ID2014400500">
+        <p klasse="redner">
+          <a id="r7" />
+          <redner id="11004922">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Andrew</vorname>
+              <nachname>Ullmann</nachname>
+              <fraktion>FDP</fraktion>
+            </name>
+          </redner>Dr. Andrew Ullmann (FDP):</p>
+        <p klasse="J_1">Sehr verehrte Frau Präsidentin! Meine Damen und Herren! Das Warten auf Godot ist endlich vorbei. Es geht vorwärts im Gesundheitswesen, die Digitalisierung kommt. Heute erreichen wir als Ampel einen wichtigen Meilenstein in der Gesetzgebung zur Digitalisierung unseres Gesundheitssystems. Wir haben gemeinsam eine wegweisende Gesetzgebung verhandelt und in Form gebracht, um das Gesundheitswesen in Deutschland für die Zukunft fitzumachen. Dafür bedanke ich mich explizit bei den Kolleginnen und Kollegen der Ampel. Wir haben viel verhandelt, und wir haben etwas Gutes hergestellt. Ich danke dafür.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">In unserer Arbeit haben wir stets auf den Grundsatz von German Mut statt German Angst gesetzt. Die Digitalisierung ist nämlich kein Grund zur Sorge, sondern eine Chance für mutige Innovationen und einen Fortschritt, der unser Gesundheitssystem auf eine neue Stufe hebt. Die Vorteile für die Patienten stehen im Mittelpunkt unserer Gesetzgebung. Die Einführung einer benutzerfreundlichen elektronischen Patientenakte gibt den Menschen mehr Kontrolle über ihre Gesundheitsdaten, fördert die Selbstbestimmung und sorgt für mehr Diagnose- und Therapiesicherheit – ein wichtiger Punkt für einen mündigen Patienten.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Die Telemedizin eröffnet weiteren Bevölkerungsschichten den Zugang zu medizinischer Betreuung und ermöglicht eine flexiblere medizinische Versorgung. Digitale Gesundheits-Apps unterstützen die Prävention und stärken die Eigenverantwortung für die persönliche Gesundheit. Prävention wird nun proaktiv zur Gemeinschaftsaufgabe der Krankenkassen und Ärzteschaft. Deshalb sind wir überzeugt, dass wir das Gesundheitswesen in unserem Land deutlich verbessert haben. Denn jeder Schritt, den wir hier gemeinsam gehen, ist ein Beitrag zur Lösung eines Problems. Und das ist auch gut so.</p>
+        <p klasse="J">Selbstverständlich haben wir auch die Datensicherheit nicht aus den Augen verloren. Basierend auf dem Input aus der öffentlichen Anhörung mit Experten und Expertinnen haben wir klare Regelungen und Standards geschaffen, um den sicheren Umgang mit Gesundheitsdaten zu gewährleisten. Denn Datenschutz und Datensicherheit sind für uns unverzichtbare Pfeiler einer überfälligen digitalen Transformation im Gesundheitswesen. Und das wurde mit diesem Gesetz umgesetzt.</p>
+        <p klasse="J">Ein Schlüsselfaktor, den wir mit in den Fokus gerückt haben, sind die erweiterten Forschungsmöglichkeiten. Deutschland verfügt über eine hervorragende medizinische Forschungslandschaft, und durch die Digitalisierung und die neue Gesetzgebung können wir diese weiter stärken. Der Zugang zu umfangreichen Gesundheitsdaten, egal ob öffentliche oder private Forschung, ermöglicht es unseren Forscherinnen und Forschern, Krankheitsursachen besser zu verstehen, personalisierte Therapieansätze zu entwickeln und innovative Medikamente und Therapiekonzepte schneller auf den Markt zu bringen. Und natürlich bleibt es jedem überlassen, ob er oder sie seine Gesundheitsdaten anonymisiert zur Verfügung stellen will oder nicht; denn die Datenhoheit bleibt bei den Menschen. Das ist auch für meine Fraktion ein sehr wichtiger Punkt.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Nicht zuletzt dürfen wir die Vorteile auch für die Leistungserbringer nicht übersehen. Durch effektivere Prozesse, bessere Kommunikation und optimierte Ressourcenplanung schaffen wir Bedingungen, unter denen Ärztinnen und Ärzte und auch Pflegepersonal sich verstärkt auf die individuelle Betreuung der Patienten konzentrieren können.</p>
+        <kommentar>(Beifall der Abg. Kordula Schulz-Asche [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <p klasse="O">Ich bin überzeugt, dass die elektronische Patientenakte auch für die Leistungserbringer benutzerfreundlich und die Sorge bezüglich der Befüllung der elektronischen Patientenakte durch eine unzureichende Praxisverwaltungssoftware unbegründet sein wird. So kommen wir gemeinsam durch die Digitalisierung einen Schritt weiter, die medizinische Versorgung in unserem Land besser umzusetzen.</p>
+        <p klasse="J">Heute stehen wir durch die Nutzung von künstlicher Intelligenz und die datenbasierte Forschung an der Schwelle zu einer revolutionären Entwicklung in der Medizin. Durch unser Gesetz zur Beschleunigung der Digitalisierung des Gesundheitswesens und mit dem Gesetz zur verbesserten Nutzung von Gesundheitsdaten werden auch wir Teil einer überfälligen Revolution. Diese Entwicklung ist ein Segen für unsere Patientinnen und Patienten sowie für die Leistungserbringer. Mit den neuen Digitalgesetzen ermöglichen wir eine individuelle Gesundheitsberatung und präventive Maßnahmen, die auf die spezifischen Bedürfnisse der Patientinnen und Patienten zugeschnitten sind – ein Wunsch, den Patienten heute schon äußern, aber der sicher noch nicht gehört worden ist.</p>
+        <p klasse="J">Meine Damen, meine Herren, der Weg von der analogen zur digitalen Patientenakte ist mehr als nur eine technologische Evolution. Es ist ein entscheidender Schritt hin zu einer Gesundheitsversorgung, die Lebensdauer, Versorgungssicherheit und Lebensqualität für alle in Deutschland verbessert.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="O">Mit dieser Gesetzgebung haben wir in der Ampelkoalition einen bedeutenden Schritt in Richtung einer modernen, effizienteren und patientenzentrierten Gesundheitsversorgung gemacht. Lassen Sie uns den eingeschlagenen Weg mit German Mut auch bei den weiteren Gesetzgebungen im Gesundheitswesen umsetzen!</p>
+        <p klasse="J">Ich wünsche Ihnen und euch allen besinnliche Feiertage und ein gesundes neues Jahr.</p>
+        <kommentar>(Beifall bei der FDP, der SPD und dem BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die SPD-Fraktion Matthias David Mieves.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+      </rede>
+      <rede id="ID2014400600">
+        <p klasse="redner">
+          <a id="r8" />
+          <redner id="11005154">
+            <name>
+              <vorname>Matthias David</vorname>
+              <nachname>Mieves</nachname>
+              <fraktion>SPD</fraktion>
+            </name>
+          </redner>Matthias David Mieves (SPD):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Liebe Damen und Herren! Mit diesen beiden Gesetzen werden wir heute drei Dinge unter Beweis stellen, an die Deutschland ja schon fast den Glauben verloren hatte.</p>
+        <p klasse="J">Erstens. Deutschland kann Digitalisierung; denn wir werden dafür sorgen, dass alle gesetzlich Versicherten eine funktionierende digitale Patientenakte bekommen werden.</p>
+        <p klasse="J">Zweitens. Die Ampel kann Fortschritt; denn wir werden einen Rückstand, den wir 20 Jahre aufgebaut haben, mit diesen Gesetzen aufholen und dafür sorgen, dass Deutschland endlich auf die Überholspur wechseln kann.</p>
+        <p klasse="J">Drittens. Wir haben in Deutschland einen Digitalminister, und der hat ein rotes, ein sozialdemokratisches Parteibuch. Er hört auf den Namen Karl Lauterbach.</p>
+        <kommentar>(Heiterkeit und Beifall des Abg. Lars Lindemann [FDP] – Lachen bei Abgeordneten der CDU/CSU und der AfD)</kommentar>
+        <p klasse="O">Herr Lauterbach, lieber Minister, vielen Dank für dieses mutige Gesetz!</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Obwohl die zwei Gesetze sehr gut sind, gibt es immer wieder falsche Vorwürfe, die in den Raum gestellt werden.</p>
+        <kommentar>(Stephan Pilsinger [CDU/CSU]: Ist das eine Comedyshow hier?)</kommentar>
+        <p klasse="O">Mit einigen dieser Falschaussagen will ich heute endlich Schluss machen.</p>
+        <p klasse="J">Falschaussage eins: Das kostet doch alles unnötig viel Geld.</p>
+        <kommentar>(Julia Klöckner [CDU/CSU]: Ja, genau! Heizdeckel!)</kommentar>
+        <p klasse="O">Es ist richtig, dass wir in Digitales investieren. Das tun wir aber, weil es etwas viel Kostbareres gibt, mit dem wir besser umgehen müssen. Und das Kostbarste, das Wertvollste, was wir haben, ist die Zeit unserer Ärztinnen und Ärzte und Pflegekräfte. Deren Zeit wird noch viel zu oft verschwendet,</p>
+        <kommentar>(Zuruf des Abg. Ates Gürpinar [fraktionslos])</kommentar>
+        <p klasse="O">weil sie sich mit viel zu viel Bürokratie herumschlagen müssen, weil sie Doppelarbeiten machen müssen. Das ist unnötig, und damit machen wir Schluss. Denn wir müssen besser auf das Kostbarste aufpassen, das wir haben: die Zeit unserer Fachkräfte.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Falschaussage zwei: Telemedizin bringt doch nichts. Das Einzige, was wir brauchen, sind Praxen vor Ort. – Wer das sagt, hat absolut keine Ahnung, wie das Leben auf dem Land ist. Stellen Sie sich mal vor, Sie wohnen in einem kleinen Ort im Kreis Kusel. Wenn Sie zu einer Praxis wollen, müssen Sie immer fahren, und zwar über weite Strecken. Vor allem müssen Sie auch wieder zurückfahren, wenn Sie danach wieder heimwollen.</p>
+        <kommentar>(Ates Gürpinar [fraktionslos]: Sie brauchen Internet!)</kommentar>
+        <p klasse="O">Wir schaffen Möglichkeiten, dass es einfacher wird, in eine Sprechstunde zu kommen: über telemedizinische Angebote. Denn der schnellste Weg zur Praxis, zur Sprechstunde wird in Zukunft nicht mehr nur über die Autobahn führen, sondern es geht auch vom Sofa aus mit dem Griff zum Smartphone auf dem Couchtisch. Das ist eine echte Verbesserung für die Menschen auf dem Land.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Falschaussage drei: Das ist alles überbordender Aufwand. – Das ist zwar richtig: Immer wenn wir etwas Neues tun, dann ist es erst mal Aufwand, absolut. Jedes Mal, wenn ich ein neues Smartphone bekomme, dann muss ich das auch erst mal einrichten. Ich muss Daten von dem alten Smartphone auf das neue ziehen. Aber das machen wir doch, weil wir wissen: Das neue hat ein paar neue Funktionen. Es kann einiges besser. – Genau so ist es auch im Gesundheitswesen: Wir brauchen ein Update. Das ist erst mal Aufwand, aber es macht danach vieles besser. Und deshalb ist es richtig, genau das jetzt zu tun.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Falschaussage vier: Daten im digitalen Raum zu haben, ist gefährlich. -Das genaue Gegenteil ist der Fall.</p>
+        <kommentar>(Dr. Christina Baum [AfD]: Ach so!)</kommentar>
+        <p klasse="O">Wir haben jetzt Daten überhaupt nicht digital verfügbar, und das gefährdet Menschen. Jedes Jahr werden in Deutschland Hunderttausende Menschen ins Krankenhaus eingeliefert, weil es ungewollte Wechselwirkungen zwischen Medikamenten gibt. Das können wir ohne digitale Hilfsmittel überhaupt nicht unter Kontrolle bringen. Mit der neuen digitalen Patientenakte wird das aber möglich. Wir schaffen mehr Sicherheit für die Menschen, die Medikamente brauchen. Das ist genau das Gegenteil von „gefährlich“. Das ist hilfreich, und es rettet Leben.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Falschaussage fünf: Wir werden alle zum gläsernen Patienten, und die ganze Welt kann in unsere Daten schauen. – Ich verrate mal ein Geheimnis:</p>
+        <kommentar>(Tino Sorge [CDU/CSU]: Ui!)</kommentar>
+        <p klasse="O">Schon heute ist es so, dass unsere Daten in Tausenden Praxen auf PCs rumliegen,</p>
+        <kommentar>(Lachen bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="O">dass unsere Daten in einigen Kliniken rumliegen.</p>
+        <kommentar>(Stephan Pilsinger [CDU/CSU]: Ist ja verrückt!)</kommentar>
+        <p klasse="O">Sogar in einigen Apotheken sind Daten von uns vorhanden.</p>
+        <kommentar>(Julia Klöckner [CDU/CSU]: Und das seit 16 Jahren!)</kommentar>
+        <p klasse="O">Die Einzigen, die keinerlei Transparenz darüber haben, die keinerlei Kontrolle über diese Daten haben, sind wir als Patienten und Patientinnen.</p>
+        <p klasse="J">Jetzt verrate ich noch was: Mit der neuen digitalen Patientenakte wird das komplett anders; denn die digitale Patientenakte wird der Ort sein, wo ich als Patient die Kontrolle darüber habe, wo ich die volle Transparenz habe. Das ist genau das Gegenteil davon, dass wir zum gläsernen Patienten werden. Wir schaffen es, dass wir endlich informationelle Selbstbestimmung leben können,</p>
+        <kommentar>(Heike Baehrens [SPD]: So ist es! Genau das ist der Punkt!)</kommentar>
+        <p klasse="O">dass die Patientinnen und Patienten die Hoheit über ihre Daten gewinnen.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Ich bin froh, dass ich mit ein paar solcher Behauptungen aufräumen konnte,</p>
+        <kommentar>(Lachen bei Abgeordneten der CDU/CSU und der AfD – Julia Klöckner [CDU/CSU]: Sie sind der Allerbeste!)</kommentar>
+        <p klasse="O">und will mit einer Bitte zum Schluss kommen. Diese zwei Gesetze werden uns einiges abverlangen, ja. Sie werden viel Energie kosten, und ich wette darauf, dass sie bei der Einführung auch noch sehr viele Nerven kosten werden – definitiv. Aber die Frage ist doch, wie wir damit umgehen. Ich sehe unser Land nicht als ein Land, wo nur gejammert, gemeckert wird, wo man laviert und sich selbst bemitleidet. Nein, ich will und ich bin überzeugt davon, dass Deutschland das Land der Macherinnen und der Macher ist. Packen wir es an! Wir krempeln jetzt alle mal die Ärmel hoch, und wir kriegen das hin. Denn Deutschland kann Digitalisierung.</p>
+        <p klasse="J">Danke fürs Zuhören.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die CDU/CSU-Fraktion Dr. Georg Kippels.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+      </rede>
+      <rede id="ID2014400700">
+        <p klasse="redner">
+          <a id="r9" />
+          <redner id="11004327">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Georg</vorname>
+              <nachname>Kippels</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Dr. Georg Kippels (CDU/CSU):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrter Herr Minister! Liebe Kolleginnen und Kollegen! Meine verehrten Damen und Herren! Schon als wir uns in der ersten Lesung am 9. November erstmalig mit dem Entwurf zum Gesundheitsdatennutzungsgesetz beschäftigt haben, habe ich die Initiative gelobt und auch ausdrücklich darauf verwiesen, dass wir uns alle einem wichtigen Thema widmen müssen. Ich habe einige Hinweise getätigt in der Hoffnung, dass diese Fragestellungen in der folgenden Anhörung kritisch bewertet, beleuchtet und nach Möglichkeit auch gelöst werden. Leider ist diese Erwartung enttäuscht worden. Deshalb will ich an dieser Stelle noch mal die Punkte aufzählen, die jetzt nach der Anhörung – eigentlich sollte sie ja zum Erkenntnisgewinn beitragen – noch offen sind und deshalb den Gesetzentwurf leider nicht zu einem guten, sondern zu einem unvollendeten Gesetzentwurf machen.</p>
+        <p klasse="J">Erstens: die Möglichkeit der Krankenkassen, ihre Abrechnungsdaten auszuwerten und in Beratungen mit den Patienten einzutreten. Vom Ansatz her ist das eine gute Idee. Aber wir haben in der Anhörung wahrgenommen, dass es zu einer deutlichen Kontroverse zwischen den Krankenkassen auf der einen Seite und den behandelnden Ärzten auf der anderen Seite kommt. Es besteht die Befürchtung, dass in das Arzt-Patienten-Verhältnis eingegriffen wird, es zu Misstrauen kommt, möglicherweise auch ein entsprechender Abbruch des Arzt-Patienten-Verhältnisses droht und damit die gute Idee – jedenfalls in dieser unklaren Ausführungsform – keine gute Ausführung erfährt. Außerdem sind die von den Krankenkassen vielfach erwähnten Problemstellungen der unerwünschten Arzneimittelnebenwirkungen über den Medikationsplan und über die Apotheken eigentlich schon hinlänglich gelöst. Also: Aufgabe nicht gelöst.</p>
+        <p klasse="J">Zweitens: die Gemeinwohlorientierung. Der Begriff hat heute schon mehrfach in den Reden Erwähnung gefunden, und er ist in der Tat eine zentrale Stelle. Aber wir haben auch damals schon erfahren, dass die Definition der Gemeinwohlorientierung je nach Blickwinkel sehr unterschiedlich ausfallen kann.</p>
+        <kommentar>(Zuruf des Abg. Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <p klasse="O">Auch in der Anhörung ist in der Tat wieder deutlich geworden: Wir haben eine Perspektive der GKV, Herr Dr. Dahmen, und eine Perspektive der Wirtschaft. Das sind natürliche gegensätzliche Positionen, die aber für eine Praktikabilität des Gesetzes eigentlich in eine griffige und vor allen Dingen geeinte Definition hätten umgearbeitet werden müssen. Wir erinnern uns an die Fragestellung in der Anhörung an Frau Professor Buyx vom Ethikrat: Gibt es in der Literatur eine übereinstimmende konsentierte Definition? Antwort: Nein. – Und sie empfahl dringend die Einholung eines entsprechenden Gutachtens zu dieser wichtigen Definitionsfrage als elementare Schaltstelle des Gesetzes.</p>
+        <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Das steht im Gesetz drin!)</kommentar>
+        <p klasse="J">Drittens: die Rolle der Privatwirtschaft. Wir alle haben heute, auch aus dem Munde von Herrn Minister Lauterbach, gehört, dass wir die Mitarbeit der Privatwirtschaft in Forschung und Entwicklung anregen wollen. Das ist uneingeschränkt richtig. Aber wir brauchen für die Einbindung der Privatwirtschaft auch einige klare Botschaften. Erstens: die uneingeschränkte Anerkennung des geistigen Eigentums.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <p klasse="O">Das ist die Basis und das Kapital der Privatwirtschaft, und dazu bedarf es eines klaren Bekenntnisses. Zweitens: Form, Inhalt und Umfang der Veröffentlichung. Das ist der Sache nach nicht zu kritisieren. Aber auch da kann es zu Kollisionslagen beim geistigen Eigentum kommen. Ein weiterer Punkt: die Einbindung in die Beiräte. Dort finden das Fachwissen der Privatwirtschaft und somit zwei Drittel des Umfangs der Forschung, die momentan stattfindet, überhaupt keine Berücksichtigung. Das wäre allerdings eine praxisorientierte und vor allen Dingen nachhaltige Einbindung und eine entscheidende Anreizbotschaft an die Privatwirtschaft.</p>
+        <p klasse="J">Und zu guter Letzt: der europäische Datenraum und die KI. Dort gibt es intensiven Befassungsbedarf. Es gibt aber bedauerlicherweise noch kein überzeugendes Konzept der Einbindung und der Verknüpfung. Sosehr die Einbindung der künstlichen Intelligenz eine elementare Aufgabe ist, so wichtig ist es, die richtigen Lernformate aufzunehmen.</p>
+        <kommentar>(Zuruf des Abg. Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <p klasse="O">– Nein, Herr Dr. Dahmen, wir wollen nicht warten. Wir wollen nur den Prozess beschreiben. Wir haben dazu mit dem AI Act der Europäischen Union auch einen Hinweis, dass es dazu eines entsprechenden Prozedere bedarf.</p>
+        <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Europa ist noch nicht so weit! Deutschland aber schon!)</kommentar>
+        <p klasse="O">Wir wollen nicht warten, aber mit einer entsprechenden Fachkompetenz begleiten, damit unsere Systeme nicht von den falschen Algorithmen lernen. Auch das ist eine wichtige Fragestellung der Zuverlässigkeit und vor allen Dingen der Vertrauensbildung für den Patienten, der dieses System dann nutzen soll.</p>
+        <p klasse="J">Zum Schluss: Der Entwurf zum Gesundheitsdatennutzungsgesetz ist kein guter, aber er ist ein immerhin noch nicht runder Gesetzentwurf. Das lässt uns allerdings an dieser Stelle nur die Veranlassung geben, sich nicht gegen dieses Gesetz auszusprechen, sondern im weiteren Prozess – Sie alle haben es ja selber als lernendes System beschrieben – auf eine entsprechende Komplettierung hinzuwirken. Die Fragestellungen können jederzeit noch nachgearbeitet werden. Dabei haben Sie uns an Ihrer Seite, allerdings heute bei einer Zustimmung noch nicht. Die Enthaltung ist die richtige Botschaft.</p>
+        <p klasse="J">Vielen herzlichen Dank für Ihre Aufmerksamkeit.</p>
+        <kommentar>(Beifall bei der CDU/CSU – Christine Aschenberg-Dugnus [FDP]: Sehr kraftvolle Enthaltung!)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die Fraktion Bündnis 90/Die Grünen Melis Sekmen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+      </rede>
+      <rede id="ID2014400800">
+        <p klasse="redner">
+          <a id="r10" />
+          <redner id="11005222">
+            <name>
+              <vorname>Melis</vorname>
+              <nachname>Sekmen</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Melis Sekmen (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Meine sehr geehrten Damen und Herren! Wenn wir über die Nutzung von Gesundheitsdaten sprechen, sind wir sehr schnell beim Thema Datenschutz. Es gibt zwei Dinge, die wir dabei im Blick haben müssen: zum einen den Datenschutz für gesunde Menschen und zum anderen den Datenschutz für Menschen, die erkrankt sind.</p>
+        <p klasse="J">Letztere Gruppe ist darauf angewiesen, dass man ihre Daten und andere Daten anonymisiert, ordentlich kuratiert und verarbeitet. Warum? Weil genau diese Menschen neue Therapieformen brauchen; sie brauchen eine schnellere, eine präzisere Diagnose, und sie brauchen Präventionsmaßnahmen. Genau deshalb bringen wir dieses Gesetz auf den Weg.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="J">Das heißt, das Ganze ist eigentlich viel komplexer, als es sich anhört; denn in der Gesundheitsforschung sind die Quantität und die Vielfalt von Daten ein wichtiges Qualitätsmerkmal für genau diese Therapieformen. Verbraucherinnen und Verbraucher haben auch ein Recht darauf, dass sie qualitative Medizinprodukte und eine wirksame Behandlung beim Arzt oder in den Krankenhäusern bekommen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Was bringen uns aber diese Daten und all diese klinischen Studien, wenn wir sie nicht in die Produktanwendung übersetzen können, beispielsweise in der Medikamentenentwicklung, im Pharmabereich oder in der Medizintechnologie?</p>
+        <p klasse="J">Bisher hatten unsere Unternehmen, die eigentlich das große Potenzial haben, Global Player zu werden, einen immensen Wettbewerbsnachteil. Diese ganzen Veröffentlichungspflichten, Herr Kippels, von denen Sie gesprochen haben, sind schon internationaler Standard. Und wir in der Ampel wollen die Gesundheitswirtschaft und unsere Unternehmen darin zu Global Playern machen und diese Branche zu einer Leitindustrie entwickeln. Genau deshalb braucht es dieses Gesetz.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="J">Eines ist mir noch wichtig: Wir führen diese Debatte auf einer sehr technischen Ebene, weil es auch viel um Verarbeitung von Daten geht. Wir beschließen heute aber ein Gesetz, das sehr, sehr vielen Menschen Zuversicht gibt, was neue Therapieformen angeht. Es gewährleistet für Menschen, die leider irgendwann erkranken werden, eine innovative Therapie und eine gescheite Patientenversorgung. Deshalb ist es ein wichtiger Meilenstein, um Deutschland als Wirtschaftsstandort starkzumachen; es ist aber auch ein großer Beitrag dafür, dass wir auch in Zukunft eine gesunde Gesellschaft haben.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächste hat das Wort für die AfD-Fraktion Dr. Christina Baum.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+      </rede>
+      <rede id="ID2014400900">
+        <p klasse="redner">
+          <a id="r11" />
+          <redner id="11005018">
+            <name>
+              <titel>Dr.</titel>
+              <vorname>Christina</vorname>
+              <nachname>Baum</nachname>
+              <fraktion>AfD</fraktion>
+            </name>
+          </redner>Dr. Christina Baum (AfD):</p>
+        <p klasse="J_1">Frau Präsidentin! Meine Damen und Herren! Die Gesundheitsversorgung in Deutschland verschlechtert sich zusehends. Das bemerken Patienten, Ärzte und medizinisches Personal gleichermaßen und inzwischen anscheinend auch die Politiker der Einheitsparteien. Sie glauben nun, die Probleme mit Digitalisierung lösen zu können, die sich über viele Jahre aufgestaut haben.</p>
+        <p klasse="J">Aus der Praxis kann ich Ihnen berichten, dass die meisten Ansätze jedoch zu mehr bürokratischem Aufwand führen und damit dem Arzt und dem Personal noch weniger Zeit für die Behandlung geben. Das ist übrigens auch ein Hauptgrund dafür, dass junge Ärzte eine Selbstständigkeit zunehmend ablehnen. Der gläserne Mensch, gefangen im Netz, dient eben nicht vorwiegend dem Wohl der Patienten, dafür aber umso mehr der Big Pharma und anderen Großkonzernen.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="J">Einen ganzheitlichen Ansatz, der das Ziel verfolgt, die Patienten tatsächlich zu heilen, gibt es bei Ihnen nicht. Niemals wird die Digitalisierung aber ein vertrauensvolles Arzt-Patienten-Verhältnis ersetzen können, nicht die menschliche Zuwendung und nicht die psychologische Begleitung.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="J">Dass Gesundheit auf einem Gleichgewicht aus Körper, Seele und Geist beruht, weiß die Menschheit seit Jahrtausenden, und dieses Urwissen wird von Ihnen vollständig außer Acht gelassen. Ein Mensch ist eben nicht die Summe seiner Daten. Wir fordern daher in unserem Antrag, dass nicht nur die Dokumentationspflichten um die Hälfte reduziert werden, sondern dass jede neue digitale Anwendung nur dann eingeführt wird, wenn sie nachweislich zu weniger Verwaltungsaufwand für Ärzte und Personal führen.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <p klasse="J">Und orientieren Sie sich doch bitte bei Ihren Gesetzesvorhaben endlich mal an den Bedürfnissen des Volkes! Die Patienten wollen in unmittelbarer Nähe einen Arzt, eine Apotheke und ein Krankenhaus und zu jeder Zeit die Medikamente, die sie dringend benötigen.</p>
+        <kommentar>(Beifall bei der AfD – Zuruf der Abg. Maria Klein-Schmeink [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <p klasse="O">Das war einmal Normalität in unserem Land, und dort müssen wir wieder hin.</p>
+        <p klasse="J">Für uns steht der Mensch als einzigartiges Individuum im Mittelpunkt all unserer Bemühungen, nicht Gewinnmaximierung von Gesundheitskonzernen oder irgendwelche Prestigeprojekte von Politikern.</p>
+        <p klasse="J">Der Virchowbund schreibt zutreffend zu diesen Gesetzen – Zitat –: „Die Digitalisierung à la Lauterbach wird zum Sargnagel der ambulanten Versorgung …“ Wollen Sie das wirklich? Wenn Sie schon nicht auf unseren Rat hören, dann hören Sie doch wenigstens auf erfahrene Ärzte und stoppen Sie diese Gesetze! Sie sind einfach nur überflüssig.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall bei der AfD)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die FDP-Fraktion Lars Lindemann.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+      </rede>
+      <rede id="ID2014401000">
+        <p klasse="redner">
+          <a id="r12" />
+          <redner id="11004095">
+            <name>
+              <vorname>Lars</vorname>
+              <nachname>Lindemann</nachname>
+              <fraktion>FDP</fraktion>
+            </name>
+          </redner>Lars Lindemann (FDP):</p>
+        <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Meine sehr geehrten Damen und Herren! Liebe Kolleginnen und Kollegen! Frau Baum, Sie haben von „Einheitsparteien“ gesprochen; das wollen wir hier nicht weiter vertiefen. Ich für meinen Teil habe aber das Empfinden, dass in dieser Koalition politischer Wettbewerb um die besten Lösungen stattfindet.</p>
+        <kommentar>(Heiterkeit der Abg. Heike Baehrens [SPD] – Konstantin Kuhle [FDP]: Das kann man wohl sagen!)</kommentar>
+        <p klasse="O">Das erleben Sie ja gerade in der letzten Zeit.</p>
+        <kommentar>(Thorsten Frei [CDU/CSU]: Das stimmt!)</kommentar>
+        <p klasse="O">Das ist Ihnen aber fremd. Es ist Ihr Bild, das Sie eigentlich haben wollen. Deswegen schließt sich das, was Sie hier gesagt haben, meine ich, aus.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Liebe Kolleginnen und Kollegen, erlauben Sie mir, zuerst ganz kurz meinen Kollegen Max Funke-Kaiser zu grüßen; denn er hat für die FDP-Fraktion mit Ihnen, lieber Kollege Dahmen, und mit Ihnen, Herr Kollege Mieves, verhandelt. Wir – ich spreche für meine Fraktion in Gänze – sind sehr dankbar, dass in diesem Kreis das erreicht worden ist, was Sie erreicht haben; weil die Digitalisierung für uns als Partei sehr wichtig ist, zumal im Gesundheitsbereich. Deswegen herzlichen Dank, Max, dass du das gemacht hast!</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD und des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Sodann haben wir viel Lob und viel Kritik gehört. Die Ankündigung einer kraftvollen Enthaltung der Union schmeichelt uns eher. Lieber Kollege Sorge, dass du hier ansprichst, dass es dem Kollegen Lauterbach möglich wird, unter der Verhandlungsführung von Herrn Dahmen, Herrn Mieves und Herrn Mordhorst sogar zu solchen Schritten zu kommen, ist doch ein Qualitätsbeweis für diese Koalition. Also vielen Dank auch dafür!</p>
+        <kommentar>(Beifall bei Abgeordneten der FDP – Tino Sorge [CDU/CSU]: Das stimmt! Das kann man so sehen!)</kommentar>
+        <p klasse="J">Jetzt zu den Digitalgesetzen. Wir haben hier Interoperationalität, Datenstandards und vor allem auch die DiGAs – das ist heute noch gar nicht angesprochen worden – auf eine neue Ebene gehoben; das ist ausdrücklich hervorzuheben. Ich würde mich aber gern ein Stück weit auf einen Nebenaspekt im Zusammenhang mit dem Digital-Gesetz konzentrieren, weil das auch für die Debatte, die jetzt folgen wird, wichtig ist.</p>
+        <p klasse="J">Die ePA ist ein wesentlicher Fortschritt, wenn sie von allen Versicherten – gesetzlich wie auch privat Versicherten – in Deutschland genutzt werden kann. Aber in der Frage, wie wir es schaffen, dass alle in der Lage sind, sie auch wirklich zu nutzen, wird noch ein Stück Weg zu gehen sein. Dabei möchte ich hier noch mal ausdrücklich darauf hinweisen, dass wir klargestellt haben – das ist in den Verhandlungen gelungen –, dass es nicht allein Aufgabe der Ärzteschaft ist, den Patientinnen und Patienten dabei zur Seite zu stehen, sondern dass das eine gesamtgesellschaftliche Aufgabe ist, der wir uns mit Ansätzen des generationsübergreifenden Lernens und vielem anderen mehr stellen müssen. Aber es ist nicht allein die Aufgabe der Ärzteschaft; das soll hier auch noch mal ausdrücklich klargestellt werden.</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD)</kommentar>
+        <p klasse="J">Beim Gesundheitsdatennutzungsgesetz – das ist auch schon von den Kollegen angesprochen worden – haben wir es endlich geschafft, die Frage, ob es ethisch vertretbar ist, bestimmte Daten zu nutzen, umzukehren, also endlich die Frage zentral in den Raum zu stellen: Ist es denn wirklich noch ethisch vertretbar, dass wir bestimmte Daten nicht mehr nutzen?</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="O">Auch das ist eine neue Basis, die wir mit dieser Koalition gefunden haben; das ist, meine ich, den Applaus, der an dieser Stelle nur spärlich war, dennoch wert. Man kann nämlich nicht auf der anderen Seite beklagen, dass wir in Deutschland Lieferengpässe bei Arzneimitteln haben, und sich in der Pharmastrategie der Bundesregierung, die ich ausdrücklich begrüße, dazu bekennen, dass wir langfristig sichere Rahmenbedingungen auch für die forschende pharmazeutische Industrie brauchen. Genau das ist ein Beitrag dazu, dass die forschende pharmazeutische Industrie in Deutschland bessere Bedingungen vorfindet.</p>
+        <p klasse="J">Frau Kollegin Vogler, noch mal an Ihre Adresse: Das Wort „Profit“ ist in Deutschland ja so eine etwas komische Umschreibung für „Unternehmensgewinne“. Wir brauchen in Deutschland Unternehmensgewinne. Das sind nämlich die Gewinne, die die Unternehmen in Forschung und in Entwicklung in Deutschland investieren sollen und wollen,</p>
+        <kommentar>(Beifall bei der FDP sowie bei Abgeordneten der SPD – Martin Sichert [AfD]: Die Sie mit der CO2-Steuer aus den Unternehmen wieder rausholen!)</kommentar>
+        <p klasse="O">damit dann eben die öffentliche Hand nicht mit Subventionen Industrieansiedlungen in Deutschland fördern muss. Deswegen ist es gut und richtig, dass wir in Deutschland pharmazeutische Unternehmen haben, die sich der Sache annehmen.</p>
+        <p klasse="J">Herzlichen Dank für Ihre Aufmerksamkeit.</p>
+        <kommentar>(Beifall bei der FDP, der SPD und dem BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort der fraktionslose Abgeordnete Ates Gürpinar.</p>
+        <kommentar>(Beifall bei fraktionslosen Abgeordneten)</kommentar>
+      </rede>
+      <rede id="ID2014401100">
+        <p klasse="redner">
+          <a id="r13" />
+          <redner id="11005073">
+            <name>
+              <vorname>Ates</vorname>
+              <nachname>Gürpinar</nachname>
+              <fraktion>fraktionslos</fraktion>
+            </name>
+          </redner>Ates Gürpinar (fraktionslos):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrte Damen und Herren! Ich bin einigermaßen verblüfft – verblüfft darüber, mit welch gespielter Naivität die Koalition bereit ist, in den beiden Gesetzen die privatesten, die intimsten, die sensibelsten Informationen der Menschen zu veräußern, nämlich die über ihre Gesundheit.</p>
+        <kommentar>(Beifall bei fraktionslosen Abgeordneten – Zurufe von der SPD: Oh! – Dr. Andrew Ullmann [FDP]: Das kann doch jeder selber entscheiden, mein Lieber!)</kommentar>
+        <p klasse="J">Manche Ihrer Reden hören sich an – vor allem die Rede von Herrn Mieves – wie aus einer Marketingabteilung eines großen Digitalkonzerns.</p>
+        <kommentar>(Beifall der Abg. Stephan Pilsinger [CDU/CSU] und Kathrin Vogler [fraktionslos])</kommentar>
+        <p klasse="O">Aber Sie tragen hier und heute Verantwortung für die Gesundheitsdaten von 80 Millionen Menschen.</p>
+        <p klasse="J">Sie müssen ja nicht uns glauben: Diese Woche haben Organisationen wie der Verbraucherzentrale Bundesverband, die Deutsche Aidshilfe, aber auch der Chaos Computer Club Ihr Vorhaben in einem offenen Brief als „nicht vertrauenswürdig“ kritisiert. Wie diese Organisationen – das ist an der Stelle wichtig zu sagen – finden auch wir, findet auch Die Linke, dass die Digitalisierung im Gesundheitswesen sinnvoll vorangetrieben werden muss, dass wir damit theoretisch den Patientinnen und Patienten helfen können. Aber so wie Sie hier und heute die elektronische Patientenakte einführen, schaden Sie doch der Idee.</p>
+        <kommentar>(Beifall bei fraktionslosen Abgeordneten)</kommentar>
+        <p klasse="J">Es ist gegenwärtig weder Ihnen noch den Menschen klar, wie diese Daten für Dritte, auch auf europäischer Ebene, genutzt werden können. Das lassen Sie ja bewusst offen, obwohl Sie wissen, dass dem Datenschutz auf europäischer Ebene selbst für Ihre geringen Ansprüche</p>
+        <kommentar>(Zuruf der Abg. Heike Baehrens [SPD])</kommentar>
+        <p klasse="O">– Frau Baehrens, selbst für Ihre geringen Ansprüche – nicht genügend Rechnung getragen werden soll, dass dort Pharmakonzerne doch nur darauf warten, die Daten für ihre Zwecke profitabel zu verwerten.</p>
+        <p klasse="J">Sehr geehrte Damen und Herren, Sie beschließen heute zwei Gesetze zur Digitalisierung und Nutzung medizinischer Daten von 80 Millionen Menschen. Die Daten geben Patientinnen und Patienten weniger durch eigenes Zutun, sondern weitestgehend ohne explizite Zustimmung während der ärztlichen Behandlung, quasi in intimsten Momenten, preis. Durch schwammige Definitionen im Gesetzestext eröffnen Sie mit der Verarbeitung dieser Daten dem Profit großer Pharmakonzerne Tür und Tor.</p>
+        <p klasse="J">Die Linke stellt den Schutz der Gesundheitsdaten und das Gemeinwohl vor die Profitinteressen – und das kann in diesem Fall nur ein Nein zu Ihren heute vorliegenden Gesetzen bedeuten.</p>
+        <p klasse="J">Vielen, vielen Dank.</p>
+        <kommentar>(Beifall bei fraktionslosen Abgeordneten)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächste hat das Wort für die SPD-Fraktion Heike Baehrens.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+      </rede>
+      <rede id="ID2014401200">
+        <p klasse="redner">
+          <a id="r14" />
+          <redner id="11004244">
+            <name>
+              <vorname>Heike</vorname>
+              <nachname>Baehrens</nachname>
+              <fraktion>SPD</fraktion>
+            </name>
+          </redner>Heike Baehrens (SPD):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Sehr geehrte Damen und Herren! Wir beschließen heute eines der größten Fortschrittsprojekte dieser Ampelkoalition. Endlich können wir das ganze Potenzial der Digitalisierung im Gesundheitswesen nutzen, und das zum Wohl der Patientinnen und Patienten und zur Entlastung der Beschäftigten.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Schon der von Gesundheitsminister Professor Karl Lauterbach vorgelegte Gesetzentwurf wurde öffentlich gelobt, und in intensiven Verhandlungen mit unseren Koalitionspartnern haben wir weitere Verbesserungen erreicht. Wir schaffen jetzt die notwendige Voraussetzung für die technische Umsetzung einer einheitlichen Dateninfrastruktur, setzen verpflichtende Sicherheitsstandards, verbessern die medizinische Forschung in Deutschland und sorgen mit der Opt-out-Regelung dafür, dass die elektronische Patientenakte endlich zum Fliegen kommt.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">So bekommt jeder gesetzlich Versicherte seine persönliche ePA und kann schon bald von ihrem Nutzen profitieren. Wer dieses Angebot nicht für sich in Anspruch nehmen möchte, kann ohne großen Aufwand seinen Widerspruch erklären. Aber ich bin sicher, dass die großen Vorteile der ePA ganz rasch bemerkt werden, auch von jenen, die noch skeptisch sind.</p>
+        <kommentar>(Beifall bei der SPD)</kommentar>
+        <p klasse="J">Was für eine Erleichterung, wenn wichtige individuelle Gesundheitsdaten nicht mehr aufwendig zusammengetragen werden müssen aus Laboren, Arztpraxen und Krankenhäusern, sondern direkt in der ePA verfügbar sind. Das Ausfüllen von Formularen kann reduziert werden. Die Kommunikation mit dem Arzt wird einfacher: Blutgruppe, Allergien, Unverträglichkeiten, Impfstatus und Medikationsplan werden in Zukunft für Ärzte ohne großen Aufwand erkennbar. Als Patientin habe ich dann zum ersten Mal selbst den vollen Überblick über das, was in meiner Akte steht, und kann entscheiden, wer darauf zurückgreifen darf.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+        <p klasse="J">Manche befürchten, dass die Nutzung der digitalen Akte für sie zu kompliziert sei. Aber ich bin fest davon überzeugt, dass es für alle leichter wird. Darum haben wir für einen einfacheren Log-in gesorgt und dafür, dass die Navigation selbsterklärend ist. Wer damit nicht klarkommt oder wer kein Handy hat, kann sich vertraulich an die Ombudsstellen der Krankenkassen oder an die nächste Apotheke wenden. Gleicher Zugang für alle, egal ob mit oder ohne Internetzugang, dafür haben wir gesorgt!</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Sehr intensiv haben wir in den Verhandlungen zu den beiden Digitalgesetzen über Datenschutz und Datensicherheit diskutiert. Ich denke, dass es gelungen ist, eine gute Balance herzustellen zwischen den Interessen des Gesundheitsschutzes und den Anforderungen des Datenschutzes. Patientinnen und Patienten können ihr Widerspruchsrecht unkompliziert über die ePA-App ausüben. Sie werden jederzeit entscheiden können, ob sie Dokumente oder gar die ganze Akte löschen wollen. Damit wird das informationelle Selbstbestimmungsrecht der Patientinnen und Patienten in vollem Umfang gewahrt. Das war uns als SPD ganz besonders wichtig.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="J">Heute schaffen wir also den rechtlichen Rahmen für die Digitalisierung im Gesundheitswesen. Dann geht es an die Umsetzung, und da kommt es darauf an, dass alle Beteiligten auch wirklich mitziehen. Das braucht jetzt noch mal eine echte Kraftanstrengung auf allen Seiten. Denn nun sind die technischen Voraussetzungen zu schaffen. Die Telematikinfrastruktur muss aufgebaut werden, die neue Sicherheitsarchitektur muss umgesetzt werden und das Forschungsdatenzentrum beim BfArM weiterentwickelt werden.</p>
+        <kommentar>(Beifall bei der SPD)</kommentar>
+        <p klasse="J">Darum braucht es weiterhin noch etwas Geduld, bis jeder einzelne Fortschritt auch ganz konkret wird. Das verbesserte E-Rezept kommt schon im nächsten Jahr. Die ePA für alle startet 2025 mit ersten wertvollen Anwendungen. Aber es muss klar sein, dass nicht alles auf einmal geht; das haben wir aus dem Prozess rund um die Corona-Warn-App gelernt. Von daher schaffen wir ein lernendes System, das Zug um Zug mehr Nutzen für Patientinnen und Patienten und für diejenigen, die im Gesundheitswesen arbeiten, bringen wird.</p>
+        <p klasse="J">Aber mit der Beschlussfassung heute ist klar: Dieser Fortschritt ist nicht mehr aufzuhalten. Darauf bin ich stolz, darüber freuen wir uns als SPD gemeinsam mit unserem Gesundheitsminister und vor allem auch mit unseren Partnern in der Koalition. Ich danke herzlich für die gute Zusammenarbeit hier in der Koalition und danke auch den Mitarbeiterinnen und Mitarbeitern im Gesundheitsministerium, die mit uns wirklich Stunden um Stunden gerungen haben und das Ganze dann auch umgesetzt haben.</p>
+        <p klasse="J">Vielen Dank.</p>
+        <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächste hat das Wort für die CDU/CSU-Fraktion Diana Stöcker.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+      </rede>
+      <rede id="ID2014401300">
+        <p klasse="redner">
+          <a id="r15" />
+          <redner id="11005233">
+            <name>
+              <vorname>Diana</vorname>
+              <nachname>Stöcker</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Diana Stöcker (CDU/CSU):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Sehr geehrter Herr Minister! Liebe Kolleginnen und Kollegen! Sehr geehrte Damen und Herren! Die Digitalisierung unseres Gesundheitssystems ist kein Projekt, das erst heute mit dem Gesundheitsdatennutzungsgesetz und dem Digital-Gesetz startet.</p>
+        <p klasse="J">Beispiel E-Rezept: Ab Januar 2024 wird das elektronische Rezept Pflicht, seit 1. Juli dieses Jahres sollen Versicherte bereits die Option haben, anstelle eines Papierrezeptes ein digitales zu erhalten. So weit die Theorie. In der Praxis ist es leider immer noch so, dass das Papierrezept wesentlich einfacher und schneller ausgestellt wird als das digitale. Das zeigt, dass zur Digitalisierung im Gesundheitswesen eben nicht nur Gesetze gehören, sondern auch die Technik, die anwenderfreundlich und effizient funktionieren muss, und natürlich der Mensch, der die Technik nutzen will und es auch tut.</p>
+        <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="J">Beispiel E-Patientenakte: Die Einführung der elektronischen Patientenakte für alle Versicherten und die damit verbundene Opt-out-Lösung bringen dem Gesundheitswesen einen Digitalisierungsschub. Die im Ausschuss zuletzt eingebrachten Änderungsanträge ermöglichen, dass auch Ärztinnen und Ärzte mit dem Start der ePA 2025 neben digitalen Medikationsübersichten nun auch Arztbriefe sowie Röntgen- und Laborbefunde verpflichtend in der ePA speichern müssen.</p>
+        <kommentar>(Zuruf vom BÜNDNIS 90/DIE GRÜNEN)</kommentar>
+        <p klasse="O">Richtig ist, dass sich nur dadurch die Durchlässigkeit und Transparenz in der Versorgung verbessert.</p>
+        <p klasse="J">Patientinnen und Patienten profitieren, wenn die Behandlungsdaten in der ePA umfangreich und übersichtlich dokumentiert werden. Dafür braucht es jedoch eine stabile Software, damit es nicht zu Abstürzen kommt und die Arztpraxen nicht genervt in ihren alten Systemen arbeiten. Es braucht eine Vergütung für das Einpflegen der Daten, und vor allem braucht es Klarheit, wer auf welche Daten zugreifen kann. Patientinnen und Patienten müssen die Hoheit über ihre Daten behalten.</p>
+        <p klasse="J">Gerade für Patientinnen und Patienten mit psychischen Erkrankungen ist es wichtig, dass sie darauf vertrauen können, dass nicht jeder Arzt, jede Ärztin Einsicht in den Krankheitsverlauf hat, und bei Missbrauch braucht es ein klares automatisches Meldesystem mit klar formulierten Sanktionen, so wie wir es aus Dänemark kennen.</p>
+        <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="J">Dort verwenden übrigens seit 2015 alle medizinischen Notfallfahrzeuge eine elektronische präklinische Krankenakte, die sich auf einem speziell dafür vorgesehenen Tablet befindet und in ganz Dänemark identisch ist. Dadurch sind die Besatzung des Rettungswagens und die aufnehmende Notfallambulanz der Klinik bereits auf der Fahrt über die Patienten informiert. Da müssen wir hin.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <p klasse="J">Ja, die Digitalisierungsgesetze sind ein Schritt nach vorn für das Gesundheitswesen; denn mit dem Digital-Gesetz sollen beispielsweise Sprechstunden und probatorische Sitzungen in der Psychotherapie per Video ermöglicht werden, wie das auch in der Covid-19-Pandemie als Ausnahmeregelung möglich war. Es hat sich in der Praxis bewährt, um besondere Lebenslagen flexibel zu unterstützen und zu überbrücken.</p>
+        <p klasse="J">Den grundsätzlichen Mangel an Therapieplätzen, Herr Minister, wird es aber nicht beheben; denn die Psychotherapeutin und der Psychotherapeut benötigen für ihre Sprechstunden genau gleich viel Zeit wie in Präsenz.</p>
+        <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+        <p klasse="O">Es ist sicherlich eine sinnvolle Ergänzung; aber die Wahlmöglichkeit der Patientinnen und Patienten bezüglich Video- oder Präsenztermin oder einer Kombination von beidem muss dabei entscheidend sein. Letztendlich hängt das immer wieder von der individuellen Krankheitsgeschichte ab.</p>
+        <kommentar>(Beifall bei der CDU/CSU sowie der Abg. Dr. Kirsten Kappert-Gonther [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+        <p klasse="J">Zusammenfassend: Ja, ein ordentlicher Aufschlag, aber noch genügend Luft nach oben. Wir hätten es uns weitgehender vorstellen können. Schließlich wird die Umsetzung entscheidend sein.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächste hat das Wort für die Fraktion Bündnis 90/Die Grünen Maria Klein-Schmeink.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+      </rede>
+      <rede id="ID2014401400">
+        <p klasse="redner">
+          <a id="r16" />
+          <redner id="11004072">
+            <name>
+              <vorname>Maria</vorname>
+              <nachname>Klein-Schmeink</nachname>
+              <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+            </name>
+          </redner>Maria Klein-Schmeink (BÜNDNIS 90/DIE GRÜNEN):</p>
+        <p klasse="J_1">Sehr geehrte Frau Präsidentin! Meine lieben Kolleginnen und Kollegen hier im Hause! Ich habe gerade „ein ordentlicher Aufschlag“ für die beiden Gesetze gehört. Das höre ich gerne. Leider spiegelt sich das voraussichtlich in Ihrem Abstimmungsverhalten, in dem vonseiten der CDU/CSU-Fraktion, nicht wider.</p>
+        <kommentar>(Beifall bei der SPD sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN und der FDP)</kommentar>
+        <p klasse="O">Ehrlich gesagt, habe ich da große Fragezeichen, warum nicht.</p>
+        <kommentar>(Zuruf von der CDU/CSU)</kommentar>
+        <p klasse="J">Schauen wir mal, was für einen Vorlauf wir haben: 2002 wurden in diesem Bundestag sowohl die eGK, also die elektronische Gesundheitskarte, als auch als Anwendungsmöglichkeiten das E-Rezept und die elektronische Patientenakte beschlossen – 2002 mit Wirkung 2004. Jetzt sind wir fast 20 Jahre weiter und müssen feststellen: Fast alles von diesen Beschlüssen ist noch nicht Realität. Da sehen wir: Wir haben im Moment zwar ein Recht auf die ePA, aber nur 1 Prozent der Versicherten nutzen diese Möglichkeit. Sie tun es nicht deshalb in so geringem Umfang, weil sie kein Vertrauen hätten, sondern weil sie nicht erleben können, dass da irgendwas Funktionierendes enthalten wäre. Das ist der eine Teil. Der zweite Teil ist, dass die Hürde, diese Patientenakte überhaupt anzulegen, so immens ist, dass man voraussichtlich erst mal daran scheitert. Das, meine Damen und Herren, muss ein Ende haben.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="J">Denn wir in Deutschland sind beinahe Schlusslicht im internationalen Vergleich, was die Zurverfügungstellung von elektronischen Daten im Gesundheitswesen angeht. Damit zerschlagen wir viele Chancen; Corona hat das mehr als deutlich gemacht. Wir sind ganz oft zwangsweise im Blindflug gewesen, weil wir die Daten nicht hatten,</p>
+        <kommentar>(Martin Sichert [AfD]: Weil Sie die Daten haben, aber nicht auswerten!)</kommentar>
+        <p klasse="O">und das verbessern wir jetzt grundlegend. Das sind wichtige Schritte, die wir nach vorne tun.</p>
+        <p klasse="J">Im ganzen Verfahren, muss ich sagen, haben wir zwei gute Vorschläge für diese beiden Gesetze noch mal deutlich verbessert. Da gilt mein Dank nun wirklich den Berichterstattern – es waren in diesem Falle nur Herren –, die daran in vielen, vielen Stunden gearbeitet haben</p>
+        <kommentar>(Beifall bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN, der SPD und der FDP)</kommentar>
+        <p klasse="O">und mit mehr als 50 Änderungsanträgen im Ausschuss noch einmal qualitativ wichtige Dinge vorangebracht haben. Dazu gehören ganz klar die noch bessere Patientenorientierung und die Nutzbarkeit, um sicherzustellen, dass auch diejenigen, die heute noch Offliner sind, die Patientenakte nutzen können. Das sind die richtigen Fortschritte, das müssen wir tun; schließlich müssen wir ja immer bedenken, dass gerade die Menschen mit einer chronischen Erkrankung oder mit Mehrfacherkrankungen diejenigen sind, die von diesen beiden Gesetzen profitieren können. Genau das müssen wir voranbringen.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <p klasse="J">Ich darf zum Schluss noch mal sagen: Es wird gerne unterstellt, damit würden die Patientensouveränität und die Hoheit über die eigenen Daten ein Ende haben.</p>
+        <kommentar>(Konstantin Kuhle [FDP]: Das ist doch Quatsch!)</kommentar>
+        <p klasse="O">Nein, im Gegenteil: Wir sehen in dem Gesetz viele, viele Möglichkeiten vor, selber zu entscheiden, was in der elektronischen Patientenakte drin ist, ob ich sie überhaupt nutzen will und ob ich meine Daten der Forschung zur Verfügung stellen will. In diesem Sinne: Räumen wir auf mit bestimmten Vorurteilen!</p>
+        <p klasse="J">Im Gegenteil, am Ende können wir sagen: Wir haben die Patientensouveränität, die Patientenorientierung und die Nutzerorientierung verbessert, und genau das ist der richtige Weg.</p>
+        <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der SPD und der FDP)</kommentar>
+        <name>Präsidentin Bärbel Bas:</name>
+        <p klasse="J_1">Als Nächster hat das Wort für die CDU/CSU-Fraktion Stephan Pilsinger.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+      </rede>
+      <rede id="ID2014401500">
+        <p klasse="redner">
+          <a id="r17" />
+          <redner id="11004853">
+            <name>
+              <vorname>Stephan</vorname>
+              <nachname>Pilsinger</nachname>
+              <fraktion>CDU/CSU</fraktion>
+            </name>
+          </redner>Stephan Pilsinger (CDU/CSU):</p>
+        <p klasse="J_1">Frau Präsidentin! Meine Damen und Herren! Herr Minister Lauterbach, Sie haben vorher von einem Quantensprung für die Digitalisierung gesprochen. Also, ich habe in meinem Medizinstudium damals im Physikkurs gelernt, dass ein Quantensprung eine Veränderung des Energiezustandes von einem Elektron auf das andere Elektron ist. Ich möchte zusammenfassen: Ich hoffe, dass Sie den umgangssprachlichen Sinn des Quantensprungs gemeint haben und nicht als Wissenschaftler den physikalischen.</p>
+        <kommentar>(Beifall bei der CDU/CSU – Zurufe von der SPD: Oah!)</kommentar>
+        <p klasse="O">– Ja.</p>
+        <kommentar>(Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Irgendwas mussten Sie ja finden, Herr Pilsinger!)</kommentar>
+        <p klasse="J">Herr Ullmann, Sie haben von einem wichtigen Meilenstein gesprochen. Gratulation zur ersten Meile! Ich muss zugeben: Das war bisher im Gesundheitsbereich das beste Gesetz der Ampelregierung. Aber es hätte noch besser laufen können, weil den Menschen noch nicht genug erklärt worden ist, was es bringt.</p>
+        <kommentar>(Dr. Andrew Ullmann [FDP]: Viel!)</kommentar>
+        <p klasse="J">Wenn ich bei mir in der Praxis unterwegs bin und mit Menschen über Maßnahmen spreche, warum sie etwas tun sollen, dann fragen sie immer: Ja, was bringt denn das für mich? Wenn man über die Digitalisierung spricht, dann ist das eigentlich leicht zu erklären. Ich habe meine medizinische Karriere als Assistenzarzt begonnen. Viel in meiner Tätigkeit hat damit zusammengehangen, dass man viele Briefe schreiben musste – die ganzen Zusammenfassungen –, die man an einem Computer geschrieben hat; dann hat man einen vorläufigen Bericht ausgestellt. Diesen Bericht hat man dann in schriftlicher Form erst mal dem Patienten ausgehändigt, und der hat ihn dann mit zum Hausarzt gebracht.</p>
+        <kommentar>(Zuruf des Abg. Dr. Andrew Ullmann [FDP])</kommentar>
+        <p klasse="O">Und der Hausarzt hat diesen vorläufigen Arztbrief dann wiederum über seine Arzthelferin scannen lassen, und diesen Arztbrief hat er dann ausgelesen – bis zu dem Zeitpunkt, wo der Oberarzt dann diesen Arztbrief korrigiert hat und die endgültige Form dann noch mal als zusätzliche Variante zum Hausarzt geschickt worden ist, damit er dies wiederum scannt und auf seinen Rechner hochlädt.</p>
+        <p klasse="J">Das hat die Praxen massiv belastet. Dieser ganze Bürokratiewust hat nichts gebracht, und deswegen ist die Digitalisierung gerade für den medizinischen Bereich entscheidend. Er verbessert das Gesundheitswesen und auch die Sicherheit der Patienten.</p>
+        <kommentar>(Beifall bei Abgeordneten der CDU/CSU – Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Dann können Sie doch zustimmen, Herr Pilsinger!)</kommentar>
+        <p klasse="J">Ich muss aber eins anmerken, was mir an diesem Gesetz noch nicht so wirklich gut gefällt. Sie haben jetzt in dem beigefügten Änderungsantrag erklärt, dass die Hausärzte dafür zuständig sind, die elektronische Patientenakte zu befüllen. Ich verstehe das in gewisser Weise. Denn was bringt es, eine ePA zu haben, wenn die nicht befüllt wird? Aber, ich glaube nicht, dass der Hausarzt der geeignete Adressat ist, so eine Befüllung vorzunehmen.</p>
+        <kommentar>(Martina Stamm-Fibich [SPD]: Wer denn sonst?)</kommentar>
+        <p klasse="O">Ich sage es Ihnen ganz deutlich: Die Hausärzte sind nicht die Haussekretäre der gematik oder der Krankenkassen.</p>
+        <kommentar>(Beifall bei der CDU/CSU [Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Das machen sie doch mit dem Leitz-Ordner auch!])</kommentar>
+        <p klasse="J">Es ist, glaube ich, ganz entscheidend, wie die Ausführungen der gematik zustande kommen. Die gematik muss funktionieren, und auch der Zugriff auf die elektronische Patientenakte muss am Ende funktionieren. Und wenn man hört, dass es zukünftig erst mal drei Minuten dauern wird, um die Daten aus der elektronischen Patientenakte auf seinen Computer stationär herunterzuladen, dann stellt man fest: Das ist nicht die Form der Digitalisierung, die wir uns wünschen. Das entlastet die Hausärzte und die niedergelassenen Ärzte nicht, sondern das belastet sie. Und das ist gerade der falsche Weg. Da brauchen wir noch einen deutlichen Fortschritt. Deswegen bitte ich Sie, das zu ändern.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+        <p klasse="J">Ich glaube, dass es richtig ist, dass wir die Praxen – vorhin wurde das Wort „Empowerment“ verwendet – dahin gehend stärken, diese ganze Digitalisierung auch umzusetzen. Wir hören vielfach, dass die Praxen momentan massiv durch die Inflation belastet sind und das durch ihre Vergütung nur mangelhaft ausgeglichen bekommen. Deswegen brauchen wir eine Förderung. Wir brauchen ein Praxiszukunftsgesetz, damit die Praxen befähigt werden, die Digitalisierung auch umzusetzen und nicht am Ende noch draufzahlen müssen.</p>
+        <p klasse="J">Ich glaube, dieses Gesetz ist grundsätzlich gut, hätte aber noch besser sein können. Ich finde es schade, dass Sie die Änderungsanträge im Ausschuss nicht genutzt haben, um dieses Gesetz voranzubringen; das PVS-Problem hätte gelöst werden können.</p>
+        <kommentar>(Dr. Andrew Ullmann [FDP]: Das ist doch gelöst! Das habe ich gerade doch erklärt!)</kommentar>
+        <p klasse="O">Deswegen enthalten wir uns heute. Aber wir wünschen uns, dass Sie die Digitalisierung weiter voranbringen; denn Digitalisierung ist wichtig für unsere Gesellschaft.</p>
+        <p klasse="J">Danke schön.</p>
+        <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+      </rede>
+      <name>Präsidentin Bärbel Bas:</name>
+      <p klasse="J_1">Vielen Dank. – Ich schließe die Aussprache.</p>
+      <p klasse="J">Wir kommen zur Abstimmung über den von der Bundesregierung eingebrachten Gesetzentwurf zur Beschleunigung der Digitalisierung des Gesundheitswesens. Der Ausschuss für Gesundheit empfiehlt unter Buchstabe a seiner Beschlussempfehlung auf Drucksache 20/9788, den Gesetzentwurf der Bundesregierung auf Drucksache 20/9048 in der Ausschussfassung anzunehmen.</p>
+      <p klasse="J">Es liegen dazu verschiedene Erklärungen nach § 31 unserer Geschäftsordnung vor.<sup>1</sup>
+        <fussnote>
+          <p>
+            <a href="ANL2">Anlagen 2 und 3</a>
+          </p>
+        </fussnote>
+      </p>
+      <p klasse="J">Ich bitte diejenigen, die dem Gesetzentwurf in der Ausschussfassung zustimmen wollen, um das Handzeichen. – Das sind die Koalitionsfraktionen. Wer stimmt dagegen? – Das ist die AfD-Fraktion. Enthaltungen? – CDU/CSU-Fraktion. Damit ist der Gesetzentwurf in zweiter Beratung angenommen.</p>
+      <p klasse="K">Dritte Beratung</p>
+      <p klasse="O">und Schlussabstimmung. Ich bitte diejenigen, die dem Gesetzentwurf zustimmen, sich zu erheben. – Das sind die Koalitionsfraktionen. Wer stimmt dagegen? – Das ist die AfD-Fraktion. Enthaltungen? – Das ist die CDU/CSU-Fraktion. Damit ist der Gesetzentwurf auch in dritter Beratung und Schlussabstimmung angenommen.</p>
+      <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+      <p klasse="J">Wir kommen nun zur Abstimmung über den Entschließungsantrag der Fraktion der CDU/CSU auf Drucksache 20/9790. Wer stimmt für diesen Entschließungsantrag? – Das ist die Fraktion der CDU/CSU. Wer stimmt dagegen? – Das sind die Koalitionsfraktionen und die AfD-Fraktion. Enthaltungen? – Keine. Dann ist der Entschließungsantrag damit abgelehnt.</p>
+      <p klasse="J">Ich komme zu Tagesordnungspunkt 9 b. Beschlussempfehlung des Ausschusses für Gesundheit zu dem Antrag der Fraktion der AfD mit dem Titel „Medizinbürokratismus stoppen – Behandeln statt verwalten“. Der Ausschuss empfiehlt unter Buchstabe b seiner Beschlussempfehlung auf Drucksache 20/9788, den Antrag der Fraktion der AfD auf Drucksache 20/4670 abzulehnen. Wer stimmt für diese Beschlussempfehlung? – Wer stimmt dagegen? – Die AfD-Fraktion. Enthaltungen? – Sehe ich nicht. Dann ist die Beschlussempfehlung mit den Stimmen der restlichen Fraktionen im Hause angenommen.</p>
+      <p klasse="J">Tagesordnungspunkt 9 c. Abstimmung über den von der Bundesregierung eingebrachten Gesetzentwurf zur verbesserten Nutzung von Gesundheitsdaten. Der Ausschuss für Gesundheit empfiehlt in seiner Beschlussempfehlung auf Drucksache 20/9785, den Gesetzentwurf der Bundesregierung auf Drucksache 20/9046 in der Ausschussfassung anzunehmen. Ich bitte diejenigen, die dem Gesetzentwurf in der Ausschussfassung zustimmen wollen, um das Handzeichen. – Das sind die Koalitionsfraktionen. Wer stimmt dagegen? – Das ist die AfD-Fraktion. Wer enthält sich? – Das ist die CDU/CSU-Fraktion. Der Gesetzentwurf ist damit in zweiter Beratung angenommen.</p>
+      <p klasse="K">Dritte Beratung</p>
+      <p klasse="O">und Schlussabstimmung. Ich bitte diejenigen, die dem Gesetzentwurf zustimmen wollen, sich zu erheben. – Das sind die Koalitionsfraktionen. Wer stimmt dagegen? – Das ist die AfD-Fraktion. Wer enthält sich? – Das ist die CDU/CSU-Fraktion. Der Gesetzentwurf ist damit in dritter Beratung und Schlussabstimmung angenommen.</p>
+      <kommentar>(Beifall bei der SPD, dem BÜNDNIS 90/DIE GRÜNEN und der FDP)</kommentar>
+      <p klasse="J">Bevor wir in den nächsten Tagesordnungspunkt einsteigen, komme ich zurück auf die gestrige Aussprache zu Tagesordnungspunkt 6. Namens und im Auftrag der Vizepräsidentin Özoğuz erteile ich der Abgeordneten Leni Breymaier einen Ordnungsruf für die herabsetzende Bezeichnung einer hier im Hause vertretenen Fraktion am Ende ihrer gestrigen Rede.</p>
+      <kommentar>(Beifall bei Abgeordneten der AfD)</kommentar>
+    </tagesordnungspunkt>
     <tagesordnungspunkt top-id="Tagesordnungspunkt 10">
       <p klasse="J">Ich rufe nun auf die Tagesordnungspunkte 10 a bis 10 c:</p>
       <p klasse="T_NaS">
