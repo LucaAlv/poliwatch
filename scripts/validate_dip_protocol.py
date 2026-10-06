@@ -460,10 +460,18 @@ NESTED_GRANT_EVIDENCE = re.compile(
     r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\bzulass\w*\b)",
     re.IGNORECASE,
 )
-_NESTED_GROUP_GRANT = re.compile(
-    r"\b(?:Kollegen?|Kollegin)\s+([A-ZÄÖÜ][\wÄÖÜäöüß.-]+)\s+und\s+(?:der\s+)?(?:Kollegen?|Kollegin)\s+([A-ZÄÖÜ][\wÄÖÜäöüß.-]+)",
-    re.IGNORECASE,
+_NESTED_NAMED_ASKER = re.compile(
+    r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
+    r"([A-ZÄÖÜ][\wÄÖÜäöüß.-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß.-]*)*)"
 )
+
+
+def nested_grant_names(announcement: str) -> set[str] | None:
+    # Only names after the question wording are askers; the chair may address
+    # the main speaker by name before it.
+    question = re.search(r"\b(?:Zwischenfragen?|Zwischenbemerkung(?:en)?|Fragen?|Bemerkung(?:en)?)\b", announcement, re.IGNORECASE)
+    names = _NESTED_NAMED_ASKER.findall(announcement[question.end():]) if question else []
+    return {name.split()[-1].casefold() for name in names} or None
 
 
 def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
@@ -483,6 +491,8 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
     chair_text = ""
     pending_nested_announcement = ""
     pending_nested_names = None
+    # Carry refusals into classification even across empty speaker segments.
+    grant_epoch = 0
     preceding_chair_text = ""
     for child in rede:
         if child.tag == "name":
@@ -506,6 +516,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                         else:
                             grant_context = pending_nested_announcement
                         segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
+                                   "grant_epoch": grant_epoch,
                                    "announcement": " ".join(filter(None, (grant_context, chair_text)))}
                         nested.append(segment)
                         if pending_nested_names is not None:
@@ -536,8 +547,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                 chair_text += " " + text
                 if re.search(r"Zwischenfrage|Zwischenbemerkung", chair_text, re.IGNORECASE):
                     pending_nested_announcement = chair_text
-                    group = _NESTED_GROUP_GRANT.search(chair_text)
-                    pending_nested_names = {name.casefold() for name in group.groups()} if group else None
+                    pending_nested_names = nested_grant_names(chair_text)
             elif speaker == own:
                 paragraphs.append(text)
                 grant = NESTED_GRANT_EVIDENCE.search(text)
@@ -545,10 +555,10 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                     if speech_kinds.NOT_GRANTED.search(grant.group("grant")):
                         pending_nested_announcement = ""
                         pending_nested_names = None
+                        grant_epoch += 1
                     else:
                         pending_nested_announcement = " ".join(filter(None, (preceding_chair_text, text)))
-                        group = _NESTED_GROUP_GRANT.search(pending_nested_announcement)
-                        pending_nested_names = {name.casefold() for name in group.groups()} if group else None
+                        pending_nested_names = nested_grant_names(pending_nested_announcement)
             elif segment is not None:
                 segment["paragraphs"].append(text)
     for nested_segment in nested:
@@ -688,6 +698,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
             own_text, nested = speech_segments(rede)
             granted_nested_speaker = None
+            grant_epoch = 0
             text, paragraphs, unattributed_chars = own_text
             page_ref = rid_pages.get(rid or "")
             if page_ref:
@@ -706,6 +717,9 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             if nested and not rid:
                 raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
             for segment in nested:
+                if segment["grant_epoch"] != grant_epoch:
+                    granted_nested_speaker = None
+                    grant_epoch = segment["grant_epoch"]
                 nested_kind = speech_kinds.ZWISCHENFRAGE
                 side = derive.sprechrolle(segment["speaker"])
                 speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
