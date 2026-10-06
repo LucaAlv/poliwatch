@@ -3149,14 +3149,14 @@ class OfflineRebuildEndToEndTests(unittest.TestCase):
             path.write_text(json.dumps(stamped), encoding="utf-8")
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 0, stderr)
-            self.assertEqual(stderr.count("predate the A1 Rede rule"), 1)
+            self.assertEqual(stderr.count("predate the current speech-counting rule"), 1)
             self.assertIn("1 of 2 cached reports predate", stderr)
             old = json.loads((output_dir / "data" / "plenarprotokoll-20-999.json").read_text(encoding="utf-8"))
             old["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
             (output_dir / "data" / "plenarprotokoll-20-999.json").write_text(json.dumps(old), encoding="utf-8")
             code, stderr = self._build(output_dir)
             self.assertEqual(code, 0, stderr)
-            self.assertNotIn("predate the A1 Rede rule", stderr)
+            self.assertNotIn("predate the current speech-counting rule", stderr)
 
     def test_offline_rebuild_with_an_unknown_week_writes_no_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -454,13 +454,32 @@ class SpeechText(NamedTuple):
 # Whoever a ``<name>`` element introduces is the Sitzungsleitung ("Präsidentin
 # Julia Klöckner:"): the XML uses it for nobody else. Compared by identity.
 _SITZUNGSLEITUNG = object()
+# ponytail: reviewed grant wording only; extend with source-backed regressions.
+NESTED_GRANT_EVIDENCE = re.compile(
+    r"(?P<grant>\bich\s+(?:lasse|gestatte|erlaube)\b.{0,80}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,40}\bzu\b)"
+    r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\bzulass\w*\b)",
+    re.IGNORECASE,
+)
+_NESTED_NAMED_ASKER = re.compile(
+    r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
+    r"([A-ZÄÖÜ][\wÄÖÜäöüß.-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß.-]*)*)"
+)
+
+
+def nested_grant_names(announcement: str) -> set[str] | None:
+    # Only names after the question wording are askers; the chair may address
+    # the main speaker by name before it.
+    question = re.search(r"\b(?:Zwischenfragen?|Zwischenbemerkung(?:en)?|Fragen?|Bemerkung(?:en)?)\b", announcement, re.IGNORECASE)
+    names = _NESTED_NAMED_ASKER.findall(announcement[question.end():]) if question else []
+    return {name.split()[-1].casefold() for name in names} or None
 
 
 def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
     """One source walk: own words and separate nested speaker segments.
 
-    Marker ordinals count every speaker marker, including resumptions. Chair
-    text and comments close/bypass segments and never become speaker text.
+    Marker ordinals count every speaker marker, including resumptions. The
+    announcement field also carries explicit grant/acknowledgement evidence.
+    Chair text and comments never become speaker text.
     """
     own = redner_key(rede.find("./p[@klasse='redner']/redner"))
     speaker: object = own
@@ -470,6 +489,11 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
     unattributed = 0
     marker = 0
     chair_text = ""
+    pending_nested_announcement = ""
+    pending_nested_names = None
+    # Carry refusals into classification even across empty speaker segments.
+    grant_epoch = 0
+    preceding_chair_text = ""
     for child in rede:
         if child.tag == "name":
             speaker, segment = _SITZUNGSLEITUNG, None
@@ -479,10 +503,34 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                 marker += 1
                 redner = child.find("redner")
                 speaker, segment = redner_key(redner), None
-                if speaker is not None and speaker != own:
-                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": [],
-                               "announcement": chair_text}
-                    nested.append(segment)
+                if speaker == own:
+                    preceding_chair_text = chair_text
+                if speaker != own:
+                    if speaker is not None:
+                        candidate = parse_redner(redner)
+                        named_in_grant = (candidate.get("last_name") and pending_nested_names
+                                          and candidate["last_name"].casefold() in pending_nested_names)
+                        if pending_nested_names is not None and not named_in_grant:
+                            grant_context = ""
+                            chair_text = ""
+                        else:
+                            grant_context = pending_nested_announcement
+                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
+                                   "grant_epoch": grant_epoch,
+                                   "announcement": " ".join(filter(None, (grant_context, chair_text)))}
+                        nested.append(segment)
+                        if pending_nested_names is not None:
+                            if named_in_grant:
+                                pending_nested_names.discard(candidate["last_name"].casefold())
+                            else:
+                                pending_nested_names.clear()
+                            if not pending_nested_names:
+                                pending_nested_announcement = ""
+                        else:
+                            pending_nested_announcement = ""
+                    else:
+                        pending_nested_announcement = ""
+                        pending_nested_names = None
                 chair_text = ""
                 if not inline and segment is None:
                     continue
@@ -497,10 +545,27 @@ def speech_segments(rede: ET.Element, *, inline: bool = False) -> tuple[SpeechTe
                 unattributed += len(text)
             elif speaker is _SITZUNGSLEITUNG:
                 chair_text += " " + text
+                if re.search(r"Zwischenfrage|Zwischenbemerkung", chair_text, re.IGNORECASE):
+                    pending_nested_announcement = chair_text
+                    pending_nested_names = nested_grant_names(chair_text)
             elif speaker == own:
                 paragraphs.append(text)
+                grant = NESTED_GRANT_EVIDENCE.search(text)
+                if grant and grant.group("grant"):
+                    if speech_kinds.NOT_GRANTED.search(grant.group("grant")):
+                        pending_nested_announcement = ""
+                        pending_nested_names = None
+                        grant_epoch += 1
+                    else:
+                        pending_nested_announcement = " ".join(filter(None, (preceding_chair_text, text)))
+                        pending_nested_names = nested_grant_names(pending_nested_announcement)
             elif segment is not None:
                 segment["paragraphs"].append(text)
+    for nested_segment in nested:
+        text = " ".join(nested_segment["paragraphs"])
+        evidence = NESTED_GRANT_EVIDENCE.search(text)
+        if evidence and evidence.group("ack") and not speech_kinds.NOT_GRANTED.search(evidence.group("ack")):
+            nested_segment["announcement"] = " ".join(filter(None, (nested_segment["announcement"], evidence.group("ack"))))
     return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
 
 
@@ -632,6 +697,8 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             rid = rede.attrib.get("id")
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
             own_text, nested = speech_segments(rede)
+            granted_nested_speaker = None
+            grant_epoch = 0
             text, paragraphs, unattributed_chars = own_text
             page_ref = rid_pages.get(rid or "")
             if page_ref:
@@ -650,16 +717,24 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             if nested and not rid:
                 raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
             for segment in nested:
+                if segment["grant_epoch"] != grant_epoch:
+                    granted_nested_speaker = None
+                    grant_epoch = segment["grant_epoch"]
                 nested_kind = speech_kinds.ZWISCHENFRAGE
                 side = derive.sprechrolle(segment["speaker"])
+                speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
+                announced = (re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
+                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"]))
+                continuation = speaker_id and speaker_id == granted_nested_speaker
                 if speech_kinds.BEFRAGUNG in top_format.formats:
                     if not side and not (segment["speaker"] or {}).get("fraktion"):
                         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested question-format speaker at {rid} marker {segment['marker']}")
                     nested_kind = speech_kinds.BEFRAGUNG_ANTWORT if side else speech_kinds.BEFRAGUNG_FRAGE
                 elif (side or not (segment["speaker"] or {}).get("fraktion")
                       or not (any("?" in p for p in segment["paragraphs"])
-                              or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE))):
+                              or announced or continuation)):
                     raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
+                granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
                 nested_units.append(contribution_unit(
                     nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                     segment["speaker"], segment["paragraphs"], page_ref))

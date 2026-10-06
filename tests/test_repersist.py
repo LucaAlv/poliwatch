@@ -277,7 +277,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
         self.database.write_bytes(b"previous store")
         with self.assertRaises(build.CachedReportError) as caught:
             build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
-        self.assertIn("1 cached reports predate the A1 Rede rule and have no cached XML", str(caught.exception))
+        self.assertIn("1 cached reports predate the current speech-counting rule and have no cached XML", str(caught.exception))
         self.assertIn("(21/6)", str(caught.exception))
         self.assertIn("--fetch-xml", str(caught.exception))
         self.assertEqual(self.database.read_bytes(), b"previous store")
@@ -293,7 +293,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
             self.assertEqual(build.warn_unparsed_reports([current, old]), 1)
         message = stderr.getvalue()
         self.assertEqual(message.count("warning:"), 1)
-        self.assertIn("1 of 2 cached reports predate the A1 Rede rule", message)
+        self.assertIn("1 of 2 cached reports predate the current speech-counting rule", message)
         self.assertIn("--fetch-xml", message)
         self.assertIn("--offline --repersist", message)
         stderr = io.StringIO()

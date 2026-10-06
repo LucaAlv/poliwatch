@@ -1296,8 +1296,7 @@ def _rebuild_database_from_entries(
 
 
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The cached reports made before A1: they carry no ``speech_kinds_version``,
-    so every Kurzintervention, Frage and Antwort in them still counts as a Rede."""
+    """Cached reports with missing or older speech-counting rule provenance."""
     return [
         entry
         for entry in entries
@@ -1306,29 +1305,27 @@ def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
-    """Refuse to persist a report made before A1: its Reden counts would sit in the
-    store next to correctly classified ones. Raises CachedReportError naming them."""
+    """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
         numbers = ", ".join(
             sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
         )
         raise CachedReportError(
-            f"{len(stale)} cached reports predate the A1 Rede rule and have no cached XML in data/xml/ to re-read "
+            f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
             f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
             "fetched (no xml_url) must be deleted from data/"
         )
 
 
 def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
-    """Warn about cached reports made before A1 (see unparsed_reports): the numbers
-    built from them mix two rules. Returns how many there are."""
+    """Warn about missing or older rule inputs and return their count."""
     stale = unparsed_reports(entries)
     if stale:
         print(
-            f"warning: {len(stale)} of {len(entries)} cached reports predate the A1 Rede rule and {keeping} "
-            "Kurzinterventionen, Fragen and Antworten counted as Reden, so Reden counts, Redeanteil and the "
-            "Fakten built from them mix two rules. Fix: run --fetch-xml, then --offline --repersist.",
+            f"warning: {len(stale)} of {len(entries)} cached reports predate the current speech-counting rule and {keeping} "
+            "their older classifications, so Reden counts, Redeanteil and Fakten may mix rule versions. "
+            "Fix: run --fetch-xml if XML is missing, then --offline --repersist.",
             file=sys.stderr,
         )
     return len(stale)
