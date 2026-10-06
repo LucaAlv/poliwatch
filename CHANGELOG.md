@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.16.0.0] - 2026-10-06
+
+### Added
+
+- Compare speech classifications across cached XML and historical counting rules with a read-only audit, including source hashes, unresolved turns and count changes.
+
+### Fixed
+
+- Offline replay recognises source-backed question permissions, renewed consent and corrected recipients while preserving refusals and keeping named and faction permissions separate.
+- Procedural exchanges no longer inflate speech counts. Split replies and explicitly resumed speeches retain their native speaker, text and identity, with excluded or merged turns preserved as diagnostics.
+
 ## [0.15.1.0] - 2026-10-05
 
 ### Fixed
