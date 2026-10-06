@@ -169,6 +169,16 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P1
 **Depends on:** A2 completion; must pass before A3 readiness is claimed. [A1 validation receipt](docs/plans/a1-validation.md).
 
+### Test the independently loaded historical parser and classifier
+
+**What:** Add a regression test for the documented rule-4 comparison using an independently loaded historical parser and historical classifier pair.
+
+**Why:** PR #87 review finding (`tests/test_audit_offline_turns_cli.py:59–65`): the test baseline calls the current parser and shares its classifier, so it cannot catch regressions in loading the separate historical pair. Incorrect historical counts could pass unnoticed.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Acquire ceremony addresses omitted from sampled plenary XML
 
 **What:** If ceremony addresses are to be ingested, acquire an explicit ceremony source and define its sitting association. The inspected 2016 and 2021 memorial speeches precede their plenary sittings and are absent from the plenary XML; do not synthesize a guest unit or treat all role-less speakers as guests.
