@@ -89,6 +89,185 @@ class SourceRecoveryTests(unittest.TestCase):
 
 
 class ContributionTests(unittest.TestCase):
+    def test_source_refusals_need_and_accept_fresh_explicit_authorization(self):
+        for sitting, rid, marker in [('20-127', 'ID2012711500', 3), ('20-58', 'ID205803400', 3),
+                                     ('20-120', 'ID2012006500', 3), ('20-37', 'ID203711500', 4),
+                                     ('21-36', 'ID213613700', 7), ('21-43', 'ID214305400', 4),
+                                     ('21-56', 'ID215600500', 3), ('21-90', 'ID219002200', 4)]:
+            with self.subTest(sitting=sitting):
+                parsed = dip.parse_protocol_xml(source(f'offline-v5-renewed/{sitting}.xml'))
+                unit = next(c for t in parsed['agenda_items'] for c in t['contributions']
+                            if c['rede_id'] == f'nested:{rid}:{marker}')
+                self.assertEqual(unit['kind'], sk.ZWISCHENFRAGE)
+
+    def test_an_addressed_bystander_before_the_question_is_not_a_named_asker(self):
+        xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident</name><p>Herr Neben, bitte Ruhe. Herr Haupt, gestatten Sie eine Frage des Kollegen Gast?</p>'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p><p>Gerne.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Neben</nachname><fraktion>SPD</fraktion></name></redner></p><p>Meine Frage?</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        for placement in (xml, xml.replace('Herr Neben, bitte Ruhe. ', '').replace('Gast?</p>', 'Gast? Herr Neben, bitte Ruhe.</p>')):
+            with self.assertRaisesRegex(ValueError, 'R marker 3'):
+                dip.parse_protocol_xml(placement)
+
+    def test_reviewed_faction_permissions_reject_an_unrelated_recipient(self):
+        xml = source('offline-v5/plenarprotokoll-20-44.xml')
+        root = dip.ET.fromstring(xml)
+        rede = root.find(".//rede[@id='ID204403100']")
+        marker = rede.findall("./p[@klasse='redner']")[2]
+        marker.find('redner/name/fraktion').text = 'SPD'
+        with self.assertRaisesRegex(ValueError, 'ID204403100 marker 3'):
+            dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+        self.assertEqual(dip.nested_grant_names('Zwischenfrage vom Kollegen der Grünen'), None)
+
+    def test_new_named_and_mixed_grants_reject_unrelated_recipients(self):
+        for sitting, rid, marker, surname, faction in [
+            ('21-47', 'ID214708400', 3, 'Andere', 'AfD'),
+            ('21-47', 'ID214708400', 5, 'Andere', 'AfD'),
+            ('20-57', 'ID205710600', 3, 'Andere', 'AfD'),
+            ('20-208', 'ID2020801600', 3, 'Andere', 'SPD'),
+            ('21-93', 'ID219311800', 5, 'Andere', 'AfD'),
+        ]:
+            root = dip.ET.fromstring(source(f'offline-v5/plenarprotokoll-{sitting}.xml'))
+            rede = root.find(f".//rede[@id='{rid}']")
+            name = rede.findall("./p[@klasse='redner']")[marker - 1].find('redner/name')
+            name.find('nachname').text = surname
+            name.find('fraktion').text = faction
+            with self.subTest(sitting=sitting, marker=marker), self.assertRaisesRegex(ValueError, f'{rid} marker {marker}'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_question_addressee_is_not_its_asker(self):
+        xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<name>Präsident</name><p>Der Abgeordnete Gast hat die Möglichkeit zu einer Zwischenfrage an den Abgeordneten Neben. – Bitte schön.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Neben</nachname><fraktion>SPD</fraktion></name></redner></p><p>Meine Frage?</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with self.assertRaisesRegex(ValueError, 'R marker 2'):
+            dip.parse_protocol_xml(xml)
+        allowed = xml.replace('<nachname>Neben</nachname>', '<nachname>Gast</nachname>')
+        self.assertEqual(dip.parse_protocol_xml(allowed)['agenda_items'][0]['contributions'][0]['speaker']['last_name'], 'Gast')
+
+    def test_actual_refusal_after_acceptance_cancels_but_proven_banter_does_not(self):
+        xml = source('offline-v5/plenarprotokoll-21-56.xml')
+        self.assertTrue(dip.parse_protocol_xml(xml)['agenda_items'])
+        for mutation in ('banter', 'neutral_chair', 'explicit'):
+            root = dip.ET.fromstring(xml)
+            rede = root.find(".//rede[@id='ID215612200']")
+            for p in rede.findall('p'):
+                if mutation in {'banter', 'neutral_chair'} and 'Hoffnungen nicht enttäuschen' in dip.elem_text(p):
+                    p.text = 'Möchten Sie die Zwischenfrage wirklich zulassen?' if mutation == 'banter' else 'Vielen Dank.'
+                elif mutation == 'explicit' and dip.elem_text(p) == 'Nein. Genau.':
+                    p.text = 'Nein, ich lasse keine Zwischenfrage zu.'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID215612200 marker 4'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_fresh_faction_authorization_requires_new_consent_after_refusal(self):
+        xml = source('offline-v5/plenarprotokoll-20-51.xml')
+        root = dip.ET.fromstring(xml)
+        rede = root.find(".//rede[@id='ID205104600']")
+        for p in rede.findall('p'):
+            if dip.elem_text(p) == 'Von der CDU/CSU? – Ja.':
+                p.text = 'Vielen Dank.'
+        with self.assertRaisesRegex(ValueError, 'ID205104600 marker 4'):
+            dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_named_exchange_after_refusal_requires_the_chair_floor(self):
+        root = dip.ET.fromstring(source('offline-v5/plenarprotokoll-20-57.xml'))
+        rede = root.find(".//rede[@id='ID205710600']")
+        for p in rede.findall('p'):
+            if 'Es sind noch fünf Sekunden. Aber bitte schön.' == dip.elem_text(p):
+                p.text = 'Es sind noch fünf Sekunden.'
+        with self.assertRaisesRegex(ValueError, 'ID205710600 marker 3'):
+            dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_delegated_procedural_reply_requires_proven_identity_and_adjacent_target(self):
+        xml = source('offline-v5/plenarprotokoll-20-191.xml')
+        for mutation in ('requester', 'target', 'consent', 'boundary', 'duplicate'):
+            root = dip.ET.fromstring(xml)
+            rede = root.find(".//rede[@id='ID2019101000']")
+            target = root.find(".//rede[@id='ID2019101100']")
+            top = next(t for t in root.findall('.//tagesordnungspunkt') if rede in list(t))
+            if mutation == 'requester':
+                rede.findall("./p[@klasse='redner']")[1].find('redner').set('id', 'UNRELATED')
+            elif mutation == 'target':
+                target.find("./p[@klasse='redner']/redner/name/nachname").text = 'Andere'
+            elif mutation == 'consent':
+                for p in rede.findall('p'):
+                    if 'Sind Sie einverstanden' in dip.elem_text(p):
+                        p.text = 'Vielen Dank.'
+            elif mutation == 'duplicate':
+                top.append(copy.deepcopy(target))
+            else:
+                top.remove(target)
+                dip.ET.SubElement(root.find('sitzungsverlauf'), 'tagesordnungspunkt').append(target)
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID2019101000 marker 2'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_shortened_source_surname_requires_unique_local_candidate(self):
+        for duplicate_name in ('Cademartori Andere', 'Cademartori Dujisin'):
+            root = dip.ET.fromstring(source('offline-v5/plenarprotokoll-20-208.xml'))
+            rede = root.find(".//rede[@id='ID2020801600']")
+            clone = copy.deepcopy(rede.findall("./p[@klasse='redner']")[2])
+            clone.find('redner').set('id', 'OTHER')
+            clone.find('redner/name/nachname').text = duplicate_name
+            rede.append(clone)  # even an empty source marker makes the alias ambiguous
+            with self.subTest(name=duplicate_name), self.assertRaisesRegex(ValueError, 'ID2020801600 marker 3'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_interrupted_request_needs_acceptance_and_chair_floor_grant(self):
+        xml = source('offline-v5/plenarprotokoll-20-207.xml')
+        for missing in ('Ja, gerne.', 'Bitte schön.'):
+            root = dip.ET.fromstring(xml)
+            rede = root.find(".//rede[@id='ID2020707400']")
+            for child in rede.findall('p'):
+                if dip.elem_text(child) == missing:
+                    child.text = ''
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'ID2020707400 marker 5'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_reply_attachment_requires_evidence_matching_identity_and_unique_same_top_target(self):
+        xml = source('offline-v5/plenarprotokoll-21-35.xml')
+        for mutation in ('evidence', 'identity', 'duplicate', 'top_boundary'):
+            root = dip.ET.fromstring(xml)
+            container = root.find(".//rede[@id='ID213505100']")
+            target = root.find(".//rede[@id='ID213505200']")
+            top = next(t for t in root.findall('.//tagesordnungspunkt') if target in list(t))
+            if mutation == 'evidence':
+                for p in container.findall('p'):
+                    if 'Möchten Sie erwidern' in dip.elem_text(p):
+                        p.text = 'Vielen Dank.'
+            elif mutation == 'identity':
+                target.find("./p[@klasse='redner']/redner").set('id', 'unrelated')
+            elif mutation == 'duplicate':
+                top.append(copy.deepcopy(target))
+            else:
+                top.remove(target)
+                other = dip.ET.SubElement(root.find('sitzungsverlauf'), 'tagesordnungspunkt', {'top-id': 'other'})
+                other.append(target)
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'ID213505100 marker 2'):
+                dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_resumption_cannot_attach_to_an_unrelated_original_speaker(self):
+        root = dip.ET.fromstring(source('offline-v5/plenarprotokoll-21-43.xml'))
+        original = root.find(".//rede[@id='ID214301600']")
+        original.find("./p[@klasse='redner']/redner").set('id', 'unrelated')
+        container = root.find(".//rede[@id='ID214301700']")
+        for p in list(container):
+            if p.tag == 'p' and dip.elem_text(p) == 'Alles gut.':
+                container.remove(p)
+        with self.assertRaisesRegex(ValueError, 'ID214301700 marker 4'):
+            dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
+
+    def test_short_reply_outside_a_proven_exchange_remains_unresolved(self):
+        xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p>'
+               '<p>Rede.</p><name>Präsident</name><p>Möchten Sie antworten?</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>SPD</fraktion></name></redner></p>'
+               '<p>Ja.</p></rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with self.assertRaisesRegex(ValueError, 'R marker 2'):
+            dip.parse_protocol_xml(xml)
+
     def test_nested_remark_keeps_grant_across_same_speaker_resumption(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
                '<tagesordnungspunkt top-id="T1"><rede id="R">'
@@ -237,8 +416,12 @@ class ContributionTests(unittest.TestCase):
                     '<fraktion>Grüne</fraktion></name></redner></p><p>Eine weitere Bemerkung.</p>',
                     authorization + '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname>'
                     '<fraktion>Grüne</fraktion></name></redner></p><p>' + continuation + '</p>')
-                parsed = dip.parse_protocol_xml(renewed)
-                self.assertEqual(parsed['agenda_items'][0]['contributions'][-1]['speaker']['last_name'], 'Gast')
+                if not authorization:
+                    with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 4'):
+                        dip.parse_protocol_xml(renewed)
+                else:
+                    parsed = dip.parse_protocol_xml(renewed)
+                    self.assertEqual(parsed['agenda_items'][0]['contributions'][-1]['speaker']['last_name'], 'Gast')
 
     def test_grant_does_not_authorize_a_second_unrelated_nested_speaker(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -396,6 +579,24 @@ class ContributionTests(unittest.TestCase):
 
 
 class ReplayAndGuardTests(unittest.TestCase):
+    def test_read_only_audit_exposes_later_rejected_markers_without_editing_source(self):
+        import audit_offline_turns
+        xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt><rede id="R">'
+               '<p klasse="redner"><redner id="A"><name><nachname>Haupt</nachname><fraktion>SPD</fraktion></name></redner></p><p>Rede.</p>'
+               '<p klasse="redner"><redner id="B"><name><nachname>Gast</nachname><fraktion>SPD</fraktion></name></redner></p><p>Ungeklärt.</p>'
+               '<p klasse="redner"><redner id="C"><name><nachname>Andere</nachname><fraktion>SPD</fraktion></name></redner></p><p>Ebenfalls ungeklärt.</p>'
+               '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'source.xml'
+            path.write_text(xml)
+            result = audit_offline_turns.audit(dip, path)
+            self.assertFalse(result['accepted'])
+            self.assertEqual([u['marker_ordinal'] for u in result['unresolved']], [2, 3])
+            self.assertEqual(result['counts'], {'rede': 1})
+            self.assertEqual(path.read_text(), xml)
+            with self.assertRaisesRegex(ValueError, 'R marker 2'):
+                dip.parse_protocol_xml(path.read_text())
+
     def test_reordered_unique_tops_keep_enrichment_and_refresh_heading(self):
         parsed = dip.parse_protocol_xml(source('speech-kinds-befragung-fragestunde.xml'))
         r = report(parsed, '21/6')
@@ -423,7 +624,10 @@ class ReplayAndGuardTests(unittest.TestCase):
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
-            for version in [None, sk.VERSION - 1]:
+            self.assertEqual(sk.VERSION, 5)
+            self.assertEqual(store.SCHEMA_VERSION, 3)
+            store.require_current_speech_rules(conn)
+            for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()
                 with self.assertRaisesRegex(RuntimeError, '--offline --repersist'):
                     facts.compute(conn, facts.REGISTRY, {}, catalog=None)

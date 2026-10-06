@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 4
+VERSION = 5
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
@@ -368,6 +368,7 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
     main_key: str | None = None
     previous: str | None = None  # kind of the previous <rede>
     seen_rede = False
+    previous_rede = None
     for child in top:
         if child.tag == "p" and seen_rede and child.attrib.get("klasse") != "redner":
             between += " " + _text(child)
@@ -389,8 +390,34 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
             # The Erwiderung is the Rede of the Redner the Kurzintervention answered. The
             # Sitzungsleitung's wording is no signal: "Möchten Sie antworten? - Nein" is
             # followed by an unrelated Rede (measured on WP 20/21: 10+ real Reden).
-            if previous == KURZINTERVENTION and same_person:
+            delegated_reply = False
+            intervention_exchange = ""
+            if previous_rede is not None:
+                chair = False
+                source_key = None
+                delegation_requested = False
+                for node in previous_rede:
+                    if node.tag == "name":
+                        chair = True
+                    elif node.tag == "p" and node.get("klasse") == "redner":
+                        chair = False
+                        source_key = _redner_key(node.find("redner"))
+                    elif chair and node.tag == "p":
+                        intervention_exchange += " " + _text(node)
+                    elif node.tag == "p" and source_key == main_key:
+                        delegation_requested |= bool(names_asker(redner, _text(node)) and re.fullmatch(
+                            r"Darf auch Herr [\wÄÖÜäöüß -]+ antworten\?", _text(node)))
+                delegated_reply = (
+                    previous == KURZINTERVENTION
+                    and names_asker(redner, between)
+                    and re.search(r"Sind Sie einverstanden, dass der Abgeordnete .* antwortet\? [–-] Gut\.", between)
+                    and delegation_requested)
+            if previous == KURZINTERVENTION and (same_person or delegated_reply):
                 label = RedeLabel(ERWIDERUNG, main_id)
+            elif (main_id and names_asker(redner, intervention_exchange)
+                  and re.search(r"Herr [^.]+, Sie können eine Kurzintervention machen, eine einzige\.", intervention_exchange)
+                  and re.fullmatch(r"\s*Eine kurze Kurzintervention\.", between)):
+                label = RedeLabel(KURZINTERVENTION, main_id)
             elif main_id and announces_kurzintervention(
                 between, _last_name(redner), _fraktion(redner), len(_speech_chars(child))
             ):
@@ -403,6 +430,7 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
         previous = label.kind
         seen_rede = True
         between = trailing_sitzungsleitung_text(child)
+        previous_rede = child
     return labels
 
 
