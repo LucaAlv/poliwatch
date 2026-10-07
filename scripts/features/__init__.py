@@ -35,7 +35,7 @@ class NavItem:
 
 
 NAV_ITEMS = (
-    NavItem("pulse", "Aktueller Puls", "puls.html"),
+    NavItem("pulse", "Wochenübersicht", "puls.html"),
     NavItem("overview", "Sitzungen", "overview.html"),
     NavItem("bills", "Gesetzesvorhaben", "bills/index.html"),
     NavItem("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),

@@ -466,7 +466,7 @@ def format_percent(value: float) -> str:
 def global_header_styles() -> str:
     return """
     a:visited { color:var(--teal, #0f766e); }
-    a:focus-visible {
+    :is(a, .site-nav summary, .theme-toggle):focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
     }
@@ -523,8 +523,23 @@ def global_header_styles() -> str:
     .site-nav {
       display:flex;
       flex-wrap:wrap;
-      justify-content:flex-end;
+      justify-content:flex-start;
       gap:8px;
+      width:100%;
+      order:2;
+    }
+    .site-nav-secondary { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .site-nav-more summary { cursor:pointer; }
+    @media screen and (min-width:1024px) {
+      .site-nav-more[data-desktop] { display:contents; }
+      .site-nav-more[data-desktop] summary { display:none; }
+      .site-nav-more[data-desktop] .site-nav-secondary { margin-top:0; }
+    }
+    @media (max-width:1023px) {
+      .site-nav-more { flex-basis:100%; }
+    }
+    @media (min-width:600px) and (max-width:1023px) {
+      .site-nav-more { flex-basis:auto; }
     }
     .site-actions {
       display:flex;
@@ -532,7 +547,7 @@ def global_header_styles() -> str:
       gap:8px;
       margin-left:auto;
     }
-    .site-nav a {
+    .site-nav a, .site-nav summary {
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -545,8 +560,11 @@ def global_header_styles() -> str:
       font-size:13px;
       font-weight:700;
     }
+    .site-nav summary { display:list-item; list-style-position:inside; line-height:32px; }
     .site-nav a:hover,
-    .site-nav a[aria-current="page"] {
+    .site-nav summary:hover,
+    .site-nav a[aria-current="page"],
+    .site-nav-more[data-active] summary {
       border-color:#bdd0ea;
       background:var(--blue-soft, #eef5ff);
       color:var(--blue, #174ea6);
@@ -582,7 +600,7 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] a { color:var(--blue) !important; }
     :root[data-theme="dark"] a:visited { color:var(--teal) !important; }
     :root[data-theme="dark"] :is(
-      .site-nav a, .theme-toggle,
+      .site-nav a, .site-nav summary, .theme-toggle,
       .button, .btn, .dev-toggle,
       .page-actions a, .session-links a,
       .feature-link, .doc-link, .top-jump
@@ -591,6 +609,11 @@ def global_header_styles() -> str:
       border-color:var(--line) !important;
       color:var(--ink) !important;
     }
+    :root[data-theme="dark"] :is(.site-nav a[aria-current="page"], .site-nav-more[data-active] summary) {
+      background:var(--blue-soft) !important;
+      border-color:var(--blue) !important;
+      color:var(--blue) !important;
+    }
     :root[data-theme="dark"] :is(.btn-primary, .button.primary) {
       background:var(--blue) !important;
       border-color:var(--blue) !important;
@@ -598,8 +621,7 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] :is(
       .metric, .download-panel, .summary-band div, .panel, .table-card,
-      .filter, .sample-table, details, .snapshot, .snapshot-metrics div,
-      .stat-band div, .principle, .area-card, .top-card, .radar,
+      .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
       .week-compare, .week-metric
@@ -629,8 +651,7 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] :is(
       .muted, .eyebrow, .row-top, .row-metric, label, .card-meta,
-      th, .snapshot-date, .snapshot-metrics span, .stat-band span,
-      .principle p, .area-card p, .metric span,
+      th, .metric span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
       .session-summary-note, .ranking-empty,
@@ -689,7 +710,7 @@ def global_header_styles() -> str:
     @media (max-width: 760px) {
       .site-header { align-items:flex-start; }
       .site-nav { justify-content:flex-start; }
-      .site-actions { width:100%; justify-content:flex-start; }
+      .site-actions { justify-content:flex-end; }
     }
     """
 
@@ -997,8 +1018,35 @@ def page_head(selection: Selection | None = None) -> str:
     return theme_bootstrap_script()
 
 
+def navigation_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const disclosure = document.querySelector(".site-nav-more");
+      if (!disclosure) return;
+      const desktop = window.matchMedia("(min-width: 1024px)");
+      const summary = disclosure.querySelector("summary");
+      const links = disclosure.querySelector(".site-nav-secondary");
+      function update() {
+        const focused = document.activeElement;
+        if (desktop.matches) {
+          disclosure.open = true;
+          if (focused === summary) links.querySelector("a").focus();
+          disclosure.setAttribute("data-desktop", "");
+        } else {
+          disclosure.removeAttribute("data-desktop");
+          disclosure.open = links.contains(focused);
+        }
+      }
+      update();
+      desktop.addEventListener("change", update);
+    })();
+  </script>
+"""
+
+
 def page_scripts(selection: Selection | None = None) -> str:
-    return ai_summary_runtime_script() + theme_runtime_script()
+    return ai_summary_runtime_script() + theme_runtime_script() + navigation_runtime_script()
 
 
 def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
@@ -1008,6 +1056,7 @@ def render_global_header(*, depth: int = 0, active: str | None = None, features:
     for item in NAV_ITEMS:
         current = ' aria-current="page"' if active == item.key else ""
         links.append(f'<a href="{esc(prefix + item.path)}"{current}>{esc(item.label)}</a>')
+    group_active = ' data-active' if active in {item.key for item in NAV_ITEMS[2:]} else ""
     return (
         '<div class="site-header">'
         f'<a class="site-brand" href="{esc(brand_href)}">'
@@ -1015,13 +1064,17 @@ def render_global_header(*, depth: int = 0, active: str | None = None, features:
         "<span>Primärquellen-Monitor</span>"
         "</a>"
         '<div class="site-actions">'
-        f'<nav class="site-nav" aria-label="Globale Navigation">{"".join(links)}</nav>'
         '<button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" '
         'aria-label="Dunkles Design aktivieren">'
         '<span class="theme-toggle-icon" data-theme-icon aria-hidden="true">☾</span>'
         '<span data-theme-label>Dunkel</span>'
         '</button>'
         '</div>'
+        '<nav class="site-nav" aria-label="Globale Navigation">'
+        f'{"".join(links[:2])}<details class="site-nav-more"{group_active}>'
+        '<summary>Weitere Bereiche</summary>'
+        f'<div class="site-nav-secondary">{"".join(links[2:])}</div>'
+        '</details></nav>'
         "</div>"
     )
 

@@ -434,11 +434,12 @@ class RenderLandingPageDatenCardTests(unittest.TestCase):
         self.assertIn(">Daten<", with_page)
         self.assertIn("Stand 15.09.2026, 12:00 MESZ · 42 Protokolle", with_page)
         self.assertNotIn("Datenbank erkunden", with_page)
+        self.assertRegex(with_page, r'<li><h3><a href="database.html">Daten</a></h3>')
 
         # The global header nav always links to database.html regardless (a
         # separate, always-on NAV_ITEMS entry), and a second, unrelated
-        # area-card ("Quellen und Methode") also carries the "Transparenz"
-        # eyebrow - so this card is identified by its unique description text.
+        # source row also links to its destination, so identify the optional
+        # data row by its unique description text.
         without_page = b.render_landing_page([], database_page_href=None, data_stand=None)
         self.assertNotIn("fünf geprüfte SQL-Abfragen", without_page)
 
