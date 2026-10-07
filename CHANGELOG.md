@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.0.0] - 2026-10-07
+
+### Changed
+
+- Open the latest generated sitting directly from the homepage, alongside a separate weekly overview with dates and coverage labels. A pinned historical week keeps its own period while the latest sitting stays current.
+- Find the public areas through concise homepage sections, replacing the introductory cards, archive counters and principles.
+- The weekly view is now named “Wochenübersicht”. Below 1024 px, secondary navigation sits under “Weitere Bereiche”; keyboard focus stays visible when the layout changes.
+
 ## [0.16.0.0] - 2026-10-06
 
 ### Added
