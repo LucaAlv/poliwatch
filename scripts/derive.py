@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping
 
+from stable_ids import vote_member_occurrence_id
+
 #: The Stimmen a Mehrheitsvotum is chosen among. "nicht abgegeben" (key
 #: "absent") is not a Stimme.
 MAJORITY_KEYS = ("yes", "no", "abstain")
@@ -69,6 +71,16 @@ _KNOWN = frozenset(
 
 def _clean(value: Any) -> str:
     return " ".join(str(value if value is not None else "").replace("\xa0", " ").split())
+
+
+def vote_member_key(vote_id: Any, member: Mapping[str, Any]) -> str | None:
+    """Stable occurrence key for one member row in a roll-call vote."""
+    vote_id_clean = _clean(vote_id) or None
+    if vote_id_clean is None:
+        return None
+    name = _clean(member.get("name")) or None
+    faction = zusammenschluss(member.get("faction")) or "Unbekannt"
+    return vote_member_occurrence_id(vote_id_clean, name, faction)
 
 
 def _known(text: str) -> str | None:
@@ -204,6 +216,8 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     (r"Bundeskanzler(in)?", "bundesregierung"),
     (r"Bundesminister(in)?( .+)?", "bundesregierung"),
     (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
+    # Explicit historical government role in 19/13, Redner 999990013.
+    (r"Staatssekretär(in)? im Bundeskanzleramt", "bundesregierung"),
     (r"Staatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),
     (r"Beauftragte[r]? (der Bundesregierung|des Bundesministeriums) .+", "bundesregierung"),
     (r"Koordinator(in)? der Bundesregierung .+", "bundesregierung"),
@@ -270,7 +284,7 @@ def find_unmapped_sprechrollen(reports: Iterable[Mapping[str, Any]]) -> dict[str
     unmapped: dict[str, list[str]] = {}
     for report in reports:
         number = _clean((report.get("protocol") or {}).get("dokumentnummer")) or "?"
-        for item in report.get("agenda_items") or []:
+        for item in [report, *(report.get("agenda_items") or [])]:
             for speech in [*(item.get("xml_speakers") or []), *(item.get("xml_contributions") or [])]:
                 text = role_text(speech.get("speaker"))
                 if text and side_of_role(text) is None:

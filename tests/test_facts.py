@@ -2056,32 +2056,19 @@ class ReplayTests(StoreCase):
         self.assertIn("floor 0.50", text)
 
     @unittest.skipUnless(REAL_STORE.exists(), "real store not present")
-    def test_real_store_replay(self) -> None:
-        with tempfile.TemporaryDirectory() as cards:
-            report = facts.replay(REAL_STORE, weeks=5, cards_dir=Path(cards))
-        self.assertEqual(len(report["weeks"]), 5)
-
-    @unittest.skipUnless(REAL_STORE.exists(), "real store not present")
-    def test_real_store_monthly_metrics_reproduce_d25a(self) -> None:
-        # D25A/T11: June 2026 on the real store sums to Alexander Dobrindt at
-        # 40 Reden and the GKV-Beitragssatzstabilisierungsgesetz at 19.
+    def test_unreparsed_reference_store_refuses_facts(self) -> None:
         conn = facts.open_readonly(REAL_STORE)
         try:
-            completeness = facts.load_completeness(REAL_STORE.parent)
-            catalog = facts.load_sitting_catalog(REAL_STORE.parent / facts.CATALOG_FILENAME)
-            rows = facts.compute(conn, facts.MONTHLY_REGISTRY, completeness, catalog=catalog, built={"votes"})
+            try:
+                facts.require_current_speech_rules(conn)
+            except RuntimeError:
+                with self.assertRaisesRegex(facts.FactsError, "--offline --repersist"):
+                    facts.compute(conn, facts.MONTHLY_REGISTRY, {}, catalog=None)
+            else:
+                self.skipTest("reference store already uses current rules; scratch replay covers arithmetic")
         finally:
             conn.close()
-        june = {row["metric_id"]: row for row in rows if row["period_key"] == "2026-06"}
-        self.assertTrue(june[AKTIVSTE]["complete"])
-        self.assertEqual(june[AKTIVSTE]["value"], 40)
-        self.assertEqual(june[AKTIVSTE]["citation"]["display_name"], "Alexander Dobrindt")
-        self.assertTrue(june[VORGANG]["complete"])
-        self.assertEqual(june[VORGANG]["value"], 19)
-        self.assertIn("Beitragssatz", june[VORGANG]["citation"]["title"])
 
-
-class MainTests(StoreCase):
     def test_a_missing_store_exits_2_without_raising(self) -> None:
         missing = self.path.parent / "does-not-exist.sqlite"
         err = io.StringIO()

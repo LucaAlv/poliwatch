@@ -283,7 +283,8 @@ class PersonMetricsTests(unittest.TestCase):
             conn = pulse_store.connect(Path(tmp) / "store.sqlite")
             try:
                 report = {
-                    "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
+                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+            "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
                     "agenda_items": [
                         {
                             "index": 1, "top_id": "T1", "heading": "TOP",
@@ -324,7 +325,8 @@ class DebutOrderTests(unittest.TestCase):
             conn = pulse_store.connect(Path(tmp) / "store.sqlite")
             try:
                 report = {
-                    "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
+                    "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
+            "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
                     "agenda_items": [
                         {"index": 1, "top_id": "T1", "heading": "TOP 1", "xml_speakers": [speech("other-first-place", "Other Person"), speech("A-first-item-second-place")]},
                         {"index": 2, "top_id": "T2", "heading": "TOP 2", "xml_speakers": [speech("B-second-item-first-place")]},
@@ -341,6 +343,7 @@ class DebutOrderTests(unittest.TestCase):
 class PersistTests(unittest.TestCase):
     def report(self, *speakers: dict) -> dict:
         return {
+            "validation_summary": {"speech_kinds_version": pulse_store.speech_kinds.VERSION},
             "protocol": {"id": "p1", "dokumentnummer": "21/1", "datum": "2026-01-01"},
             "agenda_items": [
                 {

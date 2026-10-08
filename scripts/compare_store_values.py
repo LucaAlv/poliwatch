@@ -318,6 +318,12 @@ def _zusammenfuehrung(store: Store) -> dict[str, int] | None:
     conn.row_factory = sqlite3.Row
     try:
         rows = [dict(row) for row in conn.execute("SELECT m.*, p.name AS party FROM mps m LEFT JOIN parties p ON p.id=m.party_id")]
+        vote_ids = {}
+        if store.has("vote_members", "mp_id", "vote_id"):
+            for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
+                vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
+        for row in rows:
+            row["vote_ids"] = vote_ids.get(row["id"], set())
         components, totals = registry.match_rows(rows)
         return dict(rows=len(rows), entries=len(components), merges_ext_id=totals["ext_id"],
                     merges_corroborated_name=totals["corroborated_name"], merges_unique_name=totals["unique_name"],

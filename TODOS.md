@@ -7,14 +7,14 @@ Reassessed against the code, the live store and the generated site on 2026-09-19
 The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dataset for WP 18 to the present, and a site with two equal angles, the daily view and long-term analysis. Items are named by their headings below. Tracks A and B can run in parallel. C waits for A, because every count A changes moves every series C draws. D has to be finished before anything goes public.
 
 **A. Get the counts right and the coverage in, in this order**
-1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). Still open: "Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts" (PR 2), "Zu Protokoll gegebene Reden: decide what they are, then store them" (PR 3; decided 2026-09-30: a kind of their own, not a Rede).
+1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). A1 follow-ups are implemented in v0.15.0.0 (see Completed): nested Zwischenfragen, written submissions as their own kind, and source-backed historical classification. Final merged A1/A2 validation remains required before A3; ceremony addresses absent from sampled plenary XML remain a separate acquisition gap.
 2. "Stable ids for every row a release publishes" (done: A.2, see its Completed note).
 3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
 
 **B. Abstimmungen (daily view), independent of A**
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
-2. "Roll-call member rows link to external profiles, never to our own MP pages" (after A2, so the links last).
+2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
 4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters".
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
@@ -76,18 +76,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** M
 **Priority:** P3
 **Depends on:** None (A1 works without it)
-
-### Roll-call member rows link to external profiles, never to our own MP pages
-
-**What:** In `render_vote_summary` (`scripts/features/votes.py`, member rows), link each member to their `/abgeordnete/<id>.html` page when `mp_lookup` resolves them. Fall back to the external `profile_url` only when no page exists.
-
-**Why:** Today the member name always links to `member["profile_url"]` (bundestag.de or abgeordnetenwatch), even though `upsert_mp` resolves every vote member to an internal `mp_id` at persist time. A reader on a vote panel can't reach the site's own MP page, which is the page that pools that person's speeches and votes.
-
-**Context:** Speaker names in dossiers already link internally via `mp_lookup` (rerun of `write_report_files` after the roster step in `main()`), so reuse that path. Found in the 2026-09-24 database state review. Not previously tracked.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None (better after the `parties.name` item, which improves how many vote members merge)
 
 ### Document `--protocol-wahlperiode` in the README
 
@@ -172,51 +160,33 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Depends on:** None
 
 
-### Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts
+### Validate final merged A1/A2 before the A3 backfill
 
-**What:** A Rede's stored text is now only its Redner's (Sitzungsleitung and Zwischenfragen no longer leak in). Two things are left. (1) The words of an MdB who asks a Zwischenfrage (a `<p klasse="redner">` with another `redner id` inside the `<rede>`) are dropped, not stored: credit them to the asker as a Zwischenfrage of their own (CONTEXT.md: Zwischenfrage). `speech_text_and_paragraphs` (`scripts/validate_dip_protocol.py`) already walks the segments; it only returns the Redner's. (2) Detect Gastansprachen (CONTEXT.md: shown with the Sitzung, never counted as a Rede) and keep them out of speech counts.
+**What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
 
-**Why:** Zwischenfragen are still counted for nobody, so an MdB who mostly asks questions shows fewer contributions than they made. Gastansprachen still count as Reden.
+**Why:** Claude reached its usage limit on 2026-10-05. The user explicitly requested completing A1 without waiting and recording this gate. A1 preserves schema 3/key version 1 and needs no new registry policy, but later A2 edits may affect grouping and page links.
 
-**Context:** Measured on the 2026-09-29 store: 55 Zwischenfrage blocks in 8 sittings, all followed by the Redner's own marker or by a Präsident `<name>`; no text had an undeterminable speaker (`speeches.unattributed_char_count` is 0 everywhere). Kurzinterventionen and the Befragung/Fragestunde are their own items (#68, #70).
-
-**Effort:** M
-**Priority:** P1 (raised 2026-09-30: every series and release count depends on it)
-**Depends on:** None
-
-### A1 classifier precision: measure and tighten the Kurzintervention and Fragestunde rules
-
-**What:** Four open findings from the /ship review of PR 1 (2026-09-30), each reproduced on synthetic strings only. (1) `announces_kurzintervention` (`scripts/speech_kinds.py`) accepts the next Redner's surname in any of the three sentences after the Kurzintervention wording, so "Damit ist die Kurzintervention beendet. Das Wort hat als Nächste die Kollegin Meier." types Meier's Rede as a Kurzintervention (the Rede leaves `speeches`); the Fraktion branch has the same shape. Require the signal in the same sentence, or exclude closing forms (beendet, erledigt, beantwortet, möglich), with a word-boundary surname match. (2) The Fragestunde asker pairing uses a plain substring test, so 'Ott' matches 'Gottschalk'; use word boundaries, and try a name-plus-party lookup for a question whose asker has no Nachfrage instead of leaving `mp_id` NULL. (3) `announced_asker` keeps the party ("Dr. Gottfried Curio (AfD)", "..., CDU/CSU", "... von Bündnis 90/Die Grünen") in `contributions.speaker_name`, which the export publishes; cut it at the party. (4) A Fragestunde turn whose Redner has neither `<rolle>` nor `<fraktion>` is dropped with no warning or counter; keep it or count it into `validation_summary`.
-
-**Why:** A false-positive Kurzintervention removes a Rede from every count and gains a wrong `parent_rede_id`. The reference store already holds one Kurzintervention more than DIP in 4 sittings, so some exist. Measure before changing: parse the 285 cached XMLs (`data/xml/`) with old and new rules and report the moved counts per kind against DIP's `aktivitaetsart`.
-
-**Context:** The detector prefers precision (636 of DIP's 682 Kurzinterventionen, 581 of 646 Erwiderungen); tightening (1) lowers recall further, so tune both together. Also found by the adversarial review and not fixed in PR 1: (5) Kurzinterventionen the wording misses stay counted as Reden (68 sittings differed from DIP before the review fixes, 59 after), e.g. 20/112 "Sie möchten eine Kurzintervention machen? - Bitte schön.", and a warning on about one sitting in five on every build will be ignored, so decide what the warning threshold is; (6) the rules were tuned on WP 20 and 21 only: run the parser and the DIP comparison over WP 18 and 19 XML before the v1 backfill (the Regierungsbefragung exists since WP 19; the T_* paragraph classes and headings may differ); (7) `announced_asker` returned a garbage name ("Ihnen", 21/81 TOP 2), `KIND_LABELS[kind]` raises KeyError on an unknown kind in a cached report, `fetch_missing_xml` accepts any URL scheme, `reparse_cached_xml` lets exceptions other than ParseError/OSError/UnicodeDecodeError/ValueError escape as a traceback, and `--fetch-xml` counts a report with an empty document number as already cached. The unclassifiable-speaker question in a Befragung (no `<rolle>`, no `<fraktion>` stays a Rede) belongs here too: decide what such a turn is and pin it with a test.
-
-**Effort:** M
 **Priority:** P1
-**Depends on:** None
+**Depends on:** A2 completion; must pass before A3 readiness is claimed. [A1 validation receipt](docs/plans/a1-validation.md).
 
-### Stale derived data after `--offline --repersist`
+### Test the independently loaded historical parser and classifier
 
-**What:** Two findings from the same review. (1) `reparse_report_xml` (`scripts/validate_dip_protocol.py`) replaces `xml_speakers` but keeps the cached `llm_summary`, which cites chunks by `rede_id`; for a Befragung or a TOP with Kurzinterventionen the summary still shows 'Belegstellen' quoting turns that are now Beiträge, and the anchor link is silently dropped. Recompute `summary_source_fingerprint` over the new speeches and clear the summary when it no longer matches. (2) `build_report` writes `data/xml/<sitting>.xml` before the report is accepted; if `keep_cached_dossier_when_votes_failed` then keeps the old JSON, the XML is newer than the report it pairs with and a later repersist attaches Reden of one version to positions and votes of another. Write the XML next to the JSON, or store its sha256 in the report and skip the re-parse on a mismatch. Also pair agenda items by `top_id` and heading, not by `index` alone, and validate fetched XML before writing it. Fixed in PR 1 (final merge review): a reparse did not refresh `heading`; `xml_top_fields` now carries every XML-derived item key and a test compares a reparse with a fresh build. Two latent items from the same review (3): the rewritten vote queries in `scripts/facts.py` take `MIN(p.id)`, `MIN(p.document_number)` and `MIN(p.date)` separately (the old bare-column query took all three from one row, and the text minimum sorts "21/10" before "21/9"), harmless unless a vote is ever linked to agenda items of two protocols; and `persist_votes` (`scripts/persist_dip_pulse_store.py`) is dead since `persist_report` calls `persist_vote` directly, so drop it or keep the `ctx` hook in `scripts/features/votes.py` pointing at one entry point.
+**What:** Add a regression test for the documented rule-4 comparison using an independently loaded historical parser and historical classifier pair.
 
-**Why:** After a repersist the pages can show an AI summary that contradicts the counts on the same page. Rare (only a reissued protocol or a failed vote scan triggers (2)) but silent.
-
-**Context:** Found by the red team and the data-migration specialist; the stale-store guard itself shipped in PR 1 (`speech_kinds_version` on every parsed report, a warning in every build mode, a heading fallback for `is_question_format`). A hard refusal to export or post Fakten over an unparsed store was offered and not chosen; revisit it with A3. The marker lives on the report JSON only, not on the store or export: an online run that writes every report and then stops before the store rebuild, or `--no-persist`, leaves an old store next to all-fresh reports and nothing warns. Stamp `speech_kinds.VERSION` in the store (`PRAGMA user_version` or a `datenstand` row) and compare it in the offline path and the export step. Coverage caveat for the whole A1 branch: Codex adversarial and structured reviews were unavailable (usage limit), and the final tree (review fixes plus the merge of v0.10.0.0) had one Claude review of the merge only, so treat it as Claude-only coverage.
+**Why:** PR #87 review finding (`tests/test_audit_offline_turns_cli.py:59–65`): the test baseline calls the current parser and shares its classifier, so it cannot catch regressions in loading the separate historical pair. Incorrect historical counts could pass unnoticed.
 
 **Effort:** S
 **Priority:** P2
 **Depends on:** None
 
-### Regenerate the architecture diagram for the Rede/Beitrag split
+### Acquire ceremony addresses omitted from sampled plenary XML
 
-**What:** `docs/bundestag-puls-architecture.{html,json}` do not show `scripts/speech_kinds.py`, the `contributions` kinds, the `--fetch-xml` and `--repersist` re-parse path, or the `speech_kinds_version` stale-store warning. Add them to the parse and persist stages, the same way the Daten export step was added in v0.6.4.0.
+**What:** If ceremony addresses are to be ingested, acquire an explicit ceremony source and define its sitting association. The inspected 2016 and 2021 memorial speeches precede their plenary sittings and are absent from the plenary XML; do not synthesize a guest unit or treat all role-less speakers as guests.
 
-**Why:** The diagram is the one picture of the pipeline; today it shows the parser as one step that yields Reden only.
+**Why:** A1's source-backed guest check corrects the original assumption that those guest addresses inflate delivered Rede counts, but cannot ingest text its source omits.
 
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
+**Priority:** P2
+**Depends on:** Separate source acquisition and evidence-backed association; see [coverage evidence](docs/plans/a1-validation.md).
 
 ### Harden the vote acquisition and catalog completeness paths (open review findings)
 
@@ -255,7 +225,7 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 **Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
 
 **Context:**
-- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. In 18/100 (35), 18/200 (11) and 19/239 (29 of 67), `<rede>` elements sit under `<anlagen>` and are skipped; see "Zu Protokoll gegebene Reden" below. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
+- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
 - Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
 - WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
 - Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
@@ -263,16 +233,6 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 **Effort:** M (mostly running time and checking)
 **Priority:** P1
 **Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
-
-### Zu Protokoll gegebene Reden: decide what they are, then store them
-
-**What:** Some Plenarprotokolle carry Reden that were handed in in writing rather than delivered ("zu Protokoll gegebene Reden"). They sit under `<anlagen>`, which `parse_protocol_xml` (`scripts/validate_dip_protocol.py`) never reads. 19/239 has 29 such Reden next to 38 delivered ones, 18/100 has 35 next to 104, and 18/200 has 11 next to 35 (checked 2026-09-30; 21/84 has none, WP 20 and 21 not sampled). First decide in CONTEXT.md whether they are Reden (the user's first intuition on 2026-09-30: they count, but it is not decided and needs a /domain-modeling session) (and count toward Redeanteil and term series) or a kind of their own, shown and counted separately. Then parse them, with their TOP, Redner and a flag, and count them in each WP.
-
-**Why:** Today they vanish without a trace, so a researcher who counts Reden per TOP from the release gets a smaller number than the protocol, with no flag saying why. The late-night Sitzungen that use them are also where most of the text on some topics lives.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** A glossary decision (/domain-modeling)
 
 ## Protokoll-Dossier
 
@@ -882,7 +842,7 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 ### Vote-member occurrence bindings: cost and use
 
-**What:** `persist_vote` binds every roll-call vote member to a durable occurrence (`vote-member` key), about 154k `person_bindings` rows on top of the 35k speech bindings, each through the full `registry.bind` path. Check whether anything needs vote-member bindings (nothing looks them up as link keys; page eligibility uses speech bindings only) and, if not, bind once per distinct member identity per rebuild or skip the binding.
+**What:** `persist_vote` binds every roll-call vote member to a durable occurrence (`vote-member` key), about 154k `person_bindings` rows on top of the 35k speech bindings, each through the full `registry.bind` path. Measure and reduce repeat-bind cost while preserving every occurrence binding: B.2 now uses those keys to link dossier member rows to their Personenseite. Page eligibility still comes from MdB status or speaking contributions.
 
 **Why:** Roughly 5x the bind work of speeches on a full replay, and the rows are exported in a public table.
 
@@ -1068,6 +1028,43 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts
+
+**Implemented on `a1-followups` (2026-10-05):** Nested source segments are stored and linked as separate Beiträge. Guest coverage is qualified: the inspected 2016/2021 memorial addresses precede the plenary sitting and are absent from its XML; no general guest detector or exhaustive ingestion is claimed. [Validation and remaining final A2 gate](docs/plans/a1-validation.md). Final merged A1/A2 readiness for A3 is pending.
+
+**Completed:** v0.15.0.0 (2026-10-05)
+
+### A1 classifier precision: measure and tighten the Kurzintervention and Fragestunde rules
+
+**Implemented on `a1-followups` (2026-10-05):** Occurrence-role recovery, historical headings/classes, explicit D4 rejection, grant precision, party/name extraction and unique sitting-source asker matching are implemented. The old pronoun example at 21/81 was not reproduced; a pronoun regression is covered without claiming that source finding. [Validation and remaining final A2 gate](docs/plans/a1-validation.md). Final merged A1/A2 readiness for A3 is pending.
+
+**Completed:** v0.15.0.0 (2026-10-05)
+
+### Stale derived data after `--offline --repersist`
+
+**Implemented on `a1-followups` (2026-10-05):** Persisted input rule version 2 guards facts/export/store-consuming rendering; SHA pairing and proven TOP mappings protect replay. Vote receipts select one coherent source row and dead adapters are removed. [Validation and remaining final A2 gate](docs/plans/a1-validation.md). Final merged A1/A2 readiness for A3 is pending.
+
+**Completed:** v0.15.0.0 (2026-10-05)
+
+### Regenerate the architecture diagram for the Rede/Beitrag split
+
+**Implemented on `a1-followups` (2026-10-05):** Architecture JSON/HTML regenerated with speech kinds, contributions, replay and persisted-rule refusal; archify validation and Chrome light/dark inspection recorded. [Validation and remaining final A2 gate](docs/plans/a1-validation.md). Final merged A1/A2 readiness for A3 is pending.
+
+**Completed:** v0.15.0.0 (2026-10-05)
+
+### Zu Protokoll gegebene Reden: decide what they are, then store them
+
+**Implemented on `a1-followups` (2026-10-05):** Approved separate kind `zu_protokoll` is ingested/displayed with nullable TOP/page, including sitting-level submissions. Correction to the original examples: 19/239 (29) and 18/200 (11) are §31 declarations, excluded; 18/100 has 35 explicitly typed written submissions. [Validation and remaining final A2 gate](docs/plans/a1-validation.md). Final merged A1/A2 readiness for A3 is pending.
+
+**Completed:** v0.15.0.0 (2026-10-05)
+
+### Roll-call member rows link to external profiles, never to our own MP pages
+
+**Completed:** v0.14.0.0 (2026-10-04), B.2. Dossier member rows resolve the shared, normalized vote-member occurrence key through `mp_lookup`, then fall back to the external profile or a plain name. TOP and sitting votes use the same member renderer. The T0 gate required widening scope: surname-first vote names are normalized for matching, roster/speaker pairs settle first, then vote records join one unambiguous person. Conflicting ids, ambiguous namesakes and distinct records present in one roll call stay split. MP pages prefer roster/speaker biography and correctly label a Bundestag profile fallback.
+
+**Measured:** 285-report scratch replay: internal lookup coverage **0 → 147,971 / 154,015 stored member rows (96.08%)**; split-bucket misses **147,971 → 0**; vote-only misses remain **6,044 rows**. All 154,078 vote-member occurrence keys stay byte-identical. Current person groups **3,386 → 1,294** because duplicate vote-source records now join their roster/speaker person. D3 collisions: **0** (no namesake-key TODO needed). Rendered member links: **0 → 166,656 internal**, **173,407 → 6,751 Bundestag** (965 persons); every internal href exists. Browser click-through reaches the matching vote on the Personenseite. Full unittest suite passes.
+
 
 ### Detect Kurzinterventionen and Erwiderungen, and stop counting them as Reden → #68; Stop counting the Fragen and Antworten of the Befragung and Fragestunde as Reden → #70
 

@@ -1,0 +1,563 @@
+{
+  "speech_kinds_version": 2,
+  "mismatches": [
+    {
+      "document_number": "20/113",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "20/113",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "20/123",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "20/123",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/128",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "20/132",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "20/140",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 0
+    },
+    {
+      "document_number": "20/147",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 1
+    },
+    {
+      "document_number": "20/147",
+      "kind": "kurzintervention",
+      "xml": 0,
+      "dip": 1
+    },
+    {
+      "document_number": "20/149",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "20/149",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/152",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/152",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/17",
+      "kind": "erwiderung",
+      "xml": 5,
+      "dip": 7
+    },
+    {
+      "document_number": "20/17",
+      "kind": "kurzintervention",
+      "xml": 6,
+      "dip": 7
+    },
+    {
+      "document_number": "20/172",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "20/173",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "20/173",
+      "kind": "kurzintervention",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "20/175",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 1
+    },
+    {
+      "document_number": "20/182",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/182",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/191",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/196",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 2
+    },
+    {
+      "document_number": "20/210",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 2
+    },
+    {
+      "document_number": "20/211",
+      "kind": "erwiderung",
+      "xml": 8,
+      "dip": 9
+    },
+    {
+      "document_number": "20/211",
+      "kind": "kurzintervention",
+      "xml": 8,
+      "dip": 9
+    },
+    {
+      "document_number": "20/22",
+      "kind": "kurzintervention",
+      "xml": 1,
+      "dip": 0
+    },
+    {
+      "document_number": "20/28",
+      "kind": "erwiderung",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "20/28",
+      "kind": "kurzintervention",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "20/41",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 1
+    },
+    {
+      "document_number": "20/47",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "20/57",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 3
+    },
+    {
+      "document_number": "20/70",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/70",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/91",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/91",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "20/92",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 2
+    },
+    {
+      "document_number": "20/92",
+      "kind": "kurzintervention",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "21/15",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/15",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/16",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/16",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/20",
+      "kind": "kurzintervention",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "21/31",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 2
+    },
+    {
+      "document_number": "21/33",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/33",
+      "kind": "kurzintervention",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/34",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/34",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/36",
+      "kind": "kurzintervention",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "21/37",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 5
+    },
+    {
+      "document_number": "21/37",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 6
+    },
+    {
+      "document_number": "21/4",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/43",
+      "kind": "erwiderung",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "21/43",
+      "kind": "kurzintervention",
+      "xml": 8,
+      "dip": 9
+    },
+    {
+      "document_number": "21/45",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/45",
+      "kind": "kurzintervention",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/47",
+      "kind": "erwiderung",
+      "xml": 5,
+      "dip": 7
+    },
+    {
+      "document_number": "21/47",
+      "kind": "kurzintervention",
+      "xml": 5,
+      "dip": 7
+    },
+    {
+      "document_number": "21/48",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "21/48",
+      "kind": "kurzintervention",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "21/50",
+      "kind": "erwiderung",
+      "xml": 7,
+      "dip": 8
+    },
+    {
+      "document_number": "21/51",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 3
+    },
+    {
+      "document_number": "21/51",
+      "kind": "kurzintervention",
+      "xml": 1,
+      "dip": 4
+    },
+    {
+      "document_number": "21/52",
+      "kind": "kurzintervention",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/53",
+      "kind": "erwiderung",
+      "xml": 6,
+      "dip": 7
+    },
+    {
+      "document_number": "21/54",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 4
+    },
+    {
+      "document_number": "21/54",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/59",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 8
+    },
+    {
+      "document_number": "21/59",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 8
+    },
+    {
+      "document_number": "21/60",
+      "kind": "erwiderung",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/60",
+      "kind": "kurzintervention",
+      "xml": 2,
+      "dip": 3
+    },
+    {
+      "document_number": "21/62",
+      "kind": "erwiderung",
+      "xml": 9,
+      "dip": 11
+    },
+    {
+      "document_number": "21/62",
+      "kind": "kurzintervention",
+      "xml": 10,
+      "dip": 11
+    },
+    {
+      "document_number": "21/63",
+      "kind": "erwiderung",
+      "xml": 3,
+      "dip": 4
+    },
+    {
+      "document_number": "21/63",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/65",
+      "kind": "erwiderung",
+      "xml": 8,
+      "dip": 11
+    },
+    {
+      "document_number": "21/65",
+      "kind": "kurzintervention",
+      "xml": 8,
+      "dip": 11
+    },
+    {
+      "document_number": "21/68",
+      "kind": "erwiderung",
+      "xml": 10,
+      "dip": 12
+    },
+    {
+      "document_number": "21/68",
+      "kind": "kurzintervention",
+      "xml": 10,
+      "dip": 12
+    },
+    {
+      "document_number": "21/69",
+      "kind": "erwiderung",
+      "xml": 8,
+      "dip": 9
+    },
+    {
+      "document_number": "21/69",
+      "kind": "kurzintervention",
+      "xml": 8,
+      "dip": 9
+    },
+    {
+      "document_number": "21/71",
+      "kind": "erwiderung",
+      "xml": 10,
+      "dip": 11
+    },
+    {
+      "document_number": "21/71",
+      "kind": "kurzintervention",
+      "xml": 10,
+      "dip": 11
+    },
+    {
+      "document_number": "21/75",
+      "kind": "erwiderung",
+      "xml": 6,
+      "dip": 7
+    },
+    {
+      "document_number": "21/75",
+      "kind": "kurzintervention",
+      "xml": 6,
+      "dip": 7
+    },
+    {
+      "document_number": "21/76",
+      "kind": "erwiderung",
+      "xml": 1,
+      "dip": 3
+    },
+    {
+      "document_number": "21/76",
+      "kind": "kurzintervention",
+      "xml": 1,
+      "dip": 3
+    },
+    {
+      "document_number": "21/80",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 5
+    },
+    {
+      "document_number": "21/81",
+      "kind": "erwiderung",
+      "xml": 4,
+      "dip": 6
+    },
+    {
+      "document_number": "21/81",
+      "kind": "kurzintervention",
+      "xml": 4,
+      "dip": 6
+    },
+    {
+      "document_number": "21/83",
+      "kind": "kurzintervention",
+      "xml": 0,
+      "dip": 1
+    },
+    {
+      "document_number": "21/94",
+      "kind": "erwiderung",
+      "xml": 0,
+      "dip": 1
+    },
+    {
+      "document_number": "21/94",
+      "kind": "kurzintervention",
+      "xml": 0,
+      "dip": 1
+    }
+  ]
+}

@@ -11,7 +11,7 @@ class GlobalHeaderTests(unittest.TestCase):
     def test_shared_link_states_use_teal_and_visible_focus(self) -> None:
         css = pulse_html.global_header_styles()
         self.assertRegex(css, r"a:visited\s*\{\s*color:var\(--teal, #0f766e\);")
-        self.assertRegex(css, r"a:focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
+        self.assertRegex(css, r":is\(a, \.site-nav summary, \.theme-toggle\):focus-visible\s*\{[^}]*outline:2px solid var\(--blue\);[^}]*outline-offset:2px;")
         # The dark theme repaints every link blue with !important, which would
         # otherwise swamp the shared visited color; dark mode needs its own
         # higher-precedence visited rule so visited links stay teal there too.
@@ -43,12 +43,34 @@ class GlobalHeaderTests(unittest.TestCase):
         markup = pulse_html.render_global_header(depth=1, active="bills")
         self.assertIn('href="../abgeordnete/index.html"', markup)
         self.assertNotIn("bills/abgeordnete", markup)
-        nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup).group(1)
+        nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup, re.S).group(1)
         self.assertEqual(nav.count("<a "), 8)
-        for label in ("Aktueller Puls", "Sitzungen", "Gesetzesvorhaben", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen"):
+        for label in ("Wochenübersicht", "Sitzungen", "Gesetzesvorhaben", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen"):
             self.assertIn(label, nav)
         for retired in ("api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)
+
+    def test_one_registry_link_set_with_native_secondary_group(self) -> None:
+        for depth in (0, 1, 2):
+            for active in ("pulse", "overview", "bills", "votes", "sources"):
+                with self.subTest(depth=depth, active=active):
+                    markup = pulse_html.render_global_header(depth=depth, active=active)
+                    self.assertEqual(markup.count("<nav "), 1)
+                    nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup, re.S).group(1)
+                    hrefs = re.findall(r'href="([^"]+)"', nav)
+                    self.assertEqual(hrefs, ["../" * depth + item.path for item in pulse_html.NAV_ITEMS])
+                    self.assertEqual(len(set(hrefs)), 8)
+                    primary, secondary = nav.split("<details", 1)
+                    self.assertEqual(primary.count("<a "), 2)
+                    self.assertEqual(secondary.count("<a "), 6)
+                    self.assertIn("<summary>Weitere Bereiche</summary>", secondary)
+                    self.assertNotRegex(secondary.split(">", 1)[0], r"\bopen\b")
+                    self.assertEqual(nav.count('aria-current="page"'), 1)
+                    current = re.search(r'<a href="([^"]+)" aria-current="page">', nav).group(1)
+                    self.assertEqual(current, "../" * depth + next(item.path for item in pulse_html.NAV_ITEMS if item.key == active))
+                    self.assertEqual("data-active" in secondary, active not in ("pulse", "overview"))
+                    self.assertNotIn("Letzte Sitzung", nav)
+                    self.assertNotIn('role="menu"', nav)
 
     def test_dark_theme_covers_the_radar_and_drops_retired_pulse_surfaces(self) -> None:
         # The dark palette is applied through hand-maintained selector lists,

@@ -34,7 +34,7 @@
 # Which code writes which part of the website:
 #
 #   index.html           ``render_landing_page``     explanatory home page
-#   puls.html            ``render_front_page``       "Aktueller Puls": week radar + Wochenvergleich
+#   puls.html            ``render_front_page``       "Wochenübersicht": week radar + Wochenvergleich
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
@@ -86,6 +86,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -138,7 +139,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
-    "contributions": "Beiträge, die keine Rede sind: Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; eine Frage, die die Sitzungsleitung verliest und deren Fragesteller nicht spricht, hat keinen mp_id.",
+    "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
+    "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
@@ -255,6 +257,8 @@ def build_dossiers_with_progress(
         try:
             entry = build_dossier(protocol, existing_report)
         except dip.DipError as exc:
+            if exc.source_rejected:
+                raise  # D4: no staged store may replace accepted data after source refusal.
             elapsed = time.monotonic() - started
             protocol["dossier_failure_reasons"] = ["source_unavailable"]
             print(
@@ -711,7 +715,7 @@ def enrich_report_with_profiles(report: dict[str, Any], resolver: Any | None) ->
     """
     if resolver is None:
         return
-    for item in report.get("agenda_items") or []:
+    for item in [report, *(report.get("agenda_items") or [])]:
         for key in SPEAKER_LISTS:
             for speech in item.get(key) or []:
                 speaker = speech.get("speaker")
@@ -819,17 +823,12 @@ def write_report_files(
     protocol = report.get("protocol") or {}
     document_number = normalized_document_number(protocol.get("dokumentnummer"))
     report_path, page_path, slug = report_paths(output_dir, document_number)
-    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    page_path.write_text(
-        pulse_html.render_html(
-            report,
-            features=features,
-            mp_lookup=mp_lookup,
-            include_dev_view=include_dev_view,
-            database_page_href=database_page_href,
-        ),
-        encoding="utf-8",
+    rendered = pulse_html.render_html(
+        report, features=features, mp_lookup=mp_lookup,
+        include_dev_view=include_dev_view, database_page_href=database_page_href,
     )
+    dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    dip.write_text_atomic(page_path, rendered)
     return {
         "report": report,
         "report_path": report_path,
@@ -882,6 +881,16 @@ def load_existing_detail_entries(
             report = json.loads(report_path.read_text(encoding="utf-8"))
             if not isinstance(report, dict):
                 raise ValueError("the top-level JSON value is not an object")
+            if not isinstance(report.get("protocol") or {}, dict):
+                raise ValueError("protocol must be an object")
+            items = report.get("agenda_items", [])
+            if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
+                raise ValueError("agenda_items must contain objects with integer source indices")
+            for item in [report, *items]:
+                for key in SPEAKER_LISTS:
+                    units = item.get(key) or []
+                    if not isinstance(units, list) or any(not isinstance(unit, dict) for unit in units):
+                        raise ValueError(f"{key} must be a list of source units")
         except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
             if strict:
                 raise CachedReportError(f"{report_path} is unreadable: {exc}") from exc
@@ -889,6 +898,8 @@ def load_existing_detail_entries(
             continue
         protocol = report.get("protocol") or {}
         document_number = normalized_document_number(protocol.get("dokumentnummer"))
+        if strict and not document_number:
+            raise CachedReportError(f"{report_path} has no document number; restore source identity before replay")
         if not document_number or document_number not in protocol_numbers:
             continue
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
@@ -1252,6 +1263,10 @@ def _rebuild_database_from_entries(
                 roster_ingest(store)
             except RuntimeError as exc:  # the roster API failed (dip.DipError): nothing may be swapped in
                 raise DatabaseRebuildError(f"The Abgeordnetenkader could not be fetched: {exc}") from exc
+        try:
+            pulse_store.require_current_speech_rules(store)
+        except RuntimeError as exc:
+            raise DatabaseRebuildError(str(exc)) from exc
         registry.reconcile(store, full_build=True)
         store.commit()
         if facts_snapshot is not None:
@@ -1281,8 +1296,7 @@ def _rebuild_database_from_entries(
 
 
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The cached reports made before A1: they carry no ``speech_kinds_version``,
-    so every Kurzintervention, Frage and Antwort in them still counts as a Rede."""
+    """Cached reports with missing or older speech-counting rule provenance."""
     return [
         entry
         for entry in entries
@@ -1291,29 +1305,27 @@ def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
-    """Refuse to persist a report made before A1: its Reden counts would sit in the
-    store next to correctly classified ones. Raises CachedReportError naming them."""
+    """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
         numbers = ", ".join(
             sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
         )
         raise CachedReportError(
-            f"{len(stale)} cached reports predate the A1 Rede rule and have no cached XML in data/xml/ to re-read "
+            f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
             f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
             "fetched (no xml_url) must be deleted from data/"
         )
 
 
 def warn_unparsed_reports(entries: list[dict[str, Any]], *, keeping: str = "keep") -> int:
-    """Warn about cached reports made before A1 (see unparsed_reports): the numbers
-    built from them mix two rules. Returns how many there are."""
+    """Warn about missing or older rule inputs and return their count."""
     stale = unparsed_reports(entries)
     if stale:
         print(
-            f"warning: {len(stale)} of {len(entries)} cached reports predate the A1 Rede rule and {keeping} "
-            "Kurzinterventionen, Fragen and Antworten counted as Reden, so Reden counts, Redeanteil and the "
-            "Fakten built from them mix two rules. Fix: run --fetch-xml, then --offline --repersist.",
+            f"warning: {len(stale)} of {len(entries)} cached reports predate the current speech-counting rule and {keeping} "
+            "their older classifications, so Reden counts, Redeanteil and Fakten may mix rule versions. "
+            "Fix: run --fetch-xml if XML is missing, then --offline --repersist.",
             file=sys.stderr,
         )
     return len(stale)
@@ -1330,7 +1342,7 @@ def reparse_cached_xml(
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
     by_redner_id: dict[str, Any] = {}
     for entry in entries if profiles_from is None else profiles_from:
-        for item in entry["report"].get("agenda_items") or []:
+        for item in [entry["report"], *(entry["report"].get("agenda_items") or [])]:
             for identity, profile in speaker_profiles(item).items():
                 redner_id = derive.first_redner_id(identity[0])
                 if redner_id and isinstance(profile, dict) and profile.get("id") is not None:
@@ -1342,14 +1354,14 @@ def reparse_cached_xml(
         path = xml_cache_path(output_dir, document_number)
         if not document_number or not path.exists():
             continue
-        profiles = {item.get("index"): speaker_profiles(item) for item in report.get("agenda_items") or []}
+        profiles = {item.get("index"): speaker_profiles(item) for item in [report, *(report.get("agenda_items") or [])]}
         try:
             dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
-        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError) as exc:
+        except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
-                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Delete it and run --fetch-xml again"
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again"
             ) from exc
-        for item in report.get("agenda_items") or []:
+        for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
         reparsed += 1
     return reparsed
@@ -1364,13 +1376,18 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         protocol = entry["report"].get("protocol") or {}
         document_number = normalized_document_number(protocol.get("dokumentnummer"))
         path = xml_cache_path(output_dir, document_number)
-        if not document_number or path.exists():
+        if not document_number:
+            print("warning: cached report has no document number; XML acquisition failed.", file=sys.stderr)
+            failed += 1
+            continue
+        if path.exists():
             continue
         if not protocol.get("xml_url"):
             print(f"warning: {document_number} has no xml_url; its XML cannot be fetched.", file=sys.stderr)
             failed += 1
             continue
         try:
+            publication.validate_external_url(protocol["xml_url"], "bundestag-xml")
             text = dip.fetch_text(protocol["xml_url"])
             # An error or maintenance page served with HTTP 200 must not become the cache.
             root = dip.ET.fromstring(text)
@@ -1381,7 +1398,9 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
                 sitzung,
             ):
                 raise ValueError(f"it is not the Plenarprotokoll XML of {document_number}")
-        except (dip.DipError, dip.ET.ParseError, ValueError) as exc:
+            if not root.findall("./sitzungsverlauf/tagesordnungspunkt"):
+                raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
+        except (dip.DipError, dip.ET.ParseError, ValueError, publication.PublicationStateError) as exc:
             print(f"warning: {document_number}: {exc}", file=sys.stderr)
             failed += 1
             continue
@@ -1391,6 +1410,37 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         if pause:
             time.sleep(pause)
     return fetched, failed
+
+
+def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
+    for entry in entries:
+        report = entry["report"]
+        kinds = [c.get("kind") for item in [report, *(report.get("agenda_items") or [])]
+                 for c in item.get("xml_contributions") or []]
+        kinds += [m.get("kind") for m in (report.get("validation_summary") or {}).get("contribution_dip_mismatches") or []]
+        try:
+            for kind in kinds:
+                speech_kinds.validate_kind(kind)
+        except ValueError as exc:
+            raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
+
+
+def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    details = []
+    for entry in entries:
+        report = entry["report"]
+        for mismatch in (report.get("validation_summary") or {}).get("contribution_dip_mismatches") or []:
+            speech_kinds.validate_kind(mismatch["kind"])
+            details.append({"document_number": (report.get("protocol") or {}).get("dokumentnummer"), **mismatch})
+    details.sort(key=lambda row: (row["document_number"] or "", row["kind"]))
+    audit = {"speech_kinds_version": speech_kinds.VERSION, "mismatches": details}
+    path = output_dir / "data" / "a1-classification-diagnostics.json"
+    dip.write_text_atomic(path, json.dumps(audit, ensure_ascii=False, indent=2) + "\n")
+    if details:
+        sittings = len({row["document_number"] for row in details})
+        print(f"warning: [classification] {len(details)} sitting/kind differences against DIP across {sittings} sittings. "
+              f"Inspect source turns in {path}; disagreement alone does not reject a parse.", file=sys.stderr)
+    return audit
 
 
 def repersist_cached_reports(
@@ -1412,6 +1462,7 @@ def repersist_cached_reports(
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
         today=today, facts_report=facts_report, upgrade=True,
     )
+    write_classification_diagnostics(output_dir, cached)
     return cached, replaced
 
 
@@ -2124,7 +2175,7 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
-_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand"} | set(facts.FACTS_TABLES)
+_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand", "speech_rule_inputs"} | set(facts.FACTS_TABLES)
 
 
 # The outcome is mostly computed here from the counts (vote_result); only a
@@ -2580,6 +2631,7 @@ def export_distribution_data(
     source = facts.open_readonly(database_path)
     try:
         pulse_store.require_current_schema(source)
+        pulse_store.require_current_speech_rules(source)
     finally:
         source.close()
     has_page_ids = set((mp_lookup or {}).values())
@@ -3657,10 +3709,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
 
 
 # ---------------------------------------------------------------------------
-# PAGE: index.html - the explanatory home page
-#
-# Not a data view: it states what Bundestag-Puls is, the four principles it
-# claims to follow, and links out to every other area of the site.
+# PAGE: index.html - direct routes to the latest available sitting and week
 # ---------------------------------------------------------------------------
 
 
@@ -3669,319 +3718,130 @@ def render_landing_page(
     *,
     database_page_href: str | None = None,
     data_stand: str | None = None,
-    protocol_count: int = 0,
-    bill_count: int = 0,
     features: Selection | None = None,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
 ) -> str:
-    """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
+    """Homepage periods use the same generated entries and selection as puls.html."""
     features = features or publication_selection()
-    # Right-hand "Aktueller Puls" card: a snapshot of the newest generated
-    # dossier (entries are ordered newest-first by render_site), or a placeholder
-    # when nothing has been generated yet.
+    today = resolve_today(today)
+    selected_week, weeks = select_pulse_week(entries, week)
+    esc = pulse_html.esc
+    recovery = '<a class="home-action" href="overview.html">Sitzungen ansehen &rarr;</a>'
     if entries:
-        entry = entries[0]
-        report = entry["report"]
-        protocol = report.get("protocol") or {}
-        summary = report.get("validation_summary") or {}
-        snapshot = f"""
-        <aside class="snapshot">
-          <span class="eyebrow">Aktueller Puls</span>
-          <strong class="snapshot-doc">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</strong>
-          <p class="snapshot-title">{pulse_html.esc(pulse_html.short(protocol.get('titel'), 96))}</p>
-          <p class="snapshot-date">Sitzung vom {pulse_html.esc(protocol.get('datum'))}</p>
-          <div class="snapshot-metrics">
-            <div><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-            <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
-          </div>
-          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
-        </aside>
-        """
+        latest = max(entries, key=entry_sort_key)
+        protocol = entry_protocol(latest)
+        datum = protocol.get("datum")
+        dated = pulse_html.format_date(datum) if pulse_html.iso_week_key(datum) else ""
+        sitting = f"""
+          <p class="home-meta">Zuletzt verfügbar · Protokoll {esc(sitting_label(latest))}</p>
+          <p>{time_html(datum, dated) if dated else 'Sitzungsdatum nicht verfügbar'}</p>
+          <p>Tagesordnung, Reden und vorliegende Abstimmungen der zuletzt verfügbaren Sitzung.</p>
+          <a class="home-action" href="{esc(dossier_href(latest))}">Sitzungsprotokoll öffnen &rarr;</a>"""
     else:
-        snapshot = """
-        <aside class="snapshot">
-          <span class="eyebrow">Aktueller Puls</span>
-          <p class="snapshot-title">Es wurde noch keine Sitzung erzeugt.</p>
-          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier der aktuelle Lageblick.</p>
-          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
-        </aside>
-        """
+        sitting = f'<p>Noch kein Sitzungsprotokoll verfügbar</p>{recovery}'
 
-    # "Prinzipien" section - static editorial copy, four numbered cards.
-    principles = [
-        (
-            "Nur Primärquellen",
-            "Aufgebaut aus offiziellen Plenarprotokollen, Drucksachen und namentlichen Abstimmungen — niemals aus Nachrichtenberichten oder Kommentaren.",
-        ),
-        (
-            "Jede Aussage belegbar",
-            "Jede Kennzahl und jeder Auszug ist einen Klick von der exakten Protokollstelle oder Drucksache entfernt, aus der sie stammt.",
-        ),
-        (
-            "Neutral und nicht-autoritativ",
-            "Mechanische Kennzahlen statt unbelegter Haltungs-Aussagen. KI-Zusammenfassungen sind gekennzeichnet und immer mit zitierten Quellen hinterlegt.",
-        ),
-        (
-            "Automatisch aktuell",
-            "Eine geplante Pipeline holt neue Plenarprotokolle aus der DIP-API, wertet sie aus und veröffentlicht sie — ein veralteter Monitor wäre wertlos.",
-        ),
-    ]
-    principle_cards = "".join(
-        f"""
-        <article class="principle">
-          <span class="num">{i}</span>
-          <h3>{pulse_html.esc(title)}</h3>
-          <p>{pulse_html.esc(desc)}</p>
-        </article>
-        """
-        for i, (title, desc) in enumerate(principles, start=1)
-    )
+    week_heading = "Ausgewählte Woche" if week is not None else "Wochenübersicht"
+    if selected_week is None:
+        weekly = f'<p>Noch keine Woche auswertbar</p>{recovery}'
+    else:
+        week_entries = weeks[selected_week]
+        monday = date.fromisocalendar(*selected_week, 1)
+        sunday = monday + timedelta(days=6)
+        period = " – ".join(time_html(d.isoformat(), pulse_html.format_date(d.isoformat())) for d in (monday, sunday))
+        count = pulse_html.format_count(len(week_entries), "Sitzung", "Sitzungen")
+        coverage = "bisher erfasst" if monday <= today <= sunday else "erfasst"
+        earlier = [key for key in weeks if key < selected_week]
+        comparison = bool(earlier and pulse_html.week_span(max(earlier), selected_week) <= pulse_html.MAX_WEEK_GAP)
+        description = "Themen und Redeanteile der ausgewählten Woche" if week is not None else "Themen und Redeanteile der zuletzt erfassten Woche"
+        if comparison:
+            description += ", mit Vergleich zur vorherigen erfassten Woche"
+        action = "Wochenübersicht und Vergleich öffnen" if comparison else "Wochenübersicht öffnen"
+        undated = len(entries) - sum(len(bucket) for bucket in weeks.values())
+        missing = f'<p class="home-meta">{pulse_html.format_count(undated, "Sitzung", "Sitzungen")} ohne Datum nicht berücksichtigt</p>' if undated else ""
+        weekly = f"""
+          <p class="home-meta">{esc(pulse_html.week_label(selected_week))} · {esc(count)} {coverage}</p>
+          <p>{period}</p>
+          <p>{esc(description)}.</p>
+          {missing}
+          <a class="home-action" href="puls.html">{action} &rarr;</a>"""
 
-    # "Bereiche" section - the navigation cards. Optional areas are inserted
-    # only when the corresponding artifact exists,
-    # so the home page never links to a page this build did not write.
     areas = [
-        (
-            "Wochenradar",
-            "Aktueller Puls",
-            "puls.html",
-            "Worüber der Bundestag in der neuesten Sitzungswoche am meisten gesprochen hat: die Themen nach Redezahl, jede Zeile mit Beleg im Protokoll, dazu der Wochenvergleich.",
-            None,
-        ),
-        (
-            "Archiv",
-            "Plenarprotokoll-Katalog",
-            "overview.html",
-            "Der vollständige Katalog aller Plenarprotokolle aus der DIP-API mit erzeugten Dossiers je Sitzung: Tagesordnung, Rednerinnen und Redner, verknüpfte Drucksachen und Roh-API-Daten.",
-            None,
-        ),
-        (
-            "Transparenz",
-            "Quellen und Methode",
-            "sources.html",
-            "Welche offiziellen Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt — die Grundlage für das Neutralitätsversprechen.",
-            None,
-        ),
+        ("Sitzungen", "overview.html", "Sitzungsprotokolle und verfügbare Auswertungen im Archiv."),
+        ("Abstimmungen", "votes/index.html", "Namentliche Abstimmungen, Ergebnisse und einzelne Stimmen."),
+        ("Gesetzesvorhaben", "bills/index.html", "Debatten, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
+        ("Abgeordnete", "abgeordnete/index.html", "Reden und erfasste Abstimmungen einzelner Abgeordneter."),
+        ("Fakten", "fakt/index.html", "Auswertungen zu Wochen und Monaten mit ihren Belegen."),
     ]
-    if "bills" in features:
-        areas.insert(
-            2,
-            (
-                "Gesetzgebung",
-                "Gesetzesvorhaben verfolgen",
-                "bills/index.html",
-                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetzesvorhaben werden lokal im Browser gemerkt.",
-                None,
-            ),
-        )
-    if database_page_href:
-        areas.append(
-            (
-                "Transparenz",
-                "Daten",
-                database_page_href,
-                "Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.",
-                data_stand,
-            )
-        )
-    area_cards = "".join(
-        f"""
-        <a class="area-card" href="{pulse_html.esc(href)}">
-          <span class="eyebrow">{tag}</span>
-          <h3>{title}</h3>
-          <p>{pulse_html.esc(desc)}</p>
-          {f'<p class="area-meta">{pulse_html.esc(meta)}</p>' if meta else ''}
-          <span class="area-go">&Ouml;ffnen &rarr;</span>
-        </a>
-        """
-        for tag, title, href, desc, meta in areas
+    rows = "".join(
+        f'<li><h3><a href="{esc(href)}">{esc(title)} &rarr;</a></h3><p>{esc(description)}</p></li>'
+        for title, href, description in areas
     )
+    data = ""
+    if database_page_href:
+        meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.</p>{meta}</li>'
 
-    # Page anatomy, top to bottom:
-    #   global header
-    #   hero        -> headline, lead paragraph, two CTAs + the snapshot card
-    #   stat band   -> sitting / dossier / bill counters
-    #   block 1     -> "Was ist Bundestag-Puls?" prose
-    #   block 2     -> the principle cards
-    #   block 3     -> the area cards
     return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Primärquellen-Monitor des Bundestags</title>
+  <title>Bundestag-Puls · Debatten und Entscheidungen im Bundestag</title>
   {pulse_html.page_head(features)}
   <style>
     :root {{
-      --ink:#171a1f;
-      --muted:#606a78;
-      --line:#d9dee6;
-      --paper:#f7f8fa;
-      --panel:#ffffff;
-      --blue:#174ea6;
-      --teal:#0f766e;
-      --blue-soft:#eef5ff;
+      --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa;
+      --panel:#ffffff; --blue:#174ea6; --teal:#0f766e; --blue-soft:#eef5ff;
     }}
     * {{ box-sizing:border-box; }}
-    body {{
-      margin:0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color:var(--ink);
-      background:var(--paper);
-    }}
+    body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1180px; margin:0 auto; padding:22px 22px 48px; }}
     {pulse_html.global_header_styles()}
-    .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }}
-    .hero {{
-      display:grid;
-      grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);
-      gap:30px;
-      align-items:center;
-      padding:46px 0 36px;
-      border-bottom:1px solid var(--line);
-    }}
-    .hero h1 {{ margin:12px 0 0; font-size:46px; line-height:1.05; font-weight:820; letter-spacing:-.02em; }}
-    .hero .lead {{ margin:18px 0 0; max-width:620px; font-size:17px; line-height:1.55; color:#3b4452; }}
-    .cta-row {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px; }}
-    .btn {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:46px;
-      padding:10px 20px;
-      border-radius:8px;
-      border:1px solid var(--line);
-      background:#fff;
-      font-weight:750;
-      font-size:15px;
-      color:var(--ink);
-    }}
-    .btn:hover {{ text-decoration:none; }}
-    .btn-primary {{ background:var(--blue); border-color:var(--blue); color:#fff; }}
-    .btn-primary:hover {{ background:#123e85; }}
-    .btn-ghost:hover {{ border-color:#bdd0ea; background:var(--blue-soft); }}
-    .snapshot {{
-      border:1px solid var(--line);
-      border-left:4px solid var(--teal);
-      border-radius:12px;
-      background:var(--panel);
-      padding:20px;
-    }}
-    .snapshot-doc {{ display:block; margin-top:6px; font-size:15px; }}
-    .snapshot-title {{ margin:8px 0 0; color:var(--ink); font-size:15px; line-height:1.35; font-weight:650; }}
-    .snapshot-date {{ margin:4px 0 0; color:var(--muted); font-size:13px; }}
-    .snapshot-metrics {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }}
-    .snapshot-metrics div {{ border:1px solid #e2e7ef; border-radius:8px; background:#fbfcfd; padding:8px 10px; }}
-    .snapshot-metrics span {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }}
-    .snapshot-metrics strong {{ display:block; margin-top:3px; font-size:20px; }}
-    .snapshot-link {{ font-weight:750; font-size:14px; }}
-    .stat-band {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:28px; }}
-    .stat-band div {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:14px 16px; }}
-    .stat-band span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
-    .stat-band strong {{ display:block; margin-top:5px; font-size:26px; font-weight:780; }}
-    section.block {{ padding:42px 0 0; }}
-    section.block > .eyebrow {{ display:block; }}
-    section.block h2 {{ margin:8px 0 0; font-size:26px; font-weight:780; letter-spacing:-.01em; }}
-    section.block > p.intro {{ margin:10px 0 0; max-width:700px; color:var(--muted); font-size:15px; line-height:1.55; }}
-    .principles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:24px; }}
-    .principle {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px; }}
-    .principle .num {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      width:30px;
-      height:30px;
-      border-radius:8px;
-      background:var(--blue-soft);
-      color:var(--blue);
-      font-weight:800;
-      font-size:14px;
-      margin-bottom:12px;
-    }}
-    .principle h3 {{ margin:0; font-size:16px; font-weight:740; }}
-    .principle p {{ margin:8px 0 0; color:var(--muted); font-size:14px; line-height:1.5; }}
-    .areas {{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:24px; }}
-    .area-card {{
-      display:flex;
-      flex-direction:column;
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:var(--panel);
-      padding:22px;
-      color:var(--ink);
-      transition:border-color .12s, box-shadow .12s, transform .12s;
-    }}
-    .area-card:hover {{
-      text-decoration:none;
-      border-color:#bdd0ea;
-      box-shadow:0 8px 24px rgba(23,26,31,.07);
-      transform:translateY(-2px);
-    }}
-    .area-card h3 {{ margin:8px 0 0; font-size:20px; font-weight:760; }}
-    .area-card p {{ margin:10px 0 0; color:var(--muted); font-size:14px; line-height:1.5; flex:1; }}
-    .area-go {{ margin-top:16px; color:var(--blue); font-weight:750; font-size:14px; }}
-    footer {{ margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; }}
-    @media (max-width: 900px) {{
-      .hero {{ grid-template-columns:1fr; padding:30px 0 28px; }}
-      .principles {{ grid-template-columns:1fr 1fr; }}
-      .areas {{ grid-template-columns:1fr; }}
-    }}
-    @media (max-width: 600px) {{
+    .home-intro {{ padding:24px 0; }}
+    .home-intro h1 {{ margin:0; max-width:900px; font-size:46px; line-height:1.05; font-weight:820; letter-spacing:-.02em; }}
+    main p {{ margin:12px 0; font-size:16px; line-height:1.55; color:var(--muted); }}
+    .home-periods {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:30px; }}
+    .home-periods section, .home-section {{ padding:24px 0; border-top:1px solid var(--line); }}
+    main h2 {{ margin:0 0 16px; font-size:26px; font-weight:780; letter-spacing:-.01em; }}
+    .home-action, .home-rows a {{ display:inline-flex; align-items:center; min-height:44px; font-weight:750; }}
+    main .home-meta {{ font-size:12px; }}
+    .home-rows {{ list-style:none; padding:0; margin:0; }}
+    .home-rows li {{ padding:16px 0; border-bottom:1px solid var(--line); }}
+    .home-rows h3 {{ margin:0; font-size:20px; }}
+    .home-rows p {{ margin:0; }}
+    footer {{ margin-top:24px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; }}
+    @media (max-width:1023px) {{ .home-periods {{ grid-template-columns:1fr; gap:0; }} }}
+    @media (max-width:600px) {{
       .shell {{ padding:16px 14px 40px; }}
-      .hero h1 {{ font-size:34px; }}
-      .principles, .stat-band {{ grid-template-columns:1fr; }}
+      .home-intro h1 {{ font-size:34px; }}
     }}
   </style>
 </head>
 <body>
   <div class="shell">
     {pulse_html.render_global_header(features=features)}
-
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Deutscher Bundestag · aus offiziellen Quellen</span>
-        <h1>Was der Bundestag tut — mit Belegen.</h1>
-        <p class="lead">Bundestag-Puls verdichtet die verstreute offizielle Tätigkeit des Parlaments — Reden, Gesetzentwürfe, Ausschussschritte und namentliche Abstimmungen — zu einem lesbaren Bild davon, worauf sich die parlamentarische Aufmerksamkeit gerade richtet und wer wofür steht. Aufgebaut ausschließlich aus Primärquellen, nicht aus Nachrichten.</p>
-        <div class="cta-row">
-          <a class="btn btn-primary" href="puls.html">Was gerade l&auml;uft</a>
-          <a class="btn btn-ghost" href="sources.html">Wie wir arbeiten</a>
-        </div>
+    <main>
+      <header class="home-intro">
+        <h1>Debatten und Entscheidungen im Bundestag</h1>
+        <p>Sitzungsprotokolle, Themen der Woche und Abstimmungen aus offiziellen Quellen.</p>
+      </header>
+      <div class="home-periods">
+        <section aria-labelledby="latest-sitting"><h2 id="latest-sitting">Letzte Sitzung</h2>{sitting}</section>
+        <section aria-labelledby="selected-week"><h2 id="selected-week">{week_heading}</h2>{weekly}</section>
       </div>
-      {snapshot}
-    </section>
-
-    <section class="stat-band" aria-label="Kennzahlen">
-      <div><span>API-Sitzungen</span><strong>{pulse_html.esc(protocol_count)}</strong></div>
-      <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(entries))}</strong></div>
-      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
-      <div><span>Quellenart</span><strong>Primärquellen</strong></div>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Was ist Bundestag-Puls?</span>
-      <h2>Ein zusammenhängendes Bild statt Fragmenten</h2>
-      <p class="intro">Eine Rede, ein Gesetzentwurf, ein Ausschussschritt, eine namentliche Abstimmung — einzeln sind sie öffentlich, aber schwer lesbar. Bundestag-Puls fügt sie zu einem Bild zusammen: „Was passiert dort gerade, und wer stand wo?“ Wie ein ziviler Radar für parlamentarische Aufmerksamkeit — jede Aussage einen Klick von ihrer Primärquelle entfernt.</p>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Prinzipien</span>
-      <h2>Worauf dieses Projekt aufbaut</h2>
-      <div class="principles">{principle_cards}</div>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Bereiche</span>
-      <h2>Was du hier findest</h2>
-      <p class="intro">Alle Ansichten greifen auf dieselben verknüpften Primärdaten zu — wähle die passende Perspektive.</p>
-      <div class="areas">{area_cards}</div>
-    </section>
-
-    <footer>
-      Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.
-    </footer>
+      <section class="home-section" aria-labelledby="other-areas">
+        <h2 id="other-areas">Weitere Bereiche</h2><ul class="home-rows">{rows}</ul>
+      </section>
+      <section class="home-section" aria-labelledby="sources-data">
+        <h2 id="sources-data">Quellen und Daten</h2>
+        <ul class="home-rows"><li><h3><a href="sources.html">Quellen und Methode &rarr;</a></h3>
+        <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
+      </section>
+    </main>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -4111,7 +3971,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
         for item, vote in derive.iter_report_votes(report):
-            # persist_votes skips a vote without an id, so the archive does
+            # persist_vote skips a vote without an id, so the archive does
             # too: the row count must equal SELECT count(*) FROM votes.
             if not vote.get("id"):
                 continue
@@ -4553,7 +4413,7 @@ def render_week_comparison_section(
 # ---------------------------------------------------------------------------
 # Build clock and week selection for puls.html.
 #
-# puls.html is the only page whose wording depends on *when* it was rendered
+# The homepage and puls.html describe periods using the same build clock
 # ("Auswertung vom", "vor N Wochen", running vs. past week). The clock is
 # injectable so tests and CI builds are reproducible: --today, else the
 # SOURCE_DATE_EPOCH convention (UTC, reproducible-builds.org), else the wall
@@ -4769,9 +4629,9 @@ def week_header_facts(
 
     if running:
         return {
-            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "eyebrow": "Wochenübersicht",
             "h1": f"Was der Bundestag in {label} bisher verhandelt hat",
-            "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Sitzungswoche l&auml;uft",
+            "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Woche l&auml;uft",
             "running": True,
             "warning": warning,
         }
@@ -4792,14 +4652,14 @@ def week_header_facts(
     age = pulse_html.week_span(week, pulse_html.iso_week_key(today.isoformat())) if today > sunday else 0
     if age <= 1:
         return {
-            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "eyebrow": "Wochenübersicht",
             "h1": f"Was der Bundestag in {label} verhandelt hat",
             "facts": f"{counts} · Stand: {sittings}, {latest} · {clock}",
             "running": False,
             "warning": warning,
         }
     return {
-        "eyebrow": "Letzte Sitzungswoche",
+        "eyebrow": "Wochenübersicht",
         "h1": f"Was der Bundestag in {label} verhandelt hat",
         "facts": f"Letzte Sitzungswoche vor {age} Wochen · {counts} · {sittings}, {latest} · {clock}",
         "running": False,
@@ -5123,7 +4983,7 @@ def render_front_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Aktueller Puls</title>
+  <title>Bundestag-Puls · Wochenübersicht</title>
   {pulse_html.page_head(features)}
   <style>
     :root {{
@@ -6584,6 +6444,14 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     ).fetchall():
         contributions_by_mp.setdefault(row["mp_id"], {})[row["kind"]] = row["n"]
 
+    contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
+    for row in conn.execute(
+        "SELECT c.id, c.mp_id, c.kind, p.document_number, p.date "
+        "FROM contributions c JOIN protocols p ON p.id=c.protocol_id "
+        "WHERE c.mp_id IS NOT NULL ORDER BY p.date DESC, c.sequence, c.id"
+    ):
+        contribution_links_by_mp.setdefault(row["mp_id"], []).append(dict(row))
+
     # All roll-call votes cast by an MP, newest first. Feeds the "Namentliche
     # Abstimmungen" list and the participation tally.
     votes_by_mp: dict[str, list[dict[str, Any]]] = {}
@@ -6609,7 +6477,10 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     assignments = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
     current_person_ids = set(assignments.values())
-    page_eligible = {row[0] for row in conn.execute("SELECT DISTINCT person_id FROM person_bindings WHERE id >= ? AND id < ?", _prefix_range(key_prefix("speech")))}
+    page_eligible = set()
+    for namespace in ("speech", "contribution"):
+        page_eligible.update(row[0] for row in conn.execute(
+            "SELECT DISTINCT person_id FROM person_bindings WHERE id >= ? AND id < ?", _prefix_range(key_prefix(namespace))))
     historical = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
@@ -6632,8 +6503,9 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Prefer the roster biography; the page key comes from the registry.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1, r["id"]))
+        # Prefer roster, then speaker biography over roll-call attributes.
+        # The page key still comes from the registry.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["id"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
@@ -6690,6 +6562,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
             "contribution_counts": dict(sorted(contribution_counts.items())),
+            "contribution_links": [c for r in members for c in contribution_links_by_mp.get(r["id"], [])],
             "contribution_count": sum(contribution_counts.values()),
             "votes": merged_votes,
             "vote_tally": tally,
@@ -6966,17 +6839,24 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     counts = mp.get("contribution_counts") or {}
     if not counts:
         return ""
+    for kind in counts:
+        speech_kinds.validate_kind(kind)
     fields = "".join(
         f'<div class="field"><span>{pulse_html.esc(speech_kinds.KIND_LABELS[kind][1])}</span>'
         f"<strong>{pulse_html.esc(counts[kind])}</strong></div>"
         for kind in speech_kinds.CONTRIBUTION_KINDS
         if counts.get(kind)
     )
+    links = "".join(
+        f'<li><a href="../protocols/plenarprotokoll-{slugify_document_number(c["document_number"])}.html#contribution-{pulse_html.esc(c["id"])}">'
+        f'{pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
+        for c in mp.get("contribution_links") or []
+    )
     return (
         '<section class="panel">'
         "<h2>Weitere Beiträge (keine Reden)</h2>"
-        "<p>Kurzinterventionen, Erwiderungen sowie Fragen und Antworten in Befragung und Fragestunde zählen nicht als Reden.</p>"
-        f'<div class="field-grid">{fields}</div>'
+        "<p>Zwischenfragen, schriftliche Beiträge, Kurzinterventionen, Erwiderungen sowie Fragen und Antworten zählen gesondert.</p>"
+        f'<div class="field-grid">{fields}</div><ul>{links}</ul>'
         "</section>"
     )
 
@@ -6987,12 +6867,15 @@ def render_abgeordnete_detail(
     publication_domains: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
-    # Header link out to the abgeordnetenwatch.de profile, when one was resolved.
+    # Joined roll-call records may supply a Bundestag profile when no
+    # abgeordnetenwatch profile exists. Keep the link's source label accurate.
     profile_link = ""
     if mp.get("profile_url"):
+        profile_href = pulse_html.source_url(mp["profile_url"], "public-profile")
+        profile_source = "abgeordnetenwatch.de" if (urlparse(profile_href).hostname or "").endswith("abgeordnetenwatch.de") else "Bundestag"
         profile_link = (
-            f'<a class="source-link" href="{pulse_html.esc(pulse_html.source_url(mp["profile_url"], "abgeordnetenwatch"))}" target="_blank" rel="noopener">'
-            "abgeordnetenwatch.de-Profil ↗</a>"
+            f'<a class="source-link" href="{pulse_html.esc(profile_href)}" target="_blank" rel="noopener">'
+            f"{profile_source}-Profil ↗</a>"
         )
 
     # "Überblick" grid: only fields that actually exist in the data are shown -
@@ -8409,7 +8292,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9793,6 +9676,7 @@ def render_site(
     # the DIP catalog arrives newest-first, but that ordering is undocumented.
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
+    today = resolve_today(today)
 
     # Every protocol document number this build actually produced a dossier
     # for - the join key resolve_entity_link and the Fakt der Woche pages use
@@ -9917,9 +9801,9 @@ def render_site(
             entries,
             database_page_href=database_page_href,
             data_stand=data_stand,
-            protocol_count=len(protocols),
-            bill_count=int(bill_output["count"]),
             features=features,
+            today=today,
+            week=week,
         ),
         encoding="utf-8",
     )
@@ -10245,7 +10129,7 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
 # Capability introspection exits before touching the network or output tree.
 def print_capability_table(selection: EnrichmentSelection) -> None:
     print("Feste öffentliche Bereiche")
-    print("  Aktueller Puls, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
+    print("  Wochenübersicht, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
     print("\nOptionale Datenerfassung")
     for enrichment_id, enrichment in ENRICHMENT_REGISTRY.items():
         state = "ausgewählt" if enrichment_id in selection else "nicht ausgewählt"
@@ -10927,13 +10811,15 @@ def main() -> int:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
 
-    # Only --offline --repersist upgrades an old store; an online update would
-    # otherwise fetch everything and then be refused by the rebuild. --no-persist
-    # renders without reading the store, so an old store does not block it.
-    if not getattr(args, "repersist", False) and not args.no_persist and database_path.exists():
+    # Explicit replay upgrades an old schema. Store consumers, including
+    # no-persist rendering, require current persisted rules; an online rebuild
+    # can repair the rules from accepted source inputs.
+    if not getattr(args, "repersist", False) and database_path.exists():
         previous = facts.open_readonly(database_path)
         try:
             pulse_store.require_current_schema(previous)
+            if args.offline or args.no_persist:
+                pulse_store.require_current_speech_rules(previous)
         except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -11017,6 +10903,13 @@ def main() -> int:
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
 
+        try:
+            validate_cached_kinds(cached_entries)
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}", file=sys.stderr)
+            return 1
+        if not getattr(args, "repersist", False):
+            write_classification_diagnostics(output_dir, cached_entries)
         entries = rebuild_cached_detail_pages(
             output_dir,
             protocols,
@@ -11284,6 +11177,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    write_classification_diagnostics(output_dir, entries)
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
     try:

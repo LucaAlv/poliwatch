@@ -255,6 +255,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 (agenda_item_2, now, now),
             )
         person_registry.reconcile(conn)
+        conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
         conn.commit()
     finally:
         conn.close()

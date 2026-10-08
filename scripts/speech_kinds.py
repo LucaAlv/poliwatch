@@ -21,10 +21,12 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 1
+VERSION = 5
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"
+ZWISCHENFRAGE = "zwischenfrage"
+ZU_PROTOKOLL = "zu_protokoll"
 BEFRAGUNG_FRAGE = "befragung_frage"
 BEFRAGUNG_ANTWORT = "befragung_antwort"
 FRAGESTUNDE_FRAGE = "fragestunde_frage"
@@ -33,6 +35,8 @@ FRAGESTUNDE_ANTWORT = "fragestunde_antwort"
 CONTRIBUTION_KINDS = (
     KURZINTERVENTION,
     ERWIDERUNG,
+    ZWISCHENFRAGE,
+    ZU_PROTOKOLL,
     BEFRAGUNG_FRAGE,
     BEFRAGUNG_ANTWORT,
     FRAGESTUNDE_FRAGE,
@@ -43,6 +47,8 @@ CONTRIBUTION_KINDS = (
 KIND_LABELS = {
     KURZINTERVENTION: ("Kurzintervention", "Kurzinterventionen"),
     ERWIDERUNG: ("Erwiderung", "Erwiderungen"),
+    ZWISCHENFRAGE: ("Zwischenfrage", "Zwischenfragen"),
+    ZU_PROTOKOLL: ("Zu Protokoll gegebener Beitrag", "Zu Protokoll gegebene Beiträge"),
     BEFRAGUNG_FRAGE: ("Frage in der Befragung der Bundesregierung", "Fragen in der Befragung der Bundesregierung"),
     BEFRAGUNG_ANTWORT: ("Antwort in der Befragung der Bundesregierung", "Antworten in der Befragung der Bundesregierung"),
     FRAGESTUNDE_FRAGE: ("Frage oder Nachfrage in der Fragestunde", "Fragen und Nachfragen in der Fragestunde"),
@@ -139,13 +145,38 @@ MEMBER = "member"
 OFFICIAL = "official"
 
 
+def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
+    """Occurrence-specific structured or printed role; never a person's job."""
+    if redner is None:
+        return None, None
+    long = _text(redner.find("name/rolle/rolle_lang")) or None
+    short = _text(redner.find("name/rolle/rolle_kurz")) or None
+    printed = None
+    # A role follows the printed name and a comma, before the label's colon.
+    label = _clean(redner.tail).split(":", 1)[0]
+    for match in re.finditer(",", label):
+        suffix = label[match.end():].strip()
+        if derive.side_of_role(suffix):
+            printed = suffix
+            break
+    structured = long or short
+    if structured and printed and derive.side_of_role(structured) != derive.side_of_role(printed):
+        raise ValueError(f"conflicting roles at redner {redner.get('id')}: {structured!r} / {printed!r}")
+    return (long, short) if structured else (printed, None)
+
+
+def validate_kind(kind: str) -> None:
+    if kind not in CONTRIBUTION_KINDS:
+        raise ValueError(f"Unknown contribution kind {kind!r}; reparse cached XML with --offline --repersist")
+
+
 def speaker_class(redner: ET.Element | None) -> str | None:
     """A Redner with a ``<rolle>`` (Bundesregierung, Bundesrat) is an official,
     one with a ``<fraktion>`` and no rolle an MdB, anyone else no one this
     module can place."""
     if redner is None:
         return None
-    if redner.find("name/rolle") is not None:
+    if any(effective_role(redner)):
         return OFFICIAL
     if _text(redner.find("name/fraktion")):
         return MEMBER
@@ -206,7 +237,12 @@ WITHDRAWN = re.compile(r"zieht zurück|zurückgezogen|verzichtet", re.IGNORECASE
 # A sentence that closes the Kurzintervention just held ("Damit ist die Kurzintervention
 # beendet. Das Wort hat als Nächste die Kollegin Meier.") grants nothing: the Redner
 # named after it speaks a Rede of their own.
-CLOSED = re.compile(r"\b(?:beendet|abgeschlossen|erledigt|vorbei)\b|zu Ende", re.IGNORECASE)
+CLOSED = re.compile(
+    r"\b(?:beendet|abgeschlossen|erledigt|vorbei)\b|zu Ende"
+    r"|\b(?:Danke|Dank)\b[^;!?]*\bfür\b[^;!?]*"
+    r"\b(?:Kurzintervention|Zwischenbemerkung|Zwischenintervention)\b[^;!?]*",
+    re.IGNORECASE,
+)
 # The Sitzungsleitung asks whether a Kurzintervention is wanted and the Redner says yes
 # by taking the floor: "Sie möchten eine Kurzintervention machen? – Bitte schön."
 INVITES = re.compile(r"^\W*(?:ja\W+)?bitte\s+(?:schön|sehr)\b", re.IGNORECASE)
@@ -251,7 +287,7 @@ def announces_kurzintervention(
 ) -> bool:
     """Whether the Sitzungsleitung text grants a Kurzintervention to the Redner
     whose surname, Fraktion and text length are given."""
-    surname = next_surname.casefold()
+    surname = re.compile(rf"(?<![\w-]){re.escape(next_surname)}(?![\w-])", re.IGNORECASE) if next_surname else None
     fraktion = FRAKTION_WORDING.get(next_fraktion)
     if WITHDRAWN.search(text):
         return False
@@ -272,6 +308,9 @@ def announces_kurzintervention(
             not KURZINTERVENTION_WORDING.search(sentence)
             or NOT_GRANTED.search(sentence)
             or CONDITIONAL.search(sentence)
+            or (re.search(r"\b(?:möglich|beantwortet)\b", sentence, re.IGNORECASE)
+                and not (surname and index + 1 < len(sentences) and surname.search(sentences[index + 1])
+                         and re.search(r"In dem Fall.*\bWort\b", sentences[index + 1])))
         ):
             continue
         if GRANTS_WORT.search(sentence):
@@ -285,7 +324,27 @@ def announces_kurzintervention(
             and next_chars <= WEAK_MAX_CHARS
         ):
             return True
-        if surname and any(surname in near.casefold() for near in sentences[index : index + 3]):
+        # A pending intervention can name its recipient in the following
+        # chair sentence. Require an explicit pending/grant signal, excluding
+        # retrospective explanations and an announcement of the next Rede.
+        near = " ".join([sentence, *sentences[index + 1:index + 4]])
+        if re.search(r"\bkeine?\s+Kurzintervention(?:en)?\b[^.]*\b(?:zulassen|zulasse|mehr)\b", near, re.IGNORECASE):
+            continue
+        pending = re.search(
+            r"(?:\bes gibt\b|\bgibt es\b|\bwir haben noch\b|\bich habe zwei Bitten\b|\bich lasse\b|"
+            r"\blasse ich\b|\bzulasse\b|\bstattgeben\b|\bzugelassen[^.]*vorziehen\b)",
+            near if re.search(r"\bangemeldet\b|\bstattgeben\b", sentence, re.IGNORECASE) else sentence,
+            re.IGNORECASE,
+        )
+        next_rede = re.search(r"\b(?:die|der) nächste[nr]? Redner(?:in)?\b", near, re.IGNORECASE)
+        retrospective = re.search(r"\b(?:das war|danke für|premiere|für das protokoll)\b", sentence, re.IGNORECASE)
+        if surname and surname.search(near) and pending and not next_rede and not retrospective:
+            return True
+        # Explicit anaphoric grants after a procedural explanation (20/21,
+        # 20/22) remain source evidence, even when 'möglich' describes the rule.
+        if surname and surname.search(near) and re.search(r"\bWort zu einer solchen\b|In dem Fall.*\bWort\b", near):
+            return True
+        if surname and surname.search(sentence):
             return True
         if fraktion and fraktion.search(sentence) and next_chars <= WEAK_MAX_CHARS:
             return True
@@ -309,6 +368,7 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
     main_key: str | None = None
     previous: str | None = None  # kind of the previous <rede>
     seen_rede = False
+    previous_rede = None
     for child in top:
         if child.tag == "p" and seen_rede and child.attrib.get("klasse") != "redner":
             between += " " + _text(child)
@@ -318,6 +378,8 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
         redner = _rede_redner(child)
         who = speaker_class(redner)
         if befragung:
+            if who is None:
+                raise ValueError(f"unresolved Befragung turn {child.get('id')} redner {redner.get('id') if redner is not None else None}")
             if opening and who == OFFICIAL:
                 label = RedeLabel(None)
             else:
@@ -328,8 +390,34 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
             # The Erwiderung is the Rede of the Redner the Kurzintervention answered. The
             # Sitzungsleitung's wording is no signal: "Möchten Sie antworten? - Nein" is
             # followed by an unrelated Rede (measured on WP 20/21: 10+ real Reden).
-            if previous == KURZINTERVENTION and same_person:
+            delegated_reply = False
+            intervention_exchange = ""
+            if previous_rede is not None:
+                chair = False
+                source_key = None
+                delegation_requested = False
+                for node in previous_rede:
+                    if node.tag == "name":
+                        chair = True
+                    elif node.tag == "p" and node.get("klasse") == "redner":
+                        chair = False
+                        source_key = _redner_key(node.find("redner"))
+                    elif chair and node.tag == "p":
+                        intervention_exchange += " " + _text(node)
+                    elif node.tag == "p" and source_key == main_key:
+                        delegation_requested |= bool(names_asker(redner, _text(node)) and re.fullmatch(
+                            r"Darf auch Herr [\wÄÖÜäöüß -]+ antworten\?", _text(node)))
+                delegated_reply = (
+                    previous == KURZINTERVENTION
+                    and names_asker(redner, between)
+                    and re.search(r"Sind Sie einverstanden, dass der Abgeordnete .* antwortet\? [–-] Gut\.", between)
+                    and delegation_requested)
+            if previous == KURZINTERVENTION and (same_person or delegated_reply):
                 label = RedeLabel(ERWIDERUNG, main_id)
+            elif (main_id and names_asker(redner, intervention_exchange)
+                  and re.search(r"Herr [^.]+, Sie können eine Kurzintervention machen, eine einzige\.", intervention_exchange)
+                  and re.fullmatch(r"\s*Eine kurze Kurzintervention\.", between)):
+                label = RedeLabel(KURZINTERVENTION, main_id)
             elif main_id and announces_kurzintervention(
                 between, _last_name(redner), _fraktion(redner), len(_speech_chars(child))
             ):
@@ -342,6 +430,7 @@ def classify_reden(top: ET.Element, formats: frozenset[str], continuation: bool 
         previous = label.kind
         seen_rede = True
         between = trailing_sitzungsleitung_text(child)
+        previous_rede = child
     return labels
 
 
@@ -368,18 +457,32 @@ _ANNOUNCE_NAME = re.compile(
 _ANNOUNCE_TAIL = re.compile(r"\s+(?:von der|von den|von dem|vom|für|aus|auf|gestellt)\b.*$")
 
 
-def announced_asker(announcement: str) -> str | None:
-    """The name in "Wir kommen zur Frage 2 des Abgeordneten Bernd Schattner von
-    der AfD-Fraktion:", None when the announcement names no one."""
+def announced_asker_details(announcement: str) -> tuple[str | None, str | None]:
     matches = list(_ANNOUNCED.finditer(announcement))
     if not matches:
-        return None
+        return None, None
     rest = re.sub(r"\s+auf$", "", matches[-1].group("rest").strip())
     named = _ANNOUNCE_NAME.search(rest)
     if named is None:
-        return None
-    name = _ANNOUNCE_TAIL.sub("", named.group("name")).strip(" ,")
-    return re.sub(r"^(?:Kolleg(?:in|en|e)|Abgeordnete[nr]?)\s+", "", name) or None
+        return None, None
+    name = named.group("name").strip(" ,")
+    party = None
+    suffix = re.search(r"\s*(?:\(([^)]+)\)|,\s*(.+)|\s+von\s+(?:der\s+|den\s+)?(.+))$", name)
+    if suffix:
+        candidate = next(value for value in suffix.groups() if value)
+        candidate = re.sub(r"-Fraktion$", "", candidate)
+        if derive.zusammenschluss(candidate):
+            party = candidate
+            name = name[:suffix.start()].strip()
+    name = _ANNOUNCE_TAIL.sub("", name).strip(" ,")
+    name = re.sub(r"^(?:Kolleg(?:in|en|e)|Abgeordnete[nr]?)\s+", "", name)
+    if name in {"Ihnen", "Sie", "Herr", "Frau"}:
+        return None, party
+    return name or None, party
+
+
+def announced_asker(announcement: str) -> str | None:
+    return announced_asker_details(announcement)[0]
 
 
 def names_asker(redner: ET.Element | None, announcement: str) -> bool:
@@ -392,7 +495,23 @@ def names_asker(redner: ET.Element | None, announcement: str) -> bool:
     return bool(surname) and re.search(rf"(?<![\w-]){re.escape(surname)}(?![\w-])", announcement, re.IGNORECASE) is not None
 
 
-def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
+def asker_candidates(redners: Any) -> dict[tuple[str, str], dict[str, ET.Element]]:
+    """Unique source candidates for this sitting, using only member occurrences."""
+    candidates: dict[tuple[str, str], dict[str, ET.Element]] = {}
+    for candidate in redners:
+        if speaker_class(candidate) != MEMBER:
+            continue
+        name = candidate.find("name")
+        if name is None:
+            continue
+        full = _clean(" ".join(_text(name.find(k)) for k in ("titel", "vorname", "nachname")))
+        normalized = re.sub(r"^(?:(?:Dr\.|Prof\.|Herr|Frau)\s*)+", "", full).casefold()
+        party = derive.zusammenschluss(_fraktion(candidate)) or ""
+        candidates.setdefault((normalized, party), {})[_redner_key(candidate) or ""] = candidate
+    return candidates
+
+
+def fragestunde_turns(top: ET.Element, candidates: dict[tuple[str, str], dict[str, ET.Element]] | None = None) -> tuple[list[Turn], int]:
     """The Fragen and Antworten of a Fragestunde, in document order, and the
     number of turns left out because their marker names no one.
 
@@ -423,8 +542,7 @@ def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
             who = speaker_class(redner)
             question = None
             if who is None:
-                speaker, turn, unplaced_open = "unplaced", None, True
-                continue
+                raise ValueError(f"unresolved Fragestunde marker redner {redner.get('id') if redner is not None else None}")
             speaker = "turn"
             turn = {
                 "kind": FRAGESTUNDE_FRAGE if who == MEMBER else FRAGESTUNDE_ANTWORT,
@@ -441,7 +559,7 @@ def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
             elif speaker == "unplaced" and unplaced_open:
                 unplaced, unplaced_open = unplaced + 1, False
             elif speaker == "leadership":
-                if child.attrib.get("klasse") == "p":
+                if child.attrib.get("klasse") in {"p", "P"}:
                     if question is None:
                         question = {
                             "kind": FRAGESTUNDE_FRAGE,
@@ -455,6 +573,7 @@ def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
                 else:
                     announcement, question = text, None
 
+    candidates = candidates if candidates is not None else asker_candidates(top.iter("redner"))
     turns: list[Turn] = []
     for index, item in enumerate(items):
         if "announcement" in item:
@@ -465,5 +584,13 @@ def fragestunde_turns(top: ET.Element) -> tuple[list[Turn], int]:
                     if names_asker(follower["redner"], item["announcement"]):
                         item["redner"] = follower["redner"]
                     break
+            if item["redner"] is None:
+                announced, party = announced_asker_details(item["announcement"])
+                normalized = re.sub(r"^(?:(?:Dr\.|Prof\.|Herr|Frau)\s*)+", "", announced or "").casefold()
+                matches = {key: candidate for (name, faction), group in candidates.items()
+                           if name == normalized and (not party or faction == derive.zusammenschluss(party))
+                           for key, candidate in group.items() if key}
+                if len(matches) == 1:
+                    item["redner"] = next(iter(matches.values()))
         turns.append(Turn(item["kind"], item["redner"], item.get("announced"), item["paragraphs"]))
     return [turn for turn in turns if turn.paragraphs], unplaced

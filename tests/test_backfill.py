@@ -218,7 +218,7 @@ class RetainedScopeTests(unittest.TestCase):
         before = (self.database).read_bytes()
         code, _fetch, _build_dossiers, render_site, stderr = self.run_main("--document-number", "21/2", generated=[])
         self.assertEqual(code, 1)
-        self.assertIn("ERROR [persist]: 1 cached reports predate the A1 Rede rule", stderr)
+        self.assertIn("ERROR [persist]: 1 cached reports predate the current speech-counting rule", stderr)
         self.assertIn("(21/1)", stderr)
         self.assertEqual(self.database.read_bytes(), before)
         render_site.assert_not_called()
@@ -230,6 +230,9 @@ class RetainedScopeTests(unittest.TestCase):
         old = report_for(1, acquisition=COMPLETE_VOTES)
         del old["validation_summary"]["speech_kinds_version"]
         write_cached(self.output_dir, old)
+        old["agenda_items"][0]["top_id"] = "Tagesordnungspunkt 1"
+        old["agenda_items"][1].update(top_id="Tagesordnungspunkt 2", heading="Fragestunde")
+        write_cached(self.output_dir, old)
         xml = (_support.FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
         (self.output_dir / "data" / "xml").mkdir(exist_ok=True)
         (self.output_dir / "data" / "xml" / "plenarprotokoll-21-1.xml").write_text(
@@ -237,7 +240,7 @@ class RetainedScopeTests(unittest.TestCase):
         )
         code, _fetch, _build_dossiers, render_site, stderr = self.run_main("--document-number", "21/2", generated=[])
         self.assertEqual(code, 0, stderr)
-        self.assertNotIn("predate the A1 Rede rule", stderr)
+        self.assertNotIn("predate the current speech-counting rule", stderr)
         kept = next(e["report"] for e in render_site.call_args.kwargs["entries"] if e["slug"] == "21-1")
         self.assertEqual(kept["validation_summary"]["speech_kinds_version"], speech_kinds.VERSION)
         conn = sqlite3.connect(self.database)

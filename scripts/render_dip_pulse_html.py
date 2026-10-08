@@ -466,7 +466,7 @@ def format_percent(value: float) -> str:
 def global_header_styles() -> str:
     return """
     a:visited { color:var(--teal, #0f766e); }
-    a:focus-visible {
+    :is(a, .site-nav summary, .theme-toggle):focus-visible {
       outline:2px solid var(--blue);
       outline-offset:2px;
     }
@@ -523,8 +523,23 @@ def global_header_styles() -> str:
     .site-nav {
       display:flex;
       flex-wrap:wrap;
-      justify-content:flex-end;
+      justify-content:flex-start;
       gap:8px;
+      width:100%;
+      order:2;
+    }
+    .site-nav-secondary { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .site-nav-more summary { cursor:pointer; }
+    @media screen and (min-width:1024px) {
+      .site-nav-more[data-desktop] { display:contents; }
+      .site-nav-more[data-desktop] summary { display:none; }
+      .site-nav-more[data-desktop] .site-nav-secondary { margin-top:0; }
+    }
+    @media (max-width:1023px) {
+      .site-nav-more { flex-basis:100%; }
+    }
+    @media (min-width:600px) and (max-width:1023px) {
+      .site-nav-more { flex-basis:auto; }
     }
     .site-actions {
       display:flex;
@@ -532,7 +547,7 @@ def global_header_styles() -> str:
       gap:8px;
       margin-left:auto;
     }
-    .site-nav a {
+    .site-nav a, .site-nav summary {
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -545,8 +560,11 @@ def global_header_styles() -> str:
       font-size:13px;
       font-weight:700;
     }
+    .site-nav summary { display:list-item; list-style-position:inside; line-height:32px; }
     .site-nav a:hover,
-    .site-nav a[aria-current="page"] {
+    .site-nav summary:hover,
+    .site-nav a[aria-current="page"],
+    .site-nav-more[data-active] summary {
       border-color:#bdd0ea;
       background:var(--blue-soft, #eef5ff);
       color:var(--blue, #174ea6);
@@ -582,7 +600,7 @@ def global_header_styles() -> str:
     :root[data-theme="dark"] a { color:var(--blue) !important; }
     :root[data-theme="dark"] a:visited { color:var(--teal) !important; }
     :root[data-theme="dark"] :is(
-      .site-nav a, .theme-toggle,
+      .site-nav a, .site-nav summary, .theme-toggle,
       .button, .btn, .dev-toggle,
       .page-actions a, .session-links a,
       .feature-link, .doc-link, .top-jump
@@ -591,6 +609,11 @@ def global_header_styles() -> str:
       border-color:var(--line) !important;
       color:var(--ink) !important;
     }
+    :root[data-theme="dark"] :is(.site-nav a[aria-current="page"], .site-nav-more[data-active] summary) {
+      background:var(--blue-soft) !important;
+      border-color:var(--blue) !important;
+      color:var(--blue) !important;
+    }
     :root[data-theme="dark"] :is(.btn-primary, .button.primary) {
       background:var(--blue) !important;
       border-color:var(--blue) !important;
@@ -598,8 +621,7 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] :is(
       .metric, .download-panel, .summary-band div, .panel, .table-card,
-      .filter, .sample-table, details, .snapshot, .snapshot-metrics div,
-      .stat-band div, .principle, .area-card, .top-card, .radar,
+      .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
       .week-compare, .week-metric
@@ -629,8 +651,7 @@ def global_header_styles() -> str:
     }
     :root[data-theme="dark"] :is(
       .muted, .eyebrow, .row-top, .row-metric, label, .card-meta,
-      th, .snapshot-date, .snapshot-metrics span, .stat-band span,
-      .principle p, .area-card p, .metric span,
+      th, .metric span,
       .speaker-row em, .position-list em, .doc-list em,
       .activity-list em, .people-list em, .summary-sources span,
       .session-summary-note, .ranking-empty,
@@ -689,7 +710,7 @@ def global_header_styles() -> str:
     @media (max-width: 760px) {
       .site-header { align-items:flex-start; }
       .site-nav { justify-content:flex-start; }
-      .site-actions { width:100%; justify-content:flex-start; }
+      .site-actions { justify-content:flex-end; }
     }
     """
 
@@ -997,8 +1018,35 @@ def page_head(selection: Selection | None = None) -> str:
     return theme_bootstrap_script()
 
 
+def navigation_runtime_script() -> str:
+    return """
+  <script>
+    (() => {
+      const disclosure = document.querySelector(".site-nav-more");
+      if (!disclosure) return;
+      const desktop = window.matchMedia("(min-width: 1024px)");
+      const summary = disclosure.querySelector("summary");
+      const links = disclosure.querySelector(".site-nav-secondary");
+      function update() {
+        const focused = document.activeElement;
+        if (desktop.matches) {
+          disclosure.open = true;
+          if (focused === summary) links.querySelector("a").focus();
+          disclosure.setAttribute("data-desktop", "");
+        } else {
+          disclosure.removeAttribute("data-desktop");
+          disclosure.open = links.contains(focused);
+        }
+      }
+      update();
+      desktop.addEventListener("change", update);
+    })();
+  </script>
+"""
+
+
 def page_scripts(selection: Selection | None = None) -> str:
-    return ai_summary_runtime_script() + theme_runtime_script()
+    return ai_summary_runtime_script() + theme_runtime_script() + navigation_runtime_script()
 
 
 def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
@@ -1008,6 +1056,7 @@ def render_global_header(*, depth: int = 0, active: str | None = None, features:
     for item in NAV_ITEMS:
         current = ' aria-current="page"' if active == item.key else ""
         links.append(f'<a href="{esc(prefix + item.path)}"{current}>{esc(item.label)}</a>')
+    group_active = ' data-active' if active in {item.key for item in NAV_ITEMS[2:]} else ""
     return (
         '<div class="site-header">'
         f'<a class="site-brand" href="{esc(brand_href)}">'
@@ -1015,13 +1064,17 @@ def render_global_header(*, depth: int = 0, active: str | None = None, features:
         "<span>Primärquellen-Monitor</span>"
         "</a>"
         '<div class="site-actions">'
-        f'<nav class="site-nav" aria-label="Globale Navigation">{"".join(links)}</nav>'
         '<button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" '
         'aria-label="Dunkles Design aktivieren">'
         '<span class="theme-toggle-icon" data-theme-icon aria-hidden="true">☾</span>'
         '<span data-theme-label>Dunkel</span>'
         '</button>'
         '</div>'
+        '<nav class="site-nav" aria-label="Globale Navigation">'
+        f'{"".join(links[:2])}<details class="site-nav-more"{group_active}>'
+        '<summary>Weitere Bereiche</summary>'
+        f'<div class="site-nav-secondary">{"".join(links[2:])}</div>'
+        '</details></nav>'
         "</div>"
     )
 
@@ -1589,10 +1642,52 @@ def is_question_format(item: dict[str, Any]) -> bool:
     return bool(speech_kinds.heading_formats(item.get("heading")))
 
 
+def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], mp_lookup: dict[str, str] | None = None) -> str:
+    cards = []
+    from stable_ids import contribution_occurrence_id
+    for c in item.get("xml_contributions") or []:
+        speech_kinds.validate_kind(c["kind"])
+        key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, c["sequence"], c.get("rede_id"))
+        speaker = c.get("speaker") or {}
+        name = esc(derive.speaker_display_name(speaker) or "Nicht zugeordnet")
+        # The registry lookup keys occurrences; never guess a person from a name.
+        person = (mp_lookup or {}).get(key)
+        if person:
+            name = f'<a href="../abgeordnete/{esc(person)}.html">{name}</a>'
+        label = esc(speech_kinds.KIND_LABELS[c["kind"]][0])
+        page = (c.get("source_page") or {}).get("page")
+        pdf = safe_href(protocol.get("pdf_url"))
+        start_page = (protocol.get("xml_header") or {}).get("start_page")
+        physical_page = int(page) - int(start_page) + 1 if page and start_page else None
+        href = pdf + f"#page={physical_page}" if pdf and physical_page and physical_page > 0 else pdf
+        source_label = f"Originalprotokoll · S. {page}" if page else "Originalprotokoll"
+        source = f'<a href="{esc(href)}">{esc(source_label)}</a>' if href else ""
+        parent = c.get("parent_rede_id")
+        containing = ""
+        if parent:
+            for i, speech in enumerate(item.get("xml_speakers") or []):
+                if speech.get("rede_id") == parent:
+                    parent_label = "Enthaltende Rede" if c["kind"] == speech_kinds.ZWISCHENFRAGE or str(c.get("rede_id") or "").startswith("nested:") else "Bezugsrede"
+                    containing = f'<a href="#{esc(speech_anchor(item, speech, i))}">{parent_label}</a>'
+                    break
+            if not containing:
+                for other in item.get("xml_contributions") or []:
+                    if other.get("rede_id") == parent:
+                        parent_key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, other["sequence"], parent)
+                        containing = f'<a href="#contribution-{esc(parent_key)}">Enthaltender Beitrag</a>'
+                        break
+        paragraphs = c.get("paragraphs") or ([c["text"]] if c.get("text") else [])
+        body = "".join(f'<p>{esc(text)}</p>' for text in paragraphs)
+        cards.append(f'<details class="speech-card" id="contribution-{esc(key)}"><summary><span class="party-dot"></span><strong>{name}</strong><em>{label}</em></summary><div class="speech-text">{source} {containing}{body}</div></details>')
+    return '<div class="speech-cards contribution-cards">' + "".join(cards) + '</div>' if cards else ""
+
+
 def render_top_contributions(item: dict[str, Any]) -> str:
     """The Beiträge of one agenda item by kind: what was said there that is no
     Rede. Empty when there are none."""
     counts = contribution_counts(item)
+    for kind in counts:
+        speech_kinds.validate_kind(kind)
     if not counts:
         return ""
     parts = [
@@ -2660,7 +2755,7 @@ def render_speech_details(item: dict[str, Any], stats: dict[str, Any], profiles_
         )
     if not cards:
         if item.get("xml_contributions"):
-            return '<span class="muted">Keine Reden; nur Fragen und Antworten (siehe Beiträge)</span>'
+            return '<span class="muted">Keine Reden; weitere Beiträge siehe oben</span>'
         return '<span class="muted">Keine Reden im XML</span>'
     return f'<div class="speech-cards">{"".join(cards)}</div>'
 
@@ -2774,7 +2869,7 @@ def render_html(
             for party, count in stats["party_counts"].most_common()
         ]
         vote_sections = (
-            "".join(components["votes"].dossier_sections(report, {"item": item}))
+            "".join(components["votes"].dossier_sections(report, {"item": item, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"}))
             if "votes" in components
             else ""
         )
@@ -2821,6 +2916,7 @@ def render_html(
               </div>
               {top_documents}
               {render_top_contributions(item)}
+              {render_contribution_details(item, protocol, mp_lookup)}
               <div class="top-bars">
                 <div>
                   <label>Redeanteil <strong>{format_percent(speech_share)}</strong></label>
@@ -2855,7 +2951,7 @@ def render_html(
     sitting_vote_section = ""
     if sitting_votes and "votes" in components:
         vote_sections = "".join(
-            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}})
+            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"})
         )
         sitting_vote_section = (
             '<section class="top-card sitting-votes" id="sitting-votes">'
@@ -2889,6 +2985,11 @@ def render_html(
     ]
     footer_nav = " · ".join(link for link in footer_links if link)
     footer_nav_html = f" {footer_nav}" if footer_nav else ""
+    sitting_contributions_html = (
+        '<section class="top-card"><h2>Schriftliche Beiträge ohne gesicherte TOP-Zuordnung</h2>'
+        + render_top_contributions(report) + render_contribution_details(report, protocol, mp_lookup) + '</section>'
+        if report.get("xml_contributions") else ""
+    )
     protocol_dev_sections = (
         "".join(components["dev-view"].dossier_sections(report, {"scope": "protocol"}))
         if "dev-view" in components
@@ -3800,7 +3901,8 @@ def render_html(
         {sitting_vote_section}
       </main>
     </div>
-    {protocol_dev_sections}
+    {sitting_contributions_html}
+      {protocol_dev_sections}
     <footer>
       <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
     </footer>

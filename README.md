@@ -252,6 +252,12 @@ python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .cont
 - an unreadable or malformed cached report, or a report that fails to persist, prints one `ERROR [repersist]:` line naming the file, exits 1, and leaves the previous database byte for byte as it was (it is opened read-only, so an older schema is not migrated either);
 - when the rebuilt content equals the current database apart from timestamps, the existing file is kept and the run says so, so running it twice changes nothing.
 
+Counting rule version 2 adds nested Zwischenfragen and explicitly typed written submissions (`zu_protokoll`) as separate Beiträge. Neither enters Rede totals, shares or term series. Dossiers show their text, source links and containing contribution; person pages show their separate counts and links. Unassigned written submissions remain visible at sitting level. Historical printed speaker roles, `T_ohne_NaS` headings and uppercase question paragraphs are supported; unresolved question-format turns stop source acceptance.
+
+Rule version 3 rejected unproven nested turns instead of counting them as Zwischenfragen, excluded retrospective thanks from Kurzintervention grants, and associated written submissions with their local annex TOP references. Replay also rejects null agenda-item lists before replacing the store. Rule version 4 adds explicit grant and acknowledgement evidence for nested turns, carries grant evidence across chair interruptions and same-speaker resumptions, limits named group grants to those speakers, and does not treat explicit refusals as grants.
+
+Each persisted protocol records its actual input rule version in `speech_rule_inputs`. Facts, export and store-consuming offline/`--no-persist` rendering refuse missing/stale versions before writing output. Fresh report JSON cannot certify an old database. Repair with the command above; missing XML requires `--fetch-xml` first. Replay validates the XML/report SHA when present and proves one-to-one TOP associations before updating DIP/vote enrichment. A changed or ambiguous source set requires reacquiring the whole sitting report. Detailed DIP kind differences are retained in `data/a1-classification-diagnostics.json`; one build warning points to that file. See [A1 source and scratch validation](docs/plans/a1-validation.md).
+
 Schema 3 / export format 2 uses stable text row IDs and issued person URLs. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
 
 It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A store built before A1 has no cached XML: run `python3 scripts/build_dip_pulse_site.py --fetch-xml --output-dir .context/dip-pulse-site` once (public bundestag.de files, no API key, about 0.3 s per sitting), then `--offline --repersist`. A report from before A1 with no cached XML stops the re-persist with the store untouched, so old Reden counts never sit next to new ones; a report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/` (an online update re-fetches it). It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
@@ -300,6 +306,8 @@ scripts/preview_dip_pulse_site.sh update --limit 5 --detail-limit 2
 ## 5. Public presentation and operator controls
 
 Every ordinary build publishes the same public destinations and source-backed sections. Missing optional data is explained contextually as not requested, complete with no match, partial, or unavailable. `sources.html#datenstand` shows aggregate state and acquisition time. The old `settings.html` URL remains as an explanatory compatibility page during `0.5.x`; old `bundestag-pulse-features` browser data is inert.
+
+In sitting dossiers, names in roll-call member lists link to the matching Personenseite when the identity is unambiguous. Otherwise the row keeps its Bundestag profile link, or shows a plain name when no profile is available.
 
 AI summaries are visible when a usable, structurally validated summary exists. The exact label is `KI-generiert · nicht redaktionell geprüft`. Visitors can expand or collapse all summaries with one control; that single preference uses `bundestag-pulse-ai-summaries-v1`. Structural citation validation proves that cited targets resolve, not that every claim is factually supported or balanced.
 
@@ -365,14 +373,14 @@ Developer payloads are separate from presentation and enrichment. Use `--include
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
-`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. The page is the only one whose wording depends on when it was built: whether the sitting week is still running (Monday to Sunday of the week), how old it is ("Letzte Sitzungswoche vor 13 Wochen"), and the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Sitzungswoche vor 13 Wochen"), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
 
 | Input | Effect |
 |---|---|
-| `--today YYYY-MM-DD` | Build date: decides running vs. past week and is printed as "Auswertung vom" |
+| `--today YYYY-MM-DD` | Build date: decides running vs. past week; `puls.html` prints it as "Auswertung vom" |
 | `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC (a CI build with a pinned epoch shows that UTC date) |
 | neither | The current date at build time |
-| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps: every cached dossier stays) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+| `--week YYYY-WW` | The ISO sitting week shown by `puls.html` and the homepage; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps: every cached dossier stays) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24
@@ -406,8 +414,9 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 | `warning:` about the Namenslisten page | "0 rows" means the id rotated or the markup drifted — set `BT_NAMENSLISTEN_LIST_ID` (no CLI flag exists for it). "returned N rows (the request limit)" is informational, not fixable by that variable: the page's window is a fixed 200 rows, so an older vote gets no link this build, but keeps one a previous build already found. The outcome badge is unaffected either way. |
 | abgeordnetenwatch 429s / timeouts | The resolver throttles and retries; the update continues without profile links. Omit `--enrich aw-profiles` for debug runs. |
 | `ERROR [sprechrolle]: N speaker role(s) map to no Sprechrolle: …` | A speaker's `<rolle_lang>` in a cached protocol is one no rule in `SPRECHROLLE_RULES` maps. The message lists every such role with the protocol and Rede id; the store is left as it was. Add each role to the rules, see [Sprechrolle rules](#sprechrolle-rules), then re-run. |
-| `warning: N of M cached reports predate the A1 Rede rule …` | Those reports were parsed before Kurzinterventionen, Erwiderungen and the Fragen and Antworten of a Befragung or Fragestunde were kept out of the Reden, so Reden counts, Redeanteil and the Fakten built from them mix two rules. Printed by a render that persists nothing (`--offline` without `--repersist`, `--no-persist`). Run `build_dip_pulse_site.py --fetch-xml` once (it downloads the missing XML and exits), then `--offline --repersist` (§4c). |
-| `ERROR [repersist]` or `ERROR [persist]: N cached reports predate the A1 Rede rule and have no cached XML …` | A build that writes the store refuses reports from before A1 it cannot re-read, and names them; the store is left untouched. Run `--fetch-xml`, then `--offline --repersist`. A named report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/`. |
+| `Missing/stale persisted speech rules` | The store contains missing or old per-protocol rule versions. Facts, export and store-consuming rendering stop before writes; repair with `--fetch-xml` if needed, then `--offline --repersist`. Current report JSON alone does not repair the store. |
+| `warning: N of M cached reports predate the current speech-counting rule …` | These reports use an older speech-counting rule, so Reden counts, Redeanteil and facts may mix rule versions. The warning appears when persisting nothing (`--offline` without `--repersist`, `--no-persist`). Re-read cached XML with `--offline --repersist` (§4c); if a report has no cached XML, run `build_dip_pulse_site.py --fetch-xml` first. |
+| `ERROR [repersist]` or `ERROR [persist]: N cached reports predate the current speech-counting rule and have no cached XML …` | A store-writing build refuses reports with older counting rules when their XML is unavailable, and names them; the store is left untouched. Run `--fetch-xml`, then `--offline --repersist`. A named report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/`. |
 | `ERROR [repersist]: … is not the Plenarprotokoll XML of …` | A file in `data/xml/` is not the protocol of its sitting (a maintenance page, another sitting, no agenda items). The store is left untouched. Delete the named file and run `--fetch-xml` again. |
 | Builds feel slow | Narrow with `--document-number`, lower `--detail-limit`, and request only the enrichments you need. |
 | `error: --week 2030-01 ist nicht im Archiv` | The requested week has no cached dossier; the message lists the weeks that do (§6). |
@@ -416,7 +425,7 @@ Note that `data/` ships alongside the pages and contains the cached DIP JSON and
 
 ### Sprechrolle rules
 
-A Rede in a Sprechrolle (CONTEXT.md; `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
+A Rede in a Sprechrolle ([CONTEXT.md](CONTEXT.md); `<rolle>` in the protocol XML) counts for one of three sides and for no Fraktion or Gruppe (ADR 0001): `bundesregierung`, `bundesrat` or `weitere`. The side is stored per speech in `speeches.sprechrolle`, derived when persisting and when rendering from the speaker's `<rolle_lang>` by `SPRECHROLLE_RULES` in `scripts/derive.py`: an ordered list of `(pattern that must match the whole role text, side)` where the first match wins.
 
 - A role that names a Land in brackets ("Ministerpräsident (Bayern)", "Staatsminister (Hessen)") is the Bundesrat.
 - The Bundeskanzler, Bundesminister, Parlamentarische Staatssekretäre, Staatsminister beim Bund, Beauftragte and Koordinatoren der Bundesregierung are the Bundesregierung.
@@ -427,6 +436,7 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 ## 9. More documentation
 
 - [docs/project-documentation.md](docs/project-documentation.md) — full command, flag, and environment reference, pipeline internals, SQLite schema.
+- [A1 source and scratch validation](docs/plans/a1-validation.md), [A1/A2 coordination contract](docs/plans/a1-a2-contract.md), and [ADR 0002](docs/adr/0002-kurzinterventionen-are-not-reden.md) — source coverage, persistence/replay boundaries, and the Rede/Beitrag counting decision.
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.

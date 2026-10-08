@@ -1,0 +1,26 @@
+[
+  {
+    "fixture": "a1-historical-18-13.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18013.xml",
+    "source_sha256": "f6be29c4d6a12fef6014e5e9cc0f656ac1cc92628dedec967cf8bbcf61fe9c03",
+    "editing": "Question-format TOPs only; long J body paragraphs truncated to 300 characters; markers, roles, headings and P/p question paragraphs retained."
+  },
+  {
+    "fixture": "a1-historical-18-84.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18084.xml",
+    "source_sha256": "a372c41f5223d1bf1440c88341523ff0e71ec928a1d9c48d241131280df14cfb",
+    "editing": "Question-format TOPs only; long J body paragraphs truncated to 300 characters; markers, roles, headings and P/p question paragraphs retained."
+  },
+  {
+    "fixture": "a1-written-18-100.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18100.xml",
+    "source_sha256": "0b2ed597cb2cb800ac9d7ced3fbb39184767269821954ac4a599934efbd91ee2",
+    "editing": "TOP 15 without delivered speeches; first written annex reduced to its first complete rede; §31 negative."
+  },
+  {
+    "fixture": "a1-role-19-13.xml",
+    "url": "https://dserver.bundestag.de/btp/19/19013.xml",
+    "source_sha256": "e7bb3f7675bcb8990067bc569588b53abd496eb07e481e9df33e797f991cb36b",
+    "editing": "First complete speaker marker for Klaus-Dieter Fritsche, redner 999990013; explicit structured and printed government role retained."
+  }
+]

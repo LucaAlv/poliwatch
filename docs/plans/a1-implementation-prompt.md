@@ -1,0 +1,7 @@
+Implement the A1 follow-ups on branch `a1-followups` using `docs/plans/a1-followups.md` as the implementation plan and `docs/plans/a1-turn-investigation.md` as source evidence. Read the repository instructions, CONTEXT and relevant ADRs first.
+
+Follow T1–T8 and their acceptance gates. Decisions are settled: extend existing modules (D1=A); refuse facts, exports and affected output from missing/stale persisted speech-rule provenance, with explicit replay recovery (D3=A); reject genuinely unresolved question-format turns after exhausting reliable source evidence, before accepting the sitting or replacing the store (D4=A). Do not add an unknown contribution kind. Written submissions are separate non-Rede Beiträge.
+
+Claude is completing A2 in a separate checkout. Preserve that ownership; coordinate contribution identity/schema changes and validate the final combined branches. Start independent source/parser work now; do not mark combined A1/A2 readiness before A2 integration passes.
+
+Use source-backed fixtures and scratch caches/stores/output, preserve existing IDs, run focused tests then the full supported Python suite, compare old/new source labels and counts, verify idempotent replay, integrity/FKs, exports and links. Python 3.13 is available at `/opt/miniconda3/bin/python3.13`. Update TODOs and domain/architecture docs only to reflect verified behavior. No A3 full acquisition, reference-store rewrite or release/deployment is authorized by this handoff.

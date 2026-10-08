@@ -504,7 +504,13 @@ _MP_TITLE_WORDS = frozenset(
 
 # Casefolded, whitespace-collapsed, title-free name used as a merge bucket key.
 def _normalized_mp_name(name: Any) -> str:
-    words = re.sub(r"\s+", " ", clean_mp_name(name).casefold()).strip().split(" ")
+    text = clean_mp_name(name).casefold()
+    # Roll-call lists print "surname, given name"; keep the source spelling in
+    # mps, but compare it in the same order as roster and protocol names.
+    if "," in text:
+        surname, given = text.split(",", 1)
+        text = f"{given.strip()} {surname.strip()}"
+    words = re.sub(r"\s+", " ", text).strip().split(" ")
     while len(words) > 2 and words[0].rstrip(".") in _MP_TITLE_WORDS:
         words.pop(0)
     return " ".join(word for word in words if word)
@@ -613,7 +619,12 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         # everything else (a DIP person, a roll-call member).
         return {"speaker" if member.get("xml_redner_id") else "roster" for member in rows_of[root]}
 
-    # Pass 2: Namensabgleich on the records pass 1 left. A name+party bucket
+    def vote_only(root: str) -> bool:
+        return all(member.get("vote_ids") and not member.get("xml_redner_id")
+                   and not member.get("dip_person_id") and not member.get("is_mdb")
+                   for member in rows_of[root])
+
+    # Pass 2: Namensabgleich on roster/speaker records pass 1 left. A name+party bucket
     # merges only when it holds exactly two records, one on each side, and no
     # Personenkennung of one contradicts one of the other. It is a guess, so
     # any other shape stays split. Buckets are judged on the records passes 1 and 1b left and
@@ -627,6 +638,7 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
 
     pending: list[tuple[str, str]] = []
     for records in buckets.values():
+        records = {root for root in records if not vote_only(root)}
         if len(records) < 2:
             continue
         ordered = sorted(records)
@@ -669,6 +681,38 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         if union(left, right, "unique_name"):
             rows_of[right_root].extend(rows_of.pop(left_root))
 
+    # Pass 3: a roll-call record is a third source, not another roster person.
+    # Attach it only to one unambiguous roster/speaker component of its name
+    # and party. The anchor's profile may come from a different source, but
+    # conflicting voter profiles make the bucket ambiguous even when those
+    # voters appear in different roll calls. Distinct records voting in the
+    # same roll call cannot be guessed to be one person either.
+    for records in buckets.values():
+        roots = {find(root) for root in records}
+        voters = sorted(root for root in roots if vote_only(root))
+        anchors = sorted(root for root in roots if not vote_only(root))
+        if not voters or len(anchors) != 1:
+            continue
+        anchor = anchors[0]
+        if not any(member.get("xml_redner_id") or member.get("dip_person_id") or member.get("is_mdb")
+                   for member in rows_of[anchor]):
+            continue
+        groups = [rows_of[root] for root in [anchor, *voters]]
+        votes = [set().union(*(member.get("vote_ids", set()) for member in group)) for group in groups]
+        ids = [_merge_external_ids(group) for group in groups]
+        # Compare profile URLs between voters only: a speaker may have an
+        # abgeordnetenwatch profile while a voter has a Bundestag profile.
+        ids[0]["profile"] = set()
+        partitions = {member.get("partition") for group in groups for member in group if member.get("partition")}
+        if len(partitions) > 1 or any(
+            votes[a] & votes[b] or _external_ids_conflict(ids[a], ids[b])
+            for a, b in itertools.combinations(range(len(groups)), 2)
+        ):
+            continue
+        for voter in voters:
+            if union(voter, anchor, "unique_name"):
+                rows_of[anchor].extend(rows_of.pop(voter))
+
     # Group the merged rows back into one bucket per person.
     components: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -683,11 +727,15 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> lis
     vacated by an occurrence moving to another record. A record that is not live
     is stale evidence: it keeps its person but takes part in no match."""
     bound = set() if touched is not None else {row[0] for row in conn.execute("SELECT DISTINCT record_id FROM person_bindings")}
+    vote_ids: dict[str, set[str]] = {}
+    for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
+        vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
         live = record["id"] in touched if touched is not None else record["id"] in bound or not evidence.get("vacated")
-        evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live)
+        evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
+                        vote_ids=vote_ids.get(record["id"], set()))
         rows.append(evidence)
     return rows
 

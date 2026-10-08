@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.0.0] - 2026-10-07
+
+### Changed
+
+- Open the latest generated sitting directly from the homepage, alongside a separate weekly overview with dates and coverage labels. A pinned historical week keeps its own period while the latest sitting stays current.
+- Find the public areas through concise homepage sections, replacing the introductory cards, archive counters and principles.
+- The weekly view is now named “Wochenübersicht”. Below 1024 px, secondary navigation sits under “Weitere Bereiche”; keyboard focus stays visible when the layout changes.
+
+## [0.16.0.0] - 2026-10-06
+
+### Added
+
+- Compare speech classifications across cached XML and historical counting rules with a read-only audit, including source hashes, unresolved turns and count changes.
+
+### Fixed
+
+- Offline replay recognises source-backed question permissions, renewed consent and corrected recipients while preserving refusals and keeping named and faction permissions separate.
+- Procedural exchanges no longer inflate speech counts. Split replies and explicitly resumed speeches retain their native speaker, text and identity, with excluded or merged turns preserved as diagnostics.
+
+## [0.15.1.0] - 2026-10-05
+
+### Fixed
+
+- Offline replay retains nested Zwischenfragen when the main speaker or chair interrupts, or when an explicit grant or acknowledgement supplies the evidence. Multi-speaker grants apply only to the named askers; refusals and unrelated later speakers do not inherit consent.
+- Cached reports and stores made under earlier counting rules require a fresh `--offline --repersist` rebuild before their counts are used. Stale-rule diagnostics describe older classifications accurately and request `--fetch-xml` only when XML is missing.
+
+## [0.15.0.0] - 2026-10-05
+
+### Added
+
+- Read nested Zwischenfragen and explicitly written submissions as separate Beiträge, with their own text, speaker and source links. Written submissions without a proven Tagesordnungspunkt appear with the sitting; they do not count as delivered Reden.
+- Rebuild cached reports with `--offline --repersist` under the current counting rules. Facts, exports and store-backed pages refuse older rule provenance and name the rebuild needed to refresh it.
+
+### Fixed
+
+- Historical Befragung and Fragestunde sources now use the role printed on each occurrence, recognised headings and explicit question/answer evidence. Unresolved or contradictory source evidence rejects the affected sitting instead of silently counting it as a Rede.
+- Kurzintervention classification distinguishes grants from refusals and closing announcements, while read-out questions receive an asker only when the sitting's source evidence identifies one uniquely.
+- Cached replay proves each TOP association before carrying votes or enrichment forward, checks paired XML hashes, and leaves accepted outputs intact when source matching fails.
+- Vote receipts take their sitting id, document number and date from one authoritative source row, including when duplicate or stale links exist.
+
+## [0.14.0.0] - 2026-10-04
+
+### Added
+
+- Names in dossier roll-call member lists now link to their Personenseite, where you can follow the person's votes and speeches. Members without an internal match keep their Bundestag profile link, or their plain name when no profile is available.
+
+### Fixed
+
+- Vote records printed surname-first now join their roster or speaker identity when the match is unambiguous. Conflicting ids, ambiguous namesakes and distinct people in the same roll call remain separate; vote-member occurrence ids stay unchanged. On the 285 cached sittings, 147,971 of 154,015 stored member rows now resolve internally, producing 166,656 working member links.
+- Personenseiten prefer roster and speaker biography over vote-list attributes, and correctly label a Bundestag profile fallback.
+
 ## [0.13.0.0] - 2026-10-03
 
 ### Added

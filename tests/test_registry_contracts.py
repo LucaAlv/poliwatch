@@ -28,7 +28,7 @@ def report(pid="s1", names=("Ada Example",), rede_ids=None):
          "char_count": 20, "text": "Ein geprüfter Text."}
         for index, name in enumerate(names)
     ]
-    return {"protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10"},
+    return {"validation_summary": {"speech_kinds_version": store.speech_kinds.VERSION}, "protocol": {"id": pid, "dokumentnummer": f"21/{pid[-1]}", "datum": "2026-06-10"},
             "agenda_items": [{"index": 1, "heading": "Debatte", "xml_speakers": speakers}]}
 
 
@@ -612,7 +612,8 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(corrupt.returncode, 1)
         self.assertNotIn("Traceback", corrupt.stderr)
         rendered = subprocess.run([*script, "--no-persist"], capture_output=True, text=True)
-        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        self.assertEqual(rendered.returncode, 1, rendered.stderr)
+        self.assertIn("file is not a database", rendered.stderr)
 
 
     # Value: protects=a durable alias whose survivor a name guess moved elsewhere still redirects to the current person's page; fails_when=aliases are resolved only through the durable chain so the retired key matches no page and its published file is deleted; why_new=the guess redirect test had no retired key behind the moved survivor; seam=none

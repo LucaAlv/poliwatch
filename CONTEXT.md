@@ -63,7 +63,7 @@ An identifier a source assigns to exactly one Person and keeps for them, such as
 _Avoid_: treating a name, a Zusammenschluss or a profile link as proof of identity
 
 **Namensabgleich**:
-Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. It may join records only when exactly one record on each side matches and no Personenkennung contradicts it.
+Treating two records as the same Person because their name and Zusammenschluss match. It is a guess, never proof: names and Zusammenschlüsse change, and namesakes exist. Roster and speaker records may join only when exactly one component on each side matches and no Personenkennung contradicts it. Roll-call records form a third source: surname-first names are compared in given-name order, and vote records may join exactly one unambiguous roster/speaker component. Different profile versions may join it, but distinct records present in the same roll call, conflicting Personenkennungen and ambiguous namesakes stay separate.
 _Avoid_: name match as identity, merging every record in a group of namesakes
 
 **Zusammenführung**:
@@ -105,12 +105,16 @@ One contribution to the debate for which a Redner is given the floor, as the Ple
 _Avoid_: Wortbeitrag (too broad), counting a whole protocol section as one Redner's text, counting every recorded contribution as a Rede
 
 **Beitrag**:
-Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde. Each has a Kind (`kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
+Something said in a Sitzung that is not a Rede but that the Plenarprotokoll records with its Redner: a Zwischenfrage, a written submission, a Kurzintervention, an Erwiderung, a Frage or an Antwort of a Befragung der Bundesregierung or a Fragestunde. Each has a Kind (`zwischenfrage`, `zu_protokoll`, `kurzintervention`, `erwiderung`, `befragung_frage`, `befragung_antwort`, `fragestunde_frage`, `fragestunde_antwort`) and is stored in `contributions`, never in `speeches`. Beiträge are counted on their own by Kind and add to no figure defined over Reden, nor to the Zeichen of a Tagesordnungspunkt or Redner.
 _Avoid_: Wortmeldung, counting a Beitrag as a Rede, adding Beiträge to a Person's Reden
 
 **Zwischenfrage**:
-A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner.
+A question or remark another MdB makes during a Rede with the Redner's consent. It belongs to the MdB who asks it, not to the Redner. A separately marked nested speaker segment is stored as a Beitrag with its own source identity and a link to the containing Rede or Beitrag. In a Befragung, nested official answers remain answers of that format.
 _Avoid_: counting it as part of the Rede
+
+**Zu Protokoll gegebener Beitrag**:
+A written submission explicitly identified in a typed annex as a zu Protokoll gegebene Rede. It is stored as `zu_protokoll`, displayed and counted separately, and adds to no Rede total, share or term series (decision 2026-09-30). A source-supported TOP is attached; uncertain associations remain sitting-level and missing source pages stay null. Declarations under §31 are a different source type and are excluded.
+_Avoid_: treating every annex `<rede>` as a written submission, counting it as a delivered Rede
 
 **Kurzintervention**:
 A remark of at most two minutes that an MdB is given the floor for right after another Redner's Rede (§ 27a Abs. 2 GO-BT). It is not a Rede and counts toward no Redeanteil or Rangfolge nach Reden; where shown, it is counted on its own.

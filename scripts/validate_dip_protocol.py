@@ -70,7 +70,9 @@ ANTHROPIC_SUMMARY_MAX_OUTPUT_TOKENS = 400
 
 
 class DipError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, source_rejected: bool = False):
+        super().__init__(message)
+        self.source_rejected = source_rejected
 
 
 class SummaryError(RuntimeError):
@@ -385,8 +387,7 @@ def parse_redner(redner: ET.Element | None) -> dict[str, Any] | None:
     first = child_text(name, "vorname")
     last = child_text(name, "nachname")
     fraction = child_text(name, "fraktion") or None
-    role_long = child_text(name, "rolle/rolle_lang") or None
-    role_short = child_text(name, "rolle/rolle_kurz") or None
+    role_long, role_short = speech_kinds.effective_role(redner)
     parts = [part for part in (title, first, last) if part]
     display_name = clean_text(" ".join(parts)) or elem_text(redner)
     if fraction and derive.zusammenschluss(fraction) is None:
@@ -453,44 +454,355 @@ class SpeechText(NamedTuple):
 # Whoever a ``<name>`` element introduces is the Sitzungsleitung ("Präsidentin
 # Julia Klöckner:"): the XML uses it for nobody else. Compared by identity.
 _SITZUNGSLEITUNG = object()
+# ponytail: reviewed grant wording only; extend with source-backed regressions.
+NESTED_GRANT_EVIDENCE = re.compile(
+    r"(?P<grant>\bich\s+(?:lasse|gestatte|erlaube)\b.{0,80}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,40}\bzu\b)"
+    r"|(?P<direct>\bich\s+(?:erlaube\s+Zwischenfragen|freue mich auf Ihre Zwischenfrage)\b)"
+    r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\b(?:zulass\w*|zugelassen haben)\b)",
+    re.IGNORECASE,
+)
+_NESTED_NAMED_ASKER = re.compile(
+    r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
+    r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"
+)
 
 
-def speech_text_and_paragraphs(rede: ET.Element) -> SpeechText:
-    """The words the Rede's Redner spoke (CONTEXT.md: Rede, Sitzungsleitung,
-    Zwischenfrage).
+def nested_grant_names(announcement: str) -> set[str] | None:
+    # Names before the question need an explicit asker predicate; an address
+    # to the main speaker or a bystander alone is not permission.
+    question = re.search(r"\b(?:Zwischenfragen?|Zwischenbemerkung(?:en)?|Fragen?|Bemerkung(?:en)?)\b", announcement, re.IGNORECASE)
+    request = re.sub(r"\b[A-Z]\.\s+", "", announcement[question.end():]) if question else ""
+    request = re.split(r"\ban (?:den|die) Abgeordnet", request, flags=re.IGNORECASE)[0]
+    names = _NESTED_NAMED_ASKER.findall(speech_kinds._SENTENCE_END.split(request)[0])
+    if question:
+        names += re.findall(
+            r"\b(?:Herr|Frau|Abgeordnete[nr]?|Kolleg(?:in|en|e))\s+(?:Dr\.\s+)?"
+            r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"
+            r"\s+(?:hat (?:die Möglichkeit|eine)|würde[^.!?]{0,30}gerne?|hat sich gemeldet)",
+            announcement[:question.start()])
+    surnames = {name.split()[-1].rstrip(".").casefold() for name in names}
+    return {name for name in surnames if name not in {"kollege", "kollegen", "kollegin", "fraktion", "ihnen", "zwischenfrage", "zwischenfragen", "frau", "herr"}
+            and not any(re.search(pattern.pattern, name, re.IGNORECASE)
+                        for pattern in speech_kinds.FRAKTION_WORDING.values())} or None
 
-    A ``<rede>`` interleaves the Redner with the Sitzungsleitung and with MdBs
-    asking a Zwischenfrage. The current speaker starts as the Rede's first
-    ``<redner>``, becomes the Sitzungsleitung at a ``<name>`` element and
-    becomes whoever a ``<p klasse="redner">`` marker names. Only paragraphs
-    spoken while the Redner is the current speaker are his or hers. The
-    Redner resumes with a marker of his or her own id: measured on 961 Reden
-    of eight sittings (WP 20 and 21) a ``<name>`` block was always followed by
-    such a marker or by the end of the Rede, so no resumption is inferred from
-    paragraph classes. Text with no determinable speaker (a marker that names
-    nobody, or a Rede that never names its Redner) goes to nobody and is
-    counted in ``unattributed_chars``. ``<kommentar>`` is not a ``<p>`` and
-    stays excluded.
+
+def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
+    """One source walk: own words and separate nested speaker segments.
+
+    Marker ordinals count every speaker marker, including resumptions. The
+    announcement field also carries explicit grant/acknowledgement evidence.
+    Chair text and comments never become speaker text.
     """
     own = redner_key(rede.find("./p[@klasse='redner']/redner"))
     speaker: object = own
     paragraphs: list[str] = []
+    nested: list[dict[str, Any]] = []
+    segment = None
     unattributed = 0
+    marker = 0
+    chair_text = ""
+    pending_nested_announcement = ""
+    pending_nested_names = None
+    # Carry refusals into classification even across empty speaker segments.
+    grant_epoch = 0
+    preceding_chair_text = ""
+    refused = False
+    pending_request = ""
+    pending_factions = set()
+    interrupted_request_pending = False
+    floor_granted = False
+    request_accepted = False
+    declined_request = ""
+    candidates = {parse_redner(r)["last_name"].casefold(): r for r in rede.iter("redner")
+                  if redner_key(r) != own and parse_redner(r).get("last_name")}
+
+    candidate_keys = {name: {redner_key(r) for r in rede.iter("redner")
+                             if redner_key(r) != own and parse_redner(r).get("last_name", "").casefold() == name}
+                      for name in candidates}
+
+    def recipients(context):
+        questions = list(re.finditer(r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", context, re.IGNORECASE))
+        question = questions[0] if questions else None
+        # Keep asker clauses on either side of the question, excluding its
+        # addressee and unrelated chair addresses. A shortened compound surname
+        # is safe only when it selects one structured candidate in this Rede.
+        recipient_text = " ".join(speech_kinds._SENTENCE_END.split(context[q.end():])[0] for q in questions) if questions else speech_kinds._SENTENCE_END.split(context)[0]
+        recipient_text = re.split(r"\ban (?:den|die) Abgeordnet", recipient_text, flags=re.IGNORECASE)[0]
+        asker_context = re.split(r"\ban (?:den|die) Abgeordnet", context, flags=re.IGNORECASE)[0]
+        names = set()
+        for name, r in candidates.items():
+            aliases = [name]
+            short = name.split()[0]
+            if short != name and short not in {"von", "van", "de", "zu", "zur", "zum"} and sum(len(candidate_keys[n]) for n in candidates if n.split()[0] == short) == 1:
+                aliases.append(short)
+            for alias in aliases:
+                token = rf"(?<![\w-]){re.escape(alias)}(?![\w-])"
+                if (re.search(token, recipient_text, re.IGNORECASE)
+                    or re.search(token + r"[^.!?]{0,100}(?:gemeldet|würde[^.!?]{0,30}gerne?|hat die Möglichkeit)", asker_context, re.IGNORECASE)):
+                    names.add(name)
+        explicit_names = nested_grant_names(context) or set()
+        if not question:
+            explicit_names |= {name.split()[-1].casefold() for name in re.findall(
+                r"\b(?:Herrn?|Frau|Kollegen?|Kollegin|Abgeordnete[nr]?)\s+(?:Dr\.\s+)?"
+                r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)", recipient_text)}
+        names |= {name for name in explicit_names
+                  if not any((candidate.endswith(" " + name) or candidate.startswith(name + " ")) or speech_kinds._text(candidates[candidate].find("name/vorname")).casefold() == name
+                             for candidate in names)
+                  and name != speech_kinds._last_name(rede.find("./p[@klasse='redner']/redner")).casefold()}
+        # A faction attached to a named asker does not grant its other members.
+        factions = set()
+        for clause in re.split(r"\bund (?:einmal|von|aus)\b", recipient_text, flags=re.IGNORECASE):
+            if any(re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", clause, re.IGNORECASE) for name in names):
+                continue
+            factions |= {derive.zusammenschluss(faction) for faction, pattern in speech_kinds.FRAKTION_WORDING.items()
+                         if pattern.search(clause)}
+        return names or None, factions
+
     for child in rede:
         if child.tag == "name":
-            speaker = _SITZUNGSLEITUNG
+            speaker, segment = _SITZUNGSLEITUNG, None
+            chair_text = ""
         elif child.tag == "p":
-            if child.attrib.get("klasse") == "redner":
-                speaker = redner_key(child.find("redner"))
-                continue
-            text = elem_text(child)
+            if child.get("klasse") == "redner":
+                marker += 1
+                redner = child.find("redner")
+                speaker, segment = redner_key(redner), None
+                if speaker == own:
+                    preceding_chair_text = chair_text
+                if speaker != own:
+                    if speaker is not None:
+                        candidate = parse_redner(redner)
+                        named_in_grant = (candidate.get("last_name") and pending_nested_names
+                                          and candidate["last_name"].casefold() in pending_nested_names)
+                        faction_matches = derive.zusammenschluss(candidate.get("fraktion")) in pending_factions
+                        recipient_mismatch = ((pending_nested_names is not None or bool(pending_factions))
+                                              and not (named_in_grant or faction_matches))
+                        if recipient_mismatch:
+                            grant_context = ""
+                            chair_text = ""
+                        else:
+                            grant_context = pending_nested_announcement
+                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
+                                   "grant_epoch": grant_epoch, "refused": refused,
+                                   "recipient_mismatch": bool(recipient_mismatch),
+                                   "authorized": bool(grant_context) and (not interrupted_request_pending or floor_granted),
+                                   "incomplete_exchange": interrupted_request_pending and not (request_accepted and floor_granted),
+                                   "announcement": " ".join(filter(None, (grant_context, chair_text)))}
+                        nested.append(segment)
+                        if named_in_grant:
+                            pending_nested_names.discard(candidate["last_name"].casefold())
+                        elif faction_matches:
+                            pending_factions.discard(derive.zusammenschluss(candidate.get("fraktion")))
+                        if not pending_nested_names and not pending_factions:
+                            pending_nested_announcement = pending_request = ""
+                            pending_nested_names = None
+                    else:
+                        pending_nested_announcement = ""
+                        pending_nested_names = None
+                if speaker == own and all_speakers:
+                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": [],
+                               "announcement": preceding_chair_text, "own": True}
+                    nested.append(segment)
+                chair_text = ""
+                if not inline and segment is None:
+                    continue
+                # Written annexes can start the entire first paragraph in the
+                # printed label's tail. Preserve only what follows its colon.
+                text = clean_text((redner.tail or "").partition(":")[2]) if redner is not None else ""
+            else:
+                text = elem_text(child)
             if not text:
                 continue
             if speaker is None:
                 unattributed += len(text)
+            elif speaker is _SITZUNGSLEITUNG:
+                chair_text += " " + text
+                question_request = re.search(
+                    r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
+                interrupted_request = re.search(r"Ich wollte Sie fragen:.*\bHerr\b.*würde gerne\s*[–-]", chair_text)
+                request_wording = re.search(
+                    r"gestatt|erlaub|zulass|lassen.*\bzu\b|es gibt|es gäbe|es würde.*geben|wir haben|Sagen Sie Ja oder Nein|hat sich gemeldet|Fragewunsch|hat die Möglichkeit|Sind Sie bereit|würde[^.!?]{0,30}gerne?|geben Sie",
+                    chair_text, re.IGNORECASE)
+                if (question_request and request_wording) or interrupted_request:
+                    request_accepted = False
+                    interrupted_request_pending = bool(interrupted_request)
+                    floor_granted = False
+                    if pending_request and not refused and re.search(r"\b(?:auch|noch|immer noch|zweite|weitere)\b", chair_text):
+                        pending_request += " " + chair_text
+                    else:
+                        pending_request = chair_text
+                        pending_nested_names = None
+                    names, factions = recipients(pending_request)
+                    if names:
+                        pending_nested_names = (pending_nested_names or set()) | names
+                    pending_factions = factions
+                    if not refused and re.search(r"Zwischenfrage|Zwischenbemerkung", chair_text, re.IGNORECASE):
+                        pending_nested_announcement = pending_request
+                if declined_request and re.fullmatch(r"\s*Also doch\?", chair_text):
+                    pending_request = declined_request
+                    pending_nested_names, pending_factions = recipients(pending_request)
+                    request_accepted = False
+                if interrupted_request_pending and (speech_kinds.INVITES.match(chair_text)
+                    or re.search(r"Es sind noch .* Sekunden\. Aber bitte schön\.", chair_text)):
+                    floor_granted = True
+                if pending_nested_announcement and re.search(r"\b(?:Herr|Frau)\b|\bWort\b", chair_text):
+                    pending_nested_announcement += " " + chair_text
             elif speaker == own:
                 paragraphs.append(text)
-    return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed)
+                if all_speakers and segment is not None:
+                    segment["paragraphs"].append(text)
+                grant = NESTED_GRANT_EVIDENCE.search(text)
+                contextual_no = request_accepted and (
+                    re.search(r"\b(?:Hoffnungen nicht enttäuschen|verlängert Ihre Redezeit|das ist abgesprochen)\b", preceding_chair_text, re.IGNORECASE)
+                    or re.match(r"^\W*Nein, wir nehmen die Leute ernst\.", text))
+                correction = re.fullmatch(r"Nein, von (?:Frau|Herrn?) [\wÄÖÜäöüß -]+\.", text)
+                refusal = (grant and grant.group("grant") and speech_kinds.NOT_GRANTED.search(grant.group("grant"))) or (
+                    pending_request and not contextual_no and not correction and re.match(r"^\W*(?:Nein|Nee|Auf keinen Fall|An dieser Stelle nicht)\b", text, re.IGNORECASE)) or any(
+                        speech_kinds.NOT_GRANTED.search(sentence)
+                        and re.search(r"Zwischenfragen?|Frage(?:n|wunsch)?|Rückfrage|Wortmeldung", sentence, re.IGNORECASE)
+                        and re.search(r"\b(?:(?:ich|wir)\s+(?:lasse[n]?|gestatte[n]?|erlaube[n]?)|(?:lasse[n]?|gestatte[n]?|erlaube[n]?)\s+(?:ich|wir))\b", sentence, re.IGNORECASE)
+                        for sentence in speech_kinds._SENTENCE_END.split(text))
+                # An explicit reversal is fresh authorization, not a question-mark override.
+                reversal = re.fullmatch(r"\W*Nein\?\s*Doch\.", text)
+                refusal = refusal and not reversal
+                renewed = declined_request and re.search(
+                    r"\bDoch, ich lasse sie zu\b|\b(?:Bitte schön|Na los, dann fragen Sie),? (?:Herr|Frau)\b"
+                    r"|\bDann stellen Sie doch eine Zwischenfrage\b|\bbitte schön, Frau\b.*\bgerne\b"
+                    r"|\bWollen wir, (?:Frau|Herr)\b.*\bIch wäre bereit\b"
+                    r"|\bBitte, bitte, wenn er unbedingt will\b", text, re.IGNORECASE)
+                named_question = re.search(r"\b(?:Herr|Frau)\s+[^.!?]+\s+hat eine Frage\b", text)
+                contextual_acceptance = pending_request and re.search(
+                    r"\b(?:aber (?:bitte|gerne)|gerne .*ja|Also gerne in dieser Reihenfolge|"
+                    r"ich mache das sehr gerne|Die lasse ich doch zu|Eine Frage .*lasse ich gerne zu|"
+                    r"Dann kann er gerne|Von der CDU/CSU\?\s*[–-]\s*Ja)\b", text, re.IGNORECASE)
+                if refusal:
+                    declined_request = pending_request or preceding_chair_text
+                    pending_nested_announcement = pending_request = ""
+                    pending_nested_names = None
+                    pending_factions = set()
+                    refused = True
+                    request_accepted = False
+                    grant_epoch += 1
+                elif correction:
+                    # Correcting the chair's recipient is neither consent nor
+                    # refusal. Wait for the corrected request and acceptance.
+                    pending_nested_announcement = pending_request = ""
+                    pending_nested_names = None
+                    pending_factions = set()
+                    request_accepted = False
+                elif named_question or contextual_acceptance or renewed or reversal or (grant and (grant.group("grant") or grant.group("direct"))) or (
+                    pending_request and re.search(
+                        r"^\W*(?:Ja\b|Bitte\b|(?:Aber )?(?:Sehr )?Gerne\b|(?:Aber )?Selbstverständlich\b|Unbedingt\b|"
+                        r"(?:Die|Das) (?:würde ich dann auch zulassen|lasse ich zu|mache ich gerne|würde ich machen)|"
+                        r"Vom Kollegen \w+ immer|Beide\b|Ach komm, dann mach)|\b(?:aber ja|ja, bitte)\b", text, re.IGNORECASE)):
+                    request_accepted = True
+                    if named_question:
+                        interrupted_request_pending = True
+                        floor_granted = False
+                        pending_request = text
+                        pending_nested_names, pending_factions = recipients(text)
+                    if contextual_acceptance and re.search(r"Dann kann er gerne", text, re.IGNORECASE):
+                        pending_request = preceding_chair_text
+                        pending_nested_names, pending_factions = recipients(pending_request)
+                    if renewed:
+                        pending_request = pending_request or declined_request
+                        pending_nested_names, pending_factions = recipients(pending_request)
+                        named_recipients, _ = recipients(text)
+                        if named_recipients:
+                            pending_nested_names = named_recipients
+                    pending_nested_announcement = " ".join(dict.fromkeys(filter(None, (pending_request, preceding_chair_text, text))))
+                    if not pending_request or re.search(r"Vom Kollegen \w+ immer", text):
+                        names, factions = recipients(text)
+                        pending_nested_names = names or pending_nested_names
+                        pending_factions |= factions
+                    refused = False
+            elif segment is not None:
+                segment["paragraphs"].append(text)
+    for nested_segment in nested:
+        text = " ".join(nested_segment["paragraphs"])
+        evidence = NESTED_GRANT_EVIDENCE.search(text)
+        if evidence and evidence.group("ack") and not nested_segment.get("refused") and not speech_kinds.NOT_GRANTED.search(evidence.group("ack")):
+            nested_segment["announcement"] = " ".join(filter(None, (nested_segment["announcement"], evidence.group("ack"))))
+    return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
+
+
+def speech_text_and_paragraphs(rede: ET.Element) -> SpeechText:
+    return speech_segments(rede)[0]
+
+
+def contribution_unit(kind: str, rede_id: str | None, parent: str | None, sequence: int,
+                      speaker: dict[str, Any] | None, paragraphs: list[str], page: dict[str, Any] | None) -> dict[str, Any]:
+    text = clean_text(" ".join(paragraphs))
+    return {"kind": kind, "rede_id": rede_id, "parent_rede_id": parent,
+            "sequence": sequence, "speaker": speaker, "paragraphs": paragraphs,
+            "source_page": page, "text": text, "char_count": len(text),
+            "paragraph_count": len(paragraphs), "snippet": text[:240], "unattributed_char_count": 0}
+
+
+def written_contributions(root: ET.Element, agenda_items: list[dict[str, Any]],
+                         rid_pages: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Only explicitly typed written submissions; an uncertain TOP stays null."""
+    unassigned = []
+    tops_by_id: dict[str, list[dict[str, Any]]] = {}
+    for top in agenda_items:
+        tops_by_id.setdefault(clean_text(top.get("top_id") or ""), []).append(top)
+    for annex_index, block in enumerate(root.findall("./anlagen/anlage/anlagen-text"), 1):
+        if clean_text(block.get("anlagen-typ") or "").casefold() not in {
+            "zu protokoll gegebene reden", "zu protokoll gegebene rede"
+        }:
+            continue
+        annex_pages = {}
+        current_page = None
+        for node in block.iter():
+            if node.tag == "a" and node.get("typ") == "druckseitennummer":
+                current_page = page_number(re.sub(r"^S", "", node.get("id") or ""))
+            elif node.tag == "rede" and current_page is not None:
+                annex_pages[node.get("id")] = {"page": current_page, "quadrant": None}
+
+        target = None
+        association_evidence = ""
+        sequence = 0
+        for child in block:
+            if child.tag == "p":
+                text = elem_text(child)
+                refs = re.findall(r"\(Tagesordnungspunkt\s+([^()]+)\)", text)
+                if refs:
+                    association_evidence = text
+                    candidates = tops_by_id.get("Tagesordnungspunkt " + clean_text(refs[0]), []) if len(refs) == 1 else []
+                    target = candidates[0] if len(candidates) == 1 else None
+                elif child.get("klasse") in {"Anlage_2", "Anlage_3", "Anlage_Strich"}:
+                    # A new annex heading starts a new local context; a later TOP
+                    # reference must not reach back across it.
+                    target = None
+                    association_evidence = text
+                continue
+            if child.tag != "rede":
+                continue
+            sequence += 1
+            rid = child.get("id") or f"annex:{annex_index}:{sequence}"
+            own, _nested = speech_segments(child, inline=True)
+            unit = contribution_unit(speech_kinds.ZU_PROTOKOLL, rid, None, sequence,
+                                     parse_redner(child.find("./p[@klasse='redner']/redner")),
+                                     own.paragraphs, rid_pages.get(rid) or annex_pages.get(rid))
+            unit["annex_type"] = block.get("anlagen-typ")
+            unit["top_association_evidence"] = association_evidence
+            if target is not None:
+                unit["sequence"] = max((c["sequence"] for c in target["contributions"]), default=0) + 1
+                target["contributions"].append(unit)
+            else:
+                unit["sequence"] = len(unassigned) + 1
+                unassigned.append(unit)
+    return unassigned
+
+
+def xml_source_sha256(xml_text: str) -> str:
+    """Hash XML text with canonical line endings, matching cache text reads.
+
+    XML normalizes CR/CRLF to LF; transport line endings must not make an
+    accepted source/report pair fail its later replay.
+    """
+    canonical = xml_text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
@@ -502,13 +814,17 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
+    try:
+        asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
+    except ValueError as exc:
+        raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}: {exc}") from exc
     for index, top in enumerate(root.findall("./sitzungsverlauf/tagesordnungspunkt"), start=1):
         heading_lines: list[str] = []
         zusatz_lines: list[str] = []
         transfer_lines: list[str] = []
         for paragraph in top.findall("p"):
             klass = paragraph.attrib.get("klasse", "")
-            if klass in {"T_NaS", "T_fett"}:
+            if klass in {"T_NaS", "T_fett", "T_ohne_NaS"}:
                 text = elem_text(paragraph)
                 if text:
                     heading_lines.append(text)
@@ -526,14 +842,117 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
         redes = top.findall("rede")
-        labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
+        try:
+            labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
+        except ValueError as exc:
+            raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: {exc}") from exc
         speeches: list[dict[str, Any]] = []
         contributions: list[dict[str, Any]] = []
         pages: list[dict[str, Any]] = []
+        nested_units: list[dict[str, Any]] = []
+        diagnostics: list[dict[str, Any]] = []
+        attachments: dict[str, list[str]] = {}
+        procedural_reden = set()
+        parsed_turns = [speech_segments(rede) for rede in redes]
+        by_id = {rede.get("id"): i for i, rede in enumerate(redes)}
+
+        def diagnostic(rid, segment, treatment, evidence, target=None):
+            entry = {"source_rede_id": rid, "marker_ordinal": segment["marker"],
+                     "speaker": segment["speaker"], "text": clean_text(" ".join(segment["paragraphs"])),
+                     "evidence": evidence, "treatment": treatment}
+            if target:
+                entry["target_rede_id"] = target
+                attachments.setdefault(target, []).extend(segment["paragraphs"])
+            diagnostics.append(entry)
+
+        for i, (rede, label) in enumerate(zip(redes, labels)):
+            rid = rede.get("id")
+            own_text, nested = parsed_turns[i]
+            chair_evidence = ""
+            chair = False
+            for child in rede:
+                if child.tag == "name":
+                    chair = True
+                elif child.tag == "p" and child.get("klasse") == "redner":
+                    chair = False
+                elif chair and child.tag == "p":
+                    chair_evidence += " " + elem_text(child)
+            remaining = []
+            resumed_started = False
+            parent_index = by_id.get(label.parent_rede_id)
+            main_key = redner_key(redes[parent_index].find("./p[@klasse='redner']/redner")) if parent_index is not None else None
+            reply = (i + 1 if i + 1 < len(redes) and labels[i + 1].kind == speech_kinds.ERWIDERUNG
+                     and labels[i + 1].parent_rede_id == label.parent_rede_id
+                     and sum(r.get("id") == redes[i + 1].get("id") for r in redes) == 1 else None)
+            resumed = (i > 0 and label.kind is None and labels[i - 1].kind is None
+                       and re.search(r"unterbreche den eigenen Redner", own_text.text, re.IGNORECASE)
+                       and re.search(r"\bHerbeirufung\b", own_text.text)
+                       and re.search(r"Sie können weiterreden", chair_evidence)
+                       and sum(r.get("id") == redes[i - 1].get("id") for r in redes) == 1)
+            if resumed:
+                procedural_reden.add(rid)
+                for turn in speech_segments(rede, all_speakers=True)[1]:
+                    if turn.get("own"):
+                        diagnostic(rid, turn, "procedural", "summons request: " + own_text.text)
+            for segment in nested:
+                key = derive.first_redner_id(segment["speaker"].get("xml_redner_id"))
+                text = clean_text(" ".join(segment["paragraphs"]))
+                short_reply = re.fullmatch(r"(?:Nein\.|Nein, ich antworte nicht\.|Sehr gerne\.|Ja\.)", text)
+                invited = re.search(r"(?:möchten Sie|dürfen.*Sie|Sie dürfen).*?(?:antworten|erwidern)", segment["announcement"], re.IGNORECASE)
+                reply_evidence = re.search(r"(?:antworten|erwidern)", chair_evidence, re.IGNORECASE)
+                next_rede = redes[i + 1] if i + 1 < len(redes) else None
+                next_speaker = next_rede.find("./p[@klasse='redner']/redner") if next_rede is not None else None
+                unique_next = next_rede is not None and sum(r.get("id") == next_rede.get("id") for r in redes) == 1
+                intervention_negotiation = (
+                    label.kind is None and unique_next and labels[i + 1].kind == speech_kinds.KURZINTERVENTION
+                    and labels[i + 1].parent_rede_id == rid and redner_key(next_speaker) == key
+                    and speech_kinds.names_asker(next_speaker, segment["announcement"])
+                    and re.search(r"Sie können eine Kurzintervention machen, eine einzige", segment["announcement"])
+                    and re.fullmatch(r"Eine einzige\? Ja, warum sollte ich mehrere Kurzinterventionen machen\?", text))
+                delegated_reply = (
+                    label.kind == speech_kinds.KURZINTERVENTION and key == main_key and invited
+                    and reply is not None and unique_next and redner_key(next_speaker) != key
+                    and re.fullmatch(r"Darf auch Herr [\wÄÖÜäöüß -]+ antworten\?", text)
+                    and speech_kinds.names_asker(next_speaker, text)
+                    and speech_kinds.names_asker(next_speaker, chair_evidence)
+                    and re.search(r"Sind Sie einverstanden, dass der Abgeordnete .* antwortet\? [–-] Gut\.", chair_evidence))
+                if intervention_negotiation or delegated_reply:
+                    diagnostic(rid, segment, "procedural", chair_evidence)
+                    continue
+                if label.kind == speech_kinds.KURZINTERVENTION and key == main_key and short_reply and invited:
+                    if text.startswith("Nein") or (reply is not None and redner_key(redes[reply].find("./p[@klasse='redner']/redner")) == key):
+                        diagnostic(rid, segment, "procedural", segment["announcement"])
+                        continue
+                if (label.kind == speech_kinds.KURZINTERVENTION and key == main_key and reply is not None
+                    and redner_key(redes[reply].find("./p[@klasse='redner']/redner")) == key and reply_evidence):
+                    diagnostic(rid, segment, "merged_erwiderung", chair_evidence, redes[reply].get("id"))
+                    continue
+                if resumed and key == redner_key(redes[i - 1].find("./p[@klasse='redner']/redner")):
+                    if text == "Alles gut.":
+                        diagnostic(rid, segment, "procedural", "summons interruption: " + own_text.text)
+                        continue
+                    if re.search(r"Sie können weiterreden", segment["announcement"]) or resumed_started:
+                        resumed_started = True
+                        diagnostic(rid, segment, "merged_rede", chair_evidence, redes[i - 1].get("id"))
+                        continue
+                if (resumed or re.fullmatch(r"Darf auch Herr [\wÄÖÜäöüß -]+ antworten\?", text)
+                    or (label.kind == speech_kinds.KURZINTERVENTION and key == main_key)):
+                    segment["unsupported_reply"] = True
+                remaining.append(segment)
+            parsed_turns[i] = (SpeechText("", [], 0) if resumed else own_text, remaining)
+
         for sequence, (rede, label) in enumerate(zip(redes, labels), start=1):
             rid = rede.attrib.get("id")
             redner = parse_redner(rede.find("./p[@klasse='redner']/redner"))
-            text, paragraphs, unattributed_chars = speech_text_and_paragraphs(rede)
+            own_text, nested = parsed_turns[sequence - 1]
+            if rid in attachments:
+                prefix = attachments[rid] if label.kind == speech_kinds.ERWIDERUNG else []
+                suffix = attachments[rid] if label.kind is None else []
+                merged = prefix + own_text.paragraphs + suffix
+                own_text = SpeechText(clean_text(" ".join(merged)), merged, own_text.unattributed_chars)
+            granted_nested_speaker = None
+            grant_epoch = 0
+            text, paragraphs, unattributed_chars = own_text
             page_ref = rid_pages.get(rid or "")
             if page_ref:
                 pages.append(page_ref)
@@ -548,15 +967,45 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 "paragraphs": paragraphs,
                 "snippet": text[:240],
             }
+            if nested and not rid:
+                raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
+            for segment in nested:
+                if segment["grant_epoch"] != grant_epoch:
+                    granted_nested_speaker = None
+                    grant_epoch = segment["grant_epoch"]
+                nested_kind = speech_kinds.ZWISCHENFRAGE
+                side = derive.sprechrolle(segment["speaker"])
+                speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
+                announced = (segment.get("authorized") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
+                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"]))
+                continuation = speaker_id and speaker_id == granted_nested_speaker
+                if speech_kinds.BEFRAGUNG in top_format.formats:
+                    if not side and not (segment["speaker"] or {}).get("fraktion"):
+                        raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested question-format speaker at {rid} marker {segment['marker']}")
+                    nested_kind = speech_kinds.BEFRAGUNG_ANTWORT if side else speech_kinds.BEFRAGUNG_FRAGE
+                elif (segment.get("recipient_mismatch") or segment.get("incomplete_exchange") or segment.get("unsupported_reply")
+                      or segment.get("refused")
+                      or side or not (segment["speaker"] or {}).get("fraktion")
+                      or not (any("?" in p for p in segment["paragraphs"])
+                              or announced or continuation)):
+                    raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
+                granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                nested_units.append(contribution_unit(
+                    nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
+                    segment["speaker"], segment["paragraphs"], page_ref))
             if label.kind is None:
-                speeches.append(unit)
+                if rid not in procedural_reden:
+                    speeches.append(unit)
             else:
                 contributions.append(
                     {**unit, "kind": label.kind, "parent_rede_id": label.parent_rede_id, "sequence": sequence}
                 )
         unplaced_turn_count = 0
         if speech_kinds.FRAGESTUNDE in top_format.formats:
-            turns, unplaced_turn_count = speech_kinds.fragestunde_turns(top)
+            try:
+                turns, unplaced_turn_count = speech_kinds.fragestunde_turns(top, asker_candidates)
+            except ValueError as exc:
+                raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: {exc}") from exc
             for flat_index, turn in enumerate(turns, start=1):
                 text = clean_text(" ".join(turn.paragraphs))
                 if turn.redner is not None:
@@ -580,6 +1029,9 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                     }
                 )
 
+        for nested_unit in nested_units:
+            nested_unit["sequence"] = max([len(redes), *(c["sequence"] for c in contributions)]) + 1
+            contributions.append(nested_unit)
         sorted_pages = sorted(pages, key=page_sort_key)
         agenda_items.append(
             {
@@ -587,6 +1039,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 "top_id": top.attrib.get("top-id"),
                 "heading": heading,
                 "question_formats": sorted(top_format.formats),
+                "xml_turn_diagnostics": diagnostics,
                 "drucksachen": extract_drucksachen(top),
                 "ueberweisung": transfer_lines,
                 "page_range": {
@@ -599,7 +1052,10 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             }
         )
 
+    sitting_contributions = written_contributions(root, agenda_items, rid_pages)
     return {
+        "xml_sha256": xml_source_sha256(xml_text),
+        "sitting_contributions": sitting_contributions,
         "xml_protocol": {
             "wahlperiode": root.attrib.get("wahlperiode"),
             "sitzung_nr": root.attrib.get("sitzung-nr"),
@@ -1830,23 +2286,9 @@ def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
         "page_range": top["page_range"],
         "xml_drucksachen": top["drucksachen"],
         "question_formats": top["question_formats"],
+        "xml_turn_diagnostics": [dict(d) for d in top.get("xml_turn_diagnostics", [])],
         "xml_speech_count": len(top["speeches"]),
-        "xml_contributions": [
-            {
-                "kind": contribution["kind"],
-                "rede_id": contribution["rede_id"],
-                "parent_rede_id": contribution["parent_rede_id"],
-                "sequence": contribution["sequence"],
-                "source_page": contribution["source_page"],
-                "speaker": contribution["speaker"],
-                "paragraph_count": contribution["paragraph_count"],
-                "char_count": contribution["char_count"],
-                "text": contribution["text"],
-                "paragraphs": contribution["paragraphs"],
-                "snippet": contribution["snippet"],
-            }
-            for contribution in top["contributions"]
-        ],
+        "xml_contributions": [dict(c) for c in top["contributions"]],
         "xml_speakers": [
             {
                 "rede_id": speech["rede_id"],
@@ -1874,10 +2316,10 @@ def xml_top_fields(top: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def contribution_summary(agenda_items: list[dict[str, Any]]) -> dict[str, Any]:
+def contribution_summary(agenda_items: list[dict[str, Any]], sitting_contributions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The ``validation_summary`` keys for Reden and Beiträge, over parsed
     agenda items."""
-    contributions = [c for top in agenda_items for c in top["contributions"]]
+    contributions = [c for top in agenda_items for c in top["contributions"]] + (sitting_contributions or [])
     return {
         "speech_kinds_version": speech_kinds.VERSION,
         "xml_speech_count": sum(len(top["speeches"]) for top in agenda_items),
@@ -1889,8 +2331,8 @@ def contribution_summary(agenda_items: list[dict[str, Any]]) -> dict[str, Any]:
             and c["rede_id"] is None
             and not (c["speaker"] or {}).get("xml_redner_id")
         ),
-        # Fragestunde turns whose speaker marker names no MdB and no official: no
-        # Beitrag, but their text is counted here instead of vanishing.
+        # Retained report field for compatibility; D4 rejects unresolved turns
+        # before an accepted report can contain an unplaced turn.
         "fragestunde_unplaced_turns": sum(top.get("unplaced_turn_count", 0) for top in agenda_items),
     }
 
@@ -1900,6 +2342,7 @@ KIND_MISMATCH_WARNING = "Die XML zählt "
 
 def kind_mismatch_warnings(mismatches: list[dict[str, Any]]) -> list[str]:
     def label(mismatch: dict[str, Any]) -> str:
+        speech_kinds.validate_kind(mismatch["kind"])
         singular, plural = speech_kinds.KIND_LABELS[mismatch["kind"]]
         return singular if mismatch["xml"] == 1 else plural
 
@@ -1913,6 +2356,9 @@ def check_xml_belongs_to_report(
     from: same Wahlperiode and Sitzung, at least one agenda item, and an XML item for
     every report item. A re-parse that stamps the marker over anything else would
     hide a report that still holds the old rule."""
+    cached_sha = (report.get("protocol") or {}).get("xml_sha256")
+    if cached_sha and cached_sha != parsed_xml.get("xml_sha256"):
+        raise ValueError("cached report/XML SHA-256 mismatch; reacquire the sitting report")
     number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
     wahlperiode, _, sitzung = number.partition("/")
     xml_protocol = parsed_xml.get("xml_protocol") or {}
@@ -1930,18 +2376,60 @@ def check_xml_belongs_to_report(
         raise ValueError(f"it has no agenda item {', '.join(missing)} that the report holds")
 
 
+def replay_top_map(report: dict[str, Any], parsed_xml: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    """Prove one-to-one source association before changing enrichment fields."""
+    old = report.get("agenda_items") or []
+    new = parsed_xml["agenda_items"]
+    if len(old) != len(new):
+        raise ValueError("agenda item set changed; reacquire the sitting report")
+    remaining = list(new)
+    result = {}
+    for old_index, item in enumerate(old):
+        top_id = clean_text(item.get("top_id") or "")
+        candidates = [t for t in remaining if clean_text(t.get("top_id") or "") == top_id]
+        if len(candidates) > 1 or not top_id:
+            same_heading = [t for t in candidates if clean_text(t.get("heading") or "") == clean_text(item.get("heading") or "")]
+            if len(same_heading) == 1:
+                candidates = same_heading
+            else:
+                ids = {u.get("rede_id") for key in ("xml_speakers", "xml_contributions") for u in item.get(key) or [] if u.get("rede_id")}
+                supported = [t for t in candidates if ids & {u.get("rede_id") for key in ("speeches", "contributions") for u in t[key] if u.get("rede_id")}]
+                candidates = supported
+                if not candidates:
+                    # Repeated procedural TOPs may have no rede IDs (21/2).
+                    # Distinguish them by their neighboring source identities;
+                    # source index by itself is never sufficient evidence.
+                    def neighborhood(items, position):
+                        return tuple(clean_text(items[i].get("top_id") or "") if 0 <= i < len(items) else None
+                                     for i in (position - 1, position + 1))
+                    context = neighborhood(old, old_index)
+                    candidates = [t for t in same_heading if neighborhood(new, new.index(t)) == context]
+        if len(candidates) != 1:
+            raise ValueError(f"ambiguous or missing source TOP {top_id!r} ({item.get('heading')!r}); reacquire the sitting report")
+        target = candidates[0]
+        result[item["index"]] = target
+        remaining.remove(target)
+    if remaining:
+        raise ValueError("unmatched source TOPs; reacquire the sitting report")
+    return result
+
+
 def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> None:
     """Replace what a cached report holds of the XML-derived fields (heading,
     Reden, Beiträge; see ``xml_top_fields``) with what the current parser reads
     from the sitting's XML, leaving every DIP-derived field
-    alone. Agenda items pair up by ``index``; the XML is the same document, so
-    the numbering does not move.
+    alone. Agenda items pair by validated source TOP identity, including repeated
+    TOP context; the existing report index remains its stable enrichment key.
 
     An AI summary cites Reden of the old parse. One whose source no longer matches
     the re-read Reden (a cited turn is now a Beitrag) is dropped: it would quote
     that turn as evidence for a Rede that has no anchor any more."""
     by_index = {top["index"]: top for top in parsed_xml["agenda_items"]}
     check_xml_belongs_to_report(report, parsed_xml, by_index)
+    by_index = replay_top_map(report, parsed_xml)
+    protocol = report.setdefault("protocol", {})
+    protocol["xml_sha256"] = parsed_xml.get("xml_sha256")
+    protocol["xml_header"] = parsed_xml["xml_protocol"]
     dropped = 0
     for item in report.get("agenda_items") or []:
         top = by_index.get(item.get("index"))
@@ -1960,8 +2448,9 @@ def reparse_report_xml(report: dict[str, Any], parsed_xml: dict[str, Any]) -> No
     generation = report.get("summary_generation")
     if dropped and isinstance(generation, dict) and "available_top_count" in generation:
         generation["available_top_count"] = sum(1 for item in report.get("agenda_items") or [] if item.get("llm_summary"))
+    report["xml_contributions"] = parsed_xml.get("sitting_contributions", [])
     summary = report.setdefault("validation_summary", {})
-    summary.update(contribution_summary(parsed_xml["agenda_items"]))
+    summary.update(contribution_summary(parsed_xml["agenda_items"], parsed_xml.get("sitting_contributions")))
     mismatches = speech_kinds.dip_mismatches(
         summary["xml_contribution_counts"], (report.get("api_records") or {}).get("aktivitaeten") or []
     )
@@ -2430,7 +2919,10 @@ def build_report(
     xml_sink = getattr(args, "xml_sink", None)
     if isinstance(xml_sink, dict):
         xml_sink["text"] = xml_text
-    parsed_xml = parse_protocol_xml(xml_text)
+    try:
+        parsed_xml = parse_protocol_xml(xml_text)
+    except (ET.ParseError, ValueError) as exc:
+        raise DipError(f"{document_number}: protocol source rejected: {exc}", source_rejected=True) from exc
     parsed_speech_count = sum(len(top["speeches"]) for top in parsed_xml["agenda_items"])
     progress(
         f"Parsed XML: {len(parsed_xml['agenda_items'])} agenda item(s), "
@@ -2482,10 +2974,11 @@ def build_report(
             "pdf_url": fundstelle.get("pdf_url"),
             "xml_url": xml_url,
             "xml_header": parsed_xml["xml_protocol"],
+            "xml_sha256": xml_source_sha256(xml_text),
         },
         "validation_summary": {
             "xml_top_count": len(parsed_xml["agenda_items"]),
-            **contribution_summary(parsed_xml["agenda_items"]),
+            **contribution_summary(parsed_xml["agenda_items"], parsed_xml.get("sitting_contributions")),
             "xml_drucksache_count": xml_drucksache_count,
             "tops_with_xml_drucksachen": tops_with_xml_drucksachen,
             "tops_with_api_positions": tops_with_api_positions,
@@ -2496,6 +2989,7 @@ def build_report(
         "sampled_people": enrichment["sampled_people"],
         "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
+        "xml_contributions": parsed_xml.get("sitting_contributions", []),
         "acquisition": acquisition,
     }
     if getattr(args, "summary_mode", "off") != "off":
