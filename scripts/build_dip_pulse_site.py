@@ -34,7 +34,7 @@
 # Which code writes which part of the website:
 #
 #   index.html           ``render_landing_page``     explanatory home page
-#   puls.html            ``render_front_page``       "Aktueller Puls": week radar + Wochenvergleich
+#   puls.html            ``render_front_page``       "Wochenübersicht": week radar + Wochenvergleich
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
@@ -3709,10 +3709,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
 
 
 # ---------------------------------------------------------------------------
-# PAGE: index.html - the explanatory home page
-#
-# Not a data view: it states what Bundestag-Puls is, the four principles it
-# claims to follow, and links out to every other area of the site.
+# PAGE: index.html - direct routes to the latest available sitting and week
 # ---------------------------------------------------------------------------
 
 
@@ -3721,319 +3718,130 @@ def render_landing_page(
     *,
     database_page_href: str | None = None,
     data_stand: str | None = None,
-    protocol_count: int = 0,
-    bill_count: int = 0,
     features: Selection | None = None,
+    today: date | datetime | None = None,
+    week: tuple[int, int] | None = None,
 ) -> str:
-    """Explanatory home page: what Bundestag-Puls is, its principles, and links to every subpart."""
+    """Homepage periods use the same generated entries and selection as puls.html."""
     features = features or publication_selection()
-    # Right-hand "Aktueller Puls" card: a snapshot of the newest generated
-    # dossier (entries are ordered newest-first by render_site), or a placeholder
-    # when nothing has been generated yet.
+    today = resolve_today(today)
+    selected_week, weeks = select_pulse_week(entries, week)
+    esc = pulse_html.esc
+    recovery = '<a class="home-action" href="overview.html">Sitzungen ansehen &rarr;</a>'
     if entries:
-        entry = entries[0]
-        report = entry["report"]
-        protocol = report.get("protocol") or {}
-        summary = report.get("validation_summary") or {}
-        snapshot = f"""
-        <aside class="snapshot">
-          <span class="eyebrow">Aktueller Puls</span>
-          <strong class="snapshot-doc">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</strong>
-          <p class="snapshot-title">{pulse_html.esc(pulse_html.short(protocol.get('titel'), 96))}</p>
-          <p class="snapshot-date">Sitzung vom {pulse_html.esc(protocol.get('datum'))}</p>
-          <div class="snapshot-metrics">
-            <div><span>Tagesordnung</span><strong>{pulse_html.esc(summary.get('xml_top_count'))}</strong></div>
-            <div><span>Reden</span><strong>{pulse_html.esc(summary.get('xml_speech_count'))}</strong></div>
-            <div><span>Drucksachen</span><strong>{pulse_html.esc(summary.get('xml_drucksache_count'))}</strong></div>
-            <div><span>Personen</span><strong>{pulse_html.esc(summary.get('unique_person_ids'))}</strong></div>
-          </div>
-          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
-        </aside>
-        """
+        latest = max(entries, key=entry_sort_key)
+        protocol = entry_protocol(latest)
+        datum = protocol.get("datum")
+        dated = pulse_html.format_date(datum) if pulse_html.iso_week_key(datum) else ""
+        sitting = f"""
+          <p class="home-meta">Zuletzt verfügbar · Protokoll {esc(sitting_label(latest))}</p>
+          <p>{time_html(datum, dated) if dated else 'Sitzungsdatum nicht verfügbar'}</p>
+          <p>Tagesordnung, Reden und vorliegende Abstimmungen der zuletzt verfügbaren Sitzung.</p>
+          <a class="home-action" href="{esc(dossier_href(latest))}">Sitzungsprotokoll öffnen &rarr;</a>"""
     else:
-        snapshot = """
-        <aside class="snapshot">
-          <span class="eyebrow">Aktueller Puls</span>
-          <p class="snapshot-title">Es wurde noch keine Sitzung erzeugt.</p>
-          <p class="snapshot-date">Sobald ein Plenarprotokoll ausgewertet ist, erscheint hier der aktuelle Lageblick.</p>
-          <a class="snapshot-link" href="puls.html">Was gerade l&auml;uft &rarr;</a>
-        </aside>
-        """
+        sitting = f'<p>Noch kein Sitzungsprotokoll verfügbar</p>{recovery}'
 
-    # "Prinzipien" section - static editorial copy, four numbered cards.
-    principles = [
-        (
-            "Nur Primärquellen",
-            "Aufgebaut aus offiziellen Plenarprotokollen, Drucksachen und namentlichen Abstimmungen — niemals aus Nachrichtenberichten oder Kommentaren.",
-        ),
-        (
-            "Jede Aussage belegbar",
-            "Jede Kennzahl und jeder Auszug ist einen Klick von der exakten Protokollstelle oder Drucksache entfernt, aus der sie stammt.",
-        ),
-        (
-            "Neutral und nicht-autoritativ",
-            "Mechanische Kennzahlen statt unbelegter Haltungs-Aussagen. KI-Zusammenfassungen sind gekennzeichnet und immer mit zitierten Quellen hinterlegt.",
-        ),
-        (
-            "Automatisch aktuell",
-            "Eine geplante Pipeline holt neue Plenarprotokolle aus der DIP-API, wertet sie aus und veröffentlicht sie — ein veralteter Monitor wäre wertlos.",
-        ),
-    ]
-    principle_cards = "".join(
-        f"""
-        <article class="principle">
-          <span class="num">{i}</span>
-          <h3>{pulse_html.esc(title)}</h3>
-          <p>{pulse_html.esc(desc)}</p>
-        </article>
-        """
-        for i, (title, desc) in enumerate(principles, start=1)
-    )
+    week_heading = "Ausgewählte Woche" if week is not None else "Wochenübersicht"
+    if selected_week is None:
+        weekly = f'<p>Noch keine Woche auswertbar</p>{recovery}'
+    else:
+        week_entries = weeks[selected_week]
+        monday = date.fromisocalendar(*selected_week, 1)
+        sunday = monday + timedelta(days=6)
+        period = " – ".join(time_html(d.isoformat(), pulse_html.format_date(d.isoformat())) for d in (monday, sunday))
+        count = pulse_html.format_count(len(week_entries), "Sitzung", "Sitzungen")
+        coverage = "bisher erfasst" if monday <= today <= sunday else "erfasst"
+        earlier = [key for key in weeks if key < selected_week]
+        comparison = bool(earlier and pulse_html.week_span(max(earlier), selected_week) <= pulse_html.MAX_WEEK_GAP)
+        description = "Themen und Redeanteile der ausgewählten Woche" if week is not None else "Themen und Redeanteile der zuletzt erfassten Woche"
+        if comparison:
+            description += ", mit Vergleich zur vorherigen erfassten Woche"
+        action = "Wochenübersicht und Vergleich öffnen" if comparison else "Wochenübersicht öffnen"
+        undated = len(entries) - sum(len(bucket) for bucket in weeks.values())
+        missing = f'<p class="home-meta">{pulse_html.format_count(undated, "Sitzung", "Sitzungen")} ohne Datum nicht berücksichtigt</p>' if undated else ""
+        weekly = f"""
+          <p class="home-meta">{esc(pulse_html.week_label(selected_week))} · {esc(count)} {coverage}</p>
+          <p>{period}</p>
+          <p>{esc(description)}.</p>
+          {missing}
+          <a class="home-action" href="puls.html">{action} &rarr;</a>"""
 
-    # "Bereiche" section - the navigation cards. Optional areas are inserted
-    # only when the corresponding artifact exists,
-    # so the home page never links to a page this build did not write.
     areas = [
-        (
-            "Wochenradar",
-            "Aktueller Puls",
-            "puls.html",
-            "Worüber der Bundestag in der neuesten Sitzungswoche am meisten gesprochen hat: die Themen nach Redezahl, jede Zeile mit Beleg im Protokoll, dazu der Wochenvergleich.",
-            None,
-        ),
-        (
-            "Archiv",
-            "Plenarprotokoll-Katalog",
-            "overview.html",
-            "Der vollständige Katalog aller Plenarprotokolle aus der DIP-API mit erzeugten Dossiers je Sitzung: Tagesordnung, Rednerinnen und Redner, verknüpfte Drucksachen und Roh-API-Daten.",
-            None,
-        ),
-        (
-            "Transparenz",
-            "Quellen und Methode",
-            "sources.html",
-            "Welche offiziellen Quellen genutzt werden, wie sie verarbeitet werden und was bewusst ausgeschlossen bleibt — die Grundlage für das Neutralitätsversprechen.",
-            None,
-        ),
+        ("Sitzungen", "overview.html", "Sitzungsprotokolle und verfügbare Auswertungen im Archiv."),
+        ("Abstimmungen", "votes/index.html", "Namentliche Abstimmungen, Ergebnisse und einzelne Stimmen."),
+        ("Gesetzesvorhaben", "bills/index.html", "Debatten, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
+        ("Abgeordnete", "abgeordnete/index.html", "Reden und erfasste Abstimmungen einzelner Abgeordneter."),
+        ("Fakten", "fakt/index.html", "Auswertungen zu Wochen und Monaten mit ihren Belegen."),
     ]
-    if "bills" in features:
-        areas.insert(
-            2,
-            (
-                "Gesetzgebung",
-                "Gesetzesvorhaben verfolgen",
-                "bills/index.html",
-                "Verfolge einzelne Vorgänge von der Drucksache über die Plenardebatte bis zur namentlichen Abstimmung. Gefolgte Gesetzesvorhaben werden lokal im Browser gemerkt.",
-                None,
-            ),
-        )
-    if database_page_href:
-        areas.append(
-            (
-                "Transparenz",
-                "Daten",
-                database_page_href,
-                "Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.",
-                data_stand,
-            )
-        )
-    area_cards = "".join(
-        f"""
-        <a class="area-card" href="{pulse_html.esc(href)}">
-          <span class="eyebrow">{tag}</span>
-          <h3>{title}</h3>
-          <p>{pulse_html.esc(desc)}</p>
-          {f'<p class="area-meta">{pulse_html.esc(meta)}</p>' if meta else ''}
-          <span class="area-go">&Ouml;ffnen &rarr;</span>
-        </a>
-        """
-        for tag, title, href, desc, meta in areas
+    rows = "".join(
+        f'<li><h3><a href="{esc(href)}">{esc(title)} &rarr;</a></h3><p>{esc(description)}</p></li>'
+        for title, href, description in areas
     )
+    data = ""
+    if database_page_href:
+        meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.</p>{meta}</li>'
 
-    # Page anatomy, top to bottom:
-    #   global header
-    #   hero        -> headline, lead paragraph, two CTAs + the snapshot card
-    #   stat band   -> sitting / dossier / bill counters
-    #   block 1     -> "Was ist Bundestag-Puls?" prose
-    #   block 2     -> the principle cards
-    #   block 3     -> the area cards
     return f"""<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Primärquellen-Monitor des Bundestags</title>
+  <title>Bundestag-Puls · Debatten und Entscheidungen im Bundestag</title>
   {pulse_html.page_head(features)}
   <style>
     :root {{
-      --ink:#171a1f;
-      --muted:#606a78;
-      --line:#d9dee6;
-      --paper:#f7f8fa;
-      --panel:#ffffff;
-      --blue:#174ea6;
-      --teal:#0f766e;
-      --blue-soft:#eef5ff;
+      --ink:#171a1f; --muted:#606a78; --line:#d9dee6; --paper:#f7f8fa;
+      --panel:#ffffff; --blue:#174ea6; --teal:#0f766e; --blue-soft:#eef5ff;
     }}
     * {{ box-sizing:border-box; }}
-    body {{
-      margin:0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color:var(--ink);
-      background:var(--paper);
-    }}
+    body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }}
     a {{ color:var(--blue); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
     .shell {{ max-width:1180px; margin:0 auto; padding:22px 22px 48px; }}
     {pulse_html.global_header_styles()}
-    .eyebrow {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; }}
-    .hero {{
-      display:grid;
-      grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);
-      gap:30px;
-      align-items:center;
-      padding:46px 0 36px;
-      border-bottom:1px solid var(--line);
-    }}
-    .hero h1 {{ margin:12px 0 0; font-size:46px; line-height:1.05; font-weight:820; letter-spacing:-.02em; }}
-    .hero .lead {{ margin:18px 0 0; max-width:620px; font-size:17px; line-height:1.55; color:#3b4452; }}
-    .cta-row {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px; }}
-    .btn {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:46px;
-      padding:10px 20px;
-      border-radius:8px;
-      border:1px solid var(--line);
-      background:#fff;
-      font-weight:750;
-      font-size:15px;
-      color:var(--ink);
-    }}
-    .btn:hover {{ text-decoration:none; }}
-    .btn-primary {{ background:var(--blue); border-color:var(--blue); color:#fff; }}
-    .btn-primary:hover {{ background:#123e85; }}
-    .btn-ghost:hover {{ border-color:#bdd0ea; background:var(--blue-soft); }}
-    .snapshot {{
-      border:1px solid var(--line);
-      border-left:4px solid var(--teal);
-      border-radius:12px;
-      background:var(--panel);
-      padding:20px;
-    }}
-    .snapshot-doc {{ display:block; margin-top:6px; font-size:15px; }}
-    .snapshot-title {{ margin:8px 0 0; color:var(--ink); font-size:15px; line-height:1.35; font-weight:650; }}
-    .snapshot-date {{ margin:4px 0 0; color:var(--muted); font-size:13px; }}
-    .snapshot-metrics {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }}
-    .snapshot-metrics div {{ border:1px solid #e2e7ef; border-radius:8px; background:#fbfcfd; padding:8px 10px; }}
-    .snapshot-metrics span {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }}
-    .snapshot-metrics strong {{ display:block; margin-top:3px; font-size:20px; }}
-    .snapshot-link {{ font-weight:750; font-size:14px; }}
-    .stat-band {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:28px; }}
-    .stat-band div {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:14px 16px; }}
-    .stat-band span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
-    .stat-band strong {{ display:block; margin-top:5px; font-size:26px; font-weight:780; }}
-    section.block {{ padding:42px 0 0; }}
-    section.block > .eyebrow {{ display:block; }}
-    section.block h2 {{ margin:8px 0 0; font-size:26px; font-weight:780; letter-spacing:-.01em; }}
-    section.block > p.intro {{ margin:10px 0 0; max-width:700px; color:var(--muted); font-size:15px; line-height:1.55; }}
-    .principles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:24px; }}
-    .principle {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px; }}
-    .principle .num {{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      width:30px;
-      height:30px;
-      border-radius:8px;
-      background:var(--blue-soft);
-      color:var(--blue);
-      font-weight:800;
-      font-size:14px;
-      margin-bottom:12px;
-    }}
-    .principle h3 {{ margin:0; font-size:16px; font-weight:740; }}
-    .principle p {{ margin:8px 0 0; color:var(--muted); font-size:14px; line-height:1.5; }}
-    .areas {{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:24px; }}
-    .area-card {{
-      display:flex;
-      flex-direction:column;
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:var(--panel);
-      padding:22px;
-      color:var(--ink);
-      transition:border-color .12s, box-shadow .12s, transform .12s;
-    }}
-    .area-card:hover {{
-      text-decoration:none;
-      border-color:#bdd0ea;
-      box-shadow:0 8px 24px rgba(23,26,31,.07);
-      transform:translateY(-2px);
-    }}
-    .area-card h3 {{ margin:8px 0 0; font-size:20px; font-weight:760; }}
-    .area-card p {{ margin:10px 0 0; color:var(--muted); font-size:14px; line-height:1.5; flex:1; }}
-    .area-go {{ margin-top:16px; color:var(--blue); font-weight:750; font-size:14px; }}
-    footer {{ margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; }}
-    @media (max-width: 900px) {{
-      .hero {{ grid-template-columns:1fr; padding:30px 0 28px; }}
-      .principles {{ grid-template-columns:1fr 1fr; }}
-      .areas {{ grid-template-columns:1fr; }}
-    }}
-    @media (max-width: 600px) {{
+    .home-intro {{ padding:24px 0; }}
+    .home-intro h1 {{ margin:0; max-width:900px; font-size:46px; line-height:1.05; font-weight:820; letter-spacing:-.02em; }}
+    main p {{ margin:12px 0; font-size:16px; line-height:1.55; color:var(--muted); }}
+    .home-periods {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:30px; }}
+    .home-periods section, .home-section {{ padding:24px 0; border-top:1px solid var(--line); }}
+    main h2 {{ margin:0 0 16px; font-size:26px; font-weight:780; letter-spacing:-.01em; }}
+    .home-action, .home-rows a {{ display:inline-flex; align-items:center; min-height:44px; font-weight:750; }}
+    main .home-meta {{ font-size:12px; }}
+    .home-rows {{ list-style:none; padding:0; margin:0; }}
+    .home-rows li {{ padding:16px 0; border-bottom:1px solid var(--line); }}
+    .home-rows h3 {{ margin:0; font-size:20px; }}
+    .home-rows p {{ margin:0; }}
+    footer {{ margin-top:24px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.6; }}
+    @media (max-width:1023px) {{ .home-periods {{ grid-template-columns:1fr; gap:0; }} }}
+    @media (max-width:600px) {{
       .shell {{ padding:16px 14px 40px; }}
-      .hero h1 {{ font-size:34px; }}
-      .principles, .stat-band {{ grid-template-columns:1fr; }}
+      .home-intro h1 {{ font-size:34px; }}
     }}
   </style>
 </head>
 <body>
   <div class="shell">
     {pulse_html.render_global_header(features=features)}
-
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Deutscher Bundestag · aus offiziellen Quellen</span>
-        <h1>Was der Bundestag tut — mit Belegen.</h1>
-        <p class="lead">Bundestag-Puls verdichtet die verstreute offizielle Tätigkeit des Parlaments — Reden, Gesetzentwürfe, Ausschussschritte und namentliche Abstimmungen — zu einem lesbaren Bild davon, worauf sich die parlamentarische Aufmerksamkeit gerade richtet und wer wofür steht. Aufgebaut ausschließlich aus Primärquellen, nicht aus Nachrichten.</p>
-        <div class="cta-row">
-          <a class="btn btn-primary" href="puls.html">Was gerade l&auml;uft</a>
-          <a class="btn btn-ghost" href="sources.html">Wie wir arbeiten</a>
-        </div>
+    <main>
+      <header class="home-intro">
+        <h1>Debatten und Entscheidungen im Bundestag</h1>
+        <p>Sitzungsprotokolle, Themen der Woche und Abstimmungen aus offiziellen Quellen.</p>
+      </header>
+      <div class="home-periods">
+        <section aria-labelledby="latest-sitting"><h2 id="latest-sitting">Letzte Sitzung</h2>{sitting}</section>
+        <section aria-labelledby="selected-week"><h2 id="selected-week">{week_heading}</h2>{weekly}</section>
       </div>
-      {snapshot}
-    </section>
-
-    <section class="stat-band" aria-label="Kennzahlen">
-      <div><span>API-Sitzungen</span><strong>{pulse_html.esc(protocol_count)}</strong></div>
-      <div><span>Erzeugte Dossiers</span><strong>{pulse_html.esc(len(entries))}</strong></div>
-      <div><span>Verfolgte Gesetzesvorhaben</span><strong>{pulse_html.esc(bill_count)}</strong></div>
-      <div><span>Quellenart</span><strong>Primärquellen</strong></div>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Was ist Bundestag-Puls?</span>
-      <h2>Ein zusammenhängendes Bild statt Fragmenten</h2>
-      <p class="intro">Eine Rede, ein Gesetzentwurf, ein Ausschussschritt, eine namentliche Abstimmung — einzeln sind sie öffentlich, aber schwer lesbar. Bundestag-Puls fügt sie zu einem Bild zusammen: „Was passiert dort gerade, und wer stand wo?“ Wie ein ziviler Radar für parlamentarische Aufmerksamkeit — jede Aussage einen Klick von ihrer Primärquelle entfernt.</p>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Prinzipien</span>
-      <h2>Worauf dieses Projekt aufbaut</h2>
-      <div class="principles">{principle_cards}</div>
-    </section>
-
-    <section class="block">
-      <span class="eyebrow">Bereiche</span>
-      <h2>Was du hier findest</h2>
-      <p class="intro">Alle Ansichten greifen auf dieselben verknüpften Primärdaten zu — wähle die passende Perspektive.</p>
-      <div class="areas">{area_cards}</div>
-    </section>
-
-    <footer>
-      Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.
-    </footer>
+      <section class="home-section" aria-labelledby="other-areas">
+        <h2 id="other-areas">Weitere Bereiche</h2><ul class="home-rows">{rows}</ul>
+      </section>
+      <section class="home-section" aria-labelledby="sources-data">
+        <h2 id="sources-data">Quellen und Daten</h2>
+        <ul class="home-rows"><li><h3><a href="sources.html">Quellen und Methode &rarr;</a></h3>
+        <p>Offizielle Quellen, Verarbeitung und Grenzen der Auswertungen.</p></li>{data}</ul>
+      </section>
+    </main>
+    <footer>Statischer Prototyp · Bundestag-Puls. Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Datenquellen und Methode sind unter <a href="sources.html">Quellen</a> dokumentiert.</footer>
   </div>
   {pulse_html.page_scripts(features)}
 </body>
@@ -4605,7 +4413,7 @@ def render_week_comparison_section(
 # ---------------------------------------------------------------------------
 # Build clock and week selection for puls.html.
 #
-# puls.html is the only page whose wording depends on *when* it was rendered
+# The homepage and puls.html describe periods using the same build clock
 # ("Auswertung vom", "vor N Wochen", running vs. past week). The clock is
 # injectable so tests and CI builds are reproducible: --today, else the
 # SOURCE_DATE_EPOCH convention (UTC, reproducible-builds.org), else the wall
@@ -4821,9 +4629,9 @@ def week_header_facts(
 
     if running:
         return {
-            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "eyebrow": "Wochenübersicht",
             "h1": f"Was der Bundestag in {label} bisher verhandelt hat",
-            "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Sitzungswoche l&auml;uft",
+            "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Woche l&auml;uft",
             "running": True,
             "warning": warning,
         }
@@ -4844,14 +4652,14 @@ def week_header_facts(
     age = pulse_html.week_span(week, pulse_html.iso_week_key(today.isoformat())) if today > sunday else 0
     if age <= 1:
         return {
-            "eyebrow": "Sitzungswoche · Aktueller Puls",
+            "eyebrow": "Wochenübersicht",
             "h1": f"Was der Bundestag in {label} verhandelt hat",
             "facts": f"{counts} · Stand: {sittings}, {latest} · {clock}",
             "running": False,
             "warning": warning,
         }
     return {
-        "eyebrow": "Letzte Sitzungswoche",
+        "eyebrow": "Wochenübersicht",
         "h1": f"Was der Bundestag in {label} verhandelt hat",
         "facts": f"Letzte Sitzungswoche vor {age} Wochen · {counts} · {sittings}, {latest} · {clock}",
         "running": False,
@@ -5175,7 +4983,7 @@ def render_front_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Aktueller Puls</title>
+  <title>Bundestag-Puls · Wochenübersicht</title>
   {pulse_html.page_head(features)}
   <style>
     :root {{
@@ -8484,7 +8292,7 @@ def render_overview(
       <a class="open-button" href="{pulse_html.esc(catalog_href)}">Katalog durchsuchen</a>
     </section>
     <footer>
-      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Aktueller Puls</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
+      Das XML-Protokoll ist maßgeblich; DIP-API-Daten ergänzen jede Sitzung. Mit --detail-limit 0 werden Dossiers für alle geholten Protokolle erzeugt, mit --detail-limit -1 nur der Katalog. <a href="puls.html">Wochenübersicht</a> · <a href="bills/index.html">Gesetzesvorhaben</a> · <a href="abgeordnete/index.html">Abgeordnete</a>{database_footer_link} · <a href="sources.html">Quellen</a>.
     </footer>
   </div>
   {pulse_html.page_scripts(features)}
@@ -9868,6 +9676,7 @@ def render_site(
     # the DIP catalog arrives newest-first, but that ordering is undocumented.
     entries = sorted(entries, key=entry_sort_key, reverse=True)
     protocols = sorted(protocols, key=protocol_sort_key, reverse=True)
+    today = resolve_today(today)
 
     # Every protocol document number this build actually produced a dossier
     # for - the join key resolve_entity_link and the Fakt der Woche pages use
@@ -9992,9 +9801,9 @@ def render_site(
             entries,
             database_page_href=database_page_href,
             data_stand=data_stand,
-            protocol_count=len(protocols),
-            bill_count=int(bill_output["count"]),
             features=features,
+            today=today,
+            week=week,
         ),
         encoding="utf-8",
     )
@@ -10320,7 +10129,7 @@ def warn_deprecated_feature_configuration(args: argparse.Namespace, *, root: Pat
 # Capability introspection exits before touching the network or output tree.
 def print_capability_table(selection: EnrichmentSelection) -> None:
     print("Feste öffentliche Bereiche")
-    print("  Aktueller Puls, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
+    print("  Wochenübersicht, Sitzungen, Gesetzesvorhaben, Abgeordnete, Quellen")
     print("\nOptionale Datenerfassung")
     for enrichment_id, enrichment in ENRICHMENT_REGISTRY.items():
         state = "ausgewählt" if enrichment_id in selection else "nicht ausgewählt"

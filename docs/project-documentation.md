@@ -144,8 +144,8 @@ Important generated files:
 
 | Path | Purpose |
 |---|---|
-| `index.html` | Landing page for the local static site |
-| `puls.html` | Front page, the week radar (docs/designs/puls-wochenradar.md): the newest dated sitting week (or `--week`) with one chip per sitting, "Themen der Woche" ranked by speech count and named by DIP Vorgang titles with a receipt on every row, and the Wochenvergleich band incl. the week's roll-call votes |
+| `index.html` | Homepage with direct entries to the latest generated sitting and the selected sitting week |
+| `puls.html` | Wochenübersicht and week radar (docs/designs/puls-wochenradar.md): the newest dated sitting week (or `--week`) with one chip per sitting, "Themen der Woche" ranked by speech count and named by DIP Vorgang titles with a receipt on every row, and the Wochenvergleich band incl. the week's roll-call votes |
 | `overview.html` | Protocol/catalog overview |
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
@@ -192,7 +192,7 @@ Shared schema-v2 trust boundary for acquisition facts, presentation-state deriva
 
 ## Fixed public presentation and enrichments
 
-Every ordinary static publication has eight stable public destinations: Aktueller Puls, Sitzungen, Gesetze, Abgeordnete, Abstimmungen, Fakten, Daten, and Quellen. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
+Every ordinary static publication has eight stable public destinations: Wochenübersicht, Sitzungen, Gesetzesvorhaben, Abgeordnete, Abstimmungen, Fakten, Daten, and Quellen. Below 1024px, the shared header keeps Wochenübersicht and Sitzungen visible and groups the other six links under the native “Weitere Bereiche” disclosure; at wider sizes all eight links are visible. Public components load unconditionally; no gear, `data-feature-*` CSS gate, or general browser preference decides whether they exist. The compatibility `settings.html` page contains no switches.
 
 Votes, profile links, and the full roster have explicit acquisition states: `not_requested`, `complete`, `partial`, or `failed`. Renderers derive contextual public copy from those facts. A successful lookup with zero matching votes is therefore different from a build that never requested vote data. `data/features.json` aggregates those facts and `sources.html#datenstand` explains them.
 
@@ -403,8 +403,8 @@ Common options:
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
 | `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
 | `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
-| `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week and prints it as "Auswertung vom" |
-| `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. `puls.html` renders that week |
+| `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week, and prints it as "Auswertung vom"; the homepage uses the same date to label its selected week |
+| `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. Both `puls.html` and the homepage use that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
 | `--no-persist` | off | Skip SQLite graph-store generation |
 | `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit`; not combinable with `--document-number`. Every cached dossier is kept whatever an update acquires |

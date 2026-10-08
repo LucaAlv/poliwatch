@@ -373,14 +373,14 @@ Developer payloads are separate from presentation and enrichment. Use `--include
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
-`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and the sitting week for `puls.html`. The page is the only one whose wording depends on when it was built: whether the sitting week is still running (Monday to Sunday of the week), how old it is ("Letzte Sitzungswoche vor 13 Wochen"), and the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Sitzungswoche vor 13 Wochen"), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
 
 | Input | Effect |
 |---|---|
-| `--today YYYY-MM-DD` | Build date: decides running vs. past week and is printed as "Auswertung vom" |
+| `--today YYYY-MM-DD` | Build date: decides running vs. past week; `puls.html` prints it as "Auswertung vom" |
 | `SOURCE_DATE_EPOCH` | Fallback when `--today` is absent: an integer Unix timestamp, read as UTC (a CI build with a pinned epoch shows that UTC date) |
 | neither | The current date at build time |
-| `--week YYYY-WW` | The ISO sitting week `puls.html` shows; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps: every cached dossier stays) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
+| `--week YYYY-WW` | The ISO sitting week shown by `puls.html` and the homepage; without it, the newest dated week. A week the build cannot hold is refused before any file is written (offline: no cached dossier; online: none of the dossiers this run builds, per `--detail-limit`/`--dossier-document-number`, or keeps: every cached dossier stays) and the message lists the available weeks. Online, if every dossier of that week then fails to build, the build stops after the dossiers, before `puls.html` |
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --today 2026-09-15 --week 2026-24

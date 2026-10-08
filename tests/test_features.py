@@ -13,7 +13,7 @@ class FixedPresentationTests(unittest.TestCase):
         self.assertEqual(
             [(item.key, item.label, item.path) for item in NAV_ITEMS],
             [
-                ("pulse", "Aktueller Puls", "puls.html"),
+                ("pulse", "Wochenübersicht", "puls.html"),
                 ("overview", "Sitzungen", "overview.html"),
                 ("bills", "Gesetzesvorhaben", "bills/index.html"),
                 ("abgeordnete", "Abgeordnete", "abgeordnete/index.html"),

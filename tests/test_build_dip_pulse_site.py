@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import tempfile
 import unittest
 from pathlib import Path
@@ -926,7 +926,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
 
         # _render_pulse builds on 2026-09-15, fourteen ISO weeks after KW 24:
         # the stale-archive state, which leads with the age.
-        self.assertIn('<span class="eyebrow">Letzte Sitzungswoche</span>', header)
+        self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
         self.assertIn(
             '<a href="protocols/plenarprotokoll-21-84.html"><time datetime="2026-06-12">Fr 12.06.</time> · 21/84</a>',
@@ -2636,6 +2636,127 @@ class BuildClockAndWeekTests(unittest.TestCase):
     _item = SittingWeekComparisonTests._item
     _entry = SittingWeekComparisonTests._entry
 
+    @staticmethod
+    def _home_section(markup: str, section: str) -> str:
+        return re.search(rf'<section[^>]*aria-labelledby="{section}"[^>]*>(.*?)</section>', markup, re.S).group(1)
+
+    def test_homepage_latest_generated_sitting_and_plain_semantics(self) -> None:
+        old = self._entry("2026-05-20", "21/70", [])
+        newest = self._entry("2026-06-12", "21/84", [])
+        markup = build_dip_pulse_site.render_landing_page([old, newest], today=date(2026, 6, 16))
+        sitting = self._home_section(markup, "latest-sitting")
+        self.assertIn('href="protocols/plenarprotokoll-21-84.html">Sitzungsprotokoll öffnen', sitting)
+        self.assertIn('Zuletzt verfügbar · Protokoll 21/84', sitting)
+        self.assertIn('<time datetime="2026-06-12">12.06.2026</time>', sitting)
+        self.assertIn('Tagesordnung, Reden und vorliegende Abstimmungen', sitting)
+        self.assertEqual(markup.count('<main>'), 1)
+        self.assertEqual(markup.count('<h1>'), 1)
+        self.assertIn('<h1>Debatten und Entscheidungen im Bundestag</h1>', markup)
+        self.assertLess(markup.index('id="latest-sitting"'), markup.index('id="selected-week"'))
+        for retired in ('Was gerade', 'Aktueller Puls', 'stat-band', 'snapshot', 'principles', 'Prinzipien', 'Automatisch aktuell', 'Was ist Bundestag-Puls?', 'area-card'):
+            self.assertNotIn(retired, markup)
+        main = re.search(r'<main>(.*?)</main>', markup, re.S).group(1)
+        self.assertEqual(main.count('href="puls.html"'), 1)
+        for href in ('overview.html', 'votes/index.html', 'bills/index.html', 'abgeordnete/index.html', 'fakt/index.html', 'sources.html'):
+            self.assertIn(f'href="{href}"', main)
+
+    def test_homepage_empty_and_undated_recovery_and_error_contracts(self) -> None:
+        for entries in ([], [self._entry("", "21/85", [])], [self._entry("invalid", "21/86", [])]):
+            with self.subTest(entries=entries):
+                markup = build_dip_pulse_site.render_landing_page(entries, today=date(2026, 9, 15))
+                weekly = self._home_section(markup, "selected-week")
+                self.assertIn('Noch keine Woche auswertbar', weekly)
+                self.assertIn('href="overview.html">Sitzungen ansehen', weekly)
+                self.assertNotIn('href="puls.html"', weekly)
+                self.assertNotIn('<time ', markup)
+                sitting = self._home_section(markup, "latest-sitting")
+                if entries:
+                    self.assertIn('Sitzungsdatum nicht verfügbar', sitting)
+                    self.assertIn('Sitzungsprotokoll öffnen', sitting)
+                else:
+                    self.assertIn('Noch kein Sitzungsprotokoll verfügbar', sitting)
+                    self.assertNotIn('Sitzungsprotokoll öffnen', sitting)
+                with self.assertRaises(ValueError):
+                    build_dip_pulse_site.render_landing_page(entries, week=(2026, 1), today=date(2026, 9, 15))
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "gestern"}):
+            with self.assertRaises(ValueError):
+                build_dip_pulse_site.render_landing_page([])
+
+    def test_homepage_comparison_promises_follow_weekly_eligibility(self) -> None:
+        current = self._entry("2026-06-12", "21/84", [])
+        for gap in (None, 12, 13):
+            entries = [current]
+            if gap is not None:
+                entries.append(self._entry((date(2026, 6, 12) - timedelta(weeks=gap)).isoformat(), "21/70", []))
+            with self.subTest(gap=gap):
+                home = build_dip_pulse_site.render_landing_page(entries, today=date(2026, 6, 16))
+                weekly = self._home_section(home, "selected-week")
+                eligible = gap == 12
+                self.assertEqual('mit Vergleich zur vorherigen erfassten Woche' in weekly, eligible)
+                self.assertEqual('Wochenübersicht und Vergleich öffnen' in weekly, eligible)
+                if not eligible:
+                    self.assertIn('Wochenübersicht öffnen', weekly)
+                pulse = build_dip_pulse_site.render_front_page(entries, today=date(2026, 6, 16))
+                self.assertIn('id="wochenvergleich"', pulse)
+                self.assertEqual('Noch keine Vergleichswoche' not in pulse, eligible)
+
+    def test_homepage_running_year_boundary_and_partial_week(self) -> None:
+        entries = [self._entry("2027-01-01", "21/100", []), self._entry("", "21/101", [])]
+        markup = build_dip_pulse_site.render_landing_page(entries, today=date(2027, 1, 1))
+        weekly = self._home_section(markup, "selected-week")
+        self.assertIn('KW 53/2026 · 1 Sitzung bisher erfasst', weekly)
+        self.assertIn('<time datetime="2026-12-28">28.12.2026</time>', weekly)
+        self.assertIn('<time datetime="2027-01-03">03.01.2027</time>', weekly)
+        self.assertIn('1 Sitzung ohne Datum nicht berücksichtigt', weekly)
+        self.assertNotIn('vollständig', weekly)
+
+    # Value: protects=optional Daten link and escaped manifest label; fails_when=link gating or HTML escaping is removed; why_new=homepage tests cover periods and core routes, not manifest-driven content; seam=none
+    def test_homepage_data_link_is_optional_and_manifest_label_is_escaped(self) -> None:
+        plain = build_dip_pulse_site.render_landing_page([], today=date(2026, 6, 16))
+        source_data = self._home_section(plain, "sources-data")
+        self.assertNotIn('href="database.html"', source_data)
+        self.assertNotIn(">Daten</a>", source_data)
+
+        linked = build_dip_pulse_site.render_landing_page(
+            [], database_page_href="database.html", data_stand="Stand <aktuell>", today=date(2026, 6, 16)
+        )
+        source_data = self._home_section(linked, "sources-data")
+        self.assertIn('<a href="database.html">Daten</a>', source_data)
+        self.assertIn("Stand &lt;aktuell&gt;", source_data)
+        self.assertNotIn("Stand <aktuell>", source_data)
+
+    def test_render_site_home_and_week_match_pinned_inputs_and_ignore_catalog_only_latest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = CurrentPulseOrderTests._output_dir(tmp)
+            protocols = [CurrentPulseOrderTests._protocol(doc, doc, datum) for doc, datum in (
+                ("21/70", "2026-05-20"), ("21/71", "2026-05-21"), ("21/84", "2026-06-12"), ("21/99", "2026-09-15"))]
+            entries = [CurrentPulseOrderTests._entry(output_dir, protocol) for protocol in protocols[:3]]
+            kwargs = dict(output_dir=output_dir, database_path=output_dir / 'data' / 'bundestag-pulse.sqlite', no_persist=True,
+                          protocols=protocols, entries=entries, abg_mps=[], mp_lookup={})
+            for week, count, start, end in ((None, 1, "2026-06-08", "2026-06-14"), ((2026, 21), 2, "2026-05-18", "2026-05-24")):
+                build_dip_pulse_site.render_site(**kwargs, today=date(2026, 9, 15), week=week)
+                home = (output_dir / 'index.html').read_bytes()
+                pulse = (output_dir / 'puls.html').read_bytes()
+                markup = home.decode()
+                weekly = self._home_section(markup, "selected-week")
+                label = "KW 21/2026" if week else "KW 24/2026"
+                self.assertIn(label, weekly)
+                self.assertIn(label.encode(), pulse)
+                self.assertIn(pulse_html.format_count(count, 'Sitzung', 'Sitzungen'), weekly)
+                for datum in (start, end):
+                    self.assertIn(f'datetime="{datum}"', weekly)
+                self.assertEqual('Ausgewählte Woche' in weekly, week is not None)
+                self.assertIn('href="protocols/plenarprotokoll-21-84.html"', self._home_section(markup, "latest-sitting"))
+                self.assertNotIn('protocols/plenarprotokoll-21-99.html', markup)
+                self.assertEqual(len(re.findall(r'<a href="protocols/', pulse.decode().split('<nav class="week-chips"')[1].split('</nav>')[0])), count)
+                build_dip_pulse_site.render_site(**kwargs, today=datetime(2026, 9, 15, 23, 59), week=week)
+                self.assertEqual(home, (output_dir / 'index.html').read_bytes())
+                self.assertEqual(pulse, (output_dir / 'puls.html').read_bytes())
+                with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1789453800"}):
+                    build_dip_pulse_site.render_site(**kwargs, week=week)
+                self.assertEqual(home, (output_dir / 'index.html').read_bytes())
+                self.assertEqual(pulse, (output_dir / 'puls.html').read_bytes())
+
     def test_resolve_today_prefers_explicit_then_epoch_then_clock(self) -> None:
         self.assertEqual(build_dip_pulse_site.resolve_today(date(2026, 9, 15)), date(2026, 9, 15))
         self.assertEqual(build_dip_pulse_site.resolve_today(datetime(2026, 9, 15, 23, 59)), date(2026, 9, 15))
@@ -2814,7 +2935,7 @@ class BuildClockAndWeekTests(unittest.TestCase):
                 self.assertEqual(front.call_args.kwargs["today"], date(2026, 9, 15))
                 self.assertEqual(front.call_args.kwargs["week"], (2026, 24))
                 build_dip_pulse_site.render_site(**kwargs)
-                self.assertIsNone(front.call_args.kwargs["today"])
+                self.assertEqual(front.call_args.kwargs["today"], build_dip_pulse_site.resolve_today())
                 self.assertIsNone(front.call_args.kwargs["week"])
             # Unmocked, an unknown week is the renderer's ValueError, so main() must pre-check.
             with mock.patch.object(sys, "stderr", new_callable=io.StringIO), self.assertRaises(ValueError):
@@ -3297,11 +3418,11 @@ class WeekRadarPageTests(unittest.TestCase):
     def test_header_running_week(self) -> None:
         markup = self._render(today=date(2026, 6, 11))
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
-        self.assertIn('<span class="eyebrow">Sitzungswoche · Aktueller Puls</span>', header)
+        self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("<h1>Was der Bundestag in KW 24/2026 bisher verhandelt hat</h1>", header)
         self.assertIn(
             '29 Reden in 9 Tagesordnungspunkten · Stand <time datetime="2026-06-11">11.06.2026</time>: '
-            "3 Sitzungen erfasst, Sitzungswoche l&auml;uft",
+            "3 Sitzungen erfasst, Woche l&auml;uft",
             header,
         )
         self.assertNotIn("Auswertung vom", header)
@@ -3310,7 +3431,7 @@ class WeekRadarPageTests(unittest.TestCase):
     def test_header_past_week_within_one_iso_week(self) -> None:
         markup = self._render(today=date(2026, 6, 16))
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
-        self.assertIn('<span class="eyebrow">Sitzungswoche · Aktueller Puls</span>', header)
+        self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
         self.assertIn(
             "29 Reden in 9 Tagesordnungspunkten · Stand: 3 Sitzungen, letztes Protokoll 21/84 vom "
@@ -3321,7 +3442,7 @@ class WeekRadarPageTests(unittest.TestCase):
     def test_header_older_week_leads_with_its_age(self) -> None:
         markup = self._render(today=date(2026, 9, 15))
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
-        self.assertIn('<span class="eyebrow">Letzte Sitzungswoche</span>', header)
+        self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("Letzte Sitzungswoche vor 14 Wochen · 29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll 21/84 vom", header)
         self.assertIn('Auswertung vom <time datetime="2026-09-15">15.09.2026</time>', header)
         # A build dated before the week renders as a past week and warns.
