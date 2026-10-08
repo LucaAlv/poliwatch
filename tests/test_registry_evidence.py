@@ -274,6 +274,48 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
         components, _ = registry.match_rows([voter, speaker, roster])
         self.assertEqual(sorted(sorted(r["id"] for r in members) for members in components.values()), [["a", "v"], ["b"]])
 
+    @staticmethod
+    def _switcher_rows(**voters):
+        """A roster/speaker anchor printed under two parties, and one roll-call record per party."""
+        def row(rid, pairs, **kw):
+            return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)
+        anchor = row("a", [("Ada Example", "SPD"), ("Ada Example", "CDU/CSU")], xml_redner_id="1")
+        return [anchor] + [row(rid, [("Ada Example", party)], **kw) for rid, (party, kw) in voters.items()]
+
+    # Value: protects=two roll-call records that voted in the same roll call, or whose profiles or trusted aw ids differ, do not both attach to one party-switching anchor through its two name+party buckets; fails_when=pass 3 checks voters only against the anchor within one bucket and applies the attaches afterwards; why_new=collecting attaches across buckets removed the sequential check that saw the anchor's grown vote set; seam=none
+    def test_roll_call_records_in_different_buckets_of_one_anchor_are_checked_against_each_other(self):
+        conflicts = {
+            "same roll call": (dict(vote_ids={"x"}), dict(vote_ids={"x"})),
+            "different profiles": (dict(vote_ids={"x"}, profile_url="https://example.test/u1"), dict(vote_ids={"y"}, profile_url="https://example.test/u2")),
+            "different trusted aw ids": (dict(vote_ids={"x"}, aw_politician_id=6, aw_match="ext_id"), dict(vote_ids={"y"}, aw_politician_id=7, aw_match="ext_id")),
+        }
+        for label, (first, second) in conflicts.items():
+            rows = self._switcher_rows(v=("SPD", first), w=("CDU/CSU", second))
+            for order in itertools.permutations(rows):
+                with self.subTest(label, order=[r["id"] for r in order]):
+                    components, _ = registry.match_rows(list(order))
+                    self.assertEqual(len(components), 3)
+        # Control: conflict-free voters of the two buckets both attach to the anchor.
+        rows = self._switcher_rows(v=("SPD", dict(vote_ids={"x"})), w=("CDU/CSU", dict(vote_ids={"y"})))
+        components, _ = registry.match_rows(rows)
+        self.assertEqual(sorted(sorted(r["id"] for r in members) for members in components.values()), [["a", "v", "w"]])
+
+    # Value: protects=a roll-call record whose name+party is ambiguous between several anchors in one of its buckets joins none, however unambiguous its other bucket is; fails_when=only buckets with exactly one anchor count as candidates; why_new=the pass-3 candidate collection ignored buckets it could not attach in; seam=none
+    def test_an_ambiguous_bucket_vetoes_a_roll_call_record_with_several_parties(self):
+        def row(rid, pairs, **kw):
+            return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)
+        anchors = [row("a1", [("Anna Alt", "SPD")], xml_redner_id="1"),
+                   row("a2", [("Anna Alt", "CDU/CSU")], xml_redner_id="2"),
+                   row("a3", [("Anna Alt", "CDU/CSU")], xml_redner_id="3")]
+        voter = row("v", [("Anna Alt", "SPD"), ("Anna Alt", "CDU/CSU")], vote_ids={"x"})
+        for order in itertools.permutations([*anchors, voter]):
+            with self.subTest(order=[r["id"] for r in order]):
+                components, _ = registry.match_rows(list(order))
+                self.assertEqual(len(components), 4)
+        # Control: the same voter printed under the SPD pair alone attaches to a1.
+        components, _ = registry.match_rows([*anchors, row("v", [("Anna Alt", "SPD")], vote_ids={"x"})])
+        self.assertEqual(sorted(sorted(r["id"] for r in m) for m in components.values()), [["a1", "v"], ["a2"], ["a3"]])
+
     # Value: protects=pass 3 gives the same grouping under different PYTHONHASHSEED values, which reorder the name+party keys of a multi-pair record; fails_when=bucket or key iteration order decides an attach; why_new=every other order test runs in one interpreter and so cannot see hash-order dependence; seam=none
     def test_pass_3_grouping_does_not_depend_on_the_hash_seed(self):
         import os

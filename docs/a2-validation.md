@@ -70,6 +70,8 @@ The sandbox store has no DIP roster rows, so roster-dependent figures (and the 2
 
 ## Order-independent evidence (2026-10-04)
 
+The figures below were measured on 2026-10-04, before `main` v0.14.0.0 to v0.17.0.0 (roll-call member records, pass 3, comma-name comparison) was merged and before the review fixes that followed (roster authority for biography attributes, abgeordnetenwatch fields chosen as one unit, party ranking, pass 3 candidate collection). They were not re-measured on the merged tree; the automated order-independence contracts (`tests/test_registry_evidence.py`, 22 tests) were.
+
 A record's evidence is now the folded set of what its occurrences print (`person_registry._fold`), not the last occurrence persisted, and a record in two qualifying name+party buckets joins neither. Measured by replaying two clones of the reference cache (285 cached reports, a schema 1 build store, `--offline --repersist`, database and pages), one with the previous `HEAD` and one with this change; the original cache was not touched.
 
 | Figure | Before | After |

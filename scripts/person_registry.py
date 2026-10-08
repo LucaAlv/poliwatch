@@ -688,21 +688,33 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # and party. The anchor's profile may come from a different source, but
     # conflicting voter profiles make the bucket ambiguous even when those
     # voters appear in different roll calls. Distinct records voting in the
-    # same roll call cannot be guessed to be one person either. A record printed
-    # under several parties sits in several buckets; if they name different
-    # anchors it has no unique partner and joins none, whichever bucket is
-    # visited first.
+    # same roll call cannot be guessed to be one person either. A record
+    # printed under several parties sits in several buckets: it joins only when
+    # they name exactly one anchor between them (a bucket with several anchors
+    # vetoes it), and the voters that reach one anchor, from whichever bucket,
+    # are checked against each other, so the result does not depend on which
+    # bucket is visited first.
     attach: dict[str, set[str]] = {}
+    blocked: set[str] = set()
     for _, records in sorted(buckets.items()):
         roots = {find(root) for root in records}
         voters = sorted(root for root in roots if vote_only(root))
         anchors = sorted(root for root in roots if not vote_only(root))
+        if len(anchors) > 1:
+            blocked.update(voters)
         if not voters or len(anchors) != 1:
             continue
         anchor = anchors[0]
         if not any(member.get("xml_redner_id") or member.get("dip_person_id") or member.get("is_mdb")
                    for member in rows_of[anchor]):
             continue
+        for voter in voters:
+            attach.setdefault(voter, set()).add(anchor)
+    by_anchor: dict[str, list[str]] = {}
+    for voter, anchors in sorted(attach.items()):
+        if len(anchors) == 1 and voter not in blocked:
+            by_anchor.setdefault(next(iter(anchors)), []).append(voter)
+    for anchor, voters in sorted(by_anchor.items()):
         groups = [rows_of[root] for root in [anchor, *voters]]
         votes = [set().union(*(member.get("vote_ids", set()) for member in group)) for group in groups]
         ids = [_merge_external_ids(group) for group in groups]
@@ -716,10 +728,6 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         ):
             continue
         for voter in voters:
-            attach.setdefault(voter, set()).add(anchor)
-    for voter, anchors in sorted(attach.items()):
-        if len(anchors) == 1:
-            (anchor,) = anchors
             if union(voter, anchor, "unique_name"):
                 rows_of[anchor].extend(rows_of.pop(voter))
 
