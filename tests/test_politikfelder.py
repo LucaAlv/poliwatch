@@ -194,6 +194,10 @@ class AgendaItemTests(unittest.TestCase):
         self.assertEqual(self.tags(top, cache_of(), "20"), (["Verkehr", "Digitales"], "einzelplan"))
         self.assertEqual(self.tags(top, cache, "21"), (["Verkehr"], "einzelplan"))
 
+    def test_the_einzelplan_may_be_only_in_the_top_id(self) -> None:
+        top = dict(item(heading=""), top_id="Einzelplan 04")
+        self.assertEqual(self.tags(top, cache_of()), (["Staat & Demokratie"], "einzelplan"))
+
     def test_a_bundled_einzelplan_heading_takes_each_in_order_and_caps_at_three(self) -> None:
         top = item(heading="Einzelplan 06 Inneres b) hier: Einzelplan 07 Justiz und Einzelplan 14")
         tags, source = self.tags(top, cache_of(), "21")

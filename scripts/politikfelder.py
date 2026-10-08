@@ -256,10 +256,13 @@ def _vorgaenge_of_numbers(numbers: Iterable[str], cache: Mapping[str, Any]) -> t
 
 
 def _einzelplan_tags(item: Mapping[str, Any], wahlperiode: str) -> tuple[list[str], bool]:
-    """(tags, a named Einzelplan is not in the table) from the item's heading."""
+    """(tags, a named Einzelplan is not in the table) from the item's heading and
+    TOP id. In 117 TOPs of the archive (2026-10-09) the Einzelplan is only in
+    ``top_id`` ("Einzelplan 04") and the heading is empty."""
     tags: list[str] = []
     unknown = False
-    for match in _EINZELPLAN_RE.finditer(str(item.get("heading") or "")):
+    text = f"{item.get('heading') or ''} {item.get('top_id') or ''}"
+    for match in _EINZELPLAN_RE.finditer(text):
         fields = EINZELPLAN_TO_POLITIKFELDER.get((wahlperiode, match.group(1).zfill(2)))
         if fields is None:
             unknown = True
