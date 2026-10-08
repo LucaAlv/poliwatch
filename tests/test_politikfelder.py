@@ -122,7 +122,7 @@ class ClosedListTests(unittest.TestCase):
             report = json.loads(path.read_text(encoding="utf-8"))
             wahlperiode = derive.report_wahlperiode(report)
             for agenda_item in report.get("agenda_items") or []:
-                for match in re.finditer(r"\bEinzelplan\s+(\d{1,2})\b", str(agenda_item.get("heading") or "")):
+                for match in re.finditer(r"\bEinzelplan\s+(\d{1,2})\b", f"{agenda_item.get('heading') or ''} {agenda_item.get('top_id') or ''}"):
                     seen.add((wahlperiode, match.group(1).zfill(2)))
         self.assertLessEqual(seen, set(pf.EINZELPLAN_TO_POLITIKFELDER))
 
