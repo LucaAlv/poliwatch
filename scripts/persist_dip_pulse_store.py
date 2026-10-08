@@ -579,9 +579,19 @@ def upsert_mp(
                     wahlkreis=clean(wahlkreis), bundesland=clean(bundesland),
                     person_roles_json=clean(person_roles_json))
     record_id, person_id, identity_key, evidence = registry.bind(conn, identity_key, evidence, occurrence_id)
-    aw_match = evidence.get("aw_match")
-    if evidence.get("profile_blocked"):  # a partition record other than the profile owner carries no profile
-        aw_politician_id = profile_url = None
+    # The row shows what the registry settled for the record across this build's
+    # occurrences, not whichever occurrence was persisted last. A partition record
+    # other than the profile owner carries no profile (bind blanked it).
+    display_name = evidence.get("display_name", display_name)
+    xml_redner_id = evidence.get("xml_redner_id", xml_redner_id)
+    dip_person_id = evidence.get("dip_person_id", dip_person_id)
+    title, function, wahlperiode, birth_year, gender, profession, wahlkreis, bundesland, person_roles_json = (
+        evidence.get(field) for field in (
+            "title", "function", "wahlperiode", "birth_year", "gender", "profession", "wahlkreis", "bundesland",
+            "person_roles_json"))
+    aw_politician_id, aw_match, profile_url = (evidence.get(field) for field in ("aw_politician_id", "aw_match", "profile_url"))
+    if len(evidence.get("pairs", ())) > 1 and evidence.get("party"):
+        party_id = conn.execute("SELECT id FROM parties WHERE name=?", (evidence["party"],)).fetchone()[0]
     conn.execute(
         """
         INSERT INTO mps(
@@ -596,19 +606,19 @@ def upsert_mp(
           dip_person_id = COALESCE(excluded.dip_person_id, mps.dip_person_id),
           xml_redner_id = COALESCE(excluded.xml_redner_id, mps.xml_redner_id),
           display_name = COALESCE(NULLIF(excluded.display_name, 'Unbekannt'), mps.display_name),
-          title = COALESCE(excluded.title, mps.title),
-          function = COALESCE(excluded.function, mps.function),
-          wahlperiode = COALESCE(excluded.wahlperiode, mps.wahlperiode),
-          profile_url = COALESCE(excluded.profile_url, mps.profile_url),
+          title = excluded.title,
+          function = excluded.function,
+          wahlperiode = excluded.wahlperiode,
+          profile_url = excluded.profile_url,
           party_id = COALESCE(excluded.party_id, mps.party_id),
-          birth_year = COALESCE(excluded.birth_year, mps.birth_year),
-          gender = COALESCE(excluded.gender, mps.gender),
-          profession = COALESCE(excluded.profession, mps.profession),
-          wahlkreis = COALESCE(excluded.wahlkreis, mps.wahlkreis),
-          bundesland = COALESCE(excluded.bundesland, mps.bundesland),
-          aw_politician_id = COALESCE(excluded.aw_politician_id, mps.aw_politician_id),
-          aw_match = CASE WHEN excluded.aw_politician_id IS NOT NULL THEN excluded.aw_match ELSE mps.aw_match END,
-          person_roles_json = COALESCE(excluded.person_roles_json, mps.person_roles_json),
+          birth_year = excluded.birth_year,
+          gender = excluded.gender,
+          profession = excluded.profession,
+          wahlkreis = excluded.wahlkreis,
+          bundesland = excluded.bundesland,
+          aw_politician_id = excluded.aw_politician_id,
+          aw_match = excluded.aw_match,
+          person_roles_json = excluded.person_roles_json,
           is_mdb = MAX(mps.is_mdb, excluded.is_mdb),
           updated_at = excluded.updated_at
         """,
