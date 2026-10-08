@@ -15,8 +15,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **B. Abstimmungen (daily view), independent of A**
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
-3. "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters".
+3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
+4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Item 2 (the topic filter on `votes/index.html`) is covered by B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -544,18 +544,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** None
 
-### Politikfeld tags on Tagesordnungspunkte and votes
-
-**What:** A fixed, closed list of 13 Politikfelder (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie); one to three tags per TOP and vote, stored in the SQLite store and exported in the Daten CSVs; tag chips on the dossier, the votes archive and the week radar act as filters. Done when every vote in the store has ≥1 tag or an explicit `untagged` row, and the list is enforced by a test that rejects any other label.
-
-**Why:** No taxonomy or filter exists (audit 2026-09-19); topic-level navigation is the main way plenarwatch's archive is browsed. A closed list is what keeps the LLM from inventing categories.
-
-**Context:** Correction 2026-09-30: `sachgebiet` appears nowhere in `scripts/` or the cached report JSON, so the build does not fetch it today. It sits on DIP's `/vorgang` record, which has to be fetched per Vorgang; it can also be empty, as it was on a sampled Kleine Anfrage. The rest of this paragraph assumes that fetch. Seed deterministically from DIP: `vorgang.sachgebiet` is a free field on every Vorgang, so map DIP Sachgebiete → the 13 fields in a lookup table and let the LLM fill only the gaps (plenarwatch: "assignment failure doesn't block publication"). Tag column on `agenda_items` and `votes`; add to `docs/data-license.md`'s export contract only after the pilot gate under Daten is decided.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
 ### Fraktionsblöcke: what each Fraktion argued, per Tagesordnungspunkt
 
 **What:** Under every debated TOP, a block per Fraktion in the fixed order CDU/CSU, AfD, SPD, Bündnis 90/Die Grünen, Die Linke, fraktionslos (plus Bundesregierung when a minister spoke), each with up to three arguments paraphrased in indirect speech, each argument tied to a verbatim protocol quote ≤125 characters with a page anchor; a Fraktion without a speech gets the explicit line "kein Redebeitrag im Protokoll", never an empty block. Done when the order is enforced in code, every quote passes the verbatim check from the validators item, and the block renders on a full-week offline rebuild.
@@ -802,7 +790,7 @@ Done when the chart and the recipe give the same numbers on the same release, an
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
 1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Otherwise write a labelled AI sentence under the validators item.
-2. Topic filter on `votes/index.html`, from the Politikfeld tags.
+2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
 3. The named Abweichler per Fraktion on the vote panel. The data exists (recipe `r3-abweichler`).
 4. The responsible committee, from the Beschlussempfehlung.
 
@@ -1028,6 +1016,29 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Politikfeld tags on Tagesordnungspunkte and votes
+
+**Completed:** v0.18.0.0 (2026-10-09), branch `feat-politikfelder`. A closed list of 13 Politikfelder (`scripts/politikfelder.py`), 1 to 3 tags per TOP and per vote, derived deterministically at persist and render time and never written into a report. Tables `agenda_item_politikfelder` and `vote_politikfelder` (CHECK constraints from the closed lists), `proceedings.sachgebiet`, 27 CSVs, `EXPORT_FORMAT` 4, the tag tables marked `derived`. Chips on the dossier TOP cards, a Politikfeld filter with `?politikfeld=` on `votes/index.html`, and a chip filter on the week radar. Sources, in order: the Sachgebiet of the TOP's Vorgänge (lead first, then by frequency, at most 3), then the Drucksache numbers the TOP names, then the Einzelplan in the heading or TOP id keyed by (Wahlperiode, number); a vote takes its own Drucksachen first, then its TOPs. The Vorgang cache is `data/dip-vorgang-cache.json`, filled by online builds only; a cache miss is stored as `not_fetched`.
+
+Real store (290 Sitzungen, 2,912 TOPs, 217 namentliche Abstimmungen), measured 2026-10-09 after one cache fill and `--offline --repersist`:
+- Votes without a row: 0 (TOPs: 0). Votes by source: 216 `drucksache` (99.5 %), 1 `untagged` (the Wahlprüfung vote 20/66).
+- TOPs by source: 2,109 `sachgebiet` (72.4 %), 211 `drucksache` (7.2 %), 149 `einzelplan` (5.1 %), 443 `untagged` (15.2 %), 0 `not_fetched`.
+- The 443 untagged TOPs: 77 Fragestunden, 77 Befragungen der Bundesregierung, 117 Wahlen, Geschäftsordnung, Ordnungsmaßnahmen and Immunität, 51 with an empty heading, 91 whose heading names a Gesetz or Antrag but for which DIP gave no Vorgangsposition and the TOP names no Drucksache, 30 other.
+- First tag over TOPs: Außenpolitik 428, Wirtschaft & Finanzen 399, Soziales 390, Energie & Klima 283, Staat & Demokratie 198, Gesundheit 148, Bildung 139, Innere Sicherheit 119, Digitales 103, Justiz 80, Verkehr 76, Migration 70, Verteidigung 36. Over votes: Außenpolitik 57, Energie & Klima 41, Wirtschaft & Finanzen 28, Soziales 19, Innere Sicherheit 16, Gesundheit 14, Staat & Demokratie 12, Migration 11, Verteidigung 8, Justiz 4, Verkehr 3, Digitales 2, Bildung 1.
+- Measured live (2026-10-04): `/vorgang?f.id` returned 400 ids in one call (batch kept at 100); a repeated `f.dokumentnummer` returns one deduplicated union and cannot say which number belongs to which Vorgang, so numbers are resolved one call per number (25 of 25 sampled Beschlussempfehlungen resolve to a Vorgang of their own TOP). A Sammelübersicht can resolve to several Vorgänge (20/13413 gives 5), so a vote's Vorgänge are ranked by how many of its numbers name them. About 4 lookups a second made DIP's edge answer HTTP 400 with a bot challenge to the whole API for several hours, so the build now pauses 0.5 s per lookup; the first full fill of about 2,400 numbers takes 25 minutes, later builds fetch only new ones.
+- The plan's "113 TOPs headed only Einzelplan 04" is real, but the Einzelplan sits in `top_id`, not the heading (117 TOPs, mostly the Haushaltswoche). The rule reads both; before that fix the Haushaltswoche rows of the radar were untagged (Einzelplan TOPs 37 -> 149, untagged 555 -> 443).
+- Mapping surprises, left as designed: a Haushalt vote takes the Sachgebiet of its Haushaltsgesetz Vorgang (Wirtschaft & Finanzen), not its ministry's field; a bundled heading with one Einzelplan sub-item and no Vorgang is tagged from that sub-item alone (20/106 TOP 6); a Regierungserklärung carries every field of its Entschließungsanträge.
+
+### Fill the remaining untagged Tagesordnungspunkte
+
+**What:** The 91 TOPs of the real store whose heading names a Gesetz or Antrag but that have no Vorgangsposition and name no Drucksache, and the 30 "other" ones, stay `untagged` after B3. Tag them from the heading with a model, restricted to the closed list, stored with a source of its own (for example `llm`) so a reader can tell it from a DIP-derived tag. Leave Fragestunde, Befragung, Wahlen and Geschäftsordnung untagged: they have no policy area.
+
+**Why:** B3 stays deterministic on purpose, so the Daten export carries no model output (docs/data-license.md). Measure first how many of the 121 a better deterministic rule can still reach, for example matching the heading against `/vorgang` titles.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
 ### Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts
 
