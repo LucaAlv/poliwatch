@@ -67,3 +67,25 @@ The review changed the registry: persons carry a durable `home_person_id`; merge
 | Order independence | a store built from half of the reports and then replayed with all of them groups records into persons exactly like a fresh replay of all reports (identical grouping fingerprint `6f877bf3d1e92af0`) |
 
 The sandbox store has no DIP roster rows, so roster-dependent figures (and the 2026-09-30 person-page and alias-page counts) were not re-measured. Page rendering was not repeated: the disk was nearly full. Redirect pages are written for retired keys and for keys a guess moved to another person; this is covered by `test_a_guess_merged_key_keeps_a_redirect_page`, not by a full-site count.
+
+## Order-independent evidence (2026-10-04)
+
+A record's evidence is now the folded set of what its occurrences print (`person_registry._fold`), not the last occurrence persisted, and a record in two qualifying name+party buckets joins neither. Measured by replaying two clones of the reference cache (285 cached reports, a schema 1 build store, `--offline --repersist`, database and pages), one with the previous `HEAD` and one with this change; the original cache was not touched.
+
+| Figure | Before | After |
+|---|---|---|
+| Source records / occurrence bindings / aliases | 4,253 / 195,278 / 0 | 4,253 / 195,278 / 0 |
+| Current persons | 3,386 | 3,365 (−21) |
+| Records with more than one printed (name, party) pair | not recorded | 212 |
+| Records with more than one Redner-ID | 0 | 0 |
+| `mps` rows whose name or party changed | | 26 |
+| Redner-ID `11005304` | Alexander Föhr 13 speeches, Dirk-Ulrich Mende 9 | unchanged (13 / 9; characters 48,274 / 40,578 in both replays) |
+| Person pages (`abgeordnete/`) | 1,038 | 1,038 |
+| Reden per Zusammenschluss and Sprechrolle (r2), r3 rows without LIMIT | 6,390 CDU/CSU … 363 | all equal |
+| Stored facts, publishable weeks and months | 0 / 0 | 0 / 0 |
+
+The 21 fewer persons are 21 groups of two that became one: a speaker record printed under several parties or names now joins the roster record of the party it is listed under. They are Fraktion switchers and name changes (the former Linke members now in the BSW Gruppe, Wagenknecht, Hunko, Ulrich and others; Helferich, Spaniel and Seitz, AfD then fraktionslos; Gräßle; Cademartori; Neuhäuser), which last-writer evidence had split depending on which sitting was persisted last. The old grouping was an accident of persist order; the new one is the same in every order (`tests/test_registry_evidence.py`). No figure the site publishes as a count moved: pages, Reden per Fraktion and Sprechrolle, the r3 recipe and the facts are equal; `scripts/compare_store_values.py` reports only the `mps` rows per party (AfD 650 → 651, Die Linke 253 → 254, Gruppe Die Linke 46 → 45, fraktionslos 28 → 27) and its raw-row Zusammenführung simulation (3,387 → 3,384 persons, which ignores the registry's durable/recomputed split and reads the flat representative fields).
+
+The 26 `mps` rows now show the representative pair, chosen by content: the fullest printed name (a title kept, or the longer given names) and, between two parties, the alphabetically first (Cezanne: "Gruppe Die Linke" became "Die Linke"); a page whose person has a roster record still takes its biography from that record. Binding has no sitting chronology, which is why the rule is a content key and not "newest"; a speech's own Fraktion is stored on the speech and readers fall back to the MP's party only when the XML names none, so the representative party can reach a count only through such a speech; none of the r2 tallies moved on the reference cache.
+
+An unchanged second replay of the new store reported "store content unchanged, file kept" (same size, modification time and checksum). The cached `plenarprotokoll-*.json` reports are byte-identical between the two replays; both differ from the pristine cache because the offline render re-parses them from `xml/`, which is unrelated to this change (`xml/` is identical).
