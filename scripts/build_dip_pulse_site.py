@@ -1535,6 +1535,43 @@ def refresh_vorgang_cache(
     return stats
 
 
+def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
+    """One line per build, on every path: how many TOPs and votes the store tags by
+    source, how many of them are ``not_fetched`` (a cache miss: run an online update),
+    and any Sachgebiet label DIP now uses that the mapping does not know."""
+    try:
+        conn = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        try:
+            counts = {
+                kind: dict(conn.execute(f"SELECT source, COUNT(DISTINCT {key}) FROM {table} GROUP BY source"))
+                for kind, table, key in (
+                    ("TOPs", "agenda_item_politikfelder", "agenda_item_id"),
+                    ("Abstimmungen", "vote_politikfelder", "vote_id"),
+                )
+            }
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return  # a store without the tag tables yet: the persist that follows reports it
+    for kind, by_source in counts.items():
+        listed = ", ".join(f"{n} {source}" for source, n in sorted(by_source.items(), key=lambda item: -item[1]))
+        print(f"politikfelder: {kind}: {listed or 'none'}", file=sys.stderr)
+    missing = sum(by_source.get("not_fetched", 0) for by_source in counts.values())
+    if missing:
+        print(
+            f"warning: [politikfelder] {missing} TOPs or votes are not_fetched (not in the Vorgang cache). "
+            "Fix: run an online update.",
+            file=sys.stderr,
+        )
+    unknown = politikfelder.unknown_sachgebiete(cache)
+    if unknown:
+        print(
+            f"warning: [politikfelder] Sachgebiet labels the mapping does not know, skipped: {sorted(unknown)}. "
+            "Fix: map them in SACHGEBIET_TO_POLITIKFELD.",
+            file=sys.stderr,
+        )
+
+
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None, facts_report: dict[str, Any] | None = None,
@@ -11151,6 +11188,8 @@ def main() -> int:
             database_page_href=dossier_database_page_href(args, database_path),
             vorgang_cache=vorgang_cache,
         )
+        if not args.no_persist and database_path.exists():
+            log_politikfelder_summary(database_path, vorgang_cache)
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -11418,6 +11457,8 @@ def main() -> int:
     write_classification_diagnostics(output_dir, entries)
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
+    if not args.no_persist and database_path.exists():
+        log_politikfelder_summary(database_path, vorgang_cache)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,

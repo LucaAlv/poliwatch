@@ -668,6 +668,17 @@ class RepersistTests(unittest.TestCase):
             code = build.main()
         return code, err.getvalue()
 
+    # Value: protects=an --offline --repersist build never reaches DIP for Vorgänge and still says how the Politikfelder came out; fails_when=the offline path calls refresh_vorgang_cache, or prints no Politikfeld line, so a cache miss (not_fetched) passes unseen; why_new=no test covered the offline side of the fetch; seam=none
+    def test_an_offline_repersist_fetches_nothing_and_logs_the_politikfeld_sources(self) -> None:
+        with mock.patch.object(build, "refresh_vorgang_cache") as refresh:
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        refresh.assert_not_called()
+        self.assertIn("politikfelder: TOPs:", err)
+        self.assertIn("politikfelder: Abstimmungen:", err)
+        self.assertIn("not_fetched", err)  # no cache in this fixture: every tag is a cache miss, and the build says so
+        self.assertIn("Fix: run an online update.", err)
+
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()
         before = sha(self.database)

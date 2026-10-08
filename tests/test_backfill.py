@@ -101,13 +101,14 @@ class RetainedScopeTests(unittest.TestCase):
             mock.patch.object(build, "fetch_protocols", return_value=copy.deepcopy(self.catalog)) as fetch,
             mock.patch.object(build, "build_dossiers_with_progress", return_value=generated) as build_dossiers,
             mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
-            mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
+            mock.patch.object(build, "refresh_vorgang_cache", return_value={}) as refresh,  # never reach DIP from a test
             mock.patch.object(build, "render_site", return_value=self.output_dir / "index.html") as render_site,
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),
         ):
             code = build.main()
         self.pipeline = pipeline
+        self.refresh = refresh
         return code, fetch, build_dossiers, render_site, stderr.getvalue()
 
     def test_backfilling_one_sitting_keeps_every_other_protocol_speech_vote_and_page(self) -> None:
@@ -208,6 +209,9 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.counts(), before)
         self.assertEqual(len(render_site.call_args.kwargs["entries"]), 3)
+        # The online build fills the Vorgang cache once, from every sitting it is about to persist.
+        self.refresh.assert_called_once()
+        self.assertEqual(len(self.refresh.call_args.args[1]), 3)
 
     # Value: protects=an online build that keeps a cached report from before A1 with no cached XML persists nothing and names it;
     #   fails_when=the online path warns and persists the old Reden counts next to correctly classified ones;
