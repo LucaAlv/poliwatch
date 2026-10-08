@@ -253,13 +253,15 @@ def _json_key(value: Any) -> str:
 
 
 def _pair_rank(pair: list[str | None]) -> tuple[Any, ...]:
-    return (pair[0] == "Unbekannt", not pair[1], -len(pair[0]), pair[0], pair[1] or "")
+    # A name with a comma is the roll call's "surname, given name" or a DIP title
+    # with its ", MdB, party" tail: a plain printed name is the better heading.
+    return (pair[0] == "Unbekannt", not pair[1], "," in pair[0], -len(pair[0]), pair[0], pair[1] or "")
 
 
 def _representative_pair(pairs: list[list[str | None]]) -> list[str | None]:
     """The (page name, party) a record shows when its occurrences print several:
     the name of the best pair (a real name over the "Unbekannt" placeholder, one
-    with a party over one without, the fullest name with titles, then
+    with a party over one without, one without a comma, the fullest name with titles, then
     alphabetical) and the party of the best pair that has one, so a real name
     printed without a party still shows the party its other pairs name. Binding
     has no sitting chronology, so "newest" is not available; the matching rule
@@ -686,8 +688,12 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # and party. The anchor's profile may come from a different source, but
     # conflicting voter profiles make the bucket ambiguous even when those
     # voters appear in different roll calls. Distinct records voting in the
-    # same roll call cannot be guessed to be one person either.
-    for records in buckets.values():
+    # same roll call cannot be guessed to be one person either. A record printed
+    # under several parties sits in several buckets; if they name different
+    # anchors it has no unique partner and joins none, whichever bucket is
+    # visited first.
+    attach: dict[str, set[str]] = {}
+    for _, records in sorted(buckets.items()):
         roots = {find(root) for root in records}
         voters = sorted(root for root in roots if vote_only(root))
         anchors = sorted(root for root in roots if not vote_only(root))
@@ -710,6 +716,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         ):
             continue
         for voter in voters:
+            attach.setdefault(voter, set()).add(anchor)
+    for voter, anchors in sorted(attach.items()):
+        if len(anchors) == 1:
+            (anchor,) = anchors
             if union(voter, anchor, "unique_name"):
                 rows_of[anchor].extend(rows_of.pop(voter))
 

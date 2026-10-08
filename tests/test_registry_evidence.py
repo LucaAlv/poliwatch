@@ -252,6 +252,56 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
         ])
         self.assertEqual(len(components), 1)
 
+    @staticmethod
+    def _pass3_world(voter_id="v", anchor_ids=("a", "b"), voter_pairs=(("Ada Example", "SPD"), ("Ada Example", "CDU/CSU"))):
+        def row(rid, pairs, **kw):
+            return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)
+        roster = row(anchor_ids[0], [("Ada Example", "SPD")], dip_person_id="d1", is_mdb=True)
+        speaker = row(anchor_ids[1], [("Ada Example", "CDU/CSU")], xml_redner_id="222")
+        voter = row(voter_id, voter_pairs, vote_ids={"v1"})
+        return roster, speaker, voter
+
+    # Value: protects=a roll-call record printed under two parties, each matching a different roster or speaker record, joins neither, in any row order and under any hash seed; fails_when=pass 3 attaches it to whichever name+party bucket it visits first; why_new=pass 3 judged one bucket at a time and a record now sits in one bucket per pair; seam=none
+    def test_a_roll_call_record_with_two_candidate_anchors_joins_neither(self):
+        for voter_id, anchor_ids in itertools.product(("v", "0", "z"), (("a", "b"), ("b", "a"))):
+            world = self._pass3_world(voter_id, anchor_ids)
+            for rows in itertools.permutations(world):
+                with self.subTest(voter=voter_id, anchors=anchor_ids, order=[r["id"] for r in rows]):
+                    components, _ = registry.match_rows(list(rows))
+                    self.assertEqual(len(components), 3)
+        # Control: the same voter printed under one party attaches to the anchor of that party.
+        roster, speaker, voter = self._pass3_world(voter_pairs=(("Ada Example", "SPD"),))
+        components, _ = registry.match_rows([voter, speaker, roster])
+        self.assertEqual(sorted(sorted(r["id"] for r in members) for members in components.values()), [["a", "v"], ["b"]])
+
+    # Value: protects=pass 3 gives the same grouping under different PYTHONHASHSEED values, which reorder the name+party keys of a multi-pair record; fails_when=bucket or key iteration order decides an attach; why_new=every other order test runs in one interpreter and so cannot see hash-order dependence; seam=none
+    def test_pass_3_grouping_does_not_depend_on_the_hash_seed(self):
+        import os
+        import subprocess
+        import sys
+        script = (
+            "import sys, json; sys.path[:0] = [sys.argv[1], sys.argv[2]]\n"
+            "import person_registry as registry\n"
+            "from test_registry_evidence import EvidenceDecisionTests as T\n"
+            "components, _ = registry.match_rows(list(T._pass3_world()))\n"
+            "print(json.dumps(sorted(sorted(r['id'] for r in m) for m in components.values())))\n"
+        )
+        here = os.path.dirname(os.path.abspath(__file__))
+        results = set()
+        for seed in ("0", "1", "2", "3", "4", "5"):
+            out = subprocess.run([sys.executable, "-c", script, os.path.join(here, "..", "scripts"), here],
+                                 env={**os.environ, "PYTHONHASHSEED": seed}, capture_output=True, text=True, check=True)
+            results.add(out.stdout.strip())
+        self.assertEqual(results, {'[["a"], ["b"], ["v"]]'})
+
+    # Value: protects=a record that folds a roll-call "surname, given name" form with the plain printed name shows the plain name; fails_when=the longest name wins and the comma form becomes the heading; why_new=roll-call names entered the registry with the v0.14 merge; seam=none
+    def test_the_shown_name_prefers_a_plain_form_over_a_comma_form(self):
+        for items in itertools.permutations([dict(display_name="Schmidt, Carolin", party="SPD"),
+                                             dict(display_name="Carolin Schmidt", party="SPD"),
+                                             dict(display_name="Dr. Carolin Schmidt, MdB, SPD", party="SPD")]):
+            result = functools.reduce(registry._fold, (dict(i) for i in items), {})
+            self.assertEqual(result["display_name"], "Carolin Schmidt")
+
     # Value: protects=a stale roster record printed under two parties joins neither live speaker its keys match, while one printed under a single party still joins its speaker; fails_when=the stale-partner pass takes one of several name+party keys and so joins whichever speaker that key reaches; why_new=staged roster tests give the stale record one name and party; seam=none
     def test_a_stale_roster_record_with_two_parties_joins_no_speaker(self):
         def groups(roster_parties):
