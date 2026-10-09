@@ -197,24 +197,156 @@ def allocate(conn: sqlite3.Connection, preferred: str | None = None) -> str:
     conn.execute("INSERT INTO persons VALUES (?, ?)", (key, ordinal))
     return key
 
-def _first_touch(conn: sqlite3.Connection, record_id: str) -> bool:
+def _first_touch(conn: sqlite3.Connection, record_id: str, baseline: str | None = None) -> bool:
     """Mark a record as bound on this connection (a full build's live set, read
-    by reconcile); True the first time. The temp table is made on first use."""
+    by reconcile); True the first time. ``baseline`` is the evidence it had
+    before this build touched it, kept so later decisions about the record do not
+    depend on which occurrence was persisted first. The temp table is made on
+    first use."""
+    insert = "INSERT OR IGNORE INTO registry_touched VALUES (?, ?)"
     try:
-        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
+        return conn.execute(insert, (record_id, baseline)).rowcount == 1
     except sqlite3.OperationalError:
-        conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL)")
-        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
+        return conn.execute(insert, (record_id, baseline)).rowcount == 1
+
+
+def _touched(conn: sqlite3.Connection, record_id: str) -> tuple[bool, str | None]:
+    """``(touched in this build, baseline evidence json)`` of a record."""
+    try:
+        row = conn.execute("SELECT baseline FROM registry_touched WHERE id = ?", (record_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return False, None
+    return (row is not None), (row[0] if row else None)
+
+
+def _redner_ids(evidence: dict[str, Any]) -> set[str]:
+    """Every Redner-ID a record's evidence names (one person can have several);
+    old evidence has only the flat ``xml_redner_id``."""
+    ids = evidence.get("xml_redner_ids")
+    if ids is None:
+        ids = [evidence.get("xml_redner_id")]
+    return {first for first in (derive.first_redner_id(i) for i in ids) if first}
+
+
+def _name_party_pairs(evidence: dict[str, Any]) -> list[list[str | None]]:
+    """The (printed name, party) pairs a record's evidence holds, sorted; old
+    evidence and store rows have only the flat ``display_name`` and ``party``."""
+    pairs = evidence.get("pairs")
+    if pairs is None:
+        pairs = [[evidence.get("display_name"), evidence.get("party")]] if evidence.get("display_name") else []
+    return pairs
 
 
 def _hard_id_conflict(old: dict[str, Any], new: dict[str, Any]) -> bool:
-    """Both sides name an official id and the ids differ: the source now says a
-    different person, which is not an enrichment of the bound record."""
-    pairs = (
-        (derive.first_redner_id(old.get("xml_redner_id")), derive.first_redner_id(new.get("xml_redner_id"))),
-        (old.get("dip_person_id"), new.get("dip_person_id")),
-    )
-    return any(a and b and a != b for a, b in pairs)
+    """Both sides name an official id and the new one is not among the old ones:
+    the source now says a different person, which is not an enrichment of the
+    bound record."""
+    old_ids, new_ids = _redner_ids(old), _redner_ids(new)
+    if old_ids and new_ids and not new_ids <= old_ids:
+        return True
+    return bool(old.get("dip_person_id") and new.get("dip_person_id") and old["dip_person_id"] != new["dip_person_id"])
+
+
+def _json_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _pair_rank(pair: list[str | None]) -> tuple[Any, ...]:
+    # A name with a comma is the roll call's "surname, given name" or a DIP title
+    # with its ", MdB, party" tail: a plain printed name is the better heading.
+    return (pair[0] == "Unbekannt", not pair[1], "," in pair[0], -len(pair[0]), pair[0], pair[1] or "")
+
+
+def _representative_pair(pairs: list[list[str | None]]) -> list[str | None]:
+    """The (page name, party) a record shows when its occurrences print several:
+    the name of the best pair (a real name over the "Unbekannt" placeholder, one
+    with a party over one without, one without a comma, the fullest name with titles, then
+    alphabetical) and the party of the best pair that has one, so a real name
+    printed without a party still shows the party its other pairs name. Binding
+    has no sitting chronology, so "newest" is not available; the matching rule
+    uses every pair, not this one."""
+    with_party = [p for p in pairs if p[1]]
+    return [min(pairs, key=_pair_rank)[0], min(with_party, key=_pair_rank)[1] if with_party else None]
+
+
+#: The abgeordnetenwatch fields of a record are chosen together, never mixed.
+_AW_FIELDS = ("aw_politician_id", "aw_match", "profile_url")
+
+
+def _aw_choice(unit: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Which abgeordnetenwatch unit wins: one with a valid id, a trusted lookup, the
+    fullest, then by content."""
+    return (not isinstance(unit[0], int), unit[1] != derive.TRUSTED_AW_MATCH, -sum(v is not None for v in unit), _json_key(unit))
+
+
+#: Biography attributes. A roster occurrence (``is_mdb``) is the authority for
+#: them; a cached dossier's or a speaker's value only stands in when no roster
+#: occurrence supplies one, so a stale cached value never beats the live roster.
+_BIO_FIELDS = ("title", "function", "wahlperiode", "birth_year", "gender", "profession", "wahlkreis", "bundesland",
+               "person_roles_json")
+
+
+def _roster_bio(evidence: dict[str, Any]) -> dict[str, Any]:
+    """The biography values the roster occurrences of a record supplied: kept as
+    ``roster_bio`` once folded, read off the attributes of a single roster occurrence."""
+    if "roster_bio" in evidence:
+        return evidence["roster_bio"]
+    return {f: evidence[f] for f in _BIO_FIELDS if evidence.get(f) is not None} if evidence.get("is_mdb") else {}
+
+
+def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Fold one occurrence's evidence into a record's evidence for this build.
+
+    Commutative, associative and idempotent, so the result depends on the set of
+    occurrences and not on the order they are persisted in. Names and parties are
+    kept as a set of pairs, Redner-IDs as a set; the flat ``display_name``,
+    ``party`` and ``xml_redner_id`` are a representative of those sets. Booleans
+    OR, the abgeordnetenwatch fields are chosen as a unit (a trusted lookup first),
+    the biography attributes come from roster occurrences when there are any, and
+    any other attribute that differs takes the smallest value."""
+    out = dict(base)
+    roster_base, roster_new = _roster_bio(base), _roster_bio(new)
+    roster = {f: min((r[f] for r in (roster_base, roster_new) if f in r), key=_json_key)
+              for f in _BIO_FIELDS if f in roster_base or f in roster_new}
+    pairs = {tuple(p) for p in _name_party_pairs(base)} | {tuple(p) for p in _name_party_pairs(new)}
+    ids = _redner_ids(base) | _redner_ids(new)
+    units = [tuple(e.get(f) for f in _AW_FIELDS) for e in (base, new) if any(e.get(f) is not None for f in _AW_FIELDS)]
+    for key, value in new.items():
+        if value is None or key in ("pairs", "xml_redner_ids", "roster_bio", *_AW_FIELDS, *_BIO_FIELDS):
+            continue
+        if isinstance(value, bool) or isinstance(out.get(key), bool):
+            out[key] = bool(out.get(key)) or bool(value)
+        elif out.get(key) is None:
+            out[key] = value
+        elif out[key] != value:
+            out[key] = min(out[key], value, key=_json_key)
+    for field in _BIO_FIELDS:
+        stand_in = [e[field] for e, r in ((base, roster_base), (new, roster_new)) if e.get(field) is not None and field not in r]
+        value = roster.get(field, min(stand_in, key=_json_key) if stand_in else None)
+        if value is None:
+            out.pop(field, None)
+        else:
+            out[field] = value
+    out["roster_bio"] = roster
+    if units:
+        for field, value in zip(_AW_FIELDS, min(units, key=_aw_choice)):
+            if value is None:
+                out.pop(field, None)
+            else:
+                out[field] = value
+    if pairs:
+        out["pairs"] = sorted([list(p) for p in pairs], key=_json_key)
+        name, party = _representative_pair(out["pairs"])
+        out["display_name"] = name
+        if party is None:
+            out.pop("party", None)
+        else:
+            out["party"] = party
+    if ids:
+        out["xml_redner_ids"] = sorted(ids)
+        out["xml_redner_id"] = min(ids)
+    return out
 
 
 def bind(
@@ -228,19 +360,23 @@ def bind(
     moves to the record of the new identity on a changed reviewed partition or a
     different official id. Evidence is re-read from the source on a record's first
     touch in this connection; only registry-owned evidence survives from the
-    earlier build."""
+    earlier build. Every later touch folds its occurrence in with ``_fold``, and a
+    record's decisions compare against its evidence from before the build, so
+    neither the evidence nor the binding depends on persist order."""
     evidence["ever_mdb"] = bool(evidence.get("is_mdb"))
     identity = partition_identity(identity, evidence)
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
     bound = conn.execute("SELECT record_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
+    bound_touched = False
     if bound:
         previous = conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
+        bound_touched, baseline = _touched(conn, bound[0])
         # A reviewed partition, or a source that now names a different official
         # id, moves a binding; otherwise the established source record wins over
         # changing attributes.
         moved = (
             (evidence.get("partition") and evidence.get("partition") != previous["partition"])
-            or _hard_id_conflict(json.loads(previous["evidence_json"]), evidence)
+            or _hard_id_conflict(json.loads(baseline or previous["evidence_json"]), evidence)
         )
         if not moved:
             row = previous
@@ -249,15 +385,14 @@ def bind(
         record_id, home = row["id"], resolve(conn, row["home_person_id"])
         previous = json.loads(row["evidence_json"])
         was_mdb = bool(previous.get("ever_mdb") or previous.get("is_mdb"))
-        if _first_touch(conn, record_id):
+        if _first_touch(conn, record_id, row["evidence_json"]):
             # First touch in this build: the source speaks again, so nothing but the
             # registry's own ever_mdb (re-derived below) survives from the earlier
             # build; an id the source stopped supplying cannot keep linking records.
             previous = {}
         evidence["ever_mdb"] = bool(evidence.get("ever_mdb") or was_mdb)
-        previous.update({k:v for k,v in evidence.items() if v is not None})
         previous.pop("vacated", None)
-        evidence = previous
+        evidence = _fold(previous, evidence)
     else:
         record_id = stable_key("mp", identity)
         xml = evidence.get("xml_redner_id")
@@ -265,12 +400,14 @@ def bind(
         preferred = stable_key("person", "xml", xml) if xml and not evidence.get("partition") else stable_key("person", "dip", dip) if dip else None
         home = allocate(conn, preferred)
         _first_touch(conn, record_id)
-        evidence = {k: v for k, v in evidence.items() if v is not None}
+        evidence = _fold({}, evidence)
     if evidence.get("profile_blocked"):
         evidence.update(aw_politician_id=None, aw_match=PARTITIONED, profile_url=None)
-    if bound and bound[0] != record_id:
+    if bound and bound[0] != record_id and not bound_touched:
         # The occurrence left its old record; once nothing is bound to it any more
-        # that record is stale evidence, which reconcile no longer matches on.
+        # that record is stale evidence, which reconcile no longer matches on. A
+        # record this build touched is live and is not marked, whichever order
+        # its occurrences were persisted in.
         old = conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (bound[0],)).fetchone()
         conn.execute("UPDATE person_records SET evidence_json=? WHERE id=?",
                      (json.dumps({**json.loads(old[0]), "vacated": True}, ensure_ascii=False, sort_keys=True), bound[0]))
@@ -314,8 +451,7 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
         keys.append(f"aw:{row['aw_politician_id']}")
     if row.get("dip_person_id"):
         keys.append(f"dip:{row['dip_person_id']}:{row['partition']}" if row.get("partition") else f"dip:{row['dip_person_id']}")
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
+    for xml_id in sorted(_redner_ids(row)):
         keys.append(f"xml:{xml_id}:{row['partition']}" if row.get("partition") else f"xml:{xml_id}")
     return keys
 
@@ -328,9 +464,7 @@ def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
         ids["aw"].add(str(row["aw_politician_id"]))
     if row.get("dip_person_id"):
         ids["dip"].add(str(row["dip_person_id"]))
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
-        ids["xml"].add(xml_id)
+    ids["xml"].update(_redner_ids(row))
     if row.get("profile_url"):
         ids["profile"].add(str(row["profile_url"]))
     return ids
@@ -398,6 +532,17 @@ def _normalized_mp_party(party: Any) -> str:
 
 
 
+def name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
+    """Every normalised (name, party) a record is known under, with both parts
+    present: the keys of the buckets it can join."""
+    keys = {(_normalized_mp_name(name), _normalized_mp_party(party)) for name, party in _name_party_pairs(row)}
+    return {key for key in keys if key[0] and key[1]}
+
+
+def _names(row: dict[str, Any]) -> set[str]:
+    return {name for name in (_normalized_mp_name(n) for n, _ in _name_party_pairs(row)) if name}
+
+
 def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dict, dict]:
     """Group rows into persons. ``guesses=False`` stops after the passes that rest
     on a shared Personenkennung; the name-based passes only ever propose."""
@@ -461,11 +606,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         if aw_id is None or row.get("partition") or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
             continue
         other = first_for_key.get(f"aw:{aw_id}")
-        name = _normalized_mp_name(row.get("display_name"))
-        if other is None or not name or find(other) == find(row["id"]):
+        if other is None or find(other) == find(row["id"]):
             continue
-        other_name = _normalized_mp_name(by_id[other].get("display_name"))
-        if name == other_name and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
+        # Any printed name in common corroborates: a record may be printed under several.
+        if _names(row) & _names(by_id[other]) and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
             union(row["id"], other, "corroborated_name")
 
     rows_of: dict[str, list[dict[str, Any]]] = {}
@@ -487,12 +631,12 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # Personenkennung of one contradicts one of the other. It is a guess, so
     # any other shape stays split. Buckets are judged on the records passes 1 and 1b left and
     # the unions applied afterwards.
+    # A record printed under several names or parties sits in one bucket per
+    # pair.
     buckets: dict[tuple[str, str], set[str]] = {}
     for row in rows:
-        name_key = _normalized_mp_name(row.get("display_name"))
-        party_key = _normalized_mp_party(row.get("party"))
-        if name_key and party_key:
-            buckets.setdefault((name_key, party_key), set()).add(find(row["id"]))
+        for key in name_party_keys(row):
+            buckets.setdefault(key, set()).add(find(row["id"]))
 
     pending: list[tuple[str, str]] = []
     for records in buckets.values():
@@ -516,7 +660,16 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
             totals["buckets_split_3plus"] += 1
         else:
             totals["buckets_split_namesakes"] += 1
+    # A record in two qualifying buckets (a Fraktion switcher beside two roster
+    # records) has no unique partner: it joins neither.
+    partners: dict[str, set[str]] = {}
     for left, right in pending:
+        partners.setdefault(left, set()).add(right)
+        partners.setdefault(right, set()).add(left)
+    for left, right in pending:
+        if len(partners[left]) > 1 or len(partners[right]) > 1:
+            totals["buckets_split_namesakes"] += 1
+            continue
         left_root, right_root = find(left), find(right)
         if left_root == right_root:
             continue
@@ -535,17 +688,33 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # and party. The anchor's profile may come from a different source, but
     # conflicting voter profiles make the bucket ambiguous even when those
     # voters appear in different roll calls. Distinct records voting in the
-    # same roll call cannot be guessed to be one person either.
-    for records in buckets.values():
+    # same roll call cannot be guessed to be one person either. A record
+    # printed under several parties sits in several buckets: it joins only when
+    # they name exactly one anchor between them (a bucket with several anchors
+    # vetoes it), and the voters that reach one anchor, from whichever bucket,
+    # are checked against each other, so the result does not depend on which
+    # bucket is visited first.
+    attach: dict[str, set[str]] = {}
+    blocked: set[str] = set()
+    for _, records in sorted(buckets.items()):
         roots = {find(root) for root in records}
         voters = sorted(root for root in roots if vote_only(root))
         anchors = sorted(root for root in roots if not vote_only(root))
+        if len(anchors) > 1:
+            blocked.update(voters)
         if not voters or len(anchors) != 1:
             continue
         anchor = anchors[0]
         if not any(member.get("xml_redner_id") or member.get("dip_person_id") or member.get("is_mdb")
                    for member in rows_of[anchor]):
             continue
+        for voter in voters:
+            attach.setdefault(voter, set()).add(anchor)
+    by_anchor: dict[str, list[str]] = {}
+    for voter, anchors in sorted(attach.items()):
+        if len(anchors) == 1 and voter not in blocked:
+            by_anchor.setdefault(next(iter(anchors)), []).append(voter)
+    for anchor, voters in sorted(by_anchor.items()):
         groups = [rows_of[root] for root in [anchor, *voters]]
         votes = [set().union(*(member.get("vote_ids", set()) for member in group)) for group in groups]
         ids = [_merge_external_ids(group) for group in groups]
@@ -614,21 +783,18 @@ def _stale_roster_partners(
     record of its name+party, exactly one live person holds that name+party, that
     person has a speaker side but no live roster record of its own, and no
     official id or partition of the two contradicts."""
-    def key(row: dict[str, Any]) -> tuple[str, str] | None:
-        name, party = _normalized_mp_name(row.get("display_name")), _normalized_mp_party(row.get("party"))
-        return (name, party) if name and party else None
-
     live_by_key: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
     component_of_person: dict[str, int] = {}
     for members in components.values():
         for row in members:
             component_of_person.setdefault(row["person_id"], id(members))
-        for k in {key(row) for row in members} - {None}:
+        for k in set().union(*(name_party_keys(row) for row in members)):
             live_by_key.setdefault(k, []).append(members)
     stale_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        if not row["live"] and is_stale_roster_partner(row) and key(row):
-            stale_by_key.setdefault(key(row), []).append(row)
+        keys = name_party_keys(row)
+        if not row["live"] and is_stale_roster_partner(row) and len(keys) == 1:
+            stale_by_key.setdefault(next(iter(keys)), []).append(row)
     partners = []
     for k, stale in stale_by_key.items():
         targets = live_by_key.get(k, [])

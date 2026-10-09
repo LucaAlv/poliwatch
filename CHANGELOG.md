@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.1.0] - 2026-10-09
+
+### Fixed
+
+- A speaker who is printed under several names or parties in the protocols (a Fraktion switcher, a name with and without a title) now gets the same person page, name, party and biography whichever sitting is processed last. Before, the last sitting decided, so a rebuild in another order could group the same speaker differently. On the reference cache this joins 21 pairs of speaker and roster records that the old order had left split (3,386 persons became 3,365), among them former Linke members now in the BSW Gruppe, Wagenknecht, Hunko, Helferich, Spaniel and Seitz; no published count of Reden per Fraktion or per Sprechrolle, no page and no fact moved.
+- A person whose record is listed in the Abgeordnetenkader keeps the title, Wahlperioden and function from that list. A value cached in an older dossier no longer wins just because it sorts first.
+- A roll-call record printed under two parties attaches to a roster or speaker person only when exactly one of them matches, and two roll-call records that voted in the same roll call, or whose profile links disagree, never attach to the same person through different parties. The result no longer depends on the hash seed of the Python process.
+- A speaker's two Redner-IDs that share one abgeordnetenwatch profile now both link the person page; before, only the one persisted last did.
+- The name shown for a person prefers the plain printed form over a “Nachname, Vorname” roll-call form or a DIP title with its “, MdB, Partei” tail.
+
 ## [0.17.0.0] - 2026-10-07
 
 ### Changed
