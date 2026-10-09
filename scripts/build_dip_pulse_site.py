@@ -1475,58 +1475,57 @@ def refresh_vorgang_cache(
     """
     reports = [entry["report"] for entry in entries]
     stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0}
-    failures = 0
 
-    ids, _ = politikfelder.fetch_targets(reports, cache)
-    for start in range(0, len(ids), dip.VORGANG_BATCH):
-        batch = ids[start : start + dip.VORGANG_BATCH]
-        try:
-            cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch))
-            stats["vorgaenge"] += len(batch)
-            failures = 0
-        except dip.DipError as exc:
-            stats["vorgaenge_failed"] += len(batch)
-            failures += 1
-            print(f"warning: Vorgang fetch failed for {len(batch)} ids: {exc}", file=sys.stderr)
-            if failures >= VORGANG_FETCH_MAX_FAILURES:
-                break
-    politikfelder.save_cache(output_dir, cache)
-
-    ids, numbers = politikfelder.fetch_targets(reports, cache)
-    failures = 0
-    for number in numbers:
-        if failures >= VORGANG_FETCH_MAX_FAILURES:
-            stats["nummern_failed"] += 1
-            continue
-        time.sleep(NUMBER_LOOKUP_PAUSE)
-        try:
-            documents = dip.resolve_dokumentnummer(client, number)
-        except dip.DipError as exc:
-            stats["nummern_failed"] += 1
-            failures += 1
-            print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
-            continue
+    def fetch_ids(ids: list[str]) -> bool:
+        """Fetch ``ids`` in batches into the cache; True when the API looks down
+        (VORGANG_FETCH_MAX_FAILURES batches failed in a row), so the caller stops."""
         failures = 0
-        stats["nummern"] += 1
-        cache["dokumentnummern"][number] = [str(d["id"]) for d in documents if d.get("id")]
-        for document in documents:
-            if document.get("id"):
-                cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
+        for start in range(0, len(ids), dip.VORGANG_BATCH):
+            batch = ids[start : start + dip.VORGANG_BATCH]
+            try:
+                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch))
+                stats["vorgaenge"] += len(batch)
+                failures = 0
+            except dip.DipError as exc:
+                stats["vorgaenge_failed"] += len(batch)
+                failures += 1
+                print(f"warning: Vorgang fetch failed for {len(batch)} ids: {exc}", file=sys.stderr)
+                if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    return True
+        return False
+
+    def resolve_numbers(numbers: list[str]) -> bool:
+        failures = 0
+        for position, number in enumerate(numbers):
+            time.sleep(NUMBER_LOOKUP_PAUSE)
+            try:
+                documents = dip.resolve_dokumentnummer(client, number)
+            except dip.DipError as exc:
+                stats["nummern_failed"] += 1
+                failures += 1
+                print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
+                if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    stats["nummern_failed"] += len(numbers) - position - 1
+                    return True
+                continue
+            failures = 0
+            stats["nummern"] += 1
+            cache["dokumentnummern"][number] = [str(d["id"]) for d in documents if d.get("id")]
+            for document in documents:
+                if document.get("id"):
+                    cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
+        return False
+
+    ids, _ = politikfelder.fetch_targets(reports, cache)
+    down = fetch_ids(ids)
     politikfelder.save_cache(output_dir, cache)
 
-    # A Vorgang a resolved number named, fetched by a later pass (rare: the
-    # resolving call already returned its record).
-    ids, _ = politikfelder.fetch_targets(reports, cache)
-    ids = [i for i in ids if i not in cache["vorgaenge"]]
-    for start in range(0, len(ids), dip.VORGANG_BATCH):
-        batch = ids[start : start + dip.VORGANG_BATCH]
-        try:
-            cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch))
-            stats["vorgaenge"] += len(batch)
-        except dip.DipError as exc:
-            stats["vorgaenge_failed"] += len(batch)
-            print(f"warning: Vorgang fetch failed for {len(batch)} ids: {exc}", file=sys.stderr)
-    politikfelder.save_cache(output_dir, cache)
+    # Which TOPs still need numbers resolved depends on the Vorgänge just fetched. A
+    # lookup returns its Vorgang records inline, so no further id pass is needed.
+    if not down:
+        _, numbers = politikfelder.fetch_targets(reports, cache)
+        down = resolve_numbers(numbers)
+        politikfelder.save_cache(output_dir, cache)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
         f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left as not_fetched)",

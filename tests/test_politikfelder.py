@@ -301,15 +301,19 @@ class CacheFileTests(unittest.TestCase):
 class FakeClient:
     """An ApiClient stand-in that answers ``/vorgang`` from a dict and records the calls."""
 
-    def __init__(self, records: dict[str, dict[str, Any]], numbers: dict[str, list[str]] | None = None, fail: bool = False):
+    def __init__(
+        self, records: dict[str, dict[str, Any]], numbers: dict[str, list[str]] | None = None, fail: bool = False,
+        fail_numbers: bool = False,
+    ):
         self.records = records
         self.numbers = numbers or {}
         self.fail = fail
+        self.fail_numbers = fail_numbers
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def list_all(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.calls.append((path, dict(params or {})))
-        if self.fail:
+        if self.fail or (self.fail_numbers and "f.dokumentnummer" in params):
             raise dip.DipError("boom")
         if "f.id" in params:
             return [{"id": i, **self.records[i]} for i in params["f.id"] if i in self.records]
@@ -393,6 +397,42 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(top_tags[2], ([pf.UNTAGGED], "untagged"))
         self.assertEqual(vote_tags["s"], ([pf.UNTAGGED], "not_fetched"))
 
+    # Value: protects=an outage or a DIP bot challenge stops the fetch after 5 failed calls in a row and the build still finishes; fails_when=the breaker is removed or off by one, so a dead API gets a call per Vorgang batch and per number at 0.5 s pacing; why_new=test_a_failed_fetch... fails only 1 batch and 2 numbers, never reaching 5; seam=none
+    def test_five_failures_in_a_row_stop_the_fetch_and_the_build_still_finishes(self) -> None:
+        many = [item(i, positions=(position(f"v{i}"),)) for i in range(1, 9)]
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": many}}]
+        self.enterContext(mock.patch.object(dip, "VORGANG_BATCH", 1))
+        client = FakeClient({}, fail=True)
+        stats, _saved, _err = self.run_refresh(client, pf.empty_cache())
+        self.assertEqual([p["f.id"] for _, p in client.calls], [[f"v{i}"] for i in range(1, 6)])  # 5 of 8 batches, then stop
+        self.assertEqual((stats["vorgaenge"], stats["vorgaenge_failed"], stats["nummern"]), (0, 5, 0))
+
+        numbered = [item(i, numbers=(f"21/{i}",)) for i in range(1, 8)]
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": numbered}}]
+        client = FakeClient({}, fail_numbers=True)
+        stats, _saved, _err = self.run_refresh(client, pf.empty_cache())
+        lookups = [p["f.dokumentnummer"] for _, p in client.calls if "f.dokumentnummer" in p]
+        self.assertEqual(lookups, [f"21/{i}" for i in range(1, 6)])
+        self.assertEqual((stats["nummern"], stats["nummern_failed"]), (0, 7))  # the 2 left over count as failed
+
+    # Value: protects=a success between failures resets the breaker, so one flaky call never aborts a long fill; fails_when=the failure counter is not reset on success; why_new=the breaker test fails every call; seam=none
+    def test_a_success_between_failures_resets_the_breaker(self) -> None:
+        numbered = [item(i, numbers=(f"21/{i}",)) for i in range(1, 11)]
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": numbered}}]
+
+        class Flaky(FakeClient):
+            def list_all(self, path, params=None):
+                number = (params or {}).get("f.dokumentnummer")
+                if number and int(number.split("/")[1]) % 5:  # 4 failures, then a success, repeatedly
+                    self.calls.append((path, dict(params)))
+                    raise dip.DipError("boom")
+                return super().list_all(path, params)
+
+        stats, saved, _err = self.run_refresh(Flaky({}, {"21/5": [], "21/10": []}), pf.empty_cache())
+        self.assertEqual(stats["nummern"], 2)
+        self.assertEqual(stats["nummern_failed"], 8)
+        self.assertEqual(sorted(saved["dokumentnummern"]), ["21/10", "21/5"])
+
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]
         cache = cache_of(
@@ -465,6 +505,29 @@ class PersistTests(unittest.TestCase):
         )
 
 
+class SummaryTests(unittest.TestCase):
+    # Value: protects=every build says how the Politikfelder came out, surfaces a Sachgebiet label DIP added, and a missing store never crashes it; fails_when=the unknown-label warning or the sqlite3.Error guard is removed; why_new=only the not_fetched branch is covered (test_repersist); seam=none
+    def test_the_summary_lists_sources_warns_on_a_new_label_and_survives_a_missing_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.sqlite"
+            conn = pulse_store.connect(path)
+            report = fixture_report()
+            report["agenda_items"][0]["api"]["positions"] = [position("v1", "Gesetzgebung")]
+            cache = cache_of({"v1": vorgang("Gesundheit", "Neues Gebiet")})
+            pulse_store.persist_report(conn, report, cache)
+            conn.close()
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                build.log_politikfelder_summary(path, cache)
+                build.log_politikfelder_summary(Path(tmp) / "absent.sqlite", cache)
+            lines = err.getvalue().splitlines()
+        self.assertIn("politikfelder: TOPs: 1 sachgebiet, 1 untagged", lines)
+        self.assertIn("politikfelder: Abstimmungen: 1 top", lines)
+        self.assertEqual(sum(line.startswith("politikfelder: TOPs") for line in lines), 1)  # the absent store printed nothing
+        self.assertTrue(any("'Neues Gebiet'" in line and "does not know" in line for line in lines), lines)
+        self.assertFalse(any("not_fetched" in line for line in lines))
+
+
 class RenderTests(unittest.TestCase):
     def report(self) -> dict[str, Any]:
         report = fixture_report()
@@ -479,6 +542,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(markup.count('class="pf-tags"'), 1)  # the Fragestunde TOP has no chip
         self.assertNotIn("untagged", markup)
         self.assertEqual(report, before)  # nothing is written into the report
+
+    # Value: protects=the cache main loads reaches the dossier page that write_report_files writes, and the cached report JSON stays free of tags; fails_when=write_report_files stops passing vorgang_cache to render_html, so pages ship with no chips while the unit tests stay green; why_new=every other render test calls render_html directly; seam=none
+    def test_write_report_files_threads_the_cache_into_the_page_and_keeps_the_report_untagged(self) -> None:
+        report = self.report()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "data").mkdir()
+            (Path(tmp) / "protocols").mkdir()
+            entry = build.write_report_files(report, Path(tmp), vorgang_cache=cache_of({"v1": vorgang("Verkehr")}))
+            self.assertIn('<li class="pf-tag">Verkehr</li>', entry["page_path"].read_text(encoding="utf-8"))
+            self.assertNotIn("politikfeld", entry["report_path"].read_text(encoding="utf-8").lower())
 
     def test_no_cache_means_no_chips(self) -> None:
         self.assertNotIn('class="pf-tags"', pulse_html.render_html(self.report()))

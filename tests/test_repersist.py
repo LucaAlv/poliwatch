@@ -679,6 +679,26 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("not_fetched", err)  # no cache in this fixture: every tag is a cache miss, and the build says so
         self.assertIn("Fix: run an online update.", err)
 
+    # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
+    def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:
+        cache = {
+            "version": 1,
+            "vorgaenge": {"vorgang-1": {"sachgebiet": ["Verkehr"]}, "fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}},
+            "dokumentnummern": {},
+        }
+        (self.output_dir / "data" / "dip-vorgang-cache.json").write_text(json.dumps(cache), encoding="utf-8")
+        code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        conn = sqlite3.connect(self.database)
+        try:
+            tags = dict(conn.execute("SELECT politikfeld, source FROM agenda_item_politikfelder WHERE politikfeld != 'untagged'"))
+            sachgebiet = {r[0] for r in conn.execute("SELECT sachgebiet FROM proceedings WHERE sachgebiet IS NOT NULL")}
+        finally:
+            conn.close()
+        self.assertEqual(tags, {"Verkehr": "sachgebiet", "Gesundheit": "sachgebiet"})
+        self.assertEqual(sachgebiet, {'["Verkehr"]', '["Gesundheit"]'})
+        self.assertIn("politikfelder: TOPs:", err)
+
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()
         before = sha(self.database)
