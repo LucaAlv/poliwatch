@@ -282,11 +282,10 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
         anchor = row("a", [("Ada Example", "SPD"), ("Ada Example", "CDU/CSU")], xml_redner_id="1")
         return [anchor] + [row(rid, [("Ada Example", party)], **kw) for rid, (party, kw) in voters.items()]
 
-    # Value: protects=two roll-call records that voted in the same roll call, or whose profiles or trusted aw ids differ, do not both attach to one party-switching anchor through its two name+party buckets; fails_when=pass 3 checks voters only against the anchor within one bucket and applies the attaches afterwards; why_new=collecting attaches across buckets removed the sequential check that saw the anchor's grown vote set; seam=none
-    def test_roll_call_records_in_different_buckets_of_one_anchor_are_checked_against_each_other(self):
+    # Value: protects=two roll-call records that voted in the same roll call, or hold contradicting trusted aw ids, do not both attach to one party-switching anchor through its two name+party buckets, while differing profile links (one per legislative period) do not block either; fails_when=voters of different buckets are never compared, or their profile links are compared; why_new=collecting attaches across buckets removed the sequential check, and comparing profiles across buckets detached 41 real roll-call records on the reference cache; seam=none
+    def test_roll_call_records_in_different_buckets_of_one_anchor_are_compared_for_roll_calls_and_ids(self):
         conflicts = {
             "same roll call": (dict(vote_ids={"x"}), dict(vote_ids={"x"})),
-            "different profiles": (dict(vote_ids={"x"}, profile_url="https://example.test/u1"), dict(vote_ids={"y"}, profile_url="https://example.test/u2")),
             "different trusted aw ids": (dict(vote_ids={"x"}, aw_politician_id=6, aw_match="ext_id"), dict(vote_ids={"y"}, aw_politician_id=7, aw_match="ext_id")),
         }
         for label, (first, second) in conflicts.items():
@@ -295,10 +294,28 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
                 with self.subTest(label, order=[r["id"] for r in order]):
                     components, _ = registry.match_rows(list(order))
                     self.assertEqual(len(components), 3)
-        # Control: conflict-free voters of the two buckets both attach to the anchor.
-        rows = self._switcher_rows(v=("SPD", dict(vote_ids={"x"})), w=("CDU/CSU", dict(vote_ids={"y"})))
-        components, _ = registry.match_rows(rows)
-        self.assertEqual(sorted(sorted(r["id"] for r in members) for members in components.values()), [["a", "v", "w"]])
+        # Control: voters of the two buckets with different roll calls and different profile links both attach.
+        rows = self._switcher_rows(
+            v=("SPD", dict(vote_ids={"x"}, profile_url="https://example.test/u1")),
+            w=("CDU/CSU", dict(vote_ids={"y"}, profile_url="https://example.test/u2")))
+        for order in itertools.permutations(rows):
+            components, _ = registry.match_rows(list(order))
+            self.assertEqual(sorted(sorted(r["id"] for r in members) for members in components.values()), [["a", "v", "w"]])
+
+    # Value: protects=a party-switching anchor keeps the roll-call record of a bucket that accepts it when another bucket holds two voters with different profile links; fails_when=one bucket's profile ambiguity drops the voters of the anchor's other buckets; why_new=on the reference cache 41 roll-call records detached from their person (Helferich, Hoffmann, Merten ...) when voters were judged per anchor instead of per bucket; seam=none
+    def test_an_ambiguous_bucket_of_a_switcher_does_not_detach_the_voter_of_its_other_bucket(self):
+        def row(rid, pairs, **kw):
+            return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)
+        anchor = row("aw", [("Matthias Helferich", "AfD"), ("Matthias Helferich", "fraktionslos")], xml_redner_id="11005079",
+                     aw_politician_id=145751, aw_match="ext_id", profile_url="https://aw.example.test/helferich")
+        afd = row("afd", [("Helferich, Matthias", "AfD")], vote_ids={"1000", "1001"}, profile_url="https://bt.example.test/h-1044860")
+        free_old = row("free-old", [("Helferich, Matthias", "fraktionslos")], vote_ids={"760"}, profile_url="https://bt.example.test/h-860592")
+        free_new = row("free-new", [("Helferich, Matthias", "fraktionslos")], vote_ids={"949"}, profile_url="https://bt.example.test/h20-860592")
+        for order in itertools.permutations([anchor, afd, free_old, free_new]):
+            with self.subTest(order=[r["id"] for r in order]):
+                components, _ = registry.match_rows(list(order))
+                self.assertEqual(sorted(sorted(r["id"] for r in m) for m in components.values()),
+                                 [["afd", "aw"], ["free-new"], ["free-old"]])
 
     # Value: protects=a roll-call record whose name+party is ambiguous between several anchors in one of its buckets joins none, however unambiguous its other bucket is; fails_when=only buckets with exactly one anchor count as candidates; why_new=the pass-3 candidate collection ignored buckets it could not attach in; seam=none
     def test_an_ambiguous_bucket_vetoes_a_roll_call_record_with_several_parties(self):
