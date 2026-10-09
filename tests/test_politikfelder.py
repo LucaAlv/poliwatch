@@ -165,11 +165,6 @@ class AgendaItemTests(unittest.TestCase):
         top = item(positions=(position("a", twins=("twin",)),))
         self.assertEqual(self.tags(top, cache), (["Verteidigung"], "sachgebiet"))
 
-    def test_a_vorgang_without_sachgebiet_falls_through_to_the_drucksache(self) -> None:
-        cache = cache_of({"a": vorgang(), "b": vorgang("Energie")}, {"21/5": ["b"]})
-        top = item(positions=(position("a"),), numbers=("21/5",))
-        self.assertEqual(self.tags(top, cache), (["Energie & Klima"], "drucksache"))
-
     def test_no_positions_uses_the_drucksache_numbers_of_the_top(self) -> None:
         cache = cache_of({"b": vorgang("Kultur")}, {"21/7": ["b"]})
         top = item(numbers=("21/7",))
@@ -240,8 +235,8 @@ class VoteTests(unittest.TestCase):
             {"21/1": ["main"], "21/2": ["main"], "21/3": ["other", "main"]},
         )
         vote = {"document_numbers": ["21/3", "21/1", "21/2"]}
-        # 21/1 and 21/2 name only `main`, so the bundle 21/3 does not add `other`.
-        self.assertEqual(pf.tags_for_vote(vote, [], cache), (["Verkehr"], "drucksache"))
+        # 21/3 names two Vorgänge, which is still narrow: `other` counts, `main` (named 3 times) leads.
+        self.assertEqual(pf.tags_for_vote(vote, [], cache), (["Verkehr", "Justiz"], "drucksache"))
 
     def test_without_a_resolvable_drucksache_the_votes_tops_decide(self) -> None:
         cache = cache_of({"x": vorgang()}, {"21/1": ["x"]})
@@ -300,6 +295,35 @@ class VoteNumberTests(unittest.TestCase):
         self.assertEqual(pf.tags_for_vote({"document_numbers": ["20/13413", "20/1"]}, [], cache)[0],
                          ["Innere Sicherheit", "Migration", "Außenpolitik"])
         self.assertEqual(pf.tags_for_vote({"document_numbers": ["20/1"]}, [], cache), ([pf.UNTAGGED], "untagged"))
+
+    # Value: protects=a TOP's Antrag that names two Vorgänge (the Antrag and the EU paper it comments on) is not outvoted by a later single-Vorgang number; fails_when=numbers are tiered for TOPs as they are for votes, so the heading's lead subject is dropped; why_new=the TOP path only had bundle tests; seam=none
+    def test_a_tops_numbers_all_count_whatever_their_fanout_up_to_the_cap(self) -> None:
+        cache = cache_of(
+            {"u1": vorgang("Umwelt"), "u2": vorgang("Recht"), "s": vorgang("Gesundheit")},
+            {"21/3835": ["u1", "u2"], "21/772": ["s"]},
+        )
+        top = item(numbers=("21/3835", "21/772"))
+        tags, source = pf.tags_for_agenda_item(top, cache, wahlperiode="21")
+        self.assertEqual((tags[0], source), ("Energie & Klima", "drucksache"))
+        self.assertEqual(set(tags), {"Energie & Klima", "Justiz", "Gesundheit"})
+
+    # Value: protects=a TOP that has Vorgänge of its own but no Sachgebiet is not tagged from the Drucksachen it only cites; fails_when=the fall-through to cited numbers is allowed again, so a Wahlprüfung Sammelübersicht is tagged Bildung and Gesundheit; why_new=no test gave a TOP both own Vorgänge and cited numbers; seam=none
+    def test_cited_numbers_do_not_tag_a_top_whose_own_vorgaenge_lack_a_sachgebiet(self) -> None:
+        cache = cache_of({"own": vorgang(), "cited": vorgang("Kultur")}, {"20/9": ["cited"]})
+        top = item(positions=(position("own"),), numbers=("20/9",))
+        self.assertEqual(pf.tags_for_agenda_item(top, cache, wahlperiode="20"), ([pf.UNTAGGED], "untagged"))
+        self.assertEqual(pf.tags_for_agenda_item(item(numbers=("20/9",)), cache, wahlperiode="20"), (["Bildung"], "drucksache"))
+
+    # Value: protects=a vote falls through to the next tier when the narrow tier has no Sachgebiet, and a tier that holds the TOP's own Vorgang goes before an unrelated narrow one; fails_when=the first non-empty tier decides regardless, so a Petition without Sachgebiet leaves the vote untagged or an unrelated Antrag outranks the TOP's bundle; why_new=tiers were tested only with one narrow number; seam=none
+    def test_a_vote_falls_through_tiers_and_prefers_the_tier_of_its_own_top(self) -> None:
+        cache = cache_of(
+            {"petition": vorgang(), "mine": vorgang("Gesundheit"), "x": vorgang("Verkehr"), "y": vorgang("Recht"), "unrelated": vorgang("Kultur")},
+            {"21/1": ["petition"], "21/2": ["mine", "x", "y"], "21/3": ["unrelated"]},
+        )
+        self.assertEqual(pf.tags_for_vote({"document_numbers": ["21/1", "21/2"]}, [], cache)[0][0], "Gesundheit")
+        vote = {"document_numbers": ["21/3", "21/2"]}
+        self.assertEqual(pf.tags_for_vote(vote, [], cache)[0], ["Bildung"])  # narrow tier first, nothing says otherwise
+        self.assertEqual(pf.tags_for_vote(vote, [], cache, linked_vorgang_ids=["mine"]), (["Gesundheit"], "drucksache"))
 
     def test_bundesrat_papers_are_not_looked_up_as_bundestag_numbers(self) -> None:
         top = item(numbers=("20/5",))

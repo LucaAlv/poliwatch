@@ -806,7 +806,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 ### Politikfelder: findings deferred from the B3 review
 
-**What:** Seven findings of the /ship review (2026-10-09) that B3 does not fix:
+**What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
 1. A missing lead Vorgang or number makes the tags come from the survivors with the wrong lead, and the source says `sachgebiet` or `drucksache`, not that something was missing. Record a partial flag, or count partial results in the build summary.
 2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
 3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Put a cache digest into `datenstand`, or render from the store.
@@ -814,6 +814,8 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 5. The inline filter scripts on `votes/index.html` and the week radar are checked only by a headless-Chromium probe run by hand (2026-10-09), not by the suite. Add a browser test when the suite has one.
 6. A Vorgang DIP does not return, or a number it resolves to nothing, is stored as "fetched, nothing known" and counted as fetched, so an offline repersist stores `untagged`, not `not_fetched`, until the next online build. Empty Sachgebiet records (4,086 of 7,511 cached Vorgänge, most pulled in by numbers with a huge fan-out) and empty lookups are asked again on every online build, about 40 batches and a pause each; bound that with `aktualisiert` or a fetched-at date.
 7. A Sachgebiet label the mapping does not know is skipped at tag time, so tagging can fall through to a weaker source; the build summary names the label afterwards. Consider a `not_fetched`-like source for an unmapped label.
+8. A TOP that names many specific Drucksachen (a bundled Beratung) is tagged with the three most frequent of up to eight fields, in first-seen order on ties: the plan's cap of 3, not a measure of what the TOP is about (65 of 207 TOPs tagged through their Drucksachen carry more than 3 fields). Decide whether a TOP over some breadth should stay untagged.
+9. A Bundesrat Drucksache whose number looks like a Bundestag one is skipped only in `linked_drucksachen` (by its `/brd/` URL), not in a vote's numbers or a heading. `load_cache` leaves a file it could not read in place, but an online build then overwrites it with what it has fetched. A non-empty `dokumentnummern` list is never refreshed, so whether a number is "narrow" depends on when it was fetched.
 
 **Why:** None of them changes a number in the real store today (0 not_fetched, 0 partial, one empty lookup), and each needs a decision beyond B3's plan.
 

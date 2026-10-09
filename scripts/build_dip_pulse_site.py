@@ -1478,6 +1478,12 @@ def refresh_vorgang_cache(
     reports = [entry["report"] for entry in entries]
     stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0}
 
+    def save() -> None:
+        try:
+            politikfelder.save_cache(output_dir, cache)
+        except OSError as exc:  # a full disk must not end the build or hide its own error
+            print(f"warning: could not save the Vorgang cache: {exc}", file=sys.stderr)
+
     def fetch_ids(ids: list[str]) -> bool:
         """Fetch ``ids`` in batches into the cache; True when the API looks down
         (VORGANG_FETCH_MAX_FAILURES batches failed in a row), so the caller stops."""
@@ -1523,15 +1529,15 @@ def refresh_vorgang_cache(
                     if document.get("id"):
                         cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
                 if stats["nummern"] % CACHE_SAVE_EVERY == 0:
-                    politikfelder.save_cache(output_dir, cache)
+                    save()
         finally:
-            politikfelder.save_cache(output_dir, cache)
+            save()
 
     ids, _ = politikfelder.fetch_targets(reports, cache)
     try:
         down = fetch_ids(ids)
     finally:
-        politikfelder.save_cache(output_dir, cache)
+        save()
 
     # Which TOPs still need numbers resolved depends on the Vorgänge just fetched. A
     # lookup returns its Vorgang records inline, so no further id pass is needed.

@@ -15,6 +15,7 @@ This module does no network I/O. Its one file access is ``load_cache`` and
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import tempfile
@@ -164,14 +165,14 @@ def empty_cache() -> dict[str, Any]:
 def load_cache(output_dir: Path | str) -> dict[str, Any]:
     """The Vorgang cache of a site directory; empty when absent or unreadable."""
     path = cache_path(output_dir)
-    if not path.exists():
-        return empty_cache()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         vorgaenge = data["vorgaenge"]
         dokumentnummern = data["dokumentnummern"]
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
             raise TypeError("vorgaenge and dokumentnummern must be objects")
+    except FileNotFoundError:
+        return empty_cache()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # Keep a file with bad content for inspection (the next online build would overwrite
         # it); a file that could not be read at all may be fine and stays where it is.
@@ -214,7 +215,11 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
         try:
             handle.write(text)
             handle.flush()
-            temporary.chmod(0o644)  # NamedTemporaryFile creates 0600; the site files are world-readable
+            os.fsync(handle.fileno())
+            try:
+                temporary.chmod(0o644)  # NamedTemporaryFile creates 0600; the site files are world-readable
+            except OSError:
+                pass  # a filesystem that rejects chmod keeps the default mode
             temporary.replace(path)
         except BaseException:
             temporary.unlink(missing_ok=True)
@@ -270,18 +275,34 @@ def _from_vorgaenge(vorgang_ids: list[str], cache: Mapping[str, Any]) -> tuple[l
 #: A number that resolves to more Vorgänge than this (a Plenarprotokoll or a Sammelübersicht;
 #: the real cache has numbers with 69) says nothing about any one of them.
 MAX_NUMBER_FANOUT = 10
+#: A number naming this many Vorgänge or fewer is "narrow": an Antrag and the EU paper it
+#: comments on. A Beschlussempfehlung or Sammelübersicht names more.
+NARROW_NUMBER_FANOUT = 2
 
 
-def _vorgaenge_of_numbers(numbers: Iterable[str], cache: Mapping[str, Any]) -> tuple[list[str], bool]:
-    """Vorgang ids that Drucksache numbers resolve to, and whether a number is
-    missing from the cache.
+def _ranked(id_lists: list[list[str]]) -> list[str]:
+    """Vorgang ids ranked by how many of the lists name them (ties: first seen)."""
+    counts: Counter[str] = Counter()
+    first_seen: dict[str, int] = {}
+    for ids in id_lists:
+        for vorgang_id in ids:
+            counts[vorgang_id] += 1
+            first_seen.setdefault(vorgang_id, len(first_seen))
+    return sorted(counts, key=lambda v: (-counts[v], first_seen[v]))
 
-    A number that names exactly one Vorgang is specific; a Beschlussempfehlung or
-    Sammelübersicht names several and would pull in the fields of Vorgänge the TOP or
-    vote is not about. When any number is specific, only the Vorgänge of the specific
-    numbers count; otherwise every number with at most ``MAX_NUMBER_FANOUT`` Vorgänge
-    does. Ids are ranked by how many numbers name them (ties: first seen), so the
-    best-supported Vorgang leads."""
+
+def _vorgaenge_of_numbers(
+    numbers: Iterable[str], cache: Mapping[str, Any], *, narrow_first: bool = False
+) -> tuple[list[list[str]], bool]:
+    """Tiers of Vorgang ids that Drucksache numbers resolve to, and whether a number is
+    missing from the cache. Each tier is ranked by how many numbers name a Vorgang
+    (ties: first seen), so the best-supported one leads.
+
+    The last tier holds every number with at most ``MAX_NUMBER_FANOUT`` Vorgänge: a
+    huge fan-out says nothing about any one of them. With ``narrow_first`` a tier of
+    the narrow numbers (at most ``NARROW_NUMBER_FANOUT`` Vorgänge) comes before it,
+    for a vote, whose own Antrag is narrow and whose Beschlussempfehlung is a bundle
+    that would pull in Vorgänge the vote is not about."""
     resolved = cache.get("dokumentnummern") or {}
     named: list[list[str]] = []
     missing = False
@@ -292,15 +313,11 @@ def _vorgaenge_of_numbers(numbers: Iterable[str], cache: Mapping[str, Any]) -> t
         ids = [str(i) for i in resolved[str(number)] or ()]
         if ids:
             named.append(ids)
-    specific = [ids for ids in named if len(ids) == 1]
-    chosen = specific or [ids for ids in named if len(ids) <= MAX_NUMBER_FANOUT]
-    counts: Counter[str] = Counter()
-    first_seen: dict[str, int] = {}
-    for ids in chosen:
-        for vorgang_id in ids:
-            counts[vorgang_id] += 1
-            first_seen.setdefault(vorgang_id, len(first_seen))
-    return sorted(counts, key=lambda v: (-counts[v], first_seen[v])), missing
+    tiers = []
+    if narrow_first:
+        tiers.append(_ranked([ids for ids in named if len(ids) <= NARROW_NUMBER_FANOUT]))
+    tiers.append(_ranked([ids for ids in named if len(ids) <= MAX_NUMBER_FANOUT]))
+    return tiers, missing
 
 
 def _einzelplan_tags(item: Mapping[str, Any], wahlperiode: str) -> tuple[list[str], bool]:
@@ -347,13 +364,16 @@ def tags_for_agenda_item(item: Mapping[str, Any], cache: Mapping[str, Any], *, w
     if tags:
         return tags, "sachgebiet"
 
-    numbers = derive.item_document_numbers(item, wahlperiode)
-    number_ids, numbers_missing = _vorgaenge_of_numbers(numbers, cache)
-    missing |= numbers_missing
-    tags, ids_missing = _from_vorgaenge(number_ids, cache)
-    missing |= ids_missing
-    if tags:
-        return tags, "drucksache"
+    # A TOP DIP gives Vorgänge of its own but no Sachgebiet is not the TOP of the Drucksachen
+    # it merely cites (a Sammelübersicht of 17 Vorgänge cites dozens of unrelated numbers).
+    if not ids:
+        numbers = derive.item_document_numbers(item, wahlperiode)
+        (number_ids,), numbers_missing = _vorgaenge_of_numbers(numbers, cache)
+        missing |= numbers_missing
+        tags, ids_missing = _from_vorgaenge(number_ids, cache)
+        missing |= ids_missing
+        if tags:
+            return tags, "drucksache"
 
     tags, unknown = _einzelplan_tags(item, wahlperiode)
     if tags:
@@ -393,14 +413,17 @@ def tags_for_vote(
     resolved Vorgänge are among those of the TOPs the vote sits under
     (``linked_vorgang_ids``), only those count.
     """
-    number_ids, missing = _vorgaenge_of_numbers(vote_document_numbers(vote, wahlperiode), cache)
+    tiers, missing = _vorgaenge_of_numbers(vote_document_numbers(vote, wahlperiode), cache, narrow_first=True)
     linked = {str(i) for i in linked_vorgang_ids}
-    if linked & set(number_ids):
-        number_ids = [i for i in number_ids if i in linked]
-    tags, ids_missing = _from_vorgaenge(number_ids, cache)
-    missing |= ids_missing
-    if tags:
-        return tags, "drucksache"
+    # A tier that holds a Vorgang of the vote's TOP is about that TOP and comes first, narrowed
+    # to those Vorgänge; the other tiers follow. The first tier that yields a tag wins.
+    ordered = [t for t in tiers if linked & set(t)] + [t for t in tiers if not linked & set(t)]
+    for tier in ordered:
+        number_ids = [i for i in tier if i in linked] if linked & set(tier) else tier
+        tags, ids_missing = _from_vorgaenge(number_ids, cache)
+        missing |= ids_missing
+        if tags:
+            return tags, "drucksache"
 
     per_item: list[list[str]] = []
     for item_tags, source in linked_item_tags:

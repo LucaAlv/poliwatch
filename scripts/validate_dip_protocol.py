@@ -180,7 +180,10 @@ class ApiClient:
                     continue
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
             except ValueError as exc:
-                # A 200 that is not JSON (an HTML bot-challenge page, a cut-off body).
+                # A 200 that is not JSON (an HTML bot-challenge page, a cut-off body): retried like a reset.
+                if attempt < self.retries:
+                    self._retry_delay(path, exc, attempt)
+                    continue
                 raise DipError(f"DIP API returned an unreadable body for {path}: {exc}") from exc
             except (OSError, http.client.HTTPException) as exc:
                 # URLError and timeouts are OSErrors, and so is a connection
@@ -200,7 +203,11 @@ class ApiClient:
         previous_cursor = None
         while True:
             page = self.get_json(path, params)
-            if not isinstance(page, dict) or not all(isinstance(d, dict) for d in page.get("documents") or []):
+            if (
+                not isinstance(page, dict)
+                or not isinstance(page.get("documents") or [], list)
+                or not all(isinstance(d, dict) for d in page.get("documents") or [])
+            ):
                 raise DipError(f"DIP API returned an unexpected body for {path}: {str(page)[:200]}")
             batch = page.get("documents") or []
             documents.extend(batch)
