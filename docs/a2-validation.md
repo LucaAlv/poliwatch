@@ -70,7 +70,7 @@ The sandbox store has no DIP roster rows, so roster-dependent figures (and the 2
 
 ## Order-independent evidence (2026-10-04)
 
-The figures below were measured on 2026-10-04, before `main` v0.14.0.0 to v0.17.0.0 (roll-call member records, pass 3, comma-name comparison) was merged and before the review fixes that followed (roster authority for biography attributes, abgeordnetenwatch fields chosen as one unit, party ranking, pass 3 candidate collection). They were not re-measured on the merged tree; the automated order-independence contracts (`tests/test_registry_evidence.py`, 22 tests) were.
+The figures below were measured on 2026-10-04, before `main` v0.14.0.0 to v0.17.0.0 (roll-call member records, pass 3, comma-name comparison) was merged and before the review fixes that followed (roster authority for biography attributes, abgeordnetenwatch fields chosen as one unit, party ranking, pass 3 candidate collection). They were re-measured on the merged tree on 2026-10-09 (last subsection), on a later snapshot of the reference output directory; the automated order-independence contracts are `tests/test_registry_evidence.py` (23 tests).
 
 A record's evidence is now the folded set of what its occurrences print (`person_registry._fold`), not the last occurrence persisted, and a record in two qualifying name+party buckets joins neither. Measured by replaying two clones of the reference cache (285 cached reports, a schema 1 build store, `--offline --repersist`, database and pages), one with the previous `HEAD` and one with this change; the original cache was not touched.
 
@@ -91,3 +91,22 @@ The 21 fewer persons are 21 groups of two that became one: a speaker record prin
 The 26 `mps` rows now show the representative pair, chosen by content: the fullest printed name (a title kept, or the longer given names) and, between two parties, the alphabetically first (Cezanne: "Gruppe Die Linke" became "Die Linke"); a page whose person has a roster record still takes its biography from that record. Binding has no sitting chronology, which is why the rule is a content key and not "newest"; a speech's own Fraktion is stored on the speech and readers fall back to the MP's party only when the XML names none, so the representative party can reach a count only through such a speech; none of the r2 tallies moved on the reference cache.
 
 An unchanged second replay of the new store reported "store content unchanged, file kept" (same size, modification time and checksum). The cached `plenarprotokoll-*.json` reports are byte-identical between the two replays; both differ from the pristine cache because the offline render re-parses them from `xml/`, which is unrelated to this change (`xml/` is identical).
+
+### Re-measured on the merged tree (2026-10-09)
+
+Method as above, on the current reference output directory (291 cached reports, 290 cached XML files, 4,306 source records, 198,196 occurrence bindings): two clones of that directory, `--offline --repersist` with a clean export of `main` at v0.17.0.0 and with this branch, both from scratch; the original directory was not touched. The directory is a later snapshot than the one measured on 2026-10-04, so the absolute figures differ.
+
+| Figure | `main` v0.17.0.0 | this branch |
+|---|---|---|
+| Source records / occurrence bindings / aliases | 4,306 / 198,196 / 0 | 4,306 / 198,196 / 0 |
+| Current persons (distinct `person_id` of `person_records`) | 3,095 | 3,094 (−1) |
+| Speaker and roster records joined that `main` left split | | 21 |
+| Roll-call records attached to an anchor in `main` and not here | | 23 |
+| Roll-call records attached here and not in `main` | | 3 |
+| Roll-call records attached to a different set of anchors | | 16 |
+| `mps` rows per party | AfD 658, Die Linke 258, Gruppe Die Linke 46, fraktionslos 28 | 659, 259, 45, 27 |
+| Person pages (`abgeordnete/`), Reden per Zusammenschluss and Sprechrolle (r2), recipe r3 rows, votes, `vote_members`, bindings | | all equal |
+
+The 21 joins are the speaker/roster pairs of the earlier measurement (Tatti, Al-Dailami, Leye, Helferich, Spaniel, Cotar, Farle, Bacherle, Mohamed Ali, Cademartori and others). The net −1 is these 21 minus the 23 roll-call records that now stay separate, plus 3 that attach. The 23 are roll-call records of an MdB with one Bundestag biography link per legislative period (`biografien/…-858092` and `biografien20/…-858092`): a record printed under several parties now sits in every name+party bucket of its pairs, so two period records of the same MdB share a bucket, and the existing rule (two roll-call records with different profile links in one bucket are ambiguous) skips that bucket. Treating links that end in the same Bundestag member number as one profile would attach 619 more roll-call records (2,460 persons) and is a change to `main`'s matching design, not part of this fix; see TODOS A.2 follow-ups (6).
+
+A first version of the roll-call pass (checking all voters of an anchor against each other, whichever bucket they came from) detached 41 records and raised the count to 3,111; judging each bucket on its own, as `main` does, removed that.
