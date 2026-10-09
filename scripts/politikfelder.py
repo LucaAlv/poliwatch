@@ -173,13 +173,16 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
             raise TypeError("vorgaenge and dokumentnummern must be objects")
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        # Keep the file for inspection: the next online build would overwrite it.
-        kept = path.with_name(path.name + ".corrupt")
-        try:
-            path.replace(kept)
-            note = f"moved to {kept.name}"
-        except OSError:
-            note = "left in place"
+        # Keep a file with bad content for inspection (the next online build would overwrite
+        # it); a file that could not be read at all may be fine and stays where it is.
+        note = "left in place"
+        if not isinstance(exc, OSError):
+            kept = path.with_name(path.name + ".corrupt")
+            try:
+                path.replace(kept)
+                note = f"moved to {kept.name}"
+            except OSError:
+                pass
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -187,7 +190,11 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         )
         return empty_cache()
     # A record or number list of the wrong shape is dropped, not trusted: it counts as a cache miss.
-    vorgaenge = {str(k): v for k, v in vorgaenge.items() if isinstance(v, dict)}
+    vorgaenge = {
+        str(k): v
+        for k, v in vorgaenge.items()
+        if isinstance(v, dict) and isinstance(v.get("sachgebiet", []), list)
+    }
     dokumentnummern = {str(k): [str(i) for i in v] for k, v in dokumentnummern.items() if isinstance(v, list)}
     return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": dokumentnummern}
 
@@ -203,8 +210,15 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
     ) as handle:
-        handle.write(text)
-    Path(handle.name).replace(path)
+        temporary = Path(handle.name)
+        try:
+            handle.write(text)
+            handle.flush()
+            temporary.chmod(0o644)  # NamedTemporaryFile creates 0600; the site files are world-readable
+            temporary.replace(path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
 
 
 def fields_for_sachgebiete(sachgebiete: Iterable[Any]) -> list[str]:
@@ -253,21 +267,37 @@ def _from_vorgaenge(vorgang_ids: list[str], cache: Mapping[str, Any]) -> tuple[l
     return _union(per_vorgang), missing
 
 
+#: A number that resolves to more Vorgänge than this (a Plenarprotokoll or a Sammelübersicht;
+#: the real cache has numbers with 69) says nothing about any one of them.
+MAX_NUMBER_FANOUT = 10
+
+
 def _vorgaenge_of_numbers(numbers: Iterable[str], cache: Mapping[str, Any]) -> tuple[list[str], bool]:
     """Vorgang ids that Drucksache numbers resolve to, and whether a number is
-    missing from the cache. A Beschlussempfehlung or Sammelübersicht can resolve
-    to several Vorgänge, so ids are ranked by how many of the numbers name them
-    (ties: first seen), and the best-supported Vorgang leads."""
+    missing from the cache.
+
+    A number that names exactly one Vorgang is specific; a Beschlussempfehlung or
+    Sammelübersicht names several and would pull in the fields of Vorgänge the TOP or
+    vote is not about. When any number is specific, only the Vorgänge of the specific
+    numbers count; otherwise every number with at most ``MAX_NUMBER_FANOUT`` Vorgänge
+    does. Ids are ranked by how many numbers name them (ties: first seen), so the
+    best-supported Vorgang leads."""
     resolved = cache.get("dokumentnummern") or {}
-    counts: Counter[str] = Counter()
-    first_seen: dict[str, int] = {}
+    named: list[list[str]] = []
     missing = False
     for number in numbers:
         if str(number) not in resolved:
             missing = True
             continue
-        for vorgang_id in resolved[str(number)] or ():
-            vorgang_id = str(vorgang_id)
+        ids = [str(i) for i in resolved[str(number)] or ()]
+        if ids:
+            named.append(ids)
+    specific = [ids for ids in named if len(ids) == 1]
+    chosen = specific or [ids for ids in named if len(ids) <= MAX_NUMBER_FANOUT]
+    counts: Counter[str] = Counter()
+    first_seen: dict[str, int] = {}
+    for ids in chosen:
+        for vorgang_id in ids:
             counts[vorgang_id] += 1
             first_seen.setdefault(vorgang_id, len(first_seen))
     return sorted(counts, key=lambda v: (-counts[v], first_seen[v])), missing

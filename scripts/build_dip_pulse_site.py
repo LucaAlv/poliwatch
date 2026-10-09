@@ -145,7 +145,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
-    "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der zugehörigen Vorgänge; Rang und Herkunft stehen in der Zeile.",
+    "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
@@ -1528,8 +1528,10 @@ def refresh_vorgang_cache(
             politikfelder.save_cache(output_dir, cache)
 
     ids, _ = politikfelder.fetch_targets(reports, cache)
-    down = fetch_ids(ids)
-    politikfelder.save_cache(output_dir, cache)
+    try:
+        down = fetch_ids(ids)
+    finally:
+        politikfelder.save_cache(output_dir, cache)
 
     # Which TOPs still need numbers resolved depends on the Vorgänge just fetched. A
     # lookup returns its Vorgang records inline, so no further id pass is needed.
@@ -1548,8 +1550,15 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
     """One line per build, on every path: how many TOPs and votes the store tags by
     source, how many of them are ``not_fetched`` (a cache miss: run an online update),
     and any Sachgebiet label DIP now uses that the mapping does not know."""
+    unknown = politikfelder.unknown_sachgebiete(cache)
+    if unknown:
+        print(
+            f"warning: [politikfelder] Sachgebiet labels the mapping does not know, skipped: {sorted(unknown)}. "
+            "Fix: map them in SACHGEBIET_TO_POLITIKFELD.",
+            file=sys.stderr,
+        )
     try:
-        conn = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
         try:
             counts = {
                 kind: dict(conn.execute(f"SELECT source, COUNT(DISTINCT {key}) FROM {table} GROUP BY source"))
@@ -1560,8 +1569,9 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
             }
         finally:
             conn.close()
-    except sqlite3.Error:
-        return  # a store without the tag tables yet: the persist that follows reports it
+    except sqlite3.Error as exc:
+        print(f"note: [politikfelder] no summary, the store could not be read: {exc}", file=sys.stderr)
+        return
     for kind, by_source in counts.items():
         listed = ", ".join(f"{n} {source}" for source, n in sorted(by_source.items(), key=lambda item: -item[1]))
         print(f"politikfelder: {kind}: {listed or 'none'}", file=sys.stderr)
@@ -1570,13 +1580,6 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
         print(
             f"warning: [politikfelder] {missing} TOPs or votes are not_fetched (not in the Vorgang cache). "
             "Fix: run an online update.",
-            file=sys.stderr,
-        )
-    unknown = politikfelder.unknown_sachgebiete(cache)
-    if unknown:
-        print(
-            f"warning: [politikfelder] Sachgebiet labels the mapping does not know, skipped: {sorted(unknown)}. "
-            "Fix: map them in SACHGEBIET_TO_POLITIKFELD.",
             file=sys.stderr,
         )
 

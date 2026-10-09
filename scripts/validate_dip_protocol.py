@@ -200,6 +200,8 @@ class ApiClient:
         previous_cursor = None
         while True:
             page = self.get_json(path, params)
+            if not isinstance(page, dict) or not all(isinstance(d, dict) for d in page.get("documents") or []):
+                raise DipError(f"DIP API returned an unexpected body for {path}: {str(page)[:200]}")
             batch = page.get("documents") or []
             documents.extend(batch)
             cursor = page.get("cursor")

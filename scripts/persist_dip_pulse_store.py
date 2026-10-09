@@ -921,8 +921,9 @@ def persist_positions(
         proceeding_id = clean(position.get("vorgang_id"))
         position_id = clean(position.get("id"))
         if proceeding_id:
-            # The raw DIP labels the Politikfelder were derived from. NULL when the
-            # Vorgang is not in the cache (offline build, failed fetch).
+            # The raw DIP labels of this position's own Vorgang, the main input of the
+            # Politikfelder (a twin or a Vorgang found through a Drucksache number is not
+            # stored here). NULL when the Vorgang is not in the cache (offline build, failed fetch).
             record = cached_vorgaenge.get(proceeding_id)
             sachgebiet = None if record is None else dumps(record.get("sachgebiet") or [])
             conn.execute(

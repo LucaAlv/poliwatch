@@ -432,7 +432,9 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     for doc in item.get("xml_drucksachen") or []:
         add(doc.get("dokumentnummer"))
     for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
-        add(doc.get("dokumentnummer"))
+        # A Bundesrat paper ("20/23" at .../brd/2023/0020-23.pdf) shares the shape of a Bundestag number.
+        if "/brd/" not in str(doc.get("url") or ""):
+            add(doc.get("dokumentnummer"))
     for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
         add(number)
     return numbers

@@ -240,7 +240,8 @@ class VoteTests(unittest.TestCase):
             {"21/1": ["main"], "21/2": ["main"], "21/3": ["other", "main"]},
         )
         vote = {"document_numbers": ["21/3", "21/1", "21/2"]}
-        self.assertEqual(pf.tags_for_vote(vote, [], cache), (["Verkehr", "Justiz"], "drucksache"))
+        # 21/1 and 21/2 name only `main`, so the bundle 21/3 does not add `other`.
+        self.assertEqual(pf.tags_for_vote(vote, [], cache), (["Verkehr"], "drucksache"))
 
     def test_without_a_resolvable_drucksache_the_votes_tops_decide(self) -> None:
         cache = cache_of({"x": vorgang()}, {"21/1": ["x"]})
@@ -284,6 +285,29 @@ class VoteNumberTests(unittest.TestCase):
         self.assertEqual(pf.tags_for_vote(vote, [], cache, wahlperiode="20"), (["Verkehr"], "drucksache"))
         report = {"protocol": {"dokumentnummer": "20/9"}, "agenda_items": [], "sitting_votes": [dict(vote, id="v")]}
         self.assertEqual(pf.fetch_targets([report], cache_of({"real": vorgang("Verkehr")}, {"20/5": ["real"]})), ([], []))
+
+    # Value: protects=a vote's specific Drucksache decides its tags and a Sammelübersicht with dozens of Vorgänge decides nothing; fails_when=every number counts alike, so the 20/195 Terrorismusbekämpfung bill gets Migration and Außenpolitik from its bundled Beschlussempfehlung; why_new=the ranking tests never mixed a specific number with a bundle; seam=none
+    def test_a_specific_number_beats_a_bundle_and_a_huge_fanout_is_ignored(self) -> None:
+        many = [f"w{i}" for i in range(pf.MAX_NUMBER_FANOUT + 1)]
+        cache = cache_of(
+            {"gesetz": vorgang("Innere Sicherheit"), "b": vorgang("Migration und Aufenthaltsrecht"), "c": vorgang("Außenpolitik und internationale Beziehungen"),
+             **{w: vorgang("Verteidigung") for w in many}},
+            {"20/12806": ["gesetz"], "20/13413": ["gesetz", "b", "c"], "20/1": many},
+        )
+        self.assertEqual(pf.tags_for_vote({"document_numbers": ["20/12806", "20/13413"]}, [], cache),
+                         (["Innere Sicherheit"], "drucksache"))
+        # Only bundles: all with a fan-out up to the cap count, the huge one does not.
+        self.assertEqual(pf.tags_for_vote({"document_numbers": ["20/13413", "20/1"]}, [], cache)[0],
+                         ["Innere Sicherheit", "Migration", "Außenpolitik"])
+        self.assertEqual(pf.tags_for_vote({"document_numbers": ["20/1"]}, [], cache), ([pf.UNTAGGED], "untagged"))
+
+    def test_bundesrat_papers_are_not_looked_up_as_bundestag_numbers(self) -> None:
+        top = item(numbers=("20/5",))
+        top["api"]["linked_drucksachen"] = [
+            {"dokumentnummer": "20/23", "url": "https://dserver.bundestag.de/brd/2023/0020-23.pdf"},
+            {"dokumentnummer": "20/6", "url": "https://dserver.bundestag.de/btd/20/000/2000006.pdf"},
+        ]
+        self.assertEqual(derive.item_document_numbers(top, "20"), ["20/5", "20/6"])
 
     # Value: protects=a Beschlussempfehlung that names several Vorgänge tags the vote from the Vorgänge of the TOP it sits under, not from DIP's result order; fails_when=the intersection with the TOP's Vorgänge is dropped, so an unrelated Antrag of a Sammelübersicht leads the vote; why_new=bundle ranking was tested only by number counts; seam=none
     def test_a_bundled_number_is_narrowed_to_the_vorgaenge_of_the_votes_top(self) -> None:
@@ -335,6 +359,14 @@ class CacheFileTests(unittest.TestCase):
                 self.assertEqual(pf.load_cache(tmp), pf.empty_cache())
             self.assertFalse(path.exists())
             self.assertEqual(path.with_name(path.name + ".corrupt").read_text(encoding="utf-8"), "{broken")
+
+    def test_a_record_with_a_non_list_sachgebiet_is_dropped_and_the_saved_file_is_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pf.save_cache(tmp, cache_of({"1": {"sachgebiet": "Verkehr"}, "2": {"sachgebiet": ["Recht"]}}))
+            path = pf.cache_path(tmp)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()), [path.name])  # no temp left behind
+            self.assertEqual(list(pf.load_cache(tmp)["vorgaenge"]), ["2"])
 
     def test_save_then_load_round_trips(self) -> None:
         cache = cache_of({"1": vorgang("Recht")}, {"21/1": ["1"]})
