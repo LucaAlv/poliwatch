@@ -12,6 +12,17 @@ import persist_dip_pulse_store as pulse_store
 from _support import FIXTURES
 
 
+class SchemaGuardTests(unittest.TestCase):
+    # Value: protects=a schema-3 store (proceedings without sachgebiet) is refused with the repersist instruction instead of being stamped version 4 with empty tag tables; fails_when=require_current_schema stops checking proceedings.sachgebiet, so a plain --offline build exports empty Politikfeld tables and later persists fail; why_new=no test opened a store from before the Politikfeld columns; seam=none
+    def test_a_store_without_proceedings_sachgebiet_is_refused(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE proceedings (id TEXT PRIMARY KEY, title TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema"):
+            pulse_store.initialize(conn)
+        self.assertNotIn("agenda_item_politikfelder", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
+        conn.close()
+
+
 class ParagraphMigrationTests(unittest.TestCase):
     def test_initialize_omits_paragraphs_and_accepts_already_absent_column(self):
         conn = sqlite3.connect(":memory:")

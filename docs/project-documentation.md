@@ -157,7 +157,7 @@ Important generated files:
 | `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<person_id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation; a retired or guess-merged person key is a redirect page to the surviving person (see [docs/stable-ids.md](stable-ids.md)) |
-| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter |
+| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter and a Politikfeld filter (`?politikfeld=Migration` opens it filtered) |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
@@ -166,6 +166,7 @@ Important generated files:
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
 | `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 20 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
+| `data/dip-vorgang-cache.json` | DIP Vorgang records (Sachgebiet, Sachbegriffe, abstract) and the Vorgang each Drucksache number resolves to, which the Politikfelder are derived from. Only an online build fetches it (batches of 100 ids, then one call per Drucksache number, 0.5 s apart; the first fill of about 2,400 numbers takes 25 minutes, later builds fetch only what is new or has no Sachgebiet yet). `--offline` builds read it and never call DIP; a TOP or vote whose entry is missing is stored as `untagged` with source `not_fetched`, and the build log counts them |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
 
@@ -604,7 +605,7 @@ scripts/preview_dip_pulse_site.sh
 
 ## SQLite Store
 
-When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store from before schema 3 needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
+When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store from before schema 4 (before the Politikfeld columns) needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
 
 - `schema_migrations`
 - `parties`
@@ -621,6 +622,7 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `speech_rule_inputs` (the counting-rule version actually persisted for each protocol; consumers reject missing or stale versions)
 - `votes`
 - `agenda_item_votes`
+- `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
 - `vote_documents`
 - `vote_fractions`
 - `vote_members`

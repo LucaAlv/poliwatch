@@ -179,6 +179,9 @@ class ApiClient:
                     self._retry_delay(path, exc, attempt)
                     continue
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
+            except ValueError as exc:
+                # A 200 that is not JSON (an HTML bot-challenge page, a cut-off body).
+                raise DipError(f"DIP API returned an unreadable body for {path}: {exc}") from exc
             except (OSError, http.client.HTTPException) as exc:
                 # URLError and timeouts are OSErrors, and so is a connection
                 # reset while the body is being read, which urlopen does not

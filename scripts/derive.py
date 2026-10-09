@@ -328,17 +328,22 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
 
 
+def vote_identity(vote: Mapping[str, Any]) -> Any:
+    """A vote's identity within a sitting: its id, or (title, date) for a legacy record."""
+    return str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+
+
 def iter_report_votes(report: Mapping[str, Any]):
     """Yield (TOP or None, vote), once per vote identity across a sitting."""
     seen = set()
     for item in report.get("agenda_items") or []:
         for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
-            key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+            key = vote_identity(vote)
             if key not in seen:
                 seen.add(key)
                 yield item, vote
     for vote in report.get("sitting_votes") or []:
-        key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+        key = vote_identity(vote)
         if key not in seen:
             seen.add(key)
             yield None, vote
@@ -398,20 +403,30 @@ def report_wahlperiode(report: Mapping[str, Any]) -> str:
     return number.split("/")[0] if "/" in number else ""
 
 
+def plausible_document_number(number: Any, wahlperiode: str) -> bool:
+    """Whether a Drucksache number can belong to a sitting of ``wahlperiode``: its
+    prefix is that Wahlperiode or the one before (16 of 5,414 numbers in the archive
+    cite the earlier one). Anything else is a case number or a fragment such as
+    "76/787" or "2/3"; with no known Wahlperiode nothing is filtered."""
+    if not wahlperiode.isdigit():
+        return True
+    return str(number).split("/")[0] in {wahlperiode, str(int(wahlperiode) - 1)}
+
+
 def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str]:
     """Drucksache numbers an agenda item names, in first-seen order.
 
     The XML parser's ``xml_drucksachen`` and the API's ``linked_drucksachen``
     (the numbers ``validate_dip_protocol.top_document_numbers`` reads), then
     numbers in the heading. A heading also carries case numbers of other
-    shapes ("10/21", "1/22" in Streitsachen lists), so a heading number counts
-    only when its prefix is the sitting's Wahlperiode.
+    shapes ("10/21", "1/22" in Streitsachen lists), so every number counts only
+    when ``plausible_document_number`` accepts it.
     """
     numbers: list[str] = []
 
     def add(number: Any) -> None:
         text = str(number or "").strip()
-        if text and text not in numbers:
+        if text and text not in numbers and plausible_document_number(text, wahlperiode):
             numbers.append(text)
 
     for doc in item.get("xml_drucksachen") or []:
@@ -419,8 +434,7 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
         add(doc.get("dokumentnummer"))
     for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
-        if wahlperiode and number.split("/")[0] == wahlperiode:
-            add(number)
+        add(number)
     return numbers
 
 

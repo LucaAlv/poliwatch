@@ -95,13 +95,23 @@ class RetainedScopeTests(unittest.TestCase):
             conn.close()
 
     def run_main(self, *extra: str, generated: list[dict]):
+        self.order: list[str] = []
+        self.rebuild_cache: list[object] = []
+        real_rebuild = build.rebuild_database_from_entries
+
+        def rebuild(*args, **kwargs):
+            self.order.append("rebuild")
+            self.rebuild_cache.append(kwargs.get("vorgang_cache"))
+            return real_rebuild(*args, **kwargs)
+
         argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(self.output_dir), *extra]
         with (
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(build, "fetch_protocols", return_value=copy.deepcopy(self.catalog)) as fetch,
             mock.patch.object(build, "build_dossiers_with_progress", return_value=generated) as build_dossiers,
             mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)) as pipeline,
-            mock.patch.object(build, "refresh_vorgang_cache", return_value={}) as refresh,  # never reach DIP from a test
+            mock.patch.object(build, "refresh_vorgang_cache", side_effect=lambda *a, **k: self.order.append("refresh") or {}) as refresh,  # never reach DIP from a test
+            mock.patch.object(build, "rebuild_database_from_entries", side_effect=rebuild),
             mock.patch.object(build, "render_site", return_value=self.output_dir / "index.html") as render_site,
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             mock.patch.object(sys, "stdout", new_callable=io.StringIO),
@@ -209,9 +219,14 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.counts(), before)
         self.assertEqual(len(render_site.call_args.kwargs["entries"]), 3)
-        # The online build fills the Vorgang cache once, from every sitting it is about to persist.
+        # The online build fills the Vorgang cache once, from every sitting it is about to persist,
+        # and hands that same cache to the persist: a refresh after it would store the first build's
+        # tags as not_fetched while every other test stays green.
         self.refresh.assert_called_once()
         self.assertEqual(len(self.refresh.call_args.args[1]), 3)
+        self.assertEqual(self.order, ["refresh", "rebuild"])
+        self.assertIs(self.refresh.call_args.args[2], self.rebuild_cache[0])
+        self.assertIsNotNone(self.rebuild_cache[0])
 
     # Value: protects=an online build that keeps a cached report from before A1 with no cached XML persists nothing and names it;
     #   fails_when=the online path warns and persists the old Reden counts next to correctly classified ones;

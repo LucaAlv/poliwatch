@@ -804,6 +804,31 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Priority:** P2
 **Depends on:** Inverted-vote reading; Politikfeld tags (for 2); deterministic validators (only for the AI fallback in 1)
 
+### Politikfelder: findings deferred from the B3 review
+
+**What:** Five findings of the /ship review (2026-10-09) that B3 does not fix:
+1. A missing lead Vorgang or number makes the tags come from the survivors with the wrong lead, and the source says `sachgebiet` or `drucksache`, not that something was missing. Record a partial flag, or count partial results in the build summary.
+2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
+3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Put a cache digest into `datenstand`, or render from the store.
+4. The cache sits in the published `data/` directory and holds DIP `abstract` text. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so move the cache out or drop `abstract` until a feature reads it.
+5. The inline filter scripts on `votes/index.html` and the week radar are checked only by a headless-Chromium probe run by hand (2026-10-09), not by the suite. Add a browser test when the suite has one.
+
+**Why:** None of them changes a number in the real store today (0 not_fetched, 0 partial, one empty lookup), and each needs a decision beyond B3's plan.
+
+**Effort:** S each
+**Priority:** P3
+**Depends on:** B3
+
+### Fill the remaining untagged Tagesordnungspunkte
+
+**What:** The 91 TOPs of the real store whose heading names a Gesetz or Antrag but that have no Vorgangsposition and name no Drucksache, and the 30 "other" ones, stay `untagged` after B3. Tag them from the heading with a model, restricted to the closed list, stored with a source of its own (for example `llm`) so a reader can tell it from a DIP-derived tag. Leave Fragestunde, Befragung, Wahlen and Geschäftsordnung untagged: they have no policy area.
+
+**Why:** B3 stays deterministic on purpose, so the Daten export carries no model output (docs/data-license.md). Measure first how many of the 121 a better deterministic rule can still reach, for example matching the heading against `/vorgang` titles.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
+
 ## Architektur
 
 ### Split the dataset from the site: the site builds from a release alone
@@ -1029,16 +1054,6 @@ Real store (290 Sitzungen, 2,912 TOPs, 217 namentliche Abstimmungen), measured 2
 - Measured live (2026-10-04): `/vorgang?f.id` returned 400 ids in one call (batch kept at 100); a repeated `f.dokumentnummer` returns one deduplicated union and cannot say which number belongs to which Vorgang, so numbers are resolved one call per number (25 of 25 sampled Beschlussempfehlungen resolve to a Vorgang of their own TOP). A Sammelübersicht can resolve to several Vorgänge (20/13413 gives 5), so a vote's Vorgänge are ranked by how many of its numbers name them. About 4 lookups a second made DIP's edge answer HTTP 400 with a bot challenge to the whole API for over an hour, so the build now pauses 0.5 s per lookup; the first full fill of about 2,400 numbers takes 25 minutes, later builds fetch only new ones.
 - The plan's "113 TOPs headed only Einzelplan 04" is real, but the Einzelplan sits in `top_id`, not the heading (117 TOPs, mostly the Haushaltswoche). The rule reads both; before that fix the Haushaltswoche rows of the radar were untagged (Einzelplan TOPs 37 -> 149, untagged 555 -> 443).
 - Mapping surprises, left as designed: a Haushalt vote takes the Sachgebiet of its Haushaltsgesetz Vorgang (Wirtschaft & Finanzen), not its ministry's field; a bundled heading with one Einzelplan sub-item and no Vorgang is tagged from that sub-item alone (20/106 TOP 6); a Regierungserklärung carries every field of its Entschließungsanträge.
-
-### Fill the remaining untagged Tagesordnungspunkte
-
-**What:** The 91 TOPs of the real store whose heading names a Gesetz or Antrag but that have no Vorgangsposition and name no Drucksache, and the 30 "other" ones, stay `untagged` after B3. Tag them from the heading with a model, restricted to the closed list, stored with a source of its own (for example `llm`) so a reader can tell it from a DIP-derived tag. Leave Fragestunde, Befragung, Wahlen and Geschäftsordnung untagged: they have no policy area.
-
-**Why:** B3 stays deterministic on purpose, so the Daten export carries no model output (docs/data-license.md). Measure first how many of the 121 a better deterministic rule can still reach, for example matching the heading against `/vorgang` titles.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
 ### Credit a Zwischenfrage to the MdB who asked it, and keep Gastansprachen out of speech counts
 

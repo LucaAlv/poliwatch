@@ -33,6 +33,10 @@ def require_current_schema(conn):
     columns = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(mps)")}
     if columns and (columns.get("id") != "TEXT" or "person_id" not in columns):
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    proceedings = {row[1] for row in conn.execute("PRAGMA table_info(proceedings)")}
+    if proceedings and "sachgebiet" not in proceedings:
+        # Schema 3: initialize() would add the Politikfeld tables empty and stamp version 4.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
         # require_current alone accepts a store with no registry tables at all.

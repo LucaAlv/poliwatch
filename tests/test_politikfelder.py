@@ -175,9 +175,10 @@ class AgendaItemTests(unittest.TestCase):
         top = item(numbers=("21/7",))
         self.assertEqual(self.tags(top, cache), (["Bildung"], "drucksache"))
 
-    def test_heading_numbers_count_only_for_the_sittings_wahlperiode(self) -> None:
-        top = item(heading="Streitsachen 10/21, 1/22, 21/9 und 20/8")
-        self.assertEqual(derive.item_document_numbers(top, "21"), ["21/9"])
+    def test_numbers_count_only_for_the_sittings_or_the_previous_wahlperiode(self) -> None:
+        top = item(heading="Streitsachen 10/21, 1/22, 21/9 und 20/8", numbers=("76/787", "21/3"))
+        self.assertEqual(derive.item_document_numbers(top, "21"), ["21/3", "21/9", "20/8"])
+        self.assertEqual(derive.item_document_numbers(top, ""), ["76/787", "21/3", "10/21", "1/22", "21/9", "20/8"])
 
     def test_a_bundled_drucksache_ranks_the_vorgang_most_numbers_name(self) -> None:
         cache = cache_of(
@@ -274,6 +275,36 @@ class VoteTests(unittest.TestCase):
         self.assertEqual(vote_tags["s"], (["Energie & Klima"], "drucksache"))
 
 
+class VoteNumberTests(unittest.TestCase):
+    # Value: protects=a fragment the roll-call scraper read as a Drucksache ("76/787", "2/3") is neither looked up nor allowed to outrank the TOP's tags; fails_when=vote numbers are used unfiltered, so a junk number that DIP happens to resolve decides a vote's Politikfelder; why_new=the TOP path filtered numbers by Wahlperiode, the vote path did not; seam=none
+    def test_a_vote_ignores_numbers_of_another_wahlperiode(self) -> None:
+        cache = cache_of({"junk": vorgang("Kultur"), "real": vorgang("Verkehr")}, {"76/787": ["junk"], "20/5": ["real"]})
+        vote = {"document_numbers": ["76/787", "20/5", "2/3"]}
+        self.assertEqual(pf.vote_document_numbers(vote, "20"), ["20/5"])
+        self.assertEqual(pf.tags_for_vote(vote, [], cache, wahlperiode="20"), (["Verkehr"], "drucksache"))
+        report = {"protocol": {"dokumentnummer": "20/9"}, "agenda_items": [], "sitting_votes": [dict(vote, id="v")]}
+        self.assertEqual(pf.fetch_targets([report], cache_of({"real": vorgang("Verkehr")}, {"20/5": ["real"]})), ([], []))
+
+    # Value: protects=a Beschlussempfehlung that names several Vorgänge tags the vote from the Vorgänge of the TOP it sits under, not from DIP's result order; fails_when=the intersection with the TOP's Vorgänge is dropped, so an unrelated Antrag of a Sammelübersicht leads the vote; why_new=bundle ranking was tested only by number counts; seam=none
+    def test_a_bundled_number_is_narrowed_to_the_vorgaenge_of_the_votes_top(self) -> None:
+        cache = cache_of(
+            {"mine": vorgang("Gesundheit"), "other": vorgang("Verteidigung"), "third": vorgang("Kultur")},
+            {"21/9": ["other", "mine", "third"]},
+        )
+        vote = {"document_numbers": ["21/9"]}
+        self.assertEqual(pf.tags_for_vote(vote, [], cache), (["Verteidigung", "Gesundheit", "Bildung"], "drucksache"))
+        narrowed = pf.tags_for_vote(vote, [], cache, linked_vorgang_ids=["mine"])
+        self.assertEqual(narrowed, (["Gesundheit"], "drucksache"))
+        # No overlap with the TOP: nothing to narrow by, the plain ranking stands.
+        self.assertEqual(pf.tags_for_vote(vote, [], cache, linked_vorgang_ids=["x"])[0][0], "Verteidigung")
+
+    # Value: protects=a Drucksache that DIP had not linked to a Vorgang yet (resolved to []) is asked again on the next online build; fails_when=want_number treats an empty list as resolved, so the vote stays untagged for good; why_new=fetch_targets was tested only for a complete cache; seam=none
+    def test_a_number_that_resolved_to_nothing_is_asked_again(self) -> None:
+        report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [], "sitting_votes": [{"id": "s", "document_numbers": ["21/8"]}]}
+        self.assertEqual(pf.fetch_targets([report], cache_of(numbers={"21/8": []})), ([], ["21/8"]))
+        self.assertEqual(pf.fetch_targets([report], cache_of({"d": vorgang("Recht")}, {"21/8": ["d"]})), ([], []))
+
+
 class CacheFileTests(unittest.TestCase):
     def test_absent_file_is_an_empty_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,6 +321,20 @@ class CacheFileTests(unittest.TestCase):
                     cache = pf.load_cache(tmp)
                 self.assertEqual(cache, pf.empty_cache(), text)
                 self.assertIn("warning", err.getvalue())
+
+    # Value: protects=a cache entry of the wrong shape is dropped as a cache miss instead of crashing the build, and an unreadable file is kept for inspection; fails_when=load_cache trusts the values or overwrites the corrupt file; why_new=only the top-level shape was checked; seam=none
+    def test_wrong_shaped_entries_are_dropped_and_a_corrupt_file_is_kept(self) -> None:
+        good = {"sachgebiet": ["Recht"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pf.cache_path(tmp)
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"vorgaenge": {"1": good, "2": ["x"], "3": None}, "dokumentnummern": {"21/1": ["1"], "21/2": "12", "21/3": None}}), encoding="utf-8")
+            self.assertEqual(pf.load_cache(tmp), cache_of({"1": good}, {"21/1": ["1"]}))
+            path.write_text("{broken", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(pf.load_cache(tmp), pf.empty_cache())
+            self.assertFalse(path.exists())
+            self.assertEqual(path.with_name(path.name + ".corrupt").read_text(encoding="utf-8"), "{broken")
 
     def test_save_then_load_round_trips(self) -> None:
         cache = cache_of({"1": vorgang("Recht")}, {"21/1": ["1"]})
@@ -353,7 +398,7 @@ class FetchTests(unittest.TestCase):
             {"a": raw("Gesundheit"), "b": raw("Recht"), "c": raw("Kultur"), "d": raw("Energie")},
             {"21/7": ["c"], "21/8": ["d"]},
         )
-        cache = cache_of({"a": pf.__dict__["empty_cache"]() and dip.vorgang_cache_record(raw("Gesundheit"))})
+        cache = cache_of({"a": dip.vorgang_cache_record(raw("Gesundheit"))})
         stats, saved, _ = self.run_refresh(client, cache)
         id_calls = [params["f.id"] for path, params in client.calls if "f.id" in params]
         self.assertEqual(id_calls, [["b"]])  # a was complete, so it stays cached
@@ -367,7 +412,10 @@ class FetchTests(unittest.TestCase):
 
     def test_a_cached_vorgang_without_sachgebiet_is_refetched_and_a_second_run_fetches_nothing(self) -> None:
         records = {"a": raw("Gesundheit"), "b": raw("Recht")}
-        cache = cache_of({"a": dip.vorgang_cache_record(raw()), "b": dip.vorgang_cache_record(raw("Recht"))}, {"21/7": [], "21/8": []})
+        cache = cache_of(
+            {n: dip.vorgang_cache_record(raw("Recht")) for n in "bcd"} | {"a": dip.vorgang_cache_record(raw())},
+            {"21/7": ["c"], "21/8": ["d"]},
+        )
         client = FakeClient(records)
         self.run_refresh(client, cache)
         self.assertEqual([p["f.id"] for _, p in client.calls], [["a"]])
@@ -405,7 +453,7 @@ class FetchTests(unittest.TestCase):
         client = FakeClient({}, fail=True)
         stats, _saved, _err = self.run_refresh(client, pf.empty_cache())
         self.assertEqual([p["f.id"] for _, p in client.calls], [[f"v{i}"] for i in range(1, 6)])  # 5 of 8 batches, then stop
-        self.assertEqual((stats["vorgaenge"], stats["vorgaenge_failed"], stats["nummern"]), (0, 5, 0))
+        self.assertEqual((stats["vorgaenge"], stats["vorgaenge_failed"], stats["nummern"]), (0, 8, 0))  # 3 never tried
 
         numbered = [item(i, numbers=(f"21/{i}",)) for i in range(1, 8)]
         self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": numbered}}]
@@ -576,13 +624,18 @@ class RenderTests(unittest.TestCase):
 
     def test_the_archive_offers_untagged_as_a_filter_but_not_as_a_label(self) -> None:
         tagged = self.archive_rows(cache_of({"v1": vorgang("Gesundheit")}))[0]
-        untagged = self.archive_rows(None)[0]
+        untagged = self.archive_rows(cache_of({"v1": vorgang()}, {"20/123": ["v1"], "20/456": ["v1"]}))[0]
         self.assertEqual(untagged["politikfelder"], [pf.UNTAGGED])
+        # A cache miss is not "no Politikfeld": the page shows it as nothing, and the chip does not offer it.
+        self.assertEqual(self.archive_rows(None)[0]["politikfelder"], [])
         page = build.render_votes_archive_index([tagged, untagged])
         self.assertIn('data-politikfeld-chip="untagged">Ohne Politikfeld</button>', page)
         self.assertEqual(page.count('class="pf-tag"'), 1)  # the untagged row gets no label
         # With no tag anywhere there is nothing to filter by, so no filter row.
         self.assertNotIn('data-politikfeld-chip="', build.render_votes_archive_index([untagged]))
+
+    def test_the_radar_has_no_filter_when_nothing_is_tagged(self) -> None:
+        self.assertEqual(build.render_radar_filter([{"politikfelder": []}, {"politikfelder": [pf.UNTAGGED]}]), "")
 
     def test_the_week_radar_rows_carry_chips_and_a_filter(self) -> None:
         report = self.report()
@@ -594,8 +647,7 @@ class RenderTests(unittest.TestCase):
             [entry], {}, total=1, dossier_href_for=lambda e: "protocols/x.html",
             vorgang_cache=cache_of({"v1": vorgang("Verkehr")}),
         )
-        if not radar["rows"]:
-            self.skipTest("fixture has no ranked speech")
+        self.assertTrue(radar["rows"], "the fixture has a ranked speech")
         row = radar["rows"][0]
         self.assertEqual(row["politikfelder"], ["Verkehr"])
         markup = build.render_radar_section(radar, {"speech_count": 1}, build.publication_selection())

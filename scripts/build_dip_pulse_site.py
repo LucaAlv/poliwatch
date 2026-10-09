@@ -1456,9 +1456,11 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
 VORGANG_FETCH_MAX_FAILURES = 5
 #: Seconds between two Drucksache-number lookups (one call per number). At about 4
 #: calls a second DIP's edge answered 400 with a bot challenge to the whole API for
-#: over half an hour (2026-10-04), so the first full fill (about 2,400 numbers)
-#: takes 20 minutes; later builds fetch only new numbers.
+#: over an hour (2026-10-04), so the first full fill (about 2,400 numbers) takes
+#: about 25 minutes (1,577 s measured); later builds fetch only new numbers.
 NUMBER_LOOKUP_PAUSE = 0.5
+#: Drucksache-number lookups between two saves of the Vorgang cache.
+CACHE_SAVE_EVERY = 100
 
 
 def refresh_vorgang_cache(
@@ -1482,6 +1484,7 @@ def refresh_vorgang_cache(
         failures = 0
         for start in range(0, len(ids), dip.VORGANG_BATCH):
             batch = ids[start : start + dip.VORGANG_BATCH]
+            time.sleep(NUMBER_LOOKUP_PAUSE)
             try:
                 cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch))
                 stats["vorgaenge"] += len(batch)
@@ -1491,30 +1494,38 @@ def refresh_vorgang_cache(
                 failures += 1
                 print(f"warning: Vorgang fetch failed for {len(batch)} ids: {exc}", file=sys.stderr)
                 if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    stats["vorgaenge_failed"] += len(ids) - start - len(batch)
                     return True
         return False
 
-    def resolve_numbers(numbers: list[str]) -> bool:
+    def resolve_numbers(numbers: list[str]) -> None:
+        """Resolve numbers one call each, saving the cache every CACHE_SAVE_EVERY
+        lookups so an interrupted first fill keeps its progress; stops after
+        VORGANG_FETCH_MAX_FAILURES failures in a row."""
         failures = 0
-        for position, number in enumerate(numbers):
-            time.sleep(NUMBER_LOOKUP_PAUSE)
-            try:
-                documents = dip.resolve_dokumentnummer(client, number)
-            except dip.DipError as exc:
-                stats["nummern_failed"] += 1
-                failures += 1
-                print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
-                if failures >= VORGANG_FETCH_MAX_FAILURES:
-                    stats["nummern_failed"] += len(numbers) - position - 1
-                    return True
-                continue
-            failures = 0
-            stats["nummern"] += 1
-            cache["dokumentnummern"][number] = [str(d["id"]) for d in documents if d.get("id")]
-            for document in documents:
-                if document.get("id"):
-                    cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
-        return False
+        try:
+            for position, number in enumerate(numbers):
+                time.sleep(NUMBER_LOOKUP_PAUSE)
+                try:
+                    documents = dip.resolve_dokumentnummer(client, number)
+                except dip.DipError as exc:
+                    stats["nummern_failed"] += 1
+                    failures += 1
+                    print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
+                    if failures >= VORGANG_FETCH_MAX_FAILURES:
+                        stats["nummern_failed"] += len(numbers) - position - 1
+                        return
+                    continue
+                failures = 0
+                stats["nummern"] += 1
+                cache["dokumentnummern"][number] = [str(d["id"]) for d in documents if d.get("id")]
+                for document in documents:
+                    if document.get("id"):
+                        cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
+                if stats["nummern"] % CACHE_SAVE_EVERY == 0:
+                    politikfelder.save_cache(output_dir, cache)
+        finally:
+            politikfelder.save_cache(output_dir, cache)
 
     ids, _ = politikfelder.fetch_targets(reports, cache)
     down = fetch_ids(ids)
@@ -1524,8 +1535,7 @@ def refresh_vorgang_cache(
     # lookup returns its Vorgang records inline, so no further id pass is needed.
     if not down:
         _, numbers = politikfelder.fetch_targets(reports, cache)
-        down = resolve_numbers(numbers)
-        politikfelder.save_cache(output_dir, cache)
+        resolve_numbers(numbers)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
         f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left as not_fetched)",
@@ -4099,6 +4109,12 @@ def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     return (int(text), "") if text.isdigit() else (-1, text)
 
 
+def _shown_politikfelder(tags: list[str], source: str) -> list[str]:
+    """The tags a page shows. A ``not_fetched`` row is stored as ``untagged`` (every vote
+    has a row) but is not "no Politikfeld", so pages show it as nothing at all."""
+    return [] if source == "not_fetched" else tags
+
+
 def collect_votes_archive(
     entries: list[dict[str, Any]], vorgang_cache: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -4130,7 +4146,7 @@ def collect_votes_archive(
             }
             rows[key] = {
                 "vote": vote,
-                "politikfelder": vote_politikfelder[politikfelder.vote_key(vote)][0],
+                "politikfelder": _shown_politikfelder(*vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",

@@ -1986,7 +1986,7 @@ def topic_row(
     if not (summary.get("text") and summary.get("source_chunks")):
         summary = None
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
-    tags, _source = politikfelder.tags_for_agenda_item(
+    tags, source = politikfelder.tags_for_agenda_item(
         item,
         vorgang_cache or politikfelder.empty_cache(),
         wahlperiode=derive.report_wahlperiode(entry.get("report") or {}),
@@ -2010,7 +2010,7 @@ def topic_row(
         "trace": trace,
         "summary": summary,
         "has_votes": bool(votes),
-        "politikfelder": tags,
+        "politikfelder": [] if source == "not_fetched" else tags,
         "item": item,
         "stats": stats,
     }

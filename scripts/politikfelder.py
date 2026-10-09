@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -172,8 +173,22 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
             raise TypeError("vorgaenge and dokumentnummern must be objects")
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        print(f"warning: ignoring unreadable {path}: {exc}; Politikfelder fall back to not_fetched.", file=sys.stderr)
+        # Keep the file for inspection: the next online build would overwrite it.
+        kept = path.with_name(path.name + ".corrupt")
+        try:
+            path.replace(kept)
+            note = f"moved to {kept.name}"
+        except OSError:
+            note = "left in place"
+        print(
+            f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
+            "until an online build refills it.",
+            file=sys.stderr,
+        )
         return empty_cache()
+    # A record or number list of the wrong shape is dropped, not trusted: it counts as a cache miss.
+    vorgaenge = {str(k): v for k, v in vorgaenge.items() if isinstance(v, dict)}
+    dokumentnummern = {str(k): [str(i) for i in v] for k, v in dokumentnummern.items() if isinstance(v, list)}
     return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": dokumentnummern}
 
 
@@ -184,9 +199,12 @@ def cache_path(output_dir: Path | str) -> Path:
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+    ) as handle:
+        handle.write(text)
+    Path(handle.name).replace(path)
 
 
 def fields_for_sachgebiete(sachgebiete: Iterable[Any]) -> list[str]:
@@ -317,19 +335,38 @@ def tags_for_agenda_item(item: Mapping[str, Any], cache: Mapping[str, Any], *, w
     return [UNTAGGED], "untagged"
 
 
+def vote_document_numbers(vote: Mapping[str, Any], wahlperiode: str = "") -> list[str]:
+    """The Drucksache numbers a vote names that can belong to its sitting (the roll-call
+    scraper reads every ``12/345``-shaped string, so "76/787" turns up)."""
+    return [
+        str(number)
+        for number in vote.get("document_numbers") or ()
+        if derive.plausible_document_number(number, wahlperiode)
+    ]
+
+
 def tags_for_vote(
     vote: Mapping[str, Any],
     linked_item_tags: Iterable[Tagging],
     cache: Mapping[str, Any],
+    *,
+    wahlperiode: str = "",
+    linked_vorgang_ids: Iterable[str] = (),
 ) -> Tagging:
     """Tags and source of one vote.
 
     First the vote's own Drucksache numbers (source ``drucksache``), so a vote
     on one Vorgang of a bundled TOP does not inherit the others' fields; then
     the union of the TOPs it is linked to (source ``top``); then untagged, or
-    ``not_fetched`` when a needed cache entry is missing.
+    ``not_fetched`` when a needed cache entry is missing. A Beschlussempfehlung or
+    Sammelübersicht number can name Vorgänge the vote is not about; when some of the
+    resolved Vorgänge are among those of the TOPs the vote sits under
+    (``linked_vorgang_ids``), only those count.
     """
-    number_ids, missing = _vorgaenge_of_numbers(vote.get("document_numbers") or (), cache)
+    number_ids, missing = _vorgaenge_of_numbers(vote_document_numbers(vote, wahlperiode), cache)
+    linked = {str(i) for i in linked_vorgang_ids}
+    if linked & set(number_ids):
+        number_ids = [i for i in number_ids if i in linked]
     tags, ids_missing = _from_vorgaenge(number_ids, cache)
     missing |= ids_missing
     if tags:
@@ -351,9 +388,7 @@ def tags_for_vote(
     return [UNTAGGED], "not_fetched" if missing else "untagged"
 
 
-def vote_key(vote: Mapping[str, Any]) -> Any:
-    """The identity ``derive.iter_report_votes`` uses for a vote."""
-    return str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+vote_key = derive.vote_identity
 
 
 def report_politikfelder(
@@ -366,15 +401,19 @@ def report_politikfelder(
     wahlperiode = derive.report_wahlperiode(report)
     item_tags: list[Tagging] = []
     linked: dict[Any, list[Tagging]] = {}
+    linked_ids: dict[Any, list[str]] = {}
     for item in report.get("agenda_items") or []:
         tagging = tags_for_agenda_item(item, cache, wahlperiode=wahlperiode)
         item_tags.append(tagging)
         for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
             linked.setdefault(vote_key(vote), []).append(tagging)
+            linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
     vote_tags: dict[Any, Tagging] = {}
     for _item, vote in derive.iter_report_votes(report):
         key = vote_key(vote)
-        vote_tags[key] = tags_for_vote(vote, linked.get(key, []), cache)
+        vote_tags[key] = tags_for_vote(
+            vote, linked.get(key, []), cache, wahlperiode=wahlperiode, linked_vorgang_ids=linked_ids.get(key, ())
+        )
     return item_tags, vote_tags
 
 
@@ -398,7 +437,8 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
             ids.append(vorgang_id)
 
     def want_number(number: str) -> None:
-        if number not in resolved and number not in numbers:
+        # A number DIP has not yet linked to a Vorgang resolves to [] and is asked again.
+        if not resolved.get(number) and number not in numbers:
             numbers.append(number)
 
     for report in reports:
@@ -414,8 +454,8 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
                 for vorgang_id in resolved.get(number) or ():
                     want_id(str(vorgang_id))
         for _item, vote in derive.iter_report_votes(report):
-            for number in vote.get("document_numbers") or ():
-                want_number(str(number))
+            for number in vote_document_numbers(vote, wahlperiode):
+                want_number(number)
                 for vorgang_id in resolved.get(str(number)) or ():
                     want_id(str(vorgang_id))
     return ids, numbers
