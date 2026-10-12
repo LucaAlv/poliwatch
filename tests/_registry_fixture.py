@@ -39,12 +39,12 @@ class RegistryFixture:
         registry.copy_previous(previous, target)
         return target
 
-    def up(self, conn, occurrence, identity, name, *, xml=None, dip=None, aw=None, match=None, mdb=False, party=None):
+    def up(self, conn, occurrence, identity, name, *, xml=None, dip=None, aw=None, match=None, mdb=False, party=None, **biography):
         now = store.utc_now()
         party_id = store.upsert_party(conn, party, now) if party else None
         return store.upsert_mp(conn, now=now, display_name=name, party_id=party_id, identity_key=identity,
                                xml_redner_id=xml, dip_person_id=dip, aw_politician_id=aw, aw_match=match,
-                               is_mdb=mdb, occurrence_id=occurrence)
+                               is_mdb=mdb, occurrence_id=occurrence, **biography)
 
     def person_of_records(self, conn):
         return {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM person_records")}

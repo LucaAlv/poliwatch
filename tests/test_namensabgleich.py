@@ -82,20 +82,24 @@ class ZusammenfuehrungTests(unittest.TestCase):
 
     def test_queued_name_matches_cannot_bridge_conflicting_roster_ids(self) -> None:
         # One speaker has two party spellings across source records. Each
-        # spelling matches a different roster person before either join runs.
+        # spelling matches a different roster person before either join runs, so
+        # the speaker has no unique partner: it joins neither (it used to join
+        # whichever party sorted first).
+        speakers = []
         for identity, party in (("speaker-old", "SPD"), ("speaker-new", "CDU/CSU")):
-            pulse_store.upsert_mp(
+            speakers.append(pulse_store.upsert_mp(
                 self.conn, now=self.now, display_name="Ada Example", party_id=self.party(party),
                 identity_key=identity, xml_redner_id="11",
-            )
+            ))
         first = self.roster("Ada Example", "d1", party="SPD")
         second = self.roster("Ada Example", "d2", party="CDU/CSU")
 
         _, _, canonical, stats = self.collect()
 
-        self.assertNotEqual(canonical[first], canonical[second])
-        self.assertEqual(stats["merges_unique_name"], 1)
-        self.assertEqual(stats["buckets_split_namesakes"], 1)
+        self.assertEqual(len({canonical[first], canonical[second], canonical[speakers[0]]}), 3)
+        self.assertEqual(canonical[speakers[0]], canonical[speakers[1]])
+        self.assertEqual(stats["merges_unique_name"], 0)
+        self.assertEqual(stats["buckets_split_namesakes"], 2)
 
     def test_a_name_found_id_shared_by_two_records_does_not_join_them(self) -> None:
         a = self.speaker("Peter Müller", "11", aw=99, match="name")
