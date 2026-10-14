@@ -1220,7 +1220,13 @@ def _rebuild_database_from_entries(
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
+                skipped = [row for row in roster_rows if not row.get("dip_person_id")]
+                if skipped:
+                    # No roster identity: ingest_mdb_roster skips such rows too.
+                    print(f"warning: [roster] {len(skipped)} preserved roster rows have no DIP id and were skipped", file=sys.stderr)
                 for row in roster_rows:
+                    if not row.get("dip_person_id"):
+                        continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
                     pulse_store.upsert_mp(
                         store,
@@ -6620,7 +6626,7 @@ def ingest_mdb_roster(
     upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
     biographical data. Makes the Abgeordnete list complete rather than limited to
     speakers seen in ingested protocols."""
-    stats = {"fetched": 0, "mdb": 0, "enriched": 0}
+    stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
     if store is None:
         return stats
     persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
@@ -6632,6 +6638,11 @@ def ingest_mdb_roster(
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
             if not _has_mdb_funktion(funktion):
+                continue
+            if not pulse_store.clean(compact.get("id")):
+                # A DIP person is identified by its id alone; without one, every
+                # such row would share one name-party:Unbekannt record.
+                stats["skipped_no_id"] += 1
                 continue
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
@@ -6688,6 +6699,8 @@ def ingest_mdb_roster(
                 person_roles_json=pulse_store.dumps(funktion) if funktion else None,
                 is_mdb=True,
             )
+    if stats["skipped_no_id"]:
+        print(f"warning: [roster] {stats['skipped_no_id']} DIP persons with an MdB function have no id and were skipped", file=sys.stderr)
     return stats
 
 

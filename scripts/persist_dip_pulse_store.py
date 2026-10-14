@@ -775,7 +775,13 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 
 
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
+    skipped = 0
     for person in report.get("sampled_people") or []:
+        if not clean(person.get("id")):
+            # Without its DIP id a person has no identity of its own: every such
+            # row would share one name-party:Unbekannt record.
+            skipped += 1
+            continue
         fraktion = unwrap_dip_faction(person.get("fraktion"))
         party_id = upsert_party(conn, fraktion, now)
         display_name = clean(person.get("titel")) or clean(person.get("id")) or "Unbekannt"
@@ -791,6 +797,9 @@ def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now
             function=person.get("funktion"),
             wahlperiode=person.get("wahlperiode"),
         )
+    if skipped:
+        protocol = (report.get("protocol") or {}).get("dokumentnummer")
+        print(f"warning: [persist] {protocol}: {skipped} sampled DIP persons have no id and were skipped", file=sys.stderr)
 
 
 def persist_agenda_item(

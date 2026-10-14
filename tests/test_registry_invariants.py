@@ -121,13 +121,94 @@ class RegistryInvariantTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(len(self.occurrence_groups(fresh)), 1)
 
 
+
+    # Value: protects=a guess group with one contradicting pair stays split as a whole, its middle link included: in the chain A-B, B-C, C-D with A and D contradicting, any link could be the wrong one, so merging the conflict-free B-C would be a guess the evidence does not support; fails_when=_guess_merges merges a "safe subset" by dropping only the conflicting persons; why_new=third ship round (9) asked for a decision; seam=none
+    def test_a_guess_chain_with_contradicting_ends_stays_split(self):
+        conn = self.open_store()
+        a = self.up(conn, roster_occurrence_id("dip-1"), "dip:dip-1", "Ada A", dip="dip-1", mdb=True, party="SPD")
+        b1 = self.up(conn, speech("b1"), "xml:2", "Ada A", xml="2", party="SPD")
+        b2 = self.up(conn, speech("b2"), "xml:3", "Bea B", xml="3", party="SPD")
+        c1 = self.up(conn, roster_occurrence_id("dip-3"), "dip:dip-3", "Bea B", dip="dip-3", mdb=True, party="SPD")
+        c2 = self.up(conn, speech("c2"), "xml:4", "Cem C", xml="4", party="SPD")
+        d = self.up(conn, roster_occurrence_id("dip-4"), "dip:dip-4", "Cem C", dip="dip-4", mdb=True, party="SPD")
+        persons = self.person_of_records(conn)
+        reviewed = {"merges": [{"persons": [persons[b1], persons[b2]]}, {"persons": [persons[c1], persons[c2]]}]}
+        with self.correction_file(reviewed):
+            registry.reconcile(conn)
+        after = self.person_of_records(conn)
+        self.assertEqual(after[b1], after[b2])
+        self.assertEqual(after[c1], after[c2])
+        self.assertEqual(len({after[r] for r in (a, b1, c1, d)}), 4)
+
+    # Value: protects=a corrected roll-call profile link keeps the bound member occurrences on their record while the new link's occurrences join them again, so an incremental build groups like a fresh one and a fresh build needs no such join; fails_when=the occurrence that stayed on its record no longer meets the record the corrected link now names; why_new=third ship round (8): an incremental build issued a second person a fresh build does not; seam=none
+    def test_a_corrected_roll_call_profile_link_groups_like_a_fresh_build(self):
+        old, new = "https://bundestag.test/biografien/ada", "https://bundestag.test/biografien/ada-example"
+        first = self.open_store("first.sqlite")
+        for vote in ("v1", "v2"):
+            self.vote_up(first, vote, "Example, Ada", "SPD", old)
+        registry.reconcile(first, full_build=True)
+        incremental = self.next_build(first)
+        fresh = self.open_store("fresh.sqlite")
+        for conn in (incremental, fresh):
+            for vote in ("v1", "v2", "v3"):
+                self.vote_up(conn, vote, "Example, Ada", "SPD", new)
+        self.assertEqual(registry.reconcile(fresh, full_build=True)["same_identity"], 0)
+        totals = registry.reconcile(incremental, full_build=True)
+        self.assertEqual(self.occurrence_groups(incremental), self.occurrence_groups(fresh))
+        self.assertEqual(len(self.occurrence_groups(incremental)), 1)
+        self.assertEqual(totals["same_identity"], 1)
+        # The record the bound occurrences stayed on keeps its key and shows the corrected link.
+        stayed = incremental.execute("SELECT m.profile_url FROM mps m JOIN person_records r ON r.id = m.id WHERE r.identity_key = ?", (f"profile:{old}",)).fetchone()
+        self.assertEqual(stayed[0], new)
+
+    def reviewed_persons(self, conn, names):
+        records = [self.up(conn, speech(n), f"xml:{i}", n, xml=str(i), party="SPD") for i, n in enumerate(names, start=1)]
+        return [self.person_of_records(conn)[record] for record in records]
+
+    # Value: protects=overlapping reviewed merges settle to the same persons and aliases in any file order; fails_when=reconcile applies the entries one by one, so a later entry's survivor un-aliases an earlier one's and the file order picks the key; why_new=third ship round (9) found the order dependence; seam=none
+    def test_overlapping_reviewed_merges_do_not_depend_on_file_order(self):
+        outcomes = set()
+        for order in ((0, 1, 2), (2, 1, 0), (1, 0, 2)):
+            with self.subTest(order=order):
+                conn = self.open_store(f"order-{''.join(map(str, order))}.sqlite")
+                a, b, c, d = self.reviewed_persons(conn, ("Ada A", "Bea B", "Cem C", "Dan D"))
+                merges = [{"persons": [a, b], "survivor": b}, {"persons": [b, c]}, {"persons": [c, d], "survivor": b}]
+                with self.correction_file({"merges": [merges[i] for i in order]}):
+                    registry.reconcile(conn)
+                    state = (tuple(sorted(set(self.person_of_records(conn).values()))),
+                             tuple(tuple(r) for r in conn.execute("SELECT id, person_id FROM person_aliases ORDER BY id")))
+                    registry.reconcile(conn)
+                    self.assertEqual((tuple(sorted(set(self.person_of_records(conn).values()))),
+                                      tuple(tuple(r) for r in conn.execute("SELECT id, person_id FROM person_aliases ORDER BY id"))), state)
+                outcomes.add(state)
+                self.assertEqual(state[0], (b,))
+        self.assertEqual(len(outcomes), 1)
+
+    # Value: protects=reviewed merges that name two survivors for one person are refused with one diagnostic, also when the overlap exists only through an alias, before any merge is applied; fails_when=the entries are applied in file order and the last survivor wins; why_new=third ship round (9); seam=none
+    def test_reviewed_merges_naming_two_survivors_for_one_person_are_refused(self):
+        conn = self.open_store()
+        a, b, c, d = self.reviewed_persons(conn, ("Ada A", "Bea B", "Cem C", "Dan D"))
+        with self.correction_file({"merges": [{"persons": [a, b], "survivor": a}, {"persons": [b, c], "survivor": c}]}):
+            before = conn.execute("SELECT * FROM person_aliases").fetchall()
+            with self.assertRaisesRegex(registry.RegistryError, f"name survivors {', '.join(sorted((a, c)))} for one person"):
+                registry.reconcile(conn)
+            self.assertEqual(conn.execute("SELECT * FROM person_aliases").fetchall(), before)
+        with self.correction_file({"merges": [{"persons": [a, c]}]}):
+            registry.reconcile(conn)
+        # c is an alias of a now: [a, b] and [c, d] are one person with two survivors.
+        with self.correction_file({"merges": [{"persons": [a, c]}, {"persons": [a, b], "survivor": a}, {"persons": [c, d], "survivor": d}]}), \
+                self.assertRaisesRegex(registry.RegistryError, f"name survivors {', '.join(sorted((a, d)))} for one person"):
+            registry.reconcile(conn)
+
+
 PARTIES = ("SPD", "CDU/CSU")
 NAMES = ("Ada Example", "Bea Minister", "Cy Muster", "Dora Dorn")
 
 
 class RandomizedInvariantTests(RegistryFixture, unittest.TestCase):
     """Seeded two-build sequences. A person has a name and party from a small pool
-    (so namesakes happen), a Redner-ID, a DIP id and sometimes a shared abgeordnetenwatch id."""
+    (so namesakes happen), a Redner-ID, a DIP id, sometimes a shared abgeordnetenwatch
+    id and sometimes roll-call votes keyed by a profile link."""
 
     def world(self, rng):
         people = []
@@ -135,11 +216,15 @@ class RandomizedInvariantTests(RegistryFixture, unittest.TestCase):
             people.append({
                 "name": rng.choice(NAMES), "party": rng.choice(PARTIES), "xml": str(index + 1) if rng.random() < 0.85 else None,
                 "dip": f"d{index}" if rng.random() < 0.7 else None, "aw": index + 100 if rng.random() < 0.25 else None,
+                "url": f"https://bundestag.test/{index}" if rng.random() < 0.5 else None,
             })
         return people
 
-    def persist(self, conn, people, overrides):
+    def persist(self, conn, people, overrides, urls=None, votes=("v1",)):
         for index, person in enumerate(people):
+            if person["url"]:
+                for vote in votes:
+                    self.vote_up(conn, vote, person["name"], person["party"], (urls or {}).get(index, person["url"]))
             aw = {"aw": person["aw"], "match": "ext_id"} if person["aw"] else {}
             if person["xml"]:
                 xml = overrides.get(index, person["xml"])
@@ -154,15 +239,17 @@ class RandomizedInvariantTests(RegistryFixture, unittest.TestCase):
                 rng = random.Random(seed)
                 people = self.world(rng)
                 overrides = {index: str(900 + index) for index, person in enumerate(people) if person["xml"] and rng.random() < 0.4}
+                # A corrected roll-call profile link arrives with a new roll call.
+                urls = {index: f"{person['url']}-corrected" for index, person in enumerate(people) if person["url"] and rng.random() < 0.5}
                 first = self.open_store(f"first-{seed}.sqlite")
                 self.persist(first, people, {})
                 registry.reconcile(first)
                 incremental = self.next_build(first)
-                self.persist(incremental, people, overrides)
+                self.persist(incremental, people, overrides, urls, ("v1", "v2"))
                 registry.reconcile(incremental)
                 fresh = self.open_store(f"fresh-{seed}.sqlite")
-                self.persist(fresh, people, overrides)
-                registry.reconcile(fresh)
+                self.persist(fresh, people, overrides, urls, ("v1", "v2"))
+                self.assertEqual(registry.reconcile(fresh)["same_identity"], 0)
                 self.assertEqual(self.occurrence_groups(incremental), self.occurrence_groups(fresh))
 
     # Value: protects=reconcile is a fixed point, keeps a reviewed merge and never puts two DIP ids on one person; fails_when=any guess or merge step reads state it has already changed or a guess tears a reviewed merge apart; why_new=hand-written merge cases cover single shapes, not their combination with guesses; seam=none

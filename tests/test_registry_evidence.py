@@ -434,6 +434,49 @@ class RandomEvidenceTests(EvidenceHelpers, unittest.TestCase):
                     result = functools.reduce(registry._fold, (dict(i) for i in order), {})
                     self.assertEqual((result.get("aw_politician_id"), result.get("aw_match"), result.get("profile_url")), expected)
 
+    # Value: protects=a record's abgeordnetenwatch trust comes from this build's occurrences: a trusted lookup that is absent or found only by name in a later build is not inherited; fails_when=bind keeps the earlier build's aw unit on first touch; why_new=third ship round (9) asked whether a later occurrence inherits an earlier aw_match; seam=none
+    def test_trust_is_read_from_this_builds_occurrences(self):
+        first = self.build([occ("a", "aw:5", "Ada Example", xml="7", aw=5, match="ext_id", party="SPD")], [0], "trusted.sqlite")
+        for label, later, expected in (
+            ("lookup absent", occ("a", "xml:7", "Ada Example", xml="7", party="SPD"), (None, None)),
+            ("found by name only", occ("a", "xml:7", "Ada Example", xml="7", aw=5, match="name", party="SPD"), (5, "name")),
+        ):
+            with self.subTest(label):
+                conn = self.build([later], [0], None, previous=first)
+                (evidence,) = [json.loads(row[0]) for row in conn.execute("SELECT evidence_json FROM person_records")]
+                self.assertEqual((evidence.get("aw_politician_id"), evidence.get("aw_match")), expected)
+                self.assertNotIn("aw:5", registry.mp_keys({**evidence, "partition": None}))
+
+    # Value: protects=two different trusted abgeordnetenwatch ids on one record give it no trusted id at all, in every fold order, so it joins neither aw person durably; fails_when=_aw_choice picks one of them by string order and pass 1 merges the record into that person; why_new=third-pass follow-up (6) recorded the string-order choice; seam=none
+    def test_contradicting_trusted_aw_ids_give_a_record_no_trust(self):
+        items = [dict(display_name="Ada Example", xml_redner_id="7", aw_politician_id=aw, aw_match="ext_id", profile_url=f"https://example.test/{aw}")
+                 for aw in (5, 6)] + [dict(display_name="Ada Example", xml_redner_id="7")]
+        folded = {json.dumps(functools.reduce(registry._fold, (dict(i) for i in order), {}), sort_keys=True)
+                  for order in itertools.permutations(items)}
+        self.assertEqual(len(folded), 1)
+        result = json.loads(next(iter(folded)))
+        self.assertEqual((result.get("aw_politician_id"), result.get("aw_match"), result.get("profile_url")), (None, registry.AW_CONFLICT, None))
+        self.assertEqual(result["trusted_aw_ids"], [5, 6])
+        # Bindings stay on their records (an aw id is no hard id): Redner-ID 7's record then holds lookups 5 and 6,
+        # and Redner-ID 9's record, bound before its lookup existed, holds 5.
+        first = self.build([occ("a", "aw:5", "Ada Example", xml="7", aw=5, match="ext_id", party="SPD"),
+                            occ("c", "xml:9", "Bea Beta", xml="9", party="CDU/CSU")], [0, 1], "two-trusted.sqlite")
+        conn = self.build([occ("a", "aw:6", "Ada Example", xml="7", aw=6, match="ext_id", party="SPD"),
+                           occ("b", "aw:5", "Ada Example", xml="7", aw=5, match="ext_id", party="SPD"),
+                           occ("c", "aw:5", "Bea Beta", xml="9", aw=5, match="ext_id", party="CDU/CSU")], [0, 1, 2], None, previous=first)
+        records = {row[0]: (json.loads(row[1]), row[2]) for row in conn.execute("SELECT identity_key, evidence_json, person_id FROM person_records")}
+        self.assertEqual(sorted(records), ["aw:5", "xml:9"])
+        self.assertEqual(records["aw:5"][0]["aw_match"], registry.AW_CONFLICT)
+        self.assertEqual(records["xml:9"][0]["aw_match"], "ext_id")
+        self.assertNotEqual(records["aw:5"][1], records["xml:9"][1])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_aliases").fetchone()[0], 0)
+        # Value: protects=a record whose lookups contradict is not joined through an aw identity it once presented by the recomputed pass 1a either; fails_when=pass 1a reads the aw identities of an AW_CONFLICT record; why_new=pass 1a's id guard cannot see the blanked aw ids; seam=none
+        conflicted = dict(id="a", person_id="a", live=True, display_name="Ada Example", aw_match=registry.AW_CONFLICT,
+                          trusted_aw_ids=[5, 6], identities=["aw:5", "aw:6"])
+        holder = dict(id="b", person_id="b", live=True, display_name="Bea Beta", aw_politician_id=6, aw_match="ext_id", identities=["aw:6"])
+        components, totals = registry.match_rows([conflicted, holder])
+        self.assertEqual((len(components), totals["same_identity"]), (2, 0))
+
     # Value: protects=grouping and evidence of a seeded world with multi-name, multi-party and multi-Redner-ID records are independent of persist order and of incremental versus fresh builds; fails_when=any evidence or match step reads insertion order; why_new=combinations of the hand-written shapes; seam=none
     def test_random_worlds_are_order_independent(self):
         names = ["Ada Example", "Dr. Ada Example", "Bea Beta", "Cem Gamma"]

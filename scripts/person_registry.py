@@ -23,6 +23,8 @@ PERSON_KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 RESERVED_PERSON_KEYS = frozenset({"index"})
 #: aw_match value of a partition record: its profile is never a trusted join key.
 PARTITIONED = "partitioned"
+#: aw_match value of a record whose occurrences name two trusted abgeordnetenwatch ids.
+AW_CONFLICT = "conflicting"
 
 class RegistryError(ValueError):
     pass
@@ -298,6 +300,15 @@ def _representative_pair(pairs: list[list[str | None]]) -> list[str | None]:
 _AW_FIELDS = ("aw_politician_id", "aw_match", "profile_url")
 
 
+def _trusted_aw_ids(evidence: dict[str, Any]) -> set[int]:
+    """The abgeordnetenwatch ids looked up by Redner-ID that evidence names: kept
+    as ``trusted_aw_ids`` once two contradict, else the trusted flat id."""
+    ids = set(evidence.get("trusted_aw_ids", ()))
+    if derive.trusted_aw_id({"id": evidence.get("aw_politician_id")}, evidence.get("aw_match")) is not None:
+        ids.add(evidence["aw_politician_id"])
+    return ids
+
+
 def _aw_choice(unit: tuple[Any, ...]) -> tuple[Any, ...]:
     """Which abgeordnetenwatch unit wins: one with a valid id, a trusted lookup, the
     fullest, then by content."""
@@ -336,8 +347,9 @@ def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     pairs = {tuple(p) for p in _name_party_pairs(base)} | {tuple(p) for p in _name_party_pairs(new)}
     ids = _redner_ids(base) | _redner_ids(new)
     units = [tuple(e.get(f) for f in _AW_FIELDS) for e in (base, new) if any(e.get(f) is not None for f in _AW_FIELDS)]
+    trusted = _trusted_aw_ids(base) | _trusted_aw_ids(new)
     for key, value in new.items():
-        if value is None or key in ("pairs", "xml_redner_ids", "roster_bio", *_AW_FIELDS, *_BIO_FIELDS):
+        if value is None or key in ("pairs", "xml_redner_ids", "roster_bio", "trusted_aw_ids", "identities", *_AW_FIELDS, *_BIO_FIELDS):
             continue
         if isinstance(value, bool) or isinstance(out.get(key), bool):
             out[key] = bool(out.get(key)) or bool(value)
@@ -359,6 +371,12 @@ def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
                 out.pop(field, None)
             else:
                 out[field] = value
+    if len(trusted) > 1:
+        # Two lookups by Redner-ID name different profiles: neither is trusted,
+        # and no profile is shown, rather than one picked by id order.
+        out.update(trusted_aw_ids=sorted(trusted), aw_match=AW_CONFLICT)
+        out.pop("aw_politician_id", None)
+        out.pop("profile_url", None)
     if pairs:
         out["pairs"] = sorted([list(p) for p in pairs], key=_json_key)
         name, party = _representative_pair(out["pairs"])
@@ -370,6 +388,9 @@ def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     if ids:
         out["xml_redner_ids"] = sorted(ids)
         out["xml_redner_id"] = min(ids)
+    identities = set(base.get("identities", ())) | set(new.get("identities", ()))
+    if identities:
+        out["identities"] = sorted(identities)
     return out
 
 
@@ -389,6 +410,9 @@ def bind(
     neither the evidence nor the binding depends on persist order."""
     evidence["ever_mdb"] = bool(evidence.get("is_mdb"))
     identity = partition_identity(identity, evidence)
+    # The identity the source presents, kept when the occurrence stays on a record
+    # of another identity, so reconcile can meet the record that identity names.
+    evidence["identities"] = [identity]
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
     bound = conn.execute("SELECT record_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
     bound_touched = False
@@ -414,6 +438,8 @@ def bind(
             # registry's own ever_mdb (re-derived below) survives from the earlier
             # build; an id the source stopped supplying cannot keep linking records.
             previous = {}
+        else:
+            previous.setdefault("identities", [row["identity_key"]])
         evidence["ever_mdb"] = bool(evidence.get("ever_mdb") or was_mdb)
         previous.pop("vacated", None)
         evidence = _fold(previous, evidence)
@@ -427,6 +453,8 @@ def bind(
         evidence = _fold({}, evidence)
     if evidence.get("profile_blocked"):
         evidence.update(aw_politician_id=None, aw_match=PARTITIONED, profile_url=None)
+    if evidence.get("identities") == [identity]:
+        del evidence["identities"]  # only its own identity: the usual case, not stored
     if bound and bound[0] != record_id and not bound_touched:
         # The occurrence left its old record; once nothing is bound to it any more
         # that record is stale evidence, which reconcile no longer matches on. A
@@ -464,6 +492,39 @@ def merge(conn: sqlite3.Connection, keys: list[str], survivor: str | None = None
         for table in ("person_records", "person_bindings", "mps"):
             conn.execute(f"UPDATE {table} SET person_id=? WHERE person_id=?", (survivor, retired))
     return survivor
+
+def _reviewed_merge_groups(conn: sqlite3.Connection, merges: list[dict[str, Any]]) -> list[tuple[list[str], str | None]]:
+    """The reviewed merges as one merge per resulting person, so the file order
+    cannot decide the outcome. Entries whose persons overlap, directly or through
+    an alias, join one group; a group may name at most one survivor."""
+    parent: dict[str, str] = {}
+
+    def find(key: str) -> str:
+        parent.setdefault(key, key)
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    for entry in merges:
+        resolved = [resolve(conn, key) for key in entry["persons"]]
+        for key in resolved[1:]:
+            parent[find(key)] = find(resolved[0])
+        find(resolved[0])
+    groups: dict[str, tuple[set[str], set[str]]] = {}
+    for entry in merges:
+        keys, survivors = groups.setdefault(find(resolve(conn, entry["persons"][0])), (set(), set()))
+        keys.update(entry["persons"])
+        if entry.get("survivor"):
+            survivors.add(entry["survivor"])
+    out = []
+    for keys, survivors in sorted(groups.values(), key=lambda group: sorted(group[0])):
+        if len(survivors) > 1:
+            raise RegistryError(f"Reviewed merges name survivors {', '.join(sorted(survivors))} for one person "
+                                f"({', '.join(sorted(keys))}); name one survivor in {CORRECTIONS_PATH}")
+        out.append((sorted(keys), next(iter(survivors), None)))
+    return out
+
 
 def mp_keys(row: dict[str, Any]) -> list[str]:
     """Personenkennungen of an MP row, used to link rows that describe the same
@@ -572,7 +633,7 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     on a shared Personenkennung; the name-based passes only ever propose."""
     # Union-find: link rows that share any external id into one person.
     parent = {row["id"]: row["id"] for row in rows}
-    totals = {"ext_id": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
+    totals = {"ext_id": 0, "same_identity": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
 
     def find(node: str) -> str:
         while parent[node] != node:
@@ -610,6 +671,24 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         for row in rows:
             durable.setdefault(find(row["id"]), []).append(row)
         return durable, totals
+
+    # Pass 1a: records whose occurrences present one source identity are one
+    # record in a fresh build. In an incremental one an occurrence can stay on the
+    # record it was bound to while its identity changed (a corrected roll-call
+    # profile link): it joins the record the new identity names unless their
+    # partitions or official ids contradict. Recomputed, never an alias; on a
+    # fresh build it joins nothing.
+    first_for_identity: dict[str, str] = {}
+    for row in sorted(rows, key=lambda r: r["id"]):
+        for identity in row.get("identities", ()):
+            if identity.startswith("aw:") and row.get("aw_match") == AW_CONFLICT:
+                continue  # its Redner-ID lookups contradict: no aw identity of it is trusted
+            other = first_for_identity.setdefault(identity, row["id"])
+            if other == row["id"] or find(other) == find(row["id"]):
+                continue
+            left, right = _merge_external_ids(members_by_root[find(row["id"])]), _merge_external_ids(members_by_root[find(other)])
+            if not any(left[kind] and right[kind] and not left[kind] & right[kind] for kind in ("aw", "dip", "xml")):
+                union(row["id"], other, "same_identity")
 
     # Pass 1b: a record whose abgeordnetenwatch id was found by name joins the
     # record that holds the same id as a Personenkennung when both carry the same
@@ -783,6 +862,7 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> lis
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
+        evidence.setdefault("identities", [record["identity_key"]])
         live = record["id"] in touched if touched is not None else record["id"] in bound or not evidence.get("vacated")
         evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
                         vote_ids=vote_ids.get(record["id"], set()))
@@ -925,8 +1005,8 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     rows = _load_rows(conn, touched)
     for members in match_rows([row for row in rows if row["live"]], guesses=False)[0].values():
         merge(conn, sorted({resolve(conn, row["person_id"]) for row in members}))
-    for correction in data["merges"]:
-        merge(conn, correction["persons"], correction.get("survivor"))
+    for keys, survivor in _reviewed_merge_groups(conn, data["merges"]):
+        merge(conn, keys, survivor)
     totals = _guess_merges(conn, _load_rows(conn, touched))
     validate(conn)
     return totals

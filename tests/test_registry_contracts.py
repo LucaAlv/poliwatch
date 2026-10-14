@@ -208,8 +208,40 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertIsNone(roster_occurrence_id(""))
         conn = self.open_store()
         now = store.utc_now()
-        store.persist_sampled_people(conn, {"sampled_people": [{"titel": "Ada Example"}, {"titel": "Bea Example"}]}, now)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            store.persist_sampled_people(conn, {"protocol": {"dokumentnummer": "21/1"}, "sampled_people": [{"titel": "Ada Example"}, {"titel": "Bea Example"}]}, now)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_bindings").fetchone()[0], 0)
+        # Value: protects=two distinct DIP persons without an id are skipped with a diagnostic instead of collapsing into one name-party:Unbekannt record; fails_when=the id-less row is persisted with mp_identity(dip_person_id=None); why_new=third ship round (4): the collapse was only read, never pinned; seam=none
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_records").fetchone()[0], 0)
+        self.assertIn("21/1: 2 sampled DIP persons have no id and were skipped", stderr.getvalue())
+        client = mock.Mock()
+        client.list_all.return_value = [
+            {"titel": name, "vorname": name.split()[0], "nachname": name.split()[1], "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+            for name in ("Ada Example", "Bea Example")
+        ] + [{"id": "dip-9", "titel": "Cem Example", "vorname": "Cem", "nachname": "Example", "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}]
+        roster = self.open_store("roster.sqlite")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            stats = build.ingest_mdb_roster(client, roster, wahlperiode=21)
+        self.assertEqual((stats["mdb"], stats["skipped_no_id"]), (1, 2))
+        self.assertEqual([row[0] for row in roster.execute("SELECT identity_key FROM person_records")], ["dip:dip-9"])
+        self.assertIn("2 DIP persons with an MdB function have no id and were skipped", stderr.getvalue())
+
+    # Value: protects=a preserved roster row without a DIP id is skipped with a warning on the next rebuild instead of becoming a name-party record; fails_when=the preserved-roster replay persists it under mp_identity(display_name, party); why_new=third ship round (4): the preserved path built the identity from name and party; seam=none
+    def test_a_preserved_roster_row_without_a_dip_id_is_skipped_with_a_warning(self):
+        def ingest(staged):
+            store.upsert_mp(staged, now=store.utc_now(), display_name="Ada Example", party_id=None, identity_key="dip:dip-7",
+                            dip_person_id="dip-7", occurrence_id=stable_key("roster", "dip-7"), is_mdb=True)
+        self.rebuild([report("s1", names=("Bea Example",))], preserve_roster=False, roster_ingest=ingest)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE mps SET dip_person_id = NULL WHERE is_mdb = 1")
+        stderr = io.StringIO()
+        entries = [{"report": report("s1", names=("Bea Example",)), "report_path": self.root / "s1.json"}]
+        with contextlib.redirect_stderr(stderr):
+            build.rebuild_database_from_entries(self.db, entries)
+        self.assertIn("1 preserved roster rows have no DIP id and were skipped", stderr.getvalue())
+        self.assertEqual([r["identity_key"] for r in self.rows("person_records") if r["identity_key"].startswith("name-party:")], [])
 
     # Value: protects=the dossier page prints the reviewed name of a shared-Redner-ID occurrence, not the garbled printed one; fails_when=render_html stops applying registry.corrected_speaker so the page shows a name the store has corrected; why_new=the shipped-partition test only checks the store rows; seam=none
     def test_render_prints_the_reviewed_name_of_a_partitioned_occurrence(self):
