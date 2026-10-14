@@ -396,6 +396,124 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+# Parliamentary terms explained on bill pages. source_url is consumed by the
+# sources page; tooltip wording stays short and avoids implying legal effect.
+PARLIAMENTARY_GLOSSARY: dict[str, dict[str, str]] = {
+    "Drucksache": {
+        "slug": "drucksache",
+        "kurz": "Ein amtlich veröffentlichtes Dokument des Bundestages, etwa ein Gesetzentwurf, Antrag oder Ausschussbericht.",
+        "lang": "Drucksachen sind parlamentarische Dokumente, die den Abgeordneten und der Öffentlichkeit in der Regel elektronisch zugänglich gemacht werden.",
+        "source_url": "https://www.bundestag.de/services/glossar/bundestagsdrucksache-245364",
+    },
+    "Plenarprotokoll": {
+        "slug": "plenarprotokoll",
+        "kurz": "Stenografischer Bericht über eine Sitzung des Bundestages.",
+        "lang": "Die Plenarprotokolle dokumentieren die Sitzungen des Bundestages und stehen öffentlich als stenografische Berichte zur Verfügung.",
+        "source_url": "https://www.bundestag.de/services/glossar/plenarprotokoll-283834",
+    },
+    "Tagesordnungspunkt": {
+        "slug": "tagesordnungspunkt",
+        "kurz": "Ein auf der Tagesordnung aufgeführter Beratungsgegenstand oder Abschnitt einer Sitzung.",
+        "lang": "Die Tagesordnung legt fest, welche Gegenstände der Bundestag in einer Sitzung behandelt; ein Punkt kann mehrere Vorlagen oder Beratungen umfassen.",
+        "source_url": "https://www.bundestag.de/services/glossar/tagesordnung-868648",
+    },
+    "Erste Beratung": {
+        "slug": "erste-beratung",
+        "kurz": "Erste Behandlung eines Gesetzentwurfs im Plenum; er wird meist an Ausschüsse überwiesen.",
+        "lang": "In der ersten Beratung werden grundsätzlich die Grundzüge eines Gesetzentwurfs behandelt. Am Ende wird er in der Regel zur weiteren Arbeit an einen Ausschuss überwiesen.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Zweite Beratung": {
+        "slug": "zweite-beratung",
+        "kurz": "Plenarberatung der Ausschussfassung eines Gesetzentwurfs; Änderungen und Abstimmungen sind möglich.",
+        "lang": "In der zweiten Beratung befasst sich das Plenum mit der Ausschussempfehlung und dem Bericht. Abgeordnete können Änderungsanträge stellen; abgestimmt wird über die einzelnen Bestimmungen und Änderungsanträge. Die Schlussabstimmung folgt in der dritten Beratung.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Dritte Beratung": {
+        "slug": "dritte-beratung",
+        "kurz": "Abschließende Beratung eines Gesetzentwurfs im Plenum mit Schlussabstimmung.",
+        "lang": "In der dritten Beratung wird der Gesetzentwurf abschließend behandelt und der Bundestag stimmt darüber ab. Änderungsanträge sind nur in den dafür vorgesehenen Grenzen möglich.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Beschlussempfehlung und Bericht": {
+        "slug": "beschlussempfehlung-bericht",
+        "kurz": "Vorlage eines Ausschusses mit Empfehlung an das Plenum und Bericht über seine Beratung.",
+        "lang": "Der federführende Ausschuss legt dem Plenum regelmäßig eine Beschlussempfehlung und einen Bericht vor. Die Empfehlung ist ein Vorschlag für die Entscheidung; der Bundestag entscheidet selbst.",
+        "source_url": "https://www.bundestag.de/services/glossar/beschlussempfehlung-245344",
+    },
+    "Unterrichtung": {
+        "slug": "unterrichtung",
+        "kurz": "Mitteilung oder Bericht, mit dem etwa die Bundesregierung den Bundestag über einen Sachverhalt informiert.",
+        "lang": "Unterrichtungen werden dem Bundestag zugeleitet und als Drucksache verteilt. Je nach Gegenstand kann das Plenum sie beraten oder zur Kenntnis nehmen.",
+        "source_url": "https://www.bundestag.de/services/glossar/unterrichtung-245544",
+    },
+    "Stellungnahme": {
+        "slug": "stellungnahme",
+        "kurz": "Äußerung des Bundesrates zu einer Vorlage, etwa zu einem Gesetzentwurf der Bundesregierung.",
+        "lang": "Gesetzentwürfe der Bundesregierung gehen zuerst an den Bundesrat. Er kann dazu eine Stellungnahme abgeben, zu der sich die Regierung schriftlich äußern kann; danach wird der Entwurf mit der Stellungnahme dem Bundestag zugeleitet. Die Stellungnahme ist eine Äußerung, keine Entscheidung über das Gesetz.",
+        "source_url": "https://www.bundestag.de/parlament/aufgaben/gesetzgebung_neu/gesetzgebung/weg-255468",
+    },
+    "Gesetzesbeschluss": {
+        "slug": "gesetzesbeschluss",
+        "kurz": "Beschluss des Bundestages über einen Gesetzentwurf; das Gesetzgebungsverfahren kann danach noch weitergehen.",
+        "lang": "Nach dem Beschluss des Bundestages wird das Gesetz dem Bundesrat zugeleitet. Je nach Gesetz folgen weitere Schritte, bevor es ausgefertigt und verkündet wird.",
+        "source_url": "https://www.bundestag.de/parlament/aufgaben/gesetzgebung_neu/gesetzgebung/weg-255468",
+    },
+    "Namentliche Abstimmung": {
+        "slug": "namentliche-abstimmung",
+        "kurz": "Abstimmung, bei der das individuelle Stimmverhalten der Abgeordneten festgehalten und veröffentlicht wird.",
+        "lang": "Bei einer namentlichen Abstimmung wird für jedes Mitglied des Bundestages festgehalten, wie es abgestimmt hat. Das individuelle Stimmverhalten wird veröffentlicht.",
+        "source_url": "https://www.bundestag.de/services/glossar/nam_abst-245502",
+    },
+    "Fraktion": {
+        "slug": "fraktion",
+        "kurz": "Zusammenschluss von Abgeordneten im Bundestag zur gemeinsamen parlamentarischen Arbeit.",
+        "lang": "Fraktionen bündeln die parlamentarische Arbeit ihrer Mitglieder. Für den Fraktionsstatus gelten die Voraussetzungen der Geschäftsordnung des Bundestages.",
+        "source_url": "https://www.bundestag.de/services/glossar/fraktionen-444784",
+    },
+    "Sprechrolle": {
+        "slug": "sprechrolle",
+        "kurz": "Funktion, in der eine Person eine Rede hält, etwa als Bundesministerin, Staatssekretär oder Mitglied des Bundesrates.",
+        "lang": "Ein Begriff dieser Seite, kein amtlicher: Die Sprechrolle gehört zur einzelnen Rede, nicht zur Person. Eine Abgeordnete, die als Bundesministerin spricht, behält ihr Mandat. Die Rolle stammt aus den Plenarprotokollen; sie ist keine eigene Rechtsstellung.",
+        "source_url": "https://www.bundestag.de/dokumente/protokolle",
+        "source_label": "Plenarprotokolle, in denen die Rolle erfasst ist",
+    },
+}
+
+_PARLIAMENTARY_TERM_ALIASES = {
+    "1. beratung": "Erste Beratung",
+    "2. beratung": "Zweite Beratung",
+    "3. beratung": "Dritte Beratung",
+    "beschlussempfehlung/bericht": "Beschlussempfehlung und Bericht",
+    "namentliche abstimmungen": "Namentliche Abstimmung",
+}
+
+
+def render_parliamentary_term(
+    label: str, *, glossary_href: str = "../sources.html", tip_id: str
+) -> str:
+    """Render a known parliamentary term with a source-page link and tooltip."""
+    canonical = _PARLIAMENTARY_TERM_ALIASES.get(label.casefold())
+    if canonical is None:
+        canonical = next((term for term in PARLIAMENTARY_GLOSSARY if term.casefold() == label.casefold()), None)
+    if canonical is None and label.casefold() == "gesetzgebung":
+        entry = VORGANGSTYP_GLOSSARY["Gesetzgebung"]
+        href = f"{glossary_href}#vorgangstyp-{entry['slug']}"
+        short = entry["kurz"]
+    elif canonical is not None:
+        entry = PARLIAMENTARY_GLOSSARY[canonical]
+        href = f"{glossary_href}#parlament-{entry['slug']}"
+        short = entry["kurz"]
+    else:
+        return esc(label)
+    safe_id = esc(tip_id)
+    return (
+        f'<span class="bill-term"><a class="bill-term-link" href="{esc(href)}" '
+        f'data-bill-help="{safe_id}" aria-describedby="{safe_id}">{esc(label)}</a>'
+        f'<span class="bill-tooltip" id="{safe_id}" role="tooltip" hidden>{esc(short)}</span></span>'
+    )
+
+
 # The Angenommen/Abgelehnt pill, shared by the dossier panel and votes/index.html.
 VOTE_RESULT_BADGE_CSS = """
     .vote-result {
@@ -1043,6 +1161,23 @@ def navigation_runtime_script() -> str:
     })();
   </script>
 """
+
+
+def speech_hash_runtime_script() -> str:
+    return """<script>
+    (() => {
+      function revealSpeech() {
+        let id;
+        try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+        const speech = document.getElementById(id);
+        if (!speech || !speech.matches('details.speech-card')) return;
+        speech.open = true;
+        speech.scrollIntoView({ block: 'start' });
+      }
+      revealSpeech();
+      addEventListener('hashchange', revealSpeech);
+    })();
+    </script>"""
 
 
 def page_scripts(selection: Selection | None = None) -> str:
@@ -3052,6 +3187,13 @@ def render_html(
       border-bottom:1px solid var(--line);
     }}
     h1 {{ margin:0; font-size:34px; line-height:1.1; font-weight:760; }}
+    /* Compound words such as "Anpassungsverfahrensabweichungsgesetz" are wider than a phone. */
+    h1, .top-card h2, .metric, .row-title, .vote-head p, .speech-text {{
+      overflow-wrap:break-word;
+      -webkit-hyphens:auto;
+      hyphens:auto;
+      hyphenate-limit-chars:12 5 5;
+    }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:15px; }}
     .meta-grid {{
       display:grid;
@@ -3271,6 +3413,7 @@ def render_html(
     }}
     .attention-row {{
       display:grid;
+      grid-template-columns:minmax(0,1fr);
       gap:5px;
       padding:12px 16px;
       border-bottom:1px solid #edf0f4;
@@ -3347,7 +3490,7 @@ def render_html(
     .mini-bars i, .mini-bars b {{ display:block; height:3px; border-radius:999px; }}
     .mini-bars i {{ background:var(--teal); }}
     .mini-bars b {{ background:var(--amber); }}
-    main {{ display:grid; gap:16px; }}
+    main {{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }}
     .notice {{
       padding:12px 14px;
       border:1px solid #e3c46a;
@@ -3736,6 +3879,7 @@ def render_html(
     }}
     .speech-cards {{
       display:grid;
+      grid-template-columns:minmax(0,1fr);
       gap:8px;
     }}
     .speech-card {{
@@ -3811,22 +3955,22 @@ def render_html(
       .attention-list::after {{ display:none; }}
     }}
     @media (max-width: 1120px) {{
-      .layout {{ grid-template-columns:1fr; }}
-      .detail-grid {{ grid-template-columns:1fr; }}
-      .api-record-grid {{ grid-template-columns:1fr; }}
-      .source-strip {{ grid-template-columns:1fr; }}
+      .layout {{ grid-template-columns:minmax(0,1fr); }}
+      .detail-grid {{ grid-template-columns:minmax(0,1fr); }}
+      .api-record-grid {{ grid-template-columns:minmax(0,1fr); }}
+      .source-strip {{ grid-template-columns:minmax(0,1fr); }}
       .member-vote-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     }}
     @media (max-width: 720px) {{
       .shell {{ padding:14px; }}
-      .page-header, .top-head {{ grid-template-columns:1fr; }}
-      .session-llm-header, .session-summary-item-head {{ grid-template-columns:1fr; }}
-      .meta-grid {{ grid-template-columns:1fr 1fr; }}
+      .page-header, .top-head {{ grid-template-columns:minmax(0,1fr); }}
+      .session-llm-header, .session-summary-item-head {{ grid-template-columns:minmax(0,1fr); }}
+      .meta-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
       h1 {{ font-size:27px; }}
       h2 {{ font-size:18px; }}
       .score {{ text-align:left; border-left:0; padding-left:0; }}
-      .top-bars {{ grid-template-columns:1fr; }}
-      .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:1fr; }}
+      .top-bars {{ grid-template-columns:minmax(0,1fr); }}
+      .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:minmax(0,1fr); }}
       .vote-fraction-row {{ grid-template-columns:10px minmax(0,.7fr) minmax(90px,1fr); }}
       .vote-fraction-row em {{ display:none; }}
       .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px max-content; }}
@@ -3834,11 +3978,11 @@ def render_html(
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
       .speech-text {{ padding-left:14px; }}
-      .summary-sources li {{ grid-template-columns:1fr; }}
+      .summary-sources li {{ grid-template-columns:minmax(0,1fr); }}
       .summary-sources strong {{ grid-row:auto; }}
       .ai-summary-header {{ flex-direction:column; }}
       .ai-summary-toggle {{ width:100%; }}
-      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
+      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:minmax(0,1fr); }}
       footer {{ align-items:flex-start; flex-direction:column; }}
     }}
     @media screen and (max-width: 1120px) {{
@@ -3907,6 +4051,7 @@ def render_html(
       <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
     </footer>
   </div>
+  {speech_hash_runtime_script()}
   {page_scripts(features)}
 </body>
 </html>
