@@ -11178,6 +11178,9 @@ def main() -> int:
             pulse_store.require_current_schema(previous)
             if args.offline or args.no_persist:
                 pulse_store.require_current_speech_rules(previous)
+                # The render applies the corrections file to the pages without a
+                # reconcile, so an applied partition missing from it stops here.
+                registry.require_applied_partitions(previous)
         except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

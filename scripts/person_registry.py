@@ -169,6 +169,30 @@ def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
         return f"partition:{partition['xml_redner_id']}:{owner}"
     return identity
 
+def require_applied_partitions(conn: sqlite3.Connection) -> None:
+    """Every partition the registry applied must still be in the corrections file.
+
+    An applied partition is durable, but only the file carries its labels,
+    reviewed occurrence names and profile owner, and the pages read the file,
+    not the store. Without the entry the partition records keep their persons
+    while both regain the shared profile, the reviewed names revert, and a new
+    occurrence of the Redner-ID joins whichever record sorts first. So a removed
+    entry is refused rather than half applied."""
+    listed = {partition["xml_redner_id"] for partition in corrections()["partitions"]}
+    missing: dict[str, set[str]] = {}
+    for identity, person in conn.execute("SELECT identity_key, person_id FROM person_records WHERE partition IS NOT NULL"):
+        xml_id = identity.split(":")[1]  # partition:{xml_redner_id}:{owner}
+        if xml_id not in listed:
+            missing.setdefault(xml_id, set()).add(resolve(conn, person))
+    if missing:
+        xml_id, persons = min(missing.items())
+        raise RegistryError(
+            f"Redner-ID {xml_id} is partitioned in this registry (persons {', '.join(sorted(persons))}) but has no entry in "
+            f"{CORRECTIONS_PATH}; applied partitions are durable, so restore the entry. If its partitions are one person, keep "
+            "the entry and add a reviewed merge of these persons; to drop the partition, remove the entry, move the store "
+            "aside and run an online update with --enrich mp-roster (docs/stable-ids.md)")
+
+
 def resolve(conn: sqlite3.Connection, person_id: str) -> str:
     seen = set()
     while True:
@@ -887,6 +911,7 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     staged rebuild), so a record nothing touched is stale and is ignored by every
     match. Without it (tests, a partial persist) liveness falls back to bound or never vacated."""
     validate(conn)
+    require_applied_partitions(conn)
     data = corrections()
     touched = None
     if full_build:

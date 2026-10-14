@@ -6,6 +6,7 @@ Kept apart from test_stable_ids.py on purpose; that file holds the A.2
 identity tests."""
 from __future__ import annotations
 import contextlib
+import copy
 import io
 import json
 import sqlite3
@@ -384,6 +385,154 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             self.assertEqual(len(self.rows("person_records")), 3)
             self.rebuild([r])
             self.assertEqual(self.rows("persons"), persons)
+        # Value: protects=a partition added to a store that showed the shared ext_id profile on one person leaves it on the profile owner's row only, and the old person keeps no occurrence; fails_when=the old record's profile survives on a bound row or the non-owner partition inherits it from the record it left; why_new=the add-partition case ran without a profile; seam=none
+        self.db = self.root / "profiled.sqlite"
+        shared = self.shared_id_report()
+        with self.correction_file({}):
+            self.rebuild([shared])
+        self.assertEqual(self.profiles(), {"Dirk-Ulrich Mende": (123, "ext_id", "https://example.test/foehr")})
+        old_person = self.rows("person_records")[0]["person_id"]
+        with self.correction_file(self.partition(profile_owner="foehr")):
+            self.rebuild([shared])
+            live = {m["display_name"]: (m["aw_politician_id"], m["aw_match"], m["profile_url"])
+                    for m in self.rows("mps") if m["id"] in {b["record_id"] for b in self.rows("person_bindings")}}
+            self.assertEqual(live, {"Alexander Föhr": self.FOEHR_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE})
+            self.assertNotIn(old_person, {b["person_id"] for b in self.rows("person_bindings")})
+            state = self.registry_state()
+            self.rebuild([shared])
+            self.assertEqual(self.registry_state(), state)
+
+    def shared_id_report(self, names=("Alexander Föhr", "Dirk-Ulrich Mende")):
+        """Föhr and Mende printed under one Redner-ID whose ext_id profile is Föhr's;
+        the rede ids follow the name, so any order names the same occurrences."""
+        r = report(names=names, rede_ids={"Alexander Föhr": "s1-r0", "Dirk-Ulrich Mende": "s1-r1"})
+        for speech in r["agenda_items"][0]["xml_speakers"]:
+            speech["speaker"].update(xml_redner_id="11005304", abgeordnetenwatch={"id": 123, "match": "ext_id", "url": "https://example.test/foehr"})
+        return r
+
+    def profiles(self):
+        return {m["display_name"]: (m["aw_politician_id"], m["aw_match"], m["profile_url"]) for m in self.rows("mps")}
+
+    def partition(self, labels=None, **extra):
+        labels = labels or {"Alexander Föhr": "foehr", "Dirk-Ulrich Mende": "mende"}
+        return {"partitions": [{"xml_redner_id": "11005304", "labels": labels, **extra}]}
+
+    def registry_state(self, tables=("persons", "person_aliases", "person_records", "person_bindings", "mps")):
+        """The registry and mps rows without their write timestamps."""
+        return [[{k: v for k, v in row.items() if k not in ("created_at", "updated_at")} for row in self.rows(t)] for t in tables]
+
+    def bound_groups(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.row_factory = sqlite3.Row
+            groups = self.occurrence_groups(conn)
+            profiles = {row[0]: tuple(row[1:]) for row in conn.execute(
+                "SELECT b.id, m.aw_politician_id, m.profile_url FROM person_bindings b JOIN mps m ON m.id = b.record_id")}
+        return groups, profiles
+
+    FOEHR_PROFILE = (123, "partitioned", "https://example.test/foehr")
+    NO_PROFILE = (None, None, None)
+
+    # Value: protects=removing an applied partition from person_corrections.json cannot hand the shared profile back to both partitions; fails_when=a replay without the entry rebuilds the partition records from bare source evidence, so Mende's row shows Föhr's ext_id profile and the reviewed names revert; why_new=the third ship round found the removal half applied and the policy unpinned; seam=none
+    def test_removing_an_applied_partition_is_refused_and_the_store_kept(self):
+        r = self.shared_id_report()
+        with self.correction_file(self.partition(profile_owner="foehr")):
+            self.rebuild([r])
+        self.assertEqual(self.profiles(), {"Alexander Föhr": self.FOEHR_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE})
+        persons = sorted(p["person_id"] for p in self.rows("person_records"))
+        before = self.db.read_bytes()
+        with self.correction_file({}), self.assertRaisesRegex(build.DatabaseRebuildError, r"Redner-ID 11005304 is partitioned in this registry") as caught:
+            self.rebuild([r])
+        for person in persons:
+            self.assertIn(person, str(caught.exception))
+        self.assertEqual(self.db.read_bytes(), before)
+        # Value: protects=the refusal also guards a store written without the staged rebuild; fails_when=reconcile settles the removed partition instead of refusing it; why_new=reconcile is the one check every registry writer passes; seam=none
+        conn = self.open_store("direct.sqlite")
+        with self.correction_file(self.partition(profile_owner="foehr")):
+            self.up(conn, "occ-foehr", "xml:11005304", "Alexander Föhr", xml="11005304")
+            registry.reconcile(conn)
+        with self.correction_file({}), self.assertRaisesRegex(registry.RegistryError, "Redner-ID 11005304 is partitioned"):
+            registry.reconcile(conn)
+        # Value: protects=an offline render, which applies the corrections file to the pages without a reconcile, refuses the store too; fails_when=only reconcile checks, so --offline renders reverted reviewed names beside the store's partition persons; why_new=the render-only path never reaches reconcile; seam=none
+        site = self.root / "site"
+        (site / "data").mkdir(parents=True)
+        (site / "data" / "bundestag-pulse.sqlite").write_bytes(before)
+        stderr = io.StringIO()
+        with self.correction_file({}), mock.patch.object(sys, "argv", ["build", "--offline", "--output-dir", str(site)]), \
+                contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(build.main(), 1)
+        self.assertIn("error: Redner-ID 11005304 is partitioned in this registry", stderr.getvalue())
+        self.assertEqual((site / "data" / "bundestag-pulse.sqlite").read_bytes(), before)
+        # The documented way to drop a partition: a new history from the cached reports.
+        self.db = self.root / "fresh.sqlite"
+        with self.correction_file({}):
+            self.rebuild([r])
+        self.assertEqual(len({b["person_id"] for b in self.rows("person_bindings")}), 1)
+        self.assertEqual(self.rows("person_aliases"), [])
+
+    # Value: protects=label and profile-owner edits of an applied partition follow the file, move the shared profile with the owner and reach a fixed point; fails_when=profile_blocked or the binding is kept from an earlier build, or the incremental store groups or attributes differently from a fresh build of the same correction history; why_new=only adding a partition and the shipped file were tested; seam=none
+    def test_partition_edits_follow_the_file_and_replay_to_a_fixed_point(self):
+        r, reversed_r = self.shared_id_report(), self.shared_id_report(("Dirk-Ulrich Mende", "Alexander Föhr"))
+        cached = copy.deepcopy(r)
+        steps = (
+            ("profile owner foehr", self.partition(profile_owner="foehr"),
+             {"Alexander Föhr": self.FOEHR_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE}, 2),
+            ("profile owner moved to mende", self.partition(profile_owner="mende"),
+             {"Alexander Föhr": self.NO_PROFILE, "Dirk-Ulrich Mende": (123, "partitioned", "https://example.test/foehr")}, 2),
+            ("profile owner cleared", self.partition(), {"Alexander Föhr": self.NO_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE}, 2),
+            ("Mende's label moved to foehr", self.partition({"Alexander Föhr": "foehr", "Dirk-Ulrich Mende": "foehr"}, profile_owner="foehr"),
+             None, 1),
+        )
+        for label, corrections, expected, people in steps:
+            with self.subTest(label), self.correction_file(corrections):
+                self.rebuild([r])
+                if expected is not None:
+                    self.assertEqual(self.profiles(), expected)
+                bound = {b["person_id"] for b in self.rows("person_bindings")}
+                self.assertEqual(len(bound), people)
+                state = self.registry_state()
+                self.rebuild([r])
+                self.assertEqual(self.registry_state(), state)
+                self.rebuild([reversed_r])
+                self.assertEqual(self.registry_state(), state, "incremental replay in reversed persist order")
+                incremental = self.bound_groups()
+                current = self.db
+                for order, source in (("same order", r), ("reversed order", reversed_r)):
+                    self.db = self.root / f"fresh-{label}-{order}.sqlite"
+                    self.rebuild([source])
+                    self.assertEqual(self.bound_groups(), incremental, order)
+                self.db = current
+        self.assertEqual(r, cached)  # the cached source evidence is never rewritten
+        # Value: protects=an ordinary attribute refresh of a partitioned occurrence (a changed printed Fraktion) keeps its record and person, unlike a reviewed correction change; fails_when=bind treats any changed evidence of a partition record as a move; why_new=only correction edits were replayed; seam=none
+        with self.correction_file(self.partition(profile_owner="foehr")):
+            self.db = self.root / "refresh.sqlite"
+            self.rebuild([r])
+            before = {b["id"]: (b["record_id"], b["person_id"]) for b in self.rows("person_bindings")}
+            refreshed = copy.deepcopy(r)
+            refreshed["agenda_items"][0]["xml_speakers"][1]["speaker"]["fraktion"] = "CDU/CSU"
+            self.rebuild([refreshed])
+            self.assertEqual({b["id"]: (b["record_id"], b["person_id"]) for b in self.rows("person_bindings")}, before)
+            self.assertEqual(self.profiles(), {"Alexander Föhr": self.FOEHR_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE})
+        # Value: protects=removing a label that still has bound printed names aborts instead of guessing an owner; fails_when=partition_identity falls back to the bare Redner-ID identity for an unlisted name; why_new=label edits were untested; seam=none
+        before = self.db.read_bytes()
+        with self.correction_file(self.partition({"Alexander Föhr": "foehr"}, profile_owner="foehr")), \
+                self.assertRaisesRegex(build.DatabaseRebuildError, "review printed label 'dirk-ulrich mende'"):
+            self.rebuild([r])
+        self.assertEqual(self.db.read_bytes(), before)
+
+    # Value: protects=the documented undo for two partitions that are one person: a reviewed merge joins them while the shared profile stays on the owner's record; fails_when=a guess or the partition guard tears the reviewed merge apart, or the merge lets the non-owner record take the profile; why_new=the durable policy names this undo and nothing exercised it; seam=none
+    def test_a_reviewed_merge_undoes_a_partition_and_keeps_the_profile_with_its_owner(self):
+        r = self.shared_id_report()
+        with self.correction_file(self.partition(profile_owner="foehr")):
+            self.rebuild([r])
+        records = {rec["partition"]: rec["home_person_id"] for rec in self.rows("person_records")}
+        merged = {**self.partition(profile_owner="foehr"), "merges": [{"persons": [records["foehr"], records["mende"]], "survivor": records["foehr"]}]}
+        with self.correction_file(merged):
+            self.rebuild([r])
+            self.assertEqual({b["person_id"] for b in self.rows("person_bindings")}, {records["foehr"]})
+            self.assertEqual(self.profiles(), {"Alexander Föhr": self.FOEHR_PROFILE, "Dirk-Ulrich Mende": self.NO_PROFILE})
+            state = self.registry_state()
+            self.rebuild([r])
+            self.assertEqual(self.registry_state(), state)
 
     # Value: protects=only the --offline --repersist replay upgrades an old-schema store; fails_when=an online rebuild accepts the schema 2 store and silently mints a fresh registry; why_new=only the offline render and the export were gated; seam=none
     def test_only_the_upgrade_rebuild_accepts_an_old_schema_store(self):
