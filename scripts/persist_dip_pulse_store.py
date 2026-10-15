@@ -16,16 +16,20 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import speech_kinds
 import derive
 import person_registry as registry
+import publication_state as publication
 from stable_ids import (
-    contribution_occurrence_id, roster_occurrence_id, speech_occurrence_id, speech_rede_id, stable_key,
+    canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
+    document_number as document_number_canonical,
+    roster_occurrence_id, source_index, speech_occurrence_id, speech_rede_id, stable_key,
 )
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -39,6 +43,11 @@ def require_current_schema(conn):
         if not set(registry.REGISTRY_TABLES) <= tables:
             raise registry.RegistryError("Incomplete person registry; restore the build-store backup")
         registry.require_current(conn)
+    documents = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+    if documents and "herausgeber" not in documents:
+        # Schema 3 keyed a document by number and URL; its ids and junctions
+        # are re-minted from the cached reports, never migrated in place.
+        raise RuntimeError("Old build-store schema (documents keyed by URL). " + UPGRADE_INSTRUCTION)
 
 
 
@@ -202,6 +211,7 @@ def initialize(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS documents (
           id TEXT PRIMARY KEY NOT NULL,
+          herausgeber TEXT NOT NULL CHECK (herausgeber IN ('BT', 'BR')),
           document_number TEXT NOT NULL,
           url TEXT NOT NULL DEFAULT '',
           document_type TEXT,
@@ -210,7 +220,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           origin_json TEXT NOT NULL DEFAULT '[]',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
-          UNIQUE(document_number, url)
+          UNIQUE(herausgeber, document_number)
         );
 
         CREATE TABLE IF NOT EXISTS agenda_item_documents (
@@ -554,6 +564,7 @@ def mp_identity(
     # Redner-ID (ext_id).
     if aw_politician_id and aw_match == derive.TRUSTED_AW_MATCH:
         return f"aw:{aw_politician_id}"
+    dip_person_id = canonical_dip_person_id(dip_person_id)
     if dip_person_id:
         return f"dip:{dip_person_id}"
     if xml_redner_id:
@@ -587,13 +598,14 @@ def upsert_mp(
     is_mdb: bool = False,
     occurrence_id: str | None = None,
 ) -> str:
+    dip_person_id = canonical_dip_person_id(dip_person_id)
     if is_mdb and dip_person_id:
         # A DIP roster row names its person by DIP id only. A Redner-ID inherited from
         # a preserved or earlier row would let the roster record collide with a speaker
         # record's hard id (and the rebind check) before any protocol says so.
         xml_redner_id = None
     evidence = dict(display_name=clean(display_name), xml_redner_id=clean(xml_redner_id),
-                    dip_person_id=clean(dip_person_id), aw_politician_id=aw_politician_id,
+                    dip_person_id=dip_person_id, aw_politician_id=aw_politician_id,
                     aw_match=aw_match, profile_url=profile_url, is_mdb=is_mdb,
                     party=(conn.execute("SELECT name FROM parties WHERE id=?", (party_id,)).fetchone()[0] if party_id else None),
                     title=clean(title), function=clean(function), wahlperiode=clean(wahlperiode),
@@ -670,68 +682,92 @@ def upsert_mp(
     return record_id
 
 
+def _encodes_document_number(issuer: str, number: str, path: str) -> bool:
+    """Whether a dserver path is the one DIP files this Drucksache's PDF under:
+    ``/btd/20/086/2008601.pdf`` for BT 20/8601, ``/brd/2023/0040-23.pdf`` for
+    BR 40/23. Other number shapes (zu40/23, 137/1/23) encode nothing checkable."""
+    head, sep, tail = number.partition("/")
+    if not sep or not head.isdigit() or not tail.isdigit():
+        return False
+    if issuer == "BT":
+        return path == f"/btd/{int(head)}/{int(tail) // 100:03d}/{int(head)}{int(tail):05d}.pdf"
+    return len(tail) == 2 and path.startswith("/brd/") and path.endswith(f"/{int(head):04d}-{tail}.pdf")
+
+
+def _document_url_rank(issuer: str, number: str, url: str) -> tuple[int, int, str]:
+    """Smaller is better. One Drucksache can arrive with several URLs (a
+    rewritten host, DIP filing one number under another document's PDF, a
+    malformed path), so the stored URL is chosen by content, never by which
+    report persisted last: an official host, then the path that encodes this
+    number, then the smallest text."""
+    if not url:
+        return (2, 1, "")
+    parts = urlsplit(url)
+    official = parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-dip"]
+    encodes = _encodes_document_number(issuer, number, parts.path)
+    return (0 if official else 1, 0 if encodes else 1, url)
+
+
 def upsert_document(
     conn: sqlite3.Connection,
     *,
     now: str,
     document_number: Any,
+    herausgeber: Any = None,
     url: Any = None,
     document_type: Any = None,
     date: Any = None,
     title: Any = None,
     origin: Any = None,
 ) -> str | None:
-    number = clean(document_number)
+    """One row per Drucksache, keyed by issuer and number (stable_ids.document_id).
+
+    Every representation of the document folds into that row independently of
+    persist order: the URL by ``_document_url_rank``, the DIP metadata (type,
+    date, title, Urheber) as one unit from the fullest representation, ties by
+    content. An XML anchor or a roll-call number joins the row DIP described."""
+    issuer = document_issuer(herausgeber, url)
+    number = document_number_canonical(document_number, issuer)
     if not number:
         return None
-    normalized_url = clean(url) or ""
-    if not normalized_url:
-        existing = conn.execute(
-            """
-            SELECT id FROM documents
-            WHERE document_number = ?
-            ORDER BY CASE WHEN url = '' THEN 1 ELSE 0 END, id
-            LIMIT 1
-            """,
-            (number,),
-        ).fetchone()
-        if existing:
-            return existing["id"]
+    key = document_id(issuer, number)
+    url_text = clean(url) or ""
+    metadata = (clean(document_type), clean(date), clean(title), dumps(origin or []))
+    existing = conn.execute(
+        "SELECT url, document_type, date, title, origin_json FROM documents WHERE id = ?", (key,)
+    ).fetchone()
+    if existing:
+        url_text = min((existing["url"], url_text), key=lambda value: _document_url_rank(issuer, number, value))
+        metadata = min(
+            (tuple(existing[field] for field in ("document_type", "date", "title", "origin_json")), metadata),
+            key=_document_metadata_rank,
+        )
     conn.execute(
         """
         INSERT INTO documents(
-          id, document_number, url, document_type, date, title, origin_json, created_at, updated_at
+          id, herausgeber, document_number, url, document_type, date, title, origin_json, created_at, updated_at
         )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(document_number, url) DO UPDATE SET
-          document_type = COALESCE(excluded.document_type, documents.document_type),
-          date = COALESCE(excluded.date, documents.date),
-          title = COALESCE(excluded.title, documents.title),
-          origin_json = CASE
-            WHEN excluded.origin_json != '[]' THEN excluded.origin_json
-            ELSE documents.origin_json
-          END,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          url = excluded.url,
+          document_type = excluded.document_type,
+          date = excluded.date,
+          title = excluded.title,
+          origin_json = excluded.origin_json,
           updated_at = excluded.updated_at
         """,
-        (
-            stable_key("document", number, normalized_url), number,
-            normalized_url,
-            clean(document_type),
-            clean(date),
-            clean(title),
-            dumps(origin or []),
-            now,
-            now,
-        ),
+        (key, issuer, number, url_text, *metadata, now, now),
     )
-    row = conn.execute(
-        """
-        SELECT id FROM documents
-          WHERE document_number = ? AND url = ?
-        """,
-        (number, normalized_url),
-    ).fetchone()
-    return row["id"] if row else None
+    return key
+
+
+def _document_metadata_rank(metadata: tuple[Any, ...]) -> tuple[int, str]:
+    """Smaller is better: the representation that names the most fields, then
+    the smallest by content, so two DIP positions describing one Drucksache
+    differently settle the same way in every persist order."""
+    document_type, date, title, origin_json = metadata
+    filled = sum(value is not None for value in (document_type, date, title)) + (origin_json != "[]")
+    return (-filled, dumps(list(metadata)))
 
 
 def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
@@ -777,7 +813,7 @@ def replace_protocol(conn: sqlite3.Connection, report: dict[str, Any], now: str)
 def persist_sampled_people(conn: sqlite3.Connection, report: dict[str, Any], now: str) -> None:
     skipped = 0
     for person in report.get("sampled_people") or []:
-        if not clean(person.get("id")):
+        if not canonical_dip_person_id(person.get("id")):
             # Without its DIP id a person has no identity of its own: every such
             # row would share one name-party:Unbekannt record.
             skipped += 1
@@ -811,7 +847,7 @@ def persist_agenda_item(
     page_range = item.get("page_range") or {}
     start_page, start_quadrant = source_page_ref(page_range.get("start"))
     end_page, end_quadrant = source_page_ref(page_range.get("end"))
-    item_index = int(item.get("index") or 0)
+    item_index = source_index(item.get("index"))
     agenda_id = stable_key("agenda", protocol_id, item_index)
     conn.execute(
         """
@@ -837,6 +873,11 @@ def persist_agenda_item(
     return agenda_id
 
 
+def _is_bundestag_xml_url(url: Any) -> bool:
+    parts = urlsplit(str(url))
+    return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
+
+
 def persist_agenda_documents(
     conn: sqlite3.Connection,
     item: dict[str, Any],
@@ -844,6 +885,12 @@ def persist_agenda_documents(
     now: str,
 ) -> None:
     for doc in item.get("xml_drucksachen") or []:
+        if doc.get("url") and not _is_bundestag_xml_url(doc["url"]):
+            # Reports cached before validate_dip_protocol.extract_drucksachen
+            # checked the host still hold numbers read off news-site URLs
+            # ("11/09" from a dated euronews path). Keyed by number alone, such
+            # a fragment would join the real Drucksache of that number.
+            continue
         document_id = upsert_document(
             conn,
             now=now,
@@ -864,6 +911,7 @@ def persist_agenda_documents(
             conn,
             now=now,
             document_number=doc.get("dokumentnummer"),
+            herausgeber=doc.get("herausgeber"),
             url=doc.get("url"),
             document_type=doc.get("drucksachetyp"),
             date=doc.get("datum"),
@@ -1029,7 +1077,7 @@ def persist_speeches(
     protocol: dict[str, Any] | None = None,
 ) -> None:
     for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-        rede_id = speech_rede_id(protocol_id, int(item.get("index") or 0), sequence, speech.get("rede_id"))
+        rede_id = speech_rede_id(protocol_id, source_index(item.get("index")), sequence, speech.get("rede_id"))
         speech_id = speech_occurrence_id(protocol_id, rede_id)
         mp_id, speech_fraktion, sprechrolle = resolve_speaker(
             conn, speech.get("speaker"), now, protocol_id, rede_id, speech_id, protocol
@@ -1082,7 +1130,7 @@ def persist_contributions(
         speaker = contribution.get("speaker") or {}
         rede_id = clean(contribution.get("rede_id"))
         contribution_id = contribution_occurrence_id(
-            protocol_id, int(item.get("index") or 0), int(contribution["sequence"]), rede_id
+            protocol_id, source_index(item.get("index")), int(contribution["sequence"]), rede_id
         )
         # A question read out by the Sitzungsleitung whose asker never speaks
         # names a person the XML has no id for: keep the announced name, no MP.
@@ -1342,7 +1390,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
         agenda_ids: dict[int, str] = {}
         for item in report.get("agenda_items") or []:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
-            agenda_ids[int(item.get("index") or 0)] = agenda_item_id
+            agenda_ids[source_index(item.get("index"))] = agenda_item_id
             persist_positions(conn, item, agenda_item_id, now)
             persist_agenda_documents(conn, item, agenda_item_id, now)
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
@@ -1350,12 +1398,12 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
         for item, vote in report_vote_pairs:
             agenda_item_id = None
             if item is not None:
-                agenda_item_id = agenda_ids.get(int(item.get("index") or 0))
+                agenda_item_id = agenda_ids.get(source_index(item.get("index")))
             persist_vote(conn, vote, agenda_item_id, protocol_id, now)
         # iter_report_votes deliberately yields one row per vote. A vote may
         # still be cited under more than one TOP, so restore every source link.
         for item in report.get("agenda_items") or []:
-            agenda_item_id = agenda_ids.get(int(item.get("index") or 0))
+            agenda_item_id = agenda_ids.get(source_index(item.get("index")))
             if agenda_item_id is None:
                 continue
             for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):

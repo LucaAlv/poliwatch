@@ -36,7 +36,10 @@ class DossierLayoutTests(unittest.TestCase):
                 if attrs.get("class") == "attention-row":
                     self.links.append(attrs["href"][1:])
 
-        for index in (1, '1"&<>'):
+        # A source index written as 1, "1" or " 01 " is one item and one
+        # anchor (stable_ids.source_index); a malformed one is refused rather
+        # than printed into an id.
+        for index in (1, "1", " 01 "):
             with self.subTest(index=index):
                 report = copy.deepcopy(self.report)
                 report["agenda_items"][0]["index"] = index
@@ -44,7 +47,11 @@ class DossierLayoutTests(unittest.TestCase):
                 anchors.feed(pulse_html.render_html(report))
                 self.assertTrue(anchors.links)
                 self.assertTrue(set(anchors.links) <= anchors.targets)
-                self.assertIn(f"top-{index}", anchors.targets)
+                self.assertIn("top-1", anchors.targets)
+        report = copy.deepcopy(self.report)
+        report["agenda_items"][0]["index"] = '1"&<>'
+        with self.assertRaises(ValueError):
+            pulse_html.render_html(report)
 
     def test_protocol_dev_dump_follows_content_and_is_opt_in(self) -> None:
         normal = pulse_html.render_html(self.report)

@@ -183,7 +183,7 @@ One Tagesordnungspunkt, in one Sitzung, at which a Vorgang was dealt with, point
 _Avoid_: Fundstelle (DIP's page reference in a Drucksache or Plenarprotokoll), Debatte
 
 **Drucksache**:
-An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
+An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen. DIP also links the Bundesrat's Drucksachen of a Vorgang, numbered number/year (40/23), so a Drucksache is named by its issuer (Bundestag or Bundesrat) and number, never by the number alone and never by its URL.
 _Avoid_: document (unqualified), confusing it with a Plenarprotokoll
 
 **Gesetzgebung**:

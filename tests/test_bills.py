@@ -248,6 +248,17 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(speakers["Ada Example"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
         self.assertEqual(speakers["Bea Beispiel"], speech_occurrence_id("p1", "IDREAL"))
 
+    # Value: protects=an agenda index written as "01" gives the bill tally the occurrence key the store mints (synthetic rede id p1:1:1); fails_when=the collector formats the raw index ("p1:01:1") so the speaker loses its person link; why_new=only int indexes reached the collector before; seam=none
+    def test_a_text_index_gives_the_stored_occurrence_key(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["index"] = "01"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": None, "speaker": {"display_name": "Ada Example", "fraktion": "SPD"}, "char_count": 10},
+        ]
+        (row,) = build.collect_bill_pages([bill_entry])[0]["speakers"]
+        self.assertEqual(row["occurrence_id"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
+
     # Value: protects=a bill page tallies a reviewed occurrence of the shared Redner-ID 11005304 under its reviewed name, as the protocol page does; fails_when=the bill collector reads the raw printed speaker, so the garbled double name gets its own row and links to whichever occurrence came last; why_new=bill tests used clean names only; seam=none
     def test_a_reviewed_occurrence_is_tallied_under_its_reviewed_name(self) -> None:
         bill_entry = entry([GESETZ], DOCS)

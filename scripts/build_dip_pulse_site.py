@@ -110,7 +110,10 @@ import speech_kinds
 import publication_state as publication
 import facts
 import person_registry as registry
-from stable_ids import KEY_VERSION, key_prefix, roster_occurrence_id, speech_occurrence_id, speech_rede_id
+from stable_ids import (
+    KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
+    speech_rede_id,
+)
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -885,8 +888,13 @@ def load_existing_detail_entries(
             if not isinstance(report.get("protocol") or {}, dict):
                 raise ValueError("protocol must be an object")
             items = report.get("agenda_items", [])
-            if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
+            if not isinstance(items, list) or any(not isinstance(item, dict) or item.get("index") is None for item in items):
                 raise ValueError("agenda_items must contain objects with integer source indices")
+            # An index given as 3 or "3" is one item (stable_ids.source_index);
+            # the file keeps the form it was written in.
+            indexes = [source_index(item.get("index")) for item in items]
+            if len(set(indexes)) != len(indexes):
+                raise ValueError("agenda_items repeat a source index")
             for item in [report, *items]:
                 for key in SPEAKER_LISTS:
                     units = item.get(key) or []
@@ -1220,12 +1228,12 @@ def _rebuild_database_from_entries(
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
-                skipped = [row for row in roster_rows if not row.get("dip_person_id")]
+                skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
                 if skipped:
                     # No roster identity: ingest_mdb_roster skips such rows too.
                     print(f"warning: [roster] {len(skipped)} preserved roster rows have no DIP id and were skipped", file=sys.stderr)
                 for row in roster_rows:
-                    if not row.get("dip_person_id"):
+                    if not canonical_dip_person_id(row.get("dip_person_id")):
                         continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
                     pulse_store.upsert_mp(
@@ -1499,7 +1507,7 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     if top_id:
         keys.append(f"top:{top_id}")
     if item.get("index") is not None:
-        keys.append(f"index:{item['index']}")
+        keys.append(f"index:{source_index(item['index'])}")
     return keys
 
 
@@ -2217,7 +2225,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 3
+EXPORT_FORMAT = 4
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -3996,7 +4004,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",
                 "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
                      if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
                     if page_path
                     else None
@@ -5610,12 +5618,12 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     "protocol_title": protocol.get("titel"),
                     "top_id": item.get("top_id"),
                     "heading": item.get("heading"),
-                    "href": f"{protocol_href}#top-{item.get('index')}",
+                    "href": f"{protocol_href}#top-{source_index(item.get('index'))}",
                     "speech_count": item.get("xml_speech_count") or 0,
                 }
                 bill["protocol_refs"].append(ref)
                 # Several DIP positions can repeat one agenda item; keep its raw copy once.
-                agenda_key = (protocol_href, item.get("index") if item.get("index") is not None else id(item))
+                agenda_key = (protocol_href, source_index(item["index"]) if item.get("index") is not None else id(item))
                 if agenda_key not in seen_agenda_items.setdefault(key, set()):
                     seen_agenda_items[key].add(agenda_key)
                     bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
@@ -5671,7 +5679,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
                     # The reviewed speaker, as on the protocol page: a shared
                     # Redner-ID's occurrences are tallied under their own person.
-                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+                    rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
                     speech_href = f"{protocol_href}#{pulse_html.speech_anchor(item, speech, sequence - 1)}"
                     # Several DIP positions can repeat the same bill's agenda item.
                     seen = seen_speeches.setdefault(key, set())
@@ -6639,7 +6647,7 @@ def ingest_mdb_roster(
             funktion = compact.get("funktion") or []
             if not _has_mdb_funktion(funktion):
                 continue
-            if not pulse_store.clean(compact.get("id")):
+            if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
                 # such row would share one name-party:Unbekannt record.
                 stats["skipped_no_id"] += 1

@@ -59,7 +59,7 @@ from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
 import derive
-from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, stable_key
+from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, document_sort_key, stable_key
 from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
@@ -362,6 +362,9 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, p.date AS day, p.document_number AS document_number,\n"
+            "         CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*'\n"
+            "                   AND p.document_number NOT GLOB '*[^0-9/]*'\n"
+            "                   AND p.document_number NOT GLOB '*/*/*' THEN 0 ELSE 1 END AS malformed_number,\n"
             "         ai.item_index AS item_index, s.sequence AS sequence,\n"
             "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
@@ -374,13 +377,19 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"
             "),\n"
-            # The debut Rede is the earliest one in the sitting (agenda item, then
-            # position in it), not the smallest speech key: keys are content hashes.
+            # The debut Rede is the earliest one of the day: the earlier sitting by
+            # its number read as Wahlperiode/number (21/9 before 21/10; a malformed
+            # number after the well-formed ones, by its text), then agenda item,
+            # then position in it. Not the smallest speech key: keys are content
+            # hashes. stable_ids.document_sort_key is the same order in Python.
             "first_speech AS (\n"
             "  SELECT person_key, speech_id FROM (\n"
             "    SELECT sp.person_key AS person_key, sp.speech_id AS speech_id,\n"
             "           ROW_NUMBER() OVER (PARTITION BY sp.person_key\n"
-            "                              ORDER BY sp.document_number, sp.item_index, sp.sequence) AS rank\n"
+            "                              ORDER BY sp.malformed_number,\n"
+            "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, 1, instr(sp.document_number, '/') - 1) AS INTEGER) END,\n"
+            "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, instr(sp.document_number, '/') + 1) AS INTEGER) END,\n"
+            "                                       sp.document_number, sp.item_index, sp.sequence, sp.speech_id) AS rank\n"
             "    FROM speaker sp\n"
             "    JOIN first_day fd ON fd.person_key = sp.person_key AND fd.day = sp.day\n"
             "  ) WHERE rank = 1\n"
@@ -1501,7 +1510,9 @@ def receipts(
     if kind != "vote":
         raise FactsError(f"facts: metric {metric['id']} has unknown receipt kind {kind!r}")
     result = [_receipt("vote", row, position=0, official_url=row.get("detail_url"))]
-    ordered = sorted(documents, key=lambda doc: str(doc["id"]))
+    # Presentation order by the number, as a reader scans them; the receipt's
+    # identity (fact_sources.id) does not depend on it.
+    ordered = sorted(documents, key=lambda doc: (document_sort_key(doc["document_number"]), str(doc["id"])))
     for position, doc in enumerate(ordered, start=1):
         result.append(
             {
@@ -1523,7 +1534,7 @@ def vote_documents(conn: sqlite3.Connection, vote_id: Any) -> list[dict[str, Any
         dict(row)
         for row in conn.execute(
             "SELECT d.id, d.document_number, d.url FROM vote_documents vd "
-            "JOIN documents d ON d.id = vd.document_id WHERE vd.vote_id = ? ORDER BY d.id",
+            "JOIN documents d ON d.id = vd.document_id WHERE vd.vote_id = ? ORDER BY d.document_number, d.id",
             (str(vote_id),),
         ).fetchall()
     ]

@@ -1,6 +1,6 @@
 # Stable IDs, person URLs and build-store backups
 
-Build-store schema **3** and export format **2** replace insertion-order IDs with source-derived text IDs. Existing stores require explicit replay:
+Build-store schema **4** and export format **4** use source-derived text IDs. Schema 3 and export format 2 replaced insertion-order IDs with them; schema 4 and export format 4 key a Drucksache by its issuer and number instead of its URL. Existing stores require explicit replay:
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir>
@@ -15,8 +15,8 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | Table / field | Identity |
 |---|---|
 | `parties.id` | Namespace `party`, normalized name |
-| `agenda_items.id` | `agenda`, protocol ID and source item index |
-| `documents.id` | `document`, document number and normalized URL |
+| `agenda_items.id` | `agenda`, protocol ID and source item index as an int (`stable_ids.source_index`: `3`, `"3"` and `" 03 "` are one index) |
+| `documents.id` | `document`, issuer (`documents.herausgeber`, `BT` or `BR`) and canonical document number; the URL is an attribute (see Documents below) |
 | `speeches.id` | `speech`, protocol ID and Rede ID |
 | Synthetic Rede ID | `<protocol_id>:<item_index>:<sequence>` |
 | `mps.id` | `mp`, compact source identity; preserved by occurrence bindings when attributes or enrichment change |
@@ -26,7 +26,7 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | `person_records.id` | Source-record key, retained even after its current evidence disappears |
 | `person_records.home_person_id` | The durable owner of the record: its issued person key, which a merge resolves to the survivor through its alias. `person_id` is the record's current person, which `reconcile` may move to a namesake's person by a guess it recomputes |
 | `person_records.evidence_json` | Indexed record's matching evidence: trusted IDs, the set of printed (name, party) pairs and of Redner-IDs with a representative of each, source side and partition; `identities` (the source identities its occurrences presented, only when they differ from its own key) and `trusted_aw_ids` (only when two contradict) |
-| `person_bindings.id` | Speech key, `roster` with DIP person ID, or `vote-member` with vote ID, printed member name and faction |
+| `person_bindings.id` | Speech key, `roster` with the canonical DIP person ID (`stable_ids.canonical_dip_person_id`: `7`, `"7"` and `" 07 "` are `"7"`), or `vote-member` with vote ID, printed member name and faction |
 | `person_aliases.id` | Retired issued person key; `person_id` resolves to its survivor |
 | `facts.id` | `fact`, metric ID, period kind and period key |
 | `fact_sources.id` | `fact-source`, fact ID and source-entity key; independent of receipt position |
@@ -36,6 +36,10 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | `datenstand.tag` | Release metadata's primary key |
 
 Protocols, proceedings, proceeding positions and votes keep their source IDs. Junction tables keep composite keys made from stable foreign keys. Schema migration versions and metric IDs are natural keys. Every text primary key is explicitly `NOT NULL`. CSV IDs must be read as strings. `source_entity_id` is polymorphic: use `entity_kind` and the citation columns to identify its source table or official reference.
+
+**Documents.** A Drucksache is one row per issuer and number, wherever it is cited: an XML anchor, a DIP-linked Drucksache and a roll-call document number all reach the same `documents.id`, so the junctions and a fact's document receipts survive DIP moving a PDF. The issuer is DIP's `herausgeber` (kept in `linked_drucksachen` since schema 4); a report cached before that falls back to the dserver path (`/brd/` is the Bundesrat, anything else the Bundestag), the one place a URL still feeds identity. A number without either (an XML anchor without a link, a roll-call number) is a Bundestag Drucksache. The issuer is part of the key because the two number independently: the Bundestag Wahlperiode/number (20/23), the Bundesrat number/year (20/23 is its 20th Drucksache of 2023). A Bundestag number is canonical without leading zeros or extra whitespace; a Bundesrat number stays as printed (`zu40/23`, `137/1/23`). A number that a pre-host-check report read off a news-site URL (`11/09` from a dated path) is not persisted, since keyed by number alone it would join the real Drucksache. When the same Drucksache arrives with several URLs or descriptions, the row does not depend on persist order: the URL is the one on an official host whose path encodes the number (`/btd/20/117/2011710.pdf` for 20/11710), then the smallest; type, date, title and Urheber come as one unit from the representation naming the most of them, ties by content. Vote receipts list their Drucksachen by number (21/999 before 21/1000); their `fact_sources.id` does not depend on that position.
+
+**Source indexes and DIP person ids.** Report JSON keeps whatever form it was written in. Every key, lookup and anchor reads an agenda item's index through `stable_ids.source_index` (an int or decimal string; a missing index is 0, as the XML numbers from 1; a bool, negative or non-numeric value is refused) and a DIP person id through `canonical_dip_person_id` (no id for None, empty, 0, a bool or another type: the row is skipped as id-less). Persist, the dossier renderer and the bill pages therefore derive the same synthetic Rede-IDs and anchors, and the cached-report load refuses an item without an index or two items with one index. The canonical DIP id is the decimal text DIP already prints, so issued roster keys did not change.
 
 ## Registry and matching
 

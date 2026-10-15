@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import derive
-from stable_ids import speech_occurrence_id, speech_rede_id
+from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
 import person_registry as registry
 import publication_state as publication
 import speech_kinds
@@ -1474,7 +1474,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             if votes:
                 vote_top_count += 1
                 if first_vote_index is None:
-                    first_vote_index = item.get("index")
+                    first_vote_index = source_index(item.get("index"))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
@@ -1652,7 +1652,7 @@ def vorgang_occurrences(
                             "label": week_label(week),
                             "dokumentnummer": protocol.get("dokumentnummer"),
                             "page_path": entry.get("page_path"),
-                            "index": item.get("index"),
+                            "index": source_index(item.get("index")),
                             "vorgangsposition": record.get("vorgangsposition"),
                             "titel": record.get("titel"),
                             "vorgangstyp": record.get("vorgangstyp"),
@@ -1779,10 +1779,9 @@ def is_question_format(item: dict[str, Any]) -> bool:
 
 def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], mp_lookup: dict[str, str] | None = None) -> str:
     cards = []
-    from stable_ids import contribution_occurrence_id
     for c in item.get("xml_contributions") or []:
         speech_kinds.validate_kind(c["kind"])
-        key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, c["sequence"], c.get("rede_id"))
+        key = contribution_occurrence_id(protocol.get("id"), source_index(item.get("index")), c["sequence"], c.get("rede_id"))
         speaker = c.get("speaker") or {}
         name = esc(derive.speaker_display_name(speaker) or "Nicht zugeordnet")
         # The registry lookup keys occurrences; never guess a person from a name.
@@ -1808,7 +1807,7 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
             if not containing:
                 for other in item.get("xml_contributions") or []:
                     if other.get("rede_id") == parent:
-                        parent_key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, other["sequence"], parent)
+                        parent_key = contribution_occurrence_id(protocol.get("id"), source_index(item.get("index")), other["sequence"], parent)
                         containing = f'<a href="#contribution-{esc(parent_key)}">Enthaltender Beitrag</a>'
                         break
         paragraphs = c.get("paragraphs") or ([c["text"]] if c.get("text") else [])
@@ -2128,7 +2127,7 @@ def topic_row(
         "dossier_href": dossier_href,
         "datum": protocol.get("datum"),
         "dokumentnummer": protocol.get("dokumentnummer"),
-        "index": item.get("index"),
+        "index": source_index(item.get("index")),
         "top_id": item.get("top_id"),
         "heading": item.get("heading"),
         "speech_count": speech_count,
@@ -2191,7 +2190,7 @@ def week_topic_rows(
                         "share": percent(speech_count, total),
                         "href": f"{dossier_href}#top-{item.get('index')}",
                         "datum": protocol.get("datum"),
-                        "index": item.get("index"),
+                        "index": source_index(item.get("index")),
                     }
                 )
                 continue
@@ -2787,7 +2786,7 @@ def render_session_llm_summary(
         rows.append(
             '<article class="session-summary-item">'
             '<div class="session-summary-item-head">'
-            f'<a class="top-jump" href="#top-{esc(item.get("index"))}">{esc(item.get("top_id"))}</a>'
+            f'<a class="top-jump" href="#top-{esc(source_index(item.get("index")))}">{esc(item.get("top_id"))}</a>'
             f"<h3>{esc(short(item.get('heading'), 120))}</h3>"
             "</div>"
             f"<p>{esc(summary.get('text'))}</p>"
@@ -2919,7 +2918,7 @@ def render_html(
     for item in report.get("agenda_items") or []:
         speeches = []
         for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-            rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+            rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
             speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
             speaker["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
             speeches.append({**speech, "speaker": speaker})
@@ -2948,7 +2947,7 @@ def render_html(
             '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
             '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
-                index=esc(item["index"]),
+                index=esc(source_index(item["index"])),
                 heading_title=heading_title,
                 top=esc(item.get("top_id")),
                 title=esc(short(heading_topic, 78)),
@@ -3037,7 +3036,7 @@ def render_html(
         )
         top_sections.append(
             f"""
-            <article class="top-card" id="top-{esc(item['index'])}">
+            <article class="top-card" id="top-{esc(source_index(item['index']))}">
               <div class="top-head">
                 <div>
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>

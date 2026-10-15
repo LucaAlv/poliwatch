@@ -1194,6 +1194,9 @@ def compact_drucksache_position(position: dict[str, Any]) -> dict[str, Any]:
         "vorgangsposition": position.get("vorgangsposition"),
         "titel": position.get("titel"),
         "dokumentnummer": fundstelle.get("dokumentnummer"),
+        # BT or BR: the two number Drucksachen independently, so the number
+        # alone does not name one (persist keys a document by both).
+        "herausgeber": fundstelle.get("herausgeber"),
         "drucksachetyp": fundstelle.get("drucksachetyp"),
         "datum": fundstelle.get("datum"),
         "url": fundstelle.get("pdf_url"),

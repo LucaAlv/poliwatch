@@ -368,9 +368,10 @@ class KnappsteAbstimmungTests(StoreCase):
         self.assertEqual(row["week_n"], 1)
         self.assertAlmostEqual(row["value"], 100 / 500)
 
-    def test_receipts_cite_the_votes_documents_after_the_vote_itself_lowest_id_first(self) -> None:
+    def test_receipts_cite_the_votes_documents_after_the_vote_itself_in_number_order(self) -> None:
         # receipts() (kind "vote") appends every vote_documents row after the
-        # vote at position 0, ordered by documents.id -- never seeded by
+        # vote at position 0, ordered by number as Wahlperiode/number (21/999
+        # before 21/1000, against both text and id order) -- never seeded by
         # week_specs/_facts_fixture, so this is the only test that exercises
         # facts.vote_documents() and the "document" branch of receipts() at all.
         seeded = self.seed(
@@ -379,12 +380,12 @@ class KnappsteAbstimmungTests(StoreCase):
         vote_id = seeded["vote_ids"]["21/1"][0]
         conn = self.writable()
         conn.execute(
-            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
-            "VALUES (2, '21/500', 'https://www.bundestag.de/drucksache/500', 't', 't')"
+            "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
+            "VALUES (2, 'BT', '21/999', 'https://www.bundestag.de/drucksache/999', 't', 't')"
         )
         conn.execute(
-            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
-            "VALUES (1, '21/499', 'https://www.bundestag.de/drucksache/499', 't', 't')"
+            "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
+            "VALUES (1, 'BT', '21/1000', 'https://www.bundestag.de/drucksache/1000', 't', 't')"
         )
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
@@ -394,8 +395,8 @@ class KnappsteAbstimmungTests(StoreCase):
             [(r["entity_kind"], r["document_number"], r["official_url"], r["position"]) for r in row["receipts"]],
             [
                 ("vote", "21/1", f"https://example.test/abstimmung/{vote_id}", 0),
-                ("document", "21/499", "https://www.bundestag.de/drucksache/499", 1),
-                ("document", "21/500", "https://www.bundestag.de/drucksache/500", 2),
+                ("document", "21/999", "https://www.bundestag.de/drucksache/999", 1),
+                ("document", "21/1000", "https://www.bundestag.de/drucksache/1000", 2),
             ],
         )
 
@@ -653,6 +654,18 @@ class ErsteRedenTests(StoreCase):
         # there just isn't 8 weeks of history yet to compare it against.
         self.assertEqual(second["withheld"], facts.WITHHELD_NOT_COMPARABLE)
         self.assertEqual(second["citation"]["speakers"], [])
+
+    # Value: protects=the debut Rede of a day with two sittings is the one in the earlier sitting by number; fails_when=the tie-break sorts protocol numbers as text, so "21/10" beats "21/9"; why_new=every other debut case has one sitting per day; seam=none
+    def test_two_sittings_on_one_day_debut_in_the_earlier_one_by_number(self) -> None:
+        self.seed(
+            [
+                {"document_number": "21/10", "date": "2025-04-02", "speeches": [(100, "Ada Lovelace", "ID10")]},
+                {"document_number": "21/9", "date": "2025-04-02", "speeches": [(100, "Ada Lovelace", "ID9")]},
+            ]
+        )
+        (row,) = self.rows_for(self.compute(), ERSTE)
+        self.assertEqual(row["value"], 1)
+        self.assertEqual([(r["document_number"], r["rede_id"]) for r in row["receipts"]], [("21/9", "ID9")])
 
     def test_a_zero_debut_week_still_counts_toward_a_later_weeks_baseline(self) -> None:
         # The adversarial-review repro: eight complete weeks with debutants,
@@ -2244,12 +2257,12 @@ class PageTests(StoreCase):
         vote_id = seeded["vote_ids"]["21/9"][0]
         conn = self.writable()
         conn.execute(
-            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
-            "VALUES (1, '21/500', 'https://www.bundestag.de/drucksache/500', 't', 't')"
+            "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
+            "VALUES (1, 'BT', '21/500', 'https://www.bundestag.de/drucksache/500', 't', 't')"
         )
         conn.execute(
-            "INSERT INTO documents(id, document_number, url, created_at, updated_at) "
-            "VALUES (2, '21/501', 'https://not-allowlisted.example/drucksache/501', 't', 't')"
+            "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
+            "VALUES (2, 'BT', '21/501', 'https://not-allowlisted.example/drucksache/501', 't', 't')"
         )
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
