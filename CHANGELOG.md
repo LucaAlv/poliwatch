@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.0.0] - 2026-10-14
+
+### Added
+
+- Find a Gesetzesvorhaben by title or Drucksache number, narrow the list to the year of its latest recorded activity, and sort it by newest, oldest or title. The list shows 20 entries per page, keeps search, year, sort and page in the URL so Back and shared links restore the view, and announces result counts to screen readers. Without JavaScript, or if the script fails, every entry stays readable; printing always includes the whole list.
+- Open each recorded speech of a speaker straight from a bill page: one speech gets a direct “Rede lesen” link, several get a dated list with sitting and page. The link opens that speech in the sitting dossier and scrolls to it.
+- Parliamentary terms on bill pages (Drucksache, Plenarprotokoll, Tagesordnungspunkt, Beratungen, Beschlussempfehlung und Bericht, Stellungnahme and others) explain themselves on hover or keyboard focus and link to a new “Parlamentarische Begriffe” section on the sources page, each with its official Bundestag source.
+
+### Changed
+
+- The bill overview is a plain, readable list: one title link per bill, its latest recorded step and date, and counts of documents, debates and roll-call votes. The browser-only “Folgen” marker, its counter and the summary boxes are gone.
+- Bill pages read in a fixed order — Verlauf grouped by date, Debatten, Rednerinnen und Redner, Abstimmungen, Dokumente, Quellen und Daten — with section links at the top. All speakers are listed (twelve shown, the rest behind “Weitere Rednerinnen und Redner”) instead of only the first twelve. Bundesrat papers are labelled “Bundesrat-Drucksache” rather than as Bundestag Drucksachen (2,047 of 4,627 bill documents on the reference cache).
+- Sitting dossiers no longer overflow phone screens: long compound words in headings, metrics and speech text wrap and hyphenate.
+
+### Fixed
+
+- Speech counts on bill pages count each speech once. A bill whose agenda item appeared under several DIP positions counted that item's speeches once per position. On the reference cache the total falls from 11,726 to 9,274 speeches and from 49,528,541 to 37,448,236 characters across 53 of 562 bills; the Haushaltsgesetze move most (2024: 984 → 307, 2025: 974 → 309, 2026: 886 → 280). No speaker row is added or lost.
+- The latest step of a bill is the parliamentary step, not the sitting's Plenarprotokoll recorded on the same day: 156 of 562 bills previously showed “Plenarprotokoll” and now show their Beratung (95 “1. Beratung”, 49 “2. Beratung”, 12 others). No latest date changed.
+- Bills that share a date keep the same order before and after the page's script runs, and in print.
+- Debate rows label Zusatzpunkte and Einzelpläne as such instead of “Tagesordnungspunkt Zusatzpunkt …”.
+- Search finds titles regardless of how an umlaut is encoded.
+- Each bill's raw source data lists a repeated agenda item once (1,075 → 895 items on the reference cache).
+
 ## [0.17.1.0] - 2026-10-09
 
 ### Fixed

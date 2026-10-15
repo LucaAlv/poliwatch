@@ -142,6 +142,37 @@ class DossierLayoutTests(unittest.TestCase):
         self.assertIn('<a href="../abgeordnete/index.html">Abgeordnete</a> · <a href="../sources.html">Quellen</a>', footer)
 
 
+class ParliamentaryGlossaryTests(unittest.TestCase):
+    def test_known_term_escapes_tip_id(self) -> None:
+        rendered = pulse_html.render_parliamentary_term("Drucksache", tip_id='tip"&')
+
+        self.assertIn('href="../sources.html#parlament-drucksache"', rendered)
+        self.assertIn('data-bill-help="tip&quot;&amp;" aria-describedby="tip&quot;&amp;"', rendered)
+        self.assertIn(">Drucksache</a>", rendered)
+        self.assertIn('role="tooltip" hidden>', rendered)
+        self.assertNotIn("source_url", rendered)
+
+    def test_aliases_are_case_insensitive_and_keep_original_label(self) -> None:
+        rendered = pulse_html.render_parliamentary_term("1. beratung", tip_id="t1")
+        self.assertIn("#parlament-erste-beratung", rendered)
+        self.assertIn(">1. beratung</a>", rendered)
+        combined = pulse_html.render_parliamentary_term("beschlussempfehlung/bericht", tip_id="t2")
+        self.assertIn("#parlament-beschlussempfehlung-bericht", combined)
+        self.assertIn(">beschlussempfehlung/bericht</a>", combined)
+        plural = pulse_html.render_parliamentary_term("Namentliche Abstimmungen", tip_id="t3")
+        self.assertIn("#parlament-namentliche-abstimmung", plural)
+        self.assertIn(">Namentliche Abstimmungen</a>", plural)
+
+    def test_unknown_term_is_escaped_plain_text(self) -> None:
+        self.assertEqual(pulse_html.render_parliamentary_term("custom <term>", tip_id="t"), "custom &lt;term&gt;")
+
+    def test_gesetzgebung_reuses_vorgangstyp_copy_and_anchor(self) -> None:
+        rendered = pulse_html.render_parliamentary_term("Gesetzgebung", tip_id="g")
+        entry = pulse_html.VORGANGSTYP_GLOSSARY["Gesetzgebung"]
+        self.assertIn("#vorgangstyp-gesetzgebung", rendered)
+        self.assertIn(f'>{entry["kurz"]}</span>', rendered)
+
+
 class AttentionRankingTests(unittest.TestCase):
     """The Aufmerksamkeitsrang aside on the dossier page.
 
@@ -557,6 +588,39 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertNotIn("data-more", css)
         self.assertNotIn("dataset.more", pulse_html.attention_runtime_script())
         self.assertIn(".ranking-head .legend { font-size:12px; color:var(--muted); }", css)
+
+    def test_narrow_tracks_shrink_below_long_compound_words(self) -> None:
+        # A bare `1fr` or implicit grid track is minmax(auto,1fr): one heading
+        # such as "(Anpassungsverfahrensabweichungsgesetz" widened .layout, main
+        # and .top-head to 431px in a 390px viewport (sitting 21/90), and one
+        # unbroken token in an open speech widened .speech-cards to 788px (21/49).
+        css = self._page_css(self._render([self._item(1, 1)]))
+
+        for selector in ("main", ".speech-cards", ".attention-row"):
+            self.assertIn("grid-template-columns:minmax(0,1fr);", self._css_block(css, selector), selector)
+        narrow = self._css_block(css, "@media (max-width: 1120px)")
+        self.assertIn(".layout { grid-template-columns:minmax(0,1fr); }", narrow)
+        phone = self._css_block(css, "@media (max-width: 720px)")
+        self.assertIn(".page-header, .top-head { grid-template-columns:minmax(0,1fr); }", phone)
+        self.assertIn(".meta-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }", phone)
+        self.assertNotRegex(narrow + phone, r"grid-template-columns:1fr( 1fr)?; \}")
+        wrap = self._css_block(css, "h1, .top-card h2, .metric, .row-title, .vote-head p, .speech-text")
+        for declaration in ("overflow-wrap:break-word;", "-webkit-hyphens:auto;", "hyphens:auto;", "hyphenate-limit-chars:12 5 5;"):
+            self.assertIn(declaration, wrap)
+
+    # Value: protects=a #speech-<top>-<id> link opens the closed card: the dossier carries the reveal script and the target is a <details class="speech-card"> with that id; fails_when=the script is dropped from render_html or the card id/element drifts from speech_anchor; why_new=bill pages assert hrefs resolve to ids, nothing asserts the open-on-hash wiring; seam=none; no_claim=actual opening/scrolling (JS, needs a browser)
+    def test_speech_hash_script_is_wired_and_targets_a_details_speech_card(self) -> None:
+        item = self._item(1, 1)
+        item["xml_speakers"][0].update(rede_id="ID / 7", speaker={"fraktion": "SPD", "display_name": "Ada Example"})
+        markup = self._render([item])
+        anchor = pulse_html.speech_anchor(item, item["xml_speakers"][0], 0)
+        self.assertEqual(anchor, "speech-1-ID-7")
+        self.assertIn(f'<details class="speech-card" id="{anchor}">', markup)
+        script = pulse_html.speech_hash_runtime_script()
+        self.assertEqual(markup.count(script), 1)
+        self.assertIn("matches('details.speech-card')", script)
+        self.assertIn("addEventListener('hashchange', revealSpeech)", script)
+        self.assertLess(markup.index(script), markup.index(pulse_html.page_scripts()))
 
 
 class CurrentTopHighlightTests(unittest.TestCase):

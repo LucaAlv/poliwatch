@@ -419,6 +419,42 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
+### Keep keyboard focus on reset, and reopen a speech on a repeated link click
+
+**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
+
+**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
+
+**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Stop calling a Plenarstelle a "Debatte" on the bill pages
+
+**What:** The bill detail section "Debatten" and the overview count "N Debatten" (`render_bill_detail`, `render_bills_index` in `scripts/build_dip_pulse_site.py`) count Plenarstellen, i.e. `protocol_refs`. Relabel them (for example "Beratungen im Plenum" or "Plenarstellen", with a glossary tooltip) or count only Plenarstellen with at least one Rede as Debatten. Update the section anchor `#debatten`, the harness section-order assertion and the CHANGELOG wording of the next release.
+
+**Why:** CONTEXT.md lists "Debatte" under Avoid for Plenarstelle and Tagesordnungspunkt, because a Tagesordnungspunkt can pass without any Rede; a count of "3 Debatten" can include sittings where nobody spoke. The v0.18.0.0 docs audit blocked on this; the owner kept the glossary rule and shipped with the conflict named.
+
+**Context:** `xml_speech_count` on each ref (`protocol_refs[].speech_count`) already says whether anyone spoke. Decide label vs count semantics before editing.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Bill overview polish: controls role, same-day step ties, diacritic-insensitive search
+
+**What:** (1) Give `<div class="bill-controls" aria-label=…>` a `role="search"` (or `group`) so the label is announced. (2) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (3) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
+
+**Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
+
+**Context:** (2) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Abgeordnete
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
