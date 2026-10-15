@@ -2526,7 +2526,7 @@ def write_cards(rows: Iterable[Mapping[str, Any]], cards_dir: Path) -> list[Path
 
 
 def open_readonly(store: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{store.resolve()}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"{store.resolve().as_uri()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 

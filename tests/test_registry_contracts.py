@@ -9,10 +9,12 @@ import contextlib
 import copy
 import io
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 import _support  # noqa: F401
 import build_dip_pulse_site as build
@@ -46,7 +48,8 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
 
     @contextlib.contextmanager
     def held_lock(self):
-        lock = self.db.with_suffix(".sqlite.writer.lock")
+        lock = registry.writer_lock_path(self.db)
+        lock.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.Popen(
             [sys.executable, "-c", 'import fcntl,sys,time; f=open(sys.argv[1],"a"); fcntl.flock(f,fcntl.LOCK_EX); print("locked",flush=True); time.sleep(30)', str(lock)],
             stdout=subprocess.PIPE, text=True)
@@ -91,7 +94,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         with self.assertRaisesRegex(build.DatabaseRebuildError, "Abgeordnetenkader could not be fetched: roster down"):
             self.rebuild([r], preserve_roster=False, roster_ingest=mock.Mock(side_effect=RuntimeError("roster down")))
         self.assertEqual(before, self.db.read_bytes())
-        self.assertEqual(list(self.root.glob(".store.sqlite.*.tmp")), [])
+        self.assertEqual(list(registry.private_dir(self.db).glob(f"{self.db.name}.*.tmp*")), [])
 
     # Value: protects=a member the refreshed roster no longer lists keeps one page with biography and speeches; fails_when=a stale roster record takes part in no match, or collect_abgeordnete skips its evidence once it shares a current person; why_new=staged roster tests always list the same members; seam=none
     def test_member_dropped_from_roster_keeps_one_page_with_biography_and_speeches(self):
@@ -333,7 +336,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 with self.assertRaisesRegex(build.DatabaseRebuildError, diagnostic):
                     self.rebuild([r])
                 self.assertEqual(damaged, self.db.read_bytes())
-                self.assertEqual(list(self.root.glob(".store.sqlite.*.tmp")), [])
+                self.assertEqual(list(registry.private_dir(self.db).glob(f"{self.db.name}.*.tmp*")), [])
         # Value: protects=initialize refuses a store whose registry tables vanished instead of minting an empty registry; fails_when=require_current_schema skips the registry-tables check; why_new=copy_previous guards replay only, not a direct initialize of the build store; seam=none
         with self.subTest("direct initialize without registry tables"):
             self.db.write_bytes(pristine)
@@ -642,10 +645,14 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.rebuild([report()])
         self.assertEqual(self.db.stat().st_mode & 0o777, 0o644)  # a first store is readable by the site's server
         self.db.chmod(0o640)
-        stale = self.root / ".store.sqlite.crashed.tmp"
+        stale = registry.private_dir(self.db) / "store.sqlite.crashed.tmp"
         stale.write_bytes(b"half-written store with speech text")
+        sidecar = registry.private_dir(self.db) / "store.sqlite.crashed.tmp-journal"
+        sidecar.write_bytes(b"journal")
         self.rebuild([report(), report(pid="s2")])
         self.assertFalse(stale.exists())
+        self.assertFalse(sidecar.exists())
+        self.assertTrue(registry.writer_lock_path(self.db).exists())  # the sweep never takes the lock file
         self.assertEqual(self.db.stat().st_mode & 0o777, 0o640)
 
     # Value: protects=person pages are only collected for filename-safe person keys even if a store was edited after validation; fails_when=collect_abgeordnete writes a key like a/b into a page path; why_new=key validation only ran at rebuild, never on the offline page-collection path; seam=none
@@ -844,6 +851,214 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertFalse(mp["is_mdb"])
         self.assertEqual(mp["speech_count"], 0)
         self.assertTrue(mp["has_page"])
+
+
+class _FlakyTouch(sqlite3.Connection):
+    """A connection whose first registry_touched insert fails with an error that
+    is not the missing temp table (a busy or damaged database)."""
+    fired = False
+
+    def execute(self, sql, *args):
+        if sql.startswith("INSERT OR IGNORE INTO registry_touched") and not _FlakyTouch.fired:
+            _FlakyTouch.fired = True
+            raise sqlite3.OperationalError("disk I/O error")
+        return super().execute(sql, *args)
+
+
+class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
+    """Handoff A.2 05: store open errors, the touched table, private staging and
+    the writer lock, and person page writes (TODOS "A.2 third ship round" (3),
+    (6), (11), "A.2 second-round review leftovers" (4))."""
+
+    rebuild = RegistryContractTests.rebuild
+
+    def site(self):
+        site = self.root / "site"
+        (site / "data").mkdir(parents=True, exist_ok=True)
+        self.db = site / "data" / "bundestag-pulse.sqlite"
+        return site
+
+    def offline(self, site, *extra):
+        script = [sys.executable, str(_support.ROOT / "scripts/build_dip_pulse_site.py"), "--offline", "--output-dir", str(site), *extra]
+        return subprocess.run(script, capture_output=True, text=True)
+
+    # Value: protects=--offline and --offline --repersist over a store path that is a directory exit 1 with an error line naming the store and leave it as it was; fails_when=open_readonly sits outside the CLI's try, so the open error is a traceback; why_new=third ship round (3) was only read, the CLI tests used a file that is not a database; seam=none
+    def test_a_store_path_that_is_a_directory_is_reported_without_a_traceback(self):
+        site = self.site()
+        r = report()
+        (site / "data" / "plenarprotokoll-21-1.json").write_text(json.dumps(r))
+        self.db.mkdir()
+        (self.db / "keep").write_text("x")
+        done = self.offline(site)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertIn(f"the store {self.db} cannot be read", done.stderr)
+        replay = self.offline(site, "--repersist")
+        self.assertEqual(replay.returncode, 1, replay.stderr)
+        self.assertNotIn("Traceback", replay.stderr)
+        self.assertIn(f"ERROR [repersist]: The store {self.db.resolve()} cannot be read", replay.stderr)
+        self.assertEqual([p.name for p in self.db.iterdir()], ["keep"])
+
+    # Value: protects=--offline over a store file the user cannot read exits 1 with an error line and leaves its bytes and mode; fails_when=the open error escapes as a traceback; why_new=third ship round (3); seam=none
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_an_unreadable_store_is_reported_without_a_traceback(self):
+        site = self.site()
+        r = report()
+        (site / "data" / "plenarprotokoll-21-1.json").write_text(json.dumps(r))
+        self.rebuild([r])
+        before = self.db.read_bytes()
+        self.db.chmod(0)
+        try:
+            done = self.offline(site)
+            self.assertEqual(self.db.stat().st_mode & 0o777, 0)
+        finally:
+            self.db.chmod(0o644)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertIn(f"the store {self.db} cannot be read", done.stderr)
+        self.assertEqual(before, self.db.read_bytes())
+
+    # Value: protects=a store path with URI characters (?, #, %) opens read-only as that file; fails_when=open_readonly pastes the path into a file: URI unquoted, so ?mode=ro is cut off or another file is opened; why_new=no path with URI characters was tested; seam=none
+    def test_a_store_path_with_uri_characters_opens_read_only(self):
+        self.db = self.root / "a?b#c%d.sqlite"
+        self.rebuild([report()])
+        conn = build.facts.open_readonly(self.db)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0], 1)
+            with self.assertRaises(sqlite3.OperationalError):
+                conn.execute("DELETE FROM protocols")
+        finally:
+            conn.close()
+
+    # Value: protects=_first_touch creates its temp table only for the missing-table error and lets any other OperationalError propagate; fails_when=_first_touch treats every OperationalError as initialization and retries, hiding a failed write; why_new=third ship round (6); seam=none
+    def test_first_touch_propagates_an_unrelated_operational_error(self):
+        conn = sqlite3.connect(":memory:")
+        try:
+            self.assertTrue(registry._first_touch(conn, "r1"))
+            self.assertFalse(registry._first_touch(conn, "r1"))
+            self.assertEqual(registry._touched(conn, "r1"), (True, None))
+        finally:
+            conn.close()
+        self.assertEqual(registry._touched(sqlite3.connect(":memory:"), "r1"), (False, None))
+        _FlakyTouch.fired = False
+        flaky = sqlite3.connect(":memory:", factory=_FlakyTouch)
+        try:
+            with self.assertRaisesRegex(sqlite3.OperationalError, "disk I/O error"):
+                registry._first_touch(flaky, "r1")
+        finally:
+            flaky.close()
+
+    # Value: protects=an unexpected SQLite error at a first touch fails the staged rebuild and keeps the previous store byte for byte, leaving no staged copy; fails_when=the error is swallowed as a missing temp table and the build swaps in a store; why_new=third ship round (6); seam=sqlite3.connect is wrapped to hand the staged connection a flaky factory
+    def test_an_unexpected_touch_error_keeps_the_store(self):
+        r = report()
+        self.rebuild([r])
+        before = self.db.read_bytes()
+        staging = registry.private_dir(self.db)
+        real_connect = sqlite3.connect
+
+        def connect(path, *args, **kwargs):
+            if Path(str(path)).parent == staging:
+                kwargs["factory"] = _FlakyTouch
+            return real_connect(path, *args, **kwargs)
+
+        _FlakyTouch.fired = False
+        with mock.patch.object(store.sqlite3, "connect", connect):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "disk I/O error"):
+                self.rebuild([r])
+        self.assertTrue(_FlakyTouch.fired)
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(list(staging.glob(f"{self.db.name}.*.tmp*")), [])
+
+    # Value: protects=no staged copy, sidecar or lock file enters the published output tree, during a rebuild or after a successful or failed one; fails_when=the staged copy or writer lock lives next to the store in OUTPUT/data; why_new=third ship round (11), open half; seam=roster_ingest observes the tree while the staged store is open
+    def test_staging_and_lock_stay_outside_the_published_tree(self):
+        site = self.site()
+        self.assertEqual(registry.private_dir(self.db), (self.root / ".site.private").resolve())
+        seen = []
+
+        def observe(staged):
+            seen.append(sorted(p.relative_to(site).as_posix() for p in site.rglob("*")))
+            self.assertEqual(len(list(registry.private_dir(self.db).glob("bundestag-pulse.sqlite.*.tmp"))), 1)
+
+        self.rebuild([report()], roster_ingest=observe)
+        self.rebuild([report(), report(pid="s2")], roster_ingest=observe)
+        with self.assertRaises(build.DatabaseRebuildError):
+            self.rebuild([report()], roster_ingest=mock.Mock(side_effect=RuntimeError("roster down")))
+        after = sorted(p.relative_to(site).as_posix() for p in site.rglob("*"))
+        self.assertEqual(seen, [["data"], ["data", "data/bundestag-pulse.sqlite"]])
+        self.assertEqual(after, ["data", "data/bundestag-pulse.sqlite"])
+        self.assertTrue(registry.writer_lock_path(self.db).exists())
+
+    # Value: protects=every spelling of one store (a symlink to it, a .. path) takes the same writer lock, for the rebuild and for the facts engine; fails_when=the lock path is derived from the unresolved store path, so a symlinked store gets its own lock and two writers run at once; why_new=lock tests used one spelling only; seam=none
+    def test_equivalent_store_paths_share_one_writer_lock(self):
+        r = report()
+        self.rebuild([r])
+        (self.root / "sub").mkdir()
+        link = self.root / "alias.sqlite"
+        link.symlink_to(self.db)
+        dirlink = self.root / "linked"
+        dirlink.symlink_to(self.root, target_is_directory=True)
+        spellings = [link, self.root / "sub" / ".." / "store.sqlite", dirlink / "store.sqlite"]
+        path = self.root / "report.json"
+        path.write_text(json.dumps(r))
+        with registry.writer_lock(self.db):
+            for spelling in spellings:
+                with self.subTest(spelling=str(spelling)):
+                    self.assertEqual(registry.writer_lock_path(spelling), registry.writer_lock_path(self.db))
+                    with self.assertRaisesRegex(registry.RegistryError, "Another writer"):
+                        with registry.writer_lock(spelling):
+                            pass
+                    with self.assertRaisesRegex(registry.RegistryError, "Another writer"):
+                        build.run_facts_engine(spelling, [{"report": r, "report_path": path}], None)
+        # Value: protects=a rebuild through a symlink to the store replaces the store and keeps the link; fails_when=the swap renames the staged copy over the unresolved path, turning the link into a file and leaving the store stale; why_new=the lock was resolved, the swap target was not; seam=none
+        entries = [{"report": x, "report_path": self.root / f'{x["protocol"]["id"]}.json'} for x in (r, report(pid="s2"))]
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(build.rebuild_database_from_entries(link, entries))
+        self.assertTrue(link.is_symlink())
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0], 2)
+
+    # Value: protects=person and alias pages replace a symlink at their target instead of writing through it, and an invalid key is refused at the writer; fails_when=write_abgeordnete_pages trusts its caller's key check and opens the target following links; why_new=second-round review leftovers (4); seam=none
+    def test_person_pages_never_write_through_a_symlink(self):
+        conn = self.open_store()
+        self.up(conn, "occ-s", "xml:10", "Max Muster", xml="10", party="CDU/CSU")
+        self.up(conn, "roster:5", "dip:5", "Max Muster", dip="5", mdb=True, party="CDU/CSU")
+        registry.reconcile(conn)
+        conn.commit()
+        mps, _ = build.collect_abgeordnete(conn)
+        (mp,) = [m for m in mps if m["has_page"]]
+        (alias,) = mp["aliases"]
+        site = self.root / "site"
+        for folder in ("data", "protocols", "abgeordnete"):
+            (site / folder).mkdir(parents=True, exist_ok=True)
+        outside = self.root / "sentinel.txt"
+        outside.write_text("untouched")
+        for key in (mp["id"], alias, "index"):
+            (site / "abgeordnete" / f"{key}.html").symlink_to(outside)
+        build.write_abgeordnete_pages(site, mps)
+        self.assertEqual(outside.read_text(), "untouched")
+        for key in (mp["id"], alias, "index"):
+            target = site / "abgeordnete" / f"{key}.html"
+            self.assertFalse(target.is_symlink(), key)
+            self.assertTrue(target.is_file(), key)
+        self.assertIn(mp["id"], (site / "abgeordnete" / f"{alias}.html").read_text())
+        for bad in ("../escape", "index", ".hidden", "a/b"):
+            with self.subTest(key=bad):
+                with self.assertRaisesRegex(registry.RegistryError, "Invalid person key"):
+                    build.write_abgeordnete_pages(site, [{**mp, "aliases": [bad]}])
+                with self.assertRaisesRegex(registry.RegistryError, "Invalid person key"):
+                    build.write_abgeordnete_pages(site, [{**mp, "id": bad, "aliases": []}])
+        self.assertFalse((self.root / "escape.html").exists())
+        self.assertEqual(outside.read_text(), "untouched")
+        # Value: protects=an abgeordnete/ that links out of the output tree is refused before the stale-page sweep deletes anything there; fails_when=the writer checks only each page's parent against abg_dir, which a linked directory passes; why_new=second-round review leftovers (4); seam=none
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "precious.html").write_text("keep")
+        linked = self.root / "linked-site"
+        (linked / "data").mkdir(parents=True)
+        (linked / "abgeordnete").symlink_to(elsewhere, target_is_directory=True)
+        with self.assertRaisesRegex(registry.RegistryError, "resolves outside"):
+            build.write_abgeordnete_pages(linked, mps)
+        self.assertEqual([p.name for p in elsewhere.iterdir()], ["precious.html"])
 
 
 if __name__ == "__main__":

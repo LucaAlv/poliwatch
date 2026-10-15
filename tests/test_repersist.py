@@ -574,7 +574,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("plenarprotokoll-21-99.json", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_non_object_cached_json_aborts_and_leaves_the_store_alone(self) -> None:
         self.repersist()
@@ -584,7 +584,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("top-level JSON value is not an object", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_null_agenda_items_with_current_rules_and_no_xml_leaves_the_store_alone(self) -> None:
         self.repersist()
@@ -597,7 +597,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("agenda_items must contain objects", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_a_report_that_fails_to_persist_leaves_an_old_schema_store_byte_identical(self) -> None:
         # An older schema: a column the current initialize() would add is
@@ -625,7 +625,7 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("boom", str(caught.exception))
         self.assertEqual(before, sha(self.database))
         self.assertNotIn("person_roles_json", self.columns("mps"))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def columns(self, table: str) -> set[str]:
         conn = sqlite3.connect(self.database)

@@ -314,15 +314,17 @@ class UnmappedRoleTests(unittest.TestCase):
         self.assertIn('"Präsident des Bundesrates" (21/7 ID21701, 21/8 ID21802)', message)
         self.assertIn('"Sonderbeauftragter der Bundesregierung" (21/8 ID21801)', message)
         self.assertEqual(before, hashlib.sha256(database.read_bytes()).hexdigest())
-        self.assertEqual(list(database.parent.glob(f".{database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(database).glob(f"{database.name}.*.tmp*")), [])
 
     def test_the_command_prints_the_error_line_and_exits_1(self) -> None:
         import json
         import sys
         from unittest import mock
 
-        tmp = Path(tempfile.mkdtemp())
-        (tmp / "data").mkdir()
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        tmp = Path(holder.name) / "site"  # its private directory (.site.private) is cleaned up with holder
+        (tmp / "data").mkdir(parents=True)
         (tmp / "protocols").mkdir()
         (tmp / "data" / "plenarprotokoll-21-7.json").write_text(json.dumps(report("21/7", self.ODD)), encoding="utf-8")
         err = io.StringIO()

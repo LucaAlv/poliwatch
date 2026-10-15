@@ -604,7 +604,7 @@ scripts/preview_dip_pulse_site.sh
 
 ## SQLite Store
 
-When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store from before schema 3 needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
+When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock (both in `.OUTPUT.private/` beside the output directory, never published) and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store of an older schema needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
 
 - `schema_migrations`
 - `parties`

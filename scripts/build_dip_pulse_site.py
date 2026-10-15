@@ -1042,7 +1042,8 @@ def merge_detail_entries(
 
 # Rebuild the SQLite store from scratch out of the dossier reports.
 #
-# Written to a temporary file next to the target and moved into place only on
+# Written to a temporary file in the store's private directory (never in the
+# published tree) and moved into place only on
 # success, so a failed build never leaves a half-written database behind - the
 # database explorer page and the download link both read this file. The store
 # being replaced is only ever read, and through a read-only connection: a
@@ -1087,7 +1088,7 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
     """table -> digest of its column names and rows, timestamps left out; None
     when the file cannot be read that way (then it counts as changed)."""
     try:
-        conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -1142,6 +1143,9 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
+    # One spelling for the lock, the staging directory and the swap: a rebuild
+    # through a symlink to the store replaces the store, not the link.
+    database_path = Path(database_path).resolve()
     try:
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
@@ -1164,6 +1168,15 @@ def _rebuild_database_from_entries(
     upgrade: bool = False,
 ) -> bool:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    if database_path.exists():
+        try:
+            probe = facts.open_readonly(database_path)
+            try:
+                probe.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+            finally:
+                probe.close()
+        except sqlite3.Error as exc:
+            raise DatabaseRebuildError(f"The store {database_path} cannot be read ({exc})") from exc
     if not upgrade and database_path.exists():
         current = facts.open_readonly(database_path)
         try:
@@ -1197,13 +1210,21 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
+    # The staged copy lives in the store's private directory, never in the
+    # published tree (registry.private_dir), and must sit on the store's file
+    # system so the final rename is atomic.
+    staging = registry.private_dir(database_path)
+    if staging.stat().st_dev != database_path.parent.stat().st_dev:
+        raise DatabaseRebuildError(
+            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
+        )
     # Only the lock holder is here, so a staged copy that is still lying around
-    # is from a crashed run; it holds full speech text, so it must not pile up
-    # next to the published data.
+    # is from a crashed run; it holds full speech text, so it must not pile up.
     # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
-    for stale in database_path.parent.glob(f".{glob.escape(database_path.name)}.*.tmp*"):
+    name = database_path.resolve().name
+    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
         stale.unlink(missing_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{database_path.name}.", suffix=".tmp", dir=database_path.parent)
+    fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
     os.close(fd)
     temp_path = Path(temporary)
     store = pulse_store.connect(temp_path)
@@ -2768,7 +2789,7 @@ def _run_export(
 
     dist_conn = sqlite3.connect(dist_path, isolation_level=None)
     dist_conn.row_factory = sqlite3.Row
-    source_conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    source_conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         source_conn.backup(dist_conn)
     except sqlite3.Error:
@@ -6970,7 +6991,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     aliases = {key: target for key, target in aliases.items() if key not in page_ids}  # a live page is never overwritten by a redirect
     folded: dict[str, str] = {}
     for key in (*page_ids, *aliases):
-        if not registry.PERSON_KEY_RE.fullmatch(key) or key.casefold() in registry.RESERVED_PERSON_KEYS:
+        if not registry.valid_person_key(key):
             raise registry.RegistryError(f"Invalid person key {key!r} in the build store; restore the build-store backup")
         if folded.setdefault(key.casefold(), key) != key:
             raise registry.RegistryError(f"Person keys {folded[key.casefold()]!r} and {key!r} differ only by case; restore the build-store backup")
@@ -7364,6 +7385,24 @@ def render_abgeordnete_detail(
 
 # Write the Abgeordnete area: profile pages, the roster index and
 # data/abgeordnete.json. Called through features/abgeordnete.py.
+def _write_person_page(abg_dir: Path, key: Any, text: str) -> None:
+    """Write ``abgeordnete/<key>.html`` without trusting the caller: the key is
+    checked again (a filename, no path), whatever already sits at the target (a
+    symlink above all) is removed first, and the file is created with
+    O_EXCL|O_NOFOLLOW, so the write cannot land outside abg_dir."""
+    if not registry.valid_person_key(key):
+        raise registry.RegistryError(f"Invalid person key {key!r} for a page under {abg_dir}; restore the build-store backup")
+    _write_new_file(abg_dir / f"{key}.html", text)
+
+
+def _write_new_file(path: Path, text: str) -> None:
+    """Replace ``path`` by a new regular file, never writing through a link there."""
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def write_abgeordnete_pages(
     output_dir: Path,
     mps: list[dict[str, Any]],
@@ -7373,6 +7412,10 @@ def write_abgeordnete_pages(
     features = features or publication_selection()
     abg_dir = output_dir / "abgeordnete"
     abg_dir.mkdir(parents=True, exist_ok=True)
+    # The stale-page sweep and every page write below happen in this directory;
+    # an abgeordnete/ that is a link out of the output tree is refused first.
+    if abg_dir.resolve() != output_dir.resolve() / "abgeordnete":
+        raise registry.RegistryError(f"{abg_dir} resolves outside {output_dir}; person pages are not written through it")
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
     detail_mps = [mp for mp in mps if has_abgeordnete_page(mp)]
@@ -7381,18 +7424,12 @@ def write_abgeordnete_pages(
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
             stale_page.unlink()
     for mp in detail_mps:
-        (abg_dir / f"{mp['id']}.html").write_text(
-            render_abgeordnete_detail(mp, features, publication_domains),
-            encoding="utf-8",
-        )
+        _write_person_page(abg_dir, mp["id"], render_abgeordnete_detail(mp, features, publication_domains))
     for mp in detail_mps:
         for alias in mp.get("aliases", []):
             target = pulse_html.esc(f"{mp['id']}.html")
-            (abg_dir / f"{alias}.html").write_text(f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>', encoding="utf-8")
-    (abg_dir / "index.html").write_text(
-        render_abgeordnete_index(mps, features, publication_domains),
-        encoding="utf-8",
-    )
+            _write_person_page(abg_dir, alias, f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>')
+    _write_new_file(abg_dir / "index.html", render_abgeordnete_index(mps, features, publication_domains))
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     listed = sum(1 for mp in mps if mp.get("is_mdb"))
@@ -11194,19 +11231,26 @@ def main() -> int:
     # no-persist rendering, require current persisted rules; an online rebuild
     # can repair the rules from accepted source inputs.
     if not getattr(args, "repersist", False) and database_path.exists():
-        previous = facts.open_readonly(database_path)
+        previous = None
         try:
+            # Opening is inside: a directory or an unreadable file at the store
+            # path fails here (or at the first query), not as a traceback.
+            previous = facts.open_readonly(database_path)
             pulse_store.require_current_schema(previous)
             if args.offline or args.no_persist:
                 pulse_store.require_current_speech_rules(previous)
                 # The render applies the corrections file to the pages without a
                 # reconcile, so an applied partition missing from it stops here.
                 registry.require_applied_partitions(previous)
-        except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
+        except sqlite3.Error as exc:
+            print(f"error: the store {database_path} cannot be read ({exc}); it is left as it is", file=sys.stderr)
+            return 1
+        except (RuntimeError, registry.RegistryError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finally:
-            previous.close()
+            if previous is not None:
+                previous.close()
 
     # --- offline render ----------------------------------------------------
     # Re-render every page from what is already on disk. Useful for iterating on

@@ -21,6 +21,11 @@ REGISTRY_TABLES = ("persons", "person_aliases", "person_records", "person_bindin
 PERSON_KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 #: File stems under abgeordnete/ that belong to the site, not to a person.
 RESERVED_PERSON_KEYS = frozenset({"index"})
+
+
+def valid_person_key(key: Any) -> bool:
+    """A key that can name its own page file under abgeordnete/."""
+    return isinstance(key, str) and bool(PERSON_KEY_RE.fullmatch(key)) and key.casefold() not in RESERVED_PERSON_KEYS
 #: aw_match value of a partition record: its profile is never a trusted join key.
 PARTITIONED = "partitioned"
 #: aw_match value of a record whose occurrences name two trusted abgeordnetenwatch ids.
@@ -29,11 +34,30 @@ AW_CONFLICT = "conflicting"
 class RegistryError(ValueError):
     pass
 
+def private_dir(database_path: Path) -> Path:
+    """Where a store's writer lock and staged copies live: never in a published
+    tree. A store in ``OUTPUT/data/`` is published with OUTPUT, so its private
+    directory is ``.OUTPUT.private`` beside OUTPUT; any other store gets
+    ``.STORE.private`` in its own directory. Derived from the resolved path, so
+    every spelling of one store (a symlink, ``..``) names one lock."""
+    store = database_path.resolve()
+    if store.parent.name == "data":
+        root = store.parent.parent
+        return root.parent / f".{root.name}.private"
+    return store.parent / f".{store.name}.private"
+
+
+def writer_lock_path(database_path: Path) -> Path:
+    return private_dir(database_path) / f"{database_path.resolve().name}.writer.lock"
+
+
 @contextmanager
 def writer_lock(database_path: Path) -> Iterator[None]:
-    """Kernel releases this nonblocking lock even when a writer crashes."""
+    """Kernel releases this nonblocking lock even when a writer crashes. The lock
+    file is never removed: flock belongs to its inode."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    path = database_path.with_suffix(database_path.suffix + ".writer.lock")
+    path = writer_lock_path(database_path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with path.open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -208,7 +232,7 @@ def resolve(conn: sqlite3.Connection, person_id: str) -> str:
 
 def allocate(conn: sqlite3.Connection, preferred: str | None = None) -> str:
     if preferred is not None:
-        if not isinstance(preferred, str) or not PERSON_KEY_RE.fullmatch(preferred) or preferred.casefold() in RESERVED_PERSON_KEYS:
+        if not valid_person_key(preferred):
             raise RegistryError(f"Invalid person key {preferred!r}; use a URL-safe filename key that is not a reserved page name")
         clash = conn.execute("SELECT id FROM persons WHERE lower(id) = lower(?) AND id != ?", (preferred, preferred)).fetchone()
         if clash:
@@ -228,20 +252,29 @@ def _first_touch(conn: sqlite3.Connection, record_id: str, baseline: str | None 
     by reconcile); True the first time. ``baseline`` is the evidence it had
     before this build touched it, kept so later decisions about the record do not
     depend on which occurrence was persisted first. The temp table is made on
-    first use."""
+    first use; any other SQLite error propagates (the rebuild then keeps the store)."""
     insert = "INSERT OR IGNORE INTO registry_touched VALUES (?, ?)"
     try:
         return conn.execute(insert, (record_id, baseline)).rowcount == 1
-    except sqlite3.OperationalError:
-        conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
+    except sqlite3.OperationalError as exc:
+        if not _no_touched_table(exc):
+            raise
+        conn.execute("CREATE TEMP TABLE registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
         return conn.execute(insert, (record_id, baseline)).rowcount == 1
+
+
+def _no_touched_table(exc: sqlite3.OperationalError) -> bool:
+    """The one error that means "nothing was touched on this connection yet"."""
+    return str(exc) == "no such table: registry_touched"
 
 
 def _touched(conn: sqlite3.Connection, record_id: str) -> tuple[bool, str | None]:
     """``(touched in this build, baseline evidence json)`` of a record."""
     try:
         row = conn.execute("SELECT baseline FROM registry_touched WHERE id = ?", (record_id,)).fetchone()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as exc:
+        if not _no_touched_table(exc):
+            raise
         return False, None
     return (row is not None), (row[0] if row else None)
 
@@ -1015,7 +1048,7 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
 def validate(conn: sqlite3.Connection) -> None:
     seen: dict[str, str] = {}
     for row in conn.execute("SELECT id FROM persons"):
-        if not PERSON_KEY_RE.fullmatch(row[0]) or row[0].casefold() in RESERVED_PERSON_KEYS:
+        if not valid_person_key(row[0]):
             raise RegistryError(f"Invalid registry person key {row[0]!r}; restore the build-store backup")
         if seen.setdefault(row[0].casefold(), row[0]) != row[0]:
             raise RegistryError(f"Registry person keys {seen[row[0].casefold()]!r} and {row[0]!r} differ only by case; restore the build-store backup")

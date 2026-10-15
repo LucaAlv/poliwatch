@@ -137,7 +137,8 @@ class RetainedScopeTests(unittest.TestCase):
 
         before = self.database.read_bytes()
         refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
-        lock = self.database.with_suffix(self.database.suffix + ".writer.lock")
+        lock = build.registry.writer_lock_path(self.database)
+        lock.parent.mkdir(parents=True, exist_ok=True)
         with lock.open("a") as held:
             fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # a second open file description conflicts, in-process too
             try:

@@ -162,7 +162,7 @@ class StableIDsTests(unittest.TestCase):
         self.assertEqual(before,self.db.read_bytes())
 
     def test_writer_overlap_and_crash_recovery_preserve_history(self):
-        r=report();self.rebuild([r]);before=self.db.read_bytes();lock=self.db.with_suffix('.sqlite.writer.lock')
+        r=report();self.rebuild([r]);before=self.db.read_bytes();lock=registry.writer_lock_path(self.db)
         proc=subprocess.Popen([sys.executable,'-c','import fcntl,sys,time; f=open(sys.argv[1],"a"); fcntl.flock(f,fcntl.LOCK_EX); print("locked",flush=True); time.sleep(30)',str(lock)],stdout=subprocess.PIPE,text=True)
         try:
             self.assertEqual(proc.stdout.readline().strip(),'locked')
