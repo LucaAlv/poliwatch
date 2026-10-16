@@ -691,7 +691,7 @@ class RepersistTests(unittest.TestCase):
             try:
                 conn.execute(f"CREATE TABLE keyed (id TEXT PRIMARY KEY, {column} TEXT)")
                 conn.execute("CREATE TABLE unkeyed (a TEXT, b TEXT)")
-                conn.executemany("INSERT INTO keyed VALUES (?, ?)", rows)
+                conn.executemany("INSERT OR IGNORE INTO keyed VALUES (?, ?)", rows)
                 conn.executemany("INSERT INTO unkeyed VALUES (?, ?)", rows)
                 conn.commit()
             finally:
@@ -705,6 +705,16 @@ class RepersistTests(unittest.TestCase):
         renamed = build._content_digests(store("renamed.sqlite", rows, column="w"))
         self.assertNotEqual(forward["keyed"], renamed["keyed"])
         self.assertEqual(forward["unkeyed"], renamed["unkeyed"])
+        # The rows are summed, not sorted: a changed, deleted or repeated row
+        # still changes the digest, and so do values swapped between rows.
+        for label, changed in (("changed", [("b", "2"), ("a", "9"), ("c", "3")]), ("deleted", rows[:2]),
+                               ("duplicated", rows + rows[:1]), ("swapped", [("a", "2"), ("b", "1"), ("c", "3")])):
+            with self.subTest(label):
+                self.assertNotEqual(forward["unkeyed"], build._content_digests(store(f"{label}.sqlite", changed))["unkeyed"])
+        # A pair of equal rows does not cancel out (as it would in an XOR).
+        twice_a = build._content_digests(store("twice-a.sqlite", [("a", "1"), ("a", "1"), ("b", "2")]))
+        twice_c = build._content_digests(store("twice-c.sqlite", [("c", "3"), ("c", "3"), ("b", "2")]))
+        self.assertNotEqual(twice_a["unkeyed"], twice_c["unkeyed"])
 
     def test_a_content_change_replaces_the_file(self) -> None:
         self.repersist()

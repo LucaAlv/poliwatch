@@ -18,6 +18,7 @@ import _daten_fixture
 import build_dip_pulse_site as b
 import facts
 import persist_dip_pulse_store as pulse_store
+from stable_ids import stable_key
 
 
 READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"}
@@ -602,3 +603,96 @@ class ExportDistributionDataTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecipeRepresentativeTests(unittest.TestCase):
+    """r1 and r3 show each person under one row of theirs, chosen by content:
+    a roster row, then a speaker row, then the smallest identity_key, never
+    by the hashed mps.id."""
+
+    PERSONS = (
+        # person, identity_key, display_name, is_mdb, xml_redner_id
+        ("p-1", "dip:1", "Ada Lovelace, MdB, SPD", 0, None),
+        ("p-1", "xml:11", "Ada Lovelace", 0, "11"),
+        ("p-2", "dip:7", "Bea Zwei", 0, None),
+        ("p-2", "profile:x", "Zwei, Bea", 0, None),
+        ("p-3", "dip:9", "Dr. Cem Drei", 1, None),
+        ("p-3", "xml:33", "Cem Drei", 0, "33"),
+    )
+
+    def rows(self, members: list[tuple[str, tuple]]) -> dict[str, dict[str, tuple]]:
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(
+            """
+            CREATE TABLE parties (id TEXT PRIMARY KEY, name TEXT);
+            CREATE TABLE mps (id TEXT PRIMARY KEY, identity_key TEXT, person_id TEXT, display_name TEXT,
+                              party_id TEXT, is_mdb INTEGER, xml_redner_id TEXT);
+            CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER);
+            CREATE TABLE speeches (mp_id TEXT, char_count INTEGER);
+            CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT);
+            CREATE TABLE vote_fractions (vote_id TEXT, party_id TEXT, leading_vote TEXT);
+            INSERT INTO parties VALUES ('spd', 'SPD');
+            INSERT INTO vote_fractions VALUES ('v1', 'spd', 'yes');
+            """
+        )
+        for mp_id, (person, identity, name, is_mdb, xml) in members:
+            conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
+            conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
+            conn.execute("INSERT INTO speeches VALUES (?, 100)", (mp_id,))
+            conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no')", (mp_id,))
+        try:
+            return {
+                recipe_id: {row[0]: row[1:] for row in conn.execute(b.RECIPES_BY_ID[recipe_id]["sql"])}
+                for recipe_id in ("r1-meiste-reden", "r3-abweichler")
+            }
+        finally:
+            conn.close()
+
+    def test_the_representative_row_is_chosen_by_content_not_by_its_hashed_id(self) -> None:
+        ids = [f"mp-{n}" for n in range(len(self.PERSONS))]
+        forward = list(zip(ids, self.PERSONS))
+        backward = list(zip(reversed(ids), self.PERSONS))[::-1]
+        # Neither the id order nor the insert order may decide.
+        for order, members in (("forward", forward), ("backward", backward)):
+            with self.subTest(order=order):
+                rows = self.rows(members)
+                # The speaker row over a DIP title; identity_key over the id hash;
+                # the roster row over a speaker row. Every row's Reden pool.
+                self.assertEqual(rows["r1-meiste-reden"], {
+                    "p-1": ("Ada Lovelace", "SPD", 2, 200),
+                    "p-2": ("Bea Zwei", "SPD", 2, 200),
+                    "p-3": ("Dr. Cem Drei", "SPD", 2, 200),
+                })
+                self.assertEqual(rows["r3-abweichler"], {
+                    "p-1": ("Ada Lovelace", "SPD", 1),
+                    "p-2": ("Bea Zwei", "SPD", 1),
+                    "p-3": ("Dr. Cem Drei", "SPD", 1),
+                })
+
+    def test_the_personenseite_takes_its_heading_from_the_same_row(self) -> None:
+        # Two roll-call style rows of one person, neither roster nor speaker:
+        # the smaller identity_key (dip:1) wins although its mps.id sorts last.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    spd = pulse_store.upsert_party(conn, "SPD", now)
+                    dip_row = pulse_store.upsert_mp(
+                        conn, now=now, display_name="Aydan Özoguz, MdB, SPD", party_id=spd,
+                        identity_key=pulse_store.mp_identity(dip_person_id="1"), dip_person_id="1",
+                        occurrence_id=stable_key("contribution", "c1"))
+                    profile_url = "https://example.org/oezoguz"
+                    profile_row = pulse_store.upsert_mp(
+                        conn, now=now, display_name="Özoguz, Aydan", party_id=spd,
+                        identity_key=pulse_store.mp_identity(profile_url=profile_url), profile_url=profile_url)
+                    self.assertLess(profile_row, dip_row)
+                    persons = [row[0] for row in conn.execute("SELECT person_id FROM mps ORDER BY id")]
+                    person_registry.merge(conn, persons)
+                conn.row_factory = sqlite3.Row
+                mps, _ = b.collect_abgeordnete(conn)
+                conn.row_factory = None
+                self.assertEqual([(mp["name"], mp["has_page"]) for mp in mps], [("Aydan Özoguz", True)])
+            finally:
+                conn.close()

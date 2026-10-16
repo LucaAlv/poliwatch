@@ -931,6 +931,38 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(mp["speech_count"], 0)
         self.assertTrue(mp["has_page"])
 
+    def test_a_repeat_bind_writes_a_binding_only_when_it_changed(self):
+        first = self.open_store()
+        record = self.vote_up(first, "v1", "Ada Example", "SPD", "https://example.org/ada")
+        second = self.next_build(first)
+        occurrence = stable_key("vote-member", "v1", "Ada Example", "SPD")
+        home = second.execute("SELECT home_person_id FROM person_records WHERE id=?", (record,)).fetchone()[0]
+        writes = []
+        second.set_trace_callback(lambda sql: writes.append(sql) if "INTO person_bindings" in sql else None)
+        self.addCleanup(second.set_trace_callback, None)
+        # Unchanged since the previous build: the vote member's binding is not rewritten.
+        self.vote_up(second, "v1", "Ada Example", "SPD", "https://example.org/ada")
+        self.assertEqual(writes, [])
+        # A binding that points at another person (a guess of the previous build)
+        # is pointed back at the record's home person.
+        second.execute("INSERT INTO persons VALUES ('p-999999', 999999)")
+        second.execute("UPDATE person_bindings SET person_id='p-999999' WHERE id=?", (occurrence,))
+        self.vote_up(second, "v1", "Ada Example", "SPD", "https://example.org/ada")
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(second.execute("SELECT record_id, person_id FROM person_bindings WHERE id=?", (occurrence,)).fetchone()[:],
+                         (record, home))
+
+    def test_a_bound_occurrence_stays_on_its_record_when_its_new_identity_has_one(self):
+        first = self.open_store()
+        url = "https://example.org/ada"
+        profile_record = self.up(first, "o1", f"profile:{url}", "Ada Example", party="SPD", profile_url=url)
+        second = self.next_build(first)
+        aw_record = self.up(second, "o2", "aw:5", "Ada Example", aw=5, match="ext_id", xml="11", party="SPD")
+        # o1's source now names the trusted profile: an enrichment, not another person.
+        self.up(second, "o1", "aw:5", "Ada Example", aw=5, match="ext_id", party="SPD", profile_url=url)
+        self.assertNotEqual(profile_record, aw_record)
+        self.assertEqual(second.execute("SELECT record_id FROM person_bindings WHERE id='o1'").fetchone()[0], profile_record)
+
 
 class _FlakyTouch(sqlite3.Connection):
     """A connection whose first registry_touched insert fails with an error that

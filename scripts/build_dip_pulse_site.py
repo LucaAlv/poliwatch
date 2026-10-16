@@ -1085,8 +1085,12 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
 
 
 def _content_digests(database_path: Path) -> dict[str, str] | None:
-    """table -> digest of its column names and rows, timestamps left out; None
-    when the file cannot be read that way (then it counts as changed)."""
+    """table -> digest of its column names, row count and rows, timestamps left
+    out; None when the file cannot be read that way (then it counts as changed).
+
+    Each row's sha256 is summed modulo 2**256 in whatever order SQLite returns
+    the rows, so no table is sorted by its text primary key (that sort was most
+    of the cost); a changed, deleted or duplicated row still changes the digest."""
     try:
         conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
@@ -1100,15 +1104,14 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
             )
         ]
         for table in tables:
-            table_info = list(conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})"))
-            columns = [row[1] for row in table_info if row[1] not in _TIMESTAMP_COLUMNS]
-            digest = hashlib.sha256(repr(columns).encode("utf-8"))
+            columns = [row[1] for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
+                       if row[1] not in _TIMESTAMP_COLUMNS]
             selected = ", ".join(sqlite_identifier(column) for column in columns)
-            primary_keys = [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]]
-            order = ", ".join(sqlite_identifier(key) for key in primary_keys or columns)
-            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)} ORDER BY {order}"):
-                digest.update(repr(row).encode("utf-8"))
-            digests[table] = digest.hexdigest()
+            total = count = 0
+            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)}"):
+                total += int.from_bytes(hashlib.sha256(repr(row).encode("utf-8")).digest(), "big")
+                count += 1
+            digests[table] = hashlib.sha256(repr((columns, count, total % 2**256)).encode("utf-8")).hexdigest()
         return digests
     except sqlite3.Error:
         return None
@@ -2253,6 +2256,21 @@ SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 # All exported primary keys identify stable source rows or issued registry keys.
 # The manifest derives their declared order directly from the table schema.
 
+# The row whose name and party r1 and r3 show for a person, chosen once per
+# person: a roster row first, then a speaker row, then by identity_key, a source
+# key (mps.id is a hash). collect_abgeordnete orders a person's rows the same
+# way, so the label is the row the Personenseite takes its heading from.
+REPRESENTATIVE_SQL = (
+    "WITH representative AS (\n"
+    "  SELECT person_id, display_name, party_id FROM (\n"
+    "    SELECT person_id, display_name, party_id,\n"
+    "           ROW_NUMBER() OVER (PARTITION BY person_id\n"
+    "                              ORDER BY is_mdb DESC, xml_redner_id IS NULL, identity_key) AS rank\n"
+    "    FROM mps\n"
+    "  ) WHERE rank = 1\n"
+    ")\n"
+)
+
 # The five recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
 # addendum: R1/R3 join mp_canonical and group by the canonical id, so their
@@ -2267,11 +2285,12 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r1-meiste-reden",
         "title": "Wer hielt die meisten Reden?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
             "FROM speeches s\n"
             "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
@@ -2321,12 +2340,13 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r3-abweichler",
         "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
             "FROM vote_members vm\n"
             "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "JOIN parties p ON p.id = vm.party_id\n"
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
@@ -6788,7 +6808,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
                m.aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id, pr.partition,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
@@ -6879,7 +6899,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         # A record with no mps row keeps its evidence on the page: on its own
         # person's page, or pooled into the person a stale roster record joined.
         if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
-            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
+            evidence.update(id=record["id"], identity_key=record["identity_key"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
             assignments[record["id"]] = person_id
     rows.extend(row for row in historical if assignments[row["id"]] in page_eligible)
@@ -6892,9 +6912,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Prefer roster, then speaker biography over roll-call attributes.
-        # The page key still comes from the registry.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["id"]))
+        # Prefer roster, then speaker biography over roll-call attributes, then
+        # the source key (mps.id is a hash); Daten recipes r1/r3 pick their row
+        # in the same order (REPRESENTATIVE_SQL). The page key still comes from
+        # the registry.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["identity_key"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:

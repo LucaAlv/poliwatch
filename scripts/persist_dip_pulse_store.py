@@ -1278,11 +1278,21 @@ def persist_vote(
                 (vote_id, document_id),
             )
 
+    # A vote lists a few hundred members of a handful of Zusammenschlüsse; each
+    # party is upserted once per vote (a repeat upsert with the same ``now``
+    # changes nothing).
+    party_ids: dict[str, str | None] = {}
+
+    def party(name: str) -> str | None:
+        if name not in party_ids:
+            party_ids[name] = upsert_party(conn, name, now)
+        return party_ids[name]
+
     # Rows of one vote that name the same Zusammenschluss under two
     # spellings ("Gruppe BSW", "BSW (Gruppe)") are one row: their counts add.
     for merged in derive.merge_fractions(vote.get("fractions")):
         party_name = merged["name"]
-        party_id = upsert_party(conn, party_name, now)
+        party_id = party(party_name)
         if party_id is None:
             continue
         conn.execute(
@@ -1310,7 +1320,7 @@ def persist_vote(
 
     for member in vote.get("members") or []:
         party_name = derive.zusammenschluss(member.get("faction")) or "Unbekannt"
-        party_id = upsert_party(conn, party_name, now)
+        party_id = party(party_name)
         profile = member.get("abgeordnetenwatch") or {}
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
         profile_url = profile.get("url") or member.get("profile_url")

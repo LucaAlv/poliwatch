@@ -447,10 +447,11 @@ def bind(
     # of another identity, so reconcile can meet the record that identity names.
     evidence["identities"] = [identity]
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
-    bound = conn.execute("SELECT record_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
+    bound = conn.execute("SELECT record_id, person_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
     bound_touched = False
     if bound:
-        previous = conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
+        # Usually the identity's own record (a repeat build): already read.
+        previous = row if row and row["id"] == bound[0] else conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
         bound_touched, baseline = _touched(conn, bound[0])
         # A reviewed partition, or a source that now names a different official
         # id, moves a binding; otherwise the established source record wins over
@@ -503,7 +504,7 @@ def bind(
     if not (row and row["id"] == record_id and row["evidence_json"] == evidence_json and row["person_id"] == home):
         conn.execute("INSERT INTO person_records VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json, person_id=excluded.person_id",
                      (record_id, identity, home, evidence_json, evidence.get("partition"), home))
-    if occurrence:
+    if occurrence and not (bound and tuple(bound) == (record_id, home)):
         conn.execute("INSERT INTO person_bindings VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id, person_id=excluded.person_id", (occurrence, record_id, home))
     return record_id, home, identity, evidence
 
