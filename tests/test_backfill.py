@@ -194,6 +194,43 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertIn("previous store is untouched", stderr)
         self.assertEqual(before, self.database.read_bytes())
 
+    def seed_roster_row(self) -> None:
+        conn = pulse_store.connect(self.database)
+        try:
+            now = pulse_store.utc_now()
+            with conn:  # a roster row an earlier build ingested
+                pulse_store.upsert_mp(conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
+                                      identity_key="dip:ada", dip_person_id="ada", is_mdb=True)
+        finally:
+            conn.close()
+
+    def roster_rows(self) -> int:
+        conn = sqlite3.connect(self.database)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM mps WHERE dip_person_id = 'ada' AND is_mdb = 1").fetchone()[0]
+        finally:
+            conn.close()
+
+    # Value: protects=an online build without mp-roster (the default selection) keeps the roster rows of the previous store, fetches no roster, and hands the facts engine the build date and the votes it persisted; with --enrich mp-roster the fetched roster replaces the preserved rows; fails_when=main passes a constant preserve_roster, drops today, or the rebuild's built set ignores persisted votes; why_new=A.2 test follow-ups: the roster wiring with mp-roster not selected and built forwarding were never asserted at main(); seam=ingest_mdb_roster and compute_and_store are spies
+    def test_an_online_build_without_mp_roster_preserves_the_roster_and_forwards_today_and_built(self) -> None:
+        self.seed_roster_row()
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        with (
+            mock.patch.object(build, "ingest_mdb_roster") as ingest,
+            mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine,
+        ):
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", "--today", "2026-07-01", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        ingest.assert_not_called()
+        self.assertEqual(self.roster_rows(), 1)
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["built"], {"votes"})
+        with mock.patch.object(build, "ingest_mdb_roster", return_value={"fetched": 0, "mdb": 0, "enriched": 0}) as ingest:
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", "--enrich", "mp-roster", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        ingest.assert_called_once()
+        self.assertEqual(self.roster_rows(), 0)
+
     def test_the_catalog_is_fetched_whole_and_the_store_keeps_dossiers_cut_by_detail_limit(self) -> None:
         before = self.counts()
         code, fetch, build_dossiers, _render_site, stderr = self.run_main("--detail-limit", "1", generated=[])

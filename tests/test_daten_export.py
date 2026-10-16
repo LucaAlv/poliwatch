@@ -325,6 +325,15 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["generation"], second["generation"])
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
+    # Value: protects=the standalone facts engine computes for the build date it is given, with the votes the store holds; fails_when=run_facts_engine drops today or computes with a constant built set; why_new=third ship round (12) today forwarding: only run_data_pipeline's hop into run_facts_engine was pinned; seam=compute_and_store spy
+    def test_engine_forwards_the_build_date_and_the_built_set(self) -> None:
+        from datetime import date
+
+        with mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine:
+            b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog(), today=date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["built"], {"votes"})
+
     def test_engine_output_is_exported_as_derived_data(self) -> None:
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
@@ -488,6 +497,93 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("distribution copy failed", str(ctx.exception))
         self.assertIn("database is locked", str(ctx.exception))
         self.assertEqual([p.name for p in self.exports_dir.glob("g-*")], [])
+
+    # Value: protects=every manifest input the page renders from re-exports when it changes (tag, licence, catalog and dossier counts, each readiness state) and the same inputs reuse the generation; fails_when=one of them is dropped from _inputs_hash, so a stale manifest keeps the old tag in its file names or the old counts on the page; why_new=A.2 test follow-ups: only source, recipes, format, schema/key version and issues URL were pinned; seam=none
+    def test_skip_rule_reexports_when_any_rendered_input_changes(self) -> None:
+        first = self.export()
+        self.assertEqual(self.export()["generation"], first["generation"])
+        changes = {
+            "tag": {"tag": "v1"},
+            "license": {"license_text": "CC BY 4.0"},
+            "catalog_count": {"catalog_count": 3},
+            "dossier_count": {"dossier_count": 3},
+            **{f"readiness {feature}": {"readiness": {**READINESS, feature: "partial"}} for feature in READINESS},
+        }
+        for label, override in changes.items():
+            with self.subTest(label):
+                self.assertNotEqual(self.export(**override)["generation"], first["generation"])
+        self.assertEqual(self.export()["generation"], first["generation"])
+
+    # Value: protects=the manifest names each table's stable key exactly: its declared primary-key columns in key order; fails_when=stable_keys lists other columns or drops one of a composite key (no composite key of this schema declares its columns out of table order, so key order is not distinguishable here); why_new=registry follow-ups (3): the manifest test checked only that the list is not empty; seam=none
+    def test_manifest_stable_keys_are_the_declared_primary_keys(self) -> None:
+        manifest = self.export()
+        keys = {table["name"]: table["stable_keys"] for table in manifest["tables"]}
+        self.assertEqual(keys, {
+            "agenda_item_documents": ["agenda_item_id", "document_id", "source"],
+            "agenda_item_votes": ["agenda_item_id", "vote_id"],
+            "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
+            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"], "person_aliases": ["id"],
+            "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],
+            "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
+            "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
+            "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
+            "vote_members": ["vote_id", "mp_id"], "votes": ["id"],
+        })
+
+    def _export_acting_after_copy(self, act):
+        """Export with ``act()`` run right after the build store was copied into
+        the distribution copy (the window another build's swap could hit)."""
+        real_connect = sqlite3.connect
+
+        class ActAfterBackup(sqlite3.Connection):
+            def backup(self, target, *args, **kwargs):
+                super().backup(target, *args, **kwargs)
+                act()
+
+        def connect(*args, **kwargs):
+            if kwargs.get("uri"):
+                kwargs["factory"] = ActAfterBackup
+            return real_connect(*args, **kwargs)
+
+        with mock.patch.object(b.sqlite3, "connect", side_effect=connect):
+            return self.export()
+
+    # Value: protects=a store replaced while the export copies it is refused instead of published under the hash of the file it replaced; fails_when=the stat comparison after backup() is dropped; why_new=export snapshot/swap guards had no test; seam=the read-only source connection's backup() touches the store's mtime after copying
+    def test_a_store_changed_during_the_copy_is_refused(self) -> None:
+        def touch():
+            stat = self.db_path.stat()
+            os.utime(self.db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+        with self.assertRaisesRegex(RuntimeError, "changed while it was copied"):
+            self._export_acting_after_copy(touch)
+        self.assertEqual([p.name for p in self.exports_dir.glob("g-*")], [])
+        self.assertFalse((self.exports_dir / "datenstand.json").exists())
+
+    # Value: protects=mp_canonical is read from the distribution copy, so it maps exactly the mps rows it is published with even if the store moves on after the copy; fails_when=the mapping is read from the build store (or the caller) instead of the copy; why_new=export snapshot/swap guards had no test; seam=after backup() two mps rows swap persons in the store, its mtime restored so the swap guard passes
+    def test_mp_canonical_maps_the_rows_of_the_copy(self) -> None:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            before = dict(conn.execute("SELECT id, person_id FROM mps"))
+        (a, person_a), (c, person_c) = next(
+            (x, y) for x in sorted(before.items()) for y in sorted(before.items()) if x[1] != y[1] and len(x[1]) == len(y[1])
+        )
+
+        def swap():
+            stat = self.db_path.stat()
+            with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+                conn.execute("UPDATE mps SET person_id = CASE id WHEN ? THEN ? ELSE ? END WHERE id IN (?, ?)", (a, person_c, person_a, a, c))
+                conn.commit()
+            self.assertEqual(self.db_path.stat().st_size, stat.st_size)
+            os.utime(self.db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        manifest = self._export_acting_after_copy(swap)
+        gz_path = self.exports_dir / manifest["generation"] / manifest["files"][0]["name"]
+        dist_path = self.tmp / "distribution.sqlite"
+        with gzip.open(gz_path, "rb") as src, dist_path.open("wb") as dst:
+            dst.write(src.read())
+        with contextlib.closing(sqlite3.connect(dist_path)) as conn:
+            self.assertEqual(dict(conn.execute("SELECT mp_id, canonical_id FROM mp_canonical")), before)
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            self.assertEqual(conn.execute("SELECT person_id FROM mps WHERE id = ?", (a,)).fetchone()[0], person_c)
 
     def test_old_sqlite_raises_data_export_unavailable(self) -> None:
         with mock.patch.object(sqlite3, "sqlite_version_info", (3, 34, 0)):

@@ -6,8 +6,10 @@ Kept apart from test_stable_ids.py on purpose; that file holds the A.2
 identity tests."""
 from __future__ import annotations
 import contextlib
+from datetime import date
 import copy
 import io
+import itertools
 import json
 import os
 import sqlite3
@@ -21,7 +23,7 @@ import build_dip_pulse_site as build
 import persist_dip_pulse_store as store
 import person_registry as registry
 from _registry_fixture import RegistryFixture
-from stable_ids import stable_key
+from stable_ids import roster_occurrence_id, stable_key
 
 
 def report(pid="s1", names=("Ada Example",), rede_ids=None):
@@ -95,6 +97,38 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             self.rebuild([r], preserve_roster=False, roster_ingest=mock.Mock(side_effect=RuntimeError("roster down")))
         self.assertEqual(before, self.db.read_bytes())
         self.assertEqual(list(registry.private_dir(self.db).glob(f"{self.db.name}.*.tmp*")), [])
+
+    # Value: protects=the staged rebuild reconciles as a full build: a speaker record whose Rede the source re-keyed (its copied binding names no occurrence of this build) is stale, so it neither absorbs a roster person by its shared abgeordnetenwatch id nor keeps them apart; fails_when=_rebuild_database_from_entries calls reconcile without full_build=True, so every copied binding keeps its record live; why_new=third ship round (12): reconcile's full_build was tested directly, never through the rebuild; seam=roster_ingest adds the roster person to the staged store
+    def test_the_rebuild_reconciles_as_a_full_build(self):
+        aw = {"id": 5, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/ada"}
+        first = report()
+        first["agenda_items"][0]["xml_speakers"][0]["speaker"]["abgeordnetenwatch"] = aw
+        self.rebuild([first])
+        second = report(rede_ids={"Ada Example": "s1-corrected"})
+        second["agenda_items"][0]["xml_speakers"][0]["speaker"]["xml_redner_id"] = "9"
+
+        def ingest(staged):
+            self.up(staged, roster_occurrence_id("dip-5"), "dip:dip-5", "Ada Example", dip="dip-5", aw=5, match="ext_id", mdb=True, party="SPD")
+
+        self.rebuild([second], preserve_roster=False, roster_ingest=ingest)
+        records = {row["identity_key"]: row["person_id"] for row in self.rows("person_records")}
+        self.assertEqual(len(self.rows("person_aliases")), 0)
+        self.assertEqual(records["xml:9"], records["dip:dip-5"])
+        (stale,) = [key for key in records if key not in ("xml:9", "dip:dip-5")]
+        self.assertNotEqual(records[stale], records["dip:dip-5"])
+
+    # Value: protects=the staged rebuild hands the facts engine the build date and the built set from the staged store (no votes persisted: votes metrics are not computed); fails_when=_rebuild_database_from_entries or its wrapper drops today, or built is a constant; why_new=third ship round (12) today forwarding and A.2 test follow-ups built forwarding: no test spied the rebuild's engine call; seam=compute_and_store wrapped by a spy
+    def test_the_rebuild_hands_the_build_date_and_built_set_to_the_facts_engine(self):
+        with mock.patch.object(build.facts, "compute_and_store", wraps=build.facts.compute_and_store) as engine:
+            self.rebuild([report()], today=date(2026, 7, 1))
+        engine.assert_called_once()
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["built"], set())
+        facts_report = {}
+        with mock.patch.object(build.facts, "compute_and_store", wraps=build.facts.compute_and_store) as engine:
+            self.rebuild([report()], facts_report=facts_report)
+        self.assertIsNone(engine.call_args.kwargs["today"])
+        self.assertTrue({"incomplete_periods", "sitting_gaps"} <= facts_report.keys())
 
     # Value: protects=a member the refreshed roster no longer lists keeps one page with biography and speeches; fails_when=a stale roster record takes part in no match, or collect_abgeordnete skips its evidence once it shares a current person; why_new=staged roster tests always list the same members; seam=none
     def test_member_dropped_from_roster_keeps_one_page_with_biography_and_speeches(self):
@@ -280,12 +314,19 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             r["protocol"]["datum"] = f"2026-06-1{pid[-1]}"
             return r
         reports = [named("s1", "Ada Example"), named("s2", "Bea Example"), named("s3", "Cy Example")]
-        issued = []
-        for order in (reports, list(reversed(reports))):
-            self.db = self.root / f"order-{len(issued)}.sqlite"
-            self.rebuild(order)
-            issued.append({m["display_name"]: m["person_id"] for m in self.rows("mps")})
-        self.assertEqual(issued[0], issued[1])
+        # Value: protects=the same, for every arrival order and for sittings on one day, which only the protocol id orders; fails_when=entry_sort_key drops its id tie-break; why_new=A.2 test follow-ups: only two orders of three dated reports were checked; seam=none
+        same_day = copy.deepcopy(reports)
+        for r in same_day:
+            r["protocol"]["datum"] = "2026-06-10"
+        for label, cohort in (("dated", reports), ("same day", same_day)):
+            with self.subTest(label):
+                issued = []
+                for order in itertools.permutations(cohort):
+                    self.db = self.root / f"order-{label}-{len(issued)}.sqlite"
+                    self.rebuild(list(order))
+                    issued.append({m["display_name"]: m["person_id"] for m in self.rows("mps")})
+                self.assertTrue(all(key.startswith("p-") for key in issued[0].values()), issued[0])
+                self.assertEqual([i for i in issued if i != issued[0]], [])
 
     # Value: protects=records of two different partitions never merge into one person, by shared id or by name+party; fails_when=the partition-union guard in match_rows is removed; why_new=tests cover partition naming and rebuilds, never the union step; seam=none
     def test_match_rows_never_unions_records_of_different_partitions(self):
@@ -322,6 +363,8 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             ("person key not URL-safe", "UPDATE persons SET id = 'bad key/1'", "Invalid registry person key"),
             ("evidence is not an object", "UPDATE person_records SET evidence_json = '[]'", "Unreadable registry evidence"),
             ("record points at unknown person", "UPDATE person_records SET person_id = 'ghost'", "foreign-key violations"),
+            # Value: protects=an mps row naming a person the registry does not hold aborts the replay before its registry is carried; fails_when=validate checks foreign keys of the registry tables only (the mps arm dropped); why_new=third ship round (12), the mps foreign-key arm; seam=none
+            ("mps row points at unknown person", "UPDATE mps SET person_id = 'ghost'", "foreign-key violations"),
             ("every registry table missing", "DROP TABLE person_bindings; DROP TABLE person_records; DROP TABLE person_aliases; DROP TABLE persons", "Incomplete person registry"),
             ("registry from an unreleased A.2 draft", "ALTER TABLE person_records RENAME COLUMN home_person_id TO draft_person_id", "unreleased A.2 draft"),
         ]
@@ -337,6 +380,17 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                     self.rebuild([r])
                 self.assertEqual(damaged, self.db.read_bytes())
                 self.assertEqual(list(registry.private_dir(self.db).glob(f"{self.db.name}.*.tmp*")), [])
+        # Value: protects=an upgrade replay (--offline --repersist) of a store whose mps rows name persons but whose four registry tables are gone stops instead of re-minting every person key; fails_when=copy_previous returns silently for a store without registry tables; why_new=registry follow-ups (3): the upgrade path skips the schema pre-flight, so only copy_previous guards it; seam=none
+        with self.subTest("upgrade replay with every registry table missing"):
+            self.db.write_bytes(pristine)
+            with contextlib.closing(sqlite3.connect(self.db)) as conn:
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.executescript("; ".join(f"DROP TABLE {table}" for table in registry.REGISTRY_TABLES))
+                conn.commit()
+            damaged = self.db.read_bytes()
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "Incomplete person registry"):
+                self.rebuild([r], upgrade=True)
+            self.assertEqual(damaged, self.db.read_bytes())
         # Value: protects=initialize refuses a store whose registry tables vanished instead of minting an empty registry; fails_when=require_current_schema skips the registry-tables check; why_new=copy_previous guards replay only, not a direct initialize of the build store; seam=none
         with self.subTest("direct initialize without registry tables"):
             self.db.write_bytes(pristine)
@@ -821,6 +875,31 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertTrue(retired <= set(mp["aliases"]))
 
     # Value: protects=a guess chained through a person that holds both Foehr and Mende records never joins the two reviewed partitions; fails_when=the person-level guess group ignores partitions that are not correction: owners; why_new=only correction: owners were checked at the person level; seam=none
+    # Value: protects=a stale record's partition (an occurrence that moved away, evidence nobody prints any more) does not veto a name guess between the live records of two persons; fails_when=_guess_merges reads partitions from every member of a group instead of the live (and partner-joined) ones; why_new=registry follow-ups (3): no stale record ever carried a partition; seam=registry._guess_merges over _load_rows with partitions set in person_records
+    def test_a_stale_partition_does_not_veto_a_guess_between_live_records(self):
+        conn = self.open_store()
+        stale = self.up(conn, "occ-s", "xml:1", "Alexander Föhr", xml="1", party="CDU/CSU")
+        speaker = self.up(conn, "occ-1", "xml:10", "Max Muster", xml="10", party="SPD")
+        roster = self.up(conn, "roster:5", "dip:5", "Max Muster", dip="5", mdb=True, party="SPD")
+        mende = self.up(conn, "occ-3", "xml:30", "Erik Mende", xml="30", party="CDU/CSU")
+        person = dict(conn.execute("SELECT id, person_id FROM person_records"))
+        registry._assign(conn, stale, person[speaker])
+        registry._assign(conn, mende, person[roster])
+        conn.execute("UPDATE person_records SET partition = 'foehr' WHERE id = ?", (stale,))
+        conn.execute("UPDATE person_records SET partition = 'mende' WHERE id = ?", (mende,))
+        live = {speaker, roster, mende}
+        registry._guess_merges(conn, registry._load_rows(conn, touched=live))
+        after = dict(conn.execute("SELECT id, person_id FROM person_records"))
+        self.assertEqual(after[speaker], after[roster])
+        # Control: the same record live is evidence, and two partitions stay split.
+        for record, home in person.items():
+            registry._assign(conn, record, home)
+        registry._assign(conn, stale, person[speaker])
+        registry._assign(conn, mende, person[roster])
+        registry._guess_merges(conn, registry._load_rows(conn, touched=live | {stale}))
+        after = dict(conn.execute("SELECT id, person_id FROM person_records"))
+        self.assertNotEqual(after[speaker], after[roster])
+
     def test_a_guess_chain_never_joins_the_foehr_and_mende_partitions(self):
         first = self.open_store("first.sqlite")
         self.up(first, "roster:Z1", "dip:Z1", "Alexander Föhr", dip="Z1", aw=9, match="ext_id", mdb=True, party="CDU/CSU")
@@ -1060,6 +1139,91 @@ class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
             build.write_abgeordnete_pages(linked, mps)
         self.assertEqual([p.name for p in elsewhere.iterdir()], ["precious.html"])
 
+
+    # Value: protects=--offline over a store whose four registry tables were all dropped exits 1 with the incomplete-registry diagnostic, not a traceback or a generic read error; fails_when=require_current_schema stops checking that all registry tables exist (require_current returns silently when none exists); why_new=registry follow-ups (3): the CLI test dropped one table only; seam=none
+    def test_offline_cli_reports_a_store_without_any_registry_table(self):
+        site = self.site()
+        r = report()
+        (site / "data" / "plenarprotokoll-21-1.json").write_text(json.dumps(r))
+        self.rebuild([r])
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.executescript("; ".join(f"DROP TABLE {table}" for table in registry.REGISTRY_TABLES))
+            conn.commit()
+        before = self.db.read_bytes()
+        done = self.offline(site)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertIn("error: Incomplete person registry; restore the build-store backup", done.stderr)
+        self.assertEqual(before, self.db.read_bytes())
+
+    # Value: protects=the crash sweep takes a stale staged copy with its -journal, -wal and -shm sidecars, for a store name with glob characters, and leaves another store's staged copy alone; fails_when=the sweep pattern is unescaped (a[1] matches a1, not itself) or ends in .tmp; why_new=registry follow-ups (3): only a -journal sidecar of a plain name was tested; seam=none
+    def test_crash_sweep_escapes_the_store_name_and_takes_every_sidecar(self):
+        self.db = self.root / "a[1].sqlite"
+        self.rebuild([report()])
+        private = registry.private_dir(self.db)
+        stale = [private / f"a[1].sqlite.crashed.tmp{suffix}" for suffix in ("", "-journal", "-wal", "-shm")]
+        bystander = private / "a1.sqlite.other.tmp"
+        for path in (*stale, bystander):
+            path.write_bytes(b"x")
+        self.rebuild([report(), report(pid="s2")])
+        self.assertEqual([path.name for path in stale if path.exists()], [])
+        self.assertTrue(bystander.exists())
+
+    def _damage_after_facts(self, damage):
+        """Run the rebuild with ``damage(staged_connection)`` applied right after
+        the facts are stored, i.e. after every registry check but before the
+        final integrity and foreign-key checks."""
+        real = build.facts.compute_and_store
+
+        def compute_and_store(store_conn, *args, **kwargs):
+            result = real(store_conn, *args, **kwargs)
+            store_conn.commit()
+            damage(store_conn)
+            return result
+
+        return mock.patch.object(build.facts, "compute_and_store", compute_and_store)
+
+    # Value: protects=the final foreign_key_check of the staged store refuses a dangling row no registry check looks at, and the previous store stays byte for byte; fails_when=the end-of-rebuild foreign_key_check is dropped; why_new=third ship round (12), the end-of-rebuild foreign-key check; seam=compute_and_store is wrapped to insert a dangling vote_documents row into the staged store
+    def test_a_dangling_row_in_the_staged_store_keeps_the_previous_store(self):
+        self.rebuild([report()])
+        before = self.db.read_bytes()
+
+        def dangle(conn):
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("INSERT INTO vote_documents VALUES ('no-vote', 'no-document')")
+            conn.commit()
+            conn.execute("PRAGMA foreign_keys = ON")
+
+        with self._damage_after_facts(dangle):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "failed foreign_key_check"):
+                self.rebuild([report(), report(pid="s2")])
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(list(registry.private_dir(self.db).glob(f"{self.db.name}.*.tmp*")), [])
+
+    # Value: protects=a staged store that fails PRAGMA integrity_check never replaces the previous one; fails_when=the end-of-rebuild integrity_check is dropped; why_new=no test reached that check; seam=the staged connection's factory answers integrity_check with a corruption line
+    def test_a_staged_store_failing_integrity_check_keeps_the_previous_store(self):
+        self.rebuild([report()])
+        before = self.db.read_bytes()
+        staging = registry.private_dir(self.db)
+        real_connect = sqlite3.connect
+
+        class Corrupt(sqlite3.Connection):
+            def execute(self, sql, *args):
+                if sql.strip() == "PRAGMA integrity_check":
+                    return super().execute("SELECT 'row 1 missing from index'")
+                return super().execute(sql, *args)
+
+        def connect(path, *args, **kwargs):
+            if Path(str(path)).parent == staging:
+                kwargs["factory"] = Corrupt
+            return real_connect(path, *args, **kwargs)
+
+        with mock.patch.object(store.sqlite3, "connect", connect):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "failed integrity_check"):
+                self.rebuild([report(), report(pid="s2")])
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(list(staging.glob(f"{self.db.name}.*.tmp*")), [])
 
 if __name__ == "__main__":
     unittest.main()

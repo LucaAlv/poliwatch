@@ -87,6 +87,31 @@ class RegistryInvariantTests(RegistryFixture, unittest.TestCase):
         pages, _lookup = build.collect_abgeordnete(conn)
         self.assertEqual({mp["name"]: mp["has_page"] for mp in pages}, {"Vera Vote": False, "Sam Speaker": True})
 
+    # Value: protects=a person known only from roll calls has no page and no link, now and after its rows left the store; a roster-only former MdB whose rows left the store keeps a page as a former member; fails_when=collect_abgeordnete adds historical records without the page-eligibility filter, or links persons that have no page; why_new=A.2 test follow-ups: page eligibility of persons with no current mps row (vote-only history, a vanished roster row) was never asserted; seam=next_build carries the registry into a store without mps rows
+    def test_historical_page_eligibility_for_vote_only_and_roster_only_persons(self):
+        import build_dip_pulse_site as build
+        first = self.open_store()
+        vera = self.vote_up(first, "v1", "Vera Vote", "SPD", "https://www.bundestag.de/abgeordnete/vera")
+        rita = self.up(first, roster_occurrence_id("5"), "dip:5", "Rita Roster", dip="5", mdb=True, party="SPD")
+        # a roll-call member whose profile carries an abgeordnetenwatch id: a link key, but no page
+        from stable_ids import vote_member_occurrence_id
+        vic = self.up(first, vote_member_occurrence_id("v1", "Vic Vote", "CDU/CSU"), "aw:77", "Vic Vote", aw=77, match="ext_id", party="CDU/CSU")
+        registry.reconcile(first)
+        first.commit()
+        persons = self.person_of_records(first)
+        pages, lookup = build.collect_abgeordnete(first)
+        self.assertEqual({mp["name"]: mp["has_page"] for mp in pages}, {"Vera Vote": False, "Vic Vote": False, "Rita Roster": True})
+        self.assertNotIn(persons[vera], lookup.values())
+        self.assertNotIn(persons[vic], lookup.values())
+        self.assertNotIn("aw:77", lookup)
+        second = self.next_build(first)
+        registry.reconcile(second)
+        pages, lookup = build.collect_abgeordnete(second)
+        self.assertEqual([(mp["id"], mp["name"], mp["has_page"], mp["is_mdb"]) for mp in pages],
+                         [(persons[rita], "Rita Roster", True, False)])
+        self.assertNotIn(persons[vera], lookup.values())
+        self.assertEqual(lookup["dip:5"], persons[rita])
+
     # Value: protects=the person-level aw arm of the guess conflict guard: two roster persons with different trusted aw ids are never joined by a name guess chain; fails_when=_guess_merges compares only dip ids; why_new=only the dip arm was exercised; seam=none
     def test_a_guess_cannot_join_persons_with_contradicting_aw_ids(self):
         conn = self.open_store()
