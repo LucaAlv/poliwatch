@@ -382,6 +382,25 @@ class DocumentKeyTests(unittest.TestCase):
         self.assertEqual((document['title'], document['date']), ('A', '2024-05-01'))
         self.assertEqual(len(results[0][1][0]), 2)  # one xml and one api link to the one document
 
+    # Value: protects=a Bundesrat Drucksache keeps the PDF whose path encodes its number, whichever persist order DIP's misfiled URL arrives in; fails_when=_encodes_document_number stops matching /brd/ paths, so the smallest text wins; why_new=only Bundestag URLs were ranked; seam=none; no_claim=zu-/three-part numbers have no checkable path
+    def test_a_bundesrat_document_keeps_the_pdf_that_encodes_its_number_in_any_order(self):
+        right, misfiled = 'https://dserver.bundestag.de/brd/2023/0041-23.pdf', 'https://dserver.bundestag.de/brd/2023/0040-23.pdf'
+        docs = [{'dokumentnummer': '41/23', 'herausgeber': 'br', 'url': misfiled},
+                {'dokumentnummer': ' 41/23 ', 'herausgeber': 'BR', 'url': right},
+                {'dokumentnummer': 'zu41/23', 'herausgeber': 'BR', 'url': 'https://dserver.bundestag.de/brd/2023/0041-23.pdf'}]
+        results = []
+        for order in ((0, 1, 2), (2, 1, 0), (1, 2, 0)):
+            r = documents_report()
+            r['agenda_items'][0]['api']['linked_drucksachen'] = [docs[i] for i in order]
+            r['agenda_items'][0]['xml_drucksachen'] = []
+            r['agenda_items'][0]['votes'][0]['document_numbers'] = []
+            results.append(self.documents(self.persisted(r)))
+        self.assertEqual(results[0], results[1]); self.assertEqual(results[0], results[2])
+        by_number = {d['document_number']: d for d in results[0]}
+        self.assertEqual(set(by_number), {'41/23', 'zu41/23'})  # Bundesrat forms stay as printed
+        self.assertEqual({d['herausgeber'] for d in results[0]}, {'BR'})
+        self.assertEqual(by_number['41/23']['url'], right)
+
     # Value: protects=a store whose documents are still keyed by URL is refused with the replay instruction; fails_when=require_current_schema stops checking the documents table, so render and export read stale keys; why_new=schema 4 changes the documents key; seam=none
     def test_a_schema_3_documents_table_requires_the_explicit_replay(self):
         conn = sqlite3.connect(':memory:')

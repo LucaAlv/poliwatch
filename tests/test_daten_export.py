@@ -375,6 +375,16 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertFalse(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
         self.assertEqual(self.db_path.stat().st_ino, inode)
 
+    # Value: protects=a facts write that fails midway leaves the published store byte for byte as it was and no staged copy (full speech text) behind; fails_when=_write_facts_staged stops removing its temp file or swaps in before the write succeeded; why_new=only the successful staged write was pinned; seam=write_snapshot raises
+    def test_a_failing_facts_write_keeps_the_store_and_leaves_no_staged_copy(self) -> None:
+        before = self.db_path.read_bytes()
+        with mock.patch.object(facts, "write_snapshot", side_effect=sqlite3.OperationalError("database or disk is full")):
+            with self.assertRaisesRegex(sqlite3.OperationalError, "disk is full"):
+                b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
+        self.assertEqual(self.db_path.read_bytes(), before)
+        self.assertEqual(list(person_registry.private_dir(self.db_path).glob("*.tmp*")), [])
+        self.assertEqual([p.name for p in self.db_path.parent.iterdir() if p.name.startswith(self.db_path.name + "-")], [])
+
     # Value: protects=the standalone facts engine computes for the build date it is given, with the votes the store holds; fails_when=run_facts_engine drops today or computes with a constant built set; why_new=third ship round (12) today forwarding: only run_data_pipeline's hop into run_facts_engine was pinned; seam=compute_and_store spy
     def test_engine_forwards_the_build_date_and_the_built_set(self) -> None:
         from datetime import date
