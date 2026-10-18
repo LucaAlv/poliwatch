@@ -79,7 +79,7 @@ def make_output(
             )
             items[number] = pulse_store.persist_agenda_item(conn, protocol_id, {"index": 0}, NOW)
             for sequence, (rede_id, fraktion, chars, role) in enumerate(speeches):
-                mp = pulse_store.upsert_mp(conn, now=NOW, identity_key=f"mp-{rede_id}", display_name=f"MdB {rede_id}", party_id=party(fraktion or "SPD"), is_mdb=roster)
+                mp = pulse_store.upsert_mp(conn, now=NOW, identity_key=f"mp-{rede_id}", occurrence_id=f"fixture:mp-{rede_id}", display_name=f"MdB {rede_id}", party_id=party(fraktion or "SPD"), is_mdb=roster)
                 conn.execute(
                     "INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, "
                     "fraktion, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -187,6 +187,7 @@ class CompareStoreValuesTests(unittest.TestCase):
                 display_name="Alex Beispiel",
                 party_id=speaker["party_id"],
                 identity_key="vote-only:alex",
+                occurrence_id="fixture:vote-only:alex",
             )
             conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'yes')", (speaker["id"], speaker["party_id"]))
             conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'no')", (voter, speaker["party_id"]))
@@ -201,6 +202,52 @@ class CompareStoreValuesTests(unittest.TestCase):
             self.assertEqual(result["merges_unique_name"], 0)
         finally:
             store.close()
+
+    # Value: protects=the Zusammenführung diagnostic reports each statistic of this tree's matching under its own label: rows, persons, merges per provenance and name buckets left split; fails_when=_zusammenfuehrung maps a totals key to the wrong field, miscounts rows, or the report prints a value under another label; why_new=A.2 test follow-ups: only entries and unique_name were asserted, on a case where every merge count is 0; seam=none
+    def test_zusammenfuehrung_reports_every_statistic_under_its_label(self) -> None:
+        root = make_output(self.tmp / "zusammen", protocols={"21/1": []}, roster=False)
+        conn = pulse_store.connect(root / "data" / "bundestag-pulse.sqlite")
+        try:
+            def mp(name, identity, *, party="SPD", **fields):
+                return pulse_store.upsert_mp(conn, now=NOW, display_name=name, party_id=pulse_store.upsert_party(conn, party, NOW),
+                                             identity_key=identity, occurrence_id=f"fixture:{identity}", **fields)
+            for n in (1, 2):  # a shared Personenkennung (ext_id): 2 merges
+                mp(f"Ext Person{n}", f"dip:e{n}", dip_person_id=f"e{n}", aw_politician_id=100 + n, aw_match="ext_id", is_mdb=True)
+                mp(f"Ext Person{n}", f"xml:e{n}", xml_redner_id=f"9{n}", aw_politician_id=100 + n, aw_match="ext_id")
+            # a second Redner-ID whose name-found profile corroborates the first: 1 merge
+            mp("Nancy Faeser", "xml:11005452", xml_redner_id="11005452", aw_politician_id=135391, aw_match="ext_id", is_mdb=True)
+            mp("Nancy Faeser", "xml:999990119", party="Regierung", xml_redner_id="999990119", aw_politician_id=135391, aw_match="name", is_mdb=True)
+            for n in (1, 2, 3):  # one record on each side with one name and party: 3 merges
+                mp(f"Uniq Name{n}", f"dip:u{n}", dip_person_id=f"u{n}", is_mdb=True)
+                mp(f"Uniq Name{n}", f"xml:u{n}", xml_redner_id=f"7{n}")
+            for n in (1, 2, 3, 4):  # two Redner of one name: 4 buckets left split
+                mp(f"Max Muster{n}", f"xml:m{n}a", xml_redner_id=f"m{n}a")
+                mp(f"Max Muster{n}", f"xml:m{n}b", xml_redner_id=f"m{n}b")
+            for n in (1, 2):  # two Redner and a DIP person of one name: 2 buckets of 3+
+                mp(f"Peter Mueller{n}", f"xml:p{n}a", xml_redner_id=f"p{n}a")
+                mp(f"Peter Mueller{n}", f"xml:p{n}b", xml_redner_id=f"p{n}b")
+                mp(f"Peter Mueller{n}", f"dip:p{n}", dip_person_id=f"p{n}", is_mdb=True)
+            conn.commit()
+        finally:
+            conn.close()
+        expected = {"rows": 26, "entries": 20, "merges_ext_id": 2, "merges_corroborated_name": 1, "merges_unique_name": 3,
+                    "buckets_split_namesakes": 4, "buckets_split_3plus": 2}
+        store = compare.open_store(root)
+        try:
+            self.assertEqual(compare._zusammenfuehrung(store), expected)
+        finally:
+            store.close()
+        code, out, _ = run(root, root)
+        self.assertEqual(code, 0)
+        section = "Zusammenführung of the mps rows"
+        for label, key in (("mps rows", "rows"), ("Personen after Zusammenführung", "entries"),
+                           ("merges by Personenkennung (ext_id)", "merges_ext_id"),
+                           ("merges by corroborated name-found id", "merges_corroborated_name"),
+                           ("merges by unique name + party", "merges_unique_name"),
+                           ("name buckets left split: two on one side", "buckets_split_namesakes"),
+                           ("name buckets left split: 3+ records", "buckets_split_3plus")):
+            with self.subTest(label):
+                self.assertTrue(line_of(out, label, section).endswith(f" {expected[key]} -> {expected[key]} ="))
 
     def test_fixed_cohort_prints_old_new_and_delta_on_shared_protocols_only(self) -> None:
         old, new = self.stores()

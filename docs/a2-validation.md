@@ -110,3 +110,18 @@ Method as above, on the current reference output directory (291 cached reports, 
 The 21 joins are the speaker/roster pairs of the earlier measurement (Tatti, Al-Dailami, Leye, Helferich, Spaniel, Cotar, Farle, Bacherle, Mohamed Ali, Cademartori and others). The net −1 is these 21 minus the 23 roll-call records that now stay separate, plus 3 that attach. The 23 are roll-call records of an MdB with one Bundestag biography link per legislative period (`biografien/…-858092` and `biografien20/…-858092`): a record printed under several parties now sits in every name+party bucket of its pairs, so two period records of the same MdB share a bucket, and the existing rule (two roll-call records with different profile links in one bucket are ambiguous) skips that bucket. Treating links that end in the same Bundestag member number as one profile would attach 619 more roll-call records (2,460 persons) and is a change to `main`'s matching design, not part of this fix; see TODOS A.2 follow-ups (6).
 
 A first version of the roll-call pass (checking all voters of an anchor against each other, whichever bucket they came from) detached 41 records and raised the count to 3,111; judging each bucket on its own, as `main` does, removed that.
+
+## Identity edge cases (A.2 follow-up 3, 2026-10-14)
+
+Prompt 03 (presented identities and pass 1a, conflicting trusted abgeordnetenwatch ids, reviewed merges grouped per person, id-less DIP persons skipped, guess chains kept split) was measured database-only on two clones of the A1 reference cache (`right-counts-a1/after`), one replayed with the 02 tree (`b9e7946`), one with this change; the original cache was not touched. Both clones stopped at the same cached report, 21/50, whose XML no longer matches its agenda items (cache drift, the same on both trees), so it was removed from both clones and both were replayed into a fresh store: 284 reports.
+
+| Measure | 02 tree | This change |
+|---|---:|---:|
+| Grouping fingerprint (sorted bindings per person) | `f0671e5d62acccce` | `f0671e5d62acccce` |
+| Persons with occurrences / bindings | 3,086 / 196,818 | 3,086 / 196,818 |
+| Records, persons, `mps` rows / aliases | 4,252 / 0 | 4,252 / 0 |
+| Records with presented `identities`, `aw_match = 'conflicting'`, `name-party:Unbekannt` | 0, 0, 0 | 0, 0, 0 |
+| `person_records` (id, evidence bytes, person) | | identical |
+| Second, unchanged replay | | store kept (`replaced=False`) |
+
+No figure moved, as expected: pass 1a joins nothing on a fresh build, the cache has no record with two trusted ids or a DIP person without an id, and the shipped corrections file has no merges. A fresh store from cached reports holds no roster rows (`preserve_roster` reads them from the store), so the roster paths were exercised only by the tests.

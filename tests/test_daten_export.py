@@ -18,6 +18,7 @@ import _daten_fixture
 import build_dip_pulse_site as b
 import facts
 import persist_dip_pulse_store as pulse_store
+from stable_ids import stable_key
 
 
 READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"}
@@ -65,7 +66,6 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.ids = _daten_fixture.seed_store(self.db_path)
         conn = pulse_store.connect(self.db_path)
         try:
-            person_registry.reconcile(conn)
             self.mps, self.lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
@@ -140,7 +140,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             party_id = pulse_store.upsert_party(conn, "SPD", now)
             mp_id = pulse_store.upsert_mp(
                 conn, now=now, display_name="Ada Lovelace", party_id=party_id,
-                identity_key="dip:ada", dip_person_id="ada", is_mdb=True,
+                identity_key="dip:ada",
+                occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True,
             )
             conn.execute(
                 """INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)
@@ -160,11 +161,11 @@ class ExportDistributionDataTests(unittest.TestCase):
                 (ai, mp_id, now, now),
             )
         conn.execute("INSERT INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        person_registry.reconcile(conn)
         conn.commit()
         conn.close()
 
         no_votes_conn = pulse_store.connect(no_votes_db)
-        person_registry.reconcile(no_votes_conn)
         mps, lookup = b.collect_abgeordnete(no_votes_conn)
         no_votes_conn.close()
         readiness = {**READINESS, "votes": "unavailable"}
@@ -325,6 +326,74 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["generation"], second["generation"])
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
+    # Value: protects=the standalone facts engine never writes the published store in place: while the snapshot is written no -journal/-wal/-shm sits beside the store, the store is swapped in as a new file with the same mode and the same facts an in-place write gives, and an unchanged snapshot keeps the file; fails_when=run_facts_engine writes through a writable connection to the store again; why_new=handoff 05 left the facts engine's rollback journal beside the published store; seam=write_snapshot wrapped
+    def test_engine_writes_a_staged_copy_never_the_published_store(self) -> None:
+        reference = self.tmp / "in-place.sqlite"
+        import shutil as _shutil
+        _shutil.copyfile(self.db_path, reference)
+        conn = pulse_store.connect(reference)
+        try:
+            facts.compute_and_store(conn, facts.ALL_REGISTRY, facts.completeness_from_entries(self.FACTS_ENTRIES),
+                                    catalog=self.facts_catalog(), built=facts.built_sources(conn), out=io.StringIO())
+            conn.commit()
+        finally:
+            conn.close()
+        os.chmod(self.db_path, 0o640)
+        inode = self.db_path.stat().st_ino
+        real_write = facts.write_snapshot
+        beside = []
+
+        def watching_write(conn, snapshot):
+            # Looked at inside the write transaction, while a rollback journal exists.
+            def look(statement):
+                if statement.startswith("INSERT INTO fact_sources"):
+                    beside.extend(path.name for path in self.db_path.parent.iterdir()
+                                  if path.name.startswith(self.db_path.name + "-"))
+            conn.set_trace_callback(look)
+            try:
+                real_write(conn, snapshot)
+            finally:
+                conn.set_trace_callback(None)
+
+        with mock.patch.object(facts, "write_snapshot", side_effect=watching_write) as write:
+            self.assertTrue(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
+        write.assert_called_once()
+        self.assertEqual(beside, [])
+        self.assertNotEqual(self.db_path.stat().st_ino, inode)
+        self.assertEqual(self.db_path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(list(person_registry.private_dir(self.db_path).glob("*.tmp*")), [])
+
+        def facts_rows(path):
+            snapshot = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                return {table: snapshot.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall() for table in facts.FACTS_TABLES}
+            finally:
+                snapshot.close()
+
+        self.assertEqual(facts_rows(self.db_path), facts_rows(reference))
+        inode = self.db_path.stat().st_ino
+        self.assertFalse(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
+        self.assertEqual(self.db_path.stat().st_ino, inode)
+
+    # Value: protects=a facts write that fails midway leaves the published store byte for byte as it was and no staged copy (full speech text) behind; fails_when=_write_facts_staged stops removing its temp file or swaps in before the write succeeded; why_new=only the successful staged write was pinned; seam=write_snapshot raises
+    def test_a_failing_facts_write_keeps_the_store_and_leaves_no_staged_copy(self) -> None:
+        before = self.db_path.read_bytes()
+        with mock.patch.object(facts, "write_snapshot", side_effect=sqlite3.OperationalError("database or disk is full")):
+            with self.assertRaisesRegex(sqlite3.OperationalError, "disk is full"):
+                b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
+        self.assertEqual(self.db_path.read_bytes(), before)
+        self.assertEqual(list(person_registry.private_dir(self.db_path).glob("*.tmp*")), [])
+        self.assertEqual([p.name for p in self.db_path.parent.iterdir() if p.name.startswith(self.db_path.name + "-")], [])
+
+    # Value: protects=the standalone facts engine computes for the build date it is given, with the votes the store holds; fails_when=run_facts_engine drops today or computes with a constant built set; why_new=third ship round (12) today forwarding: only run_data_pipeline's hop into run_facts_engine was pinned; seam=compute_and_store spy
+    def test_engine_forwards_the_build_date_and_the_built_set(self) -> None:
+        from datetime import date
+
+        with mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine:
+            b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog(), today=date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["built"], {"votes"})
+
     def test_engine_output_is_exported_as_derived_data(self) -> None:
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
@@ -376,6 +445,45 @@ class ExportDistributionDataTests(unittest.TestCase):
             keys = self.export()
         self.assertNotEqual(first["generation"], keys["generation"])
 
+    # Value: protects=an export that fails midway leaves the published tree byte for byte as it was (the same manifest, the same generation, nothing new), for a new generation and for a forced re-export of the published one; fails_when=the generation is built inside exports_dir or the published one is removed before the new one is complete; why_new=handoff 05 left the export building inside the published tree; seam=_write_csv fails on its second table
+    def test_a_failed_export_leaves_the_published_tree_as_it_was(self) -> None:
+        def tree():
+            return {path.relative_to(self.exports_dir).as_posix(): path.read_bytes() if path.is_file() else None
+                    for path in self.exports_dir.rglob("*")}
+
+        self.export()
+        before = tree()
+        real_write = b._write_csv
+        calls = []
+
+        def failing_write(*args, **kwargs):
+            calls.append(args[1])
+            if len(calls) == 2:
+                self.assertEqual(tree(), before, "nothing appears in the published tree while the export runs")
+                raise OSError("disk full")
+            return real_write(*args, **kwargs)
+
+        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        for label, kwargs in (("new generation", {"recipes": changed}), ("forced re-export", {"force": True})):
+            with self.subTest(label), mock.patch.object(b, "_write_csv", side_effect=failing_write):
+                calls.clear()
+                with self.assertRaises(OSError):
+                    self.export(**kwargs)
+                self.assertEqual(tree(), before)
+                self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+        # A forced re-export failing between setting the published generation
+        # aside and renaming the new one in puts the published one back.
+        real_replace = Path.replace
+
+        def failing_rename_in(path, target):
+            if Path(target).parent == self.exports_dir and Path(target).name.startswith("g-") and path.name.startswith("g-") and path.parent.name.startswith("export-"):
+                raise OSError("rename failed")
+            return real_replace(path, target)
+
+        with mock.patch.object(Path, "replace", failing_rename_in), self.assertRaises(OSError):
+            self.export(force=True)
+        self.assertEqual(tree(), before)
+
     def test_force_reexports_even_when_unchanged(self) -> None:
         first = self.export()
         second = self.export(force=True)
@@ -407,19 +515,23 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.export(recipes=changed)
         self.assertFalse(first_gen_dir.exists())
 
-    def test_stale_tmp_files_are_swept_and_none_left_behind(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        stale = self.exports_dir / "leftover.tmp"
-        stale.write_text("stale")
-        self.export()
-        self.assertFalse(stale.exists())
-        remaining_tmp = list(self.exports_dir.rglob("*.tmp"))
-        self.assertEqual(remaining_tmp, [])
+    # Value: protects=a crashed export's scratch (a store copy, a half-written generation) is swept from the private work directory, and the published tree only ever holds the manifest and complete generations; fails_when=the sweep stops or the export builds inside exports_dir again; why_new=handoff 05 left the export's work files in the published tree; seam=none
+    def test_stale_work_files_are_swept_and_none_left_behind(self) -> None:
+        work = b.export_work_dir(self.exports_dir)
+        crashed = work / "export-crashed" / "g-000000000000"
+        crashed.mkdir(parents=True)
+        (crashed / "partial.csv.gz.tmp").write_text("stale")
+        (work / "export-crashed" / "dist-x.sqlite").write_text("stale")
+        manifest = self.export()
+        self.assertEqual(sorted(path.name for path in work.iterdir()), [])
+        published = {path.relative_to(self.exports_dir).as_posix() for path in self.exports_dir.rglob("*")}
+        self.assertEqual(published, {"datenstand.json", manifest["generation"]}
+                         | {f"{manifest['generation']}/{file['name']}" for file in manifest["files"]})
 
     def test_concurrent_export_is_refused_while_the_lock_is_held(self) -> None:
         # The recorded pid is this very process, so the holder is alive.
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode("utf-8"))
         os.close(fd)
@@ -432,8 +544,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             lock_path.unlink(missing_ok=True)
 
     def test_lock_left_by_a_dead_process_is_cleared_and_the_export_proceeds(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         with mock.patch.object(os, "kill", side_effect=ProcessLookupError):
             lock_path.write_text("4242", encoding="utf-8")
             stderr = io.StringIO()
@@ -445,8 +557,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertFalse(lock_path.exists())
 
     def test_lock_with_an_unreadable_pid_is_treated_as_held(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path.write_text("not-a-pid", encoding="utf-8")
         try:
             with self.assertRaises(RuntimeError):
@@ -458,9 +570,10 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_refused_export_never_sweeps_the_lock_holders_temp_files(self) -> None:
         # The stale-temp sweep runs only under the lock: a build that loses the
         # lock race must leave the winner's in-flight manifest temp file alone.
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
-        in_flight = self.exports_dir / ".datenstand-inflight.json"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        in_flight = lock_path.parent / "export-inflight" / "datenstand.json"
+        in_flight.parent.mkdir()
         in_flight.write_text("{}", encoding="utf-8")
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
@@ -489,6 +602,93 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("database is locked", str(ctx.exception))
         self.assertEqual([p.name for p in self.exports_dir.glob("g-*")], [])
 
+    # Value: protects=every manifest input the page renders from re-exports when it changes (tag, licence, catalog and dossier counts, each readiness state) and the same inputs reuse the generation; fails_when=one of them is dropped from _inputs_hash, so a stale manifest keeps the old tag in its file names or the old counts on the page; why_new=A.2 test follow-ups: only source, recipes, format, schema/key version and issues URL were pinned; seam=none
+    def test_skip_rule_reexports_when_any_rendered_input_changes(self) -> None:
+        first = self.export()
+        self.assertEqual(self.export()["generation"], first["generation"])
+        changes = {
+            "tag": {"tag": "v1"},
+            "license": {"license_text": "CC BY 4.0"},
+            "catalog_count": {"catalog_count": 3},
+            "dossier_count": {"dossier_count": 3},
+            **{f"readiness {feature}": {"readiness": {**READINESS, feature: "partial"}} for feature in READINESS},
+        }
+        for label, override in changes.items():
+            with self.subTest(label):
+                self.assertNotEqual(self.export(**override)["generation"], first["generation"])
+        self.assertEqual(self.export()["generation"], first["generation"])
+
+    # Value: protects=the manifest names each table's stable key exactly: its declared primary-key columns in key order; fails_when=stable_keys lists other columns or drops one of a composite key (no composite key of this schema declares its columns out of table order, so key order is not distinguishable here); why_new=registry follow-ups (3): the manifest test checked only that the list is not empty; seam=none
+    def test_manifest_stable_keys_are_the_declared_primary_keys(self) -> None:
+        manifest = self.export()
+        keys = {table["name"]: table["stable_keys"] for table in manifest["tables"]}
+        self.assertEqual(keys, {
+            "agenda_item_documents": ["agenda_item_id", "document_id", "source"],
+            "agenda_item_votes": ["agenda_item_id", "vote_id"],
+            "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
+            "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"], "person_aliases": ["id"],
+            "person_bindings": ["id"], "person_records": ["id"], "persons": ["id"],
+            "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
+            "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
+            "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
+            "vote_members": ["vote_id", "mp_id"], "votes": ["id"],
+        })
+
+    def _export_acting_after_copy(self, act):
+        """Export with ``act()`` run right after the build store was copied into
+        the distribution copy (the window another build's swap could hit)."""
+        real_connect = sqlite3.connect
+
+        class ActAfterBackup(sqlite3.Connection):
+            def backup(self, target, *args, **kwargs):
+                super().backup(target, *args, **kwargs)
+                act()
+
+        def connect(*args, **kwargs):
+            if kwargs.get("uri"):
+                kwargs["factory"] = ActAfterBackup
+            return real_connect(*args, **kwargs)
+
+        with mock.patch.object(b.sqlite3, "connect", side_effect=connect):
+            return self.export()
+
+    # Value: protects=a store replaced while the export copies it is refused instead of published under the hash of the file it replaced; fails_when=the stat comparison after backup() is dropped; why_new=export snapshot/swap guards had no test; seam=the read-only source connection's backup() touches the store's mtime after copying
+    def test_a_store_changed_during_the_copy_is_refused(self) -> None:
+        def touch():
+            stat = self.db_path.stat()
+            os.utime(self.db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+        with self.assertRaisesRegex(RuntimeError, "changed while it was copied"):
+            self._export_acting_after_copy(touch)
+        self.assertEqual([p.name for p in self.exports_dir.glob("g-*")], [])
+        self.assertFalse((self.exports_dir / "datenstand.json").exists())
+
+    # Value: protects=mp_canonical is read from the distribution copy, so it maps exactly the mps rows it is published with even if the store moves on after the copy; fails_when=the mapping is read from the build store (or the caller) instead of the copy; why_new=export snapshot/swap guards had no test; seam=after backup() two mps rows swap persons in the store, its mtime restored so the swap guard passes
+    def test_mp_canonical_maps_the_rows_of_the_copy(self) -> None:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            before = dict(conn.execute("SELECT id, person_id FROM mps"))
+        (a, person_a), (c, person_c) = next(
+            (x, y) for x in sorted(before.items()) for y in sorted(before.items()) if x[1] != y[1] and len(x[1]) == len(y[1])
+        )
+
+        def swap():
+            stat = self.db_path.stat()
+            with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+                conn.execute("UPDATE mps SET person_id = CASE id WHEN ? THEN ? ELSE ? END WHERE id IN (?, ?)", (a, person_c, person_a, a, c))
+                conn.commit()
+            self.assertEqual(self.db_path.stat().st_size, stat.st_size)
+            os.utime(self.db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        manifest = self._export_acting_after_copy(swap)
+        gz_path = self.exports_dir / manifest["generation"] / manifest["files"][0]["name"]
+        dist_path = self.tmp / "distribution.sqlite"
+        with gzip.open(gz_path, "rb") as src, dist_path.open("wb") as dst:
+            dst.write(src.read())
+        with contextlib.closing(sqlite3.connect(dist_path)) as conn:
+            self.assertEqual(dict(conn.execute("SELECT mp_id, canonical_id FROM mp_canonical")), before)
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            self.assertEqual(conn.execute("SELECT person_id FROM mps WHERE id = ?", (a,)).fetchone()[0], person_c)
+
     def test_old_sqlite_raises_data_export_unavailable(self) -> None:
         with mock.patch.object(sqlite3, "sqlite_version_info", (3, 34, 0)):
             with self.assertRaises(b.DataExportUnavailable):
@@ -506,3 +706,97 @@ class ExportDistributionDataTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecipeRepresentativeTests(unittest.TestCase):
+    """r1 and r3 show each person under one row of theirs, chosen by content:
+    a roster row, then a speaker row, then the smallest identity_key, never
+    by the hashed mps.id."""
+
+    PERSONS = (
+        # person, identity_key, display_name, is_mdb, xml_redner_id
+        ("p-1", "dip:1", "Ada Lovelace, MdB, SPD", 0, None),
+        ("p-1", "xml:11", "Ada Lovelace", 0, "11"),
+        ("p-2", "dip:7", "Bea Zwei", 0, None),
+        ("p-2", "profile:x", "Zwei, Bea", 0, None),
+        ("p-3", "dip:9", "Dr. Cem Drei", 1, None),
+        ("p-3", "xml:33", "Cem Drei", 0, "33"),
+    )
+
+    def rows(self, members: list[tuple[str, tuple]]) -> dict[str, dict[str, tuple]]:
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(
+            """
+            CREATE TABLE parties (id TEXT PRIMARY KEY, name TEXT);
+            CREATE TABLE mps (id TEXT PRIMARY KEY, identity_key TEXT, person_id TEXT, display_name TEXT,
+                              party_id TEXT, is_mdb INTEGER, xml_redner_id TEXT);
+            CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER);
+            CREATE TABLE speeches (mp_id TEXT, char_count INTEGER);
+            CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT);
+            CREATE TABLE vote_fractions (vote_id TEXT, party_id TEXT, leading_vote TEXT);
+            INSERT INTO parties VALUES ('spd', 'SPD');
+            INSERT INTO vote_fractions VALUES ('v1', 'spd', 'yes');
+            """
+        )
+        for mp_id, (person, identity, name, is_mdb, xml) in members:
+            conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
+            conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
+            conn.execute("INSERT INTO speeches VALUES (?, 100)", (mp_id,))
+            conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no')", (mp_id,))
+        try:
+            return {
+                recipe_id: {row[0]: row[1:] for row in conn.execute(b.RECIPES_BY_ID[recipe_id]["sql"])}
+                for recipe_id in ("r1-meiste-reden", "r3-abweichler")
+            }
+        finally:
+            conn.close()
+
+    def test_the_representative_row_is_chosen_by_content_not_by_its_hashed_id(self) -> None:
+        ids = [f"mp-{n}" for n in range(len(self.PERSONS))]
+        forward = list(zip(ids, self.PERSONS))
+        backward = list(zip(reversed(ids), self.PERSONS))[::-1]
+        # Neither the id order nor the insert order may decide.
+        for order, members in (("forward", forward), ("backward", backward)):
+            with self.subTest(order=order):
+                rows = self.rows(members)
+                # The speaker row over a DIP title; identity_key over the id hash;
+                # the roster row over a speaker row. Every row's Reden pool.
+                self.assertEqual(rows["r1-meiste-reden"], {
+                    "p-1": ("Ada Lovelace", "SPD", 2, 200),
+                    "p-2": ("Bea Zwei", "SPD", 2, 200),
+                    "p-3": ("Dr. Cem Drei", "SPD", 2, 200),
+                })
+                self.assertEqual(rows["r3-abweichler"], {
+                    "p-1": ("Ada Lovelace", "SPD", 1),
+                    "p-2": ("Bea Zwei", "SPD", 1),
+                    "p-3": ("Dr. Cem Drei", "SPD", 1),
+                })
+
+    def test_the_personenseite_takes_its_heading_from_the_same_row(self) -> None:
+        # Two roll-call style rows of one person, neither roster nor speaker:
+        # the smaller identity_key (dip:1) wins although its mps.id sorts last.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                now = pulse_store.utc_now()
+                with conn:
+                    spd = pulse_store.upsert_party(conn, "SPD", now)
+                    dip_row = pulse_store.upsert_mp(
+                        conn, now=now, display_name="Aydan Özoguz, MdB, SPD", party_id=spd,
+                        identity_key=pulse_store.mp_identity(dip_person_id="1"), dip_person_id="1",
+                        occurrence_id=stable_key("contribution", "c1"))
+                    profile_url = "https://example.org/oezoguz"
+                    profile_row = pulse_store.upsert_mp(
+                        conn, now=now, display_name="Özoguz, Aydan", party_id=spd,
+                        identity_key=pulse_store.mp_identity(profile_url=profile_url),
+                        occurrence_id="fixture:" + pulse_store.mp_identity(profile_url=profile_url), profile_url=profile_url)
+                    self.assertLess(profile_row, dip_row)
+                    persons = [row[0] for row in conn.execute("SELECT person_id FROM mps ORDER BY id")]
+                    person_registry.merge(conn, persons)
+                conn.row_factory = sqlite3.Row
+                mps, _ = b.collect_abgeordnete(conn)
+                conn.row_factory = None
+                self.assertEqual([(mp["name"], mp["has_page"]) for mp in mps], [("Aydan Özoguz", True)])
+            finally:
+                conn.close()

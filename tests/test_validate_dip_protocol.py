@@ -258,6 +258,23 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         self.assertFalse(dip.activity_in_top({"fundstelle": {"seite": "8"}}, top))
 
 
+class CompactDrucksachePositionTests(unittest.TestCase):
+    # Value: protects=a DIP Drucksache position keeps its issuer (herausgeber) next to the number in the cached report; fails_when=the field is dropped, so persist reads every Bundesrat paper as a Bundestag one; why_new=persist tests inject herausgeber into reports by hand; seam=none; no_claim=DIP field names
+    def test_the_issuer_travels_with_the_number_and_url(self) -> None:
+        position = {
+            "id": "p1", "vorgang_id": "v1", "vorgangsposition": "1. Beratung", "titel": "T",
+            "fundstelle": {"dokumentnummer": "40/23", "herausgeber": "BR", "drucksachetyp": "Gesetzentwurf",
+                           "datum": "2023-02-03", "pdf_url": "https://dserver.bundestag.de/brd/2023/0040-23.pdf"},
+        }
+        compact = dip.compact_drucksache_position(position)
+        self.assertEqual(
+            {key: compact[key] for key in ("vorgang_id", "vorgangsposition_id", "dokumentnummer", "herausgeber", "drucksachetyp", "datum", "url")},
+            {"vorgang_id": "v1", "vorgangsposition_id": "p1", "dokumentnummer": "40/23", "herausgeber": "BR",
+             "drucksachetyp": "Gesetzentwurf", "datum": "2023-02-03", "url": "https://dserver.bundestag.de/brd/2023/0040-23.pdf"},
+        )
+        self.assertIsNone(dip.compact_drucksache_position({"id": "p2"})["herausgeber"])
+
+
 class ValidateDipProtocolParserTests(unittest.TestCase):
     def test_parse_protocol_xml_extracts_agenda_speeches_and_pages(self) -> None:
         parsed = dip.parse_protocol_xml((FIXTURES / "protocol.xml").read_text(encoding="utf-8"))

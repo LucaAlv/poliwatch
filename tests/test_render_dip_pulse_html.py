@@ -36,7 +36,10 @@ class DossierLayoutTests(unittest.TestCase):
                 if attrs.get("class") == "attention-row":
                     self.links.append(attrs["href"][1:])
 
-        for index in (1, '1"&<>'):
+        # A source index written as 1, "1" or " 01 " is one item and one
+        # anchor (stable_ids.source_index); a malformed one is refused rather
+        # than printed into an id.
+        for index in (1, "1", " 01 "):
             with self.subTest(index=index):
                 report = copy.deepcopy(self.report)
                 report["agenda_items"][0]["index"] = index
@@ -44,7 +47,11 @@ class DossierLayoutTests(unittest.TestCase):
                 anchors.feed(pulse_html.render_html(report))
                 self.assertTrue(anchors.links)
                 self.assertTrue(set(anchors.links) <= anchors.targets)
-                self.assertIn(f"top-{index}", anchors.targets)
+                self.assertIn("top-1", anchors.targets)
+        report = copy.deepcopy(self.report)
+        report["agenda_items"][0]["index"] = '1"&<>'
+        with self.assertRaises(ValueError):
+            pulse_html.render_html(report)
 
     def test_protocol_dev_dump_follows_content_and_is_opt_in(self) -> None:
         normal = pulse_html.render_html(self.report)
@@ -953,6 +960,13 @@ class WeekRadarHelperTests(unittest.TestCase):
         self.assertEqual(pulse_html.render_party_stack(pulse_html.Counter(), 0), '<div class="stack empty"></div>')
 
     # -- topic identity -----------------------------------------------------
+
+    # Value: protects=a text index (" 03 ") renders the same speech anchor and fallback TOP label as the int; fails_when=speech_anchor or topic_identity formats the raw index (id "speech- 03 -ID1", "Tagesordnungspunkt  03 "); why_new=anchors and labels were tested with int indexes only; seam=none
+    def test_a_text_index_renders_the_int_anchor_and_label(self) -> None:
+        self.assertEqual(pulse_html.speech_anchor({"index": " 03 "}, {"rede_id": "ID1"}, 0), "speech-3-ID1")
+        self.assertEqual(pulse_html.speech_anchor({"index": 3}, {}, 4), "speech-3-5")
+        self.assertEqual(pulse_html.topic_identity({"index": " 03 "})["lead_title"], "Tagesordnungspunkt 3")
+
 
     def test_gesetzgebung_position_leads_a_mixed_group(self) -> None:
         item = self._item([

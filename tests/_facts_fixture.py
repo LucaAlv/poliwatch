@@ -128,6 +128,7 @@ def seed_weeks(
                     display_name=person.get("display_name", name),
                     party_id=party_id(person.get("party", party)),
                     identity_key=person["identity_key"],
+                    occurrence_id="fixture:" + person["identity_key"],
                     xml_redner_id=person.get("xml_redner_id"),
                 )
             else:
@@ -137,6 +138,7 @@ def seed_weeks(
                     display_name=name,
                     party_id=party_id(party),
                     identity_key=pulse_store.mp_identity(xml_redner_id=f"x-{name}"),
+                    occurrence_id="fixture:" + pulse_store.mp_identity(xml_redner_id=f"x-{name}"),
                     xml_redner_id=f"x-{name}",
                 )
             result["mp_ids"][name] = mps[name]

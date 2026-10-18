@@ -55,11 +55,11 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
 import derive
-from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, stable_key
+from stable_ids import SYNTHETIC_REDE_ID_SEPARATOR, document_sort_key, stable_key
 from persist_dip_pulse_store import require_current_schema, require_current_speech_rules
 from render_dip_pulse_html import agenda_topic, format_int, iso_week_key, speaker_party
 
@@ -362,6 +362,9 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         "sql": (
             "WITH speaker AS (\n"
             "  SELECT s.id AS speech_id, p.date AS day, p.document_number AS document_number,\n"
+            "         CASE WHEN p.document_number GLOB '[0-9]*/[0-9]*'\n"
+            "                   AND p.document_number NOT GLOB '*[^0-9/]*'\n"
+            "                   AND p.document_number NOT GLOB '*/*/*' THEN 0 ELSE 1 END AS malformed_number,\n"
             "         ai.item_index AS item_index, s.sequence AS sequence,\n"
             "         'p#' || mc.canonical_id AS person_key\n"
             "  FROM speeches s\n"
@@ -374,13 +377,19 @@ REGISTRY: tuple[dict[str, Any], ...] = (
             "first_day AS (\n"
             "  SELECT person_key, MIN(day) AS day FROM speaker GROUP BY person_key\n"
             "),\n"
-            # The debut Rede is the earliest one in the sitting (agenda item, then
-            # position in it), not the smallest speech key: keys are content hashes.
+            # The debut Rede is the earliest one of the day: the earlier sitting by
+            # its number read as Wahlperiode/number (21/9 before 21/10; a malformed
+            # number after the well-formed ones, by its text), then agenda item,
+            # then position in it. Not the smallest speech key: keys are content
+            # hashes. stable_ids.document_sort_key is the same order in Python.
             "first_speech AS (\n"
             "  SELECT person_key, speech_id FROM (\n"
             "    SELECT sp.person_key AS person_key, sp.speech_id AS speech_id,\n"
             "           ROW_NUMBER() OVER (PARTITION BY sp.person_key\n"
-            "                              ORDER BY sp.document_number, sp.item_index, sp.sequence) AS rank\n"
+            "                              ORDER BY sp.malformed_number,\n"
+            "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, 1, instr(sp.document_number, '/') - 1) AS INTEGER) END,\n"
+            "                                       CASE WHEN sp.malformed_number = 0 THEN CAST(substr(sp.document_number, instr(sp.document_number, '/') + 1) AS INTEGER) END,\n"
+            "                                       sp.document_number, sp.item_index, sp.sequence, sp.speech_id) AS rank\n"
             "    FROM speaker sp\n"
             "    JOIN first_day fd ON fd.person_key = sp.person_key AND fd.day = sp.day\n"
             "  ) WHERE rank = 1\n"
@@ -931,6 +940,12 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
             },
         }
     return result
+
+
+def built_sources(conn: sqlite3.Connection) -> set[str]:
+    """The optional sources this store holds (the ``built`` set of ``compute``):
+    ``votes`` once any roll call was persisted, so votes metrics are computed."""
+    return {"votes"} if conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
 
 
 def completeness_from_entries(entries: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -1501,7 +1516,9 @@ def receipts(
     if kind != "vote":
         raise FactsError(f"facts: metric {metric['id']} has unknown receipt kind {kind!r}")
     result = [_receipt("vote", row, position=0, official_url=row.get("detail_url"))]
-    ordered = sorted(documents, key=lambda doc: str(doc["id"]))
+    # Presentation order by the number, as a reader scans them; the receipt's
+    # identity (fact_sources.id) does not depend on it.
+    ordered = sorted(documents, key=lambda doc: (document_sort_key(doc["document_number"]), str(doc["id"])))
     for position, doc in enumerate(ordered, start=1):
         result.append(
             {
@@ -1523,7 +1540,7 @@ def vote_documents(conn: sqlite3.Connection, vote_id: Any) -> list[dict[str, Any
         dict(row)
         for row in conn.execute(
             "SELECT d.id, d.document_number, d.url FROM vote_documents vd "
-            "JOIN documents d ON d.id = vd.document_id WHERE vd.vote_id = ? ORDER BY d.id",
+            "JOIN documents d ON d.id = vd.document_id WHERE vd.vote_id = ? ORDER BY d.document_number, d.id",
             (str(vote_id),),
         ).fetchall()
     ]
@@ -2191,13 +2208,16 @@ def compute_and_store(
     no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
+    write: Callable[[Mapping[str, list[list[Any]]]], None] | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
     Writes nothing when the snapshot is unchanged (the store's mtime stays put
     and the Daten export's skip rule holds) and nothing at all under
-    ``no_persist``. A metric whose SQL raises aborts the build naming the
-    metric, via FactsError.
+    ``no_persist``. ``write`` replaces the in-place ``write_snapshot(conn, ...)``,
+    so a caller holding a read-only connection to a published store can write
+    the snapshot into a staged copy instead. A metric whose SQL raises aborts
+    the build naming the metric, via FactsError.
     """
     registry = tuple(registry)
     ensure_canonical(conn)
@@ -2251,7 +2271,10 @@ def compute_and_store(
         print(f"facts: unchanged ({posted} Fakten in {len(periods)} Perioden), store untouched", file=out)
         return report
     report["changed_winners"] = changed_winners(previous, snapshot)
-    write_snapshot(conn, snapshot)
+    if write is None:
+        write_snapshot(conn, snapshot)
+    else:
+        write(snapshot)
     report["written"] = True
     print(
         f"facts: wrote {len(snapshot['facts'])} rows, {posted} Fakten in "
@@ -2515,7 +2538,7 @@ def write_cards(rows: Iterable[Mapping[str, Any]], cards_dir: Path) -> list[Path
 
 
 def open_readonly(store: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{store.resolve()}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"{store.resolve().as_uri()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -2681,7 +2704,7 @@ def replay(
         catalog = load_sitting_catalog((data_dir or store.parent) / CATALOG_FILENAME)
     conn = open_readonly(store)
     try:
-        built = {"votes"} if conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+        built = built_sources(conn)
         rows = compute(conn, REGISTRY, completeness, catalog=catalog, built=built)
         rows_all = compute(conn, REGISTRY, completeness, catalog=catalog, built=built, force_all=True)
         unlinked = conn.execute(

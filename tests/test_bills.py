@@ -248,6 +248,28 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(speakers["Ada Example"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
         self.assertEqual(speakers["Bea Beispiel"], speech_occurrence_id("p1", "IDREAL"))
 
+    # Value: protects=an agenda index written as "01" gives the bill tally the occurrence key the store mints (synthetic rede id p1:1:1); fails_when=the collector formats the raw index ("p1:01:1") so the speaker loses its person link; why_new=only int indexes reached the collector before; seam=none
+    def test_a_text_index_gives_the_stored_occurrence_key(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["protocol"]["id"] = "p1"
+        bill_entry["report"]["agenda_items"][0]["index"] = "01"
+        bill_entry["report"]["agenda_items"][0]["xml_speakers"] = [
+            {"rede_id": None, "speaker": {"display_name": "Ada Example", "fraktion": "SPD"}, "char_count": 10},
+        ]
+        (row,) = build.collect_bill_pages([bill_entry])[0]["speakers"]
+        self.assertEqual(row["occurrence_id"], speech_occurrence_id("p1", synthetic_rede_id("p1", 1, 1)))
+
+    # Value: protects=an agenda index written as "03" links the bill's TOP to the anchor the protocol page renders (top-3) and matches the same item across builds; fails_when=a consumer formats the raw index ("#top-03", "index:03"), leaving a dangling anchor and a missed cache hit; why_new=the sibling test pins the occurrence key only; seam=none
+    def test_a_text_index_links_the_rendered_anchor_and_the_cache_key(self) -> None:
+        bill_entry = entry([GESETZ], DOCS)
+        bill_entry["report"]["agenda_items"][0]["index"] = "03"
+        (bill,) = build.collect_bill_pages([bill_entry])
+        self.assertTrue(all(ref["href"].endswith("#top-3") for ref in bill["protocol_refs"]), bill["protocol_refs"])
+        self.assertTrue(bill["protocol_refs"])
+        self.assertEqual(build.agenda_item_reuse_keys({"top_id": "TOP 1", "index": " 03 "}),
+                         build.agenda_item_reuse_keys({"top_id": "TOP 1", "index": 3}))
+        self.assertEqual(build.agenda_item_reuse_keys({"index": "03"}), ["index:3"])
+
     # Value: protects=a bill page tallies a reviewed occurrence of the shared Redner-ID 11005304 under its reviewed name, as the protocol page does; fails_when=the bill collector reads the raw printed speaker, so the garbled double name gets its own row and links to whichever occurrence came last; why_new=bill tests used clean names only; seam=none
     def test_a_reviewed_occurrence_is_tallied_under_its_reviewed_name(self) -> None:
         bill_entry = entry([GESETZ], DOCS)

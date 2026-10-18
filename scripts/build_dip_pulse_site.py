@@ -91,6 +91,7 @@ from urllib.parse import urlparse
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -110,7 +111,10 @@ import speech_kinds
 import publication_state as publication
 import facts
 import person_registry as registry
-from stable_ids import KEY_VERSION, key_prefix, roster_occurrence_id, speech_occurrence_id, speech_rede_id
+from stable_ids import (
+    KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
+    speech_rede_id,
+)
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -885,8 +889,13 @@ def load_existing_detail_entries(
             if not isinstance(report.get("protocol") or {}, dict):
                 raise ValueError("protocol must be an object")
             items = report.get("agenda_items", [])
-            if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
+            if not isinstance(items, list) or any(not isinstance(item, dict) or item.get("index") is None for item in items):
                 raise ValueError("agenda_items must contain objects with integer source indices")
+            # An index given as 3 or "3" is one item (stable_ids.source_index);
+            # the file keeps the form it was written in.
+            indexes = [source_index(item.get("index")) for item in items]
+            if len(set(indexes)) != len(indexes):
+                raise ValueError("agenda_items repeat a source index")
             for item in [report, *items]:
                 for key in SPEAKER_LISTS:
                     units = item.get(key) or []
@@ -1032,18 +1041,24 @@ def merge_detail_entries(
     return merged
 
 
-# Rebuild the SQLite store from scratch out of the dossier reports.
-#
-# Written to a temporary file next to the target and moved into place only on
-# success, so a failed build never leaves a half-written database behind - the
-# database explorer page and the download link both read this file. The store
-# being replaced is only ever read, and through a read-only connection: a
-# rebuild that fails part-way must leave it byte for byte as it was, even when
-# it was written by an older schema.
+@dataclass(frozen=True)
+class Rebuilt:
+    """A staged rebuild that succeeded: whether the store file was replaced, and
+    the facts engine's report for the store it built (computed on every rebuild,
+    so the data pipeline never computes the facts a second time)."""
+    replaced: bool
+    facts_report: dict[str, Any]
+
+
 class DatabaseRebuildError(Exception):
     """The staged rebuild failed (an unpersistable report, a registry, facts or SQLite
     error, missing cached evidence, a failed roster fetch or integrity check); the
     previous store stays."""
+
+
+# What a failed data pipeline (export, facts, staged store write) raises: main
+# reports each as one error: line and exit 1, offline and online alike.
+PIPELINE_ERRORS = (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error)
 
 
 # Columns holding when a row was written, not what it says. A re-persist that
@@ -1076,10 +1091,14 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
 
 
 def _content_digests(database_path: Path) -> dict[str, str] | None:
-    """table -> digest of its column names and rows, timestamps left out; None
-    when the file cannot be read that way (then it counts as changed)."""
+    """table -> digest of its column names, row count and rows, timestamps left
+    out; None when the file cannot be read that way (then it counts as changed).
+
+    Each row's sha256 is summed modulo 2**256 in whatever order SQLite returns
+    the rows, so no table is sorted by its text primary key (that sort was most
+    of the cost); a changed, deleted or duplicated row still changes the digest."""
     try:
-        conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -1091,15 +1110,14 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
             )
         ]
         for table in tables:
-            table_info = list(conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})"))
-            columns = [row[1] for row in table_info if row[1] not in _TIMESTAMP_COLUMNS]
-            digest = hashlib.sha256(repr(columns).encode("utf-8"))
+            columns = [row[1] for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
+                       if row[1] not in _TIMESTAMP_COLUMNS]
             selected = ", ".join(sqlite_identifier(column) for column in columns)
-            primary_keys = [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]]
-            order = ", ".join(sqlite_identifier(key) for key in primary_keys or columns)
-            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)} ORDER BY {order}"):
-                digest.update(repr(row).encode("utf-8"))
-            digests[table] = digest.hexdigest()
+            total = count = 0
+            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)}"):
+                total += int.from_bytes(hashlib.sha256(repr(row).encode("utf-8")).digest(), "big")
+                count += 1
+            digests[table] = hashlib.sha256(repr((columns, count, total % 2**256)).encode("utf-8")).hexdigest()
         return digests
     except sqlite3.Error:
         return None
@@ -1118,8 +1136,17 @@ def _entry_label(entry: dict[str, Any]) -> str:
     return f"{number} ({entry.get('report_path')})"
 
 
+# Rebuild the SQLite store from scratch out of the dossier reports.
+#
+# Written to a temporary file in the store's private directory (never in the
+# published tree) and moved into place only on
+# success, so a failed build never leaves a half-written database behind - the
+# database explorer page and the download link both read this file. The store
+# being replaced is only ever read, and through a read-only connection: a
+# rebuild that fails part-way must leave it byte for byte as it was, even when
+# it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, facts_report=None, upgrade=False):
+                                  today=None, upgrade=False) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1127,20 +1154,48 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     runs ``roster_ingest(staged_connection)``; reconciles persons; recomputes facts
     against ``catalog``; validates the registry and integrity; replaces the store
     only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
-    content changed). ``today`` is the build date the facts are computed for; a
-    ``facts_report`` dict receives the engine's report, so the data pipeline need
-    not compute the facts a second time. Only ``upgrade`` (``--offline --repersist``)
+    content changed). ``today`` is the build date the facts are computed for. Only ``upgrade`` (``--offline --repersist``)
     accepts a store of an older schema; every other caller is refused, so the
-    registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
+    registry is re-minted only on that explicit step. Returns a ``Rebuilt``. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
+    # One spelling for the lock, the staging directory and the swap: a rebuild
+    # through a symlink to the store replaces the store, not the link.
+    database_path = Path(database_path).resolve()
     try:
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report, upgrade=upgrade)
+                catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
+
+
+def _staged_store_path(database_path: Path) -> Path:
+    """A fresh staged file for a store, under the writer lock: in the store's
+    private directory, never in the published tree (registry.private_dir), and on
+    the store's file system so the final rename is atomic."""
+    staging = registry.private_dir(database_path)
+    if staging.stat().st_dev != database_path.parent.stat().st_dev:
+        raise DatabaseRebuildError(
+            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
+        )
+    # Only the lock holder is here, so a staged copy that is still lying around
+    # is from a crashed run; it holds full speech text, so it must not pile up.
+    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
+    name = database_path.resolve().name
+    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
+        stale.unlink(missing_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
+    os.close(fd)
+    return Path(temporary)
+
+
+def _replace_store(database_path: Path, temp_path: Path) -> None:
+    """Swap a staged store in; the store keeps the file mode it had (mkstemp
+    makes the staged copy private)."""
+    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
+    temp_path.replace(database_path)
 
 
 def _rebuild_database_from_entries(
@@ -1152,10 +1207,18 @@ def _rebuild_database_from_entries(
     catalog: facts.SittingCatalog | None = None,
     roster_ingest: Any = None,
     today: date | None = None,
-    facts_report: dict[str, Any] | None = None,
     upgrade: bool = False,
-) -> bool:
+) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    if database_path.exists():
+        try:
+            probe = facts.open_readonly(database_path)
+            try:
+                probe.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+            finally:
+                probe.close()
+        except sqlite3.Error as exc:
+            raise DatabaseRebuildError(f"The store {database_path} cannot be read ({exc})") from exc
     if not upgrade and database_path.exists():
         current = facts.open_readonly(database_path)
         try:
@@ -1189,18 +1252,11 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    # Only the lock holder is here, so a staged copy that is still lying around
-    # is from a crashed run; it holds full speech text, so it must not pile up
-    # next to the published data.
-    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
-    for stale in database_path.parent.glob(f".{glob.escape(database_path.name)}.*.tmp*"):
-        stale.unlink(missing_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{database_path.name}.", suffix=".tmp", dir=database_path.parent)
-    os.close(fd)
-    temp_path = Path(temporary)
+    temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
         pulse_store.initialize(store)
+        registry.begin_build(store)
         if database_path.exists():
             previous = facts.open_readonly(database_path)
             try:
@@ -1220,7 +1276,13 @@ def _rebuild_database_from_entries(
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
+                skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
+                if skipped:
+                    # No roster identity: ingest_mdb_roster skips such rows too.
+                    print(f"warning: [roster] {len(skipped)} preserved roster rows have no DIP id and were skipped", file=sys.stderr)
                 for row in roster_rows:
+                    if not canonical_dip_person_id(row.get("dip_person_id")):
+                        continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
                     pulse_store.upsert_mp(
                         store,
@@ -1268,12 +1330,12 @@ def _rebuild_database_from_entries(
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
-        registry.reconcile(store, full_build=True)
+        registry.reconcile(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
-        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog, today=today)
+        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries),
+                                         built=facts.built_sources(store), catalog=catalog, today=today)
         registry.validate(store)
         if store.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise DatabaseRebuildError("Rebuilt database failed integrity_check")
@@ -1285,15 +1347,11 @@ def _rebuild_database_from_entries(
         raise
     finally:
         store.close()
-    if facts_report is not None:
-        facts_report.update(report)
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
-        return False
-    # mkstemp makes the staged copy private; the store keeps the mode it had.
-    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
-    temp_path.replace(database_path)
-    return True
+        return Rebuilt(replaced=False, facts_report=report)
+    _replace_store(database_path, temp_path)
+    return Rebuilt(replaced=True, facts_report=report)
 
 
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1446,25 +1504,25 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
 
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
-    today: date | None = None, facts_report: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], bool]:
+    today: date | None = None,
+) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
     persisted. Reden and Beiträge are first re-read from each report's cached
-    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and whether
-    the store file was replaced. Raises CachedReportError or DatabaseRebuildError
+    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
+    ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
-    replaced = rebuild_database_from_entries(
+    rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, facts_report=facts_report, upgrade=True,
+        today=today, upgrade=True,
     )
     write_classification_diagnostics(output_dir, cached)
-    return cached, replaced
+    return cached, rebuilt
 
 
 # ---------------------------------------------------------------------------
@@ -1493,7 +1551,10 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     if top_id:
         keys.append(f"top:{top_id}")
     if item.get("index") is not None:
-        keys.append(f"index:{item['index']}")
+        # A previous report is read without the cached-report load's checks; a
+        # malformed index there matches nothing rather than failing the build.
+        with contextlib.suppress(ValueError):
+            keys.append(f"index:{source_index(item['index'])}")
     return keys
 
 
@@ -2211,12 +2272,27 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 3
+EXPORT_FORMAT = 4
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
 # All exported primary keys identify stable source rows or issued registry keys.
 # The manifest derives their declared order directly from the table schema.
+
+# The row whose name and party r1 and r3 show for a person, chosen once per
+# person: a roster row first, then a speaker row, then by identity_key, a source
+# key (mps.id is a hash). collect_abgeordnete orders a person's rows the same
+# way, so the label is the row the Personenseite takes its heading from.
+REPRESENTATIVE_SQL = (
+    "WITH representative AS (\n"
+    "  SELECT person_id, display_name, party_id FROM (\n"
+    "    SELECT person_id, display_name, party_id,\n"
+    "           ROW_NUMBER() OVER (PARTITION BY person_id\n"
+    "                              ORDER BY is_mdb DESC, xml_redner_id IS NULL, identity_key) AS rank\n"
+    "    FROM mps\n"
+    "  ) WHERE rank = 1\n"
+    ")\n"
+)
 
 # The five recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
@@ -2232,11 +2308,12 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r1-meiste-reden",
         "title": "Wer hielt die meisten Reden?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
             "FROM speeches s\n"
             "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
@@ -2286,12 +2363,13 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r3-abweichler",
         "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
             "FROM vote_members vm\n"
             "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "JOIN parties p ON p.id = vm.party_id\n"
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
@@ -2499,10 +2577,17 @@ def _lock_holder_alive(pid_text: str) -> bool:
     return True
 
 
+def export_work_dir(exports_dir: Path) -> Path:
+    """Where an export holds its lock and builds its files: the private
+    directory beside the published tree (``person_registry.private_dir``), so
+    nothing half-written or a full store copy is ever inside ``exports_dir``."""
+    return registry.private_dir(exports_dir) / "exports"
+
+
 @contextlib.contextmanager
-def _export_lock(exports_dir: Path):
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = exports_dir / ".lock"
+def _export_lock(work_dir: Path):
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_path = work_dir / ".lock"
     fd = None
     for attempt in range(2):
         try:
@@ -2531,16 +2616,16 @@ def _export_lock(exports_dir: Path):
         lock_path.unlink(missing_ok=True)
 
 
-# F2.1/F4.1: unique temp names inside exports_dir, cleaned up in `finally`;
-# a stale *.tmp or half-written generation directory from a crashed run is
-# swept before a new export starts.
-def _sweep_stale_temp(exports_dir: Path) -> None:
-    if not exports_dir.exists():
-        return
-    for path in exports_dir.glob("*.tmp"):
-        path.unlink(missing_ok=True)
-    for path in exports_dir.glob(".*-*.json"):
-        if path.name.startswith(".datenstand-"):
+# F2.1/F4.1: every export builds in its own scratch directory under the work
+# directory, removed in `finally`; whatever a crashed run left there is swept
+# before a new export starts.
+def _sweep_stale_work(work_dir: Path) -> None:
+    for path in work_dir.iterdir():
+        if path.name == ".lock":
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
             path.unlink(missing_ok=True)
 
 
@@ -2599,15 +2684,16 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 # identity mapping are final; render_site() and the page never open the build
 # store themselves (eng addendum: "the page ... never opens the build store").
 #
-# Layout of exports_dir:
-#   .lock                    held only while an export runs
-#   datenstand.json          the manifest; written last via mkstemp+replace,
-#                            the only pointer a reader needs to follow
-#   g-<inputs_hash[:12]>/    one generation's files; a new export writes a
-#                            fresh directory and only deletes the previous one
-#                            after datenstand.json points at the new one
+# Layout of exports_dir (published):
+#   datenstand.json          the manifest; replaced last, the only pointer a
+#                            reader needs to follow
+#   g-<inputs_hash[:12]>/    one generation's files, renamed in complete; the
+#                            previous one is deleted only after datenstand.json
+#                            points at the new one
 #   published.json           written by the (separate) publish script; never
 #   LICENSE-DATA.md          touched by this function
+# The lock, the store copies, the temp files and the generation being built
+# live in export_work_dir(exports_dir), on the same file system.
 def export_distribution_data(
     database_path: Path,
     exports_dir: Path,
@@ -2639,10 +2725,14 @@ def export_distribution_data(
     readiness = readiness or {}
 
     exports_dir.mkdir(parents=True, exist_ok=True)
-    with _export_lock(exports_dir):
+    work_dir = export_work_dir(exports_dir)
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if work_dir.stat().st_dev != exports_dir.stat().st_dev:
+        raise RuntimeError(f"export: {work_dir} and {exports_dir} must be on one file system (the generation is renamed into place)")
+    with _export_lock(work_dir):
         # Only the lock holder may sweep: a second build sweeping before it
-        # fails on the lock would delete the first build's in-flight manifest.
-        _sweep_stale_temp(exports_dir)
+        # fails on the lock would delete the first build's in-flight files.
+        _sweep_stale_work(work_dir)
         previous = _read_previous_manifest(exports_dir)
         stat = database_path.stat()
         source_sha256 = _source_sha256(database_path, stat, previous)
@@ -2668,15 +2758,16 @@ def export_distribution_data(
 
         started = time.monotonic()
         generation = f"g-{inputs_hash[:12]}"
-        gen_dir = exports_dir / generation
-        if gen_dir.exists():
-            shutil.rmtree(gen_dir)
-        gen_dir.mkdir(parents=True)
-
+        scratch = Path(tempfile.mkdtemp(dir=work_dir, prefix="export-"))
+        gen_dir = scratch / generation
+        gen_dir.mkdir()
+        published = exports_dir / generation
+        aside = scratch / "replaced"
         try:
             manifest = _run_export(
                 database_path=database_path,
                 gen_dir=gen_dir,
+                scratch_dir=scratch,
                 recipes=recipes,
                 has_page_ids=has_page_ids,
                 readiness=readiness,
@@ -2693,20 +2784,24 @@ def export_distribution_data(
                 generation=generation,
             )
 
-            manifest_fd, manifest_tmp_name = tempfile.mkstemp(dir=exports_dir, prefix=".datenstand-", suffix=".json")
-            os.close(manifest_fd)
-            manifest_tmp_path = Path(manifest_tmp_name)
+            manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            # A forced re-export of unchanged inputs names the published
+            # generation again: set it aside for the two renames, not for the
+            # whole export.
+            if published.exists():
+                published.replace(aside)
+            gen_dir.replace(published)
             manifest_tmp_path.replace(exports_dir / "datenstand.json")
         except sqlite3.Error as exc:
             # backup()/DROP COLUMN/VACUUM INTO fail with sqlite3 errors on a
             # locked or corrupt store or a full disk; surface them through the
             # CLI's clean "error:" path instead of a traceback.
-            shutil.rmtree(gen_dir, ignore_errors=True)
             raise RuntimeError(f"export: distribution copy failed: {exc}") from exc
-        except Exception:
-            shutil.rmtree(gen_dir, ignore_errors=True)
-            raise
+        finally:
+            if aside.exists() and not published.exists():
+                aside.replace(published)
+            shutil.rmtree(scratch, ignore_errors=True)
 
         for old_dir in exports_dir.glob("g-*"):
             if old_dir.name != generation:
@@ -2728,6 +2823,7 @@ def _run_export(
     *,
     database_path: Path,
     gen_dir: Path,
+    scratch_dir: Path,
     recipes: tuple[dict[str, Any], ...],
     has_page_ids: set[str],
     readiness: dict[str, str],
@@ -2743,18 +2839,18 @@ def _run_export(
     inputs_hash: str,
     generation: str,
 ) -> dict[str, Any]:
-    dist_fd, dist_name = tempfile.mkstemp(dir=gen_dir, prefix=".dist-", suffix=".sqlite")
+    dist_fd, dist_name = tempfile.mkstemp(dir=scratch_dir, prefix="dist-", suffix=".sqlite")
     os.close(dist_fd)
     dist_path = Path(dist_name)
     dist_path.unlink()  # backup() needs a fresh (non-existent or empty) target
-    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=gen_dir, prefix=".vacuum-", suffix=".sqlite")
+    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=scratch_dir, prefix="vacuum-", suffix=".sqlite")
     os.close(vacuum_fd)
     vacuum_path = Path(vacuum_name)
     vacuum_path.unlink()  # VACUUM INTO requires the target to not exist
 
     dist_conn = sqlite3.connect(dist_path, isolation_level=None)
     dist_conn.row_factory = sqlite3.Row
-    source_conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    source_conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         source_conn.backup(dist_conn)
     except sqlite3.Error:
@@ -3990,7 +4086,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",
                 "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
                      if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
                     if page_path
                     else None
@@ -5604,12 +5700,12 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     "protocol_title": protocol.get("titel"),
                     "top_id": item.get("top_id"),
                     "heading": item.get("heading"),
-                    "href": f"{protocol_href}#top-{item.get('index')}",
+                    "href": f"{protocol_href}#top-{source_index(item.get('index'))}",
                     "speech_count": item.get("xml_speech_count") or 0,
                 }
                 bill["protocol_refs"].append(ref)
                 # Several DIP positions can repeat one agenda item; keep its raw copy once.
-                agenda_key = (protocol_href, item.get("index") if item.get("index") is not None else id(item))
+                agenda_key = (protocol_href, source_index(item["index"]) if item.get("index") is not None else id(item))
                 if agenda_key not in seen_agenda_items.setdefault(key, set()):
                     seen_agenda_items[key].add(agenda_key)
                     bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
@@ -5665,7 +5761,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
                     # The reviewed speaker, as on the protocol page: a shared
                     # Redner-ID's occurrences are tallied under their own person.
-                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+                    rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
                     speech_href = f"{protocol_href}#{pulse_html.speech_anchor(item, speech, sequence - 1)}"
                     # Several DIP positions can repeat the same bill's agenda item.
                     seen = seen_speeches.setdefault(key, set())
@@ -6620,7 +6716,7 @@ def ingest_mdb_roster(
     upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
     biographical data. Makes the Abgeordnete list complete rather than limited to
     speakers seen in ingested protocols."""
-    stats = {"fetched": 0, "mdb": 0, "enriched": 0}
+    stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
     if store is None:
         return stats
     persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
@@ -6632,6 +6728,11 @@ def ingest_mdb_roster(
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
             if not _has_mdb_funktion(funktion):
+                continue
+            if not canonical_dip_person_id(compact.get("id")):
+                # A DIP person is identified by its id alone; without one, every
+                # such row would share one name-party:Unbekannt record.
+                stats["skipped_no_id"] += 1
                 continue
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
@@ -6688,6 +6789,8 @@ def ingest_mdb_roster(
                 person_roles_json=pulse_store.dumps(funktion) if funktion else None,
                 is_mdb=True,
             )
+    if stats["skipped_no_id"]:
+        print(f"warning: [roster] {stats['skipped_no_id']} DIP persons with an MdB function have no id and were skipped", file=sys.stderr)
     return stats
 
 
@@ -6746,7 +6849,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
                m.aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id, pr.partition,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
@@ -6834,10 +6937,13 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         person_id = registry.resolve(conn, record["person_id"])
         if evidence.get("ever_mdb") or evidence.get("is_mdb"):
             page_eligible.add(person_id)
-        # A record with no mps row keeps its evidence on the page: on its own
-        # person's page, or pooled into the person a stale roster record joined.
+        # A record with no mps row is stale evidence. It keeps a page only for a
+        # person this build has no current record of, or as the biography a
+        # stale roster partner pools into its live person; a stale record of a
+        # person with current records stays off the page (the source no longer
+        # supports its name, party or link key; docs/stable-ids.md).
         if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
-            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
+            evidence.update(id=record["id"], identity_key=record["identity_key"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
             assignments[record["id"]] = person_id
     rows.extend(row for row in historical if assignments[row["id"]] in page_eligible)
@@ -6850,9 +6956,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Prefer roster, then speaker biography over roll-call attributes.
-        # The page key still comes from the registry.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["id"]))
+        # Prefer roster, then speaker biography over roll-call attributes, then
+        # the source key (mps.id is a hash); Daten recipes r1/r3 pick their row
+        # in the same order (REPRESENTATIVE_SQL). The page key still comes from
+        # the registry.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["identity_key"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
@@ -6949,7 +7057,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     aliases = {key: target for key, target in aliases.items() if key not in page_ids}  # a live page is never overwritten by a redirect
     folded: dict[str, str] = {}
     for key in (*page_ids, *aliases):
-        if not registry.PERSON_KEY_RE.fullmatch(key) or key.casefold() in registry.RESERVED_PERSON_KEYS:
+        if not registry.valid_person_key(key):
             raise registry.RegistryError(f"Invalid person key {key!r} in the build store; restore the build-store backup")
         if folded.setdefault(key.casefold(), key) != key:
             raise registry.RegistryError(f"Person keys {folded[key.casefold()]!r} and {key!r} differ only by case; restore the build-store backup")
@@ -7343,6 +7451,24 @@ def render_abgeordnete_detail(
 
 # Write the Abgeordnete area: profile pages, the roster index and
 # data/abgeordnete.json. Called through features/abgeordnete.py.
+def _write_person_page(abg_dir: Path, key: Any, text: str) -> None:
+    """Write ``abgeordnete/<key>.html`` without trusting the caller: the key is
+    checked again (a filename, no path), whatever already sits at the target (a
+    symlink above all) is removed first, and the file is created with
+    O_EXCL|O_NOFOLLOW, so the write cannot land outside abg_dir."""
+    if not registry.valid_person_key(key):
+        raise registry.RegistryError(f"Invalid person key {key!r} for a page under {abg_dir}; restore the build-store backup")
+    _write_new_file(abg_dir / f"{key}.html", text)
+
+
+def _write_new_file(path: Path, text: str) -> None:
+    """Replace ``path`` by a new regular file, never writing through a link there."""
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def write_abgeordnete_pages(
     output_dir: Path,
     mps: list[dict[str, Any]],
@@ -7352,6 +7478,10 @@ def write_abgeordnete_pages(
     features = features or publication_selection()
     abg_dir = output_dir / "abgeordnete"
     abg_dir.mkdir(parents=True, exist_ok=True)
+    # The stale-page sweep and every page write below happen in this directory;
+    # an abgeordnete/ that is a link out of the output tree is refused first.
+    if abg_dir.resolve() != output_dir.resolve() / "abgeordnete":
+        raise registry.RegistryError(f"{abg_dir} resolves outside {output_dir}; person pages are not written through it")
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
     detail_mps = [mp for mp in mps if has_abgeordnete_page(mp)]
@@ -7360,18 +7490,12 @@ def write_abgeordnete_pages(
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
             stale_page.unlink()
     for mp in detail_mps:
-        (abg_dir / f"{mp['id']}.html").write_text(
-            render_abgeordnete_detail(mp, features, publication_domains),
-            encoding="utf-8",
-        )
+        _write_person_page(abg_dir, mp["id"], render_abgeordnete_detail(mp, features, publication_domains))
     for mp in detail_mps:
         for alias in mp.get("aliases", []):
             target = pulse_html.esc(f"{mp['id']}.html")
-            (abg_dir / f"{alias}.html").write_text(f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>', encoding="utf-8")
-    (abg_dir / "index.html").write_text(
-        render_abgeordnete_index(mps, features, publication_domains),
-        encoding="utf-8",
-    )
+            _write_person_page(abg_dir, alias, f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>')
+    _write_new_file(abg_dir / "index.html", render_abgeordnete_index(mps, features, publication_domains))
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     listed = sum(1 for mp in mps if mp.get("is_mdb"))
@@ -10987,21 +11111,48 @@ def run_facts_engine(
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
 ) -> dict[str, Any]:
+    """Compute the facts for a store no rebuild staged in this build. They are
+    computed read-only; a changed snapshot is written into a staged copy that
+    replaces the store, so the published store never has a write (or SQLite's
+    rollback journal) beside it."""
+    database_path = Path(database_path).resolve()
     with registry.writer_lock(database_path):
-        store = pulse_store.connect(database_path)
+        store = facts.open_readonly(database_path)
         try:
-            pulse_store.initialize(store)
-            built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+            pulse_store.require_current_schema(store)
             return facts.compute_and_store(
                 store,
                 facts.ALL_REGISTRY,
                 facts.completeness_from_entries(entries),
                 catalog=catalog,
-                built=built,
+                built=facts.built_sources(store),
                 today=today,
+                write=lambda snapshot: _write_facts_staged(database_path, snapshot),
             )
         finally:
             store.close()
+
+
+def _write_facts_staged(database_path: Path, snapshot: Mapping[str, list[list[Any]]]) -> None:
+    """``facts.write_snapshot`` into a staged copy of the store, checked and
+    swapped in; the caller holds the writer lock."""
+    temp_path = _staged_store_path(database_path)
+    try:
+        source = facts.open_readonly(database_path)
+        staged = sqlite3.connect(temp_path)
+        try:
+            source.backup(staged)
+            facts.write_snapshot(staged, snapshot)
+            staged.commit()
+            if staged.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("facts: the staged store failed integrity_check")
+        finally:
+            staged.close()
+            source.close()
+        _replace_store(database_path, temp_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 # Runs the export step (unless --no-persist, or the store does not exist) and
@@ -11030,9 +11181,10 @@ def run_data_pipeline(
 
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes. A rebuild in this build already computed them
-    # for the same entries, catalog and date and hands over its report.
+    # for the same entries, catalog and date and hands over its report; only
+    # ``None`` (no rebuild ran) computes them here.
     if not args.no_persist and database_path.exists():
-        if not facts_report:
+        if facts_report is None:
             facts_report = run_facts_engine(
                 database_path,
                 entries,
@@ -11173,16 +11325,26 @@ def main() -> int:
     # no-persist rendering, require current persisted rules; an online rebuild
     # can repair the rules from accepted source inputs.
     if not getattr(args, "repersist", False) and database_path.exists():
-        previous = facts.open_readonly(database_path)
+        previous = None
         try:
+            # Opening is inside: a directory or an unreadable file at the store
+            # path fails here (or at the first query), not as a traceback.
+            previous = facts.open_readonly(database_path)
             pulse_store.require_current_schema(previous)
             if args.offline or args.no_persist:
                 pulse_store.require_current_speech_rules(previous)
-        except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
+                # The render applies the corrections file to the pages without a
+                # reconcile, so an applied partition missing from it stops here.
+                registry.require_applied_partitions(previous)
+        except sqlite3.Error as exc:
+            print(f"error: the store {database_path} cannot be read ({exc}); it is left as it is", file=sys.stderr)
+            return 1
+        except (RuntimeError, registry.RegistryError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finally:
-            previous.close()
+            if previous is not None:
+                previous.close()
 
     # --- offline render ----------------------------------------------------
     # Re-render every page from what is already on disk. Useful for iterating on
@@ -11201,12 +11363,12 @@ def main() -> int:
         # render alone never does). All or nothing: any failure leaves the
         # previous store untouched and the run stops before anything is rendered.
         cached_entries: list[dict[str, Any]] | None = None
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         if getattr(args, "repersist", False):
             try:
-                cached_entries, replaced = repersist_cached_reports(
+                cached_entries, rebuilt = repersist_cached_reports(
                     output_dir, database_path, protocols, preserve_roster=True,
-                    today=resolve_today(getattr(args, "today", None)), facts_report=rebuilt_facts,
+                    today=resolve_today(getattr(args, "today", None)),
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -11227,9 +11389,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            rebuilt_facts = rebuilt.facts_report
             print(
                 f"repersist: {len(cached_entries)} cached reports persisted; "
-                + ("store replaced" if replaced else "store content unchanged, file kept"),
+                + ("store replaced" if rebuilt.replaced else "store content unchanged, file kept"),
                 file=sys.stderr,
             )
 
@@ -11238,9 +11401,10 @@ def main() -> int:
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
-            store = pulse_store.connect(database_path)
+            # Read only: the published store is written by a staged rebuild alone.
+            store = facts.open_readonly(database_path)
             try:
-                pulse_store.initialize(store)
+                pulse_store.require_current_schema(store)
                 if "mp-pages" in features:
                     component_context = {
                         "selection": features,
@@ -11292,7 +11456,7 @@ def main() -> int:
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
                 facts_report=rebuilt_facts,
             )
-        except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        except PIPELINE_ERRORS as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         # Dossier pages are regenerated from the cached JSON reports, then the
@@ -11410,7 +11574,7 @@ def main() -> int:
         # One catalog for the staged rebuild's facts and the data pipeline, so the
         # rebuild's facts report is handed over instead of computed twice.
         catalog = facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now())
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -11478,15 +11642,14 @@ def main() -> int:
                     )
 
                 try:
-                    rebuild_database_from_entries(
+                    rebuilt_facts = rebuild_database_from_entries(
                         database_path,
                         entries,
                         preserve_roster="mp-roster" not in enrichments,
                         catalog=catalog,
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
-                        facts_report=rebuilt_facts,
-                    )
+                    ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
                     return 1
@@ -11497,9 +11660,10 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     return 1
-                store = pulse_store.connect(database_path)
+                # Read only: the published store is written by a staged rebuild alone.
+                store = facts.open_readonly(database_path)
                 try:
-                    pulse_store.initialize(store)
+                    pulse_store.require_current_schema(store)
                     if "mp-pages" in features:
                         abg_mps, mp_lookup = collect_abgeordnete(store)
                 finally:
@@ -11550,7 +11714,7 @@ def main() -> int:
             catalog=catalog,
             facts_report=rebuilt_facts,
         )
-    except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except PIPELINE_ERRORS as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     index_path = render_site(

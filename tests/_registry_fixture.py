@@ -36,6 +36,7 @@ class RegistryFixture:
         previous.commit()
         self.builds += 1
         target = self.open_store(f"build-{self.builds}.sqlite")
+        registry.begin_build(target)
         registry.copy_previous(previous, target)
         return target
 
@@ -45,6 +46,14 @@ class RegistryFixture:
         return store.upsert_mp(conn, now=now, display_name=name, party_id=party_id, identity_key=identity,
                                xml_redner_id=xml, dip_person_id=dip, aw_politician_id=aw, aw_match=match,
                                is_mdb=mdb, occurrence_id=occurrence, **biography)
+
+    def vote_up(self, conn, vote, name, party, url):
+        """A roll-call member keyed by its profile link, as persist_vote binds one."""
+        from stable_ids import vote_member_occurrence_id
+        conn.execute("INSERT OR IGNORE INTO votes(id, created_at, updated_at) VALUES (?, '', '')", (vote,))
+        record = self.up(conn, vote_member_occurrence_id(vote, name, party), f"profile:{url}", name, party=party, profile_url=url)
+        conn.execute("INSERT OR IGNORE INTO vote_members(vote_id, mp_id, vote) VALUES (?, ?, 'yes')", (vote, record))
+        return record
 
     def person_of_records(self, conn):
         return {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM person_records")}
