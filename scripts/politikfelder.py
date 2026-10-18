@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 import derive
+import person_registry as registry
 
 POLITIKFELDER: tuple[str, ...] = (
     "Migration",
@@ -205,11 +206,20 @@ def cache_path(output_dir: Path | str) -> Path:
 
 
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
+    """Write the cache atomically. The temporary file is staged in the private
+    directory beside the published tree (``person_registry.private_dir``), so a
+    killed build leaves nothing half-written in ``data/``; only when that
+    directory is on another file system, where the rename could not be atomic,
+    is it staged next to the cache."""
     path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    staging = registry.private_dir(path)
+    staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if staging.stat().st_dev != path.parent.stat().st_dev:
+        staging = path.parent
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+        "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
     ) as handle:
         temporary = Path(handle.name)
         try:

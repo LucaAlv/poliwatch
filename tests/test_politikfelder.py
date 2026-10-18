@@ -386,17 +386,30 @@ class CacheFileTests(unittest.TestCase):
 
     def test_a_record_with_a_non_list_sachgebiet_is_dropped_and_the_saved_file_is_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            pf.save_cache(tmp, cache_of({"1": {"sachgebiet": "Verkehr"}, "2": {"sachgebiet": ["Recht"]}}))
-            path = pf.cache_path(tmp)
+            site = Path(tmp) / "site"
+            pf.save_cache(site, cache_of({"1": {"sachgebiet": "Verkehr"}, "2": {"sachgebiet": ["Recht"]}}))
+            path = pf.cache_path(site)
             self.assertEqual(path.stat().st_mode & 0o777, 0o644)
             self.assertEqual(sorted(p.name for p in path.parent.iterdir()), [path.name])  # no temp left behind
-            self.assertEqual(list(pf.load_cache(tmp)["vorgaenge"]), ["2"])
+            self.assertEqual(list(pf.load_cache(site)["vorgaenge"]), ["2"])
+
+    # Value: protects=a save killed before its rename leaves its temp file in the private directory beside the site, never in the published data/; fails_when=save_cache stages the temp next to the cache again; why_new=the other test only sees the cleanup path, which deletes the temp either way; seam=none; no_claim=a real SIGKILL (simulated by a cleanup that does nothing)
+    def test_a_killed_save_leaves_nothing_in_the_published_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            with mock.patch.object(pf.os, "fsync", side_effect=KeyboardInterrupt), mock.patch.object(Path, "unlink"):
+                with self.assertRaises(KeyboardInterrupt):
+                    pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
+            self.assertEqual(sorted(p.name for p in site.rglob("*") if p.is_file()), [])
+            leftovers = list((Path(tmp) / ".site.private").glob(".dip-vorgang-cache.json.*.tmp"))
+            self.assertEqual(len(leftovers), 1)
 
     def test_save_then_load_round_trips(self) -> None:
         cache = cache_of({"1": vorgang("Recht")}, {"21/1": ["1"]})
         with tempfile.TemporaryDirectory() as tmp:
-            pf.save_cache(tmp, cache)
-            self.assertEqual(pf.load_cache(tmp), cache)
+            site = Path(tmp) / "site"
+            pf.save_cache(site, cache)
+            self.assertEqual(pf.load_cache(site), cache)
 
 
 class FakeClient:
@@ -445,8 +458,9 @@ class FetchTests(unittest.TestCase):
     def run_refresh(self, client: FakeClient, cache: dict[str, Any]):
         self.enterContext(mock.patch.object(build, "NUMBER_LOOKUP_PAUSE", 0))
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()) as err:
-            stats = build.refresh_vorgang_cache(client, self.entries, cache, Path(tmp))
-            saved = pf.load_cache(tmp)
+            site = Path(tmp) / "site"  # save_cache stages beside the site, so keep that inside tmp too
+            stats = build.refresh_vorgang_cache(client, self.entries, cache, site)
+            saved = pf.load_cache(site)
         return stats, saved, err.getvalue()
 
     def test_only_missing_vorgaenge_and_numbers_are_fetched_and_the_cache_is_saved(self) -> None:
