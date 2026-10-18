@@ -240,8 +240,11 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
             staging = path.parent
         else:
             for stale in staging.glob(pattern):
-                if time.time() - stale.stat().st_mtime > STALE_TEMP_SECONDS:
-                    stale.unlink(missing_ok=True)
+                try:
+                    if time.time() - stale.stat().st_mtime > STALE_TEMP_SECONDS:
+                        stale.unlink(missing_ok=True)
+                except OSError:
+                    pass  # another build's save took it first
     except OSError:
         staging = path.parent
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
