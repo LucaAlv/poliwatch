@@ -103,6 +103,31 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn(':root[data-theme="dark"] a.week-label[data-tip]::after', css)
         self.assertIn(':root[data-theme="dark"] .method-list li:target', css)
 
+    def test_theme_aware_party_colors_are_defined_in_both_themes(self) -> None:
+        # Value: protects=a theme-aware PARTY_COLORS entry resolves in light and dark, so CDU/CSU stays visible on dark;
+        # fails_when=the var(--x) is renamed, its light or dark definition is dropped from global_header_styles,
+        # or its dark value equals its light value;
+        # why_new=no test links PARTY_COLORS var() references to the header tokens; seam=none;
+        # no_claim=rendered contrast or pixels (string check on emitted CSS only)
+        css = pulse_html.global_header_styles()
+        light = re.search(r"^\s*:root\s*\{([^}]*)\}", css, re.M)
+        dark = re.search(r':root\[data-theme="dark"\]\s*\{([^}]*)\}', css)
+        self.assertIsNotNone(light)
+        self.assertIsNotNone(dark)
+        referenced = {
+            name
+            for color in pulse_html.PARTY_COLORS.values()
+            for name in re.findall(r"var\((--[\w-]+)", color)
+        }
+        self.assertIn("--party-cdu", referenced)
+        for name in referenced:
+            pattern = rf"{re.escape(name)}\s*:\s*(#[0-9a-fA-F]{{3,8}})"
+            light_value = re.search(pattern, light.group(1))
+            dark_value = re.search(pattern, dark.group(1))
+            self.assertIsNotNone(light_value, name)
+            self.assertIsNotNone(dark_value, name)
+            self.assertNotEqual(light_value.group(1).lower(), dark_value.group(1).lower(), name)
+
     def test_database_nav_item_is_labelled_daten(self) -> None:
         for depth in (0, 1, 2):
             with self.subTest(depth=depth):

@@ -354,6 +354,38 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P2
 **Depends on:** None
 
+### Combined Antrag titles render as one four-line bold block on puls.html
+
+**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+
+**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Week comparison with no basis still draws every n/a slot
+
+**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
+
+**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Staleness of the "Aktueller Puls" week is only gray meta text
+
+**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
+
+**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
+
+**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
@@ -506,7 +538,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **Why:** Every page carries its own `:root` token block and the only typeface is Inter / ui-sans-serif / system-ui; every design review re-derives the tokens and flags the default font stack. The Daten page (after the dossier) was the second page to have to invent tokens a shared system would already provide. No `DESIGN.md` exists as of 2026-09-19 (`docs/design/bundestag-pulse-design.md` is the product design doc, not a design system).
 
-**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections).
+**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
 
 **Effort:** M
 **Priority:** P3
