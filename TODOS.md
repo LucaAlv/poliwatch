@@ -376,7 +376,11 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 ### Staleness of the "Aktueller Puls" week is only gray meta text
 
-**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line. Nested cards (section > panel > tile) and Inter as the display face are the other open notes; neither changed.
+**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
+
+**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
+
+**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
 
 **Effort:** S
 **Priority:** P3
@@ -534,7 +538,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 **Why:** Every page carries its own `:root` token block and the only typeface is Inter / ui-sans-serif / system-ui; every design review re-derives the tokens and flags the default font stack. The Daten page (after the dossier) was the second page to have to invent tokens a shared system would already provide. No `DESIGN.md` exists as of 2026-09-19 (`docs/design/bundestag-pulse-design.md` is the product design doc, not a design system).
 
-**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections).
+**Context:** The week-radar plan writes the radar's tokens into the plan instead. Start with `/gstack-design-consultation`; migrate per-page `:root` blocks to the shared header styles afterwards (the `:visited`/`:focus-visible` item under Daten is the first slice of that migration). Merged from two earlier entries (Daten and Design sections). The puls.html design review of 2026-09-28 also flagged its nested cards (section > panel > tile) for the same pass.
 
 **Effort:** M
 **Priority:** P3

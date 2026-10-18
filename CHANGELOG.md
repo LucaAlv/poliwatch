@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.1.0] - 2026-10-19
+
+### Fixed
+
+- CDU/CSU is visible in dark mode. Its party colour was near-black on dark surfaces, so its Fraktion bars, stacks and dots all but disappeared; it is now light grey in dark mode and unchanged in light mode.
+- In dark mode, navigation links highlight on hover again, and the current page keeps its highlight while hovered.
+- No text on the Wochenübersicht is smaller than 12px: badges, the "Wer sprach" legend and the Wochenpuls labels moved up from 11px, and the "Wer sprach" column is wider so the legend wraps less.
+- Headings on the Wochenübersicht break into balanced lines instead of leaving one word alone, and the sitting chips keep a space between date and protocol number.
+- On touch screens the Wochenübersicht's buttons, sitting chips, section links, "Sitzungsbelege prüfen" and the "Debatte im Protokoll öffnen" links are at least 44px tall.
+
 ## [0.19.0.0] - 2026-10-18
 
 ### Changed
