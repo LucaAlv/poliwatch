@@ -965,6 +965,23 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         persons = self.person_of_records(second)
         self.assertNotEqual(persons[roster], persons[speaker])
 
+    # Value: protects=a stale non-roster record (its occurrence vanished) of a person who still has current records stays off that person's page: no link key, no heading, no party from evidence the source stopped supporting; fails_when=collect_abgeordnete adds every record without an mps row as historical evidence; why_new=A.2 test follow-ups 6h: the rule held only in a code comment; seam=none
+    def test_a_stale_speaker_record_stays_off_a_page_with_current_records(self):
+        first = self.open_store("first.sqlite")
+        self.up(first, stable_key("speech", "p1", "r1"), "xml:1", "Ada Example", xml="1", aw=7, match="ext_id", party="SPD")
+        stale = self.up(first, stable_key("speech", "p1", "r0"), "xml:0", "Dr. Ada Alt", xml="0", aw=7, match="ext_id", party="Die Linke")
+        registry.reconcile(first)
+        self.assertEqual(len(set(self.person_of_records(first).values())), 1)
+        second = self.next_build(first)
+        self.up(second, stable_key("speech", "p1", "r1"), "xml:1", "Ada Example", xml="1", aw=7, match="ext_id", party="SPD")
+        registry.reconcile(second)
+        self.assertIsNone(second.execute("SELECT 1 FROM mps WHERE id = ?", (stale,)).fetchone())
+        mps, lookup = build.collect_abgeordnete(second)
+        (mp,) = mps
+        self.assertEqual((mp["name"], mp["party"]), ("Ada Example", "SPD"))
+        self.assertNotIn("xml:0", lookup)
+        self.assertEqual(lookup["xml:1"], mp["id"])
+
     # Value: protects=every bind names its occurrence; fails_when=bind accepts an empty occurrence and writes a record no binding holds; why_new=handoff 08 made occurrence required; seam=none
     def test_a_bind_without_an_occurrence_is_refused(self):
         conn = self.open_store()

@@ -326,6 +326,55 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(first["generation"], second["generation"])
         self.assertEqual(first["inputs_hash"], second["inputs_hash"])
 
+    # Value: protects=the standalone facts engine never writes the published store in place: while the snapshot is written no -journal/-wal/-shm sits beside the store, the store is swapped in as a new file with the same mode and the same facts an in-place write gives, and an unchanged snapshot keeps the file; fails_when=run_facts_engine writes through a writable connection to the store again; why_new=handoff 05 left the facts engine's rollback journal beside the published store; seam=write_snapshot wrapped
+    def test_engine_writes_a_staged_copy_never_the_published_store(self) -> None:
+        reference = self.tmp / "in-place.sqlite"
+        import shutil as _shutil
+        _shutil.copyfile(self.db_path, reference)
+        conn = pulse_store.connect(reference)
+        try:
+            facts.compute_and_store(conn, facts.ALL_REGISTRY, facts.completeness_from_entries(self.FACTS_ENTRIES),
+                                    catalog=self.facts_catalog(), built=facts.built_sources(conn), out=io.StringIO())
+            conn.commit()
+        finally:
+            conn.close()
+        os.chmod(self.db_path, 0o640)
+        inode = self.db_path.stat().st_ino
+        real_write = facts.write_snapshot
+        beside = []
+
+        def watching_write(conn, snapshot):
+            # Looked at inside the write transaction, while a rollback journal exists.
+            def look(statement):
+                if statement.startswith("INSERT INTO fact_sources"):
+                    beside.extend(path.name for path in self.db_path.parent.iterdir()
+                                  if path.name.startswith(self.db_path.name + "-"))
+            conn.set_trace_callback(look)
+            try:
+                real_write(conn, snapshot)
+            finally:
+                conn.set_trace_callback(None)
+
+        with mock.patch.object(facts, "write_snapshot", side_effect=watching_write) as write:
+            self.assertTrue(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
+        write.assert_called_once()
+        self.assertEqual(beside, [])
+        self.assertNotEqual(self.db_path.stat().st_ino, inode)
+        self.assertEqual(self.db_path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(list(person_registry.private_dir(self.db_path).glob("*.tmp*")), [])
+
+        def facts_rows(path):
+            snapshot = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                return {table: snapshot.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall() for table in facts.FACTS_TABLES}
+            finally:
+                snapshot.close()
+
+        self.assertEqual(facts_rows(self.db_path), facts_rows(reference))
+        inode = self.db_path.stat().st_ino
+        self.assertFalse(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
+        self.assertEqual(self.db_path.stat().st_ino, inode)
+
     # Value: protects=the standalone facts engine computes for the build date it is given, with the votes the store holds; fails_when=run_facts_engine drops today or computes with a constant built set; why_new=third ship round (12) today forwarding: only run_data_pipeline's hop into run_facts_engine was pinned; seam=compute_and_store spy
     def test_engine_forwards_the_build_date_and_the_built_set(self) -> None:
         from datetime import date
@@ -386,6 +435,45 @@ class ExportDistributionDataTests(unittest.TestCase):
             keys = self.export()
         self.assertNotEqual(first["generation"], keys["generation"])
 
+    # Value: protects=an export that fails midway leaves the published tree byte for byte as it was (the same manifest, the same generation, nothing new), for a new generation and for a forced re-export of the published one; fails_when=the generation is built inside exports_dir or the published one is removed before the new one is complete; why_new=handoff 05 left the export building inside the published tree; seam=_write_csv fails on its second table
+    def test_a_failed_export_leaves_the_published_tree_as_it_was(self) -> None:
+        def tree():
+            return {path.relative_to(self.exports_dir).as_posix(): path.read_bytes() if path.is_file() else None
+                    for path in self.exports_dir.rglob("*")}
+
+        self.export()
+        before = tree()
+        real_write = b._write_csv
+        calls = []
+
+        def failing_write(*args, **kwargs):
+            calls.append(args[1])
+            if len(calls) == 2:
+                self.assertEqual(tree(), before, "nothing appears in the published tree while the export runs")
+                raise OSError("disk full")
+            return real_write(*args, **kwargs)
+
+        changed = tuple({**r, "sql": r["sql"] + " "} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        for label, kwargs in (("new generation", {"recipes": changed}), ("forced re-export", {"force": True})):
+            with self.subTest(label), mock.patch.object(b, "_write_csv", side_effect=failing_write):
+                calls.clear()
+                with self.assertRaises(OSError):
+                    self.export(**kwargs)
+                self.assertEqual(tree(), before)
+                self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+        # A forced re-export failing between setting the published generation
+        # aside and renaming the new one in puts the published one back.
+        real_replace = Path.replace
+
+        def failing_rename_in(path, target):
+            if Path(target).parent == self.exports_dir and Path(target).name.startswith("g-") and path.name.startswith("g-") and path.parent.name.startswith("export-"):
+                raise OSError("rename failed")
+            return real_replace(path, target)
+
+        with mock.patch.object(Path, "replace", failing_rename_in), self.assertRaises(OSError):
+            self.export(force=True)
+        self.assertEqual(tree(), before)
+
     def test_force_reexports_even_when_unchanged(self) -> None:
         first = self.export()
         second = self.export(force=True)
@@ -417,19 +505,23 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.export(recipes=changed)
         self.assertFalse(first_gen_dir.exists())
 
-    def test_stale_tmp_files_are_swept_and_none_left_behind(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        stale = self.exports_dir / "leftover.tmp"
-        stale.write_text("stale")
-        self.export()
-        self.assertFalse(stale.exists())
-        remaining_tmp = list(self.exports_dir.rglob("*.tmp"))
-        self.assertEqual(remaining_tmp, [])
+    # Value: protects=a crashed export's scratch (a store copy, a half-written generation) is swept from the private work directory, and the published tree only ever holds the manifest and complete generations; fails_when=the sweep stops or the export builds inside exports_dir again; why_new=handoff 05 left the export's work files in the published tree; seam=none
+    def test_stale_work_files_are_swept_and_none_left_behind(self) -> None:
+        work = b.export_work_dir(self.exports_dir)
+        crashed = work / "export-crashed" / "g-000000000000"
+        crashed.mkdir(parents=True)
+        (crashed / "partial.csv.gz.tmp").write_text("stale")
+        (work / "export-crashed" / "dist-x.sqlite").write_text("stale")
+        manifest = self.export()
+        self.assertEqual(sorted(path.name for path in work.iterdir()), [])
+        published = {path.relative_to(self.exports_dir).as_posix() for path in self.exports_dir.rglob("*")}
+        self.assertEqual(published, {"datenstand.json", manifest["generation"]}
+                         | {f"{manifest['generation']}/{file['name']}" for file in manifest["files"]})
 
     def test_concurrent_export_is_refused_while_the_lock_is_held(self) -> None:
         # The recorded pid is this very process, so the holder is alive.
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode("utf-8"))
         os.close(fd)
@@ -442,8 +534,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             lock_path.unlink(missing_ok=True)
 
     def test_lock_left_by_a_dead_process_is_cleared_and_the_export_proceeds(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         with mock.patch.object(os, "kill", side_effect=ProcessLookupError):
             lock_path.write_text("4242", encoding="utf-8")
             stderr = io.StringIO()
@@ -455,8 +547,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertFalse(lock_path.exists())
 
     def test_lock_with_an_unreadable_pid_is_treated_as_held(self) -> None:
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path.write_text("not-a-pid", encoding="utf-8")
         try:
             with self.assertRaises(RuntimeError):
@@ -468,9 +560,10 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_refused_export_never_sweeps_the_lock_holders_temp_files(self) -> None:
         # The stale-temp sweep runs only under the lock: a build that loses the
         # lock race must leave the winner's in-flight manifest temp file alone.
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self.exports_dir / ".lock"
-        in_flight = self.exports_dir / ".datenstand-inflight.json"
+        lock_path = b.export_work_dir(self.exports_dir) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        in_flight = lock_path.parent / "export-inflight" / "datenstand.json"
+        in_flight.parent.mkdir()
         in_flight.write_text("{}", encoding="utf-8")
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)

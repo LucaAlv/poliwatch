@@ -55,7 +55,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 from xml.sax.saxutils import escape
 
 import derive
@@ -2208,13 +2208,16 @@ def compute_and_store(
     no_persist: bool = False,
     out=sys.stderr,
     today: date | None = None,
+    write: Callable[[Mapping[str, list[list[Any]]]], None] | None = None,
 ) -> dict[str, Any]:
     """Compute every fact and write the three tables when they changed.
 
     Writes nothing when the snapshot is unchanged (the store's mtime stays put
     and the Daten export's skip rule holds) and nothing at all under
-    ``no_persist``. A metric whose SQL raises aborts the build naming the
-    metric, via FactsError.
+    ``no_persist``. ``write`` replaces the in-place ``write_snapshot(conn, ...)``,
+    so a caller holding a read-only connection to a published store can write
+    the snapshot into a staged copy instead. A metric whose SQL raises aborts
+    the build naming the metric, via FactsError.
     """
     registry = tuple(registry)
     ensure_canonical(conn)
@@ -2268,7 +2271,10 @@ def compute_and_store(
         print(f"facts: unchanged ({posted} Fakten in {len(periods)} Perioden), store untouched", file=out)
         return report
     report["changed_winners"] = changed_winners(previous, snapshot)
-    write_snapshot(conn, snapshot)
+    if write is None:
+        write_snapshot(conn, snapshot)
+    else:
+        write(snapshot)
     report["written"] = True
     print(
         f"facts: wrote {len(snapshot['facts'])} rows, {posted} Fakten in "

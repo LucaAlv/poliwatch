@@ -1166,6 +1166,33 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         raise DatabaseRebuildError(str(exc)) from exc
 
 
+def _staged_store_path(database_path: Path) -> Path:
+    """A fresh staged file for a store, under the writer lock: in the store's
+    private directory, never in the published tree (registry.private_dir), and on
+    the store's file system so the final rename is atomic."""
+    staging = registry.private_dir(database_path)
+    if staging.stat().st_dev != database_path.parent.stat().st_dev:
+        raise DatabaseRebuildError(
+            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
+        )
+    # Only the lock holder is here, so a staged copy that is still lying around
+    # is from a crashed run; it holds full speech text, so it must not pile up.
+    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
+    name = database_path.resolve().name
+    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
+        stale.unlink(missing_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
+    os.close(fd)
+    return Path(temporary)
+
+
+def _replace_store(database_path: Path, temp_path: Path) -> None:
+    """Swap a staged store in; the store keeps the file mode it had (mkstemp
+    makes the staged copy private)."""
+    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
+    temp_path.replace(database_path)
+
+
 def _rebuild_database_from_entries(
     database_path: Path,
     entries: list[dict[str, Any]],
@@ -1220,23 +1247,7 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    # The staged copy lives in the store's private directory, never in the
-    # published tree (registry.private_dir), and must sit on the store's file
-    # system so the final rename is atomic.
-    staging = registry.private_dir(database_path)
-    if staging.stat().st_dev != database_path.parent.stat().st_dev:
-        raise DatabaseRebuildError(
-            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
-        )
-    # Only the lock holder is here, so a staged copy that is still lying around
-    # is from a crashed run; it holds full speech text, so it must not pile up.
-    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
-    name = database_path.resolve().name
-    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
-        stale.unlink(missing_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
-    os.close(fd)
-    temp_path = Path(temporary)
+    temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
         pulse_store.initialize(store)
@@ -1334,9 +1345,7 @@ def _rebuild_database_from_entries(
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
         return Rebuilt(replaced=False, facts_report=report)
-    # mkstemp makes the staged copy private; the store keeps the mode it had.
-    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
-    temp_path.replace(database_path)
+    _replace_store(database_path, temp_path)
     return Rebuilt(replaced=True, facts_report=report)
 
 
@@ -2560,10 +2569,17 @@ def _lock_holder_alive(pid_text: str) -> bool:
     return True
 
 
+def export_work_dir(exports_dir: Path) -> Path:
+    """Where an export holds its lock and builds its files: the private
+    directory beside the published tree (``person_registry.private_dir``), so
+    nothing half-written or a full store copy is ever inside ``exports_dir``."""
+    return registry.private_dir(exports_dir) / "exports"
+
+
 @contextlib.contextmanager
-def _export_lock(exports_dir: Path):
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = exports_dir / ".lock"
+def _export_lock(work_dir: Path):
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_path = work_dir / ".lock"
     fd = None
     for attempt in range(2):
         try:
@@ -2592,16 +2608,16 @@ def _export_lock(exports_dir: Path):
         lock_path.unlink(missing_ok=True)
 
 
-# F2.1/F4.1: unique temp names inside exports_dir, cleaned up in `finally`;
-# a stale *.tmp or half-written generation directory from a crashed run is
-# swept before a new export starts.
-def _sweep_stale_temp(exports_dir: Path) -> None:
-    if not exports_dir.exists():
-        return
-    for path in exports_dir.glob("*.tmp"):
-        path.unlink(missing_ok=True)
-    for path in exports_dir.glob(".*-*.json"):
-        if path.name.startswith(".datenstand-"):
+# F2.1/F4.1: every export builds in its own scratch directory under the work
+# directory, removed in `finally`; whatever a crashed run left there is swept
+# before a new export starts.
+def _sweep_stale_work(work_dir: Path) -> None:
+    for path in work_dir.iterdir():
+        if path.name == ".lock":
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
             path.unlink(missing_ok=True)
 
 
@@ -2660,15 +2676,16 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 # identity mapping are final; render_site() and the page never open the build
 # store themselves (eng addendum: "the page ... never opens the build store").
 #
-# Layout of exports_dir:
-#   .lock                    held only while an export runs
-#   datenstand.json          the manifest; written last via mkstemp+replace,
-#                            the only pointer a reader needs to follow
-#   g-<inputs_hash[:12]>/    one generation's files; a new export writes a
-#                            fresh directory and only deletes the previous one
-#                            after datenstand.json points at the new one
+# Layout of exports_dir (published):
+#   datenstand.json          the manifest; replaced last, the only pointer a
+#                            reader needs to follow
+#   g-<inputs_hash[:12]>/    one generation's files, renamed in complete; the
+#                            previous one is deleted only after datenstand.json
+#                            points at the new one
 #   published.json           written by the (separate) publish script; never
 #   LICENSE-DATA.md          touched by this function
+# The lock, the store copies, the temp files and the generation being built
+# live in export_work_dir(exports_dir), on the same file system.
 def export_distribution_data(
     database_path: Path,
     exports_dir: Path,
@@ -2700,10 +2717,14 @@ def export_distribution_data(
     readiness = readiness or {}
 
     exports_dir.mkdir(parents=True, exist_ok=True)
-    with _export_lock(exports_dir):
+    work_dir = export_work_dir(exports_dir)
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if work_dir.stat().st_dev != exports_dir.stat().st_dev:
+        raise RuntimeError(f"export: {work_dir} and {exports_dir} must be on one file system (the generation is renamed into place)")
+    with _export_lock(work_dir):
         # Only the lock holder may sweep: a second build sweeping before it
-        # fails on the lock would delete the first build's in-flight manifest.
-        _sweep_stale_temp(exports_dir)
+        # fails on the lock would delete the first build's in-flight files.
+        _sweep_stale_work(work_dir)
         previous = _read_previous_manifest(exports_dir)
         stat = database_path.stat()
         source_sha256 = _source_sha256(database_path, stat, previous)
@@ -2729,15 +2750,16 @@ def export_distribution_data(
 
         started = time.monotonic()
         generation = f"g-{inputs_hash[:12]}"
-        gen_dir = exports_dir / generation
-        if gen_dir.exists():
-            shutil.rmtree(gen_dir)
-        gen_dir.mkdir(parents=True)
-
+        scratch = Path(tempfile.mkdtemp(dir=work_dir, prefix="export-"))
+        gen_dir = scratch / generation
+        gen_dir.mkdir()
+        published = exports_dir / generation
+        aside = scratch / "replaced"
         try:
             manifest = _run_export(
                 database_path=database_path,
                 gen_dir=gen_dir,
+                scratch_dir=scratch,
                 recipes=recipes,
                 has_page_ids=has_page_ids,
                 readiness=readiness,
@@ -2754,20 +2776,24 @@ def export_distribution_data(
                 generation=generation,
             )
 
-            manifest_fd, manifest_tmp_name = tempfile.mkstemp(dir=exports_dir, prefix=".datenstand-", suffix=".json")
-            os.close(manifest_fd)
-            manifest_tmp_path = Path(manifest_tmp_name)
+            manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            # A forced re-export of unchanged inputs names the published
+            # generation again: set it aside for the two renames, not for the
+            # whole export.
+            if published.exists():
+                published.replace(aside)
+            gen_dir.replace(published)
             manifest_tmp_path.replace(exports_dir / "datenstand.json")
         except sqlite3.Error as exc:
             # backup()/DROP COLUMN/VACUUM INTO fail with sqlite3 errors on a
             # locked or corrupt store or a full disk; surface them through the
             # CLI's clean "error:" path instead of a traceback.
-            shutil.rmtree(gen_dir, ignore_errors=True)
             raise RuntimeError(f"export: distribution copy failed: {exc}") from exc
-        except Exception:
-            shutil.rmtree(gen_dir, ignore_errors=True)
-            raise
+        finally:
+            if aside.exists() and not published.exists():
+                aside.replace(published)
+            shutil.rmtree(scratch, ignore_errors=True)
 
         for old_dir in exports_dir.glob("g-*"):
             if old_dir.name != generation:
@@ -2789,6 +2815,7 @@ def _run_export(
     *,
     database_path: Path,
     gen_dir: Path,
+    scratch_dir: Path,
     recipes: tuple[dict[str, Any], ...],
     has_page_ids: set[str],
     readiness: dict[str, str],
@@ -2804,11 +2831,11 @@ def _run_export(
     inputs_hash: str,
     generation: str,
 ) -> dict[str, Any]:
-    dist_fd, dist_name = tempfile.mkstemp(dir=gen_dir, prefix=".dist-", suffix=".sqlite")
+    dist_fd, dist_name = tempfile.mkstemp(dir=scratch_dir, prefix="dist-", suffix=".sqlite")
     os.close(dist_fd)
     dist_path = Path(dist_name)
     dist_path.unlink()  # backup() needs a fresh (non-existent or empty) target
-    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=gen_dir, prefix=".vacuum-", suffix=".sqlite")
+    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=scratch_dir, prefix="vacuum-", suffix=".sqlite")
     os.close(vacuum_fd)
     vacuum_path = Path(vacuum_name)
     vacuum_path.unlink()  # VACUUM INTO requires the target to not exist
@@ -6902,8 +6929,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         person_id = registry.resolve(conn, record["person_id"])
         if evidence.get("ever_mdb") or evidence.get("is_mdb"):
             page_eligible.add(person_id)
-        # A record with no mps row keeps its evidence on the page: on its own
-        # person's page, or pooled into the person a stale roster record joined.
+        # A record with no mps row is stale evidence. It keeps a page only for a
+        # person this build has no current record of, or as the biography a
+        # stale roster partner pools into its live person; a stale record of a
+        # person with current records stays off the page (the source no longer
+        # supports its name, party or link key; docs/stable-ids.md).
         if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
             evidence.update(id=record["id"], identity_key=record["identity_key"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
@@ -11073,10 +11103,15 @@ def run_facts_engine(
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
 ) -> dict[str, Any]:
+    """Compute the facts for a store no rebuild staged in this build. They are
+    computed read-only; a changed snapshot is written into a staged copy that
+    replaces the store, so the published store never has a write (or SQLite's
+    rollback journal) beside it."""
+    database_path = Path(database_path).resolve()
     with registry.writer_lock(database_path):
-        store = pulse_store.connect(database_path)
+        store = facts.open_readonly(database_path)
         try:
-            pulse_store.initialize(store)
+            pulse_store.require_current_schema(store)
             return facts.compute_and_store(
                 store,
                 facts.ALL_REGISTRY,
@@ -11084,9 +11119,32 @@ def run_facts_engine(
                 catalog=catalog,
                 built=facts.built_sources(store),
                 today=today,
+                write=lambda snapshot: _write_facts_staged(database_path, snapshot),
             )
         finally:
             store.close()
+
+
+def _write_facts_staged(database_path: Path, snapshot: Mapping[str, list[list[Any]]]) -> None:
+    """``facts.write_snapshot`` into a staged copy of the store, checked and
+    swapped in; the caller holds the writer lock."""
+    temp_path = _staged_store_path(database_path)
+    try:
+        source = facts.open_readonly(database_path)
+        staged = sqlite3.connect(temp_path)
+        try:
+            source.backup(staged)
+            facts.write_snapshot(staged, snapshot)
+            staged.commit()
+            if staged.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("facts: the staged store failed integrity_check")
+        finally:
+            staged.close()
+            source.close()
+        _replace_store(database_path, temp_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 # Runs the export step (unless --no-persist, or the store does not exist) and
@@ -11335,9 +11393,10 @@ def main() -> int:
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
-            store = pulse_store.connect(database_path)
+            # Read only: the published store is written by a staged rebuild alone.
+            store = facts.open_readonly(database_path)
             try:
-                pulse_store.initialize(store)
+                pulse_store.require_current_schema(store)
                 if "mp-pages" in features:
                     component_context = {
                         "selection": features,
@@ -11593,9 +11652,10 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     return 1
-                store = pulse_store.connect(database_path)
+                # Read only: the published store is written by a staged rebuild alone.
+                store = facts.open_readonly(database_path)
                 try:
-                    pulse_store.initialize(store)
+                    pulse_store.require_current_schema(store)
                     if "mp-pages" in features:
                         abg_mps, mp_lookup = collect_abgeordnete(store)
                 finally:
