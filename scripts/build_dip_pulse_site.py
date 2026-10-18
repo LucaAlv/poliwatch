@@ -5378,7 +5378,7 @@ def render_front_page(
     }}
     @media (pointer:coarse) {{
       .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
-      .radar-open a {{ display:inline-block; padding:12px 0; }}
+      .radar-open a {{ display:inline-block; min-height:44px; padding:12px 0; }}
     }}
     @media (prefers-reduced-motion: reduce) {{
       a.week-label[data-tip]::after {{ transition:none; transform:none; }}
