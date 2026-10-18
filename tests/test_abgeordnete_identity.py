@@ -311,6 +311,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
             display_name="Dr. Erika Beispiel, MdB, SPD",
             party_id=party_id,
             identity_key=store.mp_identity(dip_person_id="dip-1"),
+            occurrence_id="fixture:" + store.mp_identity(dip_person_id="dip-1"),
             dip_person_id="dip-1",
             title="Dr. Erika Beispiel, MdB, SPD",
             birth_year=1980,
@@ -419,6 +420,7 @@ class AbgeordneteIdentityTests(unittest.TestCase):
                 display_name="Alex Beispiel",
                 party_id=party_id,
                 identity_key=store.mp_identity(dip_person_id=dip_id),
+                occurrence_id="fixture:" + store.mp_identity(dip_person_id=dip_id),
                 dip_person_id=dip_id,
                 is_mdb=True,
             )

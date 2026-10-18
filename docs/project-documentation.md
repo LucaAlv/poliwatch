@@ -164,7 +164,7 @@ Important generated files:
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 20 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 25 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 | `data/dip-vorgang-cache.json` | DIP Vorgang records (Sachgebiet, Sachbegriffe, abstract) and the Vorgang each Drucksache number resolves to, which the Politikfelder are derived from. Only an online build fetches it (batches of 100 ids, then one call per Drucksache number, 0.5 s apart; the first fill of about 2,400 numbers takes 25 minutes, later builds fetch only what is new or has no Sachgebiet yet). `--offline` builds read it and never call DIP; a TOP or vote whose entry is missing is stored as `untagged` with source `not_fetched`, and the build log counts them |
 
@@ -243,7 +243,7 @@ Standalone HTML renderer for a single validation report JSON. `build_dip_pulse_s
 python3 scripts/render_dip_pulse_html.py .context/report.json .context/report.html
 ```
 
-The renderer owns the detailed dossier page HTML, shared site header styles, party colors, vote labels, source links, speaker/profile links, summary presentation, and a footer nav whose Daten link is predicted, before the export runs, by `dossier_database_page_href()` in `build_dip_pulse_site.py` from the same conditions the SQLite export uses; a build whose export later fails with `DataExportUnavailable` (old SQLite) still shows the link, landing on `database.html`'s own explanation rather than the recipes page.
+The renderer owns the detailed dossier page HTML, shared site header styles, party colors, vote labels, source links, speaker/profile links, summary presentation, the `PARLIAMENTARY_GLOSSARY` of parliamentary terms (shown as hover/focus explanations on bill pages and listed under "Parlamentarische Begriffe" on `sources.html`), the dossier script that opens a speech linked by its URL fragment (`speech_hash_runtime_script()`), and a footer nav whose Daten link is predicted, before the export runs, by `dossier_database_page_href()` in `build_dip_pulse_site.py` from the same conditions the SQLite export uses; a build whose export later fails with `DataExportUnavailable` (old SQLite) still shows the link, landing on `database.html`'s own explanation rather than the recipes page.
 
 The dossier's Aufmerksamkeitsrang sidebar lives here too. On desktop it is sticky and its rows scroll inside the panel; at 1120px and below it renders collapsed to `ATTENTION_PREVIEW_ROWS` rows (`ATTENTION_PREVIEW_ROWS_PHONE` at 720px and below) behind an expand button, protocols without agenda items or extracted speeches get a plain notice instead of a ranking, and print output shows every row without controls. Ranking row labels strip recognized procedural boilerplate from the start of the agenda heading and keep the full normalized heading in the link's `title` tooltip. Both row counts are module constants near the top of the file. An `IntersectionObserver` in `attention_runtime_script()` also tracks which ranking row is "current" as the reader scrolls, setting `aria-current="true"` on the matching `.attention-row` and scrolling it into view inside the list; the observer itself switches off wherever the static-layout media query matches (`ATTENTION_STATIC_LAYOUT_QUERY`, shared between the CSS and the script), since there is no rail to mark "you are here" on. The highlight's styling is `@media screen` only, so printing shows no marker even though the observer keeps running.
 
@@ -291,7 +291,7 @@ Product/design rationale. It explains the original thesis: a primary-source, rec
 
 ### `docs/designs/`
 
-Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe. `fakt-der-woche.md` records the Fakt der Woche pages the same way: the approaches considered, the A0 replay result against the real store, and the feedback that became the A1 spec.
+Per-feature design docs written by review sessions (`docs/design/` is the product-level design; `docs/designs/` holds one doc per feature). `puls-wochenradar.md` records the `puls.html` week radar: premises, measured evidence from the cache, the approach chosen, and the gate decisions; `puls-wochenradar-sketch.png` is its real-data wireframe. `fakt-der-woche.md` records the Fakt der Woche pages the same way: the approaches considered, the A0 replay result against the real store, and the feedback that became the A1 spec. `gesetzesvorhaben.md` records the redesign of the `bills/` overview and bill pages: the approved design decisions, the engineering review, and the executed browser and test evidence.
 
 ### `.env.example` and `.env.local`
 
@@ -429,7 +429,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 27 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `4`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 27 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `5`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -561,7 +561,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
+When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (4), or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -605,7 +605,7 @@ scripts/preview_dip_pulse_site.sh
 
 ## SQLite Store
 
-When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store from before schema 4 (before the Politikfeld columns) needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
+When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqlite` from the current detail entries under a writer lock (both in `.OUTPUT.private/` beside the output directory, never published) and swaps it in only when every stage succeeds; the person registry (below) is carried forward from the previous store, and a store of an older schema needs an explicit `--offline --repersist` ([docs/stable-ids.md](stable-ids.md)). The schema is managed in `persist_dip_pulse_store.py` and currently includes:
 
 - `schema_migrations`
 - `parties`

@@ -4,6 +4,7 @@ store, swapped in only when all of them persisted."""
 from __future__ import annotations
 
 import contextlib
+from datetime import date
 import hashlib
 import io
 import json
@@ -20,7 +21,7 @@ import facts
 import persist_dip_pulse_store as pulse_store
 import speech_kinds
 from _support import FIXTURES
-from stable_ids import roster_occurrence_id, vote_member_occurrence_id
+from stable_ids import roster_occurrence_id, stable_key, vote_member_occurrence_id
 
 
 def sha(path: Path) -> str:
@@ -104,6 +105,17 @@ class ReparseCachedXmlTests(unittest.TestCase):
             report["warnings"],
             ["Anderes.", "Die XML zählt 0 Kurzinterventionen, DIP 1."],
         )
+
+    # Value: protects=a cached report whose agenda index is text ("1", " 02 ") is reparsed from its own XML like an int one; fails_when=check_xml_belongs_to_report compares the raw index with the XML's int index and refuses the XML as another protocol's; why_new=the loader accepts text indexes, every reparse test used ints; seam=none
+    def test_a_report_with_text_indexes_is_reparsed_from_its_cached_xml(self) -> None:
+        self.report["agenda_items"][0]["index"] = "1"
+        self.report["agenda_items"][1]["index"] = " 02 "
+        (self.output_dir / "data" / "plenarprotokoll-21-6.json").write_text(json.dumps(self.report), encoding="utf-8")
+        entries = self.entries()
+        self.assertEqual(build.reparse_cached_xml(self.output_dir, entries), 1)
+        befragung, fragestunde = entries[0]["report"]["agenda_items"]
+        self.assertEqual([s["speaker"]["display_name"] for s in befragung["xml_speakers"]], ["Alexander Dobrindt", "Verena Hubertz"])
+        self.assertEqual(fragestunde["xml_contributions"][0]["kind"], "fragestunde_frage")
 
     # Value: protects=a reparsed report holds exactly what a fresh build of the same XML holds, for every XML-derived key of an agenda item, the heading included (a T_ZP_NaS heading the parser learned to read reaches cached reports);
     #   fails_when=enrich_with_api gains an XML-derived item key that reparse_report_xml does not refresh, or the reparse stops refreshing the heading, so a repersisted store and an online build disagree;
@@ -483,8 +495,8 @@ class RepersistTests(unittest.TestCase):
             conn.close()
 
     def test_every_cached_report_lands_in_a_fresh_store(self) -> None:
-        entries, replaced = self.repersist()
-        self.assertTrue(replaced)
+        entries, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
         self.assertEqual(len(entries), 2)
         self.assertEqual(self.count("protocols"), 2)
         # Rows of a protocol that is no longer cached do not survive a re-persist.
@@ -512,6 +524,7 @@ class RepersistTests(unittest.TestCase):
                     display_name="Ada Lovelace",
                     party_id=pulse_store.upsert_party(conn, "SPD", now),
                     identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada",
                     dip_person_id="ada",
                     is_mdb=True,
                 )
@@ -533,7 +546,8 @@ class RepersistTests(unittest.TestCase):
             with conn:  # a roster row from an earlier build, seeded without a binding
                 pulse_store.upsert_mp(
                     conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
-                    identity_key="dip:ada", dip_person_id="ada", is_mdb=True,
+                    identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True,
                 )
         finally:
             conn.close()
@@ -552,6 +566,43 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(len(members), 2)
         for member in members:
             self.assertIn(vote_member_occurrence_id(member["vote_id"], member["display_name"], member["party"]), bound)
+
+    # Value: protects=each source's occurrence key is built from the canonical source value, case by case: a sampled DIP person id " 07 ", a preserved roster id stored as " 08 " and a roll-call member listed under a faction spelling ("Grüne") give the keys of "7", "8" and the Zusammenschluss name; fails_when=a call site builds its key from the raw id or faction, so one person gets a second occurrence when a source changes its spelling; why_new=A.2 test follow-ups: table-driven occurrence-id cases for vote members, sampled people and the preserved roster; seam=none
+    def test_occurrence_keys_use_the_canonical_source_values(self) -> None:
+        conn = pulse_store.connect(self.database)
+        try:
+            pulse_store.initialize(conn)
+            now = pulse_store.utc_now()
+            with conn:
+                pulse_store.upsert_mp(conn, now=now, display_name="Bea Roster", party_id=pulse_store.upsert_party(conn, "SPD", now),
+                                      identity_key="dip:8",
+                                      occurrence_id="fixture:dip:8", dip_person_id="8", is_mdb=True)
+                conn.execute("UPDATE mps SET dip_person_id = ' 08 ' WHERE identity_key = 'dip:8'")
+        finally:
+            conn.close()
+        path = self.output_dir / "data" / "plenarprotokoll-20-999.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["sampled_people"][0]["id"] = " 07 "
+        member = report["agenda_items"][0]["votes"][0]["members"][0]
+        member["faction"] = "Grüne"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        self.repersist()
+        conn = pulse_store.connect(self.database)
+        try:
+            bound = {row["id"] for row in conn.execute("SELECT id FROM person_bindings")}
+            (vote_id,) = conn.execute("SELECT DISTINCT vm.vote_id FROM vote_members vm JOIN mps m ON m.id = vm.mp_id WHERE m.display_name = ?",
+                                      (member["name"],)).fetchone()
+        finally:
+            conn.close()
+        cases = {
+            "sampled person ' 07 '": stable_key("roster", "7"),
+            "preserved roster ' 08 '": stable_key("roster", "8"),
+            "roll-call member under 'Grüne'": vote_member_occurrence_id(vote_id, member["name"], "BÜNDNIS 90/DIE GRÜNEN"),
+        }
+        for label, key in cases.items():
+            with self.subTest(label):
+                self.assertIn(key, bound)
+        self.assertNotIn(vote_member_occurrence_id(vote_id, member["name"], "Grüne"), bound)
 
     # Value: protects=the replay judges completeness against the cached sitting catalog the build wrote; fails_when=repersist_cached_reports stops passing the catalog so no period is ever complete and the replay publishes no Fakten; why_new=the staged-rebuild test spies the engine call but nothing exercised the repersist caller that loads the file; seam=none
     def test_the_replay_hands_the_cached_catalog_to_the_facts_engine(self) -> None:
@@ -574,7 +625,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("plenarprotokoll-21-99.json", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_non_object_cached_json_aborts_and_leaves_the_store_alone(self) -> None:
         self.repersist()
@@ -584,7 +635,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("top-level JSON value is not an object", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_null_agenda_items_with_current_rules_and_no_xml_leaves_the_store_alone(self) -> None:
         self.repersist()
@@ -597,7 +648,7 @@ class RepersistTests(unittest.TestCase):
             self.repersist()
         self.assertIn("agenda_items must contain objects", str(caught.exception))
         self.assertEqual(before, sha(self.database))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def test_a_report_that_fails_to_persist_leaves_an_old_schema_store_byte_identical(self) -> None:
         # An older schema: a column the current initialize() would add is
@@ -625,7 +676,7 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("boom", str(caught.exception))
         self.assertEqual(before, sha(self.database))
         self.assertNotIn("person_roles_json", self.columns("mps"))
-        self.assertEqual(list(self.database.parent.glob(f".{self.database.name}.*.tmp")), [])
+        self.assertEqual(list(build.registry.private_dir(self.database).glob(f"{self.database.name}.*.tmp*")), [])
 
     def columns(self, table: str) -> set[str]:
         conn = sqlite3.connect(self.database)
@@ -635,16 +686,49 @@ class RepersistTests(unittest.TestCase):
             conn.close()
 
     def test_a_second_run_with_a_different_clock_keeps_the_file(self) -> None:
-        _, replaced = self.repersist()
-        self.assertTrue(replaced)
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
         stat = self.database.stat()
         before = sha(self.database)
         with mock.patch.object(pulse_store, "utc_now", return_value="2099-01-01T00:00:00Z"):
-            _, replaced = self.repersist()
-        self.assertFalse(replaced)
+            _, rebuilt = self.repersist()
+        self.assertFalse(rebuilt.replaced)
         after = self.database.stat()
         self.assertEqual((stat.st_ino, stat.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
         self.assertEqual(before, sha(self.database))
+
+    # Value: protects=the unchanged-replay check compares content, not insert order: two stores holding the same rows in another order (with and without a primary key) have equal digests, and a renamed column does not; fails_when=_content_digests reads rows unordered or leaves the column names out of a table's digest; why_new=A.2 test follow-ups: every replay test rebuilt the same input in the same order; seam=none
+    def test_content_digests_ignore_insert_order_but_see_column_names(self) -> None:
+        def store(name: str, rows: list[tuple[str, str]], column: str = "v") -> Path:
+            path = self.output_dir / name
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(f"CREATE TABLE keyed (id TEXT PRIMARY KEY, {column} TEXT)")
+                conn.execute("CREATE TABLE unkeyed (a TEXT, b TEXT)")
+                conn.executemany("INSERT OR IGNORE INTO keyed VALUES (?, ?)", rows)
+                conn.executemany("INSERT INTO unkeyed VALUES (?, ?)", rows)
+                conn.commit()
+            finally:
+                conn.close()
+            return path
+
+        rows = [("b", "2"), ("a", "1"), ("c", "3")]
+        forward = build._content_digests(store("forward.sqlite", rows))
+        self.assertIsNotNone(forward)
+        self.assertEqual(forward, build._content_digests(store("reversed.sqlite", list(reversed(rows)))))
+        renamed = build._content_digests(store("renamed.sqlite", rows, column="w"))
+        self.assertNotEqual(forward["keyed"], renamed["keyed"])
+        self.assertEqual(forward["unkeyed"], renamed["unkeyed"])
+        # The rows are summed, not sorted: a changed, deleted or repeated row
+        # still changes the digest, and so do values swapped between rows.
+        for label, changed in (("changed", [("b", "2"), ("a", "9"), ("c", "3")]), ("deleted", rows[:2]),
+                               ("duplicated", rows + rows[:1]), ("swapped", [("a", "2"), ("b", "1"), ("c", "3")])):
+            with self.subTest(label):
+                self.assertNotEqual(forward["unkeyed"], build._content_digests(store(f"{label}.sqlite", changed))["unkeyed"])
+        # A pair of equal rows does not cancel out (as it would in an XOR).
+        twice_a = build._content_digests(store("twice-a.sqlite", [("a", "1"), ("a", "1"), ("b", "2")]))
+        twice_c = build._content_digests(store("twice-c.sqlite", [("c", "3"), ("c", "3"), ("b", "2")]))
+        self.assertNotEqual(twice_a["unkeyed"], twice_c["unkeyed"])
 
     def test_a_content_change_replaces_the_file(self) -> None:
         self.repersist()
@@ -652,8 +736,8 @@ class RepersistTests(unittest.TestCase):
         report = json.loads(path.read_text(encoding="utf-8"))
         report["protocol"]["titel"] = "Ein anderer Titel"
         path.write_text(json.dumps(report), encoding="utf-8")
-        _, replaced = self.repersist()
-        self.assertTrue(replaced)
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
 
     def run_main(self, *extra: str) -> tuple[int, str]:
         argv = ["build", "--offline", "--output-dir", str(self.output_dir), *extra]
@@ -662,10 +746,11 @@ class RepersistTests(unittest.TestCase):
         # test here, and the fixture MPs carry profile URLs the renderer refuses.
         with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(err), contextlib.redirect_stdout(
             io.StringIO()
-        ), mock.patch.object(build, "run_data_pipeline", return_value=(None, None, [], None, False)), mock.patch.object(
+        ), mock.patch.object(build, "run_data_pipeline", return_value=(None, None, [], None, False)) as pipeline, mock.patch.object(
             build, "render_site", return_value=self.output_dir / "index.html"
         ):
             code = build.main()
+        self.pipeline = pipeline
         return code, err.getvalue()
 
     # Value: protects=an --offline --repersist build never reaches DIP for Vorgänge and still says how the Politikfelder came out; fails_when=the offline path calls refresh_vorgang_cache, or prints no Politikfeld line, so a cache miss (not_fetched) passes unseen; why_new=no test covered the offline side of the fetch; seam=none
@@ -711,6 +796,48 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("Docs: README.md#re-persist-the-cached-reports", err)
         self.assertEqual(before, sha(self.database))
 
+    # Value: protects=a staged rebuild the replay refuses (a stored protocol without its cached report) ends as one ERROR [repersist] line with the fix and docs hint, exit 1, the store byte for byte; fails_when=main lets DatabaseRebuildError escape or drops the hint; why_new=registry follow-ups (3): only the CachedReportError branch was tested; seam=none
+    def test_the_command_reports_a_refused_rebuild_with_its_fix_and_exits_1(self) -> None:
+        self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("INSERT INTO protocols(id, document_number, created_at, updated_at) VALUES ('x', '99/1', 't', 't')")
+            conn.commit()
+        finally:
+            conn.close()
+        before = sha(self.database)
+        code, err = self.run_main("--repersist")
+        self.assertEqual(code, 1, err)
+        self.assertIn("ERROR [repersist]: Missing cached evidence for protocols ['x']", err)
+        self.assertIn("The previous store is untouched. Fix: resolve the cause named above", err)
+        self.assertIn("Docs: docs/stable-ids.md", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(before, sha(self.database))
+
+    # Value: protects=an offline build whose data pipeline fails in SQLite or in a staged store write (disk full, a private directory on another file system) ends as one error: line, exit 1, no traceback; fails_when=main's except tuple misses sqlite3.Error or DatabaseRebuildError; why_new=only RuntimeError/OSError/ValueError failures of the pipeline were reported; seam=run_data_pipeline mock
+    def test_an_offline_build_reports_a_store_write_failure_as_one_error_line(self) -> None:
+        self.repersist()
+        argv = ["build", "--offline", "--output-dir", str(self.output_dir)]
+        for failure in (sqlite3.OperationalError("database or disk is full"), build.DatabaseRebuildError("staged store on another file system")):
+            with self.subTest(type(failure).__name__):
+                err = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(err), contextlib.redirect_stdout(
+                    io.StringIO()
+                ), mock.patch.object(build, "run_data_pipeline", side_effect=failure):
+                    code = build.main()
+                self.assertEqual(code, 1, err.getvalue())
+                self.assertIn(f"error: {failure}", err.getvalue())
+
+    # Value: protects=--offline --repersist computes the facts once, inside the staged rebuild, for the --today build date, and hands that report to the data pipeline, which therefore does not compute them again; fails_when=main or repersist_cached_reports drops today or facts_report on the way to the rebuild or the pipeline; why_new=third ship round (12): the offline facts hand-off and today forwarding were covered online only; seam=compute_and_store spy, run_data_pipeline mock
+    def test_the_command_hands_today_and_the_rebuilt_facts_to_the_pipeline(self) -> None:
+        with mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine:
+            code, err = self.run_main("--repersist", "--today", "2026-07-01")
+        self.assertEqual(code, 0, err)
+        engine.assert_called_once()
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        handed = self.pipeline.call_args.kwargs
+        self.assertTrue({"incomplete_periods", "sitting_gaps"} <= handed["facts_report"].keys())
+
     def test_the_command_repersists_then_renders(self) -> None:
         code, err = self.run_main("--repersist")
         self.assertEqual(code, 0, err)
@@ -731,6 +858,7 @@ class RepersistTests(unittest.TestCase):
                     display_name="Ada Lovelace",
                     party_id=pulse_store.upsert_party(conn, "SPD", now),
                     identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada",
                     dip_person_id="ada",
                     is_mdb=True,
                 )

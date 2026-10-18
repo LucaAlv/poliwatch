@@ -41,7 +41,7 @@
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
-#   bills/index.html     ``render_bills_index``      "Gesetzesvorhaben verfolgen" list
+#   bills/index.html     ``render_bills_index``      Gesetzesvorhaben list with search
 #   bills/bill-*.html    ``render_bill_detail``      one legislative procedure
 #   abgeordnete/index.html   ``render_abgeordnete_index``   MP roster with filters
 #   abgeordnete/<id>.html    ``render_abgeordnete_detail``  one MP profile
@@ -84,12 +84,14 @@ import stat as stat_module
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -110,7 +112,10 @@ import publication_state as publication
 import facts
 import politikfelder
 import person_registry as registry
-from stable_ids import KEY_VERSION, key_prefix, roster_occurrence_id, speech_occurrence_id, speech_rede_id
+from stable_ids import (
+    KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
+    speech_rede_id,
+)
 # Public components are fixed product structure. EnrichmentSelection is the
 # separate operator-controlled set of optional network acquisition jobs.
 from features import (
@@ -889,8 +894,13 @@ def load_existing_detail_entries(
             if not isinstance(report.get("protocol") or {}, dict):
                 raise ValueError("protocol must be an object")
             items = report.get("agenda_items", [])
-            if not isinstance(items, list) or any(not isinstance(item, dict) or not isinstance(item.get("index"), int) for item in items):
+            if not isinstance(items, list) or any(not isinstance(item, dict) or item.get("index") is None for item in items):
                 raise ValueError("agenda_items must contain objects with integer source indices")
+            # An index given as 3 or "3" is one item (stable_ids.source_index);
+            # the file keeps the form it was written in.
+            indexes = [source_index(item.get("index")) for item in items]
+            if len(set(indexes)) != len(indexes):
+                raise ValueError("agenda_items repeat a source index")
             for item in [report, *items]:
                 for key in SPEAKER_LISTS:
                     units = item.get(key) or []
@@ -1038,18 +1048,24 @@ def merge_detail_entries(
     return merged
 
 
-# Rebuild the SQLite store from scratch out of the dossier reports.
-#
-# Written to a temporary file next to the target and moved into place only on
-# success, so a failed build never leaves a half-written database behind - the
-# database explorer page and the download link both read this file. The store
-# being replaced is only ever read, and through a read-only connection: a
-# rebuild that fails part-way must leave it byte for byte as it was, even when
-# it was written by an older schema.
+@dataclass(frozen=True)
+class Rebuilt:
+    """A staged rebuild that succeeded: whether the store file was replaced, and
+    the facts engine's report for the store it built (computed on every rebuild,
+    so the data pipeline never computes the facts a second time)."""
+    replaced: bool
+    facts_report: dict[str, Any]
+
+
 class DatabaseRebuildError(Exception):
     """The staged rebuild failed (an unpersistable report, a registry, facts or SQLite
     error, missing cached evidence, a failed roster fetch or integrity check); the
     previous store stays."""
+
+
+# What a failed data pipeline (export, facts, staged store write) raises: main
+# reports each as one error: line and exit 1, offline and online alike.
+PIPELINE_ERRORS = (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error)
 
 
 # Columns holding when a row was written, not what it says. A re-persist that
@@ -1082,10 +1098,14 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
 
 
 def _content_digests(database_path: Path) -> dict[str, str] | None:
-    """table -> digest of its column names and rows, timestamps left out; None
-    when the file cannot be read that way (then it counts as changed)."""
+    """table -> digest of its column names, row count and rows, timestamps left
+    out; None when the file cannot be read that way (then it counts as changed).
+
+    Each row's sha256 is summed modulo 2**256 in whatever order SQLite returns
+    the rows, so no table is sorted by its text primary key (that sort was most
+    of the cost); a changed, deleted or duplicated row still changes the digest."""
     try:
-        conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -1097,15 +1117,14 @@ def _content_digests(database_path: Path) -> dict[str, str] | None:
             )
         ]
         for table in tables:
-            table_info = list(conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})"))
-            columns = [row[1] for row in table_info if row[1] not in _TIMESTAMP_COLUMNS]
-            digest = hashlib.sha256(repr(columns).encode("utf-8"))
+            columns = [row[1] for row in conn.execute(f"PRAGMA table_info({sqlite_identifier(table)})")
+                       if row[1] not in _TIMESTAMP_COLUMNS]
             selected = ", ".join(sqlite_identifier(column) for column in columns)
-            primary_keys = [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]]
-            order = ", ".join(sqlite_identifier(key) for key in primary_keys or columns)
-            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)} ORDER BY {order}"):
-                digest.update(repr(row).encode("utf-8"))
-            digests[table] = digest.hexdigest()
+            total = count = 0
+            for row in conn.execute(f"SELECT {selected} FROM {sqlite_identifier(table)}"):
+                total += int.from_bytes(hashlib.sha256(repr(row).encode("utf-8")).digest(), "big")
+                count += 1
+            digests[table] = hashlib.sha256(repr((columns, count, total % 2**256)).encode("utf-8")).hexdigest()
         return digests
     except sqlite3.Error:
         return None
@@ -1124,8 +1143,17 @@ def _entry_label(entry: dict[str, Any]) -> str:
     return f"{number} ({entry.get('report_path')})"
 
 
+# Rebuild the SQLite store from scratch out of the dossier reports.
+#
+# Written to a temporary file in the store's private directory (never in the
+# published tree) and moved into place only on
+# success, so a failed build never leaves a half-written database behind - the
+# database explorer page and the download link both read this file. The store
+# being replaced is only ever read, and through a read-only connection: a
+# rebuild that fails part-way must leave it byte for byte as it was, even when
+# it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, facts_report=None, upgrade=False, vorgang_cache=None):
+                                  today=None, upgrade=False, vorgang_cache=None) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1133,21 +1161,49 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     runs ``roster_ingest(staged_connection)``; reconciles persons; recomputes facts
     against ``catalog``; validates the registry and integrity; replaces the store
     only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
-    content changed). ``today`` is the build date the facts are computed for; a
-    ``facts_report`` dict receives the engine's report, so the data pipeline need
-    not compute the facts a second time. Only ``upgrade`` (``--offline --repersist``)
+    content changed). ``today`` is the build date the facts are computed for. Only ``upgrade`` (``--offline --repersist``)
     accepts a store of an older schema; every other caller is refused, so the
-    registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
+    registry is re-minted only on that explicit step. Returns a ``Rebuilt``. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
+    # One spelling for the lock, the staging directory and the swap: a rebuild
+    # through a symlink to the store replaces the store, not the link.
+    database_path = Path(database_path).resolve()
     try:
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report, upgrade=upgrade,
+                catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
                 vorgang_cache=vorgang_cache)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
+
+
+def _staged_store_path(database_path: Path) -> Path:
+    """A fresh staged file for a store, under the writer lock: in the store's
+    private directory, never in the published tree (registry.private_dir), and on
+    the store's file system so the final rename is atomic."""
+    staging = registry.private_dir(database_path)
+    if staging.stat().st_dev != database_path.parent.stat().st_dev:
+        raise DatabaseRebuildError(
+            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
+        )
+    # Only the lock holder is here, so a staged copy that is still lying around
+    # is from a crashed run; it holds full speech text, so it must not pile up.
+    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
+    name = database_path.resolve().name
+    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
+        stale.unlink(missing_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
+    os.close(fd)
+    return Path(temporary)
+
+
+def _replace_store(database_path: Path, temp_path: Path) -> None:
+    """Swap a staged store in; the store keeps the file mode it had (mkstemp
+    makes the staged copy private)."""
+    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
+    temp_path.replace(database_path)
 
 
 def _rebuild_database_from_entries(
@@ -1159,11 +1215,19 @@ def _rebuild_database_from_entries(
     catalog: facts.SittingCatalog | None = None,
     roster_ingest: Any = None,
     today: date | None = None,
-    facts_report: dict[str, Any] | None = None,
     upgrade: bool = False,
     vorgang_cache: dict[str, Any] | None = None,
-) -> bool:
+) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
+    if database_path.exists():
+        try:
+            probe = facts.open_readonly(database_path)
+            try:
+                probe.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+            finally:
+                probe.close()
+        except sqlite3.Error as exc:
+            raise DatabaseRebuildError(f"The store {database_path} cannot be read ({exc})") from exc
     if not upgrade and database_path.exists():
         current = facts.open_readonly(database_path)
         try:
@@ -1197,18 +1261,11 @@ def _rebuild_database_from_entries(
             # carry-over costs one changed-winners report, not the build.
             print(f"warning: previous facts unreadable, not carried over ({exc})", file=sys.stderr)
 
-    # Only the lock holder is here, so a staged copy that is still lying around
-    # is from a crashed run; it holds full speech text, so it must not pile up
-    # next to the published data.
-    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
-    for stale in database_path.parent.glob(f".{glob.escape(database_path.name)}.*.tmp*"):
-        stale.unlink(missing_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{database_path.name}.", suffix=".tmp", dir=database_path.parent)
-    os.close(fd)
-    temp_path = Path(temporary)
+    temp_path = _staged_store_path(database_path)
     store = pulse_store.connect(temp_path)
     try:
         pulse_store.initialize(store)
+        registry.begin_build(store)
         if database_path.exists():
             previous = facts.open_readonly(database_path)
             try:
@@ -1228,7 +1285,13 @@ def _rebuild_database_from_entries(
         if roster_rows:
             now = pulse_store.utc_now()
             with store:
+                skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
+                if skipped:
+                    # No roster identity: ingest_mdb_roster skips such rows too.
+                    print(f"warning: [roster] {len(skipped)} preserved roster rows have no DIP id and were skipped", file=sys.stderr)
                 for row in roster_rows:
+                    if not canonical_dip_person_id(row.get("dip_person_id")):
+                        continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
                     pulse_store.upsert_mp(
                         store,
@@ -1276,12 +1339,12 @@ def _rebuild_database_from_entries(
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
-        registry.reconcile(store, full_build=True)
+        registry.reconcile(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
-        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog, today=today)
+        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries),
+                                         built=facts.built_sources(store), catalog=catalog, today=today)
         registry.validate(store)
         if store.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise DatabaseRebuildError("Rebuilt database failed integrity_check")
@@ -1293,15 +1356,11 @@ def _rebuild_database_from_entries(
         raise
     finally:
         store.close()
-    if facts_report is not None:
-        facts_report.update(report)
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
-        return False
-    # mkstemp makes the staged copy private; the store keeps the mode it had.
-    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
-    temp_path.replace(database_path)
-    return True
+        return Rebuilt(replaced=False, facts_report=report)
+    _replace_store(database_path, temp_path)
+    return Rebuilt(replaced=True, facts_report=report)
 
 
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1592,26 +1651,26 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
-    today: date | None = None, facts_report: dict[str, Any] | None = None,
+    today: date | None = None,
     vorgang_cache: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
     persisted. Reden and Beiträge are first re-read from each report's cached
-    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and whether
-    the store file was replaced. Raises CachedReportError or DatabaseRebuildError
+    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
+    ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
-    replaced = rebuild_database_from_entries(
+    rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, facts_report=facts_report, upgrade=True, vorgang_cache=vorgang_cache,
+        today=today, upgrade=True, vorgang_cache=vorgang_cache,
     )
     write_classification_diagnostics(output_dir, cached)
-    return cached, replaced
+    return cached, rebuilt
 
 
 # ---------------------------------------------------------------------------
@@ -1640,7 +1699,10 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     if top_id:
         keys.append(f"top:{top_id}")
     if item.get("index") is not None:
-        keys.append(f"index:{item['index']}")
+        # A previous report is read without the cached-report load's checks; a
+        # malformed index there matches nothing rather than failing the build.
+        with contextlib.suppress(ValueError):
+            keys.append(f"index:{source_index(item['index'])}")
     return keys
 
 
@@ -2368,12 +2430,27 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 4
+EXPORT_FORMAT = 5
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
 # All exported primary keys identify stable source rows or issued registry keys.
 # The manifest derives their declared order directly from the table schema.
+
+# The row whose name and party r1 and r3 show for a person, chosen once per
+# person: a roster row first, then a speaker row, then by identity_key, a source
+# key (mps.id is a hash). collect_abgeordnete orders a person's rows the same
+# way, so the label is the row the Personenseite takes its heading from.
+REPRESENTATIVE_SQL = (
+    "WITH representative AS (\n"
+    "  SELECT person_id, display_name, party_id FROM (\n"
+    "    SELECT person_id, display_name, party_id,\n"
+    "           ROW_NUMBER() OVER (PARTITION BY person_id\n"
+    "                              ORDER BY is_mdb DESC, xml_redner_id IS NULL, identity_key) AS rank\n"
+    "    FROM mps\n"
+    "  ) WHERE rank = 1\n"
+    ")\n"
+)
 
 # The five recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
@@ -2389,11 +2466,12 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r1-meiste-reden",
         "title": "Wer hielt die meisten Reden?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(*) AS reden, SUM(s.char_count) AS zeichen\n"
             "FROM speeches s\n"
             "JOIN mp_canonical mc ON mc.mp_id = s.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "LEFT JOIN parties p ON p.id = m.party_id\n"
             "GROUP BY mc.canonical_id\n"
             "ORDER BY reden DESC, zeichen DESC, mc.canonical_id\n"
@@ -2443,12 +2521,13 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "id": "r3-abweichler",
         "title": "Wer stimmt am häufigsten anders als die Mehrheit der eigenen Fraktion oder Gruppe?",
         "sql": (
-            "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
+            REPRESENTATIVE_SQL
+            + "SELECT mc.canonical_id AS mp_id, m.display_name, p.name AS fraktion,\n"
             "       COUNT(DISTINCT vm.vote_id) AS abweichungen\n"
             "FROM vote_members vm\n"
             "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
             "JOIN mp_canonical mc ON mc.mp_id = vm.mp_id\n"
-            "JOIN mps m ON m.id = (SELECT m2.id FROM mps m2 WHERE m2.person_id = mc.canonical_id ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)\n"
+            "JOIN representative m ON m.person_id = mc.canonical_id\n"
             "JOIN parties p ON p.id = vm.party_id\n"
             "WHERE vm.vote IN ('yes', 'no')\n"
             "  AND vf.leading_vote IN ('yes', 'no')\n"
@@ -2656,10 +2735,17 @@ def _lock_holder_alive(pid_text: str) -> bool:
     return True
 
 
+def export_work_dir(exports_dir: Path) -> Path:
+    """Where an export holds its lock and builds its files: the private
+    directory beside the published tree (``person_registry.private_dir``), so
+    nothing half-written or a full store copy is ever inside ``exports_dir``."""
+    return registry.private_dir(exports_dir) / "exports"
+
+
 @contextlib.contextmanager
-def _export_lock(exports_dir: Path):
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = exports_dir / ".lock"
+def _export_lock(work_dir: Path):
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_path = work_dir / ".lock"
     fd = None
     for attempt in range(2):
         try:
@@ -2688,16 +2774,16 @@ def _export_lock(exports_dir: Path):
         lock_path.unlink(missing_ok=True)
 
 
-# F2.1/F4.1: unique temp names inside exports_dir, cleaned up in `finally`;
-# a stale *.tmp or half-written generation directory from a crashed run is
-# swept before a new export starts.
-def _sweep_stale_temp(exports_dir: Path) -> None:
-    if not exports_dir.exists():
-        return
-    for path in exports_dir.glob("*.tmp"):
-        path.unlink(missing_ok=True)
-    for path in exports_dir.glob(".*-*.json"):
-        if path.name.startswith(".datenstand-"):
+# F2.1/F4.1: every export builds in its own scratch directory under the work
+# directory, removed in `finally`; whatever a crashed run left there is swept
+# before a new export starts.
+def _sweep_stale_work(work_dir: Path) -> None:
+    for path in work_dir.iterdir():
+        if path.name == ".lock":
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
             path.unlink(missing_ok=True)
 
 
@@ -2756,15 +2842,16 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 # identity mapping are final; render_site() and the page never open the build
 # store themselves (eng addendum: "the page ... never opens the build store").
 #
-# Layout of exports_dir:
-#   .lock                    held only while an export runs
-#   datenstand.json          the manifest; written last via mkstemp+replace,
-#                            the only pointer a reader needs to follow
-#   g-<inputs_hash[:12]>/    one generation's files; a new export writes a
-#                            fresh directory and only deletes the previous one
-#                            after datenstand.json points at the new one
+# Layout of exports_dir (published):
+#   datenstand.json          the manifest; replaced last, the only pointer a
+#                            reader needs to follow
+#   g-<inputs_hash[:12]>/    one generation's files, renamed in complete; the
+#                            previous one is deleted only after datenstand.json
+#                            points at the new one
 #   published.json           written by the (separate) publish script; never
 #   LICENSE-DATA.md          touched by this function
+# The lock, the store copies, the temp files and the generation being built
+# live in export_work_dir(exports_dir), on the same file system.
 def export_distribution_data(
     database_path: Path,
     exports_dir: Path,
@@ -2796,10 +2883,14 @@ def export_distribution_data(
     readiness = readiness or {}
 
     exports_dir.mkdir(parents=True, exist_ok=True)
-    with _export_lock(exports_dir):
+    work_dir = export_work_dir(exports_dir)
+    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if work_dir.stat().st_dev != exports_dir.stat().st_dev:
+        raise RuntimeError(f"export: {work_dir} and {exports_dir} must be on one file system (the generation is renamed into place)")
+    with _export_lock(work_dir):
         # Only the lock holder may sweep: a second build sweeping before it
-        # fails on the lock would delete the first build's in-flight manifest.
-        _sweep_stale_temp(exports_dir)
+        # fails on the lock would delete the first build's in-flight files.
+        _sweep_stale_work(work_dir)
         previous = _read_previous_manifest(exports_dir)
         stat = database_path.stat()
         source_sha256 = _source_sha256(database_path, stat, previous)
@@ -2825,15 +2916,16 @@ def export_distribution_data(
 
         started = time.monotonic()
         generation = f"g-{inputs_hash[:12]}"
-        gen_dir = exports_dir / generation
-        if gen_dir.exists():
-            shutil.rmtree(gen_dir)
-        gen_dir.mkdir(parents=True)
-
+        scratch = Path(tempfile.mkdtemp(dir=work_dir, prefix="export-"))
+        gen_dir = scratch / generation
+        gen_dir.mkdir()
+        published = exports_dir / generation
+        aside = scratch / "replaced"
         try:
             manifest = _run_export(
                 database_path=database_path,
                 gen_dir=gen_dir,
+                scratch_dir=scratch,
                 recipes=recipes,
                 has_page_ids=has_page_ids,
                 readiness=readiness,
@@ -2850,20 +2942,24 @@ def export_distribution_data(
                 generation=generation,
             )
 
-            manifest_fd, manifest_tmp_name = tempfile.mkstemp(dir=exports_dir, prefix=".datenstand-", suffix=".json")
-            os.close(manifest_fd)
-            manifest_tmp_path = Path(manifest_tmp_name)
+            manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            # A forced re-export of unchanged inputs names the published
+            # generation again: set it aside for the two renames, not for the
+            # whole export.
+            if published.exists():
+                published.replace(aside)
+            gen_dir.replace(published)
             manifest_tmp_path.replace(exports_dir / "datenstand.json")
         except sqlite3.Error as exc:
             # backup()/DROP COLUMN/VACUUM INTO fail with sqlite3 errors on a
             # locked or corrupt store or a full disk; surface them through the
             # CLI's clean "error:" path instead of a traceback.
-            shutil.rmtree(gen_dir, ignore_errors=True)
             raise RuntimeError(f"export: distribution copy failed: {exc}") from exc
-        except Exception:
-            shutil.rmtree(gen_dir, ignore_errors=True)
-            raise
+        finally:
+            if aside.exists() and not published.exists():
+                aside.replace(published)
+            shutil.rmtree(scratch, ignore_errors=True)
 
         for old_dir in exports_dir.glob("g-*"):
             if old_dir.name != generation:
@@ -2885,6 +2981,7 @@ def _run_export(
     *,
     database_path: Path,
     gen_dir: Path,
+    scratch_dir: Path,
     recipes: tuple[dict[str, Any], ...],
     has_page_ids: set[str],
     readiness: dict[str, str],
@@ -2900,18 +2997,18 @@ def _run_export(
     inputs_hash: str,
     generation: str,
 ) -> dict[str, Any]:
-    dist_fd, dist_name = tempfile.mkstemp(dir=gen_dir, prefix=".dist-", suffix=".sqlite")
+    dist_fd, dist_name = tempfile.mkstemp(dir=scratch_dir, prefix="dist-", suffix=".sqlite")
     os.close(dist_fd)
     dist_path = Path(dist_name)
     dist_path.unlink()  # backup() needs a fresh (non-existent or empty) target
-    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=gen_dir, prefix=".vacuum-", suffix=".sqlite")
+    vacuum_fd, vacuum_name = tempfile.mkstemp(dir=scratch_dir, prefix="vacuum-", suffix=".sqlite")
     os.close(vacuum_fd)
     vacuum_path = Path(vacuum_name)
     vacuum_path.unlink()  # VACUUM INTO requires the target to not exist
 
     dist_conn = sqlite3.connect(dist_path, isolation_level=None)
     dist_conn.row_factory = sqlite3.Row
-    source_conn = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    source_conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         source_conn.backup(dist_conn)
     except sqlite3.Error:
@@ -4160,7 +4257,7 @@ def collect_votes_archive(
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",
                 "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(item.get('index'))}"
+                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
                      if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
                     if page_path
                     else None
@@ -5690,7 +5787,7 @@ def render_catalog_json(protocol: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PAGES: bills/index.html and bills/bill-*.html - "Gesetzesvorhaben verfolgen"
+# PAGES: bills/index.html and bills/bill-*.html - "Gesetzesvorhaben"
 #
 # These pages are derived data: nothing is fetched here. collect_bill_pages()
 # walks the dossiers that were already built and reassembles them by legislative
@@ -5790,6 +5887,8 @@ def _related_vorgaenge(positions: list[dict[str, Any]], linked_docs: list[dict[s
 def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str, str] | None = None) -> list[dict[str, Any]]:
     bills: dict[str, dict[str, Any]] = {}
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
+    seen_speeches: dict[str, set[str]] = {}
+    seen_agenda_items: dict[str, set[tuple[Any, Any]]] = {}
 
     # Walk every dossier, every agenda item, every DIP position within it.
     for entry in detail_entries:
@@ -5884,11 +5983,15 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     "protocol_title": protocol.get("titel"),
                     "top_id": item.get("top_id"),
                     "heading": item.get("heading"),
-                    "href": f"{protocol_href}#top-{item.get('index')}",
+                    "href": f"{protocol_href}#top-{source_index(item.get('index'))}",
                     "speech_count": item.get("xml_speech_count") or 0,
                 }
                 bill["protocol_refs"].append(ref)
-                bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
+                # Several DIP positions can repeat one agenda item; keep its raw copy once.
+                agenda_key = (protocol_href, source_index(item["index"]) if item.get("index") is not None else id(item))
+                if agenda_key not in seen_agenda_items.setdefault(key, set()):
+                    seen_agenda_items[key].add(agenda_key)
+                    bill["raw"]["agenda_items"].append({"protocol": protocol, "item": item})
 
                 # Timeline entries ("Verlauf" on the detail page): one per linked
                 # document, plus one for the plenary debate itself.
@@ -5941,7 +6044,13 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
                     # The reviewed speaker, as on the protocol page: a shared
                     # Redner-ID's occurrences are tallied under their own person.
-                    rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+                    rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
+                    speech_href = f"{protocol_href}#{pulse_html.speech_anchor(item, speech, sequence - 1)}"
+                    # Several DIP positions can repeat the same bill's agenda item.
+                    seen = seen_speeches.setdefault(key, set())
+                    if speech_href in seen:
+                        continue
+                    seen.add(speech_href)
                     speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
                     name = derive.speaker_display_name(speaker)
                     party = pulse_html.speaker_party(speaker, protocol)
@@ -5950,10 +6059,16 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     speaker_key = f"person:{person_id}" if person_id else f"{name}|{party}"
                     entry_count = speaker_bucket.setdefault(
                         speaker_key,
-                        {"name": name, "party": party, "speech_count": 0, "char_count": 0},
+                        {"name": name, "party": party, "speech_count": 0, "char_count": 0, "speeches": []},
                     )
                     entry_count["occurrence_id"] = occurrence_id
                     entry_count["speech_count"] += 1
+                    entry_count["speeches"].append({
+                        "href": speech_href,
+                        "protocol_number": protocol.get("dokumentnummer"),
+                        "protocol_date": protocol.get("datum"),
+                        "source_page": speech.get("source_page"),
+                    })
                     entry_count["char_count"] += int(speech.get("char_count") or 0)
                     # Keep the speaker's external ids so the bill page can link to
                     # their Abgeordnete profile.
@@ -5979,20 +6094,32 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
             key=lambda speaker: (int(speaker.get("speech_count") or 0), int(speaker.get("char_count") or 0)),
             reverse=True,
         )
+        for speaker in bill["speakers"]:
+            speaker["speeches"].sort(key=lambda ref: str(ref.get("protocol_date") or ""), reverse=True)
         bill["events"] = unique_records(bill["events"], ("date", "kind", "title", "source"))
-        bill["events"].sort(key=lambda event: str(event.get("date") or ""), reverse=True)
+        # On a date tie the sitting's "Plenarprotokoll" document yields: it is the
+        # record of that day's step, not the step itself.
+        bill["events"].sort(key=lambda event: (str(event.get("date") or ""), event.get("kind") != "Plenarprotokoll"), reverse=True)
         latest = bill["events"][0] if bill["events"] else {}
         bill["latest_date"] = first_value(latest.get("date"), *(ref.get("protocol_date") for ref in bill["protocol_refs"]))
         bill["latest_step"] = first_value(latest.get("kind"), "Erfasst")
 
-    return sorted(
-        bills.values(),
-        key=lambda bill: (str(bill.get("latest_date") or ""), str(bill.get("title") or "")),
-        reverse=True,
-    )
+    # Published order: newest first, then title A-Z, then id. The overview
+    # script's default sort breaks date ties by this rank (data-rank), so the
+    # list does not reshuffle when the script runs.
+    by_title = sorted(bills.values(), key=lambda bill: (_title_sort_key(bill.get("title")), str(bill.get("id") or "")))
+    return sorted(by_title, key=lambda bill: str(bill.get("latest_date") or ""), reverse=True)
 
 
-# Collapsed raw-JSON block used in the "Rohdaten" section of a bill page.
+def _title_sort_key(title: Any) -> list[Any]:
+    """Approximates Intl.Collator('de', {sensitivity: 'base', numeric: true})."""
+    text = "".join(ch for ch in unicodedata.normalize("NFD", str(title or "")) if not unicodedata.combining(ch)).casefold()
+    # Digit runs compare by length then digits: numeric order without int(), which
+    # refuses very long runs.
+    return [(0, len(part.lstrip("0")), part.lstrip("0")) if part.isdecimal() else (1, 0, part) for part in re.split(r"(\d+)", text) if part]
+
+
+# Collapsed raw-JSON block used in the "Quellen und Daten" section of a bill page.
 def render_bill_json_details(title: str, payload: Any) -> str:
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     return (
@@ -6003,52 +6130,231 @@ def render_bill_json_details(title: str, payload: Any) -> str:
     )
 
 
-# Inline script shared by both bill pages: the "Folgen" toggle. Followed bills
-# are kept in localStorage only - there is no account and no server, so the
-# marking never leaves the visitor's browser.
+# Overview enhancement: static rows -> metadata matches -> ordered page.
+# No visitor fetch; failures restore the same complete readable rows.
 def render_bill_script() -> str:
-    return """
+    return r"""
   <script>
     (() => {
-      const key = "bundestag-pulse-followed-bills";
-      const read = () => {
-        try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); }
-        catch { return new Set(); }
+      const root = document.querySelector('[data-bills-index]');
+      if (!root) return;
+      const rows = Array.from(root.querySelectorAll('[data-bill-row]'));
+      if (!rows.length) return;
+      const list = root.querySelector('[data-bill-list]');
+      const search = root.querySelector('[data-bill-search]');
+      const year = root.querySelector('[data-bill-year]');
+      const sort = root.querySelector('[data-bill-sort]');
+      const reset = root.querySelector('[data-bill-reset]');
+      const prev = root.querySelector('[data-bill-prev]');
+      const next = root.querySelector('[data-bill-next]');
+      const pager = root.querySelector('[data-bill-pagination]');
+      const summary = root.querySelector('[data-bill-summary]');
+      const criteria = root.querySelector('[data-bill-criteria]');
+      const noResults = root.querySelector('[data-bill-no-results]');
+      const unavailable = root.querySelector('[data-bill-unavailable]');
+      const announcement = root.querySelector('[data-bill-announcement]');
+      const controls = [search, year, sort, reset, prev, next];
+      let failed = false;
+      const fallback = () => {
+        failed = true;
+        rows.forEach(row => { row.hidden = false; if (list) list.appendChild(row); });
+        controls.forEach(control => { if (control) control.disabled = true; });
+        delete root.dataset.billReady;
+        if (summary) summary.textContent = rows.length + ' Gesetzesvorhaben';
+        if (criteria) criteria.textContent = '';
+        if (noResults) noResults.hidden = true;
+        if (pager) pager.hidden = true;
+        if (reset) reset.hidden = true;
+        if (unavailable) unavailable.hidden = false;
+        if (announcement) announcement.textContent = unavailable ? unavailable.textContent : '';
       };
-      const write = (followed) => localStorage.setItem(key, JSON.stringify([...followed]));
-      const sync = () => {
-        const followed = read();
-        document.querySelectorAll("[data-follow-id]").forEach((button) => {
-          const active = followed.has(button.dataset.followId);
-          button.classList.toggle("is-followed", active);
-          button.setAttribute("aria-pressed", active ? "true" : "false");
-          button.textContent = active ? "Gefolgt" : "Folgen";
-        });
-        document.querySelectorAll("[data-bill-card]").forEach((card) => {
-          card.classList.toggle("is-followed", followed.has(card.dataset.billCard));
-        });
-        const count = document.querySelector("[data-follow-count]");
-        if (count) count.textContent = String(followed.size);
+      const guarded = fn => () => {
+        if (failed) return;
+        try { fn(); } catch (error) { console.error(error); fallback(); }
       };
-      document.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-follow-id]");
-        if (!button) return;
-        const followed = read();
-        const id = button.dataset.followId;
-        if (followed.has(id)) followed.delete(id);
-        else followed.add(id);
-        write(followed);
-        sync();
-      });
-      sync();
+      try {
+        if (!list || !summary || !criteria || !noResults || !unavailable ||
+            !announcement || !pager || controls.some(control => !control)) {
+          throw new Error('Incomplete law overview');
+        }
+        const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
+        const records = rows.map(row => ({
+          row, id: row.dataset.id, rank: Number(row.dataset.rank), title: row.dataset.title || '',
+          date: row.dataset.date || '', search: row.dataset.search || ''
+        }));
+        const years = new Set(Array.from(year.options, option => option.value));
+        const sorts = new Set(['date-desc', 'date-asc', 'title']);
+        const readUrl = () => {
+          const params = new URL(location.href).searchParams;
+          const requestedPage = params.get('page') || '1';
+          const page = /^\d+$/.test(requestedPage) ? Number(requestedPage) : 1;
+          return {
+            q: (params.get('q') || '').trim(),
+            year: years.has(params.get('year')) ? params.get('year') : '',
+            sort: sorts.has(params.get('sort')) ? params.get('sort') : 'date-desc',
+            page: Number.isSafeInteger(page) && page > 0 ? page : 1
+          };
+        };
+        let state = readUrl();
+        const syncControls = () => {
+          search.value = state.q;
+          year.value = state.year;
+          sort.value = state.sort;
+        };
+        const writeUrl = mode => {
+          if (!mode) return;
+          const url = new URL(location.href);
+          for (const [key, value] of Object.entries({
+            q: state.q, year: state.year,
+            sort: state.sort === 'date-desc' ? '' : state.sort,
+            page: state.page === 1 ? '' : String(state.page)
+          })) {
+            if (value) url.searchParams.set(key, value);
+            else url.searchParams.delete(key);
+          }
+          if (mode === 'push' && url.href === location.href) return;
+          // URL sync is a convenience: a throttled history API (Safari) must not
+          // switch the whole list to the fallback.
+          try { history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', url); } catch {}
+        };
+        const apply = (mode = 'replace', focusResults = false, announce = true) => {
+          state.q = search.value.trim();
+          state.year = year.value;
+          state.sort = sort.value;
+          // Build-time search text is NFC; a pasted decomposed umlaut must still match.
+          const terms = state.q.normalize('NFC').toLocaleLowerCase('de').split(/\s+/).filter(Boolean);
+          const matches = records.filter(record =>
+            terms.every(term => record.search.includes(term)) &&
+            (!state.year || record.date.startsWith(state.year + '-'))
+          );
+          const stableTitle = (a, b) => collator.compare(a.title, b.title) ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+          matches.sort((a, b) => {
+            if (state.sort === 'title') return stableTitle(a, b);
+            if (!a.date || !b.date) return a.date ? -1 : b.date ? 1 : state.sort === 'date-asc' ? stableTitle(a, b) : a.rank - b.rank;
+            const cmp = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+            if (state.sort === 'date-asc') return cmp || stableTitle(a, b);
+            return -cmp || a.rank - b.rank;
+          });
+          const pages = Math.max(1, Math.ceil(matches.length / 20));
+          state.page = Math.max(1, Math.min(state.page, pages));
+          const start = (state.page - 1) * 20;
+          const visible = new Set(matches.slice(start, start + 20).map(record => record.row));
+          rows.forEach(row => { row.hidden = !visible.has(row); });
+          // Non-matches follow in published order, so print (which shows every row) stays sorted.
+          const matched = new Set(matches);
+          matches.forEach(record => list.appendChild(record.row));
+          records.forEach(record => { if (!matched.has(record)) list.appendChild(record.row); });
+          summary.textContent = matches.length
+            ? (start + 1) + '–' + Math.min(start + 20, matches.length) + ' von ' + matches.length + ' Gesetzesvorhaben'
+            : '0 passende Gesetzesvorhaben';
+          criteria.textContent = [
+            state.q ? 'Suche: „' + state.q + '“' : '',
+            state.year ? 'Letzte erfasste Aktivität: ' + state.year : ''
+          ].filter(Boolean).join(' · ');
+          noResults.hidden = matches.length !== 0;
+          reset.hidden = !state.q && !state.year;
+          pager.hidden = matches.length <= 20;
+          prev.disabled = state.page === 1;
+          next.disabled = state.page === pages;
+          writeUrl(mode);
+          announcement.textContent = focusResults || !announce ? '' : summary.textContent;
+          if (focusResults) {
+            summary.focus({ preventScroll: true });
+            summary.scrollIntoView({ block: 'start', behavior: 'instant' });
+          }
+        };
+        const changed = mode => guarded(() => { state.page = 1; apply(mode); });
+        search.addEventListener('input', changed('replace'));
+        year.addEventListener('change', changed('push'));
+        sort.addEventListener('change', changed('push'));
+        reset.addEventListener('click', guarded(() => {
+          search.value = '';
+          year.value = '';
+          state.page = 1;
+          apply('push');
+        }));
+        prev.addEventListener('click', guarded(() => { state.page -= 1; apply('push', true); }));
+        next.addEventListener('click', guarded(() => { state.page += 1; apply('push', true); }));
+        const restore = guarded(() => { state = readUrl(); syncControls(); apply(null, false, false); });
+        addEventListener('popstate', restore);
+        addEventListener('pageshow', event => { if (event.persisted) restore(); });
+        syncControls();
+        apply('replace', false, false);
+        [search, year, sort, reset].forEach(control => { control.disabled = false; });
+        root.dataset.billReady = 'true';
+      } catch (error) { console.error(error); fallback(); }
     })();
   </script>
 """
 
 
-# CSS shared by bills/index.html and bills/bill-*.html. The Abgeordnete pages
-# extend this same sheet (see abgeordnete_styles), which is why the class names
-# below - .panel, .metric, .badge, .doc-row - reappear there.
+def render_bill_help_script() -> str:
+    """Hover/focus explanations leave their native glossary links usable."""
+    return """
+  <script>
+    (() => {
+      let active = null;
+      let dismissed = null;
+      let timer;
+      const hide = () => {
+        if (active) active.tip.hidden = true;
+        active = null;
+      };
+      const position = () => {
+        if (!active) return;
+        const anchor = active.link.getBoundingClientRect();
+        const box = active.tip.getBoundingClientRect();
+        const left = Math.max(12, Math.min(anchor.left, innerWidth - box.width - 12));
+        const below = anchor.bottom + 8;
+        const top = below + box.height <= innerHeight - 12
+          ? below : anchor.top - box.height - 8;
+        active.tip.style.left = left + 'px';
+        active.tip.style.top = Math.max(12, Math.min(top, innerHeight - box.height - 12)) + 'px';
+      };
+      const closeLater = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (active && document.activeElement !== active.link &&
+              !active.link.matches(':hover') && !active.tip.matches(':hover')) hide();
+        }, 100);
+      };
+      document.querySelectorAll('[data-bill-help]').forEach(link => {
+        const tip = document.getElementById(link.dataset.billHelp);
+        if (!tip) return;
+        const show = () => {
+          clearTimeout(timer);
+          if (dismissed === link) return;
+          hide();
+          tip.hidden = false;
+          active = { link, tip };
+          position();
+        };
+        link.addEventListener('mouseenter', show);
+        link.addEventListener('focus', show);
+        link.addEventListener('mouseleave', () => {
+          if (document.activeElement !== link) dismissed = null;
+          closeLater();
+        });
+        link.addEventListener('blur', () => {
+          if (!link.matches(':hover')) dismissed = null;
+          closeLater();
+        });
+        tip.addEventListener('mouseenter', () => clearTimeout(timer));
+        tip.addEventListener('mouseleave', closeLater);
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && active) { dismissed = active.link; hide(); }
+      });
+      addEventListener('resize', position);
+      addEventListener('scroll', position, true);
+    })();
+  </script>
+"""
+
+
+# Base sheet shared by the bill, Abgeordnete and vote pages (abgeordnete_styles
+# and the vote archive extend it). Bill-only rules belong in bill_page_styles().
 def bill_styles() -> str:
     return """
     :root {
@@ -6126,24 +6432,17 @@ def bill_styles() -> str:
       padding:11px 12px;
     }
     .metric strong, .field strong { display:block; margin-top:4px; font-size:21px; overflow-wrap:anywhere; }
-    .bill-list, .content-grid, .timeline, .speaker-list, .doc-list {
+    .content-grid, .speaker-list, .doc-list {
       display:grid;
       gap:12px;
       margin-top:18px;
     }
-    .bill-card, .panel {
+    .panel {
       border:1px solid var(--line);
       border-radius:8px;
       background:var(--panel);
       padding:16px;
     }
-    .bill-card {
-      display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
-      gap:16px;
-      align-items:start;
-    }
-    .bill-card.is-followed { border-color:#8bc8bd; box-shadow:inset 4px 0 0 var(--green); }
     .bill-meta {
       display:flex;
       flex-wrap:wrap;
@@ -6163,7 +6462,7 @@ def bill_styles() -> str:
       white-space:nowrap;
     }
     .actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
-    .follow-button, .open-button {
+    .open-button {
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -6178,11 +6477,6 @@ def bill_styles() -> str:
       font-weight:750;
       cursor:pointer;
     }
-    .follow-button.is-followed {
-      border-color:#89c5ba;
-      background:#e7f6f3;
-      color:#0f5f59;
-    }
     .content-grid {
       grid-template-columns:minmax(0,1fr) 360px;
       align-items:start;
@@ -6193,7 +6487,7 @@ def bill_styles() -> str:
       gap:10px;
       margin-top:14px;
     }
-    .timeline-row, .speaker-row, .doc-row {
+    .speaker-row, .doc-row {
       display:grid;
       grid-template-columns:120px minmax(0,1fr) minmax(120px,.45fr);
       gap:10px;
@@ -6201,8 +6495,8 @@ def bill_styles() -> str:
       border-bottom:1px solid #eef1f5;
       font-size:13px;
     }
-    .timeline-row:last-child, .speaker-row:last-child, .doc-row:last-child { border-bottom:0; padding-bottom:0; }
-    .timeline-row time, .timeline-row em, .speaker-row em, .doc-row em {
+    .speaker-row:last-child, .doc-row:last-child { border-bottom:0; padding-bottom:0; }
+    .speaker-row em, .doc-row em {
       color:var(--muted);
       font-style:normal;
       overflow-wrap:anywhere;
@@ -6235,10 +6529,10 @@ def bill_styles() -> str:
     }
     footer { padding-top:24px; color:var(--muted); font-size:12px; }
     @media (max-width: 900px) {
-      .page-header, .bill-card, .content-grid { grid-template-columns:1fr; }
+      .page-header, .content-grid { grid-template-columns:1fr; }
       .actions { justify-content:flex-start; }
       .summary-grid, .field-grid { grid-template-columns:1fr 1fr; }
-      .timeline-row, .speaker-row, .doc-row { grid-template-columns:1fr; gap:4px; }
+      .speaker-row, .doc-row { grid-template-columns:1fr; gap:4px; }
     }
     @media (max-width: 640px) {
       .shell { padding:18px 14px; }
@@ -6248,247 +6542,396 @@ def bill_styles() -> str:
 """
 
 
-# PAGE: bills/index.html - the list of detected legislative procedures.
+
+def bill_page_styles() -> str:
+    """Bill-only refinements; the shared MP/vote base sheet stays independent."""
+    return bill_styles() + """
+    .bill-page main { min-width:0; }
+    .bill-page .page-header { grid-template-columns:minmax(0,1fr); }
+    .bill-page p { max-width:72ch; font-size:16px; line-height:1.5; }
+    .bill-page h1, .bill-page h2, .bill-page h3, .bill-page a { overflow-wrap:anywhere; }
+    .bill-page .eyebrow { font-size:14px; text-transform:none; letter-spacing:0; }
+    .bill-page a { transition:color 140ms ease, border-color 140ms ease; }
+    .bill-page :is(button,input,select,summary):focus-visible {
+      outline:2px solid var(--blue); outline-offset:3px;
+    }
+    .bill-page .local-nav a, .bill-section-nav a { min-height:44px; background:var(--panel); font-size:16px; }
+    .bill-controls {
+      display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);
+      gap:12px; padding:22px 0 18px;
+    }
+    .bill-control { display:grid; align-content:start; gap:6px; min-width:0; font-size:16px; color:var(--ink); }
+    .bill-control label { line-height:1.4; }
+    .bill-control :is(input,select), .bill-page .bill-button {
+      min-height:44px; min-width:0; width:100%; border:1px solid var(--line);
+      border-radius:6px; padding:10px 12px; background:var(--panel); color:var(--ink); font:inherit;
+      transition:border-color 140ms ease, background-color 140ms ease;
+    }
+    .bill-control input:hover, .bill-control select:hover, .bill-page .bill-button:hover { border-color:var(--blue); }
+    .bill-control small { font-size:14px; color:var(--muted); line-height:1.4; }
+    .bill-page .bill-button { width:auto; cursor:pointer; color:var(--blue); }
+    .bill-page .bill-button:disabled { opacity:.55; cursor:default; }
+    .bill-results-header { display:flex; flex-wrap:wrap; align-items:start; justify-content:space-between; gap:12px; }
+    .bill-page .bill-result-summary { font-size:18px; font-weight:650; color:var(--ink); margin:0; scroll-margin-top:18px; }
+    .bill-page .bill-coverage, .bill-page .bill-criteria, .bill-page .bill-result-meta,
+    .bill-page .bill-unavailable { font-size:14px; color:var(--muted); }
+    .bill-page .bill-criteria:empty { display:none; }
+    .bill-results { margin-top:20px; }
+    .bill-result { border-top:1px solid var(--line); padding:20px 0; }
+    .bill-result h2 { max-width:58ch; }
+    .bill-page .bill-result-context { margin-top:8px; color:var(--ink); }
+    .bill-result[hidden], .bill-page [hidden] { display:none; }
+    .bill-pagination { display:flex; flex-wrap:wrap; gap:12px; padding:14px 0; border-top:1px solid var(--line); }
+    .bill-empty { padding:24px 0; }
+    .bill-empty strong { font-size:18px; }
+    .bill-section-nav { display:flex; flex-wrap:wrap; gap:8px 16px; margin:16px 0; }
+    .bill-section-nav a { display:inline-flex; align-items:center; padding:8px 12px; border:1px solid var(--line); border-radius:6px; }
+    .bill-page .bill-context { margin-top:14px; }
+    .bill-page .bill-caveat { font-size:14px; }
+    .bill-detail-grid { display:grid; grid-template-columns:minmax(0,1fr) 360px; grid-template-rows:min-content 1fr; gap:12px; align-items:start; }
+    .bill-reading-lead { grid-column:1; grid-row:1; min-width:0; }
+    .bill-support { grid-column:2; grid-row:1 / span 2; display:grid; gap:12px; min-width:0; background:transparent !important; }
+    .bill-reading-rest { grid-column:1; grid-row:2; display:grid; gap:12px; min-width:0; }
+    .bill-page section { scroll-margin-top:18px; }
+    .bill-page .panel { min-width:0; }
+    .bill-page .panel h2 { margin-bottom:10px; }
+    .bill-page .panel h3 { font-size:18px; margin-top:22px; }
+    .bill-events, .bill-documents, .bill-debates, .bill-speakers, .bill-votes, .bill-related {
+      list-style:none; padding:0; margin:14px 0 0; display:grid; gap:14px;
+    }
+    .bill-events li, .bill-documents li, .bill-speakers li, .bill-votes li,
+    .bill-debates li, .bill-related li { min-width:0; border-bottom:1px solid var(--line); padding-bottom:14px; font-size:16px; line-height:1.5; overflow-wrap:anywhere; }
+    .bill-events li:last-child, .bill-documents li:last-child, .bill-speakers li:last-child,
+    .bill-votes li:last-child, .bill-debates li:last-child, .bill-related li:last-child { border-bottom:0; padding-bottom:0; }
+    .bill-page .bill-event-date { font-size:16px; margin-top:20px; color:var(--muted); }
+    .bill-speaker-name, .bill-speaker-role, .bill-speaker-count { display:block; }
+    .bill-speaker-name { font-weight:650; }
+    .bill-speaker-role { margin-top:3px; }
+    .bill-speaker-count { margin-top:5px; font-size:14px; color:var(--muted); }
+    .bill-page .bill-document-meta { font-size:14px; }
+    .bill-speaker-speeches { margin-top:5px; }
+    .bill-speaker-speeches summary, .bill-speech-links a { min-height:44px; padding:10px 0; font-size:14px; line-height:1.5; }
+    .bill-speaker-speeches summary { cursor:pointer; color:var(--blue); }
+    .bill-speech-links a { display:block; }
+    .bill-more-speakers { margin-top:16px; }
+    .bill-more-speakers summary, .bill-page .raw-block summary { min-height:44px; cursor:pointer; font-size:16px; line-height:1.5; padding:10px 0; color:var(--blue); }
+    .bill-page .raw-block { background:var(--panel); border-color:var(--line); }
+    .bill-page .raw-block summary { padding:10px; }
+    .bill-term-link { text-decoration-line:underline; text-decoration-style:dotted; text-underline-offset:4px; }
+    .bill-tooltip {
+      position:fixed; z-index:20; width:max-content; max-width:min(320px,calc(100vw - 24px));
+      max-height:calc(100vh - 24px); overflow:auto;
+      padding:12px; border:1px solid var(--line); border-radius:6px; background:var(--panel);
+      color:var(--ink); font-size:14px; font-weight:400; line-height:1.5;
+      animation:bill-help-appear 120ms ease-out;
+    }
+    .bill-sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+    @keyframes bill-help-appear { from { opacity:0; } to { opacity:1; } }
+    @media (min-width:641px) and (max-width:1023px) {
+      .bill-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .bill-control:first-child { grid-column:1 / -1; }
+    }
+    @media (min-width:1024px) { .bill-control label { min-height:2.8em; } }
+    @media (max-width:900px) {
+      .bill-detail-grid { grid-template-columns:minmax(0,1fr); grid-template-rows:none; }
+      .bill-detail-grid > * { grid-column:auto; grid-row:auto; }
+    }
+    @media (max-width:640px) { .bill-controls { grid-template-columns:minmax(0,1fr); } }
+    @media (prefers-reduced-motion:reduce) {
+      .bill-page a, .bill-control :is(input,select), .bill-page .bill-button { transition:none; }
+      .bill-tooltip { animation:none; }
+    }
+    @media print {
+      .bill-page [data-bill-row][hidden] { display:block !important; }
+      .bill-controls, .bill-pagination, .bill-tooltip, .bill-unavailable,
+      .bill-criteria, .bill-result-summary, .bill-empty[data-bill-no-results],
+      .bill-page [data-bill-reset] { display:none !important; }
+      .bill-result, .bill-page .panel { break-inside:avoid; }
+    }
+"""
+
+
+# PAGE: bills/index.html. All rows are readable before enhancement runs.
 def render_bills_index(bills: list[dict[str, Any]], features: Selection | None = None) -> str:
     features = features or publication_selection()
-    # One card per bill: type and latest date, title linking to the detail page,
-    # who introduced it, and badges counting documents, plenary appearances and
-    # roll-call votes. Following is a page-local browser interaction.
     rows = []
-    for bill in bills:
-        introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
-        rows.append(
-            f"""
-            <article class="bill-card" data-bill-card="{pulse_html.esc(bill['id'])}">
-              <div>
-                <span class="eyebrow">{pulse_html.esc(bill.get('type'))} · {pulse_html.esc(bill.get('latest_date'))}</span>
-                <h2><a href="{pulse_html.esc(bill['slug'])}.html">{pulse_html.esc(bill.get('title'))}</a></h2>
-                <p>{pulse_html.esc(introduced)}</p>
-                <div class="bill-meta">
-                  <span class="badge">{pulse_html.esc(bill.get('latest_step'))}</span>
-                  <span class="badge">{pulse_html.esc(len(bill.get('documents') or []))} Drucksachen</span>
-                  <span class="badge">{pulse_html.esc(len(bill.get('protocol_refs') or []))} Plenarstellen</span>
-                  <span class="badge">{pulse_html.esc(len(bill.get('votes') or []))} Abstimmungen</span>
-                </div>
-              </div>
-              <div class="actions">
-                {'<button class="follow-button" type="button" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>'}
-                <a class="open-button" href="{pulse_html.esc(bill['slug'])}.html">Details</a>
-              </div>
-            </article>
-            """
-        )
-
+    years = set()
+    for index, bill in enumerate(bills):
+        parsed_date = pulse_html._parse_datum(bill.get("latest_date"))
+        date_iso = parsed_date.isoformat() if parsed_date else ""
+        if parsed_date:
+            years.add(parsed_date.year)
+        title = str(bill.get("title") or "Unbenanntes Gesetzesvorhaben")
+        search = unicodedata.normalize("NFC", " ".join([title, *(str(doc.get("dokumentnummer") or "") for doc in bill.get("documents") or [])])).lower()
+        date_label = pulse_html.format_date(date_iso) or "Datum nicht erfasst"
+        date_html = f'<time datetime="{date_iso}">{date_label}</time>' if date_iso else date_label
+        event = pulse_html.render_parliamentary_term(str(bill.get("latest_step") or "Erfasster Vorgang"), tip_id=f"result-{index}-event")
+        counts = " · ".join((
+            pulse_html.format_count(len(bill.get("documents") or []), "Dokument", "Dokumente"),
+            pulse_html.format_count(len(bill.get("protocol_refs") or []), "Debatte", "Debatten"),
+            pulse_html.format_count(len(bill.get("votes") or []), "namentliche Abstimmung", "namentliche Abstimmungen"),
+        ))
+        rows.append(f"""
+        <article class="bill-result" data-bill-row data-rank="{index}" data-id="{pulse_html.esc(bill['id'])}"
+          data-title="{pulse_html.esc(title)}" data-date="{date_iso}" data-search="{pulse_html.esc(search)}">
+          <h2><a href="{pulse_html.esc(bill['slug'])}.html">{pulse_html.esc(title)}</a></h2>
+          <p class="bill-result-context">Zuletzt erfasst: {date_html} · {event}</p>
+          <p class="bill-result-meta">{pulse_html.esc(counts)}</p>
+        </article>""")
+    controls = ""
+    results = """<div class="bill-empty"><strong>Noch keine Gesetzesvorhaben verfügbar.</strong>
+      <p>Hier erscheinen Vorhaben aus den erfassten Sitzungsauswertungen.</p>
+      <p><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></p></div>"""
+    if rows:
+        year_options = "".join(f'<option value="{year}">{year}</option>' for year in sorted(years, reverse=True))
+        controls = f"""
+      <div class="bill-controls" aria-label="Gesetzesvorhaben finden">
+        <div class="bill-control"><label for="bill-search">Gesetzesvorhaben suchen</label>
+          <input id="bill-search" type="search" data-bill-search aria-describedby="bill-search-hint" disabled>
+          <small id="bill-search-hint">Titel oder Drucksachennummer</small></div>
+        <div class="bill-control"><label for="bill-year">Jahr der letzten erfassten Aktivität</label>
+          <select id="bill-year" data-bill-year aria-describedby="bill-year-hint" disabled><option value="">Alle Jahre</option>{year_options}</select>
+          <small id="bill-year-hint">Erfasste Aktivität, nicht das Jahr der Einbringung.</small></div>
+        <div class="bill-control"><label for="bill-sort">Sortierung</label>
+          <select id="bill-sort" data-bill-sort disabled><option value="date-desc">Zuletzt erfasst</option>
+            <option value="date-asc">Älteste zuerst</option><option value="title">Titel A–Z</option></select></div>
+      </div>"""
+        results = f"""
+      <div class="bill-results-header">
+        <div><p class="bill-result-summary" data-bill-summary tabindex="-1">{len(bills)} Gesetzesvorhaben</p>
+          <p class="bill-coverage">Die Liste zeigt Vorhaben aus den hier ausgewerteten Sitzungen, nicht alle Gesetzesvorhaben.</p>
+          <p class="bill-criteria" data-bill-criteria></p></div>
+        <button type="button" class="bill-button" data-bill-reset disabled hidden>Suche und Filter zurücksetzen</button>
+      </div>
+      <p class="bill-unavailable" data-bill-unavailable hidden>Suche derzeit nicht verfügbar. Alle erfassten Gesetzesvorhaben werden angezeigt.</p>
+      <noscript><p class="bill-unavailable">Die interaktive Suche benötigt JavaScript. Alle erfassten Gesetzesvorhaben werden angezeigt; nutze auch die Suche deines Browsers.</p></noscript>
+      <div class="bill-empty" data-bill-no-results hidden><strong>Keine passenden Gesetzesvorhaben gefunden.</strong>
+        <p>Versuche einen anderen Suchbegriff oder setze Suche und Filter zurück.</p></div>
+      <div class="bill-results" data-bill-list>{''.join(rows)}</div>
+      <nav class="bill-pagination" data-bill-pagination aria-label="Ergebnisseiten" hidden>
+        <button class="bill-button" data-bill-prev type="button" disabled>Zurück</button>
+        <button class="bill-button" data-bill-next type="button" disabled>Weiter</button>
+      </nav>
+      <span class="bill-sr-only" data-bill-announcement role="status" aria-live="polite" aria-atomic="true"></span>"""
     return f"""<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bundestag-Puls · Gesetzesvorhaben verfolgen</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · Gesetzesvorhaben</title>
   {pulse_html.page_head(features)}
-  <style>{bill_styles()}</style>
+  <style>{bill_page_styles()}</style>
 </head>
-<body>
+<body class="bill-page">
   <div class="shell">
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
-    <header class="page-header">
-      <div>
-        <h1>Gesetzesvorhaben verfolgen</h1>
-        <p>Jeder Eintrag wird aus den erzeugten Plenarprotokoll-Dossiers, DIP-Vorgangspositionen und verknüpften Drucksachen abgeleitet. Es werden keine ML- oder LLM-Zusammenfassungen verwendet.</p>
-      </div>
-      <div class="follow-summary">
-        <span class="eyebrow">Gefolgt in diesem Browser</span>
-        <strong data-follow-count>0</strong>
-      </div>
-    </header>
-    <section class="summary-grid">
-      <div class="metric"><span>Aktuelle Gesetzesvorhaben</span><strong>{pulse_html.esc(len(bills))}</strong></div>
-      <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(sum(len(b.get('documents') or []) for b in bills))}</strong></div>
-      <div class="metric"><span>Plenarstellen</span><strong>{pulse_html.esc(sum(len(b.get('protocol_refs') or []) for b in bills))}</strong></div>
-      <div class="metric"><span>Abstimmungen</span><strong>{pulse_html.esc(sum(len(b.get('votes') or []) for b in bills))}</strong></div>
-    </section>
-    <section class="bill-list">
-      {''.join(rows) if rows else '<p>In den erzeugten Detaildossiers wurden noch keine Gesetzgebungsvorgänge erkannt.</p>'}
-    </section>
-    <footer>Die Folge-Markierung wird lokal im Browser gespeichert. Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> · <a href="../sources.html">Quellen und Methode</a></footer>
+    <header class="page-header"><div><h1>Gesetzesvorhaben</h1>
+      <p>Finde Gesetzesvorhaben und lies nach, wie sie im Bundestag beraten wurden.</p></div></header>
+    <main data-bills-index>{controls}{results}</main>
+    <footer><a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
-  {render_bill_script()}
+  {render_bill_script() if rows else ''}
+  {render_bill_help_script() if rows else ''}
   {pulse_html.page_scripts(features)}
 </body>
 </html>
 """
 
 
-# PAGE: bills/bill-<slug>.html - everything known about one procedure.
 def _bill_event_href(value: Any) -> str:
     """Accept an allowlisted official source or our generated dossier anchor."""
     href = str(value or "")
     if href.startswith("https://"):
         return pulse_html.source_url(href, "bundestag-dip")
-    if re.fullmatch(r"\.\./protocols/plenarprotokoll-[a-z0-9-]+\.html#top-[0-9]+", href):
+    if re.fullmatch(r"\.\./protocols/plenarprotokoll-[a-z0-9-]+\.html#(?:top-[0-9]+|speech-[0-9]+-[A-Za-z0-9_-]+)", href):
         return href
     raise publication.PublicationStateError("unsafe bill timeline URL")
 
 
+def _is_bundesrat_document(doc: dict[str, Any]) -> bool:
+    """DIP marks Bundesrat papers by a "(B)" number suffix and the /brd/ path."""
+    number = str(doc.get("dokumentnummer") or "").strip()
+    return number.endswith("(B)") or "/brd/" in str(doc.get("url") or "")
+
+
+# PAGE: bills/bill-<slug>.html. DOM order stays readable without scripts.
 def render_bill_detail(
     bill: dict[str, Any],
     mp_lookup: dict[str, str] | None = None,
     features: Selection | None = None,
 ) -> str:
     features = features or publication_selection()
-    # The four list sections of the page are built first, then interpolated into
-    # the template: Verlauf (timeline), Drucksachen, Rednerinnen und Redner
-    # (top 12, linked to their MP profile when resolvable) and Plenarstellen.
-    introduced = ", ".join(bill.get("introduced_by") or []) or "Urheber nicht im Rohdatensatz"
-    events = []
+    term = pulse_html.render_parliamentary_term
+    events_by_date: dict[str, list[dict[str, Any]]] = {}
     for event in bill.get("events") or []:
-        title = pulse_html.esc(event.get("title") or "")
-        if event.get("url"):
-            title = (
-                f'<a href="{pulse_html.esc(_bill_event_href(event.get("url")))}">{title}</a>'
+        parsed = pulse_html._parse_datum(event.get("date"))
+        events_by_date.setdefault(parsed.isoformat() if parsed else "", []).append(event)
+    timeline = []
+    event_index = 0
+    for date_iso in sorted(events_by_date, reverse=True):
+        event_rows = []
+        for event in events_by_date[date_iso]:
+            kind = str(event.get("kind") or "Erfasster Vorgang")
+            label = pulse_html.esc(event.get("source") or "Quelle öffnen")
+            if event.get("url"):
+                label = f'<a href="{pulse_html.esc(_bill_event_href(event["url"]))}">{label}</a>'
+            elif not event.get("source"):
+                label = "Quelle nicht verknüpft"
+            distinct_title = str(event.get("title") or "")
+            title_html = f'<p>{pulse_html.esc(distinct_title)}</p>' if distinct_title and distinct_title != bill.get("title") else ""
+            event_rows.append(f'<li><strong>{term(kind, tip_id=f"event-{event_index}")}</strong>{title_html}<p>{label}</p></li>')
+            event_index += 1
+        date_label = pulse_html.format_date(date_iso) or "Datum nicht erfasst"
+        date_html = f'<time datetime="{date_iso}">{date_label}</time>' if date_iso else date_label
+        timeline.append(f'<div><h3 class="bill-event-date">{date_html}</h3><ul class="bill-events">{"".join(event_rows)}</ul></div>')
+
+    documents = []
+    for index, doc in enumerate(bill.get("documents") or []):
+        number = pulse_html.esc(doc.get("dokumentnummer") or "Dokument ohne Nummer")
+        if doc.get("url"):
+            number = f'<a href="{pulse_html.esc(pulse_html.source_url(doc["url"], "bundestag-dip"))}">{number}</a>'
+        kind = str(doc.get("drucksachetyp") or doc.get("dokumentart") or "Dokumenttyp nicht erfasst")
+        # Bundesrat papers ("557/25(B)", served under /brd/) are not Bundestag
+        # Drucksachen; the glossary's Drucksache tooltip would misattribute them.
+        if _is_bundesrat_document(doc):
+            document_label_html = "Bundesrat-Drucksache"
+        else:
+            document_label = "Plenarprotokoll" if "plenarprotokoll" in kind.lower() else (
+                "Drucksache" if kind in {"Gesetzentwurf", "Beschlussempfehlung", "Beschlussempfehlung und Bericht", "Bericht", "Unterrichtung", "Stellungnahme"} else "Dokument"
             )
-        events.append(
-            '<li class="timeline-row">'
-            f'<time>{pulse_html.esc(event.get("date") or "")}</time>'
-            f'<strong>{title}<br><span class="eyebrow">{pulse_html.esc(event.get("kind") or "")}</span></strong>'
-            f'<em>{pulse_html.esc(event.get("source") or "")}</em>'
-            "</li>"
-        )
+            document_label_html = term(document_label, tip_id=f"document-{index}-label")
+        authors = pulse_html.esc(", ".join(doc.get("urheber") or []) or "Urheber nicht erfasst")
+        documents.append(f'<li><strong>{document_label_html} {number}</strong><p>{term(kind, tip_id=f"document-{index}-kind")}</p><p class="bill-document-meta">{authors}</p></li>')
 
-    docs = []
-    for doc in bill.get("documents") or []:
-        number = pulse_html.esc(doc.get("dokumentnummer") or "")
-        label = (
-            f'<a href="{pulse_html.esc(pulse_html.source_url(doc.get("url"), "bundestag-dip"))}">{number}</a>'
-            if doc.get("url")
-            else number
-        )
-        docs.append(
-            '<li class="doc-row">'
-            f"<strong>{label}</strong>"
-            f'<span>{pulse_html.esc(doc.get("drucksachetyp") or "")}</span>'
-            f'<em>{pulse_html.esc(", ".join(doc.get("urheber") or []))}</em>'
-            "</li>"
-        )
-
-    related_rows = []
-    for related in bill.get("related") or []:
-        numbers = ", ".join(
-            str(doc.get("dokumentnummer")) for doc in related.get("documents") or [] if doc.get("dokumentnummer")
-        )
-        related_rows.append(
-            '<li class="doc-row">'
-            f"<strong>{pulse_html.esc(related.get('title') or 'Ohne Titel')}</strong>"
-            f'<span>{pulse_html.esc(related.get("type") or "")}</span>'
-            f"<em>{pulse_html.esc(numbers)}</em>"
-            "</li>"
-        )
-    related_panel = (
-        '<section class="panel"><h2>Weitere Vorgänge zu diesem Tagesordnungspunkt</h2>'
-        f'<ul class="doc-list">{"".join(related_rows)}</ul></section>'
-        if related_rows
-        else ""
-    )
+    related = []
+    for row in bill.get("related") or []:
+        numbers = ", ".join(str(doc.get("dokumentnummer")) for doc in row.get("documents") or [] if doc.get("dokumentnummer"))
+        related.append(f'<li><strong>{pulse_html.esc(row.get("title") or "Ohne Titel")}</strong><p>{pulse_html.esc(row.get("type") or "")}{" · " + pulse_html.esc(numbers) if numbers else ""}</p></li>')
+    related_html = (
+        '<h3>Weitere Vorgänge zu diesem Tagesordnungspunkt</h3>'
+        '<p>Diese Vorgänge wurden am selben Tagesordnungspunkt beraten. Sie sind nicht automatisch Änderungen dieses Vorhabens.</p>'
+        f'<ul class="bill-related">{"".join(related)}</ul>'
+    ) if related else ""
 
     speakers = []
-    for speaker in (bill.get("speakers") or [])[:12]:
-        mp_href = pulse_html.mp_page_href(
-            {
-                "abgeordnetenwatch": {"id": speaker.get("aw_id"), "match": speaker.get("aw_match")},
-                "occurrence_id": speaker.get("occurrence_id"),
-                "xml_redner_id": speaker.get("xml_redner_id"),
-            },
-            mp_lookup,
-            "../abgeordnete/",
+    for speaker in bill.get("speakers") or []:
+        href = pulse_html.mp_page_href(
+            {"abgeordnetenwatch": {"id": speaker.get("aw_id"), "match": speaker.get("aw_match")},
+             "occurrence_id": speaker.get("occurrence_id"), "xml_redner_id": speaker.get("xml_redner_id")},
+            mp_lookup, "../abgeordnete/",
         )
-        name = pulse_html.esc(speaker.get("name"))
-        name_html = f'<a href="{pulse_html.esc(mp_href)}">{name}</a>' if mp_href else name
-        speakers.append(
-            '<li class="speaker-row">'
-            f'<strong>{name_html}</strong>'
-            f'<span>{pulse_html.esc(speaker.get("party"))}</span>'
-            f'<em>{pulse_html.esc(speaker.get("speech_count"))} Reden · {pulse_html.esc(pulse_html.format_int(int(speaker.get("char_count") or 0)))} Zeichen</em>'
-            "</li>"
-        )
+        name = pulse_html.esc(speaker.get("name") or "Name nicht erfasst")
+        name_html = f'<a href="{pulse_html.esc(href)}">{name}</a>' if href else name
+        counts = pulse_html.format_count(int(speaker.get("speech_count") or 0), "Rede", "Reden")
+        chars = pulse_html.format_int(int(speaker.get("char_count") or 0))
+        speech_links = []
+        speech_refs = speaker.get("speeches") or []
+        for index, ref in enumerate(speech_refs, start=1):
+            date = pulse_html.format_date(ref.get("protocol_date")) or "Datum nicht erfasst"
+            source = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+            page = pulse_html.source_page_text(ref.get("source_page"))
+            action = 'Rede lesen' if len(speech_refs) == 1 else f'Rede {index}'
+            label = f'{action} · {date} · {source}' + (f' · S. {page}' if page else '')
+            speech_links.append(f'<a href="{pulse_html.esc(_bill_event_href(ref["href"]))}">{pulse_html.esc(label)}</a>')
+        if len(speech_links) == 1:
+            speech_html = f'<div class="bill-speech-links">{speech_links[0]}</div>'
+        elif speech_links:
+            speech_html = f'<details class="bill-speaker-speeches"><summary>{counts} ansehen</summary><div class="bill-speech-links">{"".join(speech_links)}</div></details>'
+        else:
+            speech_html = ""
+        count_html = f'{chars} Zeichen' if speech_links else f'{counts} · {chars} Zeichen'
+        speakers.append(f'<li><strong class="bill-speaker-name">{name_html}</strong><span class="bill-speaker-role">{pulse_html.esc(speaker.get("party") or "Zugehörigkeit nicht erfasst")}</span>{speech_html}<span class="bill-speaker-count">{count_html}</span></li>')
+    speaker_list = f'<ul class="bill-speakers">{"".join(speakers[:12])}</ul>' if speakers else '<p>Keine Reden in den erfassten Daten zugeordnet.</p>'
+    if len(speakers) > 12:
+        speaker_list += f'<details class="bill-more-speakers"><summary>Weitere Rednerinnen und Redner ({len(speakers) - 12})</summary><ul class="bill-speakers">{"".join(speakers[12:])}</ul></details>'
 
-    refs = []
-    for ref in bill.get("protocol_refs") or []:
-        refs.append(
-            f'<a class="source-link" href="{pulse_html.esc(ref.get("href"))}">'
-            f'BT-PlPr {pulse_html.esc(ref.get("protocol_number"))} · {pulse_html.esc(ref.get("top_id"))}'
-            "</a>"
-        )
+    debates = []
+    for index, ref in enumerate(bill.get("protocol_refs") or []):
+        label = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+        if ref.get("href"):
+            label = f'<a href="{pulse_html.esc(_bill_event_href(ref["href"]))}">{pulse_html.esc(label)}</a>'
+        else:
+            label = pulse_html.esc(label)
+        date_label = pulse_html.format_date(ref.get("protocol_date")) or "Datum nicht erfasst"
+        # Only TOP ids get the Tagesordnungspunkt term; Zusatzpunkt or
+        # Einzelplan ids keep their own label.
+        top_id = " ".join(str(ref.get("top_id") or "").split())
+        top_match = re.fullmatch(r"(?:TOP|Tagesordnungspunkt)(?: (.+))?", top_id)
+        if top_match or not top_id:
+            number = top_match.group(1) if top_match else None
+            top = f'{term("Tagesordnungspunkt", tip_id=f"debate-{index}")} {pulse_html.esc(number or "nicht erfasst")}'
+        else:
+            top = pulse_html.esc(top_id)
+        debates.append(f'<li><strong>{label}</strong><p>{date_label} · {top}</p></li>')
 
+    votes = []
+    for vote in bill.get("votes") or []:
+        label = pulse_html.esc(vote.get("title") or "Namentliche Abstimmung")
+        if vote.get("detail_url"):
+            label = f'<a href="{pulse_html.esc(pulse_html.source_url(vote["detail_url"], "bundestag-roll-call"))}">{label}</a>'
+        date_label = pulse_html.format_date(vote.get("date")) or "Datum nicht erfasst"
+        votes.append(f'<li><strong>{label}</strong><p>{date_label}</p></li>')
+
+    latest_date = pulse_html.format_date(bill.get("latest_date")) or "Datum nicht erfasst"
+    latest_step = term(str(bill.get("latest_step") or "Erfasster Vorgang"), tip_id="latest-event")
+    latest = next((event for event in bill.get("events") or [] if event.get("date") == bill.get("latest_date") and event.get("kind") == bill.get("latest_step")), {})
+    source_link = f' · <a href="{pulse_html.esc(_bill_event_href(latest["url"]))}">Quelle öffnen</a>' if latest.get("url") else ""
+    authors = pulse_html.esc(", ".join(bill.get("introduced_by") or []) or "nicht erfasst")
+    sections = (("verlauf", "Verlauf"), ("debatten", "Debatten"), ("redner", "Rednerinnen und Redner"),
+                ("abstimmungen", "Abstimmungen"), ("dokumente", "Dokumente"), ("quellen", "Quellen und Daten"))
+    anchors = "".join(f'<a href="#{id}">{label}</a>' for id, label in sections)
     return f"""<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{pulse_html.esc(bill.get('title'))} · Bundestag-Puls</title>
   {pulse_html.page_head(features)}
-  <style>{bill_styles()}</style>
+  <style>{bill_page_styles()}</style>
 </head>
-<body>
+<body class="bill-page">
   <div class="shell">
     {pulse_html.render_global_header(depth=1, active="bills", features=features)}
-    <header class="page-header">
-      <div>
-        <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation">
-          <a href="index.html">Alle Gesetzesvorhaben</a>
-        </nav>
-        <span class="eyebrow">{pulse_html.esc(bill.get('type'))}</span>
-        <h1>{pulse_html.esc(bill.get('title'))}</h1>
-        <p>Rohdatenübersicht zu Vorgang, Drucksachen, Plenarstellen, Rednern und Abstimmungen.</p>
-      </div>
-      <div class="actions">
-        {'<button class="follow-button" type="button" data-follow-id="' + pulse_html.esc(bill['id']) + '" aria-pressed="false">Folgen</button>'}
-      </div>
-    </header>
-    <section class="summary-grid">
-      <div class="metric"><span>Letzter Schritt</span><strong>{pulse_html.esc(bill.get('latest_step'))}</strong></div>
-      <div class="metric"><span>Letztes Datum</span><strong>{pulse_html.esc(bill.get('latest_date'))}</strong></div>
-      <div class="metric"><span>Drucksachen</span><strong>{pulse_html.esc(len(bill.get('documents') or []))}</strong></div>
-      <div class="metric"><span>Vorgang</span><strong>{pulse_html.esc(bill.get('vorgang_id') or 'n/a')}</strong></div>
-    </section>
-    <div class="content-grid">
-      <main>
-        <section class="panel">
-          <h2>Überblick</h2>
-          <div class="field-grid">
-            <div class="field"><span>Eingebracht von</span><strong>{pulse_html.esc(introduced)}</strong></div>
-            <div class="field"><span>Primäre Drucksache</span><strong>{pulse_html.esc(bill.get('primary_document') or 'n/a')}</strong></div>
-            <div class="field"><span>Plenarstellen</span><strong>{pulse_html.esc(len(bill.get('protocol_refs') or []))}</strong></div>
-            <div class="field"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(len(bill.get('votes') or []))}</strong></div>
-          </div>
+    <header class="page-header"><div>
+      <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation"><a href="index.html">Alle Gesetzesvorhaben</a></nav>
+      <span class="eyebrow">Gesetzesvorhaben</span><h1>{pulse_html.esc(bill.get('title') or 'Unbenanntes Gesetzesvorhaben')}</h1>
+      <p class="bill-context">Zuletzt erfasst: {latest_date} · {latest_step}{source_link}</p>
+      <p class="bill-caveat">Der zuletzt erfasste Schritt beschreibt die vorliegenden Quellen, nicht zwingend den aktuellen Rechtsstand.</p>
+    </div></header>
+    <nav class="bill-section-nav" aria-label="Abschnitte dieses Gesetzesvorhabens">{anchors}</nav>
+    <main class="bill-detail-grid">
+      <div class="bill-reading-lead"><section class="panel" id="verlauf"><h2>Verlauf</h2>
+        {''.join(timeline) if timeline else '<p>Keine Verlaufseinträge in den erfassten Daten.</p>'}
+      </section></div>
+      <aside class="bill-support" aria-label="Debatten und Beteiligte">
+        <section class="panel" id="debatten"><h2>Debatten</h2>
+          <p>Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.</p>
+          {'<ul class="bill-debates">' + ''.join(debates) + '</ul>' if debates else '<p>Keine Debatten in den erfassten Daten verknüpft.</p>'}
         </section>
-        <section class="panel">
-          <h2>Verlauf</h2>
-          <ul class="timeline">{''.join(events) if events else '<li>Keine Verlaufseinträge.</li>'}</ul>
+        <section class="panel" id="redner"><h2>Rednerinnen und Redner</h2>
+          <p>Erfasste Personen: {len(speakers)}. Nach Zahl der erfassten Reden.</p>
+          <p>Angegeben ist die {term('Fraktion', tip_id='speaker-fraktion')} oder {term('Sprechrolle', tip_id='speaker-role')} im Protokoll. Die Reden am gemeinsamen Tagesordnungspunkt können mehrere Vorhaben betreffen.</p>
+          {speaker_list}
         </section>
-        <section class="panel">
-          <h2>Drucksachen</h2>
-          <ul class="doc-list">{''.join(docs) if docs else '<li>Keine verknüpften Drucksachen.</li>'}</ul>
-        </section>
-        {related_panel}
-        <section class="panel">
-          <h2>Rohdaten</h2>
-          {render_bill_json_details("Normalisierter Bill-Datensatz", bill)}
-        </section>
-      </main>
-      <aside>
-        <section class="panel">
-          <h2>Plenarstellen</h2>
-          <div class="bill-meta">{''.join(refs) if refs else '<span class="badge">Keine Plenarstelle</span>'}</div>
-        </section>
-        <section class="panel">
-          <h2>Rednerinnen und Redner</h2>
-          <ul class="speaker-list">{''.join(speakers) if speakers else '<li>Keine Reden zugeordnet.</li>'}</ul>
+        <section class="panel" id="abstimmungen"><h2>Abstimmungen</h2>
+          <p>Hier sind nur verknüpfte {term('namentliche Abstimmungen', tip_id='vote-kind')} aufgeführt.</p>
+          {'<ul class="bill-votes">' + ''.join(votes) + '</ul>' if votes else '<p>Keine namentliche Abstimmung in den erfassten Daten verknüpft.</p>'}
         </section>
       </aside>
-    </div>
-    <footer>Diese Seite beschreibt nur Felder, die in den erzeugten Rohdaten vorhanden sind. Automatische Zusammenfassungen sind bewusst nicht enthalten. <a href="index.html">Gesetzesvorhaben verfolgen</a> · <a href="../overview.html">Plenarprotokoll-Katalog</a></footer>
+      <div class="bill-reading-rest">
+        <section class="panel" id="dokumente"><h2>Dokumente</h2>
+          <p>Urheber der verknüpften Dokumente: {authors}.</p>
+          {'<ul class="bill-documents">' + ''.join(documents) + '</ul>' if documents else '<p>Keine Dokumente in den erfassten Daten verknüpft.</p>'}
+          {related_html}
+        </section>
+        <section class="panel" id="quellen"><h2>Quellen und Daten</h2>
+          <p>DIP-Vorgang: {pulse_html.esc(bill.get('vorgang_id') or 'nicht erfasst')}. Die Übersicht zeigt nur die in den ausgewerteten Sitzungen verknüpften Quellen.</p>
+          <p><a href="../sources.html">Quellen und Methode</a> · {term('Gesetzgebung', tip_id='law-definition')}</p>
+          {render_bill_json_details('Erfasste Quelldaten', bill)}
+        </section>
+      </div>
+    </main>
+    <footer><a href="index.html">Alle Gesetzesvorhaben</a> · <a href="../overview.html">Sitzungen ansehen</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
-  {render_bill_script()}
+  {render_bill_help_script()}
   {pulse_html.page_scripts(features)}
 </body>
 </html>
@@ -6556,7 +6999,7 @@ def ingest_mdb_roster(
     upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
     biographical data. Makes the Abgeordnete list complete rather than limited to
     speakers seen in ingested protocols."""
-    stats = {"fetched": 0, "mdb": 0, "enriched": 0}
+    stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
     if store is None:
         return stats
     persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
@@ -6568,6 +7011,11 @@ def ingest_mdb_roster(
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
             if not _has_mdb_funktion(funktion):
+                continue
+            if not canonical_dip_person_id(compact.get("id")):
+                # A DIP person is identified by its id alone; without one, every
+                # such row would share one name-party:Unbekannt record.
+                stats["skipped_no_id"] += 1
                 continue
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
@@ -6624,6 +7072,8 @@ def ingest_mdb_roster(
                 person_roles_json=pulse_store.dumps(funktion) if funktion else None,
                 is_mdb=True,
             )
+    if stats["skipped_no_id"]:
+        print(f"warning: [roster] {stats['skipped_no_id']} DIP persons with an MdB function have no id and were skipped", file=sys.stderr)
     return stats
 
 
@@ -6682,7 +7132,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                m.profile_url, m.birth_year, m.gender, m.profession,
                m.wahlkreis, m.bundesland, m.aw_politician_id,
                m.aw_match, m.person_roles_json,
-               m.is_mdb, m.dip_person_id, m.xml_redner_id, pr.partition,
+               m.is_mdb, m.dip_person_id, m.xml_redner_id, m.identity_key, pr.partition,
                p.name AS party
         FROM mps m
         LEFT JOIN parties p ON m.party_id = p.id
@@ -6770,10 +7220,13 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
         person_id = registry.resolve(conn, record["person_id"])
         if evidence.get("ever_mdb") or evidence.get("is_mdb"):
             page_eligible.add(person_id)
-        # A record with no mps row keeps its evidence on the page: on its own
-        # person's page, or pooled into the person a stale roster record joined.
+        # A record with no mps row is stale evidence. It keeps a page only for a
+        # person this build has no current record of, or as the biography a
+        # stale roster partner pools into its live person; a stale record of a
+        # person with current records stays off the page (the source no longer
+        # supports its name, party or link key; docs/stable-ids.md).
         if record["id"] not in assignments and (person_id not in current_person_ids or registry.is_stale_roster_partner(evidence)):
-            evidence.update(id=record["id"], is_mdb=False, partition=record["partition"])
+            evidence.update(id=record["id"], identity_key=record["identity_key"], is_mdb=False, partition=record["partition"])
             historical.append(evidence)
             assignments[record["id"]] = person_id
     rows.extend(row for row in historical if assignments[row["id"]] in page_eligible)
@@ -6786,9 +7239,11 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     # Collapse each bucket into a single MP record: the roster row wins for the
     # biography fields, speeches and votes are pooled from every member row.
     for members in components.values():
-        # Prefer roster, then speaker biography over roll-call attributes.
-        # The page key still comes from the registry.
-        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["id"]))
+        # Prefer roster, then speaker biography over roll-call attributes, then
+        # the source key (mps.id is a hash); Daten recipes r1/r3 pick their row
+        # in the same order (REPRESENTATIVE_SQL). The page key still comes from
+        # the registry.
+        members.sort(key=lambda r: (0 if r["is_mdb"] else 1 if r.get("xml_redner_id") else 2, r["identity_key"]))
         cid = assignments[members[0]["id"]]
 
         def first(field: str) -> Any:
@@ -6885,7 +7340,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     aliases = {key: target for key, target in aliases.items() if key not in page_ids}  # a live page is never overwritten by a redirect
     folded: dict[str, str] = {}
     for key in (*page_ids, *aliases):
-        if not registry.PERSON_KEY_RE.fullmatch(key) or key.casefold() in registry.RESERVED_PERSON_KEYS:
+        if not registry.valid_person_key(key):
             raise registry.RegistryError(f"Invalid person key {key!r} in the build store; restore the build-store backup")
         if folded.setdefault(key.casefold(), key) != key:
             raise registry.RegistryError(f"Person keys {folded[key.casefold()]!r} and {key!r} differ only by case; restore the build-store backup")
@@ -7279,6 +7734,24 @@ def render_abgeordnete_detail(
 
 # Write the Abgeordnete area: profile pages, the roster index and
 # data/abgeordnete.json. Called through features/abgeordnete.py.
+def _write_person_page(abg_dir: Path, key: Any, text: str) -> None:
+    """Write ``abgeordnete/<key>.html`` without trusting the caller: the key is
+    checked again (a filename, no path), whatever already sits at the target (a
+    symlink above all) is removed first, and the file is created with
+    O_EXCL|O_NOFOLLOW, so the write cannot land outside abg_dir."""
+    if not registry.valid_person_key(key):
+        raise registry.RegistryError(f"Invalid person key {key!r} for a page under {abg_dir}; restore the build-store backup")
+    _write_new_file(abg_dir / f"{key}.html", text)
+
+
+def _write_new_file(path: Path, text: str) -> None:
+    """Replace ``path`` by a new regular file, never writing through a link there."""
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def write_abgeordnete_pages(
     output_dir: Path,
     mps: list[dict[str, Any]],
@@ -7288,6 +7761,10 @@ def write_abgeordnete_pages(
     features = features or publication_selection()
     abg_dir = output_dir / "abgeordnete"
     abg_dir.mkdir(parents=True, exist_ok=True)
+    # The stale-page sweep and every page write below happen in this directory;
+    # an abgeordnete/ that is a link out of the output tree is refused first.
+    if abg_dir.resolve() != output_dir.resolve() / "abgeordnete":
+        raise registry.RegistryError(f"{abg_dir} resolves outside {output_dir}; person pages are not written through it")
     # Detail pages for MdBs and for anyone who actually spoke (so cross-links from
     # protocol/bill speaker lists never dangle, even for ministers/guests).
     detail_mps = [mp for mp in mps if has_abgeordnete_page(mp)]
@@ -7296,18 +7773,12 @@ def write_abgeordnete_pages(
         if stale_page.name != "index.html" and stale_page.name not in expected_pages:
             stale_page.unlink()
     for mp in detail_mps:
-        (abg_dir / f"{mp['id']}.html").write_text(
-            render_abgeordnete_detail(mp, features, publication_domains),
-            encoding="utf-8",
-        )
+        _write_person_page(abg_dir, mp["id"], render_abgeordnete_detail(mp, features, publication_domains))
     for mp in detail_mps:
         for alias in mp.get("aliases", []):
             target = pulse_html.esc(f"{mp['id']}.html")
-            (abg_dir / f"{alias}.html").write_text(f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>', encoding="utf-8")
-    (abg_dir / "index.html").write_text(
-        render_abgeordnete_index(mps, features, publication_domains),
-        encoding="utf-8",
-    )
+            _write_person_page(abg_dir, alias, f'<!doctype html><html lang="de"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={target}"><link rel="canonical" href="{target}"><title>Person</title><a href="{target}">Zur Person</a></html>')
+    _write_new_file(abg_dir / "index.html", render_abgeordnete_index(mps, features, publication_domains))
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     listed = sum(1 for mp in mps if mp.get("is_mdb"))
@@ -9256,6 +9727,13 @@ def render_sources_page(
         f"<span>{pulse_html.esc(entry['lang'])}</span></li>"
         for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items()
     )
+    parliamentary_items = "".join(
+        f'<li id="parlament-{pulse_html.esc(entry["slug"])}">'
+        f'<strong>{pulse_html.esc(term)}</strong><span>{pulse_html.esc(entry["lang"])} '
+        f'<a href="{pulse_html.esc(pulse_html.source_url(entry["source_url"], "bundestag-dip"))}">'
+        f'{pulse_html.esc(entry.get("source_label", "Erläuterung beim Deutschen Bundestag"))}</a></span></li>'
+        for term, entry in pulse_html.PARLIAMENTARY_GLOSSARY.items()
+    )
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -9513,6 +9991,11 @@ def render_sources_page(
         <ul class="method-list glossary">
           {vorgangstyp_items}
         </ul>
+      </section>
+      <section class="panel" id="parlamentarische-begriffe">
+        <h2>Parlamentarische Begriffe</h2>
+        <p>Kurze Erläuterungen zu Dokumenten, Beratungen und Beteiligten. Die Links führen zu den offiziellen Quellen des Deutschen Bundestages.</p>
+        <ul class="method-list glossary">{parliamentary_items}</ul>
       </section>
       <section class="panel note">
         <h2>Was nicht genutzt wird</h2>
@@ -9857,7 +10340,6 @@ def derive_feature_readiness(
         "mp-pages": "ready" if abg_mps else "unavailable",
         "mp-roster": "ready" if any(mp.get("is_mdb") for mp in abg_mps) else "unavailable",
         "bills": bills_state,
-        "bill-follow": bills_state,
         "dev-view": "ready",
     }
 
@@ -10917,21 +11399,48 @@ def run_facts_engine(
     catalog: facts.SittingCatalog | None,
     today: date | None = None,
 ) -> dict[str, Any]:
+    """Compute the facts for a store no rebuild staged in this build. They are
+    computed read-only; a changed snapshot is written into a staged copy that
+    replaces the store, so the published store never has a write (or SQLite's
+    rollback journal) beside it."""
+    database_path = Path(database_path).resolve()
     with registry.writer_lock(database_path):
-        store = pulse_store.connect(database_path)
+        store = facts.open_readonly(database_path)
         try:
-            pulse_store.initialize(store)
-            built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+            pulse_store.require_current_schema(store)
             return facts.compute_and_store(
                 store,
                 facts.ALL_REGISTRY,
                 facts.completeness_from_entries(entries),
                 catalog=catalog,
-                built=built,
+                built=facts.built_sources(store),
                 today=today,
+                write=lambda snapshot: _write_facts_staged(database_path, snapshot),
             )
         finally:
             store.close()
+
+
+def _write_facts_staged(database_path: Path, snapshot: Mapping[str, list[list[Any]]]) -> None:
+    """``facts.write_snapshot`` into a staged copy of the store, checked and
+    swapped in; the caller holds the writer lock."""
+    temp_path = _staged_store_path(database_path)
+    try:
+        source = facts.open_readonly(database_path)
+        staged = sqlite3.connect(temp_path)
+        try:
+            source.backup(staged)
+            facts.write_snapshot(staged, snapshot)
+            staged.commit()
+            if staged.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("facts: the staged store failed integrity_check")
+        finally:
+            staged.close()
+            source.close()
+        _replace_store(database_path, temp_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 # Runs the export step (unless --no-persist, or the store does not exist) and
@@ -10960,9 +11469,10 @@ def run_data_pipeline(
 
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes. A rebuild in this build already computed them
-    # for the same entries, catalog and date and hands over its report.
+    # for the same entries, catalog and date and hands over its report; only
+    # ``None`` (no rebuild ran) computes them here.
     if not args.no_persist and database_path.exists():
-        if not facts_report:
+        if facts_report is None:
             facts_report = run_facts_engine(
                 database_path,
                 entries,
@@ -11106,16 +11616,26 @@ def main() -> int:
     # no-persist rendering, require current persisted rules; an online rebuild
     # can repair the rules from accepted source inputs.
     if not getattr(args, "repersist", False) and database_path.exists():
-        previous = facts.open_readonly(database_path)
+        previous = None
         try:
+            # Opening is inside: a directory or an unreadable file at the store
+            # path fails here (or at the first query), not as a traceback.
+            previous = facts.open_readonly(database_path)
             pulse_store.require_current_schema(previous)
             if args.offline or args.no_persist:
                 pulse_store.require_current_speech_rules(previous)
-        except (RuntimeError, registry.RegistryError, sqlite3.Error) as exc:
+                # The render applies the corrections file to the pages without a
+                # reconcile, so an applied partition missing from it stops here.
+                registry.require_applied_partitions(previous)
+        except sqlite3.Error as exc:
+            print(f"error: the store {database_path} cannot be read ({exc}); it is left as it is", file=sys.stderr)
+            return 1
+        except (RuntimeError, registry.RegistryError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finally:
-            previous.close()
+            if previous is not None:
+                previous.close()
 
     # --- offline render ----------------------------------------------------
     # Re-render every page from what is already on disk. Useful for iterating on
@@ -11134,12 +11654,12 @@ def main() -> int:
         # render alone never does). All or nothing: any failure leaves the
         # previous store untouched and the run stops before anything is rendered.
         cached_entries: list[dict[str, Any]] | None = None
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         if getattr(args, "repersist", False):
             try:
-                cached_entries, replaced = repersist_cached_reports(
+                cached_entries, rebuilt = repersist_cached_reports(
                     output_dir, database_path, protocols, preserve_roster=True,
-                    today=resolve_today(getattr(args, "today", None)), facts_report=rebuilt_facts,
+                    today=resolve_today(getattr(args, "today", None)),
                     vorgang_cache=vorgang_cache,
                 )
             except derive.SprechrolleError as exc:
@@ -11161,9 +11681,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            rebuilt_facts = rebuilt.facts_report
             print(
                 f"repersist: {len(cached_entries)} cached reports persisted; "
-                + ("store replaced" if replaced else "store content unchanged, file kept"),
+                + ("store replaced" if rebuilt.replaced else "store content unchanged, file kept"),
                 file=sys.stderr,
             )
 
@@ -11172,9 +11693,10 @@ def main() -> int:
         # The MP pages are read out of the existing store; the roster fetch is
         # skipped because it would need the network.
         if not args.no_persist and database_path.exists():
-            store = pulse_store.connect(database_path)
+            # Read only: the published store is written by a staged rebuild alone.
+            store = facts.open_readonly(database_path)
             try:
-                pulse_store.initialize(store)
+                pulse_store.require_current_schema(store)
                 if "mp-pages" in features:
                     component_context = {
                         "selection": features,
@@ -11229,7 +11751,7 @@ def main() -> int:
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
                 facts_report=rebuilt_facts,
             )
-        except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        except PIPELINE_ERRORS as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         # Dossier pages are regenerated from the cached JSON reports, then the
@@ -11348,7 +11870,7 @@ def main() -> int:
         # One catalog for the staged rebuild's facts and the data pipeline, so the
         # rebuild's facts report is handed over instead of computed twice.
         catalog = facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now())
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -11419,16 +11941,15 @@ def main() -> int:
                     )
 
                 try:
-                    rebuild_database_from_entries(
+                    rebuilt_facts = rebuild_database_from_entries(
                         database_path,
                         entries,
                         preserve_roster="mp-roster" not in enrichments,
                         catalog=catalog,
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
-                        facts_report=rebuilt_facts,
                         vorgang_cache=vorgang_cache,
-                    )
+                    ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
                     return 1
@@ -11439,9 +11960,10 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     return 1
-                store = pulse_store.connect(database_path)
+                # Read only: the published store is written by a staged rebuild alone.
+                store = facts.open_readonly(database_path)
                 try:
-                    pulse_store.initialize(store)
+                    pulse_store.require_current_schema(store)
                     if "mp-pages" in features:
                         abg_mps, mp_lookup = collect_abgeordnete(store)
                 finally:
@@ -11495,7 +12017,7 @@ def main() -> int:
             catalog=catalog,
             facts_report=rebuilt_facts,
         )
-    except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except PIPELINE_ERRORS as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     index_path = render_site(

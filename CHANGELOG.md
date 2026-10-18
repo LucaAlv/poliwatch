@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0.0] - 2026-10-18
+
+### Changed
+
+- A Drucksache is identified by its issuer (Bundestag or Bundesrat) and its number, not by its URL. A DIP URL rewrite no longer creates a new document, and Bundesrat numbers no longer collide with Bundestag numbers. On the reference cache the store holds 7,952 documents instead of 7,956 (5,749 Bundestag, 2,203 Bundesrat): four numbers had a second, wrong or malformed URL (20/11710, 20/13328, 21/1060, 21/1061), and each now keeps the URL that encodes its number. Junction links, grouping, person keys, roster bindings and facts are unchanged.
+- Store schema 4 and Daten export format 4. A store built by an earlier version is refused with the instruction to run `--offline --repersist`; every document id is minted once more, so document receipts in the facts change id once.
+- The Daten recipes r1 and r3 name each person from the same row the Personenseite uses (roster row, then speaker row): 496 r1 names, 16 r1 parties and 25 r3 labels change on the reference cache, and one Personenseite heading changes.
+- A repeat offline rebuild of the reference cache takes about 245 s instead of about 300 s.
+- Nothing is written inside the published output while a build runs: the staged store, the writer lock, the facts write and the Daten export's scratch files live in a private directory beside the output directory (`.OUTPUT.private/`). A failed export leaves the published files as they were.
+
+### Fixed
+
+- Removing an applied partition (for example Föhr/Mende) from the corrections file is refused instead of silently giving one speaker the other's profile.
+- An incremental build groups persons the same way a fresh build does after a roll-call profile link is corrected; a record with two contradicting abgeordnetenwatch ids gets no profile instead of whichever sorts first; reviewed merges no longer depend on file order.
+- DIP persons without an id are skipped with a warning instead of all sharing one “Unbekannt” person. DIP person ids written as 7, "7" or " 07 " are one person.
+- An agenda index given as text ("3") is the same item as 3 everywhere: in the store, in page anchors and links, in bill pages, in summary reuse and when re-reading cached XML. A malformed, missing or repeated index in a cached report is refused with a message.
+- `--offline` over a store that cannot be opened, or a data pipeline that fails in SQLite or in the staged write, ends with one `error:` line and exit 1 instead of a traceback; the store is left as it was.
+- Person pages are never written through a symbolic link, and a page directory that resolves outside the output directory is refused.
+- On the same sitting day, the first-speech fact orders protocols by number (21/9 before 21/10), and vote receipts list Drucksachen in number order.
+
+## [0.18.0.0] - 2026-10-14
+
+### Added
+
+- Find a Gesetzesvorhaben by title or Drucksache number, narrow the list to the year of its latest recorded activity, and sort it by newest, oldest or title. The list shows 20 entries per page, keeps search, year, sort and page in the URL so Back and shared links restore the view, and announces result counts to screen readers. Without JavaScript, or if the script fails, every entry stays readable; printing always includes the whole list.
+- Open each recorded speech of a speaker straight from a bill page: one speech gets a direct “Rede lesen” link, several get a dated list with sitting and page. The link opens that speech in the sitting dossier and scrolls to it.
+- Parliamentary terms on bill pages (Drucksache, Plenarprotokoll, Tagesordnungspunkt, Beratungen, Beschlussempfehlung und Bericht, Stellungnahme and others) explain themselves on hover or keyboard focus and link to a new “Parlamentarische Begriffe” section on the sources page, each with its official Bundestag source.
+
+### Changed
+
+- The bill overview is a plain, readable list: one title link per bill, its latest recorded step and date, and counts of documents, debates and roll-call votes. The browser-only “Folgen” marker, its counter and the summary boxes are gone.
+- Bill pages read in a fixed order — Verlauf grouped by date, Debatten, Rednerinnen und Redner, Abstimmungen, Dokumente, Quellen und Daten — with section links at the top. All speakers are listed (twelve shown, the rest behind “Weitere Rednerinnen und Redner”) instead of only the first twelve. Bundesrat papers are labelled “Bundesrat-Drucksache” rather than as Bundestag Drucksachen (2,047 of 4,627 bill documents on the reference cache).
+- Sitting dossiers no longer overflow phone screens: long compound words in headings, metrics and speech text wrap and hyphenate.
+
+### Fixed
+
+- Speech counts on bill pages count each speech once. A bill whose agenda item appeared under several DIP positions counted that item's speeches once per position. On the reference cache the total falls from 11,726 to 9,274 speeches and from 49,528,541 to 37,448,236 characters across 53 of 562 bills; the Haushaltsgesetze move most (2024: 984 → 307, 2025: 974 → 309, 2026: 886 → 280). No speaker row is added or lost.
+- The latest step of a bill is the parliamentary step, not the sitting's Plenarprotokoll recorded on the same day: 156 of 562 bills previously showed “Plenarprotokoll” and now show their Beratung (95 “1. Beratung”, 49 “2. Beratung”, 12 others). No latest date changed.
+- Bills that share a date keep the same order before and after the page's script runs, and in print.
+- Debate rows label Zusatzpunkte and Einzelpläne as such instead of “Tagesordnungspunkt Zusatzpunkt …”.
+- Search finds titles regardless of how an umlaut is encoded.
+- Each bill's raw source data lists a repeated agenda item once (1,075 → 895 items on the reference cache).
+
+## [0.17.1.0] - 2026-10-09
+
+### Fixed
+
+- A speaker who is printed under several names or parties in the protocols (a Fraktion switcher, a name with and without a title) now gets the same person page, name, party and biography whichever sitting is processed last. Before, the last sitting decided, so a rebuild in another order could group the same speaker differently. On the reference cache this joins 21 pairs of speaker and roster records that the old order had left split, among them former Linke members now in the BSW Gruppe, Wagenknecht, Hunko, Helferich, Spaniel and Seitz; 23 roll-call records of party-switching members stay unattached to their person instead of being attached by chance (3,095 persons become 3,094). No published count of Reden per Fraktion or per Sprechrolle, no page and no fact moved.
+- A person whose record is listed in the Abgeordnetenkader keeps the title, Wahlperioden and function from that list. A value cached in an older dossier no longer wins just because it sorts first.
+- A roll-call record printed under two parties attaches to a roster or speaker person only when exactly one of them matches, and two roll-call records that voted in the same roll call, or whose profile links disagree, never attach to the same person through different parties. The result no longer depends on the hash seed of the Python process.
+- A speaker's two Redner-IDs that share one abgeordnetenwatch profile now both link the person page; before, only the one persisted last did.
+- The name shown for a person prefers the plain printed form over a “Nachname, Vorname” roll-call form or a DIP title with its “, MdB, Partei” tail.
+
 ## [0.17.0.0] - 2026-10-07
 
 ### Changed

@@ -149,7 +149,8 @@ class RetainedScopeTests(unittest.TestCase):
 
         before = self.database.read_bytes()
         refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
-        lock = self.database.with_suffix(self.database.suffix + ".writer.lock")
+        lock = build.registry.writer_lock_path(self.database)
+        lock.parent.mkdir(parents=True, exist_ok=True)
         with lock.open("a") as held:
             fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # a second open file description conflicts, in-process too
             try:
@@ -204,6 +205,44 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertIn("Abgeordnetenkader could not be fetched: DIP 503", stderr)
         self.assertIn("previous store is untouched", stderr)
         self.assertEqual(before, self.database.read_bytes())
+
+    def seed_roster_row(self) -> None:
+        conn = pulse_store.connect(self.database)
+        try:
+            now = pulse_store.utc_now()
+            with conn:  # a roster row an earlier build ingested
+                pulse_store.upsert_mp(conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
+                                      identity_key="dip:ada",
+                                      occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True)
+        finally:
+            conn.close()
+
+    def roster_rows(self) -> int:
+        conn = sqlite3.connect(self.database)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM mps WHERE dip_person_id = 'ada' AND is_mdb = 1").fetchone()[0]
+        finally:
+            conn.close()
+
+    # Value: protects=an online build without mp-roster (the default selection) keeps the roster rows of the previous store, fetches no roster, and hands the facts engine the build date and the votes it persisted; with --enrich mp-roster the fetched roster replaces the preserved rows; fails_when=main passes a constant preserve_roster, drops today, or the rebuild's built set ignores persisted votes; why_new=A.2 test follow-ups: the roster wiring with mp-roster not selected and built forwarding were never asserted at main(); seam=ingest_mdb_roster and compute_and_store are spies
+    def test_an_online_build_without_mp_roster_preserves_the_roster_and_forwards_today_and_built(self) -> None:
+        self.seed_roster_row()
+        refreshed = write_cached(self.output_dir, report_for(2, acquisition=COMPLETE_VOTES))
+        with (
+            mock.patch.object(build, "ingest_mdb_roster") as ingest,
+            mock.patch.object(facts, "compute_and_store", wraps=facts.compute_and_store) as engine,
+        ):
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", "--today", "2026-07-01", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        ingest.assert_not_called()
+        self.assertEqual(self.roster_rows(), 1)
+        self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
+        self.assertEqual(engine.call_args.kwargs["built"], {"votes"})
+        with mock.patch.object(build, "ingest_mdb_roster", return_value={"fetched": 0, "mdb": 0, "enriched": 0}) as ingest:
+            code, *_rest, stderr = self.run_main("--document-number", "21/2", "--enrich", "mp-roster", generated=[refreshed])
+        self.assertEqual(code, 0, stderr)
+        ingest.assert_called_once()
+        self.assertEqual(self.roster_rows(), 0)
 
     def test_the_catalog_is_fetched_whole_and_the_store_keeps_dossiers_cut_by_detail_limit(self) -> None:
         before = self.counts()
@@ -495,25 +534,31 @@ class IncompleteReportTests(StoreCase):
             )
         self.assertEqual(fmt.call_args.kwargs["vote_scan_pages"], 0)
 
-    # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store); why_new=the main()-level test mocks the whole pipeline; seam=none
+    # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again, even when the computed report is empty; only no report (None) computes it; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store), or an empty result reads as "not computed"; why_new=the main()-level test mocks the whole pipeline; handoff 08 made None the only "not computed"; seam=none
     def test_run_data_pipeline_reuses_a_handed_over_facts_report(self) -> None:
         args = SimpleNamespace(no_persist=False, vote_scan_pages=None, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
         seeded = self.seed(week_specs(3))
-        handed = {"incomplete_periods": [], "sitting_gaps": {}}
-        with (
-            mock.patch.object(build, "export_distribution_data", return_value={}),
-            mock.patch.object(build, "collect_bill_pages", return_value=[]),
-            mock.patch.object(build, "derive_feature_readiness", return_value={}),
-            mock.patch.object(build, "run_facts_engine") as engine,
-            mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
-        ):
-            build.run_data_pipeline(
-                args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
-                abg_mps=[], mp_lookup={}, catalog=seeded["catalog"], facts_report=handed,
-            )
-        engine.assert_not_called()
-        self.assertIs(fmt.call_args.args[0], handed)
+        computed = {"incomplete_periods": [], "sitting_gaps": {}}
+        for handed in ({"incomplete_periods": [], "sitting_gaps": {}}, {}, None):
+            with (
+                self.subTest(handed=handed),
+                mock.patch.object(build, "export_distribution_data", return_value={}),
+                mock.patch.object(build, "collect_bill_pages", return_value=[]),
+                mock.patch.object(build, "derive_feature_readiness", return_value={}),
+                mock.patch.object(build, "run_facts_engine", return_value=computed) as engine,
+                mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
+            ):
+                build.run_data_pipeline(
+                    args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
+                    abg_mps=[], mp_lookup={}, catalog=seeded["catalog"], facts_report=handed,
+                )
+                if handed is None:
+                    engine.assert_called_once()
+                    self.assertIs(fmt.call_args.args[0], computed)
+                else:
+                    engine.assert_not_called()
+                    self.assertIs(fmt.call_args.args[0], handed)
 
     def test_a_complete_store_prints_nothing(self) -> None:
         seeded = self.seed(week_specs(10))

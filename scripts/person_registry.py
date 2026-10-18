@@ -21,17 +21,43 @@ REGISTRY_TABLES = ("persons", "person_aliases", "person_records", "person_bindin
 PERSON_KEY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 #: File stems under abgeordnete/ that belong to the site, not to a person.
 RESERVED_PERSON_KEYS = frozenset({"index"})
+
+
+def valid_person_key(key: Any) -> bool:
+    """A key that can name its own page file under abgeordnete/."""
+    return isinstance(key, str) and bool(PERSON_KEY_RE.fullmatch(key)) and key.casefold() not in RESERVED_PERSON_KEYS
 #: aw_match value of a partition record: its profile is never a trusted join key.
 PARTITIONED = "partitioned"
+#: aw_match value of a record whose occurrences name two trusted abgeordnetenwatch ids.
+AW_CONFLICT = "conflicting"
 
 class RegistryError(ValueError):
     pass
 
+def private_dir(database_path: Path) -> Path:
+    """Where a store's writer lock and staged copies live: never in a published
+    tree. A store in ``OUTPUT/data/`` is published with OUTPUT, so its private
+    directory is ``.OUTPUT.private`` beside OUTPUT; any other store gets
+    ``.STORE.private`` in its own directory. Derived from the resolved path, so
+    every spelling of one store (a symlink, ``..``) names one lock."""
+    store = database_path.resolve()
+    if store.parent.name == "data":
+        root = store.parent.parent
+        return root.parent / f".{root.name}.private"
+    return store.parent / f".{store.name}.private"
+
+
+def writer_lock_path(database_path: Path) -> Path:
+    return private_dir(database_path) / f"{database_path.resolve().name}.writer.lock"
+
+
 @contextmanager
 def writer_lock(database_path: Path) -> Iterator[None]:
-    """Kernel releases this nonblocking lock even when a writer crashes."""
+    """Kernel releases this nonblocking lock even when a writer crashes. The lock
+    file is never removed: flock belongs to its inode."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    path = database_path.with_suffix(database_path.suffix + ".writer.lock")
+    path = writer_lock_path(database_path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with path.open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -169,6 +195,30 @@ def partition_identity(identity: str, evidence: dict[str, Any]) -> str:
         return f"partition:{partition['xml_redner_id']}:{owner}"
     return identity
 
+def require_applied_partitions(conn: sqlite3.Connection) -> None:
+    """Every partition the registry applied must still be in the corrections file.
+
+    An applied partition is durable, but only the file carries its labels,
+    reviewed occurrence names and profile owner, and the pages read the file,
+    not the store. Without the entry the partition records keep their persons
+    while both regain the shared profile, the reviewed names revert, and a new
+    occurrence of the Redner-ID joins whichever record sorts first. So a removed
+    entry is refused rather than half applied."""
+    listed = {partition["xml_redner_id"] for partition in corrections()["partitions"]}
+    missing: dict[str, set[str]] = {}
+    for identity, person in conn.execute("SELECT identity_key, person_id FROM person_records WHERE partition IS NOT NULL"):
+        xml_id = identity.split(":")[1]  # partition:{xml_redner_id}:{owner}
+        if xml_id not in listed:
+            missing.setdefault(xml_id, set()).add(resolve(conn, person))
+    if missing:
+        xml_id, persons = min(missing.items())
+        raise RegistryError(
+            f"Redner-ID {xml_id} is partitioned in this registry (persons {', '.join(sorted(persons))}) but has no entry in "
+            f"{CORRECTIONS_PATH}; applied partitions are durable, so restore the entry. If its partitions are one person, keep "
+            "the entry and add a reviewed merge of these persons; to drop the partition, remove the entry, move the store "
+            "aside and run an online update with --enrich mp-roster (docs/stable-ids.md)")
+
+
 def resolve(conn: sqlite3.Connection, person_id: str) -> str:
     seen = set()
     while True:
@@ -182,7 +232,7 @@ def resolve(conn: sqlite3.Connection, person_id: str) -> str:
 
 def allocate(conn: sqlite3.Connection, preferred: str | None = None) -> str:
     if preferred is not None:
-        if not isinstance(preferred, str) or not PERSON_KEY_RE.fullmatch(preferred) or preferred.casefold() in RESERVED_PERSON_KEYS:
+        if not valid_person_key(preferred):
             raise RegistryError(f"Invalid person key {preferred!r}; use a URL-safe filename key that is not a reserved page name")
         clash = conn.execute("SELECT id FROM persons WHERE lower(id) = lower(?) AND id != ?", (preferred, preferred)).fetchone()
         if clash:
@@ -197,29 +247,188 @@ def allocate(conn: sqlite3.Connection, preferred: str | None = None) -> str:
     conn.execute("INSERT INTO persons VALUES (?, ?)", (key, ordinal))
     return key
 
-def _first_touch(conn: sqlite3.Connection, record_id: str) -> bool:
+def _first_touch(conn: sqlite3.Connection, record_id: str, baseline: str | None = None) -> bool:
     """Mark a record as bound on this connection (a full build's live set, read
-    by reconcile); True the first time. The temp table is made on first use."""
+    by reconcile); True the first time. ``baseline`` is the evidence it had
+    before this build touched it, kept so later decisions about the record do not
+    depend on which occurrence was persisted first. The temp table is made on
+    first use; any other SQLite error propagates (the rebuild then keeps the store)."""
+    insert = "INSERT OR IGNORE INTO registry_touched VALUES (?, ?)"
     try:
-        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
-    except sqlite3.OperationalError:
-        conn.execute("CREATE TEMP TABLE IF NOT EXISTS registry_touched (id TEXT PRIMARY KEY NOT NULL)")
-        return conn.execute("INSERT OR IGNORE INTO registry_touched VALUES (?)", (record_id,)).rowcount == 1
+        return conn.execute(insert, (record_id, baseline)).rowcount == 1
+    except sqlite3.OperationalError as exc:
+        if not _no_touched_table(exc):
+            raise
+        conn.execute("CREATE TEMP TABLE registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
+        return conn.execute(insert, (record_id, baseline)).rowcount == 1
+
+
+def _no_touched_table(exc: sqlite3.OperationalError) -> bool:
+    """The one error that means "nothing was touched on this connection yet"."""
+    return str(exc) == "no such table: registry_touched"
+
+
+def _touched(conn: sqlite3.Connection, record_id: str) -> tuple[bool, str | None]:
+    """``(touched in this build, baseline evidence json)`` of a record."""
+    try:
+        row = conn.execute("SELECT baseline FROM registry_touched WHERE id = ?", (record_id,)).fetchone()
+    except sqlite3.OperationalError as exc:
+        if not _no_touched_table(exc):
+            raise
+        return False, None
+    return (row is not None), (row[0] if row else None)
+
+
+def _redner_ids(evidence: dict[str, Any]) -> set[str]:
+    """Every Redner-ID a record's evidence names (one person can have several);
+    old evidence has only the flat ``xml_redner_id``."""
+    ids = evidence.get("xml_redner_ids")
+    if ids is None:
+        ids = [evidence.get("xml_redner_id")]
+    return {first for first in (derive.first_redner_id(i) for i in ids) if first}
+
+
+def _name_party_pairs(evidence: dict[str, Any]) -> list[list[str | None]]:
+    """The (printed name, party) pairs a record's evidence holds, sorted; old
+    evidence and store rows have only the flat ``display_name`` and ``party``."""
+    pairs = evidence.get("pairs")
+    if pairs is None:
+        pairs = [[evidence.get("display_name"), evidence.get("party")]] if evidence.get("display_name") else []
+    return pairs
 
 
 def _hard_id_conflict(old: dict[str, Any], new: dict[str, Any]) -> bool:
-    """Both sides name an official id and the ids differ: the source now says a
-    different person, which is not an enrichment of the bound record."""
-    pairs = (
-        (derive.first_redner_id(old.get("xml_redner_id")), derive.first_redner_id(new.get("xml_redner_id"))),
-        (old.get("dip_person_id"), new.get("dip_person_id")),
-    )
-    return any(a and b and a != b for a, b in pairs)
+    """Both sides name an official id and the new one is not among the old ones:
+    the source now says a different person, which is not an enrichment of the
+    bound record."""
+    old_ids, new_ids = _redner_ids(old), _redner_ids(new)
+    if old_ids and new_ids and not new_ids <= old_ids:
+        return True
+    return bool(old.get("dip_person_id") and new.get("dip_person_id") and old["dip_person_id"] != new["dip_person_id"])
+
+
+def _json_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _pair_rank(pair: list[str | None]) -> tuple[Any, ...]:
+    # A name with a comma is the roll call's "surname, given name" or a DIP title
+    # with its ", MdB, party" tail: a plain printed name is the better heading.
+    return (pair[0] == "Unbekannt", not pair[1], "," in pair[0], -len(pair[0]), pair[0], pair[1] or "")
+
+
+def _representative_pair(pairs: list[list[str | None]]) -> list[str | None]:
+    """The (page name, party) a record shows when its occurrences print several:
+    the name of the best pair (a real name over the "Unbekannt" placeholder, one
+    with a party over one without, one without a comma, the fullest name with titles, then
+    alphabetical) and the party of the best pair that has one, so a real name
+    printed without a party still shows the party its other pairs name. Binding
+    has no sitting chronology, so "newest" is not available; the matching rule
+    uses every pair, not this one."""
+    with_party = [p for p in pairs if p[1]]
+    return [min(pairs, key=_pair_rank)[0], min(with_party, key=_pair_rank)[1] if with_party else None]
+
+
+#: The abgeordnetenwatch fields of a record are chosen together, never mixed.
+_AW_FIELDS = ("aw_politician_id", "aw_match", "profile_url")
+
+
+def _trusted_aw_ids(evidence: dict[str, Any]) -> set[int]:
+    """The abgeordnetenwatch ids looked up by Redner-ID that evidence names: kept
+    as ``trusted_aw_ids`` once two contradict, else the trusted flat id."""
+    ids = set(evidence.get("trusted_aw_ids", ()))
+    if derive.trusted_aw_id({"id": evidence.get("aw_politician_id")}, evidence.get("aw_match")) is not None:
+        ids.add(evidence["aw_politician_id"])
+    return ids
+
+
+def _aw_choice(unit: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Which abgeordnetenwatch unit wins: one with a valid id, a trusted lookup, the
+    fullest, then by content."""
+    return (not isinstance(unit[0], int), unit[1] != derive.TRUSTED_AW_MATCH, -sum(v is not None for v in unit), _json_key(unit))
+
+
+#: Biography attributes. A roster occurrence (``is_mdb``) is the authority for
+#: them; a cached dossier's or a speaker's value only stands in when no roster
+#: occurrence supplies one, so a stale cached value never beats the live roster.
+_BIO_FIELDS = ("title", "function", "wahlperiode", "birth_year", "gender", "profession", "wahlkreis", "bundesland",
+               "person_roles_json")
+
+
+def _roster_bio(evidence: dict[str, Any]) -> dict[str, Any]:
+    """The biography values the roster occurrences of a record supplied: kept as
+    ``roster_bio`` once folded, read off the attributes of a single roster occurrence."""
+    if "roster_bio" in evidence:
+        return evidence["roster_bio"]
+    return {f: evidence[f] for f in _BIO_FIELDS if evidence.get(f) is not None} if evidence.get("is_mdb") else {}
+
+
+def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Fold one occurrence's evidence into a record's evidence for this build.
+
+    Commutative, associative and idempotent, so the result depends on the set of
+    occurrences and not on the order they are persisted in. Names and parties are
+    kept as a set of pairs, Redner-IDs as a set; the flat ``display_name``,
+    ``party`` and ``xml_redner_id`` are a representative of those sets. Booleans
+    OR, the abgeordnetenwatch fields are chosen as a unit (a trusted lookup first),
+    the biography attributes come from roster occurrences when there are any, and
+    any other attribute that differs takes the smallest value."""
+    out = dict(base)
+    roster_base, roster_new = _roster_bio(base), _roster_bio(new)
+    roster = {f: min((r[f] for r in (roster_base, roster_new) if f in r), key=_json_key)
+              for f in _BIO_FIELDS if f in roster_base or f in roster_new}
+    pairs = {tuple(p) for p in _name_party_pairs(base)} | {tuple(p) for p in _name_party_pairs(new)}
+    ids = _redner_ids(base) | _redner_ids(new)
+    units = [tuple(e.get(f) for f in _AW_FIELDS) for e in (base, new) if any(e.get(f) is not None for f in _AW_FIELDS)]
+    trusted = _trusted_aw_ids(base) | _trusted_aw_ids(new)
+    for key, value in new.items():
+        if value is None or key in ("pairs", "xml_redner_ids", "roster_bio", "trusted_aw_ids", "identities", *_AW_FIELDS, *_BIO_FIELDS):
+            continue
+        if isinstance(value, bool) or isinstance(out.get(key), bool):
+            out[key] = bool(out.get(key)) or bool(value)
+        elif out.get(key) is None:
+            out[key] = value
+        elif out[key] != value:
+            out[key] = min(out[key], value, key=_json_key)
+    for field in _BIO_FIELDS:
+        stand_in = [e[field] for e, r in ((base, roster_base), (new, roster_new)) if e.get(field) is not None and field not in r]
+        value = roster.get(field, min(stand_in, key=_json_key) if stand_in else None)
+        if value is None:
+            out.pop(field, None)
+        else:
+            out[field] = value
+    out["roster_bio"] = roster
+    if units:
+        for field, value in zip(_AW_FIELDS, min(units, key=_aw_choice)):
+            if value is None:
+                out.pop(field, None)
+            else:
+                out[field] = value
+    if len(trusted) > 1:
+        # Two lookups by Redner-ID name different profiles: neither is trusted,
+        # and no profile is shown, rather than one picked by id order.
+        out.update(trusted_aw_ids=sorted(trusted), aw_match=AW_CONFLICT)
+        out.pop("aw_politician_id", None)
+        out.pop("profile_url", None)
+    if pairs:
+        out["pairs"] = sorted([list(p) for p in pairs], key=_json_key)
+        name, party = _representative_pair(out["pairs"])
+        out["display_name"] = name
+        if party is None:
+            out.pop("party", None)
+        else:
+            out["party"] = party
+    if ids:
+        out["xml_redner_ids"] = sorted(ids)
+        out["xml_redner_id"] = min(ids)
+    identities = set(base.get("identities", ())) | set(new.get("identities", ()))
+    if identities:
+        out["identities"] = sorted(identities)
+    return out
 
 
 def bind(
-    conn: sqlite3.Connection, identity: str, evidence: dict[str, Any],
-    occurrence: str | None = None,
+    conn: sqlite3.Connection, identity: str, evidence: dict[str, Any], occurrence: str,
 ) -> tuple[str, str, str, dict[str, Any]]:
     """Bind one source occurrence to a source record and its home person.
 
@@ -228,19 +437,29 @@ def bind(
     moves to the record of the new identity on a changed reviewed partition or a
     different official id. Evidence is re-read from the source on a record's first
     touch in this connection; only registry-owned evidence survives from the
-    earlier build."""
+    earlier build. Every later touch folds its occurrence in with ``_fold``, and a
+    record's decisions compare against its evidence from before the build, so
+    neither the evidence nor the binding depends on persist order."""
+    if not occurrence:
+        raise RegistryError(f"Source record {identity!r} has no occurrence id; every bind names the occurrence it binds")
     evidence["ever_mdb"] = bool(evidence.get("is_mdb"))
     identity = partition_identity(identity, evidence)
+    # The identity the source presents, kept when the occurrence stays on a record
+    # of another identity, so reconcile can meet the record that identity names.
+    evidence["identities"] = [identity]
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
-    bound = conn.execute("SELECT record_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
+    bound = conn.execute("SELECT record_id, person_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone()
+    bound_touched = False
     if bound:
-        previous = conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
+        # Usually the identity's own record (a repeat build): already read.
+        previous = row if row and row["id"] == bound[0] else conn.execute("SELECT * FROM person_records WHERE id = ?", (bound[0],)).fetchone()
+        bound_touched, baseline = _touched(conn, bound[0])
         # A reviewed partition, or a source that now names a different official
         # id, moves a binding; otherwise the established source record wins over
         # changing attributes.
         moved = (
             (evidence.get("partition") and evidence.get("partition") != previous["partition"])
-            or _hard_id_conflict(json.loads(previous["evidence_json"]), evidence)
+            or _hard_id_conflict(json.loads(baseline or previous["evidence_json"]), evidence)
         )
         if not moved:
             row = previous
@@ -249,15 +468,16 @@ def bind(
         record_id, home = row["id"], resolve(conn, row["home_person_id"])
         previous = json.loads(row["evidence_json"])
         was_mdb = bool(previous.get("ever_mdb") or previous.get("is_mdb"))
-        if _first_touch(conn, record_id):
+        if _first_touch(conn, record_id, row["evidence_json"]):
             # First touch in this build: the source speaks again, so nothing but the
             # registry's own ever_mdb (re-derived below) survives from the earlier
             # build; an id the source stopped supplying cannot keep linking records.
             previous = {}
+        else:
+            previous.setdefault("identities", [row["identity_key"]])
         evidence["ever_mdb"] = bool(evidence.get("ever_mdb") or was_mdb)
-        previous.update({k:v for k,v in evidence.items() if v is not None})
         previous.pop("vacated", None)
-        evidence = previous
+        evidence = _fold(previous, evidence)
     else:
         record_id = stable_key("mp", identity)
         xml = evidence.get("xml_redner_id")
@@ -265,12 +485,16 @@ def bind(
         preferred = stable_key("person", "xml", xml) if xml and not evidence.get("partition") else stable_key("person", "dip", dip) if dip else None
         home = allocate(conn, preferred)
         _first_touch(conn, record_id)
-        evidence = {k: v for k, v in evidence.items() if v is not None}
+        evidence = _fold({}, evidence)
     if evidence.get("profile_blocked"):
         evidence.update(aw_politician_id=None, aw_match=PARTITIONED, profile_url=None)
-    if bound and bound[0] != record_id:
-        # The occurrence left its old record; once nothing is bound to it any more
-        # that record is stale evidence, which reconcile no longer matches on.
+    if evidence.get("identities") == [identity]:
+        del evidence["identities"]  # only its own identity: the usual case, not stored
+    if bound and bound[0] != record_id and not bound_touched:
+        # The occurrence left its old record: the source now says that evidence
+        # was someone else's, so the record may not rejoin as a stale roster
+        # partner (is_stale_roster_partner). A record this build touched is live
+        # and is not marked, whichever order its occurrences were persisted in.
         old = conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (bound[0],)).fetchone()
         conn.execute("UPDATE person_records SET evidence_json=? WHERE id=?",
                      (json.dumps({**json.loads(old[0]), "vacated": True}, ensure_ascii=False, sort_keys=True), bound[0]))
@@ -281,7 +505,7 @@ def bind(
     if not (row and row["id"] == record_id and row["evidence_json"] == evidence_json and row["person_id"] == home):
         conn.execute("INSERT INTO person_records VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json, person_id=excluded.person_id",
                      (record_id, identity, home, evidence_json, evidence.get("partition"), home))
-    if occurrence:
+    if not (bound and tuple(bound) == (record_id, home)):
         conn.execute("INSERT INTO person_bindings VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id, person_id=excluded.person_id", (occurrence, record_id, home))
     return record_id, home, identity, evidence
 
@@ -304,6 +528,39 @@ def merge(conn: sqlite3.Connection, keys: list[str], survivor: str | None = None
             conn.execute(f"UPDATE {table} SET person_id=? WHERE person_id=?", (survivor, retired))
     return survivor
 
+def _reviewed_merge_groups(conn: sqlite3.Connection, merges: list[dict[str, Any]]) -> list[tuple[list[str], str | None]]:
+    """The reviewed merges as one merge per resulting person, so the file order
+    cannot decide the outcome. Entries whose persons overlap, directly or through
+    an alias, join one group; a group may name at most one survivor."""
+    parent: dict[str, str] = {}
+
+    def find(key: str) -> str:
+        parent.setdefault(key, key)
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    for entry in merges:
+        resolved = [resolve(conn, key) for key in entry["persons"]]
+        for key in resolved[1:]:
+            parent[find(key)] = find(resolved[0])
+        find(resolved[0])
+    groups: dict[str, tuple[set[str], set[str]]] = {}
+    for entry in merges:
+        keys, survivors = groups.setdefault(find(resolve(conn, entry["persons"][0])), (set(), set()))
+        keys.update(entry["persons"])
+        if entry.get("survivor"):
+            survivors.add(entry["survivor"])
+    out = []
+    for keys, survivors in sorted(groups.values(), key=lambda group: sorted(group[0])):
+        if len(survivors) > 1:
+            raise RegistryError(f"Reviewed merges name survivors {', '.join(sorted(survivors))} for one person "
+                                f"({', '.join(sorted(keys))}); name one survivor in {CORRECTIONS_PATH}")
+        out.append((sorted(keys), next(iter(survivors), None)))
+    return out
+
+
 def mp_keys(row: dict[str, Any]) -> list[str]:
     """Personenkennungen of an MP row, used to link rows that describe the same
     person across sources (DIP roster vs. protocol speaker). An abgeordnetenwatch
@@ -314,8 +571,7 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
         keys.append(f"aw:{row['aw_politician_id']}")
     if row.get("dip_person_id"):
         keys.append(f"dip:{row['dip_person_id']}:{row['partition']}" if row.get("partition") else f"dip:{row['dip_person_id']}")
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
+    for xml_id in sorted(_redner_ids(row)):
         keys.append(f"xml:{xml_id}:{row['partition']}" if row.get("partition") else f"xml:{xml_id}")
     return keys
 
@@ -328,9 +584,7 @@ def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
         ids["aw"].add(str(row["aw_politician_id"]))
     if row.get("dip_person_id"):
         ids["dip"].add(str(row["dip_person_id"]))
-    xml_id = derive.first_redner_id(row.get("xml_redner_id"))
-    if xml_id:
-        ids["xml"].add(xml_id)
+    ids["xml"].update(_redner_ids(row))
     if row.get("profile_url"):
         ids["profile"].add(str(row["profile_url"]))
     return ids
@@ -398,12 +652,23 @@ def _normalized_mp_party(party: Any) -> str:
 
 
 
+def name_party_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
+    """Every normalised (name, party) a record is known under, with both parts
+    present: the keys of the buckets it can join."""
+    keys = {(_normalized_mp_name(name), _normalized_mp_party(party)) for name, party in _name_party_pairs(row)}
+    return {key for key in keys if key[0] and key[1]}
+
+
+def _names(row: dict[str, Any]) -> set[str]:
+    return {name for name in (_normalized_mp_name(n) for n, _ in _name_party_pairs(row)) if name}
+
+
 def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dict, dict]:
     """Group rows into persons. ``guesses=False`` stops after the passes that rest
     on a shared Personenkennung; the name-based passes only ever propose."""
     # Union-find: link rows that share any external id into one person.
     parent = {row["id"]: row["id"] for row in rows}
-    totals = {"ext_id": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
+    totals = {"ext_id": 0, "same_identity": 0, "corroborated_name": 0, "unique_name": 0, "buckets_split_namesakes": 0, "buckets_split_3plus": 0}
 
     def find(node: str) -> str:
         while parent[node] != node:
@@ -442,6 +707,24 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
             durable.setdefault(find(row["id"]), []).append(row)
         return durable, totals
 
+    # Pass 1a: records whose occurrences present one source identity are one
+    # record in a fresh build. In an incremental one an occurrence can stay on the
+    # record it was bound to while its identity changed (a corrected roll-call
+    # profile link): it joins the record the new identity names unless their
+    # partitions or official ids contradict. Recomputed, never an alias; on a
+    # fresh build it joins nothing.
+    first_for_identity: dict[str, str] = {}
+    for row in sorted(rows, key=lambda r: r["id"]):
+        for identity in row.get("identities", ()):
+            if identity.startswith("aw:") and row.get("aw_match") == AW_CONFLICT:
+                continue  # its Redner-ID lookups contradict: no aw identity of it is trusted
+            other = first_for_identity.setdefault(identity, row["id"])
+            if other == row["id"] or find(other) == find(row["id"]):
+                continue
+            left, right = _merge_external_ids(members_by_root[find(row["id"])]), _merge_external_ids(members_by_root[find(other)])
+            if not any(left[kind] and right[kind] and not left[kind] & right[kind] for kind in ("aw", "dip", "xml")):
+                union(row["id"], other, "same_identity")
+
     # Pass 1b: a record whose abgeordnetenwatch id was found by name joins the
     # record that holds the same id as a Personenkennung when both carry the same
     # name (titles aside). This is how a Person with two Redner-IDs (an MdB id and
@@ -461,11 +744,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         if aw_id is None or row.get("partition") or derive.trusted_aw_id({"id": aw_id}, row.get("aw_match")) is not None:
             continue
         other = first_for_key.get(f"aw:{aw_id}")
-        name = _normalized_mp_name(row.get("display_name"))
-        if other is None or not name or find(other) == find(row["id"]):
+        if other is None or find(other) == find(row["id"]):
             continue
-        other_name = _normalized_mp_name(by_id[other].get("display_name"))
-        if name == other_name and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
+        # Any printed name in common corroborates: a record may be printed under several.
+        if _names(row) & _names(by_id[other]) and not _external_ids_conflict(strong_ids(find(row["id"])), strong_ids(find(other))):
             union(row["id"], other, "corroborated_name")
 
     rows_of: dict[str, list[dict[str, Any]]] = {}
@@ -487,12 +769,12 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # Personenkennung of one contradicts one of the other. It is a guess, so
     # any other shape stays split. Buckets are judged on the records passes 1 and 1b left and
     # the unions applied afterwards.
+    # A record printed under several names or parties sits in one bucket per
+    # pair.
     buckets: dict[tuple[str, str], set[str]] = {}
     for row in rows:
-        name_key = _normalized_mp_name(row.get("display_name"))
-        party_key = _normalized_mp_party(row.get("party"))
-        if name_key and party_key:
-            buckets.setdefault((name_key, party_key), set()).add(find(row["id"]))
+        for key in name_party_keys(row):
+            buckets.setdefault(key, set()).add(find(row["id"]))
 
     pending: list[tuple[str, str]] = []
     for records in buckets.values():
@@ -516,7 +798,16 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
             totals["buckets_split_3plus"] += 1
         else:
             totals["buckets_split_namesakes"] += 1
+    # A record in two qualifying buckets (a Fraktion switcher beside two roster
+    # records) has no unique partner: it joins neither.
+    partners: dict[str, set[str]] = {}
     for left, right in pending:
+        partners.setdefault(left, set()).add(right)
+        partners.setdefault(right, set()).add(left)
+    for left, right in pending:
+        if len(partners[left]) > 1 or len(partners[right]) > 1:
+            totals["buckets_split_namesakes"] += 1
+            continue
         left_root, right_root = find(left), find(right)
         if left_root == right_root:
             continue
@@ -535,11 +826,22 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # and party. The anchor's profile may come from a different source, but
     # conflicting voter profiles make the bucket ambiguous even when those
     # voters appear in different roll calls. Distinct records voting in the
-    # same roll call cannot be guessed to be one person either.
-    for records in buckets.values():
+    # same roll call cannot be guessed to be one person either. Each bucket is
+    # judged on its own, as for a record with a single name and party. A record
+    # printed under several parties sits in several buckets: it joins only when
+    # the buckets that accept it name exactly one anchor (a bucket with several
+    # anchors vetoes it), so the result does not depend on which bucket is
+    # visited first. Voters that reach one anchor through different buckets are
+    # finally checked against each other for a shared roll call or contradicting
+    # official ids; their profile links may differ (one per legislative period).
+    attach: dict[str, set[str]] = {}
+    blocked: set[str] = set()
+    for _, records in sorted(buckets.items()):
         roots = {find(root) for root in records}
         voters = sorted(root for root in roots if vote_only(root))
         anchors = sorted(root for root in roots if not vote_only(root))
+        if len(anchors) > 1:
+            blocked.update(voters)
         if not voters or len(anchors) != 1:
             continue
         anchor = anchors[0]
@@ -559,7 +861,20 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
         ):
             continue
         for voter in voters:
-            if union(voter, anchor, "unique_name"):
+            attach.setdefault(voter, set()).add(anchor)
+    by_anchor: dict[str, list[str]] = {}
+    for voter, anchors in sorted(attach.items()):
+        if len(anchors) == 1 and voter not in blocked:
+            by_anchor.setdefault(next(iter(anchors)), []).append(voter)
+    for anchor, voters in sorted(by_anchor.items()):
+        votes = [set().union(*(member.get("vote_ids", set()) for member in rows_of[root])) for root in voters]
+        ids = [_merge_external_ids(rows_of[root]) for root in voters]
+        for external in ids:
+            external["profile"] = set()
+        clash = {voters[side] for a, b in itertools.combinations(range(len(voters)), 2)
+                 if votes[a] & votes[b] or _external_ids_conflict(ids[a], ids[b]) for side in (a, b)}
+        for voter in voters:
+            if voter not in clash and union(voter, anchor, "unique_name"):
                 rows_of[anchor].extend(rows_of.pop(voter))
 
     # Group the merged rows back into one bucket per person.
@@ -569,20 +884,18 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
 
     return components, totals
 
-def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> list[dict[str, Any]]:
+def _load_rows(conn: sqlite3.Connection, touched: set[str]) -> list[dict[str, Any]]:
     """Every record's evidence with its current person, its partition and whether
-    it is live. In a full build a record is live when
-    this build touched it (``touched``); otherwise when it is bound, or was never
-    vacated by an occurrence moving to another record. A record that is not live
-    is stale evidence: it keeps its person but takes part in no match."""
-    bound = set() if touched is not None else {row[0] for row in conn.execute("SELECT DISTINCT record_id FROM person_bindings")}
+    it is live: this build touched it (``touched``). A record that is not live is
+    stale evidence: it keeps its person but takes part in no match."""
     vote_ids: dict[str, set[str]] = {}
     for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
         vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
-        live = record["id"] in touched if touched is not None else record["id"] in bound or not evidence.get("vacated")
+        evidence.setdefault("identities", [record["identity_key"]])
+        live = record["id"] in touched
         evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
                         vote_ids=vote_ids.get(record["id"], set()))
         rows.append(evidence)
@@ -614,21 +927,18 @@ def _stale_roster_partners(
     record of its name+party, exactly one live person holds that name+party, that
     person has a speaker side but no live roster record of its own, and no
     official id or partition of the two contradicts."""
-    def key(row: dict[str, Any]) -> tuple[str, str] | None:
-        name, party = _normalized_mp_name(row.get("display_name")), _normalized_mp_party(row.get("party"))
-        return (name, party) if name and party else None
-
     live_by_key: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
     component_of_person: dict[str, int] = {}
     for members in components.values():
         for row in members:
             component_of_person.setdefault(row["person_id"], id(members))
-        for k in {key(row) for row in members} - {None}:
+        for k in set().union(*(name_party_keys(row) for row in members)):
             live_by_key.setdefault(k, []).append(members)
     stale_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        if not row["live"] and is_stale_roster_partner(row) and key(row):
-            stale_by_key.setdefault(key(row), []).append(row)
+        keys = name_party_keys(row)
+        if not row["live"] and is_stale_roster_partner(row) and len(keys) == 1:
+            stale_by_key.setdefault(next(iter(keys)), []).append(row)
     partners = []
     for k, stale in stale_by_key.items():
         targets = live_by_key.get(k, [])
@@ -652,8 +962,8 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     """Apply the name-based guesses to the current persons, from the rows alone.
 
     A pure function of ``rows``: it reads no earlier guess, so a replay, an
-    incremental build and a fresh build agree. Only live records are matched (a
-    vacated one is stale evidence); a stale roster record joins afterwards as a
+    incremental build and a fresh build agree. Only live records are matched (one
+    this build did not touch is stale evidence); a stale roster record joins afterwards as a
     partner only (``_stale_roster_partners``). Whole persons move, so a guess can never
     tear a durable merge apart. A group that would join two partitions, or
     persons whose official ids contradict, stays split; otherwise the person
@@ -701,7 +1011,14 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     return totals
 
 
-def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str, int]:
+def begin_build(conn: sqlite3.Connection) -> None:
+    """Start a staged rebuild on this connection: an empty touched set, so a
+    rebuild that binds nothing still reconciles (every record is then stale)."""
+    conn.execute("DROP TABLE IF EXISTS temp.registry_touched")
+    conn.execute("CREATE TEMP TABLE registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
+
+
+def reconcile(conn: sqlite3.Connection) -> dict[str, int]:
     """Settle which person every record belongs to.
 
     Durable: the issued home key, reviewed merges, and merges that rest on a
@@ -709,16 +1026,16 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     (``_guess_merges``), which move a record's current person without retiring any
     key, so a guess that stops holding, or arrives in another order, leaves no trace.
 
-    ``full_build``: every live occurrence was bound again on this connection (the
-    staged rebuild), so a record nothing touched is stale and is ignored by every
-    match. Without it (tests, a partial persist) liveness falls back to bound or never vacated."""
+    It runs at the end of a staged rebuild, on the connection that bound every
+    live occurrence again, so a record nothing touched is stale and is ignored by
+    every match. A connection that never started a build or bound anything has no
+    touched set and is refused rather than read as "everything is stale"."""
+    if not conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='registry_touched'").fetchone():
+        raise RegistryError("reconcile runs only after a rebuild has bound its occurrences on this connection")
     validate(conn)
+    require_applied_partitions(conn)
     data = corrections()
-    touched = None
-    if full_build:
-        touched = set()
-        if conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='registry_touched'").fetchone():
-            touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
+    touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
     # Every record restarts from its durable home.
     for record in conn.execute("SELECT id, home_person_id FROM person_records").fetchall():
         _assign(conn, record["id"], resolve(conn, record["home_person_id"]))
@@ -726,8 +1043,8 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     rows = _load_rows(conn, touched)
     for members in match_rows([row for row in rows if row["live"]], guesses=False)[0].values():
         merge(conn, sorted({resolve(conn, row["person_id"]) for row in members}))
-    for correction in data["merges"]:
-        merge(conn, correction["persons"], correction.get("survivor"))
+    for keys, survivor in _reviewed_merge_groups(conn, data["merges"]):
+        merge(conn, keys, survivor)
     totals = _guess_merges(conn, _load_rows(conn, touched))
     validate(conn)
     return totals
@@ -736,7 +1053,7 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
 def validate(conn: sqlite3.Connection) -> None:
     seen: dict[str, str] = {}
     for row in conn.execute("SELECT id FROM persons"):
-        if not PERSON_KEY_RE.fullmatch(row[0]) or row[0].casefold() in RESERVED_PERSON_KEYS:
+        if not valid_person_key(row[0]):
             raise RegistryError(f"Invalid registry person key {row[0]!r}; restore the build-store backup")
         if seen.setdefault(row[0].casefold(), row[0]) != row[0]:
             raise RegistryError(f"Registry person keys {seen[row[0].casefold()]!r} and {row[0]!r} differ only by case; restore the build-store backup")

@@ -57,7 +57,7 @@ class ZusammenfuehrungTests(unittest.TestCase):
         ``page`` gives it a page."""
         identity = "xml:" + xml_id if separate else pulse_store.mp_identity(aw_politician_id=aw, aw_match=match, xml_redner_id=xml_id)
         return pulse_store.upsert_mp(
-            self.conn, now=self.now, display_name=name, party_id=self.party(party), identity_key=identity,
+            self.conn, now=self.now, display_name=name, party_id=self.party(party), identity_key=identity, occurrence_id="fixture:" + identity,
             xml_redner_id=xml_id, aw_politician_id=aw, aw_match=match, is_mdb=page,
         )
 
@@ -68,7 +68,7 @@ class ZusammenfuehrungTests(unittest.TestCase):
         """A DIP person (roster side)."""
         identity = "dip:" + dip_id if separate else pulse_store.mp_identity(aw_politician_id=aw, aw_match=match, dip_person_id=dip_id)
         return pulse_store.upsert_mp(
-            self.conn, now=self.now, display_name=name, party_id=self.party(party), identity_key=identity,
+            self.conn, now=self.now, display_name=name, party_id=self.party(party), identity_key=identity, occurrence_id="fixture:" + identity,
             dip_person_id=dip_id, aw_politician_id=aw, aw_match=match, is_mdb=True,
         )
 
@@ -82,20 +82,25 @@ class ZusammenfuehrungTests(unittest.TestCase):
 
     def test_queued_name_matches_cannot_bridge_conflicting_roster_ids(self) -> None:
         # One speaker has two party spellings across source records. Each
-        # spelling matches a different roster person before either join runs.
+        # spelling matches a different roster person before either join runs, so
+        # the speaker has no unique partner: it joins neither (it used to join
+        # whichever party sorted first).
+        speakers = []
         for identity, party in (("speaker-old", "SPD"), ("speaker-new", "CDU/CSU")):
-            pulse_store.upsert_mp(
+            speakers.append(pulse_store.upsert_mp(
                 self.conn, now=self.now, display_name="Ada Example", party_id=self.party(party),
-                identity_key=identity, xml_redner_id="11",
-            )
+                identity_key=identity,
+                occurrence_id="fixture:" + identity, xml_redner_id="11",
+            ))
         first = self.roster("Ada Example", "d1", party="SPD")
         second = self.roster("Ada Example", "d2", party="CDU/CSU")
 
         _, _, canonical, stats = self.collect()
 
-        self.assertNotEqual(canonical[first], canonical[second])
-        self.assertEqual(stats["merges_unique_name"], 1)
-        self.assertEqual(stats["buckets_split_namesakes"], 1)
+        self.assertEqual(len({canonical[first], canonical[second], canonical[speakers[0]]}), 3)
+        self.assertEqual(canonical[speakers[0]], canonical[speakers[1]])
+        self.assertEqual(stats["merges_unique_name"], 0)
+        self.assertEqual(stats["buckets_split_namesakes"], 2)
 
     def test_a_name_found_id_shared_by_two_records_does_not_join_them(self) -> None:
         a = self.speaker("Peter Müller", "11", aw=99, match="name")
@@ -206,7 +211,7 @@ class ZusammenfuehrungTests(unittest.TestCase):
     def test_a_contradicting_dip_id_blocks_the_corroboration(self) -> None:
         trusted = self.roster("Ada Lovelace", "dip-1", aw=5, match="ext_id", separate=True)
         named = pulse_store.upsert_mp(
-            self.conn, now=self.now, display_name="Ada Lovelace", party_id=self.party("SPD"), identity_key="xml:9",
+            self.conn, now=self.now, display_name="Ada Lovelace", party_id=self.party("SPD"), identity_key="xml:9", occurrence_id="fixture:xml:9",
             xml_redner_id="9", dip_person_id="dip-2", aw_politician_id=5, aw_match="name",
         )
         _, _, canonical, stats = self.collect()
@@ -392,7 +397,8 @@ class PersistTests(unittest.TestCase):
             with conn:
                 pulse_store.upsert_mp(
                     conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
-                    identity_key="aw:77", dip_person_id="dip-ada", aw_politician_id=77, is_mdb=True,
+                    identity_key="aw:77",
+                    occurrence_id="fixture:aw:77", dip_person_id="dip-ada", aw_politician_id=77, is_mdb=True,
                 )
             conn.close()
             entry = {
@@ -422,7 +428,8 @@ class PersistTests(unittest.TestCase):
                 pulse_store.upsert_mp(
                     conn, now=now, display_name="Steffi Lemke",
                     party_id=pulse_store.upsert_party(conn, "BÜNDNIS 90/DIE GRÜNEN", now),
-                    identity_key="aw:175323", dip_person_id="steffi", xml_redner_id="11005518",
+                    identity_key="aw:175323",
+                    occurrence_id="fixture:aw:175323", dip_person_id="steffi", xml_redner_id="11005518",
                     aw_politician_id=175323, is_mdb=True,
                 )
             conn.close()
@@ -437,7 +444,6 @@ class PersistTests(unittest.TestCase):
             conn = pulse_store.connect(database)
             try:
                 rows = {row["identity_key"]: dict(row) for row in conn.execute("SELECT * FROM mps")}
-                person_registry.reconcile(conn)
                 _, _ = build.collect_abgeordnete(conn)
                 canonical = {row["id"]: row["person_id"] for row in conn.execute("SELECT id, person_id FROM mps")}
                 roster, speaker = rows["dip:steffi"], rows["xml:11005518"]

@@ -555,9 +555,9 @@ class ContributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'store.sqlite'
             entries = [{'report': r}]
-            self.assertTrue(build.rebuild_database_from_entries(path, entries))
+            self.assertTrue(build.rebuild_database_from_entries(path, entries).replaced)
             original = path.read_bytes()
-            self.assertFalse(build.rebuild_database_from_entries(path, entries, keep_if_unchanged=True))
+            self.assertFalse(build.rebuild_database_from_entries(path, entries, keep_if_unchanged=True).replaced)
             self.assertEqual(path.read_bytes(), original)
             conn = store.connect(path)
             self.addCleanup(conn.close)
@@ -625,7 +625,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             conn = store.connect(path)
             store.persist_report(conn, r)
             self.assertEqual(sk.VERSION, 5)
-            self.assertEqual(store.SCHEMA_VERSION, 4)
+            self.assertEqual(store.SCHEMA_VERSION, 5)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()

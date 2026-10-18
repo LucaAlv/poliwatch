@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 import derive
 import politikfelder
-from stable_ids import speech_occurrence_id, speech_rede_id
+from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
 import person_registry as registry
 import publication_state as publication
 import speech_kinds
@@ -395,6 +395,124 @@ def vorgangstyp_anchor(kind: str) -> str | None:
 
 def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
+
+
+# Parliamentary terms explained on bill pages. source_url is consumed by the
+# sources page; tooltip wording stays short and avoids implying legal effect.
+PARLIAMENTARY_GLOSSARY: dict[str, dict[str, str]] = {
+    "Drucksache": {
+        "slug": "drucksache",
+        "kurz": "Ein amtlich veröffentlichtes Dokument des Bundestages, etwa ein Gesetzentwurf, Antrag oder Ausschussbericht.",
+        "lang": "Drucksachen sind parlamentarische Dokumente, die den Abgeordneten und der Öffentlichkeit in der Regel elektronisch zugänglich gemacht werden.",
+        "source_url": "https://www.bundestag.de/services/glossar/bundestagsdrucksache-245364",
+    },
+    "Plenarprotokoll": {
+        "slug": "plenarprotokoll",
+        "kurz": "Stenografischer Bericht über eine Sitzung des Bundestages.",
+        "lang": "Die Plenarprotokolle dokumentieren die Sitzungen des Bundestages und stehen öffentlich als stenografische Berichte zur Verfügung.",
+        "source_url": "https://www.bundestag.de/services/glossar/plenarprotokoll-283834",
+    },
+    "Tagesordnungspunkt": {
+        "slug": "tagesordnungspunkt",
+        "kurz": "Ein auf der Tagesordnung aufgeführter Beratungsgegenstand oder Abschnitt einer Sitzung.",
+        "lang": "Die Tagesordnung legt fest, welche Gegenstände der Bundestag in einer Sitzung behandelt; ein Punkt kann mehrere Vorlagen oder Beratungen umfassen.",
+        "source_url": "https://www.bundestag.de/services/glossar/tagesordnung-868648",
+    },
+    "Erste Beratung": {
+        "slug": "erste-beratung",
+        "kurz": "Erste Behandlung eines Gesetzentwurfs im Plenum; er wird meist an Ausschüsse überwiesen.",
+        "lang": "In der ersten Beratung werden grundsätzlich die Grundzüge eines Gesetzentwurfs behandelt. Am Ende wird er in der Regel zur weiteren Arbeit an einen Ausschuss überwiesen.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Zweite Beratung": {
+        "slug": "zweite-beratung",
+        "kurz": "Plenarberatung der Ausschussfassung eines Gesetzentwurfs; Änderungen und Abstimmungen sind möglich.",
+        "lang": "In der zweiten Beratung befasst sich das Plenum mit der Ausschussempfehlung und dem Bericht. Abgeordnete können Änderungsanträge stellen; abgestimmt wird über die einzelnen Bestimmungen und Änderungsanträge. Die Schlussabstimmung folgt in der dritten Beratung.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Dritte Beratung": {
+        "slug": "dritte-beratung",
+        "kurz": "Abschließende Beratung eines Gesetzentwurfs im Plenum mit Schlussabstimmung.",
+        "lang": "In der dritten Beratung wird der Gesetzentwurf abschließend behandelt und der Bundestag stimmt darüber ab. Änderungsanträge sind nur in den dafür vorgesehenen Grenzen möglich.",
+        "source_url": "https://www.bundestag.de/services/glossar/beratung-245342",
+    },
+    "Beschlussempfehlung und Bericht": {
+        "slug": "beschlussempfehlung-bericht",
+        "kurz": "Vorlage eines Ausschusses mit Empfehlung an das Plenum und Bericht über seine Beratung.",
+        "lang": "Der federführende Ausschuss legt dem Plenum regelmäßig eine Beschlussempfehlung und einen Bericht vor. Die Empfehlung ist ein Vorschlag für die Entscheidung; der Bundestag entscheidet selbst.",
+        "source_url": "https://www.bundestag.de/services/glossar/beschlussempfehlung-245344",
+    },
+    "Unterrichtung": {
+        "slug": "unterrichtung",
+        "kurz": "Mitteilung oder Bericht, mit dem etwa die Bundesregierung den Bundestag über einen Sachverhalt informiert.",
+        "lang": "Unterrichtungen werden dem Bundestag zugeleitet und als Drucksache verteilt. Je nach Gegenstand kann das Plenum sie beraten oder zur Kenntnis nehmen.",
+        "source_url": "https://www.bundestag.de/services/glossar/unterrichtung-245544",
+    },
+    "Stellungnahme": {
+        "slug": "stellungnahme",
+        "kurz": "Äußerung des Bundesrates zu einer Vorlage, etwa zu einem Gesetzentwurf der Bundesregierung.",
+        "lang": "Gesetzentwürfe der Bundesregierung gehen zuerst an den Bundesrat. Er kann dazu eine Stellungnahme abgeben, zu der sich die Regierung schriftlich äußern kann; danach wird der Entwurf mit der Stellungnahme dem Bundestag zugeleitet. Die Stellungnahme ist eine Äußerung, keine Entscheidung über das Gesetz.",
+        "source_url": "https://www.bundestag.de/parlament/aufgaben/gesetzgebung_neu/gesetzgebung/weg-255468",
+    },
+    "Gesetzesbeschluss": {
+        "slug": "gesetzesbeschluss",
+        "kurz": "Beschluss des Bundestages über einen Gesetzentwurf; das Gesetzgebungsverfahren kann danach noch weitergehen.",
+        "lang": "Nach dem Beschluss des Bundestages wird das Gesetz dem Bundesrat zugeleitet. Je nach Gesetz folgen weitere Schritte, bevor es ausgefertigt und verkündet wird.",
+        "source_url": "https://www.bundestag.de/parlament/aufgaben/gesetzgebung_neu/gesetzgebung/weg-255468",
+    },
+    "Namentliche Abstimmung": {
+        "slug": "namentliche-abstimmung",
+        "kurz": "Abstimmung, bei der das individuelle Stimmverhalten der Abgeordneten festgehalten und veröffentlicht wird.",
+        "lang": "Bei einer namentlichen Abstimmung wird für jedes Mitglied des Bundestages festgehalten, wie es abgestimmt hat. Das individuelle Stimmverhalten wird veröffentlicht.",
+        "source_url": "https://www.bundestag.de/services/glossar/nam_abst-245502",
+    },
+    "Fraktion": {
+        "slug": "fraktion",
+        "kurz": "Zusammenschluss von Abgeordneten im Bundestag zur gemeinsamen parlamentarischen Arbeit.",
+        "lang": "Fraktionen bündeln die parlamentarische Arbeit ihrer Mitglieder. Für den Fraktionsstatus gelten die Voraussetzungen der Geschäftsordnung des Bundestages.",
+        "source_url": "https://www.bundestag.de/services/glossar/fraktionen-444784",
+    },
+    "Sprechrolle": {
+        "slug": "sprechrolle",
+        "kurz": "Funktion, in der eine Person eine Rede hält, etwa als Bundesministerin, Staatssekretär oder Mitglied des Bundesrates.",
+        "lang": "Ein Begriff dieser Seite, kein amtlicher: Die Sprechrolle gehört zur einzelnen Rede, nicht zur Person. Eine Abgeordnete, die als Bundesministerin spricht, behält ihr Mandat. Die Rolle stammt aus den Plenarprotokollen; sie ist keine eigene Rechtsstellung.",
+        "source_url": "https://www.bundestag.de/dokumente/protokolle",
+        "source_label": "Plenarprotokolle, in denen die Rolle erfasst ist",
+    },
+}
+
+_PARLIAMENTARY_TERM_ALIASES = {
+    "1. beratung": "Erste Beratung",
+    "2. beratung": "Zweite Beratung",
+    "3. beratung": "Dritte Beratung",
+    "beschlussempfehlung/bericht": "Beschlussempfehlung und Bericht",
+    "namentliche abstimmungen": "Namentliche Abstimmung",
+}
+
+
+def render_parliamentary_term(
+    label: str, *, glossary_href: str = "../sources.html", tip_id: str
+) -> str:
+    """Render a known parliamentary term with a source-page link and tooltip."""
+    canonical = _PARLIAMENTARY_TERM_ALIASES.get(label.casefold())
+    if canonical is None:
+        canonical = next((term for term in PARLIAMENTARY_GLOSSARY if term.casefold() == label.casefold()), None)
+    if canonical is None and label.casefold() == "gesetzgebung":
+        entry = VORGANGSTYP_GLOSSARY["Gesetzgebung"]
+        href = f"{glossary_href}#vorgangstyp-{entry['slug']}"
+        short = entry["kurz"]
+    elif canonical is not None:
+        entry = PARLIAMENTARY_GLOSSARY[canonical]
+        href = f"{glossary_href}#parlament-{entry['slug']}"
+        short = entry["kurz"]
+    else:
+        return esc(label)
+    safe_id = esc(tip_id)
+    return (
+        f'<span class="bill-term"><a class="bill-term-link" href="{esc(href)}" '
+        f'data-bill-help="{safe_id}" aria-describedby="{safe_id}">{esc(label)}</a>'
+        f'<span class="bill-tooltip" id="{safe_id}" role="tooltip" hidden>{esc(short)}</span></span>'
+    )
 
 
 # The Angenommen/Abgelehnt pill, shared by the dossier panel and votes/index.html.
@@ -1074,6 +1192,23 @@ def navigation_runtime_script() -> str:
 """
 
 
+def speech_hash_runtime_script() -> str:
+    return """<script>
+    (() => {
+      function revealSpeech() {
+        let id;
+        try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+        const speech = document.getElementById(id);
+        if (!speech || !speech.matches('details.speech-card')) return;
+        speech.open = true;
+        speech.scrollIntoView({ block: 'start' });
+      }
+      revealSpeech();
+      addEventListener('hashchange', revealSpeech);
+    })();
+    </script>"""
+
+
 def page_scripts(selection: Selection | None = None) -> str:
     return ai_summary_runtime_script() + theme_runtime_script() + navigation_runtime_script()
 
@@ -1131,7 +1266,7 @@ def speech_anchor(item: dict[str, Any], speech: dict[str, Any], sequence: int) -
         suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(speech_id)).strip("-")
     else:
         suffix = str(sequence + 1)
-    return f"speech-{item.get('index')}-{suffix or sequence + 1}"
+    return f"speech-{source_index(item.get('index'))}-{suffix or sequence + 1}"
 
 
 # Inline "person" glyph used for the compact abgeordnetenwatch profile link so
@@ -1368,7 +1503,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             if votes:
                 vote_top_count += 1
                 if first_vote_index is None:
-                    first_vote_index = item.get("index")
+                    first_vote_index = source_index(item.get("index"))
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
                     vorgangstyp_counts[str(position["vorgangstyp"])] += 1
@@ -1546,7 +1681,7 @@ def vorgang_occurrences(
                             "label": week_label(week),
                             "dokumentnummer": protocol.get("dokumentnummer"),
                             "page_path": entry.get("page_path"),
-                            "index": item.get("index"),
+                            "index": source_index(item.get("index")),
                             "vorgangsposition": record.get("vorgangsposition"),
                             "titel": record.get("titel"),
                             "vorgangstyp": record.get("vorgangstyp"),
@@ -1673,10 +1808,9 @@ def is_question_format(item: dict[str, Any]) -> bool:
 
 def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], mp_lookup: dict[str, str] | None = None) -> str:
     cards = []
-    from stable_ids import contribution_occurrence_id
     for c in item.get("xml_contributions") or []:
         speech_kinds.validate_kind(c["kind"])
-        key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, c["sequence"], c.get("rede_id"))
+        key = contribution_occurrence_id(protocol.get("id"), source_index(item.get("index")), c["sequence"], c.get("rede_id"))
         speaker = c.get("speaker") or {}
         name = esc(derive.speaker_display_name(speaker) or "Nicht zugeordnet")
         # The registry lookup keys occurrences; never guess a person from a name.
@@ -1702,7 +1836,7 @@ def render_contribution_details(item: dict[str, Any], protocol: dict[str, Any], 
             if not containing:
                 for other in item.get("xml_contributions") or []:
                     if other.get("rede_id") == parent:
-                        parent_key = contribution_occurrence_id(protocol.get("id"), item.get("index") or 0, other["sequence"], parent)
+                        parent_key = contribution_occurrence_id(protocol.get("id"), source_index(item.get("index")), other["sequence"], parent)
                         containing = f'<a href="#contribution-{esc(parent_key)}">Enthaltender Beitrag</a>'
                         break
         paragraphs = c.get("paragraphs") or ([c["text"]] if c.get("text") else [])
@@ -1895,7 +2029,7 @@ def topic_identity(item: dict[str, Any]) -> dict[str, Any]:
         lead_title = (
             short(item.get("heading"), RADAR_TITLE_CHARS)
             or str(item.get("top_id") or "").strip()
-            or f"Tagesordnungspunkt {item.get('index')}"
+            or f"Tagesordnungspunkt {source_index(item.get('index'))}"
         )
 
     return {
@@ -1997,7 +2131,7 @@ def topic_row(
         "dossier_href": dossier_href,
         "datum": protocol.get("datum"),
         "dokumentnummer": protocol.get("dokumentnummer"),
-        "index": item.get("index"),
+        "index": source_index(item.get("index")),
         "top_id": item.get("top_id"),
         "heading": item.get("heading"),
         "speech_count": speech_count,
@@ -2060,9 +2194,9 @@ def week_topic_rows(
                         "speech_count": speech_count,
                         "contribution_counts": counts,
                         "share": percent(speech_count, total),
-                        "href": f"{dossier_href}#top-{item.get('index')}",
+                        "href": f"{dossier_href}#top-{source_index(item.get('index'))}",
                         "datum": protocol.get("datum"),
-                        "index": item.get("index"),
+                        "index": source_index(item.get("index")),
                     }
                 )
                 continue
@@ -2663,7 +2797,7 @@ def render_session_llm_summary(
         rows.append(
             '<article class="session-summary-item">'
             '<div class="session-summary-item-head">'
-            f'<a class="top-jump" href="#top-{esc(item.get("index"))}">{esc(item.get("top_id"))}</a>'
+            f'<a class="top-jump" href="#top-{esc(source_index(item.get("index")))}">{esc(item.get("top_id"))}</a>'
             f"<h3>{esc(short(item.get('heading'), 120))}</h3>"
             "</div>"
             f"<p>{esc(summary.get('text'))}</p>"
@@ -2796,7 +2930,7 @@ def render_html(
     for item in report.get("agenda_items") or []:
         speeches = []
         for sequence, speech in enumerate(item.get("xml_speakers") or [], start=1):
-            rede_id = speech_rede_id(protocol.get("id"), item.get("index") or 0, sequence, speech.get("rede_id"))
+            rede_id = speech_rede_id(protocol.get("id"), source_index(item.get("index")), sequence, speech.get("rede_id"))
             speaker = registry.corrected_speaker(speech.get("speaker") or {}, protocol.get("id"), rede_id)
             speaker["occurrence_id"] = speech_occurrence_id(protocol.get("id"), rede_id)
             speeches.append({**speech, "speaker": speaker})
@@ -2827,7 +2961,7 @@ def render_html(
             '<span class="mini-bars" title="Türkis: Anteil an allen Reden dieser Sitzung. Ocker: Anteil am extrahierten Redetext."><i style="width:{speech_share:.2f}%"></i><b style="width:{text_share:.2f}%"></b></span>'
             '<span class="row-metric">{speeches} Reden · {speech_share_label} der Sitzung</span>'
             "</a>".format(
-                index=esc(item["index"]),
+                index=esc(source_index(item["index"])),
                 heading_title=heading_title,
                 top=esc(item.get("top_id")),
                 title=esc(short(heading_topic, 78)),
@@ -2916,7 +3050,7 @@ def render_html(
         )
         top_sections.append(
             f"""
-            <article class="top-card" id="top-{esc(item['index'])}">
+            <article class="top-card" id="top-{esc(source_index(item['index']))}">
               <div class="top-head">
                 <div>
                   <span class="eyebrow">{esc(item.get('top_id'))} · {esc(page_range_text(item))}</span>
@@ -3067,6 +3201,13 @@ def render_html(
       border-bottom:1px solid var(--line);
     }}
     h1 {{ margin:0; font-size:34px; line-height:1.1; font-weight:760; }}
+    /* Compound words such as "Anpassungsverfahrensabweichungsgesetz" are wider than a phone. */
+    h1, .top-card h2, .metric, .row-title, .vote-head p, .speech-text {{
+      overflow-wrap:break-word;
+      -webkit-hyphens:auto;
+      hyphens:auto;
+      hyphenate-limit-chars:12 5 5;
+    }}
     .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:15px; }}
     .meta-grid {{
       display:grid;
@@ -3286,6 +3427,7 @@ def render_html(
     }}
     .attention-row {{
       display:grid;
+      grid-template-columns:minmax(0,1fr);
       gap:5px;
       padding:12px 16px;
       border-bottom:1px solid #edf0f4;
@@ -3362,7 +3504,7 @@ def render_html(
     .mini-bars i, .mini-bars b {{ display:block; height:3px; border-radius:999px; }}
     .mini-bars i {{ background:var(--teal); }}
     .mini-bars b {{ background:var(--amber); }}
-    main {{ display:grid; gap:16px; }}
+    main {{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }}
     .notice {{
       padding:12px 14px;
       border:1px solid #e3c46a;
@@ -3752,6 +3894,7 @@ def render_html(
     }}
     .speech-cards {{
       display:grid;
+      grid-template-columns:minmax(0,1fr);
       gap:8px;
     }}
     .speech-card {{
@@ -3827,22 +3970,22 @@ def render_html(
       .attention-list::after {{ display:none; }}
     }}
     @media (max-width: 1120px) {{
-      .layout {{ grid-template-columns:1fr; }}
-      .detail-grid {{ grid-template-columns:1fr; }}
-      .api-record-grid {{ grid-template-columns:1fr; }}
-      .source-strip {{ grid-template-columns:1fr; }}
+      .layout {{ grid-template-columns:minmax(0,1fr); }}
+      .detail-grid {{ grid-template-columns:minmax(0,1fr); }}
+      .api-record-grid {{ grid-template-columns:minmax(0,1fr); }}
+      .source-strip {{ grid-template-columns:minmax(0,1fr); }}
       .member-vote-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
     }}
     @media (max-width: 720px) {{
       .shell {{ padding:14px; }}
-      .page-header, .top-head {{ grid-template-columns:1fr; }}
-      .session-llm-header, .session-summary-item-head {{ grid-template-columns:1fr; }}
-      .meta-grid {{ grid-template-columns:1fr 1fr; }}
+      .page-header, .top-head {{ grid-template-columns:minmax(0,1fr); }}
+      .session-llm-header, .session-summary-item-head {{ grid-template-columns:minmax(0,1fr); }}
+      .meta-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
       h1 {{ font-size:27px; }}
       h2 {{ font-size:18px; }}
       .score {{ text-align:left; border-left:0; padding-left:0; }}
-      .top-bars {{ grid-template-columns:1fr; }}
-      .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:1fr; }}
+      .top-bars {{ grid-template-columns:minmax(0,1fr); }}
+      .vote-head, .vote-fractions, .member-vote-grid {{ grid-template-columns:minmax(0,1fr); }}
       .vote-fraction-row {{ grid-template-columns:10px minmax(0,.7fr) minmax(90px,1fr); }}
       .vote-fraction-row em {{ display:none; }}
       .speaker-row {{ grid-template-columns:10px minmax(0,1fr) 48px max-content; }}
@@ -3850,11 +3993,11 @@ def render_html(
       .speech-card summary {{ grid-template-columns:10px minmax(0,1fr); }}
       .speech-card summary em {{ grid-column:2; }}
       .speech-text {{ padding-left:14px; }}
-      .summary-sources li {{ grid-template-columns:1fr; }}
+      .summary-sources li {{ grid-template-columns:minmax(0,1fr); }}
       .summary-sources strong {{ grid-row:auto; }}
       .ai-summary-header {{ flex-direction:column; }}
       .ai-summary-toggle {{ width:100%; }}
-      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:1fr; }}
+      .position-list li, .doc-list li, .activity-list li, .people-list li {{ grid-template-columns:minmax(0,1fr); }}
       footer {{ align-items:flex-start; flex-direction:column; }}
     }}
     @media screen and (max-width: 1120px) {{
@@ -3923,6 +4066,7 @@ def render_html(
       <span>Das XML-Protokoll gilt als maßgeblich.{footer_nav_html}</span>
     </footer>
   </div>
+  {speech_hash_runtime_script()}
   {page_scripts(features)}
 </body>
 </html>

@@ -13,7 +13,7 @@ from _support import FIXTURES
 
 
 class SchemaGuardTests(unittest.TestCase):
-    # Value: protects=a schema-3 store (proceedings without sachgebiet) is refused with the repersist instruction instead of being stamped version 4 with empty tag tables; fails_when=require_current_schema stops checking proceedings.sachgebiet, so a plain --offline build exports empty Politikfeld tables and later persists fail; why_new=no test opened a store from before the Politikfeld columns; seam=none
+    # Value: protects=a store from before schema 5 (proceedings without sachgebiet) is refused with the repersist instruction instead of being stamped version 5 with empty tag tables; fails_when=require_current_schema stops checking proceedings.sachgebiet, so a plain --offline build exports empty Politikfeld tables and later persists fail; why_new=no test opened a store from before the Politikfeld columns; seam=none
     def test_a_store_without_proceedings_sachgebiet_is_refused(self):
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE proceedings (id TEXT PRIMARY KEY, title TEXT)")
@@ -253,6 +253,7 @@ class PartyMigrationTests(unittest.TestCase):
                 display_name=f"MdB {index}",
                 party_id=ids[name],
                 identity_key=f"dip:seed-{index}",
+                occurrence_id=f"fixture:dip:seed-{index}",
             )
         conn.execute(
             "INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now)
@@ -569,6 +570,16 @@ class ConnectGuardTests(unittest.TestCase):
             # Reconnecting to a normal, already-initialized store must not raise.
             conn = pulse_store.connect(db_path)
             conn.close()
+
+
+
+class DocumentUrlRankTests(unittest.TestCase):
+    # Value: protects=a Drucksache number with non-ASCII digits is treated as encoding no checkable path instead of crashing the persist; fails_when=_encodes_document_number goes back to str.isdigit, which accepts '²' and int() raises; why_new=every URL-rank case used ASCII numbers; seam=none
+    def test_non_ascii_digits_encode_no_checkable_path(self) -> None:
+        for issuer, number in (("BT", "2²/1"), ("BR", "٢٣/١")):
+            with self.subTest(number=number):
+                self.assertFalse(pulse_store._encodes_document_number(issuer, number, "/btd/2/000/200001.pdf"))
+        self.assertTrue(pulse_store._encodes_document_number("BT", "20/8601", "/btd/20/086/2008601.pdf"))
 
 
 if __name__ == "__main__":

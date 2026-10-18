@@ -183,7 +183,7 @@ One Tagesordnungspunkt, in one Sitzung, at which a Vorgang was dealt with, point
 _Avoid_: Fundstelle (DIP's page reference in a Drucksache or Plenarprotokoll), Debatte
 
 **Drucksache**:
-An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen.
+An official printed paper of the Bundestag, numbered Wahlperiode/number (21/1234): a Gesetzentwurf, Antrag, Beschlussempfehlung, Bericht and the like. A Vorgang usually spans several Drucksachen. DIP also links the Bundesrat's Drucksachen of a Vorgang, numbered number/year (40/23), so a Drucksache is named by its issuer (Bundestag or Bundesrat) and number, never by the number alone and never by its URL.
 _Avoid_: document (unqualified), confusing it with a Plenarprotokoll
 
 **Gesetzgebung**:
@@ -375,4 +375,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 3 / export format 2 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 5 / export format 5 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

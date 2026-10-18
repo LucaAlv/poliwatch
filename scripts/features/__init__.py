@@ -57,8 +57,7 @@ COMPONENTS = (
     ComponentDefinition("mp-pages", "Abgeordnete", "Erzeugt Übersichts- und Profilseiten für Abgeordnete.", "Bereiche", requires=("store",)),
     ComponentDefinition("mp-roster", "Vollständiger MdB-Kader", "Kompatibilitäts-ID für die Kader-Anreicherung.", "Bereiche", requires=("mp-pages",)),
     ComponentDefinition("facts", "Fakt der Woche", "Erzeugt die wöchentlichen Fakt-Karten und ihre Seiten.", "Bereiche", requires=("store",)),
-    ComponentDefinition("bills", "Gesetzesvorhaben verfolgen", "Erzeugt Übersichts- und Detailseiten für Gesetzesvorhaben (Vorgänge vom Typ Gesetzgebung).", "Bereiche", requires=("dip-fetch",)),
-    ComponentDefinition("bill-follow", "Gesetzesvorhaben merken", "Erlaubt es, Gesetzesvorhaben lokal im Browser zu markieren.", "Bereiche", requires=("bills",)),
+    ComponentDefinition("bills", "Gesetzesvorhaben", "Erzeugt Übersichts- und Detailseiten für Gesetzesvorhaben (Vorgänge vom Typ Gesetzgebung).", "Bereiche", requires=("dip-fetch",)),
     ComponentDefinition("dev-view", "Dev-Ansicht", "Zeigt Rohdaten, API-Antworten und Build-Kommandos.", "Entwicklung", requires=("dossiers",)),
 )
 

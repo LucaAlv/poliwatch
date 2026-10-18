@@ -78,7 +78,7 @@ Comparable sites:
 ## Evidence on Hand
 
 - Real official data. `scripts/preview_dip_pulse_site.sh demo` builds offline from a committed extract of Plenarprotokoll 21/84, TOP 32 a/b (16 Reden, Drucksachen 21/6354 and 21/4833). The largest local store holds 285 Sitzungen of WP 20 and 21 (2022-01-27 to 2026-06-12). WP 18 and 19 are not acquired yet.
-- Design plans and sketches in `docs/designs/` (`fixed-public-experience.md` with its wireframe PNG, `puls-wochenradar.md` with a sketch, `daten-page.md`, `fakt-der-woche.md`).
+- Design plans and sketches in `docs/designs/` (`fixed-public-experience.md` with its wireframe PNG, `puls-wochenradar.md` with a sketch, `daten-page.md`, `fakt-der-woche.md`, `gesetzesvorhaben.md`).
 - There are no users, testimonials, press, usage metrics or partners yet, because the product is pre-release. Do not invent any.
 
 ## Product Principles
