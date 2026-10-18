@@ -784,6 +784,37 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(sachgebiet, {'["Verkehr"]', '["Gesundheit"]'})
         self.assertIn("politikfelder: TOPs:", err)
 
+    # Value: protects=a store from before schema 5 (no proceedings.sachgebiet, no tag tables) is refused byte for byte by a non-upgrade rebuild and is upgraded to tagged schema 5 by --repersist; fails_when=the sachgebiet guard is dropped (an online build then stamps 5 over empty tag tables) or the upgrade path trips over the old store; why_new=the guard test uses a bare table and no test replays an old store through the rebuild; seam=none; no_claim=a store written by released code (the old shape is staged by dropping what schema 5 added)
+    @unittest.skipUnless(sqlite3.sqlite_version_info >= (3, 35), "ALTER TABLE ... DROP COLUMN needs SQLite 3.35+ to stage the old schema")
+    def test_a_schema_4_store_is_refused_by_an_online_rebuild_and_upgraded_by_repersist(self) -> None:
+        entries, _ = self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("DROP TABLE agenda_item_politikfelder")
+            conn.execute("DROP TABLE vote_politikfelder")
+            conn.execute("ALTER TABLE proceedings DROP COLUMN sachgebiet")
+            conn.commit()
+        finally:
+            conn.close()
+        old = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "Old build-store schema.*--offline --repersist"):
+            build.rebuild_database_from_entries(self.database, entries, vorgang_cache={"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+        self.assertEqual(old, sha(self.database))
+        self.assertNotIn("sachgebiet", self.columns("proceedings"))
+
+        cache = {"version": 1, "vorgaenge": {"fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}}, "dokumentnummern": {}}
+        _, rebuilt = self.repersist(vorgang_cache=cache)
+        self.assertTrue(rebuilt.replaced)
+        self.assertIn("sachgebiet", self.columns("proceedings"))
+        self.assertGreater(self.count("agenda_item_politikfelder"), 0)
+        self.assertGreater(self.count("vote_politikfelder"), 0)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertIn("Gesundheit", {r[0] for r in conn.execute("SELECT politikfeld FROM agenda_item_politikfelder")})
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], pulse_store.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()
         before = sha(self.database)

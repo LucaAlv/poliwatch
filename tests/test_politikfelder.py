@@ -7,6 +7,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -551,6 +552,50 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(stats["nummern_failed"], 8)
         self.assertEqual(sorted(saved["dokumentnummern"]), ["21/10", "21/5"])
 
+    # Value: protects=when the Vorgang pass shows the API is down, the Drucksache-number lookups are not even tried; fails_when=the `if not down` guard is dropped, so a dead API or a bot challenge gets one more call per number at 0.5 s pacing after the breaker already tripped; why_new=the breaker test's id pass names no Drucksache number, so it cannot tell; seam=none
+    def test_an_outage_on_the_id_pass_skips_the_number_lookups(self) -> None:
+        many = [item(i, positions=(position(f"v{i}"),)) for i in range(1, 7)] + [item(7, numbers=("21/7",))]
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": many}}]
+        self.enterContext(mock.patch.object(dip, "VORGANG_BATCH", 1))
+        client = FakeClient({}, {"21/7": ["x"]}, fail=True)
+        stats, _saved, _err = self.run_refresh(client, pf.empty_cache())
+        self.assertEqual([p for _, p in client.calls if "f.dokumentnummer" in p], [])
+        self.assertEqual((stats["nummern"], stats["nummern_failed"]), (0, 0))
+        self.assertEqual(stats["vorgaenge_failed"], 6)
+
+    # Value: protects=a full disk is a warning that does not end the build, and an interrupted first fill keeps what it resolved (saved every CACHE_SAVE_EVERY lookups and again on the way out); fails_when=save() stops catching OSError, or resolve_numbers loses its periodic save or its finally; why_new=every other test saves to a healthy directory and runs to the end; seam=none; no_claim=a real full disk or SIGKILL (a patched save_cache, a KeyboardInterrupt from the fake client)
+    def test_a_failed_save_is_a_warning_and_an_interrupted_fill_keeps_its_progress(self) -> None:
+        numbered = [item(i, numbers=(f"21/{i}",)) for i in range(1, 7)]
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": numbered}}]
+        self.enterContext(mock.patch.object(build, "NUMBER_LOOKUP_PAUSE", 0))
+
+        with mock.patch.object(pf, "save_cache", side_effect=OSError("disk full")), contextlib.redirect_stderr(io.StringIO()) as err:
+            stats = build.refresh_vorgang_cache(FakeClient({}, {}), self.entries, pf.empty_cache(), Path("unused"))
+        self.assertEqual(stats["nummern"], 6)
+        self.assertIn("could not save the Vorgang cache: disk full", err.getvalue())
+
+        class Interrupted(FakeClient):
+            def list_all(self, path, params=None):
+                if "f.dokumentnummer" in (params or {}) and params["f.dokumentnummer"] == "21/4":
+                    raise KeyboardInterrupt
+                return super().list_all(path, params)
+
+        self.enterContext(mock.patch.object(build, "CACHE_SAVE_EVERY", 2))
+        seen: list[int] = []
+        real_save = pf.save_cache
+
+        def spy(output_dir, cache):
+            seen.append(len(cache["dokumentnummern"]))
+            real_save(output_dir, cache)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(pf, "save_cache", side_effect=spy):
+            site = Path(tmp) / "site"
+            client = Interrupted({}, {f"21/{i}": [] for i in range(1, 7)})
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(KeyboardInterrupt):
+                build.refresh_vorgang_cache(client, self.entries, pf.empty_cache(), site)
+            self.assertEqual(sorted(pf.load_cache(site)["dokumentnummern"]), ["21/1", "21/2", "21/3"])
+        self.assertEqual(seen, [0, 2, 3])  # after the (empty) id pass, at the 2nd lookup, on the way out
+
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]
         cache = cache_of(
@@ -612,6 +657,24 @@ class PersistTests(unittest.TestCase):
             conn.execute("INSERT INTO vote_politikfelder VALUES (?, 'Recht', 9, 'sachgebiet')", (vote_id,))
         with self.assertRaises(sqlite3.IntegrityError):
             conn.execute("INSERT INTO vote_politikfelder VALUES (?, 'Justiz', 9, 'geraten')", (vote_id,))
+
+    # Value: protects=an agenda item whose source index is the text "1" or " 02 " still gets its tag rows, and a vote without an id gets none and crashes nothing; fails_when=persist_politikfelder looks agenda_ids up by the raw item["index"] instead of stable_ids.source_index (the #91 merge fix), so those TOPs are silently stored untagged; why_new=every persist test uses integer indexes and votes with ids; seam=none
+    def test_text_indexes_find_their_agenda_item_and_a_vote_without_an_id_gets_no_row(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = pulse_store.connect(Path(tmp.name) / "store.sqlite")
+        self.addCleanup(conn.close)
+        report = fixture_report()
+        report["agenda_items"][0]["index"] = "1"
+        report["agenda_items"][0]["api"]["positions"] = [position("v1", "Gesetzgebung")]
+        report["agenda_items"][1]["index"] = " 02 "
+        report["agenda_items"][1]["api"] = {"positions": [position("v2", "Antrag")]}
+        report["agenda_items"][1]["votes"] = [{"title": "Ohne Kennung", "date": "2024-05-15"}]
+        pulse_store.persist_report(conn, report, cache_of({"v1": vorgang("Gesundheit"), "v2": vorgang("Verkehr")}))
+        rows = {tuple(r) for r in conn.execute(
+            "SELECT a.item_index, politikfeld FROM agenda_item_politikfelder JOIN agenda_items a ON a.id = agenda_item_id")}
+        self.assertEqual(rows, {(1, "Gesundheit"), (2, "Verkehr")})
+        self.assertEqual({r[0] for r in conn.execute("SELECT DISTINCT vote_id FROM vote_politikfelder")}, {"12345"})
 
     def test_persisting_again_replaces_the_rows(self) -> None:
         conn = self.persisted(cache_of({"v1": vorgang("Gesundheit")}))
@@ -703,6 +766,38 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(page.count('class="pf-tag"'), 1)  # the untagged row gets no label
         # With no tag anywhere there is nothing to filter by, so no filter row.
         self.assertNotIn('data-politikfeld-chip="', build.render_votes_archive_index([untagged]))
+
+    # Value: protects=the cache main loads reaches the pages render_site writes itself: the front page radar and, through the votes component, votes/index.html; fails_when=render_site stops handing vorgang_cache to render_front_page or to the component context (or the context key is renamed), so the live site ships without Politikfeld chips and filters while every direct-call render test stays green; why_new=the other render tests call render_html, write_report_files, collect_votes_archive and week_topic_rows directly; seam=none
+    def test_render_site_threads_the_cache_into_the_front_page_and_the_votes_archive(self) -> None:
+        report = self.report()
+        report["agenda_items"][0]["xml_speakers"] = [
+            {"speaker": {"name": "A", "faction": "SPD"}, "text": "x", "text_length": 1, "rede_id": "r1"}
+        ]
+        pages: dict[bool, tuple[str, str]] = {}
+        for cached in (True, False):
+            with tempfile.TemporaryDirectory() as tmp:
+                output_dir = Path(tmp) / "site"
+                for name in ("data", "protocols", "bills", "abgeordnete"):
+                    (output_dir / name).mkdir(parents=True)
+                report_path, page_path, slug = build.report_paths(output_dir, report["protocol"]["dokumentnummer"])
+                entry = {"report": copy.deepcopy(report), "report_path": report_path, "page_path": page_path, "slug": slug}
+                with contextlib.redirect_stderr(io.StringIO()):
+                    build.render_site(
+                        output_dir=output_dir, database_path=output_dir / "data" / "bundestag-pulse.sqlite", no_persist=True,
+                        protocols=[report["protocol"]], entries=[entry], abg_mps=[], mp_lookup={}, today=date(2026, 9, 15),
+                        vorgang_cache=cache_of({"v1": vorgang("Verkehr")}) if cached else None,
+                    )
+                pages[cached] = (
+                    (output_dir / "puls.html").read_text(encoding="utf-8"),
+                    (output_dir / "votes" / "index.html").read_text(encoding="utf-8"),
+                )
+        front, archive = pages[True]
+        self.assertIn('data-radar-chip="Verkehr"', front)
+        self.assertIn('data-politikfeld-chip="Verkehr"', archive)
+        self.assertIn('<li class="pf-tag">Verkehr</li>', archive)
+        front_without, archive_without = pages[False]
+        self.assertNotIn('data-radar-chip="', front_without)
+        self.assertNotIn('data-politikfeld-chip="', archive_without)
 
     def test_the_radar_has_no_filter_when_nothing_is_tagged(self) -> None:
         self.assertEqual(build.render_radar_filter([{"politikfelder": []}, {"politikfelder": [pf.UNTAGGED]}]), "")
