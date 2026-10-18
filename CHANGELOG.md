@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0.0] - 2026-10-18
+
+### Changed
+
+- A Drucksache is identified by its issuer (Bundestag or Bundesrat) and its number, not by its URL. A DIP URL rewrite no longer creates a new document, and Bundesrat numbers no longer collide with Bundestag numbers. On the reference cache the store holds 7,952 documents instead of 7,956 (5,749 Bundestag, 2,203 Bundesrat): four numbers had a second, wrong or malformed URL (20/11710, 20/13328, 21/1060, 21/1061), and each now keeps the URL that encodes its number. Junction links, grouping, person keys, roster bindings and facts are unchanged.
+- Store schema 4 and Daten export format 4. A store built by an earlier version is refused with the instruction to run `--offline --repersist`; every document id is minted once more, so document receipts in the facts change id once.
+- The Daten recipes r1 and r3 name each person from the same row the Personenseite uses (roster row, then speaker row): 496 r1 names, 16 r1 parties and 25 r3 labels change on the reference cache, and one Personenseite heading changes.
+- A repeat offline rebuild of the reference cache takes about 245 s instead of about 300 s.
+- Nothing is written inside the published output while a build runs: the staged store, the writer lock, the facts write and the Daten export's scratch files live in a private directory beside the output directory (`.OUTPUT.private/`). A failed export leaves the published files as they were.
+
+### Fixed
+
+- Removing an applied partition (for example Föhr/Mende) from the corrections file is refused instead of silently giving one speaker the other's profile.
+- An incremental build groups persons the same way a fresh build does after a roll-call profile link is corrected; a record with two contradicting abgeordnetenwatch ids gets no profile instead of whichever sorts first; reviewed merges no longer depend on file order.
+- DIP persons without an id are skipped with a warning instead of all sharing one “Unbekannt” person. DIP person ids written as 7, "7" or " 07 " are one person.
+- An agenda index given as text ("3") is the same item as 3 everywhere: in the store, in page anchors and links, in bill pages, in summary reuse and when re-reading cached XML. A malformed, missing or repeated index in a cached report is refused with a message.
+- `--offline` over a store that cannot be opened, or a data pipeline that fails in SQLite or in the staged write, ends with one `error:` line and exit 1 instead of a traceback; the store is left as it was.
+- Person pages are never written through a symbolic link, and a page directory that resolves outside the output directory is refused.
+- On the same sitting day, the first-speech fact orders protocols by number (21/9 before 21/10), and vote receipts list Drucksachen in number order.
+
 ## [0.18.0.0] - 2026-10-14
 
 ### Added
