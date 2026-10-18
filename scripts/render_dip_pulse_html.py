@@ -2031,7 +2031,7 @@ def topic_identity(item: dict[str, Any]) -> dict[str, Any]:
         lead_title = (
             short(item.get("heading"), RADAR_TITLE_CHARS)
             or str(item.get("top_id") or "").strip()
-            or f"Tagesordnungspunkt {item.get('index')}"
+            or f"Tagesordnungspunkt {source_index(item.get('index'))}"
         )
 
     return {
@@ -2188,7 +2188,7 @@ def week_topic_rows(
                         "speech_count": speech_count,
                         "contribution_counts": counts,
                         "share": percent(speech_count, total),
-                        "href": f"{dossier_href}#top-{item.get('index')}",
+                        "href": f"{dossier_href}#top-{source_index(item.get('index'))}",
                         "datum": protocol.get("datum"),
                         "index": source_index(item.get("index")),
                     }

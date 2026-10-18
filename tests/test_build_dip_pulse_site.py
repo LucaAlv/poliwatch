@@ -2101,6 +2101,14 @@ class WeekTopicRowsTests(unittest.TestCase):
         self.assertAlmostEqual(befragung["share"], 6 / 29 * 100)
         self.assertEqual(radar["remaining"], [("21/83", Path("plenarprotokoll-21-83.html"), 1), ("21/84", Path("plenarprotokoll-21-84.html"), 1)])
 
+    # Value: protects=a question-format row links to the anchor the protocol page renders (top-<int>) when a cached report holds its index as text; fails_when=week_topic_rows formats the raw index ("#top-03"), a dangling link; why_new=the formats test above uses int indexes only; seam=none
+    def test_a_question_format_with_a_text_index_links_the_rendered_anchor(self) -> None:
+        week = self._week()
+        week[0]["report"]["agenda_items"][0]["index"] = " 01 "
+        radar, _ = self._radar(week)
+        befragung = radar["formats"][0]
+        self.assertEqual((befragung["href"], befragung["index"]), ("protocols/plenarprotokoll-21-82.html#top-1", 1))
+
     def test_tied_rows_at_the_cutoff_are_included_up_to_the_cap(self) -> None:
         entries = [self._entry("2026-06-10", "21/82", [
             self._item(i, [("SPD", 100)] * (10 if i == 1 else 2), [self._pos(f"P{i}", f"Titel {i}")]) for i in range(1, 8)

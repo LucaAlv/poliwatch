@@ -36,6 +36,7 @@ from typing import Any, Callable, NamedTuple
 import derive
 import publication_state as publication
 import speech_kinds
+from stable_ids import source_index
 
 
 BASE_URL = "https://search.dip.bundestag.de/api/v1"
@@ -2370,10 +2371,12 @@ def check_xml_belongs_to_report(
         raise ValueError(f"it is the XML of {found[0]}/{found[1]}, not of {number}")
     if not parsed_xml["agenda_items"]:
         raise ValueError("it holds no agenda items (not a Plenarprotokoll?)")
+    # A cached report may hold its index as text ("3"); the XML numbers items as ints.
+    xml_indexes = {source_index(index) for index in by_index}
     missing = [
         str(item.get("index"))
         for item in report.get("agenda_items") or []
-        if item.get("index") not in by_index
+        if source_index(item.get("index")) not in xml_indexes
     ]
     if missing:
         raise ValueError(f"it has no agenda item {', '.join(missing)} that the report holds")

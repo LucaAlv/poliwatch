@@ -687,7 +687,7 @@ def _encodes_document_number(issuer: str, number: str, path: str) -> bool:
     ``/btd/20/086/2008601.pdf`` for BT 20/8601, ``/brd/2023/0040-23.pdf`` for
     BR 40/23. Other number shapes (zu40/23, 137/1/23) encode nothing checkable."""
     head, sep, tail = number.partition("/")
-    if not sep or not head.isdigit() or not tail.isdigit():
+    if not sep or not (head.isascii() and head.isdigit() and tail.isascii() and tail.isdigit()):
         return False
     if issuer == "BT":
         return path == f"/btd/{int(head)}/{int(tail) // 100:03d}/{int(head)}{int(tail):05d}.pdf"

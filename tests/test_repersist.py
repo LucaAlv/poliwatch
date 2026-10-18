@@ -106,6 +106,17 @@ class ReparseCachedXmlTests(unittest.TestCase):
             ["Anderes.", "Die XML zählt 0 Kurzinterventionen, DIP 1."],
         )
 
+    # Value: protects=a cached report whose agenda index is text ("1", " 02 ") is reparsed from its own XML like an int one; fails_when=check_xml_belongs_to_report compares the raw index with the XML's int index and refuses the XML as another protocol's; why_new=the loader accepts text indexes, every reparse test used ints; seam=none
+    def test_a_report_with_text_indexes_is_reparsed_from_its_cached_xml(self) -> None:
+        self.report["agenda_items"][0]["index"] = "1"
+        self.report["agenda_items"][1]["index"] = " 02 "
+        (self.output_dir / "data" / "plenarprotokoll-21-6.json").write_text(json.dumps(self.report), encoding="utf-8")
+        entries = self.entries()
+        self.assertEqual(build.reparse_cached_xml(self.output_dir, entries), 1)
+        befragung, fragestunde = entries[0]["report"]["agenda_items"]
+        self.assertEqual([s["speaker"]["display_name"] for s in befragung["xml_speakers"]], ["Alexander Dobrindt", "Verena Hubertz"])
+        self.assertEqual(fragestunde["xml_contributions"][0]["kind"], "fragestunde_frage")
+
     # Value: protects=a reparsed report holds exactly what a fresh build of the same XML holds, for every XML-derived key of an agenda item, the heading included (a T_ZP_NaS heading the parser learned to read reaches cached reports);
     #   fails_when=enrich_with_api gains an XML-derived item key that reparse_report_xml does not refresh, or the reparse stops refreshing the heading, so a repersisted store and an online build disagree;
     #   why_new=the heading fix of A1 reached question_formats but not the stored heading, and no test compared a reparse with a fresh build; seam=none
@@ -771,6 +782,20 @@ class RepersistTests(unittest.TestCase):
         self.assertIn("Docs: docs/stable-ids.md", err)
         self.assertNotIn("Traceback", err)
         self.assertEqual(before, sha(self.database))
+
+    # Value: protects=an offline build whose data pipeline fails in SQLite or in a staged store write (disk full, a private directory on another file system) ends as one error: line, exit 1, no traceback; fails_when=main's except tuple misses sqlite3.Error or DatabaseRebuildError; why_new=only RuntimeError/OSError/ValueError failures of the pipeline were reported; seam=run_data_pipeline mock
+    def test_an_offline_build_reports_a_store_write_failure_as_one_error_line(self) -> None:
+        self.repersist()
+        argv = ["build", "--offline", "--output-dir", str(self.output_dir)]
+        for failure in (sqlite3.OperationalError("database or disk is full"), build.DatabaseRebuildError("staged store on another file system")):
+            with self.subTest(type(failure).__name__):
+                err = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(err), contextlib.redirect_stdout(
+                    io.StringIO()
+                ), mock.patch.object(build, "run_data_pipeline", side_effect=failure):
+                    code = build.main()
+                self.assertEqual(code, 1, err.getvalue())
+                self.assertIn(f"error: {failure}", err.getvalue())
 
     # Value: protects=--offline --repersist computes the facts once, inside the staged rebuild, for the --today build date, and hands that report to the data pipeline, which therefore does not compute them again; fails_when=main or repersist_cached_reports drops today or facts_report on the way to the rebuild or the pipeline; why_new=third ship round (12): the offline facts hand-off and today forwarding were covered online only; seam=compute_and_store spy, run_data_pipeline mock
     def test_the_command_hands_today_and_the_rebuilt_facts_to_the_pipeline(self) -> None:

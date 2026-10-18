@@ -1041,15 +1041,6 @@ def merge_detail_entries(
     return merged
 
 
-# Rebuild the SQLite store from scratch out of the dossier reports.
-#
-# Written to a temporary file in the store's private directory (never in the
-# published tree) and moved into place only on
-# success, so a failed build never leaves a half-written database behind - the
-# database explorer page and the download link both read this file. The store
-# being replaced is only ever read, and through a read-only connection: a
-# rebuild that fails part-way must leave it byte for byte as it was, even when
-# it was written by an older schema.
 @dataclass(frozen=True)
 class Rebuilt:
     """A staged rebuild that succeeded: whether the store file was replaced, and
@@ -1140,6 +1131,15 @@ def _entry_label(entry: dict[str, Any]) -> str:
     return f"{number} ({entry.get('report_path')})"
 
 
+# Rebuild the SQLite store from scratch out of the dossier reports.
+#
+# Written to a temporary file in the store's private directory (never in the
+# published tree) and moved into place only on
+# success, so a failed build never leaves a half-written database behind - the
+# database explorer page and the download link both read this file. The store
+# being replaced is only ever read, and through a read-only connection: a
+# rebuild that fails part-way must leave it byte for byte as it was, even when
+# it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
                                   today=None, upgrade=False) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
@@ -11448,7 +11448,7 @@ def main() -> int:
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
                 facts_report=rebuilt_facts,
             )
-        except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+        except (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         # Dossier pages are regenerated from the cached JSON reports, then the
@@ -11706,7 +11706,7 @@ def main() -> int:
             catalog=catalog,
             facts_report=rebuilt_facts,
         )
-    except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     index_path = render_site(
