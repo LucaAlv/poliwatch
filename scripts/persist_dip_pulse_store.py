@@ -901,11 +901,6 @@ def persist_agenda_item(
     return agenda_id
 
 
-def _is_bundestag_xml_url(url: Any) -> bool:
-    parts = urlsplit(str(url))
-    return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
-
-
 def persist_agenda_documents(
     conn: sqlite3.Connection,
     item: dict[str, Any],
@@ -913,11 +908,9 @@ def persist_agenda_documents(
     now: str,
 ) -> None:
     for doc in item.get("xml_drucksachen") or []:
-        if doc.get("url") and not _is_bundestag_xml_url(doc["url"]):
-            # Reports cached before validate_dip_protocol.extract_drucksachen
-            # checked the host still hold numbers read off news-site URLs
-            # ("11/09" from a dated euronews path). Keyed by number alone, such
-            # a fragment would join the real Drucksache of that number.
+        if doc.get("url") and not derive.is_bundestag_xml_url(doc["url"]):
+            # A number read off a news-site URL in an old cached report: keyed by
+            # number alone, such a fragment would join the real Drucksache of that number.
             continue
         document_id = upsert_document(
             conn,

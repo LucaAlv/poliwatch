@@ -14,11 +14,13 @@ This module does no network I/O. Its one file access is ``load_cache`` and
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
 import sys
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -173,6 +175,10 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
             raise TypeError("vorgaenge and dokumentnummern must be objects")
     except FileNotFoundError:
+        print(
+            f"note: no Vorgang cache at {path} yet; Politikfelder stay not_fetched until an online build fills it.",
+            file=sys.stderr,
+        )
         return empty_cache()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # Keep a file with bad content for inspection (the next online build would overwrite
@@ -197,8 +203,19 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         for k, v in vorgaenge.items()
         if isinstance(v, dict) and isinstance(v.get("sachgebiet", []), list)
     }
-    dokumentnummern = {str(k): [str(i) for i in v] for k, v in dokumentnummern.items() if isinstance(v, list)}
+    # Keys in the canonical form the lookups use ("21/06561" is "21/6561"); a cache
+    # written before numbers were canonicalised keeps its answers.
+    dokumentnummern = {
+        derive.canonical_document_number(k) or str(k): [str(i) for i in v]
+        for k, v in dokumentnummern.items()
+        if isinstance(v, list)
+    }
     return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": dokumentnummern}
+
+
+#: Age after which a temporary cache file in the private directory counts as a
+#: killed save's leftover (a full save takes well under a second).
+STALE_TEMP_SECONDS = 3600
 
 
 def cache_path(output_dir: Path | str) -> Path:
@@ -208,14 +225,24 @@ def cache_path(output_dir: Path | str) -> Path:
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     """Write the cache atomically. The temporary file is staged in the private
     directory beside the published tree (``person_registry.private_dir``), so a
-    killed build leaves nothing half-written in ``data/``; only when that
-    directory is on another file system, where the rename could not be atomic,
-    is it staged next to the cache."""
+    killed build leaves nothing half-written in ``data/``. Only when that
+    directory cannot be made (a read-only parent of OUTPUT) or is on another file
+    system, where the rename could not be atomic, is it staged next to the cache.
+    A temporary file a killed save left in the private directory is removed once
+    it is older than STALE_TEMP_SECONDS (a younger one may be a running build's)."""
     path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    staging = registry.private_dir(path)
-    staging.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if staging.stat().st_dev != path.parent.stat().st_dev:
+    pattern = f".{glob.escape(path.name)}.*.tmp"
+    try:
+        staging = registry.private_dir(path)
+        staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if staging.stat().st_dev != path.parent.stat().st_dev:
+            staging = path.parent
+        else:
+            for stale in staging.glob(pattern):
+                if time.time() - stale.stat().st_mtime > STALE_TEMP_SECONDS:
+                    stale.unlink(missing_ok=True)
+    except OSError:
         staging = path.parent
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     with tempfile.NamedTemporaryFile(
@@ -358,6 +385,22 @@ def agenda_item_vorgang_ids(item: Mapping[str, Any]) -> list[str]:
     return ids
 
 
+def reads_cited_numbers(vorgang_ids: list[str]) -> bool:
+    """Whether a TOP's tags may come from the Drucksache numbers it names: only when
+    DIP gives it no Vorgang of its own. A TOP with Vorgänge but no Sachgebiet is not
+    the TOP of the Drucksachen it merely cites (a Sammelübersicht of 17 Vorgänge
+    cites dozens of unrelated numbers). ``fetch_targets`` asks for numbers by the
+    same rule, so nothing is fetched that the tagging never reads."""
+    return not vorgang_ids
+
+
+def shown(tagging: Tagging) -> list[str]:
+    """The tags a page shows. A ``not_fetched`` row is stored as ``untagged`` (every
+    vote has a row) but is not "no Politikfeld", so pages show it as nothing at all."""
+    tags, source = tagging
+    return [] if source == "not_fetched" else tags
+
+
 def tags_for_agenda_item(item: Mapping[str, Any], cache: Mapping[str, Any], *, wahlperiode: str) -> Tagging:
     """Tags and source of one Tagesordnungspunkt.
 
@@ -374,9 +417,7 @@ def tags_for_agenda_item(item: Mapping[str, Any], cache: Mapping[str, Any], *, w
     if tags:
         return tags, "sachgebiet"
 
-    # A TOP DIP gives Vorgänge of its own but no Sachgebiet is not the TOP of the Drucksachen
-    # it merely cites (a Sammelübersicht of 17 Vorgänge cites dozens of unrelated numbers).
-    if not ids:
+    if reads_cited_numbers(ids):
         numbers = derive.item_document_numbers(item, wahlperiode)
         (number_ids,), numbers_missing = _vorgaenge_of_numbers(numbers, cache)
         missing |= numbers_missing
@@ -398,11 +439,12 @@ def tags_for_agenda_item(item: Mapping[str, Any], cache: Mapping[str, Any], *, w
 def vote_document_numbers(vote: Mapping[str, Any], wahlperiode: str = "") -> list[str]:
     """The Drucksache numbers a vote names that can belong to its sitting (the roll-call
     scraper reads every ``12/345``-shaped string, so "76/787" turns up)."""
-    return [
-        str(number)
-        for number in vote.get("document_numbers") or ()
-        if derive.plausible_document_number(number, wahlperiode)
-    ]
+    numbers: list[str] = []
+    for number in vote.get("document_numbers") or ():
+        text = derive.canonical_document_number(number)
+        if text and text not in numbers and derive.plausible_document_number(text, wahlperiode):
+            numbers.append(text)
+    return numbers
 
 
 def tags_for_vote(
@@ -486,8 +528,8 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
     Returns (Vorgang ids, Drucksache numbers). Ids: every id the TOPs name that
     is missing from the cache, plus cached ones still without a Sachgebiet (DIP
     may have filled it since). Numbers: those of every vote, and of every TOP
-    whose Vorgänge yield no tag, that the cache has not resolved. Call it again
-    after fetching the ids, because which TOPs still need numbers depends on them.
+    without Vorgänge of its own (``reads_cited_numbers``), that the cache has not
+    resolved, plus the Vorgänge already resolved numbers name.
     """
     records = cache.get("vorgaenge") or {}
     resolved = cache.get("dokumentnummern") or {}
@@ -510,7 +552,7 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
             vorgang_ids = agenda_item_vorgang_ids(item)
             for vorgang_id in vorgang_ids:
                 want_id(vorgang_id)
-            if _from_vorgaenge(vorgang_ids, cache)[0]:
+            if not reads_cited_numbers(vorgang_ids):
                 continue
             for number in derive.item_document_numbers(item, wahlperiode):
                 want_number(number)

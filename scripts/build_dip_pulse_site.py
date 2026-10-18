@@ -1513,10 +1513,13 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
 
 #: Failed DIP calls in a row after which the Vorgang fetch stops for this build.
 VORGANG_FETCH_MAX_FAILURES = 5
-#: Seconds between two Drucksache-number lookups (one call per number). At about 4
-#: calls a second DIP's edge answered 400 with a bot challenge to the whole API for
-#: over an hour (2026-10-04), so the first full fill (about 2,400 numbers) takes
-#: about 25 minutes (1,577 s measured); later builds fetch only new numbers.
+#: Seconds before every DIP request of the Vorgang fetch. A lookup is one list_all,
+#: which takes two requests (the second confirms the cursor ended), and the pause
+#: goes before each, so the fetch stays near 1.5 requests a second. At about 4 a
+#: second DIP's edge answered 400 with a bot challenge to the whole API for over
+#: an hour (2026-10-04). The first full fill (about 2,400 numbers) took 1,577 s with
+#: one pause per lookup and takes about 40 minutes with two; later builds fetch
+#: only new numbers.
 NUMBER_LOOKUP_PAUSE = 0.5
 #: Drucksache-number lookups between two saves of the Vorgang cache.
 CACHE_SAVE_EVERY = 100
@@ -1529,8 +1532,8 @@ def refresh_vorgang_cache(
     ``cache`` (updated in place) and ``data/dip-vorgang-cache.json``.
 
     Fetches only what is missing, plus cached Vorgänge that still have no
-    Sachgebiet (DIP may have filled it since). Which TOPs need Drucksache numbers
-    resolved depends on the Vorgänge, so ids go first and numbers second. A failed
+    Sachgebiet (DIP may have filled it since). Ids go first: when they show the
+    API is down, the number lookups are not tried. A failed
     call leaves a cache miss, which the Politikfelder store as ``not_fetched``; the
     build warns and goes on. Returns the fetch counts.
     """
@@ -1551,7 +1554,7 @@ def refresh_vorgang_cache(
             batch = ids[start : start + dip.VORGANG_BATCH]
             time.sleep(NUMBER_LOOKUP_PAUSE)
             try:
-                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch))
+                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch, page_pause=NUMBER_LOOKUP_PAUSE))
                 stats["vorgaenge"] += len(batch)
                 failures = 0
             except dip.DipError as exc:
@@ -1572,7 +1575,7 @@ def refresh_vorgang_cache(
             for position, number in enumerate(numbers):
                 time.sleep(NUMBER_LOOKUP_PAUSE)
                 try:
-                    documents = dip.resolve_dokumentnummer(client, number)
+                    documents = dip.resolve_dokumentnummer(client, number, page_pause=NUMBER_LOOKUP_PAUSE)
                 except dip.DipError as exc:
                     stats["nummern_failed"] += 1
                     failures += 1
@@ -1592,16 +1595,14 @@ def refresh_vorgang_cache(
         finally:
             save()
 
-    ids, _ = politikfelder.fetch_targets(reports, cache)
+    ids, numbers = politikfelder.fetch_targets(reports, cache)
     try:
         down = fetch_ids(ids)
     finally:
         save()
 
-    # Which TOPs still need numbers resolved depends on the Vorgänge just fetched. A
-    # lookup returns its Vorgang records inline, so no further id pass is needed.
+    # A lookup returns its Vorgang records inline, so no further id pass is needed.
     if not down:
-        _, numbers = politikfelder.fetch_targets(reports, cache)
         resolve_numbers(numbers)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
@@ -1649,6 +1650,38 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
         )
 
 
+def require_vorgang_cache_for_tags(
+    database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path
+) -> None:
+    """Refuse a re-persist that would strip the store's Politikfelder. Tags from
+    the Sachgebiet of a Vorgang (sources sachgebiet, drucksache, top) need the
+    Vorgang cache; with that cache empty or missing every one of them would be
+    stored as not_fetched, and the Daten export would publish that. A store
+    without the Politikfeld tables (an upgrade from before schema 5) or without
+    such tags has nothing to lose and passes."""
+    if (vorgang_cache or {}).get("vorgaenge") or not database_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            derived = sum(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE source IN ('sachgebiet', 'drucksache', 'top')"
+                ).fetchone()[0]
+                for table in ("agenda_item_politikfelder", "vote_politikfelder")
+            )
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return  # no Politikfeld tables yet: nothing to strip
+    if derived:
+        raise DatabaseRebuildError(
+            f"the Vorgang cache {politikfelder.cache_path(output_dir)} is empty or missing, "
+            f"but the store holds {derived} Politikfeld tags derived from it; a re-persist would store them as "
+            "not_fetched. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+        )
+
+
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None,
@@ -1664,6 +1697,7 @@ def repersist_cached_reports(
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
+    require_vorgang_cache_for_tags(database_path, vorgang_cache, output_dir)
     rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
@@ -4215,12 +4249,6 @@ def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     return (int(text), "") if text.isdigit() else (-1, text)
 
 
-def _shown_politikfelder(tags: list[str], source: str) -> list[str]:
-    """The tags a page shows. A ``not_fetched`` row is stored as ``untagged`` (every vote
-    has a row) but is not "no Politikfeld", so pages show it as nothing at all."""
-    return [] if source == "not_fetched" else tags
-
-
 def collect_votes_archive(
     entries: list[dict[str, Any]], vorgang_cache: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -4252,7 +4280,7 @@ def collect_votes_archive(
             }
             rows[key] = {
                 "vote": vote,
-                "politikfelder": _shown_politikfelder(*vote_politikfelder[politikfelder.vote_key(vote)]),
+                "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",

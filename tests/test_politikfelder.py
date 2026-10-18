@@ -4,8 +4,10 @@ import contextlib
 import copy
 import io
 import json
+import os
 import sqlite3
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -175,6 +177,24 @@ class AgendaItemTests(unittest.TestCase):
         top = item(heading="Streitsachen 10/21, 1/22, 21/9 und 20/8", numbers=("76/787", "21/3"))
         self.assertEqual(derive.item_document_numbers(top, "21"), ["21/3", "21/9", "20/8"])
         self.assertEqual(derive.item_document_numbers(top, ""), ["76/787", "21/3", "10/21", "1/22", "21/9", "20/8"])
+
+    # Value: protects=tagging takes a TOP's Drucksache numbers by the store's rules: no Bundesrat paper by herausgeber, no XML number off the Bundestag XML host, ASCII digits only, canonical spelling; fails_when=the URL-only /brd/ test, the missing host check, \\d or the raw spelling come back, so a BR paper or a news-URL fragment tags a TOP or one number costs two lookups; why_new=the store applies these rules since v0.19, tagging did not; seam=none
+    def test_document_numbers_follow_the_store_rules(self) -> None:
+        top = item(heading="Beratung 21/7 und 21/\u0668")
+        top["xml_drucksachen"] = [
+            {"dokumentnummer": "21/06561", "url": "https://dserver.bundestag.de/btd/21/065/2106561.pdf"},
+            {"dokumentnummer": "21/12", "url": "https://www.euronews.com/2021/12/foo"},
+            {"dokumentnummer": "21/13"},
+        ]
+        top["api"]["linked_drucksachen"] = [
+            {"dokumentnummer": "21/23", "herausgeber": "BR", "url": "https://dip.bundestag.de/moved.pdf"},
+            {"dokumentnummer": "21/24", "herausgeber": "BT", "url": "https://dserver.bundestag.de/btd/21/000/2100024.pdf"},
+            {"dokumentnummer": "21/25", "url": "https://dserver.bundestag.de/brd/2025/0025-25.pdf"},
+        ]
+        self.assertEqual(derive.item_document_numbers(top, "21"), ["21/6561", "21/13", "21/24", "21/7"])
+        self.assertTrue(derive.plausible_document_number("21/1", "\u0662\u0661"))  # a non-ASCII Wahlperiode filters nothing
+        vote = {"document_numbers": ["21/0042", "21/42", "76/787"]}
+        self.assertEqual(pf.vote_document_numbers(vote, "21"), ["21/42"])
 
     def test_a_bundled_drucksache_ranks_the_vorgang_most_numbers_name(self) -> None:
         cache = cache_of(
@@ -405,6 +425,63 @@ class CacheFileTests(unittest.TestCase):
             leftovers = list((Path(tmp) / ".site.private").glob(".dip-vorgang-cache.json.*.tmp"))
             self.assertEqual(len(leftovers), 1)
 
+    # Value: protects=a cache written with a leading-zero number keeps its answer under the canonical key the lookups use, and a missing cache says so; fails_when=load_cache keeps raw keys, so "21/06561" is a miss (not_fetched offline, a refetch online), or the absent file is silent; why_new=numbers were not canonical before the review fix; seam=none
+    def test_number_keys_are_canonical_and_an_absent_cache_is_named(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(pf.load_cache(site), pf.empty_cache())
+            self.assertIn("no Vorgang cache", err.getvalue())
+            path = pf.cache_path(site)
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(cache_of({}, {"21/06561": ["v"], "21/7": []})), encoding="utf-8")
+            self.assertEqual(pf.load_cache(site)["dokumentnummern"], {"21/6561": ["v"], "21/7": []})
+
+    # Value: protects=a private directory on another file system or one that cannot be made (a read-only parent of OUTPUT) still lets the cache save, staged next to the cache; fails_when=the st_dev check or the OSError fallback goes, so the rename fails across devices or every build loses its fetch; why_new=only same-file-system staging was tested; seam=none; no_claim=a real second device (st_dev is patched)
+    def test_save_falls_back_to_data_on_another_file_system_or_a_read_only_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            real_stat = Path.stat
+
+            def other_device(self, *args, **kwargs):
+                st = real_stat(self, *args, **kwargs)
+                if not self.name.endswith(".private"):
+                    return st
+                return os.stat_result((st.st_mode, st.st_ino, st.st_dev + 1, *tuple(st)[3:]))
+
+            with mock.patch.object(Path, "stat", other_device), mock.patch.object(pf.os, "fsync", side_effect=KeyboardInterrupt), mock.patch.object(Path, "unlink"):
+                with self.assertRaises(KeyboardInterrupt):
+                    pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
+            self.assertEqual(len(list((site / "data").glob(".dip-vorgang-cache.json.*.tmp"))), 1)  # staged beside the cache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp) / "ro"
+            site = parent / "site"
+            (site / "data").mkdir(parents=True)
+            parent.chmod(0o555)
+            try:
+                pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
+            finally:
+                parent.chmod(0o755)
+            self.assertEqual(list(pf.load_cache(site)["vorgaenge"]), ["1"])
+            self.assertFalse((parent / ".site.private").exists())
+
+    # Value: protects=a killed save's temp file in the private directory is swept once it is old, and a running build's young one is left alone; fails_when=the sweep goes (orphans the size of the cache pile up) or ignores the age (a concurrent save loses its file); why_new=the private staging added in this branch had no sweep; seam=none
+    def test_old_temp_files_in_the_private_directory_are_swept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            staging = Path(tmp) / ".site.private"
+            staging.mkdir()
+            old, young, other = (staging / ".dip-vorgang-cache.json.old.tmp", staging / ".dip-vorgang-cache.json.young.tmp", staging / "bundestag-pulse.sqlite.x.tmp")
+            for path in (old, young, other):
+                path.write_text("x", encoding="utf-8")
+            hours_ago = time.time() - 2 * pf.STALE_TEMP_SECONDS
+            os.utime(old, (hours_ago, hours_ago))
+            os.utime(other, (hours_ago, hours_ago))
+            pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
+            self.assertEqual(sorted(p.name for p in staging.iterdir()), sorted([young.name, other.name]))
+
     def test_save_then_load_round_trips(self) -> None:
         cache = cache_of({"1": vorgang("Recht")}, {"21/1": ["1"]})
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,7 +503,7 @@ class FakeClient:
         self.fail_numbers = fail_numbers
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def list_all(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def list_all(self, path: str, params: dict[str, Any] | None = None, **_: Any) -> list[dict[str, Any]]:
         self.calls.append((path, dict(params or {})))
         if self.fail or (self.fail_numbers and "f.dokumentnummer" in params):
             raise dip.DipError("boom")
@@ -540,12 +617,12 @@ class FetchTests(unittest.TestCase):
         self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": numbered}}]
 
         class Flaky(FakeClient):
-            def list_all(self, path, params=None):
+            def list_all(self, path, params=None, **kwargs):
                 number = (params or {}).get("f.dokumentnummer")
                 if number and int(number.split("/")[1]) % 5:  # 4 failures, then a success, repeatedly
                     self.calls.append((path, dict(params)))
                     raise dip.DipError("boom")
-                return super().list_all(path, params)
+                return super().list_all(path, params, **kwargs)
 
         stats, saved, _err = self.run_refresh(Flaky({}, {"21/5": [], "21/10": []}), pf.empty_cache())
         self.assertEqual(stats["nummern"], 2)
@@ -575,10 +652,10 @@ class FetchTests(unittest.TestCase):
         self.assertIn("could not save the Vorgang cache: disk full", err.getvalue())
 
         class Interrupted(FakeClient):
-            def list_all(self, path, params=None):
+            def list_all(self, path, params=None, **kwargs):
                 if "f.dokumentnummer" in (params or {}) and params["f.dokumentnummer"] == "21/4":
                     raise KeyboardInterrupt
-                return super().list_all(path, params)
+                return super().list_all(path, params, **kwargs)
 
         self.enterContext(mock.patch.object(build, "CACHE_SAVE_EVERY", 2))
         seen: list[int] = []
@@ -595,6 +672,23 @@ class FetchTests(unittest.TestCase):
                 build.refresh_vorgang_cache(client, self.entries, pf.empty_cache(), site)
             self.assertEqual(sorted(pf.load_cache(site)["dokumentnummern"]), ["21/1", "21/2", "21/3"])
         self.assertEqual(seen, [0, 2, 3])  # after the (empty) id pass, at the 2nd lookup, on the way out
+
+    # Value: protects=no Drucksache number is fetched for a TOP with Vorgänge of its own, because tagging never reads it there; fails_when=fetch_targets asks numbers whenever the TOP's Vorgänge give no tag, so paced lookups that change nothing repeat on every online build; why_new=the two rules were separate and drifted; seam=none
+    def test_fetch_targets_asks_no_numbers_for_a_top_with_own_vorgaenge(self) -> None:
+        report = {"protocol": {"dokumentnummer": "21/10"}, "agenda_items": [
+            item(1, heading="Antrag 21/123", positions=(position("V1"),)),
+            item(2, heading="Antrag 21/124"),
+        ]}
+        ids, numbers = pf.fetch_targets([report], cache_of({"V1": vorgang()}))
+        self.assertEqual((ids, numbers), (["V1"], ["21/124"]))
+
+    # Value: protects=a paced caller's list_all pauses before every page after the first, so one lookup (two requests) stays under DIP's bot-challenge rate; fails_when=page_pause is dropped or applied before the first request only; why_new=fake clients hid that a lookup is two requests; seam=none
+    def test_list_all_pauses_between_pages(self) -> None:
+        client = dip.ApiClient.__new__(dip.ApiClient)
+        pages = iter([{"documents": [{"id": "1"}], "cursor": "c1"}, {"documents": [{"id": "2"}], "cursor": "c2"}, {"documents": [], "cursor": "c2"}])
+        with mock.patch.object(dip.ApiClient, "get_json", lambda self, path, params: next(pages)), mock.patch.object(dip.time, "sleep") as sleep:
+            self.assertEqual([d["id"] for d in client.list_all("/vorgang", {}, page_pause=0.5)], ["1", "2"])
+        self.assertEqual(sleep.call_args_list, [mock.call(0.5), mock.call(0.5)])
 
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]

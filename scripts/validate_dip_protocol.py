@@ -198,11 +198,17 @@ class ApiClient:
             time.sleep(self.sleep_seconds)
         return data
 
-    def list_all(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def list_all(
+        self, path: str, params: dict[str, Any] | None = None, *, page_pause: float = 0.0
+    ) -> list[dict[str, Any]]:
+        """Every document of a cursor-paged list. ``page_pause`` seconds go before
+        each request after the first, for callers that pace their requests."""
         params = dict(params or {})
         documents: list[dict[str, Any]] = []
         previous_cursor = None
         while True:
+            if previous_cursor is not None and page_pause:
+                time.sleep(page_pause)
             page = self.get_json(path, params)
             if (
                 not isinstance(page, dict)
@@ -293,25 +299,26 @@ def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_vorgaenge(client: ApiClient, ids: list[str]) -> dict[str, dict[str, Any]]:
+def fetch_vorgaenge(client: ApiClient, ids: list[str], *, page_pause: float = 0.0) -> dict[str, dict[str, Any]]:
     """Cache records of the Vorgänge ``ids``, batched. An id DIP does not return
     gets an empty record (fetched, nothing known). A failed batch raises DipError
     before any of its ids is recorded."""
     records: dict[str, dict[str, Any]] = {}
     for start in range(0, len(ids), VORGANG_BATCH):
         batch = [str(i) for i in ids[start : start + VORGANG_BATCH]]
-        found = {str(d.get("id")): d for d in client.list_all("/vorgang", {"f.id": batch})}
+        found = {str(d.get("id")): d for d in client.list_all("/vorgang", {"f.id": batch}, page_pause=page_pause)}
         for vorgang_id in batch:
             document = found.get(vorgang_id)
             records[vorgang_id] = vorgang_cache_record(document) if document else vorgang_cache_record({})
     return records
 
 
-def resolve_dokumentnummer(client: ApiClient, number: str) -> list[dict[str, Any]]:
-    """The Vorgänge a Drucksache number belongs to, as raw DIP records. One call
-    per number: a repeated ``f.dokumentnummer`` returns one deduplicated union, so
-    a batch cannot say which number belongs to which Vorgang."""
-    return client.list_all("/vorgang", {"f.dokumentnummer": number})
+def resolve_dokumentnummer(client: ApiClient, number: str, *, page_pause: float = 0.0) -> list[dict[str, Any]]:
+    """The Vorgänge a Drucksache number belongs to, as raw DIP records. One lookup
+    per number (a list_all, so two requests): a repeated ``f.dokumentnummer``
+    returns one deduplicated union, so a batch cannot say which number belongs to
+    which Vorgang."""
+    return client.list_all("/vorgang", {"f.dokumentnummer": number}, page_pause=page_pause)
 
 
 def fetch_text(url: str) -> str:

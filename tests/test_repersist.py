@@ -815,6 +815,18 @@ class RepersistTests(unittest.TestCase):
         finally:
             conn.close()
 
+    # Value: protects=a re-persist with the Vorgang cache missing refuses to strip a store's DIP-derived Politikfelder, byte for byte, and names the online update; fails_when=require_vorgang_cache_for_tags goes, so the upgrade command stores every tag as not_fetched and the export publishes that; why_new=nothing guarded the cache before the review fix; seam=none
+    def test_a_repersist_without_the_vorgang_cache_keeps_a_tagged_store(self) -> None:
+        self.repersist()
+        self.repersist()  # no DIP-derived tags yet: an empty cache has nothing to strip
+        cache = {"version": 1, "vorgaenge": {"fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}}, "dokumentnummern": {}}
+        self.repersist(vorgang_cache=cache)
+        before = sha(self.database)
+        for empty in (None, {"version": 1, "vorgaenge": {}, "dokumentnummern": {}}):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "Vorgang cache.*online update"):
+                self.repersist(vorgang_cache=empty)
+        self.assertEqual(before, sha(self.database))
+
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()
         before = sha(self.database)
