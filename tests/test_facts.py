@@ -755,9 +755,14 @@ class AktivsteAbgeordneteTests(StoreCase):
         self.assertEqual(row["value"], 2)
         self.assertEqual(row["citation"]["display_name"], "Ada Lovelace")
         self.assertEqual(row["citation"]["speakers"], ["Ada Lovelace", "Ada Lovelace"])
+        # Every counted speech is cited, in ascending speech-id order (the
+        # winning group's rows all count 1, so none leads on value).
+        speeches = {rede_id: (number, speech_id) for speech_id, rede_id, number in self.conn.execute(
+            "SELECT s.id, s.rede_id, p.document_number FROM speeches s JOIN protocols p ON p.id = s.protocol_id")}
+        cited = sorted(("IDA1", "IDA2"), key=lambda rede_id: facts._id_sort_key(speeches[rede_id][1]))
         self.assertEqual(
             [(r["entity_kind"], r["document_number"], r["rede_id"], r["position"]) for r in row["receipts"]],
-            [("speech", "21/1", "IDA1", 0), ("speech", "21/2", "IDA2", 1)],
+            [("speech", speeches[rede_id][0], rede_id, position) for position, rede_id in enumerate(cited)],
         )
 
     def test_grouping_by_xml_redner_id_sums_the_split_persons_speeches(self) -> None:
@@ -797,8 +802,10 @@ class AktivsteAbgeordneteTests(StoreCase):
         )
         row = self.one(AKTIVSTE, registry=facts.MONTHLY_REGISTRY)
         # One speech each, 100 characters each: the tie falls to whichever
-        # has the lower stable person key, Karl Marx.
-        self.assertEqual(row["citation"]["display_name"], "Karl Marx")
+        # has the lower mps.id (D25A), a content hash, so it is read from the store.
+        names = dict(self.conn.execute("SELECT id, display_name FROM mps WHERE display_name IN ('Ada Lovelace', 'Karl Marx')"))
+        self.assertEqual(len(names), 2)
+        self.assertEqual(row["citation"]["display_name"], names[min(names, key=facts._id_sort_key)])
 
     def test_null_mp_id_speech_is_excluded(self) -> None:
         self.seed(

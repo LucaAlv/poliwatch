@@ -66,7 +66,6 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.ids = _daten_fixture.seed_store(self.db_path)
         conn = pulse_store.connect(self.db_path)
         try:
-            person_registry.reconcile(conn)
             self.mps, self.lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
@@ -141,7 +140,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             party_id = pulse_store.upsert_party(conn, "SPD", now)
             mp_id = pulse_store.upsert_mp(
                 conn, now=now, display_name="Ada Lovelace", party_id=party_id,
-                identity_key="dip:ada", dip_person_id="ada", is_mdb=True,
+                identity_key="dip:ada",
+                occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True,
             )
             conn.execute(
                 """INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)
@@ -161,11 +161,11 @@ class ExportDistributionDataTests(unittest.TestCase):
                 (ai, mp_id, now, now),
             )
         conn.execute("INSERT INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        person_registry.reconcile(conn)
         conn.commit()
         conn.close()
 
         no_votes_conn = pulse_store.connect(no_votes_db)
-        person_registry.reconcile(no_votes_conn)
         mps, lookup = b.collect_abgeordnete(no_votes_conn)
         no_votes_conn.close()
         readiness = {**READINESS, "votes": "unavailable"}
@@ -686,7 +686,8 @@ class RecipeRepresentativeTests(unittest.TestCase):
                     profile_url = "https://example.org/oezoguz"
                     profile_row = pulse_store.upsert_mp(
                         conn, now=now, display_name="Özoguz, Aydan", party_id=spd,
-                        identity_key=pulse_store.mp_identity(profile_url=profile_url), profile_url=profile_url)
+                        identity_key=pulse_store.mp_identity(profile_url=profile_url),
+                        occurrence_id="fixture:" + pulse_store.mp_identity(profile_url=profile_url), profile_url=profile_url)
                     self.assertLess(profile_row, dip_row)
                     persons = [row[0] for row in conn.execute("SELECT person_id FROM mps ORDER BY id")]
                     person_registry.merge(conn, persons)

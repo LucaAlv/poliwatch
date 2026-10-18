@@ -194,7 +194,7 @@ class StableIDsTests(unittest.TestCase):
     def test_repeat_replay_keeps_semantic_store_and_export_generation(self):
         r=report();self.rebuild([r],keep_if_unchanged=True);before=self.db.stat().st_mtime_ns
         first=build.export_distribution_data(self.db,self.root/'exports')
-        self.assertFalse(self.rebuild([r],keep_if_unchanged=True));self.assertEqual(before,self.db.stat().st_mtime_ns)
+        self.assertFalse(self.rebuild([r],keep_if_unchanged=True).replaced);self.assertEqual(before,self.db.stat().st_mtime_ns)
         second=build.export_distribution_data(self.db,self.root/'exports')
         self.assertEqual(first['generation'],second['generation'])
         for table in second['tables']:
@@ -312,7 +312,7 @@ class DocumentKeyTests(unittest.TestCase):
     # Value: protects=a DIP URL rewrite for the same Drucksache keeps documents.id, both junctions and fact_sources.id, and a third identical replay reuses the store; fails_when=the URL is part of the document key again (stable_key('document', number, url)); why_new=no test rebuilt a store with a changed document URL; seam=none
     def test_a_url_rewrite_keeps_document_keys_junctions_and_receipts(self):
         first = documents_report()
-        self.assertTrue(self.rebuild([first], keep_if_unchanged=True))
+        self.assertTrue(self.rebuild([first], keep_if_unchanged=True).replaced)
         conn = store.connect(self.db)
         try:
             before, before_links = self.documents(conn), self.links(conn)
@@ -323,7 +323,7 @@ class DocumentKeyTests(unittest.TestCase):
         item = rewritten['agenda_items'][0]
         item['xml_drucksachen'][0]['url'] = 'https://dserver.bundestag.de/btd/20/001/2000123.pdf'
         item['api']['linked_drucksachen'][0]['url'] = 'https://dserver.bundestag.de/btd/20/004/2000456.pdf'
-        self.assertTrue(self.rebuild([rewritten], keep_if_unchanged=True))
+        self.assertTrue(self.rebuild([rewritten], keep_if_unchanged=True).replaced)
         conn = store.connect(self.db)
         try:
             after = self.documents(conn)
@@ -337,7 +337,7 @@ class DocumentKeyTests(unittest.TestCase):
             self.assertEqual(conn.execute('PRAGMA foreign_key_check').fetchall(), [])
         finally:
             conn.close()
-        self.assertFalse(self.rebuild([rewritten], keep_if_unchanged=True))
+        self.assertFalse(self.rebuild([rewritten], keep_if_unchanged=True).replaced)
 
     # Value: protects=a Bundestag and a Bundesrat Drucksache printing the same number stay two documents, and a roll-call number joins the Bundestag one; fails_when=the key drops the issuer; why_new=only the URL kept them apart before; seam=none
     def test_bundestag_and_bundesrat_documents_of_one_number_stay_apart(self):

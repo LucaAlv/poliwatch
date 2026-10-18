@@ -200,7 +200,8 @@ class RetainedScopeTests(unittest.TestCase):
             now = pulse_store.utc_now()
             with conn:  # a roster row an earlier build ingested
                 pulse_store.upsert_mp(conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
-                                      identity_key="dip:ada", dip_person_id="ada", is_mdb=True)
+                                      identity_key="dip:ada",
+                                      occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True)
         finally:
             conn.close()
 
@@ -513,25 +514,31 @@ class IncompleteReportTests(StoreCase):
             )
         self.assertEqual(fmt.call_args.kwargs["vote_scan_pages"], 0)
 
-    # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store); why_new=the main()-level test mocks the whole pipeline; seam=none
+    # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again, even when the computed report is empty; only no report (None) computes it; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store), or an empty result reads as "not computed"; why_new=the main()-level test mocks the whole pipeline; handoff 08 made None the only "not computed"; seam=none
     def test_run_data_pipeline_reuses_a_handed_over_facts_report(self) -> None:
         args = SimpleNamespace(no_persist=False, vote_scan_pages=None, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
         seeded = self.seed(week_specs(3))
-        handed = {"incomplete_periods": [], "sitting_gaps": {}}
-        with (
-            mock.patch.object(build, "export_distribution_data", return_value={}),
-            mock.patch.object(build, "collect_bill_pages", return_value=[]),
-            mock.patch.object(build, "derive_feature_readiness", return_value={}),
-            mock.patch.object(build, "run_facts_engine") as engine,
-            mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
-        ):
-            build.run_data_pipeline(
-                args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
-                abg_mps=[], mp_lookup={}, catalog=seeded["catalog"], facts_report=handed,
-            )
-        engine.assert_not_called()
-        self.assertIs(fmt.call_args.args[0], handed)
+        computed = {"incomplete_periods": [], "sitting_gaps": {}}
+        for handed in ({"incomplete_periods": [], "sitting_gaps": {}}, {}, None):
+            with (
+                self.subTest(handed=handed),
+                mock.patch.object(build, "export_distribution_data", return_value={}),
+                mock.patch.object(build, "collect_bill_pages", return_value=[]),
+                mock.patch.object(build, "derive_feature_readiness", return_value={}),
+                mock.patch.object(build, "run_facts_engine", return_value=computed) as engine,
+                mock.patch.object(build, "format_incomplete_report", return_value=[]) as fmt,
+            ):
+                build.run_data_pipeline(
+                    args=args, output_dir=Path(self.tmp.name), database_path=self.path, entries=[], protocols=[],
+                    abg_mps=[], mp_lookup={}, catalog=seeded["catalog"], facts_report=handed,
+                )
+                if handed is None:
+                    engine.assert_called_once()
+                    self.assertIs(fmt.call_args.args[0], computed)
+                else:
+                    engine.assert_not_called()
+                    self.assertIs(fmt.call_args.args[0], handed)
 
     def test_a_complete_store_prints_nothing(self) -> None:
         seeded = self.seed(week_specs(10))

@@ -30,23 +30,23 @@ class RegistryInvariantTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(after[speaker], after[second])
         self.assertNotEqual(after[first], after[speaker])
 
-    # Value: protects=a record whose occurrence vanished from the source (a corrected Rede-ID) no longer feeds the name guess or the shared-id merge, in a full build and in a direct persist; fails_when=liveness stops following the build's touched set / vacated mark so a stale record blocks the join or durably aliases a roster person into it; why_new=the randomized check compares bound occurrences only and never drops an occurrence; seam=none
+    # Value: protects=a record whose occurrence vanished from the source (a corrected Rede-ID), or whose occurrence moved to another identity, no longer feeds the name guess or the shared-id merge; fails_when=liveness stops following the build's touched set so a stale record blocks the join or durably aliases a roster person into it; why_new=the randomized check compares bound occurrences only and never drops an occurrence; seam=none
     def test_a_stale_record_neither_blocks_a_guess_nor_aliases_a_new_roster_person(self):
-        for full_build in (False, True):
-            with self.subTest(full_build=full_build):
-                # A full build sees every live occurrence again, so a vanished one is stale; a direct persist only
-                # knows an occurrence moved off a record when the same occurrence is bound to another one.
-                old_speech = speech(f"old{full_build}")
-                new_speech = speech(f"new{full_build}") if full_build else old_speech
-                roster = roster_occurrence_id(f"dip-{full_build}")
-                first = self.open_store(f"first-{full_build}.sqlite")
+        for shape in ("vanished", "moved"):
+            with self.subTest(shape=shape):
+                # A rebuild sees every live occurrence again, so the old record is stale whether its occurrence
+                # is gone or is now bound to another record.
+                old_speech = speech(f"old-{shape}")
+                new_speech = speech(f"new-{shape}") if shape == "vanished" else old_speech
+                roster = roster_occurrence_id(f"dip-{shape}")
+                first = self.open_store(f"first-{shape}.sqlite")
                 self.up(first, old_speech, "xml:1", "Ada Example", xml="1", aw=5, match="ext_id", party="SPD")
                 registry.reconcile(first)
                 second = self.next_build(first)
                 # the speech's Rede-ID was corrected upstream: the old occurrence is gone, a new one names Redner-ID 9 (no aw id)
                 new_record = self.up(second, new_speech, "xml:9", "Ada Example", xml="9", party="SPD")
-                roster_record = self.up(second, roster, f"dip:dip-{full_build}", "Ada Example", dip=f"dip-{full_build}", aw=5, match="ext_id", mdb=True, party="SPD")
-                registry.reconcile(second, full_build=full_build)
+                roster_record = self.up(second, roster, f"dip:dip-{shape}", "Ada Example", dip=f"dip-{shape}", aw=5, match="ext_id", mdb=True, party="SPD")
+                registry.reconcile(second)
                 persons = self.person_of_records(second)
                 self.assertEqual(second.execute("SELECT COUNT(*) FROM person_aliases").fetchone()[0], 0)
                 self.assertEqual(persons[new_record], persons[roster_record])
@@ -171,14 +171,14 @@ class RegistryInvariantTests(RegistryFixture, unittest.TestCase):
         first = self.open_store("first.sqlite")
         for vote in ("v1", "v2"):
             self.vote_up(first, vote, "Example, Ada", "SPD", old)
-        registry.reconcile(first, full_build=True)
+        registry.reconcile(first)
         incremental = self.next_build(first)
         fresh = self.open_store("fresh.sqlite")
         for conn in (incremental, fresh):
             for vote in ("v1", "v2", "v3"):
                 self.vote_up(conn, vote, "Example, Ada", "SPD", new)
-        self.assertEqual(registry.reconcile(fresh, full_build=True)["same_identity"], 0)
-        totals = registry.reconcile(incremental, full_build=True)
+        self.assertEqual(registry.reconcile(fresh)["same_identity"], 0)
+        totals = registry.reconcile(incremental)
         self.assertEqual(self.occurrence_groups(incremental), self.occurrence_groups(fresh))
         self.assertEqual(len(self.occurrence_groups(incremental)), 1)
         self.assertEqual(totals["same_identity"], 1)

@@ -484,8 +484,8 @@ class RepersistTests(unittest.TestCase):
             conn.close()
 
     def test_every_cached_report_lands_in_a_fresh_store(self) -> None:
-        entries, replaced = self.repersist()
-        self.assertTrue(replaced)
+        entries, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
         self.assertEqual(len(entries), 2)
         self.assertEqual(self.count("protocols"), 2)
         # Rows of a protocol that is no longer cached do not survive a re-persist.
@@ -513,6 +513,7 @@ class RepersistTests(unittest.TestCase):
                     display_name="Ada Lovelace",
                     party_id=pulse_store.upsert_party(conn, "SPD", now),
                     identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada",
                     dip_person_id="ada",
                     is_mdb=True,
                 )
@@ -534,7 +535,8 @@ class RepersistTests(unittest.TestCase):
             with conn:  # a roster row from an earlier build, seeded without a binding
                 pulse_store.upsert_mp(
                     conn, now=now, display_name="Ada Lovelace", party_id=pulse_store.upsert_party(conn, "SPD", now),
-                    identity_key="dip:ada", dip_person_id="ada", is_mdb=True,
+                    identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada", dip_person_id="ada", is_mdb=True,
                 )
         finally:
             conn.close()
@@ -562,7 +564,8 @@ class RepersistTests(unittest.TestCase):
             now = pulse_store.utc_now()
             with conn:
                 pulse_store.upsert_mp(conn, now=now, display_name="Bea Roster", party_id=pulse_store.upsert_party(conn, "SPD", now),
-                                      identity_key="dip:8", dip_person_id="8", is_mdb=True)
+                                      identity_key="dip:8",
+                                      occurrence_id="fixture:dip:8", dip_person_id="8", is_mdb=True)
                 conn.execute("UPDATE mps SET dip_person_id = ' 08 ' WHERE identity_key = 'dip:8'")
         finally:
             conn.close()
@@ -672,13 +675,13 @@ class RepersistTests(unittest.TestCase):
             conn.close()
 
     def test_a_second_run_with_a_different_clock_keeps_the_file(self) -> None:
-        _, replaced = self.repersist()
-        self.assertTrue(replaced)
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
         stat = self.database.stat()
         before = sha(self.database)
         with mock.patch.object(pulse_store, "utc_now", return_value="2099-01-01T00:00:00Z"):
-            _, replaced = self.repersist()
-        self.assertFalse(replaced)
+            _, rebuilt = self.repersist()
+        self.assertFalse(rebuilt.replaced)
         after = self.database.stat()
         self.assertEqual((stat.st_ino, stat.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
         self.assertEqual(before, sha(self.database))
@@ -722,8 +725,8 @@ class RepersistTests(unittest.TestCase):
         report = json.loads(path.read_text(encoding="utf-8"))
         report["protocol"]["titel"] = "Ein anderer Titel"
         path.write_text(json.dumps(report), encoding="utf-8")
-        _, replaced = self.repersist()
-        self.assertTrue(replaced)
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
 
     def run_main(self, *extra: str) -> tuple[int, str]:
         argv = ["build", "--offline", "--output-dir", str(self.output_dir), *extra]
@@ -799,6 +802,7 @@ class RepersistTests(unittest.TestCase):
                     display_name="Ada Lovelace",
                     party_id=pulse_store.upsert_party(conn, "SPD", now),
                     identity_key="dip:ada",
+                    occurrence_id="fixture:dip:ada",
                     dip_person_id="ada",
                     is_mdb=True,
                 )

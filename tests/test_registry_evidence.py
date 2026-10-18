@@ -32,7 +32,7 @@ class EvidenceHelpers(RegistryFixture):
         for index in order:
             item = dict(occurrences[index])
             self.up(conn, item.pop("occurrence"), item.pop("identity"), item.pop("name"), **item)
-        registry.reconcile(conn, full_build=True)
+        registry.reconcile(conn)
         return conn
 
     def snapshot(self, conn):

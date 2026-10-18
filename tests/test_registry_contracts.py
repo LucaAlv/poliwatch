@@ -124,11 +124,10 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         engine.assert_called_once()
         self.assertEqual(engine.call_args.kwargs["today"], date(2026, 7, 1))
         self.assertEqual(engine.call_args.kwargs["built"], set())
-        facts_report = {}
         with mock.patch.object(build.facts, "compute_and_store", wraps=build.facts.compute_and_store) as engine:
-            self.rebuild([report()], facts_report=facts_report)
+            rebuilt = self.rebuild([report()])
         self.assertIsNone(engine.call_args.kwargs["today"])
-        self.assertTrue({"incomplete_periods", "sitting_gaps"} <= facts_report.keys())
+        self.assertTrue({"incomplete_periods", "sitting_gaps"} <= rebuilt.facts_report.keys())
 
     # Value: protects=a member the refreshed roster no longer lists keeps one page with biography and speeches; fails_when=a stale roster record takes part in no match, or collect_abgeordnete skips its evidence once it shares a current person; why_new=staged roster tests always list the same members; seam=none
     def test_member_dropped_from_roster_keeps_one_page_with_biography_and_speeches(self):
@@ -632,7 +631,7 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         with self.assertRaisesRegex(build.DatabaseRebuildError, "--offline --repersist"):
             self.rebuild([report()])
         self.assertEqual(self.db.read_bytes(), before)
-        self.assertTrue(self.rebuild([report()], upgrade=True))
+        self.assertTrue(self.rebuild([report()], upgrade=True).replaced)
         self.assertEqual(len(self.rows("persons")), 1)
 
     # Value: protects=a merged XML record's combined Redner-ID ("11005304 999990074") still meets its partition and reviewed name; fails_when=corrected_speaker or partition_identity compares the raw attribute instead of its first id; why_new=partition tests used single ids only; seam=none
@@ -931,6 +930,49 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(mp["speech_count"], 0)
         self.assertTrue(mp["has_page"])
 
+    # Value: protects=reconcile reads liveness from the build's touched set only: a connection that started no build is refused, and a build that bound nothing reconciles with every copied record stale; fails_when=reconcile reads a missing touched table as "nothing touched" (every record silently stale) or falls back to bindings; why_new=handoff 08 removed the bound/vacated fallback; seam=none
+    def test_reconcile_needs_a_build_on_its_connection(self):
+        first = self.open_store("first.sqlite")
+        self.up(first, "roster:5", "dip:5", "Ada Example", dip="5", mdb=True, party="SPD")
+        self.up(first, "speech:1", "xml:1", "Ada Example", xml="1", party="SPD")
+        registry.reconcile(first)
+        first.commit()
+        joined = set(self.person_of_records(first).values())
+        self.assertEqual(len(joined), 1)
+        reopened = self.open_store("first.sqlite")
+        with self.assertRaisesRegex(registry.RegistryError, "only after a rebuild"):
+            registry.reconcile(reopened)
+        empty = self.next_build(first)
+        registry.reconcile(empty)
+        persons = self.person_of_records(empty)
+        self.assertEqual(len(persons), 2)
+        self.assertEqual(len(set(persons.values())), 2, "stale records take part in no guess")
+
+    # Value: protects=a roster record left by one of its roster occurrences (two DIP persons folded on one trusted abgeordnetenwatch id, one now listed under another id) is vacated and does not rejoin its old speaker as a stale roster partner; fails_when=is_stale_roster_partner ignores the vacated mark; why_new=handoff 08 kept the mark only for this rule, which no test reached; seam=none
+    def test_a_vacated_roster_record_does_not_rejoin_as_a_stale_partner(self):
+        first = self.open_store("first.sqlite")
+        roster = self.up(first, "roster:7", "aw:5", "Ada Example", dip="7", aw=5, match="ext_id", mdb=True, party="SPD")
+        self.up(first, "roster:8", "aw:5", "Ada Example", dip="8", aw=5, match="ext_id", mdb=True, party="SPD")
+        speaker = self.up(first, "speech:1", "xml:1", "Ada Example", xml="1", party="SPD")
+        registry.reconcile(first)
+        self.assertEqual(len(set(self.person_of_records(first).values())), 1)
+        second = self.next_build(first)
+        moved = self.up(second, "roster:8", "aw:6", "Ada Example", dip="8", aw=6, match="ext_id", mdb=True, party="CDU/CSU")
+        self.up(second, "speech:1", "xml:1", "Ada Example", xml="1", party="SPD")
+        registry.reconcile(second)
+        self.assertNotEqual(moved, roster)
+        self.assertTrue(json.loads(second.execute("SELECT evidence_json FROM person_records WHERE id=?", (roster,)).fetchone()[0]).get("vacated"))
+        persons = self.person_of_records(second)
+        self.assertNotEqual(persons[roster], persons[speaker])
+
+    # Value: protects=every bind names its occurrence; fails_when=bind accepts an empty occurrence and writes a record no binding holds; why_new=handoff 08 made occurrence required; seam=none
+    def test_a_bind_without_an_occurrence_is_refused(self):
+        conn = self.open_store()
+        for occurrence in (None, ""):
+            with self.subTest(occurrence=occurrence), self.assertRaisesRegex(registry.RegistryError, "no occurrence id"):
+                self.up(conn, occurrence, "xml:1", "Ada Example", xml="1", party="SPD")
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_records").fetchone()[0], 0)
+
     def test_a_repeat_bind_writes_a_binding_only_when_it_changed(self):
         first = self.open_store()
         record = self.vote_up(first, "v1", "Ada Example", "SPD", "https://example.org/ada")
@@ -1123,7 +1165,7 @@ class WriterRobustnessTests(RegistryFixture, unittest.TestCase):
         # Value: protects=a rebuild through a symlink to the store replaces the store and keeps the link; fails_when=the swap renames the staged copy over the unresolved path, turning the link into a file and leaving the store stale; why_new=the lock was resolved, the swap target was not; seam=none
         entries = [{"report": x, "report_path": self.root / f'{x["protocol"]["id"]}.json'} for x in (r, report(pid="s2"))]
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertTrue(build.rebuild_database_from_entries(link, entries))
+            self.assertTrue(build.rebuild_database_from_entries(link, entries).replaced)
         self.assertTrue(link.is_symlink())
         with contextlib.closing(sqlite3.connect(self.db)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM protocols").fetchone()[0], 2)

@@ -79,7 +79,7 @@ def make_output(
             )
             items[number] = pulse_store.persist_agenda_item(conn, protocol_id, {"index": 0}, NOW)
             for sequence, (rede_id, fraktion, chars, role) in enumerate(speeches):
-                mp = pulse_store.upsert_mp(conn, now=NOW, identity_key=f"mp-{rede_id}", display_name=f"MdB {rede_id}", party_id=party(fraktion or "SPD"), is_mdb=roster)
+                mp = pulse_store.upsert_mp(conn, now=NOW, identity_key=f"mp-{rede_id}", occurrence_id=f"fixture:mp-{rede_id}", display_name=f"MdB {rede_id}", party_id=party(fraktion or "SPD"), is_mdb=roster)
                 conn.execute(
                     "INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count, "
                     "fraktion, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -187,6 +187,7 @@ class CompareStoreValuesTests(unittest.TestCase):
                 display_name="Alex Beispiel",
                 party_id=speaker["party_id"],
                 identity_key="vote-only:alex",
+                occurrence_id="fixture:vote-only:alex",
             )
             conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'yes')", (speaker["id"], speaker["party_id"]))
             conn.execute("INSERT INTO vote_members(vote_id, mp_id, party_id, vote) VALUES ('v1', ?, ?, 'no')", (voter, speaker["party_id"]))
@@ -209,7 +210,7 @@ class CompareStoreValuesTests(unittest.TestCase):
         try:
             def mp(name, identity, *, party="SPD", **fields):
                 return pulse_store.upsert_mp(conn, now=NOW, display_name=name, party_id=pulse_store.upsert_party(conn, party, NOW),
-                                             identity_key=identity, **fields)
+                                             identity_key=identity, occurrence_id=f"fixture:{identity}", **fields)
             for n in (1, 2):  # a shared Personenkennung (ext_id): 2 merges
                 mp(f"Ext Person{n}", f"dip:e{n}", dip_person_id=f"e{n}", aw_politician_id=100 + n, aw_match="ext_id", is_mdb=True)
                 mp(f"Ext Person{n}", f"xml:e{n}", xml_redner_id=f"9{n}", aw_politician_id=100 + n, aw_match="ext_id")

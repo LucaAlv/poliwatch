@@ -942,6 +942,12 @@ def completeness_from_reports(reports: Iterable[Mapping[str, Any]]) -> dict[str,
     return result
 
 
+def built_sources(conn: sqlite3.Connection) -> set[str]:
+    """The optional sources this store holds (the ``built`` set of ``compute``):
+    ``votes`` once any roll call was persisted, so votes metrics are computed."""
+    return {"votes"} if conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+
+
 def completeness_from_entries(entries: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """The build's completeness map, from the in-memory dossier entries (D10).
 
@@ -2692,7 +2698,7 @@ def replay(
         catalog = load_sitting_catalog((data_dir or store.parent) / CATALOG_FILENAME)
     conn = open_readonly(store)
     try:
-        built = {"votes"} if conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
+        built = built_sources(conn)
         rows = compute(conn, REGISTRY, completeness, catalog=catalog, built=built)
         rows_all = compute(conn, REGISTRY, completeness, catalog=catalog, built=built, force_all=True)
         unlinked = conn.execute(

@@ -428,8 +428,7 @@ def _fold(base: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
 
 
 def bind(
-    conn: sqlite3.Connection, identity: str, evidence: dict[str, Any],
-    occurrence: str | None = None,
+    conn: sqlite3.Connection, identity: str, evidence: dict[str, Any], occurrence: str,
 ) -> tuple[str, str, str, dict[str, Any]]:
     """Bind one source occurrence to a source record and its home person.
 
@@ -441,13 +440,15 @@ def bind(
     earlier build. Every later touch folds its occurrence in with ``_fold``, and a
     record's decisions compare against its evidence from before the build, so
     neither the evidence nor the binding depends on persist order."""
+    if not occurrence:
+        raise RegistryError(f"Source record {identity!r} has no occurrence id; every bind names the occurrence it binds")
     evidence["ever_mdb"] = bool(evidence.get("is_mdb"))
     identity = partition_identity(identity, evidence)
     # The identity the source presents, kept when the occurrence stays on a record
     # of another identity, so reconcile can meet the record that identity names.
     evidence["identities"] = [identity]
     row = conn.execute("SELECT * FROM person_records WHERE identity_key = ?", (identity,)).fetchone()
-    bound = conn.execute("SELECT record_id, person_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone() if occurrence else None
+    bound = conn.execute("SELECT record_id, person_id FROM person_bindings WHERE id = ?", (occurrence,)).fetchone()
     bound_touched = False
     if bound:
         # Usually the identity's own record (a repeat build): already read.
@@ -490,10 +491,10 @@ def bind(
     if evidence.get("identities") == [identity]:
         del evidence["identities"]  # only its own identity: the usual case, not stored
     if bound and bound[0] != record_id and not bound_touched:
-        # The occurrence left its old record; once nothing is bound to it any more
-        # that record is stale evidence, which reconcile no longer matches on. A
-        # record this build touched is live and is not marked, whichever order
-        # its occurrences were persisted in.
+        # The occurrence left its old record: the source now says that evidence
+        # was someone else's, so the record may not rejoin as a stale roster
+        # partner (is_stale_roster_partner). A record this build touched is live
+        # and is not marked, whichever order its occurrences were persisted in.
         old = conn.execute("SELECT evidence_json FROM person_records WHERE id=?", (bound[0],)).fetchone()
         conn.execute("UPDATE person_records SET evidence_json=? WHERE id=?",
                      (json.dumps({**json.loads(old[0]), "vacated": True}, ensure_ascii=False, sort_keys=True), bound[0]))
@@ -504,7 +505,7 @@ def bind(
     if not (row and row["id"] == record_id and row["evidence_json"] == evidence_json and row["person_id"] == home):
         conn.execute("INSERT INTO person_records VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json, person_id=excluded.person_id",
                      (record_id, identity, home, evidence_json, evidence.get("partition"), home))
-    if occurrence and not (bound and tuple(bound) == (record_id, home)):
+    if not (bound and tuple(bound) == (record_id, home)):
         conn.execute("INSERT INTO person_bindings VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET record_id=excluded.record_id, person_id=excluded.person_id", (occurrence, record_id, home))
     return record_id, home, identity, evidence
 
@@ -883,13 +884,10 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
 
     return components, totals
 
-def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> list[dict[str, Any]]:
+def _load_rows(conn: sqlite3.Connection, touched: set[str]) -> list[dict[str, Any]]:
     """Every record's evidence with its current person, its partition and whether
-    it is live. In a full build a record is live when
-    this build touched it (``touched``); otherwise when it is bound, or was never
-    vacated by an occurrence moving to another record. A record that is not live
-    is stale evidence: it keeps its person but takes part in no match."""
-    bound = set() if touched is not None else {row[0] for row in conn.execute("SELECT DISTINCT record_id FROM person_bindings")}
+    it is live: this build touched it (``touched``). A record that is not live is
+    stale evidence: it keeps its person but takes part in no match."""
     vote_ids: dict[str, set[str]] = {}
     for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
         vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
@@ -897,7 +895,7 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str] | None = None) -> lis
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
         evidence.setdefault("identities", [record["identity_key"]])
-        live = record["id"] in touched if touched is not None else record["id"] in bound or not evidence.get("vacated")
+        live = record["id"] in touched
         evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
                         vote_ids=vote_ids.get(record["id"], set()))
         rows.append(evidence)
@@ -964,8 +962,8 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     """Apply the name-based guesses to the current persons, from the rows alone.
 
     A pure function of ``rows``: it reads no earlier guess, so a replay, an
-    incremental build and a fresh build agree. Only live records are matched (a
-    vacated one is stale evidence); a stale roster record joins afterwards as a
+    incremental build and a fresh build agree. Only live records are matched (one
+    this build did not touch is stale evidence); a stale roster record joins afterwards as a
     partner only (``_stale_roster_partners``). Whole persons move, so a guess can never
     tear a durable merge apart. A group that would join two partitions, or
     persons whose official ids contradict, stays split; otherwise the person
@@ -1013,7 +1011,14 @@ def _guess_merges(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> dict[
     return totals
 
 
-def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str, int]:
+def begin_build(conn: sqlite3.Connection) -> None:
+    """Start a staged rebuild on this connection: an empty touched set, so a
+    rebuild that binds nothing still reconciles (every record is then stale)."""
+    conn.execute("DROP TABLE IF EXISTS temp.registry_touched")
+    conn.execute("CREATE TEMP TABLE registry_touched (id TEXT PRIMARY KEY NOT NULL, baseline TEXT)")
+
+
+def reconcile(conn: sqlite3.Connection) -> dict[str, int]:
     """Settle which person every record belongs to.
 
     Durable: the issued home key, reviewed merges, and merges that rest on a
@@ -1021,17 +1026,16 @@ def reconcile(conn: sqlite3.Connection, *, full_build: bool = False) -> dict[str
     (``_guess_merges``), which move a record's current person without retiring any
     key, so a guess that stops holding, or arrives in another order, leaves no trace.
 
-    ``full_build``: every live occurrence was bound again on this connection (the
-    staged rebuild), so a record nothing touched is stale and is ignored by every
-    match. Without it (tests, a partial persist) liveness falls back to bound or never vacated."""
+    It runs at the end of a staged rebuild, on the connection that bound every
+    live occurrence again, so a record nothing touched is stale and is ignored by
+    every match. A connection that never started a build or bound anything has no
+    touched set and is refused rather than read as "everything is stale"."""
+    if not conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='registry_touched'").fetchone():
+        raise RegistryError("reconcile runs only after a rebuild has bound its occurrences on this connection")
     validate(conn)
     require_applied_partitions(conn)
     data = corrections()
-    touched = None
-    if full_build:
-        touched = set()
-        if conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='registry_touched'").fetchone():
-            touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
+    touched = {row[0] for row in conn.execute("SELECT id FROM temp.registry_touched")}
     # Every record restarts from its durable home.
     for record in conn.execute("SELECT id, home_person_id FROM person_records").fetchall():
         _assign(conn, record["id"], resolve(conn, record["home_person_id"]))

@@ -595,8 +595,8 @@ def upsert_mp(
     aw_politician_id: Any = None,
     aw_match: Any = None,
     person_roles_json: Any = None,
+    occurrence_id: str,
     is_mdb: bool = False,
-    occurrence_id: str | None = None,
 ) -> str:
     dip_person_id = canonical_dip_person_id(dip_person_id)
     if is_mdb and dip_person_id:

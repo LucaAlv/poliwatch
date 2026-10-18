@@ -107,6 +107,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         display_name="Ada Lovelace",
                         party_id=party_id,
                         identity_key="dip:ada",
+                        occurrence_id="fixture:dip:ada",
                         dip_person_id="ada",
                         is_mdb=True,
                     )
@@ -669,6 +670,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         display_name="Ada Lovelace, MdB, SPD",
                         party_id=party_id,
                         identity_key=pulse_store.mp_identity(dip_person_id="dip-ada"),
+                        occurrence_id="fixture:" + pulse_store.mp_identity(dip_person_id="dip-ada"),
                         dip_person_id="dip-ada",
                         aw_politician_id=77,
                         aw_match="ext_id",
@@ -681,6 +683,7 @@ class CollectAbgeordneteTests(unittest.TestCase):
                         display_name="Ada Lovelace",
                         party_id=party_id,
                         identity_key=pulse_store.mp_identity(xml_redner_id="11001"),
+                        occurrence_id="fixture:" + pulse_store.mp_identity(xml_redner_id="11001"),
                         xml_redner_id="11001",
                         aw_politician_id=77,
                         aw_match="ext_id",

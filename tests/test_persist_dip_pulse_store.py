@@ -242,6 +242,7 @@ class PartyMigrationTests(unittest.TestCase):
                 display_name=f"MdB {index}",
                 party_id=ids[name],
                 identity_key=f"dip:seed-{index}",
+                occurrence_id=f"fixture:dip:seed-{index}",
             )
         conn.execute(
             "INSERT INTO votes(id, created_at, updated_at) VALUES ('v1', ?, ?)", (now, now)

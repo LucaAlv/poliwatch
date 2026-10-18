@@ -36,6 +36,7 @@ class RegistryFixture:
         previous.commit()
         self.builds += 1
         target = self.open_store(f"build-{self.builds}.sqlite")
+        registry.begin_build(target)
         registry.copy_previous(previous, target)
         return target
 

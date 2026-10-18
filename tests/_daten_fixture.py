@@ -41,6 +41,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 display_name="Ada Lovelace, MdB, SPD",
                 party_id=party_spd,
                 identity_key=pulse_store.mp_identity(dip_person_id="ada"),
+                occurrence_id="fixture:" + pulse_store.mp_identity(dip_person_id="ada"),
                 dip_person_id="ada",
                 aw_politician_id=77,
                 is_mdb=True,
@@ -51,6 +52,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 display_name="Ada Lovelace",
                 party_id=party_spd,
                 identity_key=pulse_store.mp_identity(xml_redner_id="11001"),
+                occurrence_id="fixture:" + pulse_store.mp_identity(xml_redner_id="11001"),
                 xml_redner_id="11001",
                 aw_politician_id=77,
             )
@@ -61,6 +63,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 display_name="Karl Marx, MdB, CDU/CSU",
                 party_id=party_cdu,
                 identity_key=pulse_store.mp_identity(dip_person_id="karl"),
+                occurrence_id="fixture:" + pulse_store.mp_identity(dip_person_id="karl"),
                 dip_person_id="karl",
                 is_mdb=True,
             )
@@ -74,6 +77,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 display_name="Vera Stimme",
                 party_id=party_cdu,
                 identity_key=pulse_store.mp_identity(profile_url="https://example.test/vera"),
+                occurrence_id="fixture:" + pulse_store.mp_identity(profile_url="https://example.test/vera"),
                 profile_url="https://example.test/vera",
                 is_mdb=False,
             )
@@ -87,6 +91,7 @@ def seed_store(path: Path) -> dict[str, Any]:
                 display_name="Petra Wechsel, MdB, CDU/CSU",
                 party_id=party_cdu,
                 identity_key=pulse_store.mp_identity(dip_person_id="petra"),
+                occurrence_id="fixture:" + pulse_store.mp_identity(dip_person_id="petra"),
                 dip_person_id="petra",
                 is_mdb=True,
             )

@@ -91,6 +91,7 @@ from urllib.parse import urlparse
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -1049,6 +1050,15 @@ def merge_detail_entries(
 # being replaced is only ever read, and through a read-only connection: a
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
+@dataclass(frozen=True)
+class Rebuilt:
+    """A staged rebuild that succeeded: whether the store file was replaced, and
+    the facts engine's report for the store it built (computed on every rebuild,
+    so the data pipeline never computes the facts a second time)."""
+    replaced: bool
+    facts_report: dict[str, Any]
+
+
 class DatabaseRebuildError(Exception):
     """The staged rebuild failed (an unpersistable report, a registry, facts or SQLite
     error, missing cached evidence, a failed roster fetch or integrity check); the
@@ -1131,7 +1141,7 @@ def _entry_label(entry: dict[str, Any]) -> str:
 
 
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, facts_report=None, upgrade=False):
+                                  today=None, upgrade=False) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1139,11 +1149,9 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
     runs ``roster_ingest(staged_connection)``; reconciles persons; recomputes facts
     against ``catalog``; validates the registry and integrity; replaces the store
     only when all of that succeeded (and, with ``keep_if_unchanged``, only when its
-    content changed). ``today`` is the build date the facts are computed for; a
-    ``facts_report`` dict receives the engine's report, so the data pipeline need
-    not compute the facts a second time. Only ``upgrade`` (``--offline --repersist``)
+    content changed). ``today`` is the build date the facts are computed for. Only ``upgrade`` (``--offline --repersist``)
     accepts a store of an older schema; every other caller is refused, so the
-    registry is re-minted only on that explicit step. Returns whether the file was replaced. Any registry, SQLite,
+    registry is re-minted only on that explicit step. Returns a ``Rebuilt``. Any registry, SQLite,
     OS or facts failure, and missing cached evidence for a stored protocol, raise
     DatabaseRebuildError with the previous store untouched."""
     # One spelling for the lock, the staging directory and the swap: a rebuild
@@ -1153,7 +1161,7 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest, today=today, facts_report=facts_report, upgrade=upgrade)
+                catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1167,9 +1175,8 @@ def _rebuild_database_from_entries(
     catalog: facts.SittingCatalog | None = None,
     roster_ingest: Any = None,
     today: date | None = None,
-    facts_report: dict[str, Any] | None = None,
     upgrade: bool = False,
-) -> bool:
+) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
     if database_path.exists():
         try:
@@ -1233,6 +1240,7 @@ def _rebuild_database_from_entries(
     store = pulse_store.connect(temp_path)
     try:
         pulse_store.initialize(store)
+        registry.begin_build(store)
         if database_path.exists():
             previous = facts.open_readonly(database_path)
             try:
@@ -1306,12 +1314,12 @@ def _rebuild_database_from_entries(
             pulse_store.require_current_speech_rules(store)
         except RuntimeError as exc:
             raise DatabaseRebuildError(str(exc)) from exc
-        registry.reconcile(store, full_build=True)
+        registry.reconcile(store)
         store.commit()
         if facts_snapshot is not None:
             facts.write_snapshot(store, facts_snapshot)
-        built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
-        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries), built=built, catalog=catalog, today=today)
+        report = facts.compute_and_store(store, facts.ALL_REGISTRY, facts.completeness_from_entries(entries),
+                                         built=facts.built_sources(store), catalog=catalog, today=today)
         registry.validate(store)
         if store.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise DatabaseRebuildError("Rebuilt database failed integrity_check")
@@ -1323,15 +1331,13 @@ def _rebuild_database_from_entries(
         raise
     finally:
         store.close()
-    if facts_report is not None:
-        facts_report.update(report)
     if keep_if_unchanged and database_path.exists() and _same_content(database_path, temp_path):
         temp_path.unlink()
-        return False
+        return Rebuilt(replaced=False, facts_report=report)
     # mkstemp makes the staged copy private; the store keeps the mode it had.
     os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
     temp_path.replace(database_path)
-    return True
+    return Rebuilt(replaced=True, facts_report=report)
 
 
 def unparsed_reports(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1484,25 +1490,25 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
 
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
-    today: date | None = None, facts_report: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], bool]:
+    today: date | None = None,
+) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
     persisted. Reden and Beiträge are first re-read from each report's cached
-    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and whether
-    the store file was replaced. Raises CachedReportError or DatabaseRebuildError
+    XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
+    ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
     cached = load_existing_detail_entries(output_dir, protocols, strict=True)
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
-    replaced = rebuild_database_from_entries(
+    rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, facts_report=facts_report, upgrade=True,
+        today=today, upgrade=True,
     )
     write_classification_diagnostics(output_dir, cached)
-    return cached, replaced
+    return cached, rebuilt
 
 
 # ---------------------------------------------------------------------------
@@ -11071,13 +11077,12 @@ def run_facts_engine(
         store = pulse_store.connect(database_path)
         try:
             pulse_store.initialize(store)
-            built = {"votes"} if store.execute("SELECT COUNT(*) FROM votes").fetchone()[0] else set()
             return facts.compute_and_store(
                 store,
                 facts.ALL_REGISTRY,
                 facts.completeness_from_entries(entries),
                 catalog=catalog,
-                built=built,
+                built=facts.built_sources(store),
                 today=today,
             )
         finally:
@@ -11110,9 +11115,10 @@ def run_data_pipeline(
 
     # Before the export, so the three facts tables are part of the store the
     # export copies and hashes. A rebuild in this build already computed them
-    # for the same entries, catalog and date and hands over its report.
+    # for the same entries, catalog and date and hands over its report; only
+    # ``None`` (no rebuild ran) computes them here.
     if not args.no_persist and database_path.exists():
-        if not facts_report:
+        if facts_report is None:
             facts_report = run_facts_engine(
                 database_path,
                 entries,
@@ -11291,12 +11297,12 @@ def main() -> int:
         # render alone never does). All or nothing: any failure leaves the
         # previous store untouched and the run stops before anything is rendered.
         cached_entries: list[dict[str, Any]] | None = None
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         if getattr(args, "repersist", False):
             try:
-                cached_entries, replaced = repersist_cached_reports(
+                cached_entries, rebuilt = repersist_cached_reports(
                     output_dir, database_path, protocols, preserve_roster=True,
-                    today=resolve_today(getattr(args, "today", None)), facts_report=rebuilt_facts,
+                    today=resolve_today(getattr(args, "today", None)),
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -11317,9 +11323,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
+            rebuilt_facts = rebuilt.facts_report
             print(
                 f"repersist: {len(cached_entries)} cached reports persisted; "
-                + ("store replaced" if replaced else "store content unchanged, file kept"),
+                + ("store replaced" if rebuilt.replaced else "store content unchanged, file kept"),
                 file=sys.stderr,
             )
 
@@ -11500,7 +11507,7 @@ def main() -> int:
         # One catalog for the staged rebuild's facts and the data pipeline, so the
         # rebuild's facts report is handed over instead of computed twice.
         catalog = facts.sitting_catalog(protocols, authoritative=True, fetched_at=dip.utc_now())
-        rebuilt_facts: dict[str, Any] = {}
+        rebuilt_facts: dict[str, Any] | None = None
         try:
             # Step 2: build the selected dossiers. Each one writes its own JSON
             # report and HTML page as a side effect.
@@ -11568,15 +11575,14 @@ def main() -> int:
                     )
 
                 try:
-                    rebuild_database_from_entries(
+                    rebuilt_facts = rebuild_database_from_entries(
                         database_path,
                         entries,
                         preserve_roster="mp-roster" not in enrichments,
                         catalog=catalog,
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
-                        facts_report=rebuilt_facts,
-                    )
+                    ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
                     return 1
