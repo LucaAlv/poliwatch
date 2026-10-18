@@ -11,7 +11,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 24 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 25 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 
@@ -35,7 +35,7 @@ conn = sqlite3.connect("bundestag-pulse.sqlite")
 # pandas, either the SQLite file or a CSV
 import pandas as pd
 pd.read_sql("SELECT * FROM speeches", conn)
-pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={"mp_id": "Int64"})
+pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={"mp_id": "string"})
 ```
 
 SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Ein öffentlicher, versionierter Release über GitHub Releases ist geplant (`scripts/publish_dip_pulse_data.sh`, separates PR) und noch nicht verfügbar; die Lizenz-/Nutzungsformulierung steht ebenfalls noch aus (Platzhalter auf der Seite: "siehe Quellen und Methode").
@@ -229,7 +229,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. Old integer-ID stores require explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 4 (integer IDs, or documents keyed by URL) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 

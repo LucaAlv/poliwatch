@@ -164,7 +164,7 @@ Important generated files:
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 20 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 25 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
@@ -428,7 +428,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 24 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `4`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 25 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `4`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -560,7 +560,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added.
+When persistence is enabled, an offline build initializes and migrates the cached SQLite schema before reading MP data. Caches created by older versions therefore remain usable when newer biography fields are added. A store from before the current schema (4) is the exception: it is refused with the `--offline --repersist` upgrade instruction rather than migrated ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
