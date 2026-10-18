@@ -5135,10 +5135,6 @@ def render_front_page(
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
     .week-chips a {{ color:var(--ink); gap:.3em; }}
-    @media (pointer:coarse) {{
-      .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
-      .radar-open a {{ display:inline-block; padding:12px 0; }}
-    }}
     .week-facts {{ margin-top:12px; max-width:860px; font-size:15px; line-height:1.5; }}
     .eyebrow {{
       color:var(--muted);
@@ -5379,6 +5375,10 @@ def render_front_page(
     }}
     @media (hover: none) {{
       a.week-label[data-tip]::after {{ display:none; }}
+    }}
+    @media (pointer:coarse) {{
+      .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
+      .radar-open a {{ display:inline-block; padding:12px 0; }}
     }}
     @media (prefers-reduced-motion: reduce) {{
       a.week-label[data-tip]::after {{ transition:none; transform:none; }}
