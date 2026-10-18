@@ -1237,7 +1237,7 @@ def speech_anchor(item: dict[str, Any], speech: dict[str, Any], sequence: int) -
         suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(speech_id)).strip("-")
     else:
         suffix = str(sequence + 1)
-    return f"speech-{item.get('index')}-{suffix or sequence + 1}"
+    return f"speech-{source_index(item.get('index'))}-{suffix or sequence + 1}"
 
 
 # Inline "person" glyph used for the compact abgeordnetenwatch profile link so

@@ -961,6 +961,13 @@ class WeekRadarHelperTests(unittest.TestCase):
 
     # -- topic identity -----------------------------------------------------
 
+    # Value: protects=a text index (" 03 ") renders the same speech anchor and fallback TOP label as the int; fails_when=speech_anchor or topic_identity formats the raw index (id "speech- 03 -ID1", "Tagesordnungspunkt  03 "); why_new=anchors and labels were tested with int indexes only; seam=none
+    def test_a_text_index_renders_the_int_anchor_and_label(self) -> None:
+        self.assertEqual(pulse_html.speech_anchor({"index": " 03 "}, {"rede_id": "ID1"}, 0), "speech-3-ID1")
+        self.assertEqual(pulse_html.speech_anchor({"index": 3}, {}, 4), "speech-3-5")
+        self.assertEqual(pulse_html.topic_identity({"index": " 03 "})["lead_title"], "Tagesordnungspunkt 3")
+
+
     def test_gesetzgebung_position_leads_a_mixed_group(self) -> None:
         item = self._item([
             self._position("A1", "Antrag eins"),

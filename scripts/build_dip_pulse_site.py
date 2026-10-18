@@ -1056,6 +1056,11 @@ class DatabaseRebuildError(Exception):
     previous store stays."""
 
 
+# What a failed data pipeline (export, facts, staged store write) raises: main
+# reports each as one error: line and exit 1, offline and online alike.
+PIPELINE_ERRORS = (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error)
+
+
 # Columns holding when a row was written, not what it says. A re-persist that
 # changes nothing but these has changed nothing (E9).
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
@@ -1546,7 +1551,10 @@ def agenda_item_reuse_keys(item: dict[str, Any]) -> list[str]:
     if top_id:
         keys.append(f"top:{top_id}")
     if item.get("index") is not None:
-        keys.append(f"index:{source_index(item['index'])}")
+        # A previous report is read without the cached-report load's checks; a
+        # malformed index there matches nothing rather than failing the build.
+        with contextlib.suppress(ValueError):
+            keys.append(f"index:{source_index(item['index'])}")
     return keys
 
 
@@ -11448,7 +11456,7 @@ def main() -> int:
                 catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
                 facts_report=rebuilt_facts,
             )
-        except (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error) as exc:
+        except PIPELINE_ERRORS as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         # Dossier pages are regenerated from the cached JSON reports, then the
@@ -11706,7 +11714,7 @@ def main() -> int:
             catalog=catalog,
             facts_report=rebuilt_facts,
         )
-    except (RuntimeError, OSError, ValueError, json.JSONDecodeError, DatabaseRebuildError, sqlite3.Error) as exc:
+    except PIPELINE_ERRORS as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     index_path = render_site(

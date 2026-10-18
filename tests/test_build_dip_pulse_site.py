@@ -3867,5 +3867,15 @@ class DossierDatenLinkTests(unittest.TestCase):
             self.assertNotIn("database.html", footer(without))
 
 
+
+class AgendaItemReuseKeyTests(unittest.TestCase):
+    # Value: protects=an online build reusing summaries from a previous (unchecked) cached report survives a malformed index there; fails_when=agenda_item_reuse_keys lets source_index's ValueError escape and the build ends in a traceback; why_new=reuse keys were tested with valid indexes only; seam=none
+    def test_a_malformed_previous_index_matches_by_top_id_only(self) -> None:
+        for index in ("abc", -1, 2.5, True):
+            with self.subTest(index=index):
+                self.assertEqual(build_dip_pulse_site.agenda_item_reuse_keys({"top_id": "TOP 1", "index": index}), ["top:TOP 1"])
+        self.assertEqual(build_dip_pulse_site.agenda_item_reuse_keys({"top_id": "TOP 1", "index": " 03 "}), ["top:TOP 1", "index:3"])
+
+
 if __name__ == "__main__":
     unittest.main()

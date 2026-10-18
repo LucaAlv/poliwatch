@@ -561,5 +561,15 @@ class ConnectGuardTests(unittest.TestCase):
             conn.close()
 
 
+
+class DocumentUrlRankTests(unittest.TestCase):
+    # Value: protects=a Drucksache number with non-ASCII digits is treated as encoding no checkable path instead of crashing the persist; fails_when=_encodes_document_number goes back to str.isdigit, which accepts '²' and int() raises; why_new=every URL-rank case used ASCII numbers; seam=none
+    def test_non_ascii_digits_encode_no_checkable_path(self) -> None:
+        for issuer, number in (("BT", "2²/1"), ("BR", "٢٣/١")):
+            with self.subTest(number=number):
+                self.assertFalse(pulse_store._encodes_document_number(issuer, number, "/btd/2/000/200001.pdf"))
+        self.assertTrue(pulse_store._encodes_document_number("BT", "20/8601", "/btd/20/086/2008601.pdf"))
+
+
 if __name__ == "__main__":
     unittest.main()
