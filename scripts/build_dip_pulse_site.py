@@ -1518,7 +1518,7 @@ VORGANG_FETCH_MAX_FAILURES = 5
 #: goes before each, so the fetch stays near 1.5 requests a second. At about 4 a
 #: second DIP's edge answered 400 with a bot challenge to the whole API for over
 #: an hour (2026-10-04). The first full fill (about 2,400 numbers) took 1,577 s with
-#: one pause per lookup and takes about 40 minutes with two; later builds fetch
+#: one pause per lookup and takes about 45 minutes with two; later builds fetch
 #: only new numbers.
 NUMBER_LOOKUP_PAUSE = 0.5
 #: Drucksache-number lookups between two saves of the Vorgang cache.
