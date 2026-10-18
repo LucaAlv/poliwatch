@@ -2621,6 +2621,13 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertEqual(build_dip_pulse_site.column_source("votes", "inversion_excerpt"), "derived")
         self.assertEqual(build_dip_pulse_site.column_source("votes", "xlsx_url"), "bundestag.de")
 
+    # Value: protects=the Daten dictionary labels the Politikfeld tables derived and keeps the raw Sachgebiet list as DIP data; fails_when=a tag table drops out of _TABLE_SOURCE_DERIVED, so derived tags are captioned as DIP data; why_new=the export test checks table names and keys, not provenance; seam=none
+    def test_politikfeld_columns_are_labelled_derived_and_sachgebiet_stays_dip(self) -> None:
+        for table in ("agenda_item_politikfelder", "vote_politikfelder"):
+            for column in ("politikfeld", "rank", "source"):
+                self.assertEqual(build_dip_pulse_site.column_source(table, column), "derived", (table, column))
+        self.assertEqual(build_dip_pulse_site.column_source("proceedings", "sachgebiet"), "dip")
+
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")
         self.assertEqual(build_dip_pulse_site._month_label("2026-13-10"), "Unbekanntes Datum")
