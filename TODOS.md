@@ -366,7 +366,7 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 ### Week comparison with no basis still draws every n/a slot
 
-**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. Tests at `tests/test_build_dip_pulse_site.py` (lines ~1438, 1612, 2823) assert the chips today, so they change with this.
+**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
 
 **Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
 
