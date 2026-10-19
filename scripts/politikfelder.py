@@ -156,7 +156,9 @@ EINZELPLAN_TO_POLITIKFELDER: dict[tuple[str, str], tuple[str, ...]] = {
     ("21", "60"): _WIRTSCHAFT,
 }
 
-_EINZELPLAN_RE = re.compile(r"\bEinzelplan\s+(\d{1,2})\b")
+#: A dotted outline number ("Einzelplan 1.7" as the top_id of an Einzelplan 17 item)
+#: is not an Einzelplan.
+_EINZELPLAN_RE = re.compile(r"\bEinzelplan\s+(\d{1,2})\b(?!\.\d)")
 
 Tagging = tuple[list[str], str]
 

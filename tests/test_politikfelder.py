@@ -118,14 +118,12 @@ class ClosedListTests(unittest.TestCase):
         reports = sorted(data.glob("plenarprotokoll-2*.json"))
         if not reports:
             self.skipTest("no cached store in this checkout")
-        import re
-
         seen = set()
         for path in reports:
             report = json.loads(path.read_text(encoding="utf-8"))
             wahlperiode = derive.report_wahlperiode(report)
             for agenda_item in report.get("agenda_items") or []:
-                for match in re.finditer(r"\bEinzelplan\s+(\d{1,2})\b", f"{agenda_item.get('heading') or ''} {agenda_item.get('top_id') or ''}"):
+                for match in pf._EINZELPLAN_RE.finditer(f"{agenda_item.get('heading') or ''} {agenda_item.get('top_id') or ''}"):
                     seen.add((wahlperiode, match.group(1).zfill(2)))
         self.assertLessEqual(seen, set(pf.EINZELPLAN_TO_POLITIKFELDER))
 
@@ -220,6 +218,12 @@ class AgendaItemTests(unittest.TestCase):
         tags, source = self.tags(top, cache_of(), "21")
         self.assertEqual(source, "einzelplan")
         self.assertEqual(tags, ["Innere Sicherheit", "Migration", "Justiz"])
+
+    def test_a_dotted_outline_top_id_is_not_an_einzelplan(self) -> None:
+        # Report 21/42 item 10: heading names Einzelplan 17, top_id is the outline number 1.7.
+        top = dict(item(heading="hier: Einzelplan 17 Bundesministerium für Bildung, Familie"), top_id="Einzelplan 1.7")
+        self.assertEqual(self.tags(top, cache_of(), "21"), (["Bildung", "Soziales"], "einzelplan"))
+        self.assertEqual(self.tags(dict(item(heading=""), top_id="Einzelplan 1.7"), cache_of(), "21"), ([pf.UNTAGGED], "untagged"))
 
     def test_an_unknown_einzelplan_pair_is_marked(self) -> None:
         top = item(heading="Einzelplan 99 Neu")
