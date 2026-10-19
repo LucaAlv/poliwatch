@@ -5435,8 +5435,8 @@ def render_front_page(
       padding-bottom:20px;
       border-bottom:1px solid var(--line);
     }}
-    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; overflow-wrap:anywhere; }}
-    h2 {{ margin:0; font-size:18px; line-height:1.25; }}
+    h1 {{ margin:0; font-size:37px; line-height:1.08; font-weight:780; overflow-wrap:anywhere; text-wrap:balance; }}
+    h2 {{ margin:0; font-size:18px; line-height:1.25; text-wrap:balance; }}
     p {{ margin:7px 0 0; color:var(--muted); }}
     .page-actions, .week-chips {{ display:flex; flex-wrap:wrap; gap:9px; justify-content:flex-start; }}
     .week-chips {{ margin-top:12px; }}
@@ -5453,7 +5453,7 @@ def render_front_page(
       font-size:13px;
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
-    .week-chips a {{ color:var(--ink); }}
+    .week-chips a {{ color:var(--ink); gap:.3em; }}
     .week-facts {{ margin-top:12px; max-width:860px; font-size:15px; line-height:1.5; }}
     .eyebrow {{
       color:var(--muted);
@@ -5474,7 +5474,7 @@ def render_front_page(
     .radar-list {{ margin:8px 0 0; padding:0; list-style:none; }}
     .radar-row {{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 220px 160px;
+      grid-template-columns:minmax(0,1fr) 220px 200px;
       gap:10px 22px;
       align-items:start;
       padding:14px 0;
@@ -5506,7 +5506,7 @@ def render_front_page(
       border:1px solid var(--line);
       border-radius:999px;
       background:var(--paper);
-      font-size:11px;
+      font-size:12px;
       color:var(--ink);
     }}
     .radar-badge {{ justify-self:start; color:var(--amber); border-color:var(--amber); }}
@@ -5519,7 +5519,7 @@ def render_front_page(
     .radar-who {{ display:grid; gap:6px; align-content:start; padding-top:2px; }}
     .who-stack {{ display:flex; overflow:hidden; height:10px; border-radius:999px; background:var(--line); }}
     .who-stack.empty {{ outline:1px solid var(--line); }}
-    .radar-legend {{ margin:0; font-size:11px; line-height:1.4; color:var(--muted); }}
+    .radar-legend {{ margin:0; font-size:12px; line-height:1.4; color:var(--muted); }}
     .radar-row a {{ text-decoration-line:underline; text-decoration-color:transparent; text-underline-offset:2px; }}
     .radar-row a:hover {{ text-decoration-color:currentColor; }}
     .radar-row a:visited {{ text-decoration-color:var(--muted); }}
@@ -5612,7 +5612,7 @@ def render_front_page(
     .week-metric span {{
       display:block;
       color:var(--muted);
-      font-size:11px;
+      font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
     }}
@@ -5624,7 +5624,7 @@ def render_front_page(
       gap:6px;
       margin-top:5px;
     }}
-    .week-metric-foot em {{ color:var(--muted); font-size:11px; font-style:normal; }}
+    .week-metric-foot em {{ color:var(--muted); font-size:12px; font-style:normal; }}
     .week-delta {{ font-size:12px; font-weight:750; white-space:nowrap; }}
     .week-delta.up {{ color:var(--teal); }}
     .week-delta.down {{ color:var(--amber); }}
@@ -5704,6 +5704,10 @@ def render_front_page(
     }}
     @media (hover: none) {{
       a.week-label[data-tip]::after {{ display:none; }}
+    }}
+    @media (pointer:coarse) {{
+      .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
+      .radar-open a {{ display:inline-block; min-height:44px; padding:12px 0; }}
     }}
     @media (prefers-reduced-motion: reduce) {{
       a.week-label[data-tip]::after {{ transition:none; transform:none; }}

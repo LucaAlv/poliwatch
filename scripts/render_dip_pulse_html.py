@@ -32,7 +32,7 @@ from features import (
 
 
 PARTY_COLORS = {
-    "CDU/CSU": "#222222",
+    "CDU/CSU": "var(--party-cdu, #222222)",
     "SPD": "#d71920",
     "AfD": "#2f6fb4",
     "BÜNDNIS 90/DIE GRÜNEN": "#169b62",
@@ -612,6 +612,7 @@ def format_percent(value: float) -> str:
 
 def global_header_styles() -> str:
     return """
+    :root { --party-cdu:#222222; }
     a:visited { color:var(--teal, #0f766e); }
     :is(a, .site-nav summary, .theme-toggle):focus-visible {
       outline:2px solid var(--blue);
@@ -633,6 +634,7 @@ def global_header_styles() -> str:
       --amber-soft:#302312;
       --surface-2:#1b232e;
       --surface-3:#202a36;
+      --party-cdu:#c3cad3;
       --warning-bg:#332908;
       --warning-line:#8a6a15;
       --warning-ink:#f5d77f;
@@ -755,6 +757,10 @@ def global_header_styles() -> str:
       background:var(--panel) !important;
       border-color:var(--line) !important;
       color:var(--ink) !important;
+    }
+    :root[data-theme="dark"] :is(.site-nav a:hover, .site-nav summary:hover) {
+      background:var(--surface-2) !important;
+      border-color:var(--blue) !important;
     }
     :root[data-theme="dark"] :is(.site-nav a[aria-current="page"], .site-nav-more[data-active] summary) {
       background:var(--blue-soft) !important;
