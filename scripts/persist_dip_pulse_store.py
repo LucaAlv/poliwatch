@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 import speech_kinds
 import derive
 import person_registry as registry
+import politikfelder
 import publication_state as publication
 from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
@@ -29,12 +30,16 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
     columns = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(mps)")}
     if columns and (columns.get("id") != "TEXT" or "person_id" not in columns):
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    proceedings = {row[1] for row in conn.execute("PRAGMA table_info(proceedings)")}
+    if proceedings and "sachgebiet" not in proceedings:
+        # Before schema 5: initialize() would add the Politikfeld tables empty and stamp version 5.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -111,6 +116,11 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _sql_list(values: tuple[str, ...]) -> str:
+    """A SQL value list for a CHECK constraint, from the closed lists in politikfelder."""
+    return ", ".join("'" + value.replace("'", "''") + "'" for value in values)
+
+
 def initialize(conn: sqlite3.Connection) -> None:
     require_current_schema(conn)
     registry.initialize(conn)
@@ -185,6 +195,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           id TEXT PRIMARY KEY NOT NULL,
           title TEXT,
           proceeding_type TEXT,
+          sachgebiet TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -315,6 +326,22 @@ def initialize(conn: sqlite3.Connection) -> None:
           PRIMARY KEY (agenda_item_id, vote_id)
         );
 
+        CREATE TABLE IF NOT EXISTS agenda_item_politikfelder (
+          agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+          politikfeld TEXT NOT NULL CHECK (politikfeld IN (%(labels)s)),
+          rank INTEGER NOT NULL,
+          source TEXT NOT NULL CHECK (source IN (%(sources)s)),
+          PRIMARY KEY (agenda_item_id, politikfeld)
+        );
+
+        CREATE TABLE IF NOT EXISTS vote_politikfelder (
+          vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+          politikfeld TEXT NOT NULL CHECK (politikfeld IN (%(labels)s)),
+          rank INTEGER NOT NULL,
+          source TEXT NOT NULL CHECK (source IN (%(sources)s)),
+          PRIMARY KEY (vote_id, politikfeld)
+        );
+
         CREATE TABLE IF NOT EXISTS vote_documents (
           vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
           document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -352,6 +379,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
         CREATE INDEX IF NOT EXISTS idx_votes_detail_url ON votes(detail_url);
         """
+        % {"labels": _sql_list(politikfelder.ALLOWED_LABELS), "sources": _sql_list(politikfelder.SOURCES)}
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
@@ -873,11 +901,6 @@ def persist_agenda_item(
     return agenda_id
 
 
-def _is_bundestag_xml_url(url: Any) -> bool:
-    parts = urlsplit(str(url))
-    return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
-
-
 def persist_agenda_documents(
     conn: sqlite3.Connection,
     item: dict[str, Any],
@@ -885,11 +908,9 @@ def persist_agenda_documents(
     now: str,
 ) -> None:
     for doc in item.get("xml_drucksachen") or []:
-        if doc.get("url") and not _is_bundestag_xml_url(doc["url"]):
-            # Reports cached before validate_dip_protocol.extract_drucksachen
-            # checked the host still hold numbers read off news-site URLs
-            # ("11/09" from a dated euronews path). Keyed by number alone, such
-            # a fragment would join the real Drucksache of that number.
+        if doc.get("url") and not derive.is_bundestag_xml_url(doc["url"]):
+            # A number read off a news-site URL in an old cached report: keyed by
+            # number alone, such a fragment would join the real Drucksache of that number.
             continue
         document_id = upsert_document(
             conn,
@@ -953,24 +974,33 @@ def persist_positions(
     item: dict[str, Any],
     agenda_item_id: str,
     now: str,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> None:
+    cached_vorgaenge = (vorgang_cache or {}).get("vorgaenge") or {}
     for position in (item.get("api") or {}).get("positions") or []:
         proceeding_id = clean(position.get("vorgang_id"))
         position_id = clean(position.get("id"))
         if proceeding_id:
+            # The raw DIP labels of this position's own Vorgang, the main input of the
+            # Politikfelder (a twin or a Vorgang found through a Drucksache number is not
+            # stored here). NULL when the Vorgang is not in the cache (offline build, failed fetch).
+            record = cached_vorgaenge.get(proceeding_id)
+            sachgebiet = None if record is None else dumps(record.get("sachgebiet") or [])
             conn.execute(
                 """
-                INSERT INTO proceedings(id, title, proceeding_type, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO proceedings(id, title, proceeding_type, sachgebiet, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title = COALESCE(excluded.title, proceedings.title),
                   proceeding_type = COALESCE(excluded.proceeding_type, proceedings.proceeding_type),
+                  sachgebiet = COALESCE(excluded.sachgebiet, proceedings.sachgebiet),
                   updated_at = excluded.updated_at
                 """,
                 (
                     proceeding_id,
                     clean(position.get("titel")),
                     clean(position.get("vorgangstyp")),
+                    sachgebiet,
                     now,
                     now,
                 ),
@@ -1368,7 +1398,42 @@ def _warn_merged_redner_ids(report: dict[str, Any]) -> None:
                 )
 
 
-def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
+def persist_politikfelder(
+    conn: sqlite3.Connection,
+    report: dict[str, Any],
+    agenda_ids: dict[int, str],
+    vorgang_cache: dict[str, Any] | None,
+) -> None:
+    """Write the tags of every agenda item and vote of ``report``. Derived on the
+    spot from the report and the Vorgang cache; ``untagged`` and ``not_fetched``
+    are stored as an explicit ``untagged`` row, so every vote has a row."""
+    item_tags, vote_tags = politikfelder.report_politikfelder(report, vorgang_cache or politikfelder.empty_cache())
+    for item, (tags, source) in zip(report.get("agenda_items") or [], item_tags):
+        agenda_item_id = agenda_ids.get(source_index(item.get("index")))
+        if agenda_item_id is None:
+            continue
+        conn.execute("DELETE FROM agenda_item_politikfelder WHERE agenda_item_id = ?", (agenda_item_id,))
+        for rank, field in enumerate(tags, start=1):
+            conn.execute(
+                "INSERT INTO agenda_item_politikfelder(agenda_item_id, politikfeld, rank, source) VALUES (?, ?, ?, ?)",
+                (agenda_item_id, field, rank, source),
+            )
+    for _item, vote in derive.iter_report_votes(report):
+        vote_id = clean(vote.get("id"))
+        if not vote_id:
+            continue
+        tags, source = vote_tags[politikfelder.vote_key(vote)]
+        conn.execute("DELETE FROM vote_politikfelder WHERE vote_id = ?", (vote_id,))
+        for rank, field in enumerate(tags, start=1):
+            conn.execute(
+                "INSERT INTO vote_politikfelder(vote_id, politikfeld, rank, source) VALUES (?, ?, ?, ?)",
+                (vote_id, field, rank, source),
+            )
+
+
+def persist_report(
+    conn: sqlite3.Connection, report: dict[str, Any], vorgang_cache: dict[str, Any] | None = None
+) -> None:
     now = utc_now()
     initialize(conn)
     protocol = report.get("protocol") or {}
@@ -1401,7 +1466,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
         for item in report.get("agenda_items") or []:
             agenda_item_id = persist_agenda_item(conn, protocol_id, item, now)
             agenda_ids[source_index(item.get("index"))] = agenda_item_id
-            persist_positions(conn, item, agenda_item_id, now)
+            persist_positions(conn, item, agenda_item_id, now, vorgang_cache)
             persist_agenda_documents(conn, item, agenda_item_id, now)
             persist_speeches(conn, protocol_id, item, agenda_item_id, now, protocol)
             persist_contributions(conn, protocol_id, item, agenda_item_id, now, protocol)
@@ -1423,6 +1488,7 @@ def persist_report(conn: sqlite3.Connection, report: dict[str, Any]) -> None:
                         "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
                         (agenda_item_id, vote_id),
                     )
+        persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
 
 
 def main() -> int:

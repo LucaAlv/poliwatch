@@ -11,7 +11,7 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
-Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 25 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
+Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 27 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und fünf bei jedem Build ausgeführte SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.
 
 Drei Wege, lokal an die Daten zu kommen (die Seite selbst zeigt die exakten Dateinamen und Prüfsummen des laufenden Builds):
 
@@ -137,6 +137,8 @@ scripts/preview_dip_pulse_site.sh update
 
 Every online build fetches the whole catalog — every Bundestag plenary protocol back to 1949, 4,667 entries in an August 2026 run, in roughly 15 seconds — and caches it as an *authoritative* catalog (`data/plenarprotokoll-catalog.json`). It is what completeness is judged against: a week or month is complete only when every sitting the catalog lists for it is in the store and fully acquired (§5). Only the newest `--detail-limit` sittings become dossiers; the rest stay catalog rows.
 
+An online build also fills `data/dip-vorgang-cache.json`, the DIP Vorgänge and Drucksache numbers the Politikfelder of each TOP and vote are derived from. The fetch pauses before every DIP request and a Drucksache lookup takes two, so the first fill of the reference archive (about 2,400 numbers) takes about 45 minutes; later builds fetch only what is new. Offline builds read the cache as it is and never call DIP.
+
 **Acquisition and retention are separate scopes.** The flags below choose which sittings are *acquired* (fetched again and rewritten). The SQLite store and the site are always rebuilt from the whole catalog plus every dossier cached in `data/plenarprotokoll-*.json`, so a narrow update never drops another sitting, speech, vote or page. There is no flag for this.
 
 Acquire exactly one sitting, leaving every other dossier untouched:
@@ -229,7 +231,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 4 (integer IDs, or documents keyed by URL) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 5 (integer IDs, documents keyed by URL, or no Politikfeld tables) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
@@ -250,6 +252,7 @@ python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir .cont
 `--repersist` (only with `--offline`) persists every cached `plenarprotokoll-*.json` into a uniquely staged database. It preserves the person registry independently of roster preservation, keeps roster attributes without inherited speaker IDs, carries previous facts for comparison, reconciles people, recomputes facts and checks integrity before replacement. Then it renders as usual. A nonblocking writer lock protects the rebuild; the lock and the staged database live in `.OUTPUT.private/` beside the output directory, never inside it (docs/stable-ids.md). Missing evidence for an existing protocol aborts. The new database replaces the old one only when every stage succeeds:
 
 - an unreadable or malformed cached report, or a report that fails to persist, prints one `ERROR [repersist]:` line naming the file, exits 1, and leaves the previous database byte for byte as it was (it is opened read-only, so an older schema is not migrated either);
+- the Vorgang cache (`data/dip-vorgang-cache.json`, which the Politikfelder are derived from) is missing, emptied or only partly restored, so the re-persist would leave more TOPs or votes without their tags (`not_fetched`) than the current store has: it stops with the store untouched and names the fix, an online update (which refills the cache) or restoring the cache file;
 - when the rebuilt content equals the current database apart from timestamps, the existing file is kept and the run says so, so running it twice changes nothing.
 
 Counting rule version 2 adds nested Zwischenfragen and explicitly typed written submissions (`zu_protokoll`) as separate Beiträge. Neither enters Rede totals, shares or term series. Dossiers show their text, source links and containing contribution; person pages show their separate counts and links. Unassigned written submissions remain visible at sitting level. Historical printed speaker roles, `T_ohne_NaS` headings and uppercase question paragraphs are supported; unresolved question-format turns stop source acceptance.
@@ -258,7 +261,7 @@ Rule version 3 rejected unproven nested turns instead of counting them as Zwisch
 
 Each persisted protocol records its actual input rule version in `speech_rule_inputs`. Facts, export and store-consuming offline/`--no-persist` rendering refuse missing/stale versions before writing output. Fresh report JSON cannot certify an old database. Repair with the command above; missing XML requires `--fetch-xml` first. Replay validates the XML/report SHA when present and proves one-to-one TOP associations before updating DIP/vote enrichment. A changed or ambiguous source set requires reacquiring the whole sitting report. Detailed DIP kind differences are retained in `data/a1-classification-diagnostics.json`; one build warning points to that file. See [A1 source and scratch validation](docs/plans/a1-validation.md).
 
-Schema 4 / export format 4 uses stable text row IDs and issued person URLs. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
+Schema 5 / export format 5 uses stable text row IDs and issued person URLs. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
 
 It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A store built before A1 has no cached XML: run `python3 scripts/build_dip_pulse_site.py --fetch-xml --output-dir .context/dip-pulse-site` once (public bundestag.de files, no API key, about 0.3 s per sitting), then `--offline --repersist`. A report from before A1 with no cached XML stops the re-persist with the store untouched, so old Reden counts never sit next to new ones; a report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/` (an online update re-fetches it). It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
 

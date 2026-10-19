@@ -233,7 +233,7 @@ class VotesComponent(BaseComponent):
         selection = ctx.get("selection")
         if selection is not None and not selection.enabled("votes"):
             return {}
-        rows = ctx["collect_votes_archive"](ctx["entries"])
+        rows = ctx["collect_votes_archive"](ctx["entries"], ctx.get("vorgang_cache"))
         return ctx["write_votes_archive_page"](output_dir, rows, selection)
 
 

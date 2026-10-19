@@ -664,10 +664,10 @@ class RepersistTests(unittest.TestCase):
         before = sha(self.database)
         real = pulse_store.persist_report
 
-        def failing(store, report):
+        def failing(store, report, *args):
             if (report.get("protocol") or {}).get("dokumentnummer") == "21/84":
                 raise ValueError("boom")
-            return real(store, report)
+            return real(store, report, *args)
 
         with mock.patch.object(pulse_store, "persist_report", side_effect=failing):
             with self.assertRaises(build.DatabaseRebuildError) as caught:
@@ -752,6 +752,80 @@ class RepersistTests(unittest.TestCase):
             code = build.main()
         self.pipeline = pipeline
         return code, err.getvalue()
+
+    # Value: protects=an --offline --repersist build never reaches DIP for Vorgänge and still says how the Politikfelder came out; fails_when=the offline path calls refresh_vorgang_cache, or prints no Politikfeld line, so a cache miss (not_fetched) passes unseen; why_new=no test covered the offline side of the fetch; seam=none
+    def test_an_offline_repersist_fetches_nothing_and_logs_the_politikfeld_sources(self) -> None:
+        with mock.patch.object(build, "refresh_vorgang_cache") as refresh:
+            code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        refresh.assert_not_called()
+        self.assertIn("politikfelder: TOPs:", err)
+        self.assertIn("politikfelder: Abstimmungen:", err)
+        self.assertIn("not_fetched", err)  # no cache in this fixture: every tag is a cache miss, and the build says so
+        self.assertIn("Fix: run an online update.", err)
+
+    # Value: protects=the Vorgang cache file in the site directory is loaded by main and its Sachgebiete reach the store on --offline --repersist; fails_when=main stops loading or passing the cache, so every tag silently becomes not_fetched; why_new=other tests hand the cache to persist_report directly or have none; seam=none
+    def test_an_offline_repersist_reads_the_cache_file_and_stores_sachgebiet_tags(self) -> None:
+        cache = {
+            "version": 1,
+            "vorgaenge": {"vorgang-1": {"sachgebiet": ["Verkehr"]}, "fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}},
+            "dokumentnummern": {},
+        }
+        (self.output_dir / "data" / "dip-vorgang-cache.json").write_text(json.dumps(cache), encoding="utf-8")
+        code, err = self.run_main("--repersist")
+        self.assertEqual(code, 0, err)
+        conn = sqlite3.connect(self.database)
+        try:
+            tags = dict(conn.execute("SELECT politikfeld, source FROM agenda_item_politikfelder WHERE politikfeld != 'untagged'"))
+            sachgebiet = {r[0] for r in conn.execute("SELECT sachgebiet FROM proceedings WHERE sachgebiet IS NOT NULL")}
+        finally:
+            conn.close()
+        self.assertEqual(tags, {"Verkehr": "sachgebiet", "Gesundheit": "sachgebiet"})
+        self.assertEqual(sachgebiet, {'["Verkehr"]', '["Gesundheit"]'})
+        self.assertIn("politikfelder: TOPs:", err)
+
+    # Value: protects=a store from before schema 5 (no proceedings.sachgebiet, no tag tables) is refused byte for byte by a non-upgrade rebuild and is upgraded to tagged schema 5 by --repersist; fails_when=the sachgebiet guard is dropped (an online build then stamps 5 over empty tag tables) or the upgrade path trips over the old store; why_new=the guard test uses a bare table and no test replays an old store through the rebuild; seam=none; no_claim=a store written by released code (the old shape is staged by dropping what schema 5 added)
+    @unittest.skipUnless(sqlite3.sqlite_version_info >= (3, 35), "ALTER TABLE ... DROP COLUMN needs SQLite 3.35+ to stage the old schema")
+    def test_a_schema_4_store_is_refused_by_an_online_rebuild_and_upgraded_by_repersist(self) -> None:
+        entries, _ = self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("DROP TABLE agenda_item_politikfelder")
+            conn.execute("DROP TABLE vote_politikfelder")
+            conn.execute("ALTER TABLE proceedings DROP COLUMN sachgebiet")
+            conn.commit()
+        finally:
+            conn.close()
+        old = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "Old build-store schema.*--offline --repersist"):
+            build.rebuild_database_from_entries(self.database, entries, vorgang_cache={"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+        self.assertEqual(old, sha(self.database))
+        self.assertNotIn("sachgebiet", self.columns("proceedings"))
+
+        cache = {"version": 1, "vorgaenge": {"fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}}, "dokumentnummern": {}}
+        _, rebuilt = self.repersist(vorgang_cache=cache)
+        self.assertTrue(rebuilt.replaced)
+        self.assertIn("sachgebiet", self.columns("proceedings"))
+        self.assertGreater(self.count("agenda_item_politikfelder"), 0)
+        self.assertGreater(self.count("vote_politikfelder"), 0)
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertIn("Gesundheit", {r[0] for r in conn.execute("SELECT politikfeld FROM agenda_item_politikfelder")})
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], pulse_store.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
+    # Value: protects=a re-persist with the Vorgang cache missing refuses to strip a store's DIP-derived Politikfelder, byte for byte, and names the online update; fails_when=require_vorgang_cache_for_tags goes, so the upgrade command stores every tag as not_fetched and the export publishes that; why_new=nothing guarded the cache before the review fix; seam=none
+    def test_a_repersist_without_the_vorgang_cache_keeps_a_tagged_store(self) -> None:
+        self.repersist()
+        self.repersist()  # no DIP-derived tags yet: an empty cache has nothing to strip
+        cache = {"version": 1, "vorgaenge": {"fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}}, "dokumentnummern": {}}
+        self.repersist(vorgang_cache=cache)
+        before = sha(self.database)
+        for empty in (None, {"version": 1, "vorgaenge": {}, "dokumentnummern": {}}):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "Vorgang cache.*online update"):
+                self.repersist(vorgang_cache=empty)
+        self.assertEqual(before, sha(self.database))
 
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()

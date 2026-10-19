@@ -202,6 +202,10 @@ _Avoid_: Gesetz for a Gesetzgebung still underway or failed
 What a Tagesordnungspunkt is about, in readers' words: the title of the Vorgang it chiefly deals with, preferring a Gesetzgebung, else its heading in the Plenarprotokoll without procedural boilerplate. Where it deals with several Vorgänge of equal weight, all their titles name it alike. Thema only names a Tagesordnungspunkt; it never decides which Vorgang a Rede counts for.
 _Avoid_: topic as a counting unit, "lead Vorgang" as an attribution rule
 
+**Politikfeld**:
+One of the 13 policy areas the site files Tagesordnungspunkte and votes under (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie). A Tagesordnungspunkt or vote has one to three, derived by a fixed rule from the Sachgebiet labels DIP gives Vorgänge, or the explicit `untagged` when no such data exists. A Tagesordnungspunkt takes the Sachgebiet of its own Vorgänge, then (only when it has none) of the Vorgänge behind the Drucksachen it names, then its Haushalts-Einzelplan; a vote takes the Sachgebiet of the Vorgänge behind its own Drucksachen first and only then those of its Tagesordnungspunkte, so a vote on one Vorgang of a bundled Tagesordnungspunkt does not inherit the others'. It describes what an item is about; it never decides which Vorgang a Rede counts for.
+_Avoid_: Sachgebiet (DIP's own 28 labels, which the 13 Politikfelder fold together), `votes.topic` (the Dachzeile bundestag.de prints over a vote), Thema (the title of a Tagesordnungspunkt), category, tag for the field itself
+
 ### Votes
 
 **Abstimmung**:
@@ -371,4 +375,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 4 / export format 4 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 5 / export format 5 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

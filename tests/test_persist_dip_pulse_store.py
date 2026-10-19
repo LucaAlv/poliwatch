@@ -12,6 +12,39 @@ import persist_dip_pulse_store as pulse_store
 from _support import FIXTURES
 
 
+class SchemaGuardTests(unittest.TestCase):
+    # Value: protects=a store from before schema 5 (proceedings without sachgebiet) is refused with the repersist instruction instead of being stamped version 5 with empty tag tables; fails_when=require_current_schema stops checking proceedings.sachgebiet, so a plain --offline build exports empty Politikfeld tables and later persists fail; why_new=no test opened a store from before the Politikfeld columns; seam=none
+    def test_a_store_without_proceedings_sachgebiet_is_refused(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE proceedings (id TEXT PRIMARY KEY, title TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema"):
+            pulse_store.initialize(conn)
+        self.assertNotIn("agenda_item_politikfelder", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
+        conn.close()
+
+
+    # Value: protects=a store written by this branch before the v0.19 merge (tag tables and sachgebiet present, documents keyed by URL) is refused with the repersist instruction and left unchanged; fails_when=the documents check is reordered or loosened, since it is the only guard that catches this shape; why_new=the guard tests used a bare proceedings table or the v0.19 shape; seam=none
+    def test_a_pre_merge_politikfeld_store_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.sqlite"
+            conn = pulse_store.connect(path)
+            pulse_store.initialize(conn)
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("DROP TABLE documents")
+            conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, url TEXT)")
+            conn.commit()
+            conn.close()
+            before = path.read_bytes()
+            conn = sqlite3.connect(path)
+            try:
+                self.assertIn("agenda_item_politikfelder", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
+                with self.assertRaisesRegex(RuntimeError, "documents keyed by URL"):
+                    pulse_store.initialize(conn)
+            finally:
+                conn.close()
+            self.assertEqual(before, path.read_bytes())
+
+
 class ParagraphMigrationTests(unittest.TestCase):
     def test_initialize_omits_paragraphs_and_accepts_already_absent_column(self):
         conn = sqlite3.connect(":memory:")

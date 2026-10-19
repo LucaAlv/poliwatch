@@ -109,6 +109,22 @@ class ApiClientRetryTests(unittest.TestCase):
             self.assertEqual(self.client().get_json("/x"), {"documents": []})
         self.assertEqual(calls, [])
 
+    # Value: protects=a 200 response that is not JSON (an HTML bot-challenge page, a cut-off body) becomes a DipError the callers handle; fails_when=json.loads errors escape get_json as a ValueError, so a build dies with a traceback and loses a long fetch; why_new=only HTTP and connection failures were covered; seam=none
+    def test_a_body_that_is_not_json_becomes_a_dip_error(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b"<!doctype html><title>Verification</title>"
+
+        with mock.patch.object(dip.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(dip.DipError, "unreadable body"):
+                self.client().get_json("/x")
+
     def test_a_persistent_reset_becomes_a_dip_error_not_a_crash(self) -> None:
         with mock.patch.object(
             dip.urllib.request, "urlopen", side_effect=ConnectionResetError(54, "reset")

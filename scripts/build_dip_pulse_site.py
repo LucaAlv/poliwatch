@@ -110,6 +110,7 @@ import derive
 import speech_kinds
 import publication_state as publication
 import facts
+import politikfelder
 import person_registry as registry
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
@@ -149,6 +150,8 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
+    "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "persons": "Dauerhafte Personenkennungen und Reihenfolge ihrer Vergabe.",
@@ -823,6 +826,7 @@ def write_report_files(
     *,
     include_dev_view: bool = False,
     database_page_href: str | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     protocol = report.get("protocol") or {}
@@ -831,6 +835,7 @@ def write_report_files(
     rendered = pulse_html.render_html(
         report, features=features, mp_lookup=mp_lookup,
         include_dev_view=include_dev_view, database_page_href=database_page_href,
+        vorgang_cache=vorgang_cache,
     )
     dip.write_text_atomic(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     dip.write_text_atomic(page_path, rendered)
@@ -986,6 +991,7 @@ def rebuild_cached_detail_pages(
     *,
     include_dev_view: bool = False,
     database_page_href: str | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Regenerate dossier HTML from cached JSON reports without API calls.
 
@@ -1004,6 +1010,7 @@ def rebuild_cached_detail_pages(
                 features,
                 include_dev_view=include_dev_view,
                 database_page_href=database_page_href,
+                vorgang_cache=vorgang_cache,
             )
         )
     return entries
@@ -1146,7 +1153,7 @@ def _entry_label(entry: dict[str, Any]) -> str:
 # rebuild that fails part-way must leave it byte for byte as it was, even when
 # it was written by an older schema.
 def rebuild_database_from_entries(database_path, entries, *, preserve_roster=True, keep_if_unchanged=False, catalog=None, roster_ingest=None,
-                                  today=None, upgrade=False) -> Rebuilt:
+                                  today=None, upgrade=False, vorgang_cache=None) -> Rebuilt:
     """Stage a fresh build store from ``entries`` and swap it over ``database_path``.
 
     Holds the writer lock; carries the person registry and previous facts forward;
@@ -1166,7 +1173,8 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         with registry.writer_lock(database_path):
             return _rebuild_database_from_entries(database_path, entries,
                 preserve_roster=preserve_roster, keep_if_unchanged=keep_if_unchanged,
-                catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade)
+                catalog=catalog, roster_ingest=roster_ingest, today=today, upgrade=upgrade,
+                vorgang_cache=vorgang_cache)
     except (registry.RegistryError, sqlite3.Error, OSError, facts.FactsError) as exc:
         raise DatabaseRebuildError(str(exc)) from exc
 
@@ -1208,6 +1216,7 @@ def _rebuild_database_from_entries(
     roster_ingest: Any = None,
     today: date | None = None,
     upgrade: bool = False,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> Rebuilt:
     """Body of rebuild_database_from_entries (see its docstring); the caller holds the writer lock."""
     if database_path.exists():
@@ -1270,7 +1279,7 @@ def _rebuild_database_from_entries(
                 previous.close()
         for entry in sorted(entries, key=entry_sort_key, reverse=True):
             try:
-                pulse_store.persist_report(store, entry["report"])
+                pulse_store.persist_report(store, entry["report"], vorgang_cache)
             except Exception as exc:
                 raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
@@ -1502,9 +1511,199 @@ def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, A
     return audit
 
 
+#: Failed DIP calls in a row after which the Vorgang fetch stops for this build.
+VORGANG_FETCH_MAX_FAILURES = 5
+#: Seconds before every DIP request of the Vorgang fetch. A lookup is one list_all,
+#: which takes two requests (the second confirms the cursor ended), and the pause
+#: goes before each, so the fetch stays near 1.5 requests a second. At about 4 a
+#: second DIP's edge answered 400 with a bot challenge to the whole API for over
+#: an hour (2026-10-04). The first full fill (about 2,400 numbers) took 1,577 s with
+#: one pause per lookup and takes about 45 minutes with two; later builds fetch
+#: only new numbers.
+NUMBER_LOOKUP_PAUSE = 0.5
+#: Drucksache-number lookups between two saves of the Vorgang cache.
+CACHE_SAVE_EVERY = 100
+
+
+def refresh_vorgang_cache(
+    client: Any, entries: list[dict[str, Any]], cache: dict[str, Any], output_dir: Path
+) -> dict[str, int]:
+    """Fetch the Vorgänge and Drucksache numbers the Politikfelder still need, into
+    ``cache`` (updated in place) and ``data/dip-vorgang-cache.json``.
+
+    Fetches only what is missing, plus cached Vorgänge that still have no
+    Sachgebiet (DIP may have filled it since). Ids go first: when they show the
+    API is down, the number lookups are not tried. A failed
+    call leaves a cache miss, which the Politikfelder store as ``not_fetched``; the
+    build warns and goes on. Returns the fetch counts.
+    """
+    reports = [entry["report"] for entry in entries]
+    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0}
+
+    def save() -> None:
+        try:
+            politikfelder.save_cache(output_dir, cache)
+        except OSError as exc:  # a full disk must not end the build or hide its own error
+            print(f"warning: could not save the Vorgang cache: {exc}", file=sys.stderr)
+
+    def fetch_ids(ids: list[str]) -> bool:
+        """Fetch ``ids`` in batches into the cache; True when the API looks down
+        (VORGANG_FETCH_MAX_FAILURES batches failed in a row), so the caller stops."""
+        failures = 0
+        for start in range(0, len(ids), dip.VORGANG_BATCH):
+            batch = ids[start : start + dip.VORGANG_BATCH]
+            time.sleep(NUMBER_LOOKUP_PAUSE)
+            try:
+                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch, page_pause=NUMBER_LOOKUP_PAUSE))
+                stats["vorgaenge"] += len(batch)
+                failures = 0
+            except dip.DipError as exc:
+                stats["vorgaenge_failed"] += len(batch)
+                failures += 1
+                print(f"warning: Vorgang fetch failed for {len(batch)} ids: {exc}", file=sys.stderr)
+                if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    stats["vorgaenge_failed"] += len(ids) - start - len(batch)
+                    return True
+        return False
+
+    def resolve_numbers(numbers: list[str]) -> None:
+        """Resolve numbers one call each, saving the cache every CACHE_SAVE_EVERY
+        lookups so an interrupted first fill keeps its progress; stops after
+        VORGANG_FETCH_MAX_FAILURES failures in a row."""
+        failures = 0
+        try:
+            for position, number in enumerate(numbers):
+                time.sleep(NUMBER_LOOKUP_PAUSE)
+                try:
+                    documents = dip.resolve_dokumentnummer(client, number, page_pause=NUMBER_LOOKUP_PAUSE)
+                    records = {str(d["id"]): dip.vorgang_cache_record(d) for d in documents if d.get("id")}
+                except dip.DipError as exc:
+                    stats["nummern_failed"] += 1
+                    failures += 1
+                    print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
+                    if failures >= VORGANG_FETCH_MAX_FAILURES:
+                        stats["nummern_failed"] += len(numbers) - position - 1
+                        return
+                    continue
+                failures = 0
+                stats["nummern"] += 1
+                cache["dokumentnummern"][number] = list(records)
+                cache["vorgaenge"].update(records)
+                if stats["nummern"] % CACHE_SAVE_EVERY == 0:
+                    save()
+        finally:
+            save()
+
+    ids, numbers = politikfelder.fetch_targets(reports, cache)
+    try:
+        down = fetch_ids(ids)
+    finally:
+        save()
+
+    # A lookup returns its Vorgang records inline, so no further id pass is needed.
+    if not down:
+        resolve_numbers(numbers)
+    print(
+        f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
+        f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left as not_fetched)",
+        file=sys.stderr,
+    )
+    return stats
+
+
+def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
+    """One line per build, on every path: how many TOPs and votes the store tags by
+    source, how many of them are ``not_fetched`` (a cache miss: run an online update),
+    and any Sachgebiet label DIP now uses that the mapping does not know."""
+    unknown = politikfelder.unknown_sachgebiete(cache)
+    if unknown:
+        print(
+            f"warning: [politikfelder] Sachgebiet labels the mapping does not know, skipped: {sorted(unknown)}. "
+            "Fix: map them in SACHGEBIET_TO_POLITIKFELD.",
+            file=sys.stderr,
+        )
+    try:
+        conn = sqlite3.connect(f"{Path(database_path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            counts = {
+                kind: dict(conn.execute(f"SELECT source, COUNT(DISTINCT {key}) FROM {table} GROUP BY source"))
+                for kind, table, key in (
+                    ("TOPs", "agenda_item_politikfelder", "agenda_item_id"),
+                    ("Abstimmungen", "vote_politikfelder", "vote_id"),
+                )
+            }
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        print(f"note: [politikfelder] no summary, the store could not be read: {exc}", file=sys.stderr)
+        return
+    for kind, by_source in counts.items():
+        listed = ", ".join(f"{n} {source}" for source, n in sorted(by_source.items(), key=lambda item: -item[1]))
+        print(f"politikfelder: {kind}: {listed or 'none'}", file=sys.stderr)
+    missing = sum(by_source.get("not_fetched", 0) for by_source in counts.values())
+    if missing:
+        print(
+            f"warning: [politikfelder] {missing} TOPs or votes are not_fetched (not in the Vorgang cache). "
+            "Fix: run an online update.",
+            file=sys.stderr,
+        )
+
+
+def require_vorgang_cache_for_tags(
+    database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
+) -> None:
+    """Refuse a re-persist that would strip the store's Politikfelder: one that
+    would leave more TOPs or votes ``not_fetched`` than the current store has.
+    That happens when the Vorgang cache is missing, emptied or only partly
+    refilled; the Daten export would then publish the loss. A store without the
+    Politikfeld tables (an upgrade from before schema 5) or without tags taken
+    from the cache has nothing to lose, and tags that need no cache (an
+    Einzelplan heading) never count against it."""
+    if not database_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            stored = sum(
+                conn.execute(f"SELECT COUNT(DISTINCT {key}) FROM {table} WHERE source = 'not_fetched'").fetchone()[0]
+                for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
+            )
+            # Only Sachgebiet and Drucksache tags come from the cache; a vote's "top" tags
+            # follow its TOP's, which may be an Einzelplan heading's.
+            from_cache = conn.execute(
+                "SELECT COUNT(*) FROM agenda_item_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
+            ).fetchone()[0] + conn.execute(
+                "SELECT COUNT(*) FROM vote_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return  # no Politikfeld tables yet: nothing to strip
+    if not from_cache:
+        return
+    cache = vorgang_cache or politikfelder.empty_cache()
+    missing_tops = 0
+    missing_votes: set[str] = set()
+    for entry in entries:
+        report = entry["report"]
+        item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
+        missing_tops += sum(source == "not_fetched" for _tags, source in item_tags)
+        for _item, vote in derive.iter_report_votes(report):
+            if vote.get("id") is not None and vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
+                missing_votes.add(str(vote["id"]))
+    would_miss = missing_tops + len(missing_votes)
+    if would_miss > stored:
+        raise DatabaseRebuildError(
+            f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
+            f"{would_miss} TOPs and votes not_fetched where the store has {stored}, so it would strip their "
+            "Politikfelder. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+        )
+
+
 def repersist_cached_reports(
     output_dir: Path, database_path: Path, protocols: list[dict[str, Any]], *, preserve_roster: bool = True,
     today: date | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], Rebuilt]:
     """``--offline --repersist``: every cached report into a fresh store, in the
     order an online build persists them, swapped in only if all of them
@@ -1516,10 +1715,11 @@ def repersist_cached_reports(
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
+    require_vorgang_cache_for_tags(database_path, vorgang_cache, output_dir, entries)
     rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
-        today=today, upgrade=True,
+        today=today, upgrade=True, vorgang_cache=vorgang_cache,
     )
     write_classification_diagnostics(output_dir, cached)
     return cached, rebuilt
@@ -2032,6 +2232,7 @@ def write_report_and_page(
     summary_timeout: float = 60,
     database_page_href: str | None = None,
     roll_call_page_cache: dict[str, str] | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -2133,6 +2334,7 @@ def write_report_and_page(
         features,
         include_dev_view=include_dev_view,
         database_page_href=database_page_href,
+        vorgang_cache=vorgang_cache,
     )
 
 
@@ -2237,7 +2439,15 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 # The facts tables are computed by scripts/facts.py from the rest of the store,
 # so every one of their columns is "derived" - the fallback below would claim
 # DIP wrote them. Their captions for the Daten page are T7's.
-_TABLE_SOURCE_DERIVED = set(registry.REGISTRY_TABLES) | {"mp_canonical", "datenstand", "speech_rule_inputs"} | set(facts.FACTS_TABLES)
+#
+# The Politikfeld tables are derived by scripts/politikfelder.py from DIP's
+# Sachgebiet labels (proceedings.sachgebiet, which is raw DIP data and so stays
+# "dip"); no model writes them.
+_TABLE_SOURCE_DERIVED = (
+    set(registry.REGISTRY_TABLES)
+    | {"mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder"}
+    | set(facts.FACTS_TABLES)
+)
 
 
 # The outcome is mostly computed here from the counts (vote_result); only a
@@ -2272,7 +2482,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 4
+EXPORT_FORMAT = 5
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -4057,16 +4267,22 @@ def _vote_id_sort_key(vote_id: Any) -> tuple[int, str]:
     return (int(text), "") if text.isdigit() else (-1, text)
 
 
-def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def collect_votes_archive(
+    entries: list[dict[str, Any]], vorgang_cache: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """Every roll-call vote across every dossier, one row per unique vote id.
 
     A vote can attach to two agenda items (pulse_html.vote_key handles the
-    dedupe, same rule week_stats uses for the Wochenvergleich vote count).
+    dedupe, same rule week_stats uses for the Wochenvergleich vote count). Each
+    row carries the vote's Politikfelder, derived from ``vorgang_cache`` the way
+    persist derives the stored ones.
     """
+    cache = vorgang_cache or politikfelder.empty_cache()
     rows: dict[str, dict[str, Any]] = {}
     for entry in entries:
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
+        _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
         for item, vote in derive.iter_report_votes(report):
             # persist_vote skips a vote without an id, so the archive does
             # too: the row count must equal SELECT count(*) FROM votes.
@@ -4082,6 +4298,7 @@ def collect_votes_archive(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
             }
             rows[key] = {
                 "vote": vote,
+                "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item) if item else "–",
@@ -4120,6 +4337,18 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         for name in fraktion_names
     )
 
+    present = {tag for row in rows for tag in row["politikfelder"]}
+    feld_chips = "".join(
+        f'<button type="button" class="chip" aria-pressed="false" data-politikfeld-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
+        for name in politikfelder.POLITIKFELDER
+        if name in present
+    )
+    if feld_chips and politikfelder.UNTAGGED in present:
+        feld_chips += (
+            '<button type="button" class="chip" aria-pressed="false" '
+            f'data-politikfeld-chip="{politikfelder.UNTAGGED}">Ohne Politikfeld</button>'
+        )
+
     current_month = None
     items = []
     for row in rows:
@@ -4135,10 +4364,12 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
         items.append(
             f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
-            f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\'>'
+            f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\''
+            f' data-politikfelder=\'{pulse_html.esc(json.dumps(row["politikfelder"], ensure_ascii=False))}\'>'
             f'<time>{pulse_html.esc(vote.get("date"))}</time>'
             f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
-            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p></div>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p>'
+            f'{pulse_html.render_politikfeld_tags(row["politikfelder"])}</div>'
             "</article>"
         )
 
@@ -4161,10 +4392,11 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
       </div>
     </header>
     <p class="archive-count" data-archive-count data-total="{pulse_html.esc(len(rows))}" aria-live="polite"><strong>{pulse_html.esc(len(rows))}</strong> Abstimmungen</p>
+    {'<section class="archive-filters" aria-label="Nach Politikfeld filtern"><span class="eyebrow">Nach Politikfeld</span><p>Das Politikfeld folgt dem DIP-Sachgebiet des Vorgangs, zu dem die Abstimmung gehört.</p><div class="chip-row">' + feld_chips + '</div></section>' if feld_chips else ''}
     {'<section class="archive-filters" aria-label="Nach Fraktion filtern"><span class="eyebrow">Nach Fraktion (Ja-Mehrheit)</span><p>Zeigt Abstimmungen mit einer Ja-Mehrheit der gewählten Fraktion. Bei Ablehnungsempfehlungen zählt stattdessen die Nein-Mehrheit als Unterstützung des Antrags.</p><div class="chip-row">' + chips + '</div></section>' if chips else ''}
     <section class="archive-list" data-archive>
       {''.join(items) if items else '<p>In den erzeugten Dossiers wurden noch keine namentlichen Abstimmungen erkannt.</p>'}
-      <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Fraktion.</p>
+      <p class="archive-empty" data-no-results hidden>Keine Abstimmungen f&uuml;r die gew&auml;hlte Auswahl.</p>
     </section>
     <footer>Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden. <a href="../overview.html">Plenarprotokoll-Katalog</a> &middot; <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
@@ -4213,16 +4445,19 @@ def votes_archive_styles() -> str:
     .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
-""" + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + """
+""" + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + pulse_html.POLITIKFELD_CHIP_CSS + """
     @media (max-width: 640px) {
       .archive-row { grid-template-columns:1fr; gap:4px; }
     }
 """
 
 
-# Inline script for votes/index.html: toggles Fraktion chips (multi-select)
-# and shows a row when an active Fraktion supported the Vorlage. For an
-# inverted recommendation, support for the Antrag comes from Nein.
+# Inline script for votes/index.html: toggles the Fraktion and Politikfeld chips
+# (multi-select within a group, both groups must match). A row shows when an
+# active Fraktion supported the Vorlage (for an inverted recommendation, support
+# for the Antrag comes from Nein) and when one of its Politikfelder is active.
+# ``?politikfeld=Migration`` (repeatable) activates a Politikfeld chip on load, so
+# a link from another page can open the archive already filtered.
 def render_votes_archive_script() -> str:
     return """
   <script>
@@ -4231,26 +4466,38 @@ def render_votes_archive_script() -> str:
       if (!container) return;
       const rows = Array.from(container.querySelectorAll('[data-row]')).map((row) => {
         let positions = {};
+        let felder = [];
         try {
           positions = JSON.parse(row.dataset.fraktionPositions || '{}');
         } catch (err) {
           positions = {};
         }
-        return { row, positions, month: row.dataset.month };
+        try {
+          felder = JSON.parse(row.dataset.politikfelder || '[]');
+        } catch (err) {
+          felder = [];
+        }
+        return { row, positions, felder, month: row.dataset.month };
       });
       const headings = Array.from(container.querySelectorAll('h2[data-month]'));
-      const chips = Array.from(document.querySelectorAll('[data-fraktion-chip]'));
+      const groups = [
+        { chips: Array.from(document.querySelectorAll('[data-fraktion-chip]')), key: 'fraktionChip', active: new Set() },
+        { chips: Array.from(document.querySelectorAll('[data-politikfeld-chip]')), key: 'politikfeldChip', active: new Set() },
+      ];
+      const [fraktion, feld] = groups;
       const noResults = document.querySelector('[data-no-results]');
       const count = document.querySelector('[data-archive-count]');
-      const active = new Set();
       const apply = () => {
         let visible = 0;
         const visibleMonths = new Set();
-        const activeList = Array.from(active);
-        rows.forEach(({ row, positions, month }) => {
-          const show = activeList.length === 0 || activeList.some((name) =>
+        const fraktionList = Array.from(fraktion.active);
+        const feldList = Array.from(feld.active);
+        rows.forEach(({ row, positions, felder, month }) => {
+          const fraktionOk = fraktionList.length === 0 || fraktionList.some((name) =>
             positions[name] === 'yes' || positions[name] === 'für den Antrag'
           );
+          const feldOk = feldList.length === 0 || feldList.some((name) => felder.includes(name));
+          const show = fraktionOk && feldOk;
           row.hidden = !show;
           if (show) {
             visible += 1;
@@ -4260,22 +4507,23 @@ def render_votes_archive_script() -> str:
         headings.forEach((heading) => {
           heading.hidden = !visibleMonths.has(heading.dataset.month);
         });
-        if (noResults) noResults.hidden = visible !== 0 || active.size === 0;
+        const filtering = fraktion.active.size + feld.active.size > 0;
+        if (noResults) noResults.hidden = visible !== 0 || !filtering;
         if (count) {
           const total = count.dataset.total;
-          count.innerHTML = active.size === 0
+          count.innerHTML = !filtering
             ? `<strong>${total}</strong> Abstimmungen`
             : `<strong>${visible}</strong> von ${total} Abstimmungen`;
         }
-        chips.forEach((chip) => {
-          const on = active.has(chip.dataset.fraktionChip);
+        groups.forEach(({ chips, key, active }) => chips.forEach((chip) => {
+          const on = active.has(chip.dataset[key]);
           chip.classList.toggle('is-active', on);
           chip.setAttribute('aria-pressed', on ? 'true' : 'false');
-        });
+        }));
       };
-      chips.forEach((chip) => {
+      groups.forEach(({ chips, key, active }) => chips.forEach((chip) => {
         chip.addEventListener('click', () => {
-          const value = chip.dataset.fraktionChip;
+          const value = chip.dataset[key];
           if (active.has(value)) {
             active.delete(value);
           } else {
@@ -4283,7 +4531,15 @@ def render_votes_archive_script() -> str:
           }
           apply();
         });
-      });
+      }));
+      try {
+        const known = new Set(feld.chips.map((chip) => chip.dataset.politikfeldChip));
+        new URLSearchParams(window.location.search).getAll('politikfeld').forEach((name) => {
+          if (known.has(name)) feld.active.add(name);
+        });
+      } catch (err) {
+        // A URL the browser cannot parse leaves the list unfiltered.
+      }
       apply();
     })();
   </script>
@@ -4887,12 +5143,70 @@ def render_radar_row(
         f'<p class="radar-legend">{esc(legend)}</p></div>'
     )
 
+    tags_html = pulse_html.render_politikfeld_tags(row.get("politikfelder"))
+    tags_json = esc(json.dumps(row.get("politikfelder") or [], ensure_ascii=False))
     return f"""
-        <li class="radar-row" id="thema-{position}">
-          <div class="radar-main">{label_html}{title_html}{trace_html}{summary_html}{badge_html}{foot_html}</div>
+        <li class="radar-row" id="thema-{position}" data-politikfelder='{tags_json}'>
+          <div class="radar-main">{label_html}{title_html}{tags_html}{trace_html}{summary_html}{badge_html}{foot_html}</div>
           {share_html}
           {who_html}
         </li>"""
+
+
+def render_radar_filter(rows: list[dict[str, Any]]) -> str:
+    """The Politikfeld chips above the radar: only those some shown row carries."""
+    present = {tag for row in rows for tag in row.get("politikfelder") or []}
+    present.discard(politikfelder.UNTAGGED)
+    chips = "".join(
+        f'<button type="button" class="chip" aria-pressed="false" data-radar-chip="{pulse_html.esc(name)}">{pulse_html.esc(name)}</button>'
+        for name in politikfelder.POLITIKFELDER
+        if name in present
+    )
+    if not chips:
+        return ""
+    return (
+        '<div class="radar-filter" role="group" aria-label="Nach Politikfeld filtern">'
+        f'<span class="eyebrow">Nach Politikfeld</span><div class="chip-row">{chips}</div></div>'
+    )
+
+
+# Filters the radar rows by Politikfeld chip (multi-select, any match). Without
+# script every row stays visible.
+RADAR_FILTER_SCRIPT = """
+      <script>
+        (() => {
+          const list = document.querySelector('.radar-list');
+          if (!list) return;
+          const rows = Array.from(list.querySelectorAll('.radar-row')).map((row) => {
+            let felder = [];
+            try { felder = JSON.parse(row.dataset.politikfelder || '[]'); } catch (err) { felder = []; }
+            return { row, felder };
+          });
+          const chips = Array.from(document.querySelectorAll('[data-radar-chip]'));
+          const empty = document.querySelector('[data-radar-empty]');
+          const active = new Set();
+          const apply = () => {
+            let visible = 0;
+            rows.forEach(({ row, felder }) => {
+              const show = active.size === 0 || felder.some((name) => active.has(name));
+              row.hidden = !show;
+              if (show) visible += 1;
+            });
+            if (empty) empty.hidden = visible !== 0 || active.size === 0;
+            chips.forEach((chip) => {
+              const on = active.has(chip.dataset.radarChip);
+              chip.classList.toggle('is-active', on);
+              chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+          };
+          chips.forEach((chip) => chip.addEventListener('click', () => {
+            const value = chip.dataset.radarChip;
+            if (active.has(value)) active.delete(value); else active.add(value);
+            apply();
+          }));
+        })();
+      </script>
+"""
 
 
 def render_radar_also(radar: dict[str, Any]) -> str:
@@ -4972,7 +5286,10 @@ def render_radar_section(
         )
         body = f'<p class="week-note radar-method">{esc(method)}</p>'
         if rows_html:
+            body += render_radar_filter(rows)
             body += f'<ul class="radar-list">{rows_html}\n      </ul>'
+            body += '<p class="week-note" data-radar-empty hidden>Kein Thema der Woche in diesem Politikfeld.</p>'
+            body += RADAR_FILTER_SCRIPT
         body += render_radar_also(radar)
     return f"""
     <section class="radar" aria-labelledby="radar-h2">
@@ -4989,6 +5306,7 @@ def render_front_page(
     *,
     today: date | datetime | None = None,
     week: tuple[int, int] | None = None,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
     today = resolve_today(today)
@@ -5017,7 +5335,8 @@ def render_front_page(
     occurrences = pulse_html.vorgang_occurrences(weeks, selected_week)
     returning = pulse_html.returning_vorgaenge(weeks, selected_week, occurrences)
     radar = pulse_html.week_topic_rows(
-        week_entries, occurrences, total=stats["speech_count"], dossier_href_for=dossier_href
+        week_entries, occurrences, total=stats["speech_count"], dossier_href_for=dossier_href,
+        vorgang_cache=vorgang_cache,
     )
     pdf_urls = {entry.get("page_path"): entry_protocol(entry).get("pdf_url") for entry in week_entries}
 
@@ -5205,6 +5524,16 @@ def render_front_page(
     .radar-row a:hover {{ text-decoration-color:currentColor; }}
     .radar-row a:visited {{ text-decoration-color:var(--muted); }}
     .radar-row a:focus-visible {{ outline:2px solid var(--blue); outline-offset:2px; border-radius:2px; }}
+    .radar-row[hidden] {{ display:none; }}
+    .radar-filter {{ margin-top:12px; }}
+    .radar-filter .chip-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }}
+    .radar-filter .chip {{
+      min-height:30px; padding:4px 11px; border:1px solid var(--line); border-radius:999px;
+      background:var(--panel); color:var(--ink); font:inherit; font-size:13px; font-weight:650; cursor:pointer;
+    }}
+    .radar-filter .chip.is-active {{ border-color:var(--blue); background:var(--blue-soft); color:var(--blue); }}
+    .radar-filter .chip:focus-visible {{ outline:2px solid var(--blue); outline-offset:2px; }}
+    {pulse_html.POLITIKFELD_CHIP_CSS}
     .radar-also {{ margin:14px 0 0; font-size:13px; line-height:1.5; color:var(--ink); }}
     .radar-also a {{ text-decoration:underline; text-underline-offset:2px; }}
     .week-head {{
@@ -10149,6 +10478,7 @@ def render_site(
     is_remote_manifest: bool = False,
     bill_slugs: set[str] | None = None,
     authoritative_catalog: bool = False,
+    vorgang_cache: dict[str, Any] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
     # Keep the argument for one release so external callers do not break, but
@@ -10238,6 +10568,7 @@ def render_site(
         "no_persist": no_persist,
         "document_numbers": document_numbers,
         "bill_slugs": bill_slugs or set(),
+        "vorgang_cache": vorgang_cache,
     }
     # Visitor-facing areas are always present. They render honest empty states
     # when the corresponding enrichment data has not been acquired yet.
@@ -10294,7 +10625,10 @@ def render_site(
         encoding="utf-8",
     )
     pulse_path.write_text(
-        render_front_page(entries, database_href=database_href, features=features, today=today, week=week),
+        render_front_page(
+            entries, database_href=database_href, features=features, today=today, week=week,
+            vorgang_cache=vorgang_cache,
+        ),
         encoding="utf-8",
     )
     overview_path.write_text(
@@ -11324,6 +11658,9 @@ def main() -> int:
     if "facts" in features:
         (output_dir / "fakt").mkdir(parents=True, exist_ok=True)
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
+    # The Vorgang cache the Politikfelder are derived from, loaded once per
+    # build; an online build fills it before it persists.
+    vorgang_cache = politikfelder.load_cache(output_dir)
 
     # Explicit replay upgrades an old schema. Store consumers, including
     # no-persist rendering, require current persisted rules; an online rebuild
@@ -11373,6 +11710,7 @@ def main() -> int:
                 cached_entries, rebuilt = repersist_cached_reports(
                     output_dir, database_path, protocols, preserve_roster=True,
                     today=resolve_today(getattr(args, "today", None)),
+                    vorgang_cache=vorgang_cache,
                 )
             except derive.SprechrolleError as exc:
                 print(exc, file=sys.stderr)
@@ -11444,7 +11782,10 @@ def main() -> int:
             cached_entries=cached_entries,
             include_dev_view=args.include_dev_view,
             database_page_href=dossier_database_page_href(args, database_path),
+            vorgang_cache=vorgang_cache,
         )
+        if not args.no_persist and database_path.exists():
+            log_politikfelder_summary(database_path, vorgang_cache)
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -11485,6 +11826,7 @@ def main() -> int:
             data_export_error=data_export_error,
             is_remote_manifest=is_remote_manifest,
             bill_slugs=bill_slugs,
+            vorgang_cache=vorgang_cache,
         )
         print(f"offline: rendered {len(entries)} cached dossiers", file=sys.stderr)
         print(index_path)
@@ -11606,6 +11948,7 @@ def main() -> int:
                     include_dev_view=args.include_dev_view,
                     database_page_href=dossier_database_page_href(args, database_path),
                     roll_call_page_cache=roll_call_page_cache,
+                    vorgang_cache=vorgang_cache,
                 ),
             )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
@@ -11637,6 +11980,8 @@ def main() -> int:
             ):
                 return 2
             if not args.no_persist:
+                refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
+
                 def ingest_roster(staged: sqlite3.Connection) -> None:
                     stats = ingest_mdb_roster(client, staged, wahlperiode=args.roster_wahlperiode, profile_resolver=profile_resolver)
                     print(
@@ -11653,6 +11998,7 @@ def main() -> int:
                         catalog=catalog,
                         roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
                         today=resolve_today(getattr(args, "today", None)),
+                        vorgang_cache=vorgang_cache,
                     ).facts_report
                 except derive.SprechrolleError as exc:
                     print(exc, file=sys.stderr)
@@ -11681,6 +12027,7 @@ def main() -> int:
                         features,
                         include_dev_view=args.include_dev_view,
                         database_page_href=database_page_href,
+                        vorgang_cache=vorgang_cache,
                     )
                     for entry in entries
                 ]
@@ -11706,6 +12053,8 @@ def main() -> int:
     write_classification_diagnostics(output_dir, entries)
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
+    if not args.no_persist and database_path.exists():
+        log_politikfelder_summary(database_path, vorgang_cache)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,
@@ -11742,6 +12091,7 @@ def main() -> int:
         is_remote_manifest=is_remote_manifest,
         bill_slugs=bill_slugs,
         authoritative_catalog=True,
+        vorgang_cache=vorgang_cache,
     )
     print(index_path)
     return 0

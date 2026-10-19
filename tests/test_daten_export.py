@@ -232,14 +232,17 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_five_csvs_named_and_headered(self) -> None:
+    def test_all_twenty_seven_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 25)
-        for name in ("fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz"):
+        self.assertEqual(len(csv_files), 27)
+        for name in (
+            "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
+            "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
+        ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
         gen_dir = self.exports_dir / manifest["generation"]
@@ -624,6 +627,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         keys = {table["name"]: table["stable_keys"] for table in manifest["tables"]}
         self.assertEqual(keys, {
             "agenda_item_documents": ["agenda_item_id", "document_id", "source"],
+            "agenda_item_politikfelder": ["agenda_item_id", "politikfeld"],
             "agenda_item_votes": ["agenda_item_id", "vote_id"],
             "agenda_items": ["id"], "contributions": ["id"], "datenstand": ["tag"], "documents": ["id"],
             "mp_canonical": ["mp_id"], "mps": ["id"], "parties": ["id"], "person_aliases": ["id"],
@@ -631,7 +635,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
             "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
-            "vote_members": ["vote_id", "mp_id"], "votes": ["id"],
+            "vote_members": ["vote_id", "mp_id"], "vote_politikfelder": ["vote_id", "politikfeld"], "votes": ["id"],
         })
 
     def _export_acting_after_copy(self, act):

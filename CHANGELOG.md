@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0.0] - 2026-10-19
+
+### Added
+
+- Every Tagesordnungspunkt and every roll-call vote has one to three Politikfelder from a closed list of 13 (Migration, Soziales, Wirtschaft & Finanzen, Energie & Klima, Verteidigung, Innere Sicherheit, Justiz, Digitales, Gesundheit, Bildung, Verkehr, Außenpolitik, Staat & Demokratie), or is explicitly untagged. They are derived without a model from DIP's Sachgebiet labels: of the Vorgänge a TOP belongs to, otherwise of the Drucksachen it names, otherwise of the Einzelplan in its heading. A vote takes the fields of its own Drucksachen, otherwise those of its TOP. On the reference cache 2,109 TOPs are tagged through their Vorgänge, 196 through their Drucksachen and 149 through their Einzelplan, 458 stay untagged (mostly Fragestunden, Befragungen, Wahlen and Geschäftsordnung), and 216 of 217 votes are tagged.
+- Dossiers show the Politikfelder of each TOP. The week radar shows them on each row and can be filtered by Politikfeld. The votes archive shows them on each vote and can be filtered by Politikfeld, including "Ohne Politikfeld", together with the Fraktion filter; `votes/index.html?politikfeld=Migration` (repeatable) opens it filtered.
+- The Daten export has two new tables, `agenda_item_politikfelder` and `vote_politikfelder` (field, rank and source of each tag), labelled as derived data, and `proceedings.sachgebiet` carries DIP's raw labels.
+- Every build prints how the Politikfelder came out, by source, and names any Sachgebiet label DIP uses that the mapping does not know.
+
+### Changed
+
+- Store schema 5 and Daten export format 5 with 27 CSVs. A store built by an earlier version is refused with the instruction to run `--offline --repersist`.
+- An online build fetches the DIP Vorgänge and Drucksache numbers the tags need into `data/dip-vorgang-cache.json`, paced at about 1.5 requests a second so DIP's edge does not block the API. The first fill of the reference archive (about 2,400 numbers) takes about 45 minutes; later builds fetch only what is new. Offline builds use the cache as it is; a TOP or vote whose input is missing from it is stored as `not_fetched` and shown without a tag.
+- `--offline --repersist` refuses to run when the Vorgang cache would leave more TOPs or votes without their tags than the current store has (a missing, emptied or partly restored cache), and names the fix: run an online update first.
+- A DIP answer that is not JSON (a bot-challenge page, a cut-off body) is retried like a dropped connection, and a list answer of the wrong shape fails with a clear error instead of a traceback.
+
 ## [0.19.1.0] - 2026-10-19
 
 ### Fixed

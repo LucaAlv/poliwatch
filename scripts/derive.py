@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import re
 from typing import Any, Iterable, Mapping
+from urllib.parse import urlsplit
 
-from stable_ids import vote_member_occurrence_id
+import publication_state as publication
+from stable_ids import document_issuer, document_number, vote_member_occurrence_id
 
 #: The Stimmen a Mehrheitsvotum is chosen among. "nicht abgegeben" (key
 #: "absent") is not a Stimme.
@@ -328,20 +330,135 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
 
 
+def vote_identity(vote: Mapping[str, Any]) -> Any:
+    """A vote's identity within a sitting: its id, or (title, date) for a legacy record."""
+    return str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+
+
 def iter_report_votes(report: Mapping[str, Any]):
     """Yield (TOP or None, vote), once per vote identity across a sitting."""
     seen = set()
     for item in report.get("agenda_items") or []:
         for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
-            key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+            key = vote_identity(vote)
             if key not in seen:
                 seen.add(key)
                 yield item, vote
     for vote in report.get("sitting_votes") or []:
-        key = str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+        key = vote_identity(vote)
         if key not in seen:
             seen.add(key)
             yield None, vote
+
+
+def _normalised_title(title: Any) -> str:
+    return " ".join(str(title or "").split())
+
+
+def agenda_procedures(item: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, str] | None]:
+    """The DIP procedures of one agenda item, and the lead among them.
+
+    Procedures come from ``api.positions`` in DIP order, then from each position's
+    ``mitberaten`` twins (they carry id, titel, vorgangstyp and vorgangsposition;
+    in 40 TOPs of the archive the only Gesetzgebung procedure is a twin). Dedup is
+    first-seen by id; titles are whitespace-normalised.
+
+    Lead = the first Gesetzgebung procedure, else the first procedure, else None.
+    """
+    positions = (item.get("api") or {}).get("positions") or []
+    procedures: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+
+    def add(record: Mapping[str, Any], vorgang_id: Any) -> None:
+        key = str(vorgang_id or "")
+        if not key or key in seen_ids:
+            return
+        seen_ids.add(key)
+        procedures.append(
+            {
+                "vorgang_id": key,
+                "titel": _normalised_title(record.get("titel")),
+                "vorgangstyp": str(record.get("vorgangstyp") or ""),
+                "vorgangsposition": str(record.get("vorgangsposition") or ""),
+            }
+        )
+
+    for position in positions:
+        add(position, position.get("vorgang_id"))
+    for position in positions:
+        for twin in position.get("mitberaten") or []:
+            add(twin, twin.get("id"))
+
+    lead = next((p for p in procedures if p["vorgangstyp"] == "Gesetzgebung"), None)
+    if lead is None and procedures:
+        lead = procedures[0]
+    return procedures, lead
+
+
+#: A Drucksache number's shape, e.g. "21/6561" (ASCII digits, like stable_ids).
+DOCUMENT_NUMBER_RE = re.compile(r"\b[0-9]{1,2}/[0-9]{1,6}\b")
+
+
+def is_bundestag_xml_url(url: Any) -> bool:
+    """Whether a Drucksache link of the XML parser points at the Bundestag's XML
+    host. Reports cached before ``validate_dip_protocol.extract_drucksachen``
+    checked the host still hold numbers read off news-site URLs ("11/09" from a
+    dated euronews path); persist and the Politikfelder both skip those."""
+    parts = urlsplit(str(url))
+    return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
+
+
+def report_wahlperiode(report: Mapping[str, Any]) -> str:
+    """The Wahlperiode of a sitting, from its protocol number "20/194" ("" if unknown)."""
+    number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
+    return number.split("/")[0] if "/" in number else ""
+
+
+def plausible_document_number(number: Any, wahlperiode: str) -> bool:
+    """Whether a Drucksache number can belong to a sitting of ``wahlperiode``: its
+    prefix is that Wahlperiode or the one before (16 of 5,414 numbers in the archive
+    cite the earlier one). Anything else is a case number or a fragment such as
+    "76/787" or "2/3"; with no known Wahlperiode nothing is filtered."""
+    if not (wahlperiode.isascii() and wahlperiode.isdigit()):
+        return True
+    return str(number).split("/")[0] in {wahlperiode, str(int(wahlperiode) - 1)}
+
+
+def canonical_document_number(number: Any) -> str:
+    """A Bundestag Drucksache number as the store keys it (``stable_ids.document_number``:
+    "21/06561" is "21/6561"), so the Politikfelder look up and cache the same text."""
+    return document_number(number, "BT") or ""
+
+
+def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str]:
+    """Drucksache numbers an agenda item names, in first-seen order.
+
+    The XML parser's ``xml_drucksachen`` and the API's ``linked_drucksachen``
+    (the numbers ``validate_dip_protocol.top_document_numbers`` reads), then
+    numbers in the heading. A heading also carries case numbers of other
+    shapes ("10/21", "1/22" in Streitsachen lists), so every number counts only
+    when ``plausible_document_number`` accepts it. The same rules as persist
+    decide what is a Bundestag Drucksache: an XML number only from the XML host,
+    a linked paper only when ``stable_ids.document_issuer`` says BT, and every
+    number in its canonical form.
+    """
+    numbers: list[str] = []
+
+    def add(number: Any) -> None:
+        text = canonical_document_number(number)
+        if text and text not in numbers and plausible_document_number(text, wahlperiode):
+            numbers.append(text)
+
+    for doc in item.get("xml_drucksachen") or []:
+        if not doc.get("url") or is_bundestag_xml_url(doc["url"]):
+            add(doc.get("dokumentnummer"))
+    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+        # A Bundesrat paper ("20/23" at .../brd/2023/0020-23.pdf) shares the shape of a Bundestag number.
+        if document_issuer(doc.get("herausgeber"), doc.get("url")) == "BT":
+            add(doc.get("dokumentnummer"))
+    for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
+        add(number)
+    return numbers
 
 
 def vote_outcome(vote: Mapping[str, Any]) -> str | None:

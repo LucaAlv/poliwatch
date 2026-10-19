@@ -31,6 +31,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- persist_dip_pulse_store.py   # library; run as a script it refuses
     |-- person_registry.py
     |-- stable_ids.py
+    |-- politikfelder.py
     |-- person_corrections.json
     |-- facts.py
     |-- abgeordnetenwatch.py
@@ -157,15 +158,16 @@ Important generated files:
 | `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
 | `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
 | `abgeordnete/index.html` and `abgeordnete/<person_id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation; a retired or guess-merged person key is a redirect page to the surviving person (see [docs/stable-ids.md](stable-ids.md)) |
-| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter |
+| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter and a Politikfeld filter (`?politikfeld=Migration` opens it filtered) |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 25 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 27 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
+| `data/dip-vorgang-cache.json` | DIP Vorgang records (Sachgebiet, Sachbegriffe, abstract) and the Vorgang each Drucksache number resolves to, which the Politikfelder are derived from. Only an online build fetches it (batches of 100 ids, then one lookup per Drucksache number; the fetch pauses 0.5 s before every DIP request and a lookup takes two requests, so it stays near 1.5 requests a second and the first fill of about 2,400 numbers takes about 45 minutes; later builds fetch only what is new or has no Sachgebiet yet). Drucksache numbers are taken by the store's rules: DIP's `herausgeber` and the XML host decide what is a Bundestag Drucksache, and numbers are in canonical form. The cache is saved atomically, its temporary file staged in the private directory beside OUTPUT (`.OUTPUT.private/`, `person_registry.private_dir`); a cache with unreadable content is moved there as `dip-vorgang-cache.json.corrupt`. `--offline` builds read it and never call DIP; a TOP or vote whose entry is missing is stored as `untagged` with source `not_fetched`, and the build log counts them. `--offline --repersist` refuses to run when the cache would leave more TOPs or votes `not_fetched` than the store has |
 
 `build_dip_pulse_site.py` can run directly, but the preview shell script is usually more convenient because it also serves the files:
 
@@ -402,7 +404,7 @@ Common options:
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
 | `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
-| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. See README "Re-persist the cached reports" |
+| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. It is also refused, with the store untouched, when the Vorgang cache (`data/dip-vorgang-cache.json`) would leave more TOPs or votes `not_fetched` than the store has; run an online update first. See README "Re-persist the cached reports" |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week, and prints it as "Auswertung vom"; the homepage uses the same date to label its selected week |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. Both `puls.html` and the homepage use that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
@@ -428,7 +430,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 25 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `4`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 27 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `5`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -560,7 +562,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (4), or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (5), or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -621,6 +623,7 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `speech_rule_inputs` (the counting-rule version actually persisted for each protocol; consumers reject missing or stale versions)
 - `votes`
 - `agenda_item_votes`
+- `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
 - `vote_documents`
 - `vote_fractions`
 - `vote_members`
