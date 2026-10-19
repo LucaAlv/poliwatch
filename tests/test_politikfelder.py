@@ -395,6 +395,7 @@ class CacheFileTests(unittest.TestCase):
     def test_wrong_shaped_entries_are_dropped_and_a_corrupt_file_is_kept(self) -> None:
         good = {"sachgebiet": ["Recht"]}
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp) / "site"
             path = pf.cache_path(tmp)
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps({"vorgaenge": {"1": good, "2": ["x"], "3": None}, "dokumentnummern": {"21/1": ["1"], "21/2": "12", "21/3": None}}), encoding="utf-8")
@@ -403,7 +404,9 @@ class CacheFileTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(pf.load_cache(tmp), pf.empty_cache())
             self.assertFalse(path.exists())
-            self.assertEqual(path.with_name(path.name + ".corrupt").read_text(encoding="utf-8"), "{broken")
+            # Kept for inspection in the private directory, not in the published data/.
+            self.assertEqual((tmp.parent / ".site.private" / (path.name + ".corrupt")).read_text(encoding="utf-8"), "{broken")
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()), [])
 
     def test_a_record_with_a_non_list_sachgebiet_is_dropped_and_the_saved_file_is_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -481,6 +484,34 @@ class CacheFileTests(unittest.TestCase):
             os.utime(other, (hours_ago, hours_ago))
             pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
             self.assertEqual(sorted(p.name for p in staging.iterdir()), sorted([young.name, other.name]))
+
+    # Value: protects=two spellings of one number keep the union of their answers in either key order, and a deeply nested file is treated as unreadable instead of crashing the build; fails_when=the canonical re-key lets the last spelling win (an empty answer erases a real one) or RecursionError escapes load_cache; why_new=canonicalisation and its merge are new in this ship; seam=none
+    def test_spellings_merge_and_a_deeply_nested_file_is_unreadable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            path = pf.cache_path(site)
+            path.parent.mkdir(parents=True)
+            for numbers in ({"21/6561": ["1", "2"], "21/06561": []}, {"21/06561": [], "21/6561": ["1", "2"]}, {"21/06561": ["3"], "21/6561": ["1"]}):
+                path.write_text(json.dumps(cache_of({}, numbers)), encoding="utf-8")
+                merged = pf.load_cache(site)["dokumentnummern"]["21/6561"]
+                self.assertEqual(sorted(merged), sorted({i for ids in numbers.values() for i in ids}), numbers)
+            path.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(pf.load_cache(site), pf.empty_cache())
+            self.assertIn("unreadable", err.getvalue())
+
+    # Value: protects=a private directory that exists but cannot be written (left by another user) still lets the cache save, next to the cache; fails_when=only mkdir and stat errors fall back, so NamedTemporaryFile raises and every build loses its fetch; why_new=the read-only-parent test makes mkdir fail, not the temp file; seam=none
+    def test_save_falls_back_when_the_private_directory_is_not_writable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            private = Path(tmp) / ".site.private"
+            private.mkdir(mode=0o500)
+            try:
+                pf.save_cache(site, cache_of({"1": vorgang("Recht")}))
+            finally:
+                private.chmod(0o700)
+            self.assertEqual(list(pf.load_cache(site)["vorgaenge"]), ["1"])
+            self.assertEqual(list(private.iterdir()), [])
 
     def test_save_then_load_round_trips(self) -> None:
         cache = cache_of({"1": vorgang("Recht")}, {"21/1": ["1"]})
@@ -690,6 +721,23 @@ class FetchTests(unittest.TestCase):
             self.assertEqual([d["id"] for d in client.list_all("/vorgang", {}, page_pause=0.5)], ["1", "2"])
         self.assertEqual(sleep.call_args_list, [mock.call(0.5), mock.call(0.5)])
 
+    # Value: protects=a DIP record whose sachgebiet is a string is a failed fetch (retried next build), never cached as single letters; fails_when=vorgang_cache_record iterates the string again, so "Gesundheit" is cached as ['G','e',...] for good; why_new=found by both adversarial passes of this ship; seam=none
+    def test_a_string_sachgebiet_is_a_failed_fetch_not_a_cached_record(self) -> None:
+        with self.assertRaises(dip.DipError):
+            dip.vorgang_cache_record({"id": "x", "sachgebiet": "Gesundheit"})
+        self.assertEqual(dip.vorgang_cache_record({"sachgebiet": None, "deskriptor": "x"})["sachgebiet"], [])
+        bad = {"sachgebiet": "Gesundheit", "abstract": "A"}
+        client = FakeClient({"a": bad, "b": bad, "c": raw("Verkehr")}, {"21/7": ["b"]})
+        self.entries = [{"report": {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [
+            item(1, positions=(position("a"),)), item(2, numbers=("21/7",)), item(3, positions=(position("c"),)),
+        ]}}]
+        self.enterContext(mock.patch.object(dip, "VORGANG_BATCH", 1))
+        stats, saved, err = self.run_refresh(client, pf.empty_cache())
+        self.assertEqual(sorted(saved["vorgaenge"]), ["c"])
+        self.assertNotIn("21/7", saved["dokumentnummern"])
+        self.assertEqual((stats["vorgaenge_failed"], stats["nummern_failed"]), (1, 1))
+        self.assertIn("unexpected sachgebiet", err)
+
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]
         cache = cache_of(
@@ -778,6 +826,39 @@ class PersistTests(unittest.TestCase):
         self.assertEqual(
             {r[0] for r in conn.execute("SELECT politikfeld FROM vote_politikfelder")}, {"Verkehr"}
         )
+
+
+class RepersistGuardTests(unittest.TestCase):
+    """build.require_vorgang_cache_for_tags on a store holding only the two tag tables."""
+
+    def store(self, tmp: str, tops: list[tuple[str, str]], votes: list[tuple[str, str]]) -> Path:
+        path = Path(tmp) / "site" / "data" / "bundestag-pulse.sqlite"
+        path.parent.mkdir(parents=True)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE agenda_item_politikfelder (agenda_item_id, politikfeld, rank, source)")
+        conn.execute("CREATE TABLE vote_politikfelder (vote_id, politikfeld, rank, source)")
+        conn.executemany("INSERT INTO agenda_item_politikfelder VALUES (?, 'x', 1, ?)", tops)
+        conn.executemany("INSERT INTO vote_politikfelder VALUES (?, 'x', 1, ?)", votes)
+        conn.commit()
+        conn.close()
+        return path
+
+    # Value: protects=the guard refuses only a re-persist that leaves more TOPs or votes not_fetched than the store has: a partial cache over cache-derived tags is refused, Einzelplan-only tags pass with no cache at all; fails_when=the guard goes back to "any non-empty cache passes" (a one-record cache strips the tags) or treats every "top" vote as cache-derived (a valid upgrade is refused); why_new=both were found by the adversarial passes of this ship; seam=none
+    def test_only_a_rise_in_not_fetched_over_cache_derived_tags_is_refused(self) -> None:
+        einzelplan = item(1, heading="Einzelplan 12 Bundesministerium für Verkehr", votes=[{"id": "v1", "title": "T", "date": "2026-01-01"}])
+        report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [einzelplan]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.store(tmp, [("t1", "einzelplan")], [("v1", "top")])
+            build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [{"report": report}])
+
+        positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "title": "T", "date": "2026-01-01"}])
+        report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [positioned]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.store(tmp, [("t1", "sachgebiet")], [("v1", "top")])
+            for partial in (None, cache_of({"unrelated": vorgang("Recht")})):
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "would leave 2 TOPs and votes not_fetched where the store has 0"):
+                    build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+            build.require_vorgang_cache_for_tags(path, cache_of({"V1": vorgang("Recht")}), path.parent.parent, [{"report": report}])
 
 
 class SummaryTests(unittest.TestCase):

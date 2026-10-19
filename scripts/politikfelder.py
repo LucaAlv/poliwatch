@@ -180,17 +180,20 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
             file=sys.stderr,
         )
         return empty_cache()
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        # Keep a file with bad content for inspection (the next online build would overwrite
-        # it); a file that could not be read at all may be fine and stays where it is.
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
+        # Keep a file with bad content for inspection, out of the published tree (the next
+        # online build would overwrite it); a file that could not be read at all may be
+        # fine and stays where it is.
         note = "left in place"
         if not isinstance(exc, OSError):
-            kept = path.with_name(path.name + ".corrupt")
-            try:
-                path.replace(kept)
-                note = f"moved to {kept.name}"
-            except OSError:
-                pass
+            for kept in (registry.private_dir(path) / (path.name + ".corrupt"), path.with_name(path.name + ".corrupt")):
+                try:
+                    kept.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    path.replace(kept)
+                    note = f"moved to {kept}"
+                    break
+                except OSError:
+                    continue
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -201,16 +204,20 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
     vorgaenge = {
         str(k): v
         for k, v in vorgaenge.items()
-        if isinstance(v, dict) and isinstance(v.get("sachgebiet", []), list)
+        if isinstance(v, dict)
+        and isinstance(v.get("sachgebiet", []), list)
+        and all(isinstance(label, str) for label in v.get("sachgebiet", []))
     }
     # Keys in the canonical form the lookups use ("21/06561" is "21/6561"); a cache
-    # written before numbers were canonicalised keeps its answers.
-    dokumentnummern = {
-        derive.canonical_document_number(k) or str(k): [str(i) for i in v]
-        for k, v in dokumentnummern.items()
-        if isinstance(v, list)
-    }
-    return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": dokumentnummern}
+    # written before numbers were canonicalised keeps its answers, and two spellings
+    # of one number keep the union of theirs (an empty answer never erases another).
+    canonical: dict[str, list[str]] = {}
+    for key, ids in dokumentnummern.items():
+        if not isinstance(ids, list):
+            continue
+        merged = canonical.setdefault(derive.canonical_document_number(key) or str(key), [])
+        merged.extend(str(i) for i in ids if str(i) not in merged)
+    return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": canonical}
 
 
 #: Age after which a temporary cache file in the private directory counts as a
@@ -226,31 +233,40 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     """Write the cache atomically. The temporary file is staged in the private
     directory beside the published tree (``person_registry.private_dir``), so a
     killed build leaves nothing half-written in ``data/``. Only when that
-    directory cannot be made (a read-only parent of OUTPUT) or is on another file
-    system, where the rename could not be atomic, is it staged next to the cache.
-    A temporary file a killed save left in the private directory is removed once
-    it is older than STALE_TEMP_SECONDS (a younger one may be a running build's)."""
+    directory cannot be made or written (a read-only parent of OUTPUT, a directory
+    another user left) or is on another file system, where the rename could not be
+    atomic, is it staged next to the cache. A temporary file a killed save left in
+    either place is removed once it is older than STALE_TEMP_SECONDS (a younger one
+    may be a running build's)."""
     path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    pattern = f".{glob.escape(path.name)}.*.tmp"
+    candidates = [path.parent]
     try:
-        staging = registry.private_dir(path)
-        staging.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if staging.stat().st_dev != path.parent.stat().st_dev:
-            staging = path.parent
-        else:
-            for stale in staging.glob(pattern):
-                try:
-                    if time.time() - stale.stat().st_mtime > STALE_TEMP_SECONDS:
-                        stale.unlink(missing_ok=True)
-                except OSError:
-                    pass  # another build's save took it first
+        private = registry.private_dir(path)
+        private.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if private.stat().st_dev == path.parent.stat().st_dev:
+            candidates.insert(0, private)
     except OSError:
-        staging = path.parent
+        pass
+    pattern = f".{glob.escape(path.name)}.*.tmp"
+    for directory in candidates:
+        for stale in directory.glob(pattern):
+            try:
+                if time.time() - stale.stat().st_mtime > STALE_TEMP_SECONDS:
+                    stale.unlink(missing_ok=True)
+            except OSError:
+                pass  # another build's save took it first
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
-    ) as handle:
+    for staging in candidates:
+        try:
+            handle = tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
+            )
+            break
+        except OSError:
+            if staging == candidates[-1]:
+                raise
+    with handle:
         temporary = Path(handle.name)
         try:
             handle.write(text)
@@ -392,8 +408,8 @@ def reads_cited_numbers(vorgang_ids: list[str]) -> bool:
     """Whether a TOP's tags may come from the Drucksache numbers it names: only when
     DIP gives it no Vorgang of its own. A TOP with Vorgänge but no Sachgebiet is not
     the TOP of the Drucksachen it merely cites (a Sammelübersicht of 17 Vorgänge
-    cites dozens of unrelated numbers). ``fetch_targets`` asks for numbers by the
-    same rule, so nothing is fetched that the tagging never reads."""
+    cites dozens of unrelated numbers). ``fetch_targets`` asks for a TOP's numbers
+    by the same rule, so no TOP number is fetched that the tagging never reads."""
     return not vorgang_ids
 
 

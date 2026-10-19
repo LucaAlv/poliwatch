@@ -1576,6 +1576,7 @@ def refresh_vorgang_cache(
                 time.sleep(NUMBER_LOOKUP_PAUSE)
                 try:
                     documents = dip.resolve_dokumentnummer(client, number, page_pause=NUMBER_LOOKUP_PAUSE)
+                    records = {str(d["id"]): dip.vorgang_cache_record(d) for d in documents if d.get("id")}
                 except dip.DipError as exc:
                     stats["nummern_failed"] += 1
                     failures += 1
@@ -1586,10 +1587,8 @@ def refresh_vorgang_cache(
                     continue
                 failures = 0
                 stats["nummern"] += 1
-                cache["dokumentnummern"][number] = [str(d["id"]) for d in documents if d.get("id")]
-                for document in documents:
-                    if document.get("id"):
-                        cache["vorgaenge"][str(document["id"])] = dip.vorgang_cache_record(document)
+                cache["dokumentnummern"][number] = list(records)
+                cache["vorgaenge"].update(records)
                 if stats["nummern"] % CACHE_SAVE_EVERY == 0:
                     save()
         finally:
@@ -1651,34 +1650,53 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 
 
 def require_vorgang_cache_for_tags(
-    database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path
+    database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
-    """Refuse a re-persist that would strip the store's Politikfelder. Tags from
-    the Sachgebiet of a Vorgang (sources sachgebiet, drucksache, top) need the
-    Vorgang cache; with that cache empty or missing every one of them would be
-    stored as not_fetched, and the Daten export would publish that. A store
-    without the Politikfeld tables (an upgrade from before schema 5) or without
-    such tags has nothing to lose and passes."""
-    if (vorgang_cache or {}).get("vorgaenge") or not database_path.exists():
+    """Refuse a re-persist that would strip the store's Politikfelder: one that
+    would leave more TOPs or votes ``not_fetched`` than the current store has.
+    That happens when the Vorgang cache is missing, emptied or only partly
+    refilled; the Daten export would then publish the loss. A store without the
+    Politikfeld tables (an upgrade from before schema 5) or without tags taken
+    from the cache has nothing to lose, and tags that need no cache (an
+    Einzelplan heading) never count against it."""
+    if not database_path.exists():
         return
     try:
         conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
         try:
-            derived = sum(
-                conn.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE source IN ('sachgebiet', 'drucksache', 'top')"
-                ).fetchone()[0]
-                for table in ("agenda_item_politikfelder", "vote_politikfelder")
+            stored = sum(
+                conn.execute(f"SELECT COUNT(DISTINCT {key}) FROM {table} WHERE source = 'not_fetched'").fetchone()[0]
+                for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
             )
+            # Only Sachgebiet and Drucksache tags come from the cache; a vote's "top" tags
+            # follow its TOP's, which may be an Einzelplan heading's.
+            from_cache = conn.execute(
+                "SELECT COUNT(*) FROM agenda_item_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
+            ).fetchone()[0] + conn.execute(
+                "SELECT COUNT(*) FROM vote_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
+            ).fetchone()[0]
         finally:
             conn.close()
     except sqlite3.Error:
         return  # no Politikfeld tables yet: nothing to strip
-    if derived:
+    if not from_cache:
+        return
+    cache = vorgang_cache or politikfelder.empty_cache()
+    missing_tops = 0
+    missing_votes: set[str] = set()
+    for entry in entries:
+        report = entry["report"]
+        item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
+        missing_tops += sum(source == "not_fetched" for _tags, source in item_tags)
+        for _item, vote in derive.iter_report_votes(report):
+            if vote.get("id") is not None and vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
+                missing_votes.add(str(vote["id"]))
+    would_miss = missing_tops + len(missing_votes)
+    if would_miss > stored:
         raise DatabaseRebuildError(
-            f"the Vorgang cache {politikfelder.cache_path(output_dir)} is empty or missing, "
-            f"but the store holds {derived} Politikfeld tags derived from it; a re-persist would store them as "
-            "not_fetched. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+            f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
+            f"{would_miss} TOPs and votes not_fetched where the store has {stored}, so it would strip their "
+            "Politikfelder. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
 
@@ -1697,7 +1715,7 @@ def repersist_cached_reports(
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
-    require_vorgang_cache_for_tags(database_path, vorgang_cache, output_dir)
+    require_vorgang_cache_for_tags(database_path, vorgang_cache, output_dir, entries)
     rebuilt = rebuild_database_from_entries(
         database_path, entries, preserve_roster=preserve_roster, keep_if_unchanged=True,
         catalog=facts.load_sitting_catalog(output_dir / "data" / facts.CATALOG_FILENAME),
