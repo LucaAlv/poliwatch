@@ -43,6 +43,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Context:** Sample of 30 XLSX files (18,895 Stimmen) had zero ungültig, so today's counts are not wrong in practice; this is about not being able to tell. HTML scraping of the filterlist also breaks whenever bundestag.de changes its markup.
 
+**Prerequisite (A3 review D7, 2026-10-19): page the Namenslisten list.** What: page the Namenslisten list beyond offset 0 so every vote back to WP 18 gets its XLSX link. Why: 0 of 217 stored votes link an XLSX today, and no WP 18/19 vote will. Context: `validate_dip_protocol.py:1576` fetches only `offset=0&limit=200`; offsets 200 and 400 reach 2022 and 2019. Depends on: none.
+
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
@@ -220,16 +222,16 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### v1 coverage: every Sitzung from WP 18 to the present
 
-**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Measured on 2026-09-30 against the reference copy (`~/agent-runs/poliwatch/.context/dip-pulse-site/`), counting only Bundestag entries in the cached catalog:
+**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Re-measured on 2026-10-19 against the post-v0.20 replay of the reference store (`~/agent-runs/b3-review-replay/site`, a replay of `.context/dip-pulse-site`; catalog from 2026-10-06), counting only Bundestag entries:
 
 | WP | In the catalog | In the store | Missing |
 |---|---|---|---|
 | 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
 | 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
-| 20 | 214 | 201 | 13, from 2021-10-26 to 2022-01-26 |
-| 21 | 87 up to 2026-06-26 | 84 | 3, plus every Sitzung after the catalog snapshot |
+| 20 | 214 | 201 (from 20/14, 2022-01-27) | 13 |
+| 21 | 97 with XML | 89 (to 2026-09-11) | 8, plus every Sitzung after the catalog snapshot |
 
-The catalog itself is from 2026-08-25, and the store was last updated on 2026-06-22. A newer scratch copy (302 Sitzungen, backfilled 2026-09-29, per the fix-stored-values work) was not found; re-measure against the current reference store before starting. Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
+About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3-coverage.md). Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
 
 **Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
 
@@ -244,6 +246,18 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 **Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
 
 ## Protokoll-Dossier
+
+### Split or filter overview.html by Wahlperiode
+
+**What:** Split or filter `overview.html` by Wahlperiode instead of one page with every card.
+
+**Why:** A3 (v1 coverage) takes the page from about 290 to about 800 cards (A3 review D8, 2026-10-19). Page weight after A3: measured in the A3 Phase 4 check.
+
+**Context:** `render_overview` (`scripts/build_dip_pulse_site.py:8748`) renders one card per generated dossier.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** A3 (v1 coverage)
 
 ### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
 
@@ -497,6 +511,18 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Depends on:** None
 
 ## Abgeordnete
+
+### Group MP pages by Wahlperiode and write abgeordnete.json without indent
+
+**What:** Group or page the speech and vote rows on each MP page by Wahlperiode, and write `data/abgeordnete.json` without `indent=2`.
+
+**Why:** After A3 a long-serving MdB shows up to twelve years of Reden and roll-call votes in one list, and the JSON grows with them (A3 review D9, 2026-10-19). Sizes after A3: measured in the A3 Phase 4 check.
+
+**Context:** MP detail page `scripts/build_dip_pulse_site.py:7652-7740`; JSON dump `:7833`.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** A3 (v1 coverage)
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 
