@@ -1,0 +1,283 @@
+{
+  "output_dir": "/Users/Luca/agent-runs/a3/gate",
+  "started_at": "2026-10-19T19:51:40Z",
+  "commit": "4b4c0fe",
+  "today": "2026-10-19",
+  "reports": 290,
+  "xml_files": 290,
+  "counts_before": {
+    "protocols": 290,
+    "agenda_items": 2912,
+    "speeches": 26267,
+    "contributions": 16787,
+    "mps": 4306,
+    "person_records": 4306,
+    "person_bindings": 198196,
+    "person_aliases": 0,
+    "documents": 8121,
+    "votes": 217,
+    "vote_members": 154015,
+    "facts": 710,
+    "persons": 3095,
+    "contribution_kinds": {
+      "befragung_antwort": 3901,
+      "befragung_frage": 3961,
+      "erwiderung": 598,
+      "fragestunde_antwort": 2687,
+      "fragestunde_frage": 2701,
+      "kurzintervention": 647,
+      "zu_protokoll": 859,
+      "zwischenfrage": 1433
+    },
+    "protocols_per_wahlperiode": {
+      "20": 201,
+      "21": 89
+    }
+  },
+  "replay": {
+    "command": [
+      "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--offline",
+      "--repersist",
+      "--output-dir",
+      "/Users/Luca/agent-runs/a3/gate",
+      "--today",
+      "2026-10-19"
+    ],
+    "exit_code": 0,
+    "seconds": 452.8,
+    "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/replay.log",
+    "store_replaced": true,
+    "store_kept": false,
+    "tail": [
+      "fakten: 187 Fakten in 153 Sitzungswochen",
+      "abstimmungen: 217 im Archiv",
+      "[puls] KW 37/2026: 4 Sitzungen, 6 Themen, 0 Frageformate, 14 weitere, today=2026-10-19",
+      "offline: rendered 290 cached dossiers",
+      "/Users/Luca/agent-runs/a3/gate/index.html"
+    ]
+  },
+  "integrity": {
+    "integrity_check": [
+      "ok"
+    ],
+    "integrity_ok": true,
+    "foreign_key_violations": 0
+  },
+  "counts": {
+    "protocols": 290,
+    "agenda_items": 2912,
+    "speeches": 26267,
+    "contributions": 16787,
+    "mps": 4306,
+    "person_records": 4306,
+    "person_bindings": 198196,
+    "person_aliases": 0,
+    "documents": 8117,
+    "votes": 217,
+    "vote_members": 154015,
+    "facts": 710,
+    "persons": 3094,
+    "contribution_kinds": {
+      "befragung_antwort": 3901,
+      "befragung_frage": 3961,
+      "erwiderung": 598,
+      "fragestunde_antwort": 2687,
+      "fragestunde_frage": 2701,
+      "kurzintervention": 647,
+      "zu_protokoll": 859,
+      "zwischenfrage": 1433
+    },
+    "protocols_per_wahlperiode": {
+      "20": 201,
+      "21": 89
+    }
+  },
+  "counts_vs_2026_10_05": {
+    "speeches": {
+      "old": 26271,
+      "new": 26267,
+      "delta": -4
+    },
+    "contributions": {
+      "old": 16799,
+      "new": 16787,
+      "delta": -12
+    },
+    "persons": {
+      "old": 3370,
+      "new": 3094,
+      "delta": -276
+    }
+  },
+  "grouping": {
+    "fingerprint": "237964f39e5102434efa6547f811793195e3ff4c75343b422a657b7552c8114b",
+    "groups": 3094,
+    "bindings": 198196
+  },
+  "order_independence": {
+    "fresh": {
+      "command": [
+        "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "/Users/Luca/agent-runs/a3/gate-gate-scratch/fresh",
+        "--today",
+        "2026-10-19"
+      ],
+      "exit_code": 0,
+      "seconds": 248.0,
+      "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/fresh.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "warning: [redner-id] 21/24 Rede ID212409300: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211802600: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211807500: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "facts: wrote 710 rows, 187 Fakten in 104 von 153 Perioden",
+        "warning: [classification] 90 sitting/kind differences against DIP across 55 sittings. Inspect source turns in /Users/Luca/agent-runs/a3/gate-gate-scratch/fresh/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "grouping": {
+        "fingerprint": "e1b3a6af0adb312b7cad4d2122aba3cd74c857e007695cea2d7ed6b1deb7dc7f",
+        "groups": 3094,
+        "bindings": 198186
+      }
+    },
+    "half": {
+      "command": [
+        "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "/Users/Luca/agent-runs/a3/gate-gate-scratch/half",
+        "--today",
+        "2026-10-19"
+      ],
+      "exit_code": 0,
+      "seconds": 116.3,
+      "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/half.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "warning: [redner-id] 21/25 Rede ID212504800: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211802600: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211807500: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "facts: wrote 710 rows, 0 Fakten in 0 von 153 Perioden",
+        "warning: [classification] 43 sitting/kind differences against DIP across 28 sittings. Inspect source turns in /Users/Luca/agent-runs/a3/gate-gate-scratch/half/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "reports": 145
+    },
+    "half_then_full": {
+      "command": [
+        "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "/Users/Luca/agent-runs/a3/gate-gate-scratch/half",
+        "--today",
+        "2026-10-19"
+      ],
+      "exit_code": 0,
+      "seconds": 253.8,
+      "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/half-then-full.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "facts: changed winner 2026-W13: kein Fakt -> laengste-sitzung (801) [protocol 21/68 https://dserver.bundestag.de/btp/21/21068.pdf]",
+        "facts: changed winner 2026-W21: kein Fakt -> laengste-sitzung (810) [protocol 21/80 https://dserver.bundestag.de/btp/21/21080.pdf], laengste-debatte (84140) [agenda_item 21/80 S. 9575 https://dserver.bundestag.de/btp/21/21080.pdf], laengste-rede (11807) [speech 21/80 ID218000300 https://dserver.bundestag.de/btp/21/21080.pdf]",
+        "facts: changed winner 2026-W24: kein Fakt -> laengste-sitzung (993) [protocol 21/83 https://dserver.bundestag.de/btp/21/21083.pdf], laengste-rede (20792) [speech 21/83 ID218300100 https://dserver.bundestag.de/btp/21/21083.pdf], laengste-debatte (98780) [agenda_item 21/83 S. 9922 https://dserver.bundestag.de/btp/21/21083.pdf], erste-reden (2) [speech 21/84 ID218409900 https://dserver.bundestag.de/btp/21/21084.pdf]",
+        "facts: changed winner 2026-W37: kein Fakt -> laengste-rede (30668) [speech 21/91 ID219100300 https://dserver.bundestag.de/btp/21/21091.pdf]",
+        "warning: [classification] 90 sitting/kind differences against DIP across 55 sittings. Inspect source turns in /Users/Luca/agent-runs/a3/gate-gate-scratch/half/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "grouping": {
+        "fingerprint": "e1b3a6af0adb312b7cad4d2122aba3cd74c857e007695cea2d7ed6b1deb7dc7f",
+        "groups": 3094,
+        "bindings": 198186
+      }
+    },
+    "equal": true
+  },
+  "unchanged_replay": {
+    "command": [
+      "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--offline",
+      "--repersist",
+      "--output-dir",
+      "/Users/Luca/agent-runs/a3/gate",
+      "--today",
+      "2026-10-19"
+    ],
+    "exit_code": 0,
+    "seconds": 360.4,
+    "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/replay-unchanged.log",
+    "store_replaced": false,
+    "store_kept": true,
+    "tail": [
+      "fakten: 187 Fakten in 153 Sitzungswochen",
+      "abstimmungen: 217 im Archiv",
+      "[puls] KW 37/2026: 4 Sitzungen, 6 Themen, 0 Frageformate, 14 weitere, today=2026-10-19",
+      "offline: rendered 290 cached dossiers",
+      "/Users/Luca/agent-runs/a3/gate/index.html"
+    ],
+    "store_before": {
+      "sha256": "831e074e2a5adc87b6024f4a9824d556906f7726d7786a30625cabd32010e5e7",
+      "bytes": 370401280,
+      "mtime_ns": 1792439737779984735,
+      "inode": 203440845
+    },
+    "store_after": {
+      "sha256": "831e074e2a5adc87b6024f4a9824d556906f7726d7786a30625cabd32010e5e7",
+      "bytes": 370401280,
+      "mtime_ns": 1792439737779984735,
+      "inode": 203440845
+    }
+  },
+  "links": {
+    "pages": 3224,
+    "links": 209897,
+    "broken": [],
+    "broken_count": 0
+  },
+  "export": {
+    "generation": "g-d0feab75c821",
+    "files": 28,
+    "counts": {
+      "protocols": 290,
+      "votes": 217,
+      "vote members": 154015
+    },
+    "problems": []
+  },
+  "publication": {
+    "command": [
+      "/Users/Luca/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--validate-publication",
+      "/Users/Luca/agent-runs/a3/gate"
+    ],
+    "exit_code": 0,
+    "seconds": 68.1,
+    "log": "/Users/Luca/agent-runs/a3/gate-gate-scratch/validate-publication.log",
+    "store_replaced": false,
+    "store_kept": false,
+    "tail": [
+      "validated: /Users/Luca/agent-runs/a3/gate"
+    ]
+  },
+  "checks": {
+    "replay_exit_0": true,
+    "sqlite_integrity_ok": true,
+    "no_foreign_key_violations": true,
+    "half_then_full_groups_like_fresh": true,
+    "replayed_store_groups_like_fresh": true,
+    "unchanged_replay_exit_0": true,
+    "unchanged_replay_keeps_store": true,
+    "no_broken_local_links": true,
+    "export_matches_store": true,
+    "publication_valid": true,
+    "all_passed": true
+  },
+  "seconds_total": 1570.7,
+  "grouping_on_fresh_bindings": {
+    "fingerprint": "e1b3a6af0adb312b7cad4d2122aba3cd74c857e007695cea2d7ed6b1deb7dc7f",
+    "groups": 3094,
+    "bindings": 198186
+  },
+  "bindings_of_retired_occurrences": 10,
+  "note": "replayed_store_groups_like_fresh recomputed after the run on the same stores with the gate script's live-binding comparison (commit after 43ab74d): the first version compared all bindings and failed on the 10 bindings the registry keeps for retired occurrence ids. The plan's checks were unaffected.",
+  "peak_rss_bytes_gate_process_tree_max": 2594680832
+}

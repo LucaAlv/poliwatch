@@ -164,6 +164,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Validate final merged A1/A2 before the A3 backfill
 
+**Completed:** 2026-10-19 (A3 Phase 0). `scripts/validate_store_gate.py` on a clone of the reference store with `main` v0.20.0.0: replay, integrity, fresh vs. half-then-full grouping, unchanged replay, links, export and publication all pass; every moved figure is explained in [the gate record](docs/plans/a3-gate-validation.md).
+
 **What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
 
 **Why:** Claude reached its usage limit on 2026-10-05. The user explicitly requested completing A1 without waiting and recording this gate. A1 preserves schema 3/key version 1 and needs no new registry policy, but later A2 edits may affect grouping and page links.
@@ -172,6 +174,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Depends on:** A2 completion; must pass before A3 readiness is claimed. [A1 validation receipt](docs/plans/a1-validation.md).
 
 ### Cached report 21/50 no longer matches its XML
+
+**Not reproduced on the reference store (2026-10-19):** `--offline --repersist` of `.context/dip-pulse-site` accepts 21/50 ([A3 gate record](docs/plans/a3-gate-validation.md)). Still open for the `right-counts-a1/after` cache it was found on.
 
 **What:** On the A1 reference cache (`right-counts-a1/after`), `--offline --repersist` stops at 21/50: "plenarprotokoll-21-50.xml is not the Plenarprotokoll XML of 21/50: agenda item set changed; reacquire the sitting report". Seen on 2026-10-14 with both the 02 tree (`b9e7946`) and the 03 tree, so it is not caused by the A.2 registry changes. Reacquire the sitting, or find which change made the cached agenda items and the XML disagree.
 

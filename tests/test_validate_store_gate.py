@@ -42,6 +42,17 @@ class GroupingFingerprintTest(unittest.TestCase):
             self.assertEqual(gate.grouping_fingerprint(a)["bindings"], 3)
 
 
+    def test_bindings_kept_for_retired_occurrences_can_be_left_out(self) -> None:
+        # A replayed store carries the registry's bindings of occurrences the
+        # reports no longer hold; a fresh one cannot have them.
+        with tempfile.TemporaryDirectory() as tmp:
+            fresh = _store(Path(tmp) / "fresh.sqlite", [("b1", "p1"), ("b2", "p1")])
+            replayed = _store(Path(tmp) / "replayed.sqlite", [("b1", "q"), ("b2", "q"), ("retired", "q")])
+            live = gate.binding_ids(fresh)
+            self.assertNotEqual(gate.grouping_fingerprint(replayed), gate.grouping_fingerprint(fresh))
+            self.assertEqual(gate.grouping_fingerprint(replayed, only=live), gate.grouping_fingerprint(fresh))
+
+
 class LinkAuditTest(unittest.TestCase):
     # Value: protects=every page a replay renders links only to pages and anchors that exist;
     # fails_when=a missing target or anchor goes unreported, or an external link is flagged;

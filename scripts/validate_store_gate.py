@@ -65,15 +65,26 @@ def _open_readonly(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True)
 
 
-def grouping_fingerprint(database_path: Path) -> dict[str, Any]:
+def binding_ids(database_path: Path) -> set[str]:
+    conn = _open_readonly(database_path)
+    try:
+        return {row[0] for row in conn.execute("SELECT id FROM person_bindings")}
+    finally:
+        conn.close()
+
+
+def grouping_fingerprint(database_path: Path, *, only: set[str] | None = None) -> dict[str, Any]:
     """How the store groups occurrence bindings into persons, independent of the
     person ids it minted: each person becomes the sorted list of its binding
-    ids, and the sorted list of those groups is hashed."""
+    ids, and the sorted list of those groups is hashed. ``only`` restricts it to
+    those bindings (a replayed store also keeps the bindings of retired
+    occurrences, which a fresh store cannot have)."""
     conn = _open_readonly(database_path)
     try:
         groups: dict[str, list[str]] = {}
         for binding_id, person_id in conn.execute("SELECT id, person_id FROM person_bindings"):
-            groups.setdefault(person_id, []).append(binding_id)
+            if only is None or binding_id in only:
+                groups.setdefault(person_id, []).append(binding_id)
     finally:
         conn.close()
     canonical = sorted("\x1f".join(sorted(ids)) for ids in groups.values())
@@ -319,8 +330,14 @@ def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
     receipt["order_independence"] = order_independence(output_dir, scratch, today)
     checks["half_then_full_groups_like_fresh"] = receipt["order_independence"]["equal"]
     if checks["replay_exit_0"] and "grouping" in receipt["order_independence"]["fresh"]:
+        # Not a plan check: the replayed store carries its registry forward, so it
+        # is compared on the bindings a fresh store holds, and the bindings it
+        # keeps for retired occurrences are counted.
+        live = binding_ids(scratch / "fresh" / STORE)
+        receipt["grouping_on_fresh_bindings"] = grouping_fingerprint(database_path, only=live)
+        receipt["bindings_of_retired_occurrences"] = len(binding_ids(database_path) - live)
         checks["replayed_store_groups_like_fresh"] = (
-            receipt["grouping"] == receipt["order_independence"]["fresh"]["grouping"]
+            receipt["grouping_on_fresh_bindings"] == receipt["order_independence"]["fresh"]["grouping"]
         )
 
     if checks["replay_exit_0"]:
