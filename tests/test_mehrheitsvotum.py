@@ -186,7 +186,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
                 conn.execute(
                     "UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')"
                 )
-                self.assertEqual([row[2:] for row in self.r3_rows(conn)], [("FDP", 1)])
+                self.assertEqual([row[3:] for row in self.r3_rows(conn)], [("FDP", 1)])
             finally:
                 conn.close()
 

@@ -117,6 +117,47 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(spd_row["reden"], 3)
         self.assertEqual(cdu_row["reden"], 3)
 
+    # Value (Fraktion stopgap, plan 2.7): protects=no Daten recipe blends Wahlperioden while
+    # parties stay keyed by name; fails_when=a recipe row lacks its Wahlperiode, or r2 pools
+    # an SPD of WP 18 with the SPD of WP 20 in one share; seam=export_distribution_data.
+    def test_every_recipe_row_names_its_wahlperiode_and_r2_shares_are_per_wahlperiode(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                now = pulse_store.utc_now()
+                conn.execute("INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at)"
+                             " VALUES ('1805', '18/5', '2013-12-18', 'Alt', '{}', ?, ?)", (now, now))
+                conn.execute("INSERT INTO agenda_items(id, protocol_id, item_index, top_id, heading, created_at, updated_at)"
+                             " VALUES ('ai-1805', '1805', 1, 'T1', 'TOP 1', ?, ?)", (now, now))
+                mp_id = conn.execute("SELECT mp_id FROM speeches WHERE fraktion = 'SPD' LIMIT 1").fetchone()[0]
+                conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
+                             " text, fraktion, created_at, updated_at) VALUES ('s-1805', '1805', 'ai-1805', 'R1805', 1, ?,"
+                             " 500, 'Alt', 'SPD', ?, ?)", (mp_id, now, now))
+                conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols",
+                             (pulse_store.speech_kinds.VERSION,))
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["export_format"], b.EXPORT_FORMAT)
+        for recipe in manifest["recipes"]:
+            with self.subTest(recipe=recipe["id"]):
+                self.assertIn("wahlperiode", recipe["columns"])
+                self.assertTrue(all(isinstance(row["wahlperiode"], int) for row in recipe["rows"]), recipe["rows"])
+        r2 = next(r for r in manifest["recipes"] if r["id"] == "r2-redeanteil-fraktion")
+        spd = {row["wahlperiode"]: row for row in r2["rows"] if row["fraktion"] == "SPD"}
+        self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
+        self.assertEqual(spd[20]["reden"], 3)
+
+    # Value (D2): protects=a sitting kept out by a reviewed source refusal is a visible,
+    # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
+    # does not name it; seam=export_distribution_data + render_daten_datenstand.
+    def test_an_excluded_sitting_is_counted_as_not_covered(self) -> None:
+        manifest = self.export(excluded_sittings=["18/84"])
+        self.assertEqual(manifest["coverage"]["source_rejected"], ["18/84"])
+        html = b.render_daten_datenstand(manifest)
+        self.assertIn("1 nicht erfasst (Quelle abgelehnt): 18/84", html)
+        self.assertNotIn("Quelle abgelehnt", b.render_daten_datenstand(self.export(force=True)))
+
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}
@@ -735,17 +776,23 @@ class RecipeRepresentativeTests(unittest.TestCase):
             CREATE TABLE mps (id TEXT PRIMARY KEY, identity_key TEXT, person_id TEXT, display_name TEXT,
                               party_id TEXT, is_mdb INTEGER, xml_redner_id TEXT);
             CREATE TABLE mp_canonical (mp_id TEXT PRIMARY KEY, canonical_id TEXT, has_page INTEGER);
-            CREATE TABLE speeches (mp_id TEXT, char_count INTEGER);
+            CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT);
+            CREATE TABLE votes (id TEXT PRIMARY KEY, protocol_id TEXT);
+            CREATE TABLE agenda_items (id TEXT PRIMARY KEY, protocol_id TEXT);
+            CREATE TABLE agenda_item_votes (agenda_item_id TEXT, vote_id TEXT);
+            CREATE TABLE speeches (mp_id TEXT, protocol_id TEXT, char_count INTEGER);
             CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT, party_id TEXT, vote TEXT);
             CREATE TABLE vote_fractions (vote_id TEXT, party_id TEXT, leading_vote TEXT);
             INSERT INTO parties VALUES ('spd', 'SPD');
             INSERT INTO vote_fractions VALUES ('v1', 'spd', 'yes');
+            INSERT INTO protocols VALUES ('pp-1', '21/1');
+            INSERT INTO votes VALUES ('v1', 'pp-1');
             """
         )
         for mp_id, (person, identity, name, is_mdb, xml) in members:
             conn.execute("INSERT INTO mps VALUES (?, ?, ?, ?, 'spd', ?, ?)", (mp_id, identity, person, name, is_mdb, xml))
             conn.execute("INSERT INTO mp_canonical VALUES (?, ?, 1)", (mp_id, person))
-            conn.execute("INSERT INTO speeches VALUES (?, 100)", (mp_id,))
+            conn.execute("INSERT INTO speeches VALUES (?, 'pp-1', 100)", (mp_id,))
             conn.execute("INSERT INTO vote_members VALUES ('v1', ?, 'spd', 'no')", (mp_id,))
         try:
             return {
@@ -766,14 +813,14 @@ class RecipeRepresentativeTests(unittest.TestCase):
                 # The speaker row over a DIP title; identity_key over the id hash;
                 # the roster row over a speaker row. Every row's Reden pool.
                 self.assertEqual(rows["r1-meiste-reden"], {
-                    "p-1": ("Ada Lovelace", "SPD", 2, 200),
-                    "p-2": ("Bea Zwei", "SPD", 2, 200),
-                    "p-3": ("Dr. Cem Drei", "SPD", 2, 200),
+                    "p-1": (21, "Ada Lovelace", "SPD", 2, 200),
+                    "p-2": (21, "Bea Zwei", "SPD", 2, 200),
+                    "p-3": (21, "Dr. Cem Drei", "SPD", 2, 200),
                 })
                 self.assertEqual(rows["r3-abweichler"], {
-                    "p-1": ("Ada Lovelace", "SPD", 1),
-                    "p-2": ("Bea Zwei", "SPD", 1),
-                    "p-3": ("Dr. Cem Drei", "SPD", 1),
+                    "p-1": (21, "Ada Lovelace", "SPD", 1),
+                    "p-2": (21, "Bea Zwei", "SPD", 1),
+                    "p-3": (21, "Dr. Cem Drei", "SPD", 1),
                 })
 
     def test_the_personenseite_takes_its_heading_from_the_same_row(self) -> None:

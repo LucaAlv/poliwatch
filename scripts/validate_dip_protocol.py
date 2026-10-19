@@ -2552,7 +2552,11 @@ def enrich_with_api(
     roll_call_list_id: str | None = None,
     progress: Callable[[str], None] | None = None,
     roll_call_page_cache: dict[str, str] | None = None,
+    person_cache: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """``person_cache`` maps a DIP person id to its /person record for the whole
+    build, so a person seen in an earlier sitting costs no request (D5). Only
+    successful fetches are cached; a failed one is tried again next sitting."""
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
     if progress:
@@ -2730,12 +2734,17 @@ def enrich_with_api(
     person_records: list[dict[str, Any]] = []
     person_fetch_errors: list[dict[str, str]] = []
     for person_index, person_id in enumerate(people_to_fetch, start=1):
-        try:
-            person = client.get_json(f"/person/{person_id}")
-        except DipError as exc:
-            person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+        if person_cache is not None and person_id in person_cache:
+            person_records.append(person_cache[person_id])
         else:
-            person_records.append(person)
+            try:
+                person = client.get_json(f"/person/{person_id}")
+            except DipError as exc:
+                person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+            else:
+                person_records.append(person)
+                if person_cache is not None:
+                    person_cache[person_id] = person
         if progress and (person_index % 25 == 0 or person_index == len(people_to_fetch)):
             progress(
                 f"Processed person records: {person_index}/{len(people_to_fetch)} "
@@ -3013,6 +3022,7 @@ def build_report(
         getattr(args, "roll_call_list_id", None),
         progress=progress,
         roll_call_page_cache=getattr(args, "roll_call_page_cache", None),
+        person_cache=getattr(args, "person_cache", None),
     )
 
     agenda_items = enrichment["agenda_items"]

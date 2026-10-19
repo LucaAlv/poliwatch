@@ -396,3 +396,34 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PersonCacheTests(unittest.TestCase):
+    # Value (D5): protects=a backfill pays one /person request per person, not one per sitting,
+    # and never keeps a failed lookup; fails_when=a repeat person is fetched again or a failure
+    # is cached; seam=enrich_with_api(person_cache=...); no_claim=live DIP person records.
+    def test_a_person_is_fetched_once_per_build_and_a_failure_is_retried(self) -> None:
+        requests: list[str] = []
+
+        class FakeClient:
+            def list_all(self, path, params):
+                if path == "/aktivitaet":
+                    return [{"id": "a1", "person_id": "p1"}, {"id": "a2", "person_id": "p2"}]
+                return []
+
+            def get_json(self, path):
+                requests.append(path)
+                if path == "/person/p2" and requests.count(path) == 1:
+                    raise dip.DipError("DIP answered 503")
+                return {"id": path.rsplit("/", 1)[1], "nachname": "N", "vorname": "V"}
+
+        parsed = dip.parse_protocol_xml((FIXTURES / "protocol.xml").read_text(encoding="utf-8"))
+        cache: dict = {}
+        with mock.patch("sys.stderr"):
+            first = dip.enrich_with_api(FakeClient(), {"id": "x", "dokumentnummer": "21/43", "datum": "2025-12-10"},
+                                        parsed, person_limit=0, vote_scan_pages=0, person_cache=cache)
+            second = dip.enrich_with_api(FakeClient(), {"id": "y", "dokumentnummer": "21/43", "datum": "2025-12-10"},
+                                         parsed, person_limit=0, vote_scan_pages=0, person_cache=cache)
+        self.assertEqual(requests, ["/person/p1", "/person/p2", "/person/p2"])
+        self.assertEqual([p["id"] for p in first["sampled_people"]], ["p1"])
+        self.assertEqual(sorted(p["id"] for p in second["sampled_people"]), ["p1", "p2"])

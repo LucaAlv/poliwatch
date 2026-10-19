@@ -711,7 +711,9 @@ def load_sitting_catalog(path: Path) -> SittingCatalog | None:
     )
 
 
-def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None) -> list[dict[str, str]]:
+def expected_sittings(
+    protocols: Sequence[Mapping[str, Any]], catalog: SittingCatalog | None, *, lower_bound: str | None = None
+) -> list[dict[str, str]]:
     """The catalog sittings a store is judged against.
 
     The DIP catalog reaches back to 1949; judging all of it would add
@@ -719,18 +721,25 @@ def expected_sittings(protocols: Sequence[Mapping[str, Any]], catalog: SittingCa
     judged range runs from the start of the week or month of the store's
     earliest sitting to the catalog's newest, so a gap inside the range or a sitting after it counts, and the
     history before the first dossier does not.
+
+    ``lower_bound`` (an ISO date) moves the start earlier, never later, and
+    applies with an empty store too. Only the backfill selection passes it (the
+    v1 coverage floor, D3); the facts periods keep the earliest-stored rule.
     """
     if catalog is None or not catalog.authoritative:
         return []
     days = [str(p.get("date") or "")[:10] for p in protocols if p.get("date")]
-    if not days:
+    if not days and not lower_bound:
         return []
-    # From the start of the first stored sitting's week or month, whichever is
-    # earlier: an earlier listed sitting of that period is missing, not out of
-    # range, and judging the period on the sittings we happen to hold would
-    # call it complete.
-    first = date.fromisoformat(min(days))
-    lower = min(first - timedelta(days=first.weekday()), first.replace(day=1)).isoformat()
+    bounds = [lower_bound] if lower_bound else []
+    if days:
+        # From the start of the first stored sitting's week or month, whichever is
+        # earlier: an earlier listed sitting of that period is missing, not out of
+        # range, and judging the period on the sittings we happen to hold would
+        # call it complete.
+        first = date.fromisoformat(min(days))
+        bounds.append(min(first - timedelta(days=first.weekday()), first.replace(day=1)).isoformat())
+    lower = min(bounds)
     return [dict(sitting) for sitting in catalog.sittings if sitting["date"] >= lower]
 
 
@@ -1013,6 +1022,8 @@ def sitting_gaps(
     protocols: Sequence[Mapping[str, Any]],
     completeness: Mapping[str, Mapping[str, Any]],
     catalog: SittingCatalog | None,
+    *,
+    lower_bound: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """document_number -> {"date", "reasons": {domain: reason}} for every judged
     sitting that is missing or not fully acquired.
@@ -1021,12 +1032,12 @@ def sitting_gaps(
     (``not_persisted``) or none to judge (``no_report``), else "votes" or
     "speeches" with the report's own reason. This is the list a backfill
     works through. Empty without an authoritative catalog: nothing can be
-    judged then, and the caller says so.
+    judged then, and the caller says so. ``lower_bound``: see expected_sittings.
     """
     if catalog is None or not catalog.authoritative:
         return {}
     persisted = {str(p["document_number"]): p for p in protocols}
-    listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog)}
+    listed = {s["document_number"]: s for s in expected_sittings(protocols, catalog, lower_bound=lower_bound)}
     # Dates are compared against the whole catalog, not the judged range: DIP
     # may have moved a stored sitting to before the range starts.
     dated = {s["document_number"]: s["date"] for s in catalog.sittings}
