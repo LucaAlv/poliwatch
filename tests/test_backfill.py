@@ -352,6 +352,13 @@ class BackfillSelectionTests(unittest.TestCase):
                 self.assertEqual([p["dokumentnummer"] for p in acquirable], expected)
                 self.assertEqual(waiting, [])
 
+    # Value (Former-MPs answer): protects=the roster spans every v1 period by default;
+    # fails_when=the default stays WP 21; seam=roster_periods.
+    def test_the_roster_spans_every_v1_wahlperiode_unless_given(self) -> None:
+        catalog = [catalog_protocol("21/3", "a", "2026-06-13"), catalog_protocol("18/1", "b", "2013-10-22")]
+        self.assertEqual(build.roster_periods(SimpleNamespace(roster_wahlperiode=None), catalog), [18, 19, 20, 21])
+        self.assertEqual(build.roster_periods(SimpleNamespace(roster_wahlperiode=[21, 20, 21]), catalog), [20, 21])
+
     def test_the_v1_floor_is_the_first_wp18_sitting_of_the_catalog(self) -> None:
         catalog = [catalog_protocol("18/2", "a", "2013-10-28"), catalog_protocol("18/1", "b", "2013-10-22"),
                    catalog_protocol("17/253", "c", "2013-09-03")]

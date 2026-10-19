@@ -92,7 +92,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Collection
+from typing import Any, Callable, Collection, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
@@ -441,6 +441,16 @@ def wahlperiode_of(protocol: dict[str, Any]) -> int | None:
     number = normalized_document_number(protocol.get("dokumentnummer"))
     head = number.split("/", 1)[0] if "/" in number else ""
     return int(head) if head.isdigit() else None
+
+
+def roster_periods(args: argparse.Namespace, catalog: list[dict[str, Any]]) -> list[int]:
+    """--roster-wahlperiode as given, else every period from
+    V1_FIRST_WAHLPERIODE to the newest one the catalog lists."""
+    given = getattr(args, "roster_wahlperiode", None)
+    if given:
+        return sorted(set(given))
+    newest = max((number for number in map(wahlperiode_of, catalog) if number is not None), default=V1_FIRST_WAHLPERIODE)
+    return list(range(V1_FIRST_WAHLPERIODE, max(newest, V1_FIRST_WAHLPERIODE) + 1))
 
 
 def v1_coverage_floor(catalog: list[dict[str, Any]]) -> str | None:
@@ -7238,31 +7248,46 @@ def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
     *,
-    wahlperiode: int,
+    wahlperioden: Sequence[int],
     profile_resolver: Any | None = None,
 ) -> dict[str, int]:
-    """Fetch the full set of MdBs for a legislative period from DIP /person and
-    upsert them as is_mdb=1 rows, optionally enriched with abgeordnetenwatch
-    biographical data. Makes the Abgeordnete list complete rather than limited to
-    speakers seen in ingested protocols."""
+    """Fetch the MdBs of each legislative period in ``wahlperioden`` from DIP
+    /person and upsert one is_mdb=1 row per person, optionally enriched with
+    abgeordnetenwatch biographical data. Makes the Abgeordnete list complete
+    rather than limited to speakers seen in ingested protocols.
+
+    A person listed in several periods is one row whose ``wahlperiode`` is the
+    JSON list of them, so a WP 18 leaver keeps a roster row and a page while the
+    index of the newest period lists only its members (collect_abgeordnete).
+    ``is_mdb`` stays the roster-source flag (biography authority, ever_mdb); it
+    does not mean "member now"."""
     stats = {"fetched": 0, "mdb": 0, "enriched": 0, "skipped_no_id": 0}
     if store is None:
         return stats
-    persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
-    stats["fetched"] = len(persons)
-    now = pulse_store.utc_now()
-    pulse_store.initialize(store)
-    with store:
+    members: dict[str, dict[str, Any]] = {}
+    for wahlperiode in sorted(set(wahlperioden)):
+        persons = client.list_all("/person", {"f.wahlperiode": wahlperiode})
+        stats["fetched"] += len(persons)
         for person in persons:
             compact = dip.compact_person(person)
-            funktion = compact.get("funktion") or []
-            if not _has_mdb_funktion(funktion):
+            if not _has_mdb_funktion(compact.get("funktion") or []):
                 continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
                 # such row would share one name-party:Unbekannt record.
                 stats["skipped_no_id"] += 1
                 continue
+            member = members.setdefault(str(compact["id"]), {"wahlperioden": set()})
+            member["wahlperioden"].add(wahlperiode)
+            # Periods run oldest first, so the newest period's record names the
+            # person and their Fraktion.
+            member["compact"] = compact
+    now = pulse_store.utc_now()
+    pulse_store.initialize(store)
+    with store:
+        for member in members.values():
+            compact = member["compact"]
+            funktion = compact.get("funktion") or []
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
             fraktion = fraktion_list[0] if fraktion_list else None
@@ -7306,7 +7331,7 @@ def ingest_mdb_roster(
                 occurrence_id=roster_occurrence_id(compact.get("id")),
                 title=compact.get("titel"),
                 function=funktion,
-                wahlperiode=compact.get("wahlperiode"),
+                wahlperiode=json.dumps(sorted(member["wahlperioden"])),
                 profile_url=profile_url,
                 birth_year=birth_year,
                 gender=gender,
@@ -7542,6 +7567,12 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             "bundesland": first("bundesland"),
             "aw_politician_id": first("aw_politician_id"),
             "is_mdb": any(r["is_mdb"] for r in members),
+            # The periods the DIP roster lists this person as an MdB in; who is
+            # a member now is derived from them below.
+            "roster_wahlperioden": sorted({
+                int(number) for r in members if r["is_mdb"]
+                for number in _parse_listish(r["wahlperiode"]) if str(number).isdigit()
+            }),
             "speech_count": len(merged_speeches),
             "total_chars": sum(s["char_count"] for s in merged_speeches),
             "speeches": merged_speeches,
@@ -7557,6 +7588,12 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             for r in members:
                 for key in registry.mp_keys(r):
                     lookup[key] = cid
+
+    # "Current MdB" is membership in the newest period the roster lists, not
+    # is_mdb, which every roster row of WP 18 onward carries.
+    newest = max((number for mp in mps for number in mp["roster_wahlperioden"]), default=None)
+    for mp in mps:
+        mp["current_mdb"] = newest is not None and newest in mp["roster_wahlperioden"]
 
     key_owners = {}
     for row in rows:
@@ -7734,10 +7771,34 @@ def render_abgeordnete_index(
     publication_domains: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
-    # Only actual MdBs are listed. People who merely appear as speakers
-    # (ministers, Bundesrat guests) still get a profile page - see
+    # Only members of the newest roster period are listed; earlier members of
+    # WP 18 onward follow in their own table. People who merely appear as
+    # speakers (ministers, Bundesrat guests) still get a profile page - see
     # write_abgeordnete_pages - they just do not clutter the roster.
-    listed = [mp for mp in mps if mp.get("is_mdb")]
+    listed = [mp for mp in mps if mp.get("current_mdb")]
+    former = sorted(
+        (mp for mp in mps if mp.get("is_mdb") and not mp.get("current_mdb")),
+        key=lambda mp: (str(mp.get("name") or "").casefold(), mp["id"]),
+    )
+    former_rows = "".join(
+        f"""
+            <tr data-former-mp-row>
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(mp.get('party') or '—')}</td>
+              <td>{pulse_html.esc(', '.join(str(number) for number in mp.get('roster_wahlperioden') or []))}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        for mp in former
+    )
+    former_section = (
+        f'<details class="former-mps"><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
+        f"({pulse_html.format_int(len(former))})</summary>"
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion (zuletzt)</th><th>Wahlperioden</th>'
+        f'<th class="num">Reden</th></tr></thead><tbody>{former_rows}</tbody></table></details>'
+        if former
+        else ""
+    )
     parties = sorted({mp["party"] for mp in listed if mp.get("party")})
     party_chips = "".join(
         f'<button class="party-chip" type="button" data-party-filter="{pulse_html.esc(party)}">{pulse_html.esc(party)}</button>'
@@ -7804,6 +7865,7 @@ def render_abgeordnete_index(
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
     </div>
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
+    {former_section}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
@@ -8027,7 +8089,7 @@ def write_abgeordnete_pages(
     _write_new_file(abg_dir / "index.html", render_abgeordnete_index(mps, features, publication_domains))
     data_path = output_dir / "data" / "abgeordnete.json"
     data_path.write_text(json.dumps(mps, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    listed = sum(1 for mp in mps if mp.get("is_mdb"))
+    listed = sum(1 for mp in mps if mp.get("current_mdb"))
     return {"count": listed, "detail_count": len(detail_mps), "index_path": abg_dir / "index.html"}
 
 
@@ -11527,8 +11589,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--roster-wahlperiode",
         type=int,
-        default=21,
-        help="Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages (default 21).",
+        action="append",
+        default=None,
+        help=(
+            "Legislative period whose full MdB roster is fetched from DIP /person for the Abgeordnete pages "
+            f"(repeatable; default every period from {V1_FIRST_WAHLPERIODE} to the catalog's newest). "
+            "The Abgeordnete index lists the members of the newest one."
+        ),
     )
     parser.add_argument(
         "--protocol-wahlperiode",
@@ -12213,11 +12280,13 @@ def main() -> int:
             if not args.no_persist:
                 refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
 
+                roster_wahlperioden = roster_periods(args, protocols)
+
                 def ingest_roster(staged: sqlite3.Connection) -> None:
-                    stats = ingest_mdb_roster(client, staged, wahlperiode=args.roster_wahlperiode, profile_resolver=profile_resolver)
+                    stats = ingest_mdb_roster(client, staged, wahlperioden=roster_wahlperioden, profile_resolver=profile_resolver)
                     print(
                         f"roster: {stats['mdb']} MdBs of {stats['fetched']} persons "
-                        f"(WP{args.roster_wahlperiode}), {stats['enriched']} enriched",
+                        f"(WP {', '.join(str(n) for n in roster_wahlperioden)}), {stats['enriched']} enriched",
                         file=sys.stderr,
                     )
 
