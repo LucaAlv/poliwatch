@@ -534,6 +534,8 @@ VOTE_RESULT_BADGE_CSS = """
     .vote-result-derived.vote-result-accepted { color:#0f766e; }
     .vote-result-derived.vote-result-rejected { color:#b91c1c; }
     .vote-result-note { margin-left:4px; font-weight:500; }
+    /* No result: plain muted text, spaced off the title like the pill. */
+    .vote-no-result { margin-left:8px; color:var(--muted); font-size:12px; font-weight:500; vertical-align:middle; }
     /* Only the archive row turns dark; the dossier .vote-panel stays light. */
     :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
     :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
@@ -810,7 +812,8 @@ def global_header_styles() -> str:
       .session-summary-note, .ranking-empty,
       .week-card h3, .week-label, .week-note, .week-sub,
       .week-metric span, .week-metric-foot em, .week-trace em,
-      .radar-siblings, .radar-trace, .radar-legend, .radar-share small
+      .radar-siblings, .radar-trace, .radar-legend, .radar-share small,
+      .vote-context-head, .vote-context-gap, .vote-abweichler-none
     ) {
       color:var(--muted) !important;
     }

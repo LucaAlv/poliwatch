@@ -38,7 +38,7 @@ def render_result_badge(vote: dict[str, Any]) -> str:
                   if vote.get("procedure_type") == "constitutional_amendment"
                   else "Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
                   if vote.get("procedure_type") else "Kein Ergebnis verfügbar")
-        return f'<span class="vote-state-note">{html.esc(reason)}</span>'
+        return f'<span class="vote-no-result">{html.esc(reason)}</span>'
     if vote.get("inverted"):
         label = "Antrag: " + label
     if result_source == "official":

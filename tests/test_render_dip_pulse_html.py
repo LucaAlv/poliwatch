@@ -126,6 +126,15 @@ class DossierLayoutTests(unittest.TestCase):
         markup = pulse_html.render_html(self.report)
         self.assertIn(".vote-result-accepted { background:#0f766e; }", markup)
         self.assertIn(".vote-result-rejected { background:#b91c1c; }", markup)
+        self.assertIn(".vote-no-result { margin-left:8px;", markup)
+
+    def test_dark_mode_keeps_vote_gap_lines_muted(self) -> None:
+        # The dark theme forces every <p> to --ink; these muted vote lines must
+        # be listed in the later --muted override or they lose their dimming.
+        markup = pulse_html.render_html(self.report)
+        muted_block = re.search(r':root\[data-theme="dark"\] :is\(\s*\.muted,.*?\)\s*\{', markup, re.S).group(0)
+        for selector in (".vote-context-head", ".vote-context-gap", ".vote-abweichler-none"):
+            self.assertIn(selector, muted_block)
 
     def test_footer_links_to_the_daten_page_between_abgeordnete_and_quellen(self) -> None:
         # Same relative-path depth as its neighbours (dossiers live one level

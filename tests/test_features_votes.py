@@ -136,6 +136,12 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         vote.pop("result_source", None)
         self.assertNotIn("vote-result", render_vote_summary({"votes": [vote]}))
 
+    # Value: protects=the no-result note is spaced off the panel title; fails_when=the note loses its styled class; why_new=it ran into the title; seam=none
+    def test_no_result_note_carries_its_spacing_class(self) -> None:
+        vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
+        vote.pop("result_raw", None)
+        self.assertIn('<span class="vote-no-result">Kein Ergebnis verfügbar</span>', render_vote_summary({"votes": [vote]}))
+
     def test_drucksache_renders_as_a_link_when_a_source_url_is_known(self) -> None:
         item = {
             "votes": [_vote(document_numbers=["21/6561"])],
