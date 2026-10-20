@@ -16,7 +16,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Done in B4 except the AI sentence for votes without a DIP abstract, which waits for "Deterministic validators". Item 2 (the topic filter) came with B3.
+4. "Vote reading misses half the inverted votes and never stores it" (P1, found 2026-10-20), then the rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". B4 did the DIP abstract, the Abweichler and the committee; the deterministic fallbacks for votes without an abstract are open, the AI sentence is deferred. Item 2 (the topic filter) came with B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -882,7 +882,10 @@ Done when the chart and the recipe give the same numbers on the same release, an
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
-1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). **Still open:** a labelled AI sentence for the votes DIP gives no abstract (64 of 217 on the reference store; measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153 and D11's "about 153" holds), under the validators item. Those panels say "Keine Beschreibung in DIP".
+1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). 64 of 217 votes on the reference store have none (measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153); those panels say "Keine Beschreibung in DIP". **Still open** for them: the two deterministic layers below. The labelled AI sentence under the validators item is deferred (decided 2026-10-20).
+   - **Lead sentence from facts we already hold**, in the pattern of the bundestag.de Textarchiv: date, what was voted on (Gesetzentwurf / Beschlussempfehlung zu Antrag X), result with tally, committee.
+   - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free.
+   - **Link the bundestag.de "Debatte" text, never copy it.** It is editorial content of the Internetredaktion, private use only under their Impressum (215 of 217 votes have one). The vote page's `showItContainer_<articleId>_…` gives the article id exactly. One article covers up to 9 votes and its section headings can name the wrong Antrag (vote 1005), so match a vote to its section by Drucksache number. Consider adding these texts to the ADR 0003 consent e-mail (question 5).
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
 3. ~~The named Abweichler per Fraktion on the vote panel.~~ Done in B4 (`derive.vote_abweichler`; 632 Abweichler in 95 of 217 votes; archive rows carry the count where every group's Einzelstimmen are complete).
 4. ~~The responsible committee, from the Beschlussempfehlung.~~ Done in B4: "Beschlussempfehlung des <Ausschuss> (Drucksache …)" on 190 of 217 panels, recipe `r6-ausschuss`. Mitberatende committees are the follow-up "Mitberatende Ausschüsse on the vote panel".
@@ -891,11 +894,28 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong.
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. That item shipped, but the inversion it detects is incomplete and never reaches the page: see "Vote reading misses half the inverted votes and never stores it". Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Deterministic validators (the AI fallback in 1, the only open part)
+**Depends on:** Vote reading misses half the inverted votes and never stores it; deterministic validators (only for the deferred AI fallback in 1)
+
+### Vote reading misses half the inverted votes and never stores it
+
+**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
+1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
+2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
+3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
+
+Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
+
+**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
+
+**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
 
 ### Mitberatende Ausschüsse on the vote panel
 
@@ -938,21 +958,6 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Priority:** P3
 **Depends on:** B3
 
-### Politikfelder: harden the Vorgang fetch and the repersist guard
-
-**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
-1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
-2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
-3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
-4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
-5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
-6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
-
-**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** B3
 
 ### Fill the remaining untagged Tagesordnungspunkte
 
@@ -1164,6 +1169,25 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Politikfelder: harden the Vorgang fetch and the repersist guard
+
+**Completed:** v0.20.1.0 (2026-10-20). Implemented `docs/plans/politikfelder-hardening.md`, including its adversarial additions: partial-response salvage without negative-caching incomplete membership, separate validation/outage accounting, identity-based replay protection and explicit store-read refusal, cache version/read-error preservation, unique corruption backups, complete atomic-save fallback, and 44px coarse-pointer chips. ID fetches also preserve unrelated cached records. Python 3.13: 1,363 tests ran with one skipped; demo publication checks and Chrome DevTools mobile/desktop fixture checks passed. No live cache/store changes or DIP requests.
+
+**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
+1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
+2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
+3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
+4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
+5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
+6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
+
+**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** B3
+
 
 ### A.2 test follow-ups
 

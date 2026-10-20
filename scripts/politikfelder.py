@@ -167,11 +167,23 @@ def empty_cache() -> dict[str, Any]:
     return {"version": 1, "vorgaenge": {}, "dokumentnummern": {}}
 
 
+class CacheLoadError(RuntimeError):
+    pass
+
+
 def load_cache(output_dir: Path | str) -> dict[str, Any]:
-    """The Vorgang cache of a site directory; empty when absent or unreadable."""
+    """Load v1 data, preserving corrupt content; refuse incompatible or unreadable files."""
     path = cache_path(output_dir)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise TypeError("cache must be an object")
+        version = data.get("version", 1)
+        if type(version) is not int or version != 1:
+            raise CacheLoadError(
+                f"Unsupported Vorgang cache version {version!r} at {path}. "
+                "Fix: use compatible code or restore a version 1 cache; the file is untouched"
+            )
         vorgaenge = data["vorgaenge"]
         dokumentnummern = data["dokumentnummern"]
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
@@ -182,20 +194,28 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
             file=sys.stderr,
         )
         return empty_cache()
-    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
-        # Keep a file with bad content for inspection, out of the published tree (the next
-        # online build would overwrite it); a file that could not be read at all may be
-        # fine and stays where it is.
+    except OSError as exc:
+        raise CacheLoadError(
+            f"Cannot read Vorgang cache {path}: {exc}. "
+            "Fix: restore read access or restore the cache; the file is untouched"
+        ) from exc
+    except (ValueError, KeyError, TypeError, RecursionError) as exc:
         note = "left in place"
-        if not isinstance(exc, OSError):
-            for kept in (registry.private_dir(path) / (path.name + ".corrupt"), path.with_name(path.name + ".corrupt")):
-                try:
-                    kept.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    path.replace(kept)
-                    note = f"moved to {kept}"
-                    break
-                except OSError:
-                    continue
+        for directory in (registry.private_dir(path), path.parent):
+            kept = None
+            try:
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
+                    kept = Path(handle.name)
+                path.replace(kept)
+                note = f"moved to {kept}"
+                break
+            except OSError:
+                if kept is not None:
+                    try:
+                        kept.unlink(missing_ok=True)
+                    except OSError:
+                        pass
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -204,11 +224,12 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         return empty_cache()
     # A record or number list of the wrong shape is dropped, not trusted: it counts as a cache miss.
     vorgaenge = {
-        str(k): v
+        str(k): {**v, "sachgebiet": [] if v.get("sachgebiet") is None else v["sachgebiet"]}
         for k, v in vorgaenge.items()
         if isinstance(v, dict)
-        and isinstance(v.get("sachgebiet", []), list)
-        and all(isinstance(label, str) for label in v.get("sachgebiet", []))
+        and (v.get("sachgebiet") is None or (
+            isinstance(v["sachgebiet"], list) and all(isinstance(label, str) for label in v["sachgebiet"])
+        ))
     }
     # Keys in the canonical form the lookups use ("21/06561" is "21/6561"); a cache
     # written before numbers were canonicalised keeps its answers, and two spellings
@@ -260,28 +281,30 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
                 pass  # another build's save took it first
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     for staging in candidates:
+        temporary = None
         try:
-            handle = tempfile.NamedTemporaryFile(
+            with tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
-            )
-            break
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+                try:
+                    temporary.chmod(0o644)  # the published cache is world-readable
+                except OSError:
+                    pass
+            temporary.replace(path)
+            return
         except OSError:
             if staging == candidates[-1]:
                 raise
-    with handle:
-        temporary = Path(handle.name)
-        try:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            try:
-                temporary.chmod(0o644)  # NamedTemporaryFile creates 0600; the site files are world-readable
-            except OSError:
-                pass  # a filesystem that rejects chmod keeps the default mode
-            temporary.replace(path)
-        except BaseException:
-            temporary.unlink(missing_ok=True)
-            raise
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def fields_for_sachgebiete(sachgebiete: Iterable[Any]) -> list[str]:

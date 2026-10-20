@@ -473,7 +473,8 @@ class CacheFileTests(unittest.TestCase):
                 self.assertEqual(pf.load_cache(tmp), pf.empty_cache())
             self.assertFalse(path.exists())
             # Kept for inspection in the private directory, not in the published data/.
-            self.assertEqual((tmp.parent / ".site.private" / (path.name + ".corrupt")).read_text(encoding="utf-8"), "{broken")
+            kept, = (tmp.parent / ".site.private").glob(path.name + ".*.corrupt")
+            self.assertEqual(kept.read_text(encoding="utf-8"), "{broken")
             self.assertEqual(sorted(p.name for p in path.parent.iterdir()), [])
 
     def test_a_record_with_a_non_list_sachgebiet_is_dropped_and_the_saved_file_is_readable(self) -> None:
@@ -587,6 +588,108 @@ class CacheFileTests(unittest.TestCase):
             site = Path(tmp) / "site"
             pf.save_cache(site, cache)
             self.assertEqual(pf.load_cache(site), cache)
+
+    def test_versions_are_checked_before_v1_fields_without_touching_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            path = pf.cache_path(site)
+            path.parent.mkdir(parents=True)
+            for version in (2, 0, -1, True, False, "1", None, 1.0, [], {}):
+                with self.subTest(version=version):
+                    original = json.dumps({"version": version, "records": {}}).encode()
+                    path.write_bytes(original)
+                    with self.assertRaisesRegex(pf.CacheLoadError, "Unsupported.*compatible code.*version 1"):
+                        pf.load_cache(site)
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(list(Path(tmp).rglob("*.corrupt")), [])
+            for versioned in (False, True):
+                cache = cache_of({"1": vorgang("Recht")})
+                if not versioned:
+                    del cache["version"]
+                path.write_text(json.dumps(cache), encoding="utf-8")
+                self.assertEqual(pf.load_cache(site), cache_of({"1": vorgang("Recht")}))
+
+    def test_read_errors_refuse_and_null_sachgebiet_retains_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            records = {"null": {"sachgebiet": None, "abstract": "keep"}, "missing": {"vorgangstyp": "Antrag"}}
+            records.update({str(i): {"sachgebiet": value} for i, value in enumerate((False, "", {}, 0, [1]))})
+            pf.save_cache(site, cache_of(records))
+            path = pf.cache_path(site)
+            original = path.read_bytes()
+            for failure in (PermissionError("denied"), OSError("read failure")):
+                with mock.patch.object(Path, "read_text", side_effect=failure):
+                    with self.assertRaisesRegex(pf.CacheLoadError, "Cannot read.*restore read access"):
+                        pf.load_cache(site)
+                self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(pf.load_cache(site)["vorgaenge"], {
+                "null": {"sachgebiet": [], "abstract": "keep"}, "missing": {"sachgebiet": [], "vorgangstyp": "Antrag"},
+            })
+
+    def test_repeated_corruption_keeps_unique_backups_and_private_failure_falls_back(self) -> None:
+        for fallback in (False, True):
+            with self.subTest(fallback=fallback), tempfile.TemporaryDirectory() as tmp:
+                site = Path(tmp) / "site"
+                path = pf.cache_path(site)
+                path.parent.mkdir(parents=True)
+                private = Path(tmp) / ".site.private"
+                if fallback:
+                    private.write_text("blocked", encoding="utf-8")
+                err = io.StringIO()
+                for text in ("{broken one", "{broken two"):
+                    path.write_text(text, encoding="utf-8")
+                    with contextlib.redirect_stderr(err):
+                        self.assertEqual(pf.load_cache(site), pf.empty_cache())
+                kept = list((path.parent if fallback else private).glob(path.name + ".*.corrupt"))
+                self.assertEqual({p.read_text(encoding="utf-8") for p in kept}, {"{broken one", "{broken two"})
+                for backup in kept:
+                    self.assertIn(str(backup), err.getvalue())
+
+    def test_complete_atomic_save_retries_locally_and_double_failure_preserves_old_cache(self) -> None:
+        for fail_at in ("replace", "fsync", "write", "flush"):
+            for both_fail in (False, True):
+                with self.subTest(fail_at=fail_at, both_fail=both_fail), tempfile.TemporaryDirectory() as tmp:
+                    site = Path(tmp) / "site"
+                    pf.save_cache(site, cache_of({"old": vorgang("Recht")}))
+                    path = pf.cache_path(site)
+                    original = path.read_bytes()
+                    attempts = []
+                    real_replace, real_fsync, real_temp = Path.replace, pf.os.fsync, pf.tempfile.NamedTemporaryFile
+
+                    def replace(temporary, target):
+                        attempts.append(temporary.parent)
+                        if both_fail or temporary.parent.name.endswith(".private"):
+                            raise OSError("rename failed")
+                        return real_replace(temporary, target)
+
+                    def fsync(fd):
+                        attempts.append(fd)
+                        if both_fail or len(attempts) == 1:
+                            raise OSError("fsync failed")
+                        return real_fsync(fd)
+
+                    def make_temp(*args, **kwargs):
+                        handle = real_temp(*args, **kwargs)
+                        attempts.append(kwargs["dir"])
+                        if both_fail or len(attempts) == 1:
+                            setattr(handle, fail_at, mock.Mock(side_effect=OSError(f"{fail_at} failed")))
+                        return handle
+
+                    patch = (mock.patch.object(Path, "replace", replace) if fail_at == "replace" else
+                             mock.patch.object(pf.os, "fsync", fsync) if fail_at == "fsync" else
+                             mock.patch.object(pf.tempfile, "NamedTemporaryFile", make_temp))
+                    with patch:
+                        if both_fail:
+                            with self.assertRaises(OSError):
+                                pf.save_cache(site, cache_of({"new": vorgang("Verkehr")}))
+                        else:
+                            pf.save_cache(site, cache_of({"new": vorgang("Verkehr")}))
+                    self.assertEqual(len(attempts), 2)
+                    self.assertEqual(list(Path(tmp).rglob("*.tmp")), [])
+                    if both_fail:
+                        self.assertEqual(path.read_bytes(), original)
+                    else:
+                        self.assertEqual(set(pf.load_cache(site)["vorgaenge"]), {"new"})
 
 
 class FakeClient:
@@ -802,8 +905,9 @@ class FetchTests(unittest.TestCase):
         self.enterContext(mock.patch.object(dip, "VORGANG_BATCH", 1))
         stats, saved, err = self.run_refresh(client, pf.empty_cache())
         self.assertEqual(sorted(saved["vorgaenge"]), ["c"])
-        self.assertNotIn("21/7", saved["dokumentnummern"])
-        self.assertEqual((stats["vorgaenge_failed"], stats["nummern_failed"]), (1, 1))
+        self.assertEqual(saved["dokumentnummern"]["21/7"], ["b"])
+        self.assertEqual((stats["vorgaenge_failed"], stats["nummern_failed"], stats["shape_errors"]), (1, 0, 2))
+        self.assertIn("b", pf.fetch_targets([self.entries[0]["report"]], saved)[0])
         self.assertIn("unexpected sachgebiet", err)
 
     # Value: protects=D12: the cache keeps a Vorgang's titel, the label of its "Worum es geht" block; fails_when=vorgang_cache_record drops titel, so blocks of vote-only Vorgänge have no name; why_new=the record kept no title before B4; seam=none
@@ -829,6 +933,114 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(pf.fetch_targets([report], cache), (["a"], []))
         cache["vorgaenge"]["a"] = complete
         self.assertEqual(pf.fetch_targets([report], cache), ([], []))
+
+    def test_mixed_batch_keeps_99_records_counts_results_and_continues(self) -> None:
+        ids = [str(i) for i in range(101)]
+        self.entries = [{"report": {"agenda_items": [
+            item(i, positions=(position(key),)) for i, key in enumerate(ids, 1)
+        ] + [item(102, numbers=("21/7",))]}}]
+        client = FakeClient({key: raw("Recht") for key in ids} | {"0": {"sachgebiet": False}}, {"21/7": ["1", "0"]})
+        stats, saved, err = self.run_refresh(client, pf.empty_cache())
+        self.assertEqual(len(saved["vorgaenge"]), 100)
+        self.assertEqual((stats["vorgaenge"], stats["vorgaenge_failed"], stats["shape_errors"]), (100, 1, 2))
+        self.assertEqual(saved["dokumentnummern"], {"21/7": ["1", "0"]})
+        self.assertEqual(pf.fetch_targets([self.entries[0]["report"]], saved), (["0"], []))
+        self.assertIn("Vorgang validation", err)
+
+    def test_shape_errors_do_not_trip_either_breaker_and_reset_outage_streaks(self) -> None:
+        self.enterContext(mock.patch.object(dip, "VORGANG_BATCH", 1))
+        for numbered in (False, True):
+            for malformed_envelope in (False, True):
+                with self.subTest(numbered=numbered, envelope=malformed_envelope):
+                    self.entries = [{"report": {"agenda_items": [
+                        item(i, numbers=(f"21/{i}",)) if numbered else item(i, positions=(position(str(i)),))
+                        for i in range(1, 16)
+                    ]}}]
+                    calls = []
+
+                    def answer(path, params, **kwargs):
+                        calls.append(params)
+                        n = len(calls)
+                        if n < 5 or 5 < n < 10:
+                            raise dip.DipError("outage")
+                        if malformed_envelope:
+                            raise dip.DipShapeError("bad envelope")
+                        return [{"id": str(n), "sachgebiet": False}]
+
+                    client = mock.Mock(list_all=mock.Mock(side_effect=answer))
+                    stats, saved, err = self.run_refresh(client, pf.empty_cache())
+                    self.assertEqual(len(calls), 15)
+                    self.assertEqual(stats["shape_errors"], 7)
+                    self.assertNotIn("outage", err.split("validation:")[-1])
+
+    def test_list_boundary_salvages_pages_without_certifying_membership(self) -> None:
+        good = [{"id": str(i), **raw("Recht")} for i in range(99)]
+        cases = [
+            [{"documents": good + [None]}],
+            [{"documents": good[:50], "cursor": "c1"}, {"documents": [None], "cursor": "c2"},
+             {"documents": good[50:], "cursor": "c3"}, {"documents": []}],
+            [{"documents": good, "cursor": "c1"}, {"documents": None}],
+        ]
+        for pages in cases:
+            with self.subTest(pages=len(pages)):
+                client = dip.ApiClient("unused")
+                with mock.patch.object(dip.ApiClient, "get_json", side_effect=pages), mock.patch.object(dip.time, "sleep") as sleep:
+                    with self.assertRaises(dip.DipShapeError) as caught:
+                        client.list_all("/vorgang", page_pause=0.5)
+                self.assertEqual(len(caught.exception.documents), 99)
+                self.assertTrue(caught.exception.incomplete_membership)
+                self.assertEqual(sleep.call_count, len(pages) - 1)
+                with mock.patch.object(dip.ApiClient, "get_json", side_effect=pages), contextlib.redirect_stderr(io.StringIO()):
+                    records = dip.fetch_vorgaenge(client, [str(i) for i in range(100)])
+                self.assertEqual(set(records), {str(i) for i in range(99)})
+                self.entries = [{"report": {"agenda_items": [item(1, numbers=("21/7",))]}}]
+                with mock.patch.object(dip.ApiClient, "get_json", side_effect=pages):
+                    stats, saved, _ = self.run_refresh(client, pf.empty_cache())
+                self.assertEqual(len(saved["vorgaenge"]), 99)
+                self.assertEqual(saved["dokumentnummern"], {})
+                self.assertEqual(stats["nummern_failed"], 1)
+                self.assertEqual(pf.fetch_targets([self.entries[0]["report"]], saved)[1], ["21/7"])
+
+    # Value: protects=integer DIP IDs are normalized to string cache keys while malformed IDs remain retryable; fails_when=vorgang_id rejects integers or the caller stores them under a non-string key; why_new=the existing case covers only string IDs and malformed values; seam=none; no_claim=live DIP ID types (fixture response)
+    def test_unusable_ids_keep_good_records_and_leave_membership_retryable(self) -> None:
+        for bad in (None, "", "  ", [], {}, True, 1.5):
+            with self.subTest(bad=bad):
+                client = mock.Mock(list_all=mock.Mock(return_value=[{"id": "a", **raw("Recht")}, {"id": bad}]))
+                stats, saved, _ = self.run_refresh(client, pf.empty_cache())
+                self.assertEqual(set(saved["vorgaenge"]), {"a"})
+                self.assertEqual(saved["dokumentnummern"], {})
+                self.assertEqual(pf.fetch_targets([self.entries[0]["report"]], saved), (["b"], ["21/7", "21/8"]))
+        client.list_all.return_value = [{"id": "a", **raw("Recht")}, {}]
+        _, saved, _ = self.run_refresh(client, pf.empty_cache())
+        self.assertEqual(set(saved["vorgaenge"]), {"a"})
+        self.assertEqual(saved["dokumentnummern"], {})
+        client.list_all.return_value = [{"id": 42, **raw("Recht")}]
+        self.assertEqual(set(dip.fetch_vorgaenge(client, ["42"])), {"42"})
+
+    # Value: protects=an ID fetch cannot overwrite a cached record outside its requested IDs; fails_when=unrequested response records enter the returned cache update; why_new=existing cases only return requested or malformed IDs; seam=none; no_claim=live DIP filtering
+    def test_id_fetch_does_not_overwrite_a_cached_unrequested_vorgang(self) -> None:
+        cache = cache_of({"outside": vorgang("Gesundheit")})
+        client = mock.Mock(list_all=mock.Mock(return_value=[
+            {"id": "a", **raw("Recht")}, {"id": "outside", **raw("Verkehr")},
+        ]))
+        cache["vorgaenge"].update(dip.fetch_vorgaenge(client, ["a", "b"]))
+        self.assertEqual(cache["vorgaenge"]["outside"], vorgang("Gesundheit"))
+        self.assertEqual(cache["vorgaenge"]["a"]["sachgebiet"], ["Recht"])
+        self.assertEqual(cache["vorgaenge"]["b"]["sachgebiet"], [])
+
+    def test_documents_must_be_an_explicit_list_and_sachgebiet_only_normalizes_null(self) -> None:
+        client = dip.ApiClient("unused")
+        for page in ({}, {"documents": None}, {"documents": False}, {"documents": ""}, {"documents": {}}, [], None):
+            with self.subTest(page=page), mock.patch.object(dip.ApiClient, "get_json", return_value=page):
+                with self.assertRaises(dip.DipShapeError):
+                    client.list_all("/person")
+        with mock.patch.object(dip.ApiClient, "get_json", return_value={"documents": []}):
+            self.assertEqual(dip.fetch_vorgaenge(client, ["missing"])["missing"]["sachgebiet"], [])
+        for value in (False, "", {}, 0, [1]):
+            with self.subTest(value=value), self.assertRaises(dip.DipShapeError):
+                dip.vorgang_cache_record({"sachgebiet": value})
+        for document in ({}, {"sachgebiet": None}):
+            self.assertEqual(dip.vorgang_cache_record(document)["sachgebiet"], [])
 
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]
@@ -922,6 +1134,9 @@ class PersistTests(unittest.TestCase):
 class RepersistGuardTests(unittest.TestCase):
     """build.require_vorgang_cache_for_tags on a store holding only the two tag tables."""
 
+    def top_id(self, index: Any, protocol: str = "p1") -> str:
+        return pulse_store.stable_key("agenda", pulse_store.clean(protocol), build.source_index(index))
+
     def store(self, tmp: str, tops: list[tuple[str, str]], votes: list[tuple[str, str]]) -> Path:
         path = Path(tmp) / "site" / "data" / "bundestag-pulse.sqlite"
         path.parent.mkdir(parents=True)
@@ -934,22 +1149,125 @@ class RepersistGuardTests(unittest.TestCase):
         conn.close()
         return path
 
-    # Value: protects=the guard refuses only a re-persist that leaves more TOPs or votes not_fetched than the store has: a partial cache over cache-derived tags is refused, Einzelplan-only tags pass with no cache at all; fails_when=the guard goes back to "any non-empty cache passes" (a one-record cache strips the tags) or treats every "top" vote as cache-derived (a valid upgrade is refused); why_new=both were found by the adversarial passes of this ship; seam=none
-    def test_only_a_rise_in_not_fetched_over_cache_derived_tags_is_refused(self) -> None:
+    def test_known_identities_are_protected_and_einzelplan_needs_no_cache(self) -> None:
         einzelplan = item(1, heading="Einzelplan 12 Bundesministerium für Verkehr", votes=[{"id": "v1", "title": "T", "date": "2026-01-01"}])
-        report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [einzelplan]}
+        report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [einzelplan]}
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.store(tmp, [("t1", "einzelplan")], [("v1", "top")])
+            path = self.store(tmp, [(self.top_id(1), "einzelplan")], [("v1", "top")])
             build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [{"report": report}])
 
         positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "title": "T", "date": "2026-01-01"}])
-        report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [positioned]}
+        report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [positioned]}
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.store(tmp, [("t1", "sachgebiet")], [("v1", "top")])
+            path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
             for partial in (None, cache_of({"unrelated": vorgang("Recht")})):
-                with self.assertRaisesRegex(build.DatabaseRebuildError, "would leave 2 TOPs and votes not_fetched where the store has 0"):
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "1 previously known TOPs and 1 previously known votes"):
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
             build.require_vorgang_cache_for_tags(path, cache_of({"V1": vorgang("Recht")}), path.parent.parent, [{"report": report}])
+
+    def test_equal_swaps_and_net_improvements_cannot_hide_a_known_identity_loss(self) -> None:
+        for kind in ("top", "vote"):
+            for recovered in (1, 2):
+                with self.subTest(kind=kind, recovered=recovered), tempfile.TemporaryDirectory() as tmp:
+                    states = [(1, "sachgebiet")] + [(i, "not_fetched") for i in range(2, recovered + 2)]
+                    tops = [(self.top_id(i), source) for i, source in states] if kind == "top" else []
+                    votes = [(f"v{i}", source) for i, source in states] if kind == "vote" else []
+                    path = self.store(tmp, tops, votes)
+                    # String indexes and cleaned protocol/vote IDs match persistence.
+                    report = {"protocol": {"id": " p1 "}, "agenda_items": [
+                        item(f" {i:02} ", positions=(position(f"V{i}"),), votes=[{"id": f" v{i} "}])
+                        for i, _ in states
+                    ]}
+                    cache = cache_of({f"V{i}": vorgang("Recht") for i, _ in states if i != 1})
+                    with self.assertRaisesRegex(build.DatabaseRebuildError, "previously known.*online update") as caught:
+                        build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, [{"report": report}])
+                    self.assertIn(self.top_id(1) if kind == "top" else "v1", str(caught.exception))
+
+    def test_unchanged_degradation_recovery_and_new_missing_entities_pass(self) -> None:
+        report = {"protocol": {"id": "p1"}, "agenda_items": [
+            item(i, positions=(position(f"V{i}"),), votes=[{"id": f"v{i}"}]) for i in range(1, 4)
+        ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.store(tmp, [(self.top_id(1), "untagged"), (self.top_id(2), "not_fetched")],
+                              [("v1", "untagged"), ("v2", "not_fetched")])
+            for records in ({"V1": vorgang()}, {"V1": vorgang(), "V2": vorgang("Recht")}):
+                build.require_vorgang_cache_for_tags(path, cache_of(records), path.parent.parent, [{"report": report}])
+            with self.assertRaises(build.DatabaseRebuildError):
+                build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [{"report": report}])
+
+    def test_empty_vote_ids_are_skipped_and_normalized_duplicates_follow_persistence(self) -> None:
+        for final_missing in (True, False):
+            with self.subTest(final_missing=final_missing), tempfile.TemporaryDirectory() as tmp:
+                path = self.store(tmp, [], [("v1", "untagged"), ("", "untagged"), ("  ", "untagged")])
+                early = {"protocol": {"id": "p2", "datum": "2026-02-01"}, "sitting_votes": [
+                    {"id": " v1 ", "document_numbers": ["21/1" if final_missing else "21/2"]},
+                ]}
+                late = {"protocol": {"id": "p1", "datum": "2026-01-01"}, "sitting_votes": [
+                    {"id": "v1", "document_numbers": ["21/2" if final_missing else "21/1"]},
+                    *[{"id": key, "document_numbers": ["21/2"]} for key in (None, "", "  ")],
+                ]}
+                entries = [{"report": late}, {"report": early}]
+                cache = cache_of({"V1": vorgang("Recht")}, {"21/1": ["V1"]})
+                if final_missing:
+                    with self.assertRaisesRegex(build.DatabaseRebuildError, "0 previously known TOPs and 1 previously known votes"):
+                        build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, entries)
+                else:
+                    build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, entries)
+                # Verify the prospective state against the actual persistence routine.
+                conn = sqlite3.connect(":memory:")
+                self.addCleanup(conn.close)
+                conn.execute("CREATE TABLE vote_politikfelder (vote_id, politikfeld, rank, source)")
+                for entry in sorted(entries, key=build.entry_sort_key, reverse=True):
+                    pulse_store.persist_politikfelder(conn, entry["report"], {}, cache)
+                self.assertEqual(conn.execute("SELECT source FROM vote_politikfelder WHERE vote_id='v1'").fetchone()[0],
+                                 "not_fetched" if final_missing else "drucksache")
+                # Also exercise overwrite order within a single report.
+                late["sitting_votes"] = early["sitting_votes"] + late["sitting_votes"]
+                if final_missing:
+                    with self.assertRaises(build.DatabaseRebuildError):
+                        build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, [{"report": late}])
+                else:
+                    build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, [{"report": late}])
+
+    def test_only_both_absent_legacy_tables_bypass_the_guard(self) -> None:
+        for missing in ("agenda_item_politikfelder", "vote_politikfelder"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
+                with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                    conn.execute(f"DROP TABLE {missing}")
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "incomplete store.*restore"):
+                    build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [])
+                with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                    conn.execute(f"DROP TABLE {'vote_politikfelder' if missing.startswith('agenda') else 'agenda_item_politikfelder'}")
+                    conn.execute("CREATE TABLE schema_migrations (version INTEGER)")
+                    conn.execute("INSERT INTO schema_migrations VALUES (5)")
+                with self.assertRaisesRegex(build.DatabaseRebuildError, "incomplete store.*restore"):
+                    build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [])
+                with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                    conn.execute("UPDATE schema_migrations SET version=4")
+                build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [])
+
+    def test_sqlite_errors_refuse_and_connections_are_closed(self) -> None:
+        for diagnostic in ("database is locked", "database disk image is malformed", "no such table: other", "no such column: source"):
+            with self.subTest(diagnostic=diagnostic), tempfile.TemporaryDirectory() as tmp:
+                path = self.store(tmp, [], [])
+                conn = mock.Mock()
+                conn.execute.side_effect = sqlite3.OperationalError(diagnostic)
+                with mock.patch.object(build.sqlite3, "connect", return_value=conn):
+                    with self.assertRaisesRegex(build.DatabaseRebuildError, diagnostic):
+                        build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [])
+                conn.close.assert_called_once()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.sqlite"
+            path.write_bytes(b"not a database")
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "not a database.*restore"):
+                build.require_vorgang_cache_for_tags(path, None, path.parent, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.store(tmp, [], [])
+            with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                conn.execute("ALTER TABLE vote_politikfelder RENAME COLUMN source TO wrong")
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "no such column: source"):
+                build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [])
 
 
 class SummaryTests(unittest.TestCase):
@@ -1061,6 +1379,8 @@ class RenderTests(unittest.TestCase):
         self.assertIn('data-radar-chip="Verkehr"', front)
         self.assertIn('data-politikfeld-chip="Verkehr"', archive)
         self.assertIn('<li class="pf-tag">Verkehr</li>', archive)
+        self.assertRegex(front, r"@media \(pointer:coarse\)\s*\{[^}]+\}[^}]*\.radar-filter \.chip\s*\{ min-height:44px; \}")
+        self.assertRegex(archive, r"@media \(pointer:coarse\)\s*\{\s*\.chip\s*\{ min-height:44px; \}")
         front_without, archive_without = pages[False]
         self.assertNotIn('data-radar-chip="', front_without)
         self.assertNotIn('data-politikfeld-chip="', archive_without)

@@ -9,6 +9,15 @@ All notable changes to this project will be documented in this file.
 - The "Worum es geht" block names each Vorgang by its DIP title. On the reference cache no context Vorgang had a title before (0 of 234; every label read "<Vorgangstyp> · DIP-Vorgang <id>"); after one online refetch all 234 have one, and DIP returned no empty title. The Vorgangstyp fallback and the refetch of records without a title are gone; a Vorgang with no record yet reads "DIP-Vorgang <id>".
 - The same refetch asked DIP again for the 86 context Vorgänge with an empty abstract: none had gained one, so 153 of 217 votes have a DIP abstract before and after.
 
+## [0.20.1.0] - 2026-10-20
+
+### Fixed
+
+- DIP refreshes retain valid Vorgänge when another record is malformed, leave incomplete lookups retryable, and distinguish validation errors from outages. ID lookups cannot overwrite unrelated cached Vorgänge.
+- Offline replay refuses any previously fetched TOP or vote becoming `not_fetched`, even when another identity recovers. Unreadable, locked, corrupt or incomplete stores stop replay without replacing the database.
+- Builds preserve unsupported or unreadable Vorgang caches and explain how to recover. Corruption backups have unique names, and atomic cache writes retry beside the cache when private staging fails, including during the final rename.
+- Politikfeld and Fraktion filter buttons on the week radar and votes archive have 44px touch targets; desktop sizing stays unchanged.
+
 ## [0.20.0.0] - 2026-10-19
 
 ### Added
