@@ -403,6 +403,17 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertIn("color:var(--blue);", self._css_block(self._page_css(markup), ".attention-toggle"))
         self.assertRegex(markup, r':root\[data-theme="dark"\] :is\([^)]*\.ranking-empty')
 
+    def test_vote_panel_takes_the_dark_surface(self) -> None:
+        # Its light #f7fbfa fill stayed under dark-mode ink, so the fraction
+        # names, committee line and Abweichler notes were light on light.
+        markup = self._render([self._item(1, 1)])
+        self.assertRegex(markup, r':root\[data-theme="dark"\] :is\([^)]*\.vote-panel[,\s][^)]*\)\s*\{\s*background:var\(--panel\)')
+
+    def test_abweichler_names_are_separated_by_semicolons(self) -> None:
+        # Names read "Nachname, Vorname"; a comma between them hides where one ends.
+        css = self._page_css(self._render([self._item(1, 1)]))
+        self.assertIn('.vote-abweichler-list li + li::before { content:"; "; }', css)
+
     def test_runtime_is_guarded_on_pages_without_a_toggle(self) -> None:
         # The script ships on every dossier, including the empty states that
         # render no #attention-list and no toggle; it must return before it

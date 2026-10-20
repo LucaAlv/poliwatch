@@ -777,7 +777,7 @@ def global_header_styles() -> str:
       .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .week-compare, .week-metric
+      .week-compare, .week-metric, .vote-panel
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
@@ -3689,7 +3689,7 @@ def render_html(
     .vote-abweichler-label {{ display:block; color:var(--muted); font-weight:650; }}
     .vote-abweichler-list {{ display:inline; margin:0; padding:0; list-style:none; }}
     .vote-abweichler-list li {{ display:inline; }}
-    .vote-abweichler-list li + li::before {{ content:", "; }}
+    .vote-abweichler-list li + li::before {{ content:"; "; }}
     .vote-abweichler-more {{ display:inline; }}
     .vote-abweichler-more summary {{
       display:inline-flex;
