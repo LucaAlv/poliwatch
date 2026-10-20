@@ -906,21 +906,6 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Priority:** P3
 **Depends on:** B3
 
-### Politikfelder: harden the Vorgang fetch and the repersist guard
-
-**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
-1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
-2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
-3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
-4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
-5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
-6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
-
-**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** B3
 
 ### Fill the remaining untagged Tagesordnungspunkte
 
@@ -1132,6 +1117,25 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Politikfelder: harden the Vorgang fetch and the repersist guard
+
+**Completed:** v0.20.1.0 (2026-10-20). Implemented `docs/plans/politikfelder-hardening.md`, including its adversarial additions: partial-response salvage without negative-caching incomplete membership, separate validation/outage accounting, identity-based replay protection and explicit store-read refusal, cache version/read-error preservation, unique corruption backups, complete atomic-save fallback, and 44px coarse-pointer chips. ID fetches also preserve unrelated cached records. Python 3.13: 1,363 tests ran with one skipped; demo publication checks and Chrome DevTools mobile/desktop fixture checks passed. No live cache/store changes or DIP requests.
+
+**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
+1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
+2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
+3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
+4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
+5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
+6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
+
+**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** B3
+
 
 ### A.2 test follow-ups
 
