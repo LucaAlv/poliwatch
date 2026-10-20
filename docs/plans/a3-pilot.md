@@ -25,7 +25,7 @@ The WP 18 share comes from a biased sample: the A1 picks favour question formats
 
 The A3 TODO recorded that 18/1, 18/100, 19/1 and 19/239 parsed on 2026-09-30. They are refused now, so the refusals arrived with speech rules 3–5. Their audit ([offline-v5-validation.md](offline-v5-validation.md)) covered only the 290 WP 20/21 files.
 
-**What blocks.** In every refusal, a member's turn is nested inside another member's `<rede>` and rule 5 cannot classify it (`unresolved nested contribution at <Rede> marker <n>`). The blocking turn is an ordinary MdB in 33 of the 37 cases, and a presidium or government role in the others. Read from the XML, four kinds:
+**What blocks.** In every refusal, a member's turn is nested inside another member's `<rede>` and rule 5 cannot classify it (`unresolved nested contribution at <Rede> marker <n>`). The blocking turn is an ordinary MdB in 34 of the 37 cases, and a presidium or government role in the other 3. Read from the XML, four kinds:
 1. **A whole Rede printed inside the previous one**, after the chair's "Als nächste Rednerin spricht …" (18/10 Bartz, 18/70 Binder). These are Reden with no `<rede>` of their own, so counting them is a structural decision.
 2. **Zwischenfragen and Zwischenbemerkungen whose grant rule 5 does not read.** The grant reads "Ja.", "Aber ja.", "Immer, ja.", or is a thank-you afterwards ("dass Sie die Zwischenbemerkung zulassen"), often with no question mark (18/50, 18/71, 19/101, 19/104, 19/108, 19/118).
 3. **A minister answering inside such an exchange** (18/50 Hendricks).
