@@ -557,7 +557,7 @@ def vote_linked_vorgang_ids(report: Mapping[str, Any]) -> dict[Any, list[str]]:
     union over all of them, so a vote cited under two TOPs gets one answer."""
     linked_ids: dict[Any, list[str]] = {}
     for item in report.get("agenda_items") or []:
-        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+        for vote in derive.item_votes(item):
             linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
     return linked_ids
 
@@ -637,7 +637,7 @@ def report_politikfelder(
     for item in report.get("agenda_items") or []:
         tagging = tags_for_agenda_item(item, cache, wahlperiode=wahlperiode)
         item_tags.append(tagging)
-        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+        for vote in derive.item_votes(item):
             linked.setdefault(vote_key(vote), []).append(tagging)
     vote_tags: dict[Any, Tagging] = {}
     for _item, vote in derive.iter_report_votes(report):

@@ -251,12 +251,6 @@ class VoteMemberProfileLinkTests(unittest.TestCase):
             markup,
         )
 
-    def test_missing_vote_id_does_not_create_internal_occurrence_link(self) -> None:
-        member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.bundestag.de/abgeordnete/ada-beispiel"}
-        markup = render_vote_summary(self._item(member, vote_id=None), mp_lookup={"other": "other-person"})
-        self.assertIn('<a href="https://www.bundestag.de/abgeordnete/ada-beispiel">Ada Beispiel</a>', markup)
-        self.assertNotIn('../abgeordnete/', markup)
-
     def test_vote_member_key_preserves_persisted_key_for_numeric_and_cleaned_values(self) -> None:
         import derive
         from stable_ids import vote_member_occurrence_id
@@ -642,6 +636,3 @@ class VotePanelAnchorTests(unittest.TestCase):
         report = {"agenda_items": [], "sitting_votes": [vote]}
         self.assertIn('id="vote-7"', render_vote_summary({"votes": [vote]}, report=report))
 
-    def test_a_vote_without_id_keeps_no_anchor(self) -> None:
-        vote = _vote(id=None)
-        self.assertNotIn('id="vote-', render_vote_summary({"index": 1, "votes": [vote]}))

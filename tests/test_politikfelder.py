@@ -918,7 +918,7 @@ class PersistTests(unittest.TestCase):
             conn.execute("INSERT INTO vote_politikfelder VALUES (?, 'Justiz', 9, 'geraten')", (vote_id,))
 
     # Value: protects=an agenda item whose source index is the text "1" or " 02 " still gets its tag rows, and a vote without an id gets none and crashes nothing; fails_when=persist_politikfelder looks agenda_ids up by the raw item["index"] instead of stable_ids.source_index (the #91 merge fix), so those TOPs are silently stored untagged; why_new=every persist test uses integer indexes and votes with ids; seam=none
-    def test_text_indexes_find_their_agenda_item_and_a_vote_without_an_id_gets_no_row(self) -> None:
+    def test_text_indexes_find_their_agenda_item(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         conn = pulse_store.connect(Path(tmp.name) / "store.sqlite")
@@ -928,7 +928,6 @@ class PersistTests(unittest.TestCase):
         report["agenda_items"][0]["api"]["positions"] = [position("v1", "Gesetzgebung")]
         report["agenda_items"][1]["index"] = " 02 "
         report["agenda_items"][1]["api"] = {"positions": [position("v2", "Antrag")]}
-        report["agenda_items"][1]["votes"] = [{"title": "Ohne Kennung", "date": "2024-05-15"}]
         pulse_store.persist_report(conn, report, cache_of({"v1": vorgang("Gesundheit"), "v2": vorgang("Verkehr")}))
         rows = {tuple(r) for r in conn.execute(
             "SELECT a.item_index, politikfeld FROM agenda_item_politikfelder JOIN agenda_items a ON a.id = agenda_item_id")}

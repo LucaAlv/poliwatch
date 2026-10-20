@@ -1221,6 +1221,15 @@ def persist_contributions(
         )
 
 
+def _vote_id(vote: dict[str, Any]) -> str:
+    """A vote's id; report loading refuses a vote without one, so a missing id
+    here is a scraper bug, never data to skip."""
+    vote_id = clean(vote.get("id"))
+    if not vote_id:
+        raise ValueError(f"roll-call vote without an id: {vote.get('title')!r} ({vote.get('date')})")
+    return vote_id
+
+
 def persist_vote(
     conn: sqlite3.Connection,
     vote: dict[str, Any],
@@ -1228,9 +1237,7 @@ def persist_vote(
     protocol_id: str,
     now: str,
 ) -> None:
-    vote_id = clean(vote.get("id"))
-    if not vote_id:
-        return
+    vote_id = _vote_id(vote)
     total = vote.get("total") or {}
     result_raw, result_source = vote.get("result_raw"), vote.get("result_source")
     conn.execute(
@@ -1439,9 +1446,7 @@ def persist_politikfelder(
                 (agenda_item_id, field, rank, source),
             )
     for _item, vote in derive.iter_report_votes(report):
-        vote_id = clean(vote.get("id"))
-        if not vote_id:
-            continue
+        vote_id = _vote_id(vote)
         tags, source = vote_tags[politikfelder.vote_key(vote)]
         conn.execute("DELETE FROM vote_politikfelder WHERE vote_id = ?", (vote_id,))
         for rank, field in enumerate(tags, start=1):
@@ -1473,9 +1478,7 @@ def persist_vote_context(
     records = cache.get("vorgaenge") or {}
     contexts = politikfelder.report_vote_vorgaenge(report, cache)
     for _item, vote in derive.iter_report_votes(report):
-        vote_id = clean(vote.get("id"))
-        if not vote_id:
-            continue
+        vote_id = _vote_id(vote)
         proceeding_ids, state = contexts[politikfelder.vote_key(vote)]
         conn.execute("DELETE FROM vote_proceedings WHERE vote_id = ?", (vote_id,))
         for rank, proceeding_id in enumerate(proceeding_ids, start=1):
@@ -1520,9 +1523,7 @@ def persist_report(
         # from the sitting that disappeared from the refreshed report; linked
         # data is cascaded with them.
         report_vote_pairs = list(derive.iter_report_votes(report))
-        current_vote_ids = {
-            clean(vote.get("id")) for _, vote in report_vote_pairs if clean(vote.get("id"))
-        }
+        current_vote_ids = {_vote_id(vote) for _, vote in report_vote_pairs}
         old_vote_ids = [
             row["id"] for row in conn.execute("SELECT id FROM votes WHERE protocol_id = ?", (protocol_id,))
             if row["id"] not in current_vote_ids
@@ -1548,13 +1549,11 @@ def persist_report(
             agenda_item_id = agenda_ids.get(source_index(item.get("index")))
             if agenda_item_id is None:
                 continue
-            for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
-                vote_id = clean(vote.get("id"))
-                if vote_id:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
-                        (agenda_item_id, vote_id),
-                    )
+            for vote in derive.item_votes(item):
+                conn.execute(
+                    "INSERT OR IGNORE INTO agenda_item_votes(agenda_item_id, vote_id) VALUES (?, ?)",
+                    (agenda_item_id, _vote_id(vote)),
+                )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
         persist_vote_context(conn, report, vorgang_cache, now)
 

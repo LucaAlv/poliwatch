@@ -150,7 +150,7 @@ This file was updated in place:
 
 ## Slice 4: archive → panel landing and closing
 
-- Archive rows link to `#top-N` or `#sitting-votes` (:4305-4309), not to the specific vote. Give the vote's **first** panel on the page (in `iter_report_votes` order) `id="vote-<id>"` and point the archive href at it. 8 of 217 votes render under two TOPs, so later copies get no id. A vote without an id keeps the TOP anchor (D9).
+- Archive rows link to `#top-N` or `#sitting-votes` (:4305-4309), not to the specific vote. Give the vote's **first** panel on the page (in `iter_report_votes` order) `id="vote-<id>"` and point the archive href at it. 8 of 217 votes render under two TOPs, so later copies get no id (D9). _Amended 2026-10-20 (review fixes, Step 2): the id-less fallback is withdrawn; the reference cache holds 0 of 246 votes without an id, and report loading refuses that shape._
 - In TODOS.md:
   - Mark B4 parts 1 (DIP part), 3 and 4 done.
   - Leave the AI fallback as the only open part of B4, with "Depends on: Deterministic validators".
@@ -527,7 +527,7 @@ Each panel gets id="vote-<id>-top-<n>" (sitting-level: vote-<id>-sitzung); archi
 
 State: approved
 Actual answer: A) Id on the first panel only (D9, user answer 2026-10-19)
-Accepted scope: render passes a per-page set of seen vote ids. The first rendering in `iter_report_votes` order gets `id="vote-<id>"`, and later copies get no id. The archive href becomes `page#vote-<id>`. A vote without an id keeps `#top-N` / `#sitting-votes`. Tests: a duplicated vote has exactly one id, the archive href targets it, and an id-less legacy vote keeps the TOP anchor.
+Accepted scope: render passes a per-page set of seen vote ids. The first rendering in `iter_report_votes` order gets `id="vote-<id>"`, and later copies get no id. The archive href becomes `page#vote-<id>`. ~~A vote without an id keeps `#top-N` / `#sitting-votes`.~~ Tests: a duplicated vote has exactly one id and the archive href targets it. _Amended 2026-10-20: "a vote without an id keeps the TOP anchor" is withdrawn, because none exist (0/246) and `require_current_vote_shape` refuses the shape at report loading._
 History: none
 
 ### R8: regression contract for existing behaviour

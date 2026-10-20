@@ -324,21 +324,6 @@ class CollectAbgeordneteTests(unittest.TestCase):
         self.assertNotIn("xlsx_url", vote)
         self.assertEqual(vote["total"], {"yes": 1, "no": 0})
 
-    def test_carry_forward_matches_id_less_legacy_votes_by_title_and_date(self) -> None:
-        # pulse_html.vote_key falls back to "title|date" when a vote has no id
-        # (legacy records predating the roll-call id field); carry-forward must
-        # still find the match through that composite key.
-        previous = {"agenda_items": [{"votes": [{
-            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0},
-            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
-        }]}]}
-        report = {"agenda_items": [{"votes": [{
-            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
-        }]}]}
-        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
-        vote = report["agenda_items"][0]["votes"][0]
-        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
-
     def test_carry_forward_keeps_an_xlsx_link_across_a_cosmetic_title_repunctuation(self) -> None:
         previous = {"agenda_items": [{"votes": [{
             "id": "1007", "date": "2026-06-11", "title": "Bundeswehr-Einsatz (KFOR)", "total": {"yes": 1, "no": 0},
@@ -2010,10 +1995,10 @@ class WeekRadarDataTests(unittest.TestCase):
         entry = self._entry("2026-06-10", "21/82", [
             dict(self._item(1, [("SPD", 100)]), votes=[vote]),
             dict(self._item(2, [("SPD", 100)]), votes=[vote, {"id": "v2", "title": "Zweite", "date": "2026-06-10"}]),
-            dict(self._item(3, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-10"}),
+            dict(self._item(3, [("SPD", 100)]), votes=[{"id": "v3", "title": "Dritte", "date": "2026-06-10"}]),
         ])
         stats = pulse_html.week_stats((2026, 24), [entry])
-        self.assertEqual(stats["vote_count"], 3)  # v1 once, v2, legacy
+        self.assertEqual(stats["vote_count"], 3)  # v1 once, v2, v3
         self.assertEqual(stats["vote_top_count"], 3)
         self.assertEqual(stats["vote_sittings"], [("21/82", Path("plenarprotokoll-21-82.html"), 1, 3)])
 
@@ -2215,7 +2200,7 @@ class WeekTopicRowsTests(unittest.TestCase):
         older = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")])])
         weeks = pulse_html.group_entries_by_week([older])
         index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
-        item = dict(self._item(3, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]), vote={"title": "Legacy"})
+        item = dict(self._item(3, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]), votes=[{"id": "v1", "title": "Namentlich"}])
         undated = self._entry("", "21/99", [item])
         row = pulse_html.topic_row(item, undated, total=10, occurrences=index, dossier_href="protocols/x.html")
         # No week of its own: the sitting cannot be placed in time, so no trace
@@ -2270,12 +2255,12 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
             dict(self._item(4, [("SPD", 100)]), votes=[shared]),
         ])
         thu = self._entry("2026-06-11", "21/83", [
-            dict(self._item(1, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-11"}),
+            dict(self._item(1, [("SPD", 100)]), votes=[{"id": "v-thu", "title": "Donnerstag", "date": "2026-06-11"}]),
             dict(self._item(2, [("SPD", 100)]), votes=[shared]),
         ])
         fri = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
         stats = pulse_html.week_stats((2026, 24), [wed, thu, fri])
-        self.assertEqual(stats["vote_count"], 3)  # v-shared, v-wed, Legacy|2026-06-11
+        self.assertEqual(stats["vote_count"], 3)  # v-shared, v-wed, v-thu
         self.assertEqual(stats["vote_top_count"], 4)
         self.assertEqual(
             stats["vote_sittings"],
@@ -2289,9 +2274,28 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
         unnumbered["page_path"] = Path("plenarprotokoll-21-99.html")
         stats = pulse_html.week_stats((2026, 24), [unnumbered])
         self.assertEqual(stats["vote_sittings"], [("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2, 1)])
-        self.assertEqual(pulse_html.vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
-        self.assertEqual(pulse_html.vote_key({}), "|")
         self.assertEqual(pulse_html.vote_key({"id": 42, "title": "x"}), "42")
+
+
+class LegacyVoteShapeTests(unittest.TestCase):
+    """require_current_vote_shape: a stale report fails loudly, never drops votes."""
+
+    def test_a_singular_vote_or_an_id_less_vote_is_refused_on_every_load(self) -> None:
+        shapes = {
+            "singular": {"index": 1, "vote": {"id": "v1", "title": "Alt"}},
+            "no id": {"index": 1, "votes": [{"title": "Ohne Id", "date": "2026-06-10"}]},
+        }
+        for label, item in shapes.items():
+            for strict in (False, True):
+                with self.subTest(shape=label, strict=strict), tempfile.TemporaryDirectory() as tmp:
+                    data = Path(tmp) / "data"
+                    data.mkdir()
+                    report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                    (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                    with self.assertRaisesRegex(build_dip_pulse_site.CachedReportError, "plenarprotokoll-21-82.json"):
+                        build_dip_pulse_site.load_existing_detail_entries(
+                            Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
+                        )
 
 
 class VotesArchiveTests(unittest.TestCase):
@@ -2313,13 +2317,6 @@ class VotesArchiveTests(unittest.TestCase):
         entry = self._entry("2026-06-10", "21/82", [self._item(1, [shared]), self._item(2, [shared])])
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         self.assertEqual(len(rows), 1)
-
-    def test_collect_skips_an_id_less_vote_like_the_store_does(self) -> None:
-        # persist_votes drops a vote without an id; the archive must agree so
-        # its row count stays equal to SELECT count(*) FROM votes.
-        legacy = {"date": "2026-06-10", "title": "Ohne Id", "total": {"yes": 1, "no": 0}}
-        entry = self._entry("2026-06-10", "21/82", [self._item(1, [legacy])])
-        self.assertEqual(build_dip_pulse_site.collect_votes_archive([entry]), [])
 
     def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
@@ -2508,13 +2505,6 @@ class VotesArchiveTests(unittest.TestCase):
             fragment = row["href"].split("#", 1)[1]
             self.assertEqual(page.count(f'id="{fragment}"'), 1, fragment)
         self.assertEqual(page.count('class="vote-panel" id="vote-'), 2)
-
-    def test_collect_handles_the_legacy_singular_vote_key(self) -> None:
-        vote = {"id": "v-legacy", "date": "2026-06-10", "title": "Legacy"}
-        item = {"index": 1, "vote": vote, "xml_drucksachen": [], "api": {}}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["vote"]["id"], "v-legacy")
 
     def test_collect_ignores_entries_with_no_report(self) -> None:
         rows = build_dip_pulse_site.collect_votes_archive([{"page_path": Path("x.html")}, {"report": None}])

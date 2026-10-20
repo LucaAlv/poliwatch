@@ -1508,7 +1508,7 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             if stats["speech_count"] and sum(stats["party_counts"].values()) < stats["speech_count"]:
                 speakers_incomplete += 1
                 sitting_speakers_complete = False
-            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+            votes = derive.item_votes(item)
             if votes:
                 vote_top_count += 1
                 if first_vote_index is None:
@@ -1556,15 +1556,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
 
 
 def vote_key(vote: dict[str, Any]) -> str:
-    """Identity of a roll-call vote: its id, or (title, date) for legacy records.
+    """Identity of a roll-call vote (``derive.vote_identity``).
 
     Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
     a vote can attach to two agenda items, so both dedupe on this key rather
     than on attachment.
     """
-    if vote.get("id"):
-        return str(vote["id"])
-    return f"{vote.get('title') or ''}|{vote.get('date') or ''}"
+    return derive.vote_identity(vote)
 
 
 WEEK_METRICS = (
@@ -2128,7 +2126,7 @@ def topic_row(
     summary = item.get("llm_summary") or {}
     if not (summary.get("text") and summary.get("source_chunks")):
         summary = None
-    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    votes = derive.item_votes(item)
     tagging = politikfelder.tags_for_agenda_item(
         item,
         vorgang_cache or politikfelder.empty_cache(),

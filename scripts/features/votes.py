@@ -285,10 +285,9 @@ def render_vote_context(vorgang_ids: list[str], state: str, cache: Mapping[str, 
     )
 
 
-def vote_anchor_id(vote: Mapping[str, Any]) -> str | None:
-    """The HTML id of a vote's first panel on its dossier page (D9), or None for a
-    legacy vote without an id, which keeps its TOP anchor."""
-    return f"vote-{vote['id']}" if vote.get("id") is not None else None
+def vote_anchor_id(vote: Mapping[str, Any]) -> str:
+    """The HTML id of a vote's first panel on its dossier page (D9)."""
+    return f"vote-{derive.vote_identity(vote)}"
 
 
 def render_vote_summary(
@@ -313,7 +312,7 @@ def render_vote_summary(
     with ``vorgang_cache``, the same answer persist stores; without it no
     "Worum es geht" block is drawn.
     """
-    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    votes = derive.item_votes(item)
     acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
     status_copy = {
         "not_requested": "Hinweis: Abstimmungsdaten wurden für diese Veröffentlichung nicht abgerufen.",
@@ -351,7 +350,7 @@ def render_vote_summary(
         key = derive.vote_identity(vote)
         anchor = vote_anchor_id(vote)
         first = first_item.get(key, item)
-        if anchor and key not in anchored and (first is item or first is None):
+        if key not in anchored and (first is item or first is None):
             anchored.add(key)
             panel_id = f' id="{html.esc(anchor)}"'
         else:

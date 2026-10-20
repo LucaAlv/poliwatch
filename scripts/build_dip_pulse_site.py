@@ -661,12 +661,6 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
     return None, " ".join(tokens[start:])
 
 
-# Agenda items carry either a list of roll-call votes ("votes") or a single
-# legacy "vote" dict. Normalise both shapes into a list.
-def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
-    return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
-
-
 # Every list of an agenda item that holds speakers: Reden and Beiträge.
 SPEAKER_LISTS = ("xml_speakers", "xml_speakers_first", "xml_contributions")
 
@@ -869,6 +863,24 @@ class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read."""
 
 
+def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> None:
+    """Refuse a report with a TOP's singular ``"vote"`` or a vote without an id.
+
+    Neither occurs in the current cache (0 of 246 votes); a stale report with
+    either fails loudly instead of losing its votes. Raised even on a lenient
+    load, which would otherwise drop the whole sitting with a warning."""
+    for item in report.get("agenda_items") or []:
+        if "vote" in item:
+            raise CachedReportError(
+                f"{report_path}: TOP {item.get('index')} has a singular \"vote\" (a shape from before \"votes\"); "
+                "an online update re-fetches it"
+            )
+    for item in [*(report.get("agenda_items") or []), {"votes": report.get("sitting_votes") or []}]:
+        for vote in derive.item_votes(item):
+            if not isinstance(vote, dict) or vote.get("id") in (None, ""):
+                raise CachedReportError(f"{report_path}: a roll-call vote has no id; an online update re-fetches it")
+
+
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
@@ -902,6 +914,7 @@ def load_existing_detail_entries(
             indexes = [source_index(item.get("index")) for item in items]
             if len(set(indexes)) != len(indexes):
                 raise ValueError("agenda_items repeat a source index")
+            require_current_vote_shape(report, report_path)
             for item in [report, *items]:
                 for key in SPEAKER_LISTS:
                     units = item.get(key) or []
@@ -1690,7 +1703,7 @@ def require_vorgang_cache_for_tags(
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
         missing_tops += sum(source == "not_fetched" for _tags, source in item_tags)
         for _item, vote in derive.iter_report_votes(report):
-            if vote.get("id") is not None and vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
+            if vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
                 missing_votes.add(str(vote["id"]))
     would_miss = missing_tops + len(missing_votes)
     if would_miss > stored:
@@ -1961,11 +1974,8 @@ def reuse_existing_dossier_enrichments(
         # unambiguously (equal top_id when both have one): an index match alone
         # can be another TOP. Nothing is merged into a TOP that has votes.
         top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
-        if votes and not _iter_report_votes(item) and _iter_report_votes(previous) and len(top_ids) <= 1:
-            if previous.get("votes"):
-                item["votes"] = copy.deepcopy(previous["votes"])
-            elif previous.get("vote"):
-                item["vote"] = copy.deepcopy(previous["vote"])
+        if votes and not derive.item_votes(item) and derive.item_votes(previous) and len(top_ids) <= 1:
+            item["votes"] = copy.deepcopy(previous["votes"])
         if not profiles:
             continue
 
@@ -4346,10 +4356,6 @@ def collect_votes_archive(
         sitting_documents = derive.report_drucksachen(report)
         page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
         for item, vote in derive.iter_report_votes(report):
-            # persist_vote skips a vote without an id, so the archive does
-            # too: the row count must equal SELECT count(*) FROM votes.
-            if not vote.get("id"):
-                continue
             key = pulse_html.vote_key(vote)
             if key in rows:
                 continue
@@ -4365,7 +4371,7 @@ def collect_votes_archive(
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
                 "abweichler": _abweichler_count(vote),
-                # The vote's own panel (D9): only votes with an id get a row.
+                # The vote's own panel (D9).
                 "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
             }
     return sorted(

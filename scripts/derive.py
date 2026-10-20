@@ -331,16 +331,22 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
 
 
-def vote_identity(vote: Mapping[str, Any]) -> Any:
-    """A vote's identity within a sitting: its id, or (title, date) for a legacy record."""
-    return str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+def item_votes(item: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The roll-call votes listed under one TOP."""
+    return item.get("votes") or []
+
+
+def vote_identity(vote: Mapping[str, Any]) -> str:
+    """A vote's identity within a sitting: its id. The scraper always sets one,
+    and report loading refuses a vote without it."""
+    return str(vote["id"])
 
 
 def iter_report_votes(report: Mapping[str, Any]):
     """Yield (TOP or None, vote), once per vote identity across a sitting."""
     seen = set()
     for item in report.get("agenda_items") or []:
-        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+        for vote in item_votes(item):
             key = vote_identity(vote)
             if key not in seen:
                 seen.add(key)
