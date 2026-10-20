@@ -57,7 +57,7 @@ class DatenPageTests(unittest.TestCase):
         self.assertNotIn('class="sample-table"', self.html)
         self.assertNotIn("data-table-search", self.html)
 
-    def test_all_five_recipe_titles_present(self) -> None:
+    def test_every_recipe_title_present(self) -> None:
         for recipe in b.RECIPES:
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn(recipe["title"], self.html)

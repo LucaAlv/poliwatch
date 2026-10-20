@@ -93,13 +93,120 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
     return f'<span class="doc-link-list">{"".join(parts)}</span>'
 
 
+def member_name_html(
+    vote: dict[str, Any], member: dict[str, Any], mp_lookup: dict[str, str] | None, mp_prefix: str
+) -> str:
+    """A roll-call member's escaped name, linked to their Personenseite when the
+    occurrence resolves to one, else to their public profile when that URL is
+    allowed, else plain."""
+    name = html.esc(member.get("name"))
+    occurrence_id = derive.vote_member_key(vote.get("id"), member)
+    href = html.mp_page_href({**member, "occurrence_id": occurrence_id}, mp_lookup, mp_prefix)
+    if not href and member.get("profile_url"):
+        try:
+            href = html.source_url(member["profile_url"], "public-profile")
+        except (html.publication.PublicationStateError, ValueError):
+            href = None
+    return f'<a href="{html.esc(href)}">{name}</a>' if href else name
+
+
+ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
+ABWEICHLER_GAP = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
+# Spells out the CONTEXT.md rule: a Ja beside an Enthaltung majority or a tie is no Abweichung.
+ABWEICHLER_NONE = "Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit der eigenen Fraktion oder Gruppe)"
+#: Names shown before the rest of a group's Abweichler fold away (D6).
+ABWEICHLER_INLINE = 10
+
+
+def render_abweichler(
+    vote: dict[str, Any], members: list[dict[str, Any]], mp_lookup: dict[str, str] | None, mp_prefix: str
+) -> str:
+    """The line under a group's tally row naming its Abweichler: the first ten
+    inline, the rest behind a native <details>."""
+    items = [f"<li>{member_name_html(vote, member, mp_lookup, mp_prefix)}</li>" for member in members]
+    inline, rest = items[:ABWEICHLER_INLINE], items[ABWEICHLER_INLINE:]
+    more = (
+        f'<details class="vote-abweichler-more"><summary>alle {len(items)} anzeigen</summary>'
+        f'<ul class="vote-abweichler-list">{"".join(rest)}</ul></details>'
+        if rest
+        else ""
+    )
+    return (
+        '<div class="vote-abweichler">'
+        f'<span class="vote-abweichler-label">{html.esc(ABWEICHLER_HEADING)} ({len(items)}):</span>'
+        f'<ul class="vote-abweichler-list">{"".join(inline)}</ul>{more}'
+        "</div>"
+    )
+
+
+def committee_genitive(name: str) -> str | None:
+    """``des`` + the genitive of a committee's name, as DIP spells it:
+    "Haushaltsausschuss" is "des Haushaltsausschusses", "Auswärtiger
+    Ausschuss" "des Auswärtigen Ausschusses", "Ältestenrat" "des
+    Ältestenrates". The head noun is the first word ending in -ausschuss,
+    -rat or -ium; before it only an ordinal or an -er adjective may stand.
+    Any other shape (a feminine noun, a Fraktion) is None, never a guess."""
+    words = str(name or "").split()
+    for index, word in enumerate(words):
+        lower = word.casefold()
+        if lower.endswith(("ausschuss", "rat")):
+            head = word + "es"
+        elif lower.endswith("ium"):
+            head = word + "s"
+        else:
+            continue
+        before = []
+        for prefix in words[:index]:
+            if prefix.rstrip(".").isdigit() and prefix.endswith("."):
+                before.append(prefix)
+            elif prefix.endswith("er"):
+                before.append(prefix[:-2] + "en")
+            else:
+                return None
+        return " ".join(["des", *before, head, *words[index + 1:]])
+    return None
+
+
+def _join_de(parts: list[str]) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " und " + parts[-1]
+
+
+def render_committee_line(committees: list[dict[str, Any]], item: dict[str, Any]) -> str:
+    """One citation per Beschlussempfehlung among the vote's Drucksachen,
+    "Beschlussempfehlung des <Ausschuss> (Drucksache <link>)". It cites the
+    document and claims no role for this vote (D14), so it stays true for a
+    vote on an Entschließungsantrag that lists the law's Beschlussempfehlung.
+    """
+    if not committees:
+        return '<p class="vote-committee muted">Ausschuss nicht ermittelt</p>'
+    # The Drucksache link comes from the sitting-wide match, then from this
+    # TOP's own sources, which win as they do for the vote's document list.
+    links = {row["number"]: (row["url"], "bundestag-dip") for row in committees if row.get("url")}
+    links.update(document_source_links(item))
+    lines = []
+    for row in committees:
+        genitives = [committee_genitive(name) for name in row["urheber"]]
+        if all(genitives):
+            who = "Beschlussempfehlung " + _join_de(genitives)
+        else:
+            who = "Beschlussempfehlung, Urheber: " + _join_de(row["urheber"])
+        lines.append(f"{html.esc(who)} (Drucksache {render_document_links([row['number']], links)})")
+    return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
+
 
 def render_vote_summary(
     item: dict[str, Any],
     acquisition: dict[str, Any] | None = None,
     mp_lookup: dict[str, str] | None = None,
     mp_prefix: str = "../abgeordnete/",
+    report: dict[str, Any] | None = None,
 ) -> str:
+    """The vote panels of one TOP (or of a sitting's votes under no TOP).
+
+    ``report`` is the sitting the TOP belongs to: the committee line looks a
+    vote's Drucksachen up across all its TOPs (``derive.vote_committees``).
+    Without it, only this TOP's linked Drucksachen are searched.
+    """
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
     acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
     status_copy = {
@@ -129,7 +236,12 @@ def render_vote_summary(
             f'<p>{html.esc(status_copy["partial"])}</p>'
             '</aside>'
         )
+    report = report if report is not None else {"agenda_items": [item]}
     for vote in votes:
+        abweichler = derive.vote_abweichler(vote)
+        # One gap note for the vote when no group has member rows, else one
+        # under each group that is short.
+        no_members = bool(abweichler) and all(group["state"] == "none" for group in abweichler.values())
         fraction_rows = []
         for fraction in derive.merge_fractions(vote.get("fractions")):
             name = fraction["name"]
@@ -146,14 +258,28 @@ def render_vote_summary(
                 if position
                 else ""
             )
+            group = abweichler.get(name)
+            note = ""
+            if group and group["members"]:
+                note = render_abweichler(vote, group["members"], mp_lookup, mp_prefix)
+            elif group and group["state"] != "complete" and not no_members:
+                note = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
             fraction_rows.append(
+                '<div class="vote-fraction-group">'
                 '<div class="vote-fraction-row">'
                 f'<span class="party-dot" style="background:{color}"></span>'
                 f'<strong>{html.esc(name)}</strong>'
                 f'{html.render_vote_stack(counts, fraction["total"])}'
                 f"{pill}"
                 "</div>"
+                f"{note}</div>"
             )
+        abweichler_note = ""
+        if no_members:
+            abweichler_note = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
+        elif abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
+            abweichler_note = f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
+        committee_line = render_committee_line(derive.vote_committees(vote, report), item)
         member_groups: dict[str, list[dict[str, Any]]] = {}
         for member in vote.get("members") or []:
             member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
@@ -162,18 +288,7 @@ def render_vote_summary(
             rows = []
             for member in sorted(member_groups[faction], key=lambda value: str(value.get("name") or "")):
                 vote_key = str(member.get("vote") or "")
-                name = html.esc(member.get("name"))
-                occurrence_id = derive.vote_member_key(vote.get("id"), member)
-                internal_href = html.mp_page_href(
-                    {**member, "occurrence_id": occurrence_id}, mp_lookup, mp_prefix
-                )
-                href = internal_href
-                if not href and member.get("profile_url"):
-                    try:
-                        href = html.source_url(member["profile_url"], "public-profile")
-                    except (html.publication.PublicationStateError, ValueError):
-                        href = None
-                name_html = f'<a href="{html.esc(href)}">{name}</a>' if href else name
+                name_html = member_name_html(vote, member, mp_lookup, mp_prefix)
                 rows.append(
                     '<li class="member-vote-row">'
                     f"<strong>{name_html}</strong>"
@@ -215,7 +330,7 @@ def render_vote_summary(
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>'
+            f'{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
@@ -227,7 +342,11 @@ def render_vote_summary(
 class VotesComponent(BaseComponent):
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
-        return [render_vote_summary(ctx["item"], acquisition, ctx.get("mp_lookup"), ctx.get("mp_prefix", "../abgeordnete/"))]
+        return [
+            render_vote_summary(
+                ctx["item"], acquisition, ctx.get("mp_lookup"), ctx.get("mp_prefix", "../abgeordnete/"), report=report
+            )
+        ]
 
     def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
         selection = ctx.get("selection")

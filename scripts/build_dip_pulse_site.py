@@ -26,7 +26,7 @@
 #      the integrity checks (schema and writes live in ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, its CSVs and five executed SQL
+#   6. Export a distribution copy of the store, its CSVs and six executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -2345,7 +2345,7 @@ def write_report_and_page(
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
 # (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
-# CSV.gz files, and five SQL "recipes" executed at build time so a visitor can
+# CSV.gz files, and six SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
 # recipe rows, the schema cards - is read from one manifest (datenstand.json)
@@ -2512,7 +2512,7 @@ REPRESENTATIVE_SQL = (
     ")\n"
 )
 
-# The five recipes executed at build time against the distribution copy and
+# The six recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
 # addendum: R1/R3 join mp_canonical and group by the canonical id, so their
 # counts equal the pooled counts on the MP profile pages).
@@ -2659,6 +2659,33 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
         "depends_on": None,
         "caveat": None,
+    },
+    {
+        # The same Beschlussempfehlung urheber the vote panels cite
+        # (derive.vote_committees), joined by the vote's Drucksache numbers.
+        "id": "r6-ausschuss",
+        "title": "Aus welchen Ausschüssen kommen die Beschlussempfehlungen namentlicher Abstimmungen?",
+        "sql": (
+            "SELECT u.value AS beschlussempfehlung_urheber,\n"
+            "       COUNT(DISTINCT vd.vote_id) AS abstimmungen\n"
+            "FROM vote_documents vd\n"
+            "JOIN documents d ON d.id = vd.document_id\n"
+            "JOIN json_each(d.origin_json) u\n"
+            "WHERE d.document_type LIKE 'Beschlussempfehlung%'\n"
+            "GROUP BY u.value\n"
+            "ORDER BY abstimmungen DESC, beschlussempfehlung_urheber\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "beschlussempfehlung_urheber", "align": "text"},
+            {"name": "abstimmungen", "align": "num"},
+        ),
+        "depends_on": "votes",
+        "caveat": (
+            "Zählt die Abstimmungen, unter deren Drucksachen eine Beschlussempfehlung dieses Ausschusses ist "
+            "(Urheber laut DIP). Das zitiert das Dokument und sagt nicht, dass der Ausschuss federführend war: "
+            "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz."
+        ),
     },
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
@@ -3558,7 +3585,7 @@ def render_daten_recipes(
 
 # Rendered without JS as hidden ("no dead button shows without JS") and
 # revealed once this script has wired up a click handler for it. One script
-# tag for all five recipe buttons, next to the markup it controls rather than
+# tag for all six recipe buttons, next to the markup it controls rather than
 # folded into page_scripts (shared by every page, most of which have none).
 def recipe_copy_runtime_script() -> str:
     return """
@@ -3934,7 +3961,7 @@ def render_database_page(
       <section class="rule-section">
         <span class="eyebrow">Fünf Abfragen</span>
         <h2>Rezepte</h2>
-        <p class="lede">Diese fünf SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
+        <p class="lede">Diese sechs SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
         <div class="recipes">{recipes_html}</div>
       </section>
       <section class="rule-section loslegen" id="loslegen">
@@ -4095,7 +4122,7 @@ def render_landing_page(
     data = ""
     if database_page_href:
         meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
-        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.</p>{meta}</li>'
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und sechs geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen, Abstimmungen und Ausschüssen.</p>{meta}</li>'
 
     return f"""<!doctype html>
 <html lang="de">

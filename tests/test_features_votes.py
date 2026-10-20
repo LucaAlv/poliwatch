@@ -263,3 +263,259 @@ class VoteMemberProfileLinkTests(unittest.TestCase):
         import derive
 
         self.assertIsNone(derive.vote_member_key("  ", {"name": "Ada Beispiel", "faction": "SPD"}))
+
+
+def _members(faction: str, yes: list[str], no: list[str]) -> list[dict[str, str]]:
+    return [{"name": name, "faction": faction, "vote": "yes"} for name in yes] + [
+        {"name": name, "faction": faction, "vote": "no"} for name in no
+    ]
+
+
+def _roll_call(members: list[dict[str, str]], **overrides: object) -> dict[str, object]:
+    """A vote whose fraction counts are exactly its member rows."""
+    tallies: dict[str, dict[str, int]] = {}
+    for member in members:
+        counts = tallies.setdefault(member["faction"], {"yes": 0, "no": 0, "abstain": 0, "absent": 0})
+        counts[member["vote"]] += 1
+    fractions = [{"name": name, "counts": counts, "total": sum(counts.values())} for name, counts in tallies.items()]
+    return _vote(fractions=fractions, members=members, **overrides)
+
+
+ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
+GAP_NOTE = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
+NONE_NOTE = "Keine Abweichler"
+
+
+class AbweichlerPanelTests(unittest.TestCase):
+    def abweichler_block(self, markup: str) -> str:
+        start = markup.index('<div class="vote-abweichler">')
+        return markup[start:markup.index("</div>", start)]
+
+    def test_one_abweichler_is_named_under_its_group_with_no_fold(self) -> None:
+        markup = render_vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]})
+        block = self.abweichler_block(markup)
+        self.assertIn(f"{ABWEICHLER_HEADING} (1)", block)
+        self.assertIn("<li>Cem</li>", block)
+        self.assertNotIn("<details", block)
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertNotIn(GAP_NOTE, markup)
+
+    def test_ten_names_show_inline_and_eleven_fold_the_rest(self) -> None:
+        for count, folded in ((10, 0), (11, 1), (62, 52)):
+            with self.subTest(count=count):
+                names = [f"MdB {n:02d}" for n in range(count)]
+                majority = [f"Ja {n:03d}" for n in range(count + 1)]
+                markup = render_vote_summary({"votes": [_roll_call(_members("SPD", majority, names))]})
+                block = self.abweichler_block(markup)
+                self.assertEqual(block.count("<li>"), count)
+                if folded:
+                    inline, rest = block.split("<details", 1)
+                    self.assertEqual(inline.count("<li>"), 10)
+                    self.assertIn(f"<summary>alle {count} anzeigen</summary>", rest)
+                    self.assertEqual(rest.count("<li>"), folded)
+                    # Alphabetical: the first ten are inline, the rest folded.
+                    self.assertIn("<li>MdB 09</li>", inline)
+                    self.assertIn("<li>MdB 10</li>", rest)
+                else:
+                    self.assertNotIn("<details", block)
+
+    def test_every_group_complete_without_abweichler_says_so_once(self) -> None:
+        members = _members("SPD", ["Ada", "Bea"], []) + _members("AfD", [], ["Cem"])
+        markup = render_vote_summary({"votes": [_roll_call(members)]})
+        self.assertEqual(markup.count(NONE_NOTE), 1)
+        self.assertNotIn('class="vote-abweichler"', markup)
+        self.assertNotIn(GAP_NOTE, markup)
+
+    def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
+        members = (
+            _members("SPD", ["Ada", "Bea"], [])
+            + [{"name": n, "faction": "FDP", "vote": v} for n, v in (("Cem", "abstain"), ("Dora", "abstain"), ("Emil", "yes"))]
+            + _members("AfD", ["Finn"], ["Gus"])
+        )
+        markup = render_vote_summary({"votes": [_roll_call(members)]})
+        self.assertNotIn('class="vote-abweichler"', markup)
+        self.assertIn(
+            '<p class="vote-abweichler-none">Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine '
+            "Ja-Mehrheit der eigenen Fraktion oder Gruppe)</p>",
+            markup,
+        )
+
+    def test_a_vote_without_member_rows_never_reads_as_zero(self) -> None:
+        import json
+        from _support import FIXTURES
+
+        vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
+        markup = render_vote_summary({"votes": [vote]})
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+        self.assertNotIn(NONE_NOTE, markup)
+
+    def test_a_partial_group_gets_the_gap_note_and_others_still_list(self) -> None:
+        members = _members("SPD", ["Ada", "Bea"], ["Cem"]) + _members("AfD", [], ["Dora"])
+        vote = _roll_call(members)
+        # AfD reports two Nein but only one member row is known.
+        vote["fractions"][1]["counts"]["no"] = 2
+        markup = render_vote_summary({"votes": [vote]})
+        self.assertIn("<li>Cem</li>", markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+        self.assertNotIn(NONE_NOTE, markup)
+        # The note sits under the AfD row, after SPD's.
+        self.assertLess(markup.index("<strong>AfD</strong>"), markup.index(GAP_NOTE))
+
+    def test_a_vote_without_fraction_rows_shows_neither_note(self) -> None:
+        markup = render_vote_summary({"votes": [_vote()]})
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertNotIn(GAP_NOTE, markup)
+
+    def test_only_fraktionslos_rows_show_neither_note(self) -> None:
+        markup = render_vote_summary({"votes": [_roll_call(_members("fraktionslos", ["Ada", "Bea"], ["Cem"]))]})
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertNotIn(GAP_NOTE, markup)
+        self.assertNotIn('class="vote-abweichler"', markup)
+
+    def test_an_inverted_vote_lists_the_same_abweichler(self) -> None:
+        members = _members("SPD", ["Ada", "Bea"], ["Cem"])
+        plain = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members)]}))
+        inverted = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members, inverted=True)]}))
+        self.assertEqual(inverted, plain)
+
+    def test_abweichler_link_like_the_einzelstimmen(self) -> None:
+        from stable_ids import vote_member_occurrence_id
+
+        members = _members("SPD", ["Ada", "Bea"], ["Cem", "Dora", "Emil"]) + _members("SPD", ["Finn", "Gus"], [])
+        members[2]["profile_url"] = "https://www.bundestag.de/abgeordnete/cem"
+        members[3]["profile_url"] = "https://evil.example/dora"
+        key = vote_member_occurrence_id("1", "Emil", "SPD")
+        block = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members)]}, mp_lookup={key: "emil"}))
+        self.assertIn('<li><a href="https://www.bundestag.de/abgeordnete/cem">Cem</a></li>', block)
+        self.assertIn("<li>Dora</li>", block)
+        self.assertNotIn("evil.example", block)
+        self.assertIn('<li><a href="../abgeordnete/emil.html">Emil</a></li>', block)
+
+    def test_the_heading_avoids_the_glossary_avoid_list(self) -> None:
+        block = self.abweichler_block(render_vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]}))
+        for avoided in ("gegen die Linie", "gegen die eigene Fraktion", "Fraktionslinie"):
+            self.assertNotIn(avoided, block)
+
+
+REFERENCE_URHEBER = (
+    # Every Beschlussempfehlung urheber on the reference store (2026-10-20).
+    "Petitionsausschuss", "Haushaltsausschuss", "Finanzausschuss", "Auswärtiger Ausschuss",
+    "Ausschuss für Inneres und Heimat", "Ausschuss für Klimaschutz und Energie", "Rechtsausschuss",
+    "Ausschuss für Arbeit und Soziales", "Wirtschaftsausschuss", "Ausschuss für Gesundheit", "Verkehrsausschuss",
+    "Ausschuss für Ernährung und Landwirtschaft", "Ausschuss für Wohnen, Stadtentwicklung, Bauwesen und Kommunen",
+    "Ausschuss für Wirtschaft und Energie", "Ausschuss für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
+    "Innenausschuss", "Ausschuss für Bildung, Forschung und Technikfolgenabschätzung",
+    "Ausschuss für Umwelt, Klimaschutz, Naturschutz und nukleare Sicherheit", "Ausschuss für Recht und Verbraucherschutz",
+    "Verteidigungsausschuss", "Ausschuss für wirtschaftliche Zusammenarbeit und Entwicklung",
+    "Ausschuss für Familie, Senioren, Frauen und Jugend", "Ausschuss für Wahlprüfung, Immunität und Geschäftsordnung",
+    "Ausschuss für Landwirtschaft, Ernährung und Heimat", "Ausschuss für Kultur und Medien", "Sportausschuss",
+    "Ausschuss für Digitales", "Vermittlungsausschuss", "Ältestenrat", "Ausschuss für Menschenrechte und humanitäre Hilfe",
+    "Ausschuss für Digitales und Staatsmodernisierung", "Wahlprüfungsausschuss",
+    "Ausschuss für die Angelegenheiten der Europäischen Union", "Ausschuss für Bildung, Familie, Senioren, Frauen und Jugend",
+    "Ausschuss für Tourismus", "Ausschuss für Sport und Ehrenamt",
+    "Bundesministerium für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
+    "Ausschuss für Forschung, Technologie, Raumfahrt und Technikfolgenabschätzung",
+    "2. Untersuchungsausschuss", "1. Untersuchungsausschuss",
+)
+
+
+class CommitteeGenitiveTests(unittest.TestCase):
+    def test_known_shapes(self) -> None:
+        from features.votes import committee_genitive
+
+        self.assertEqual(committee_genitive("Haushaltsausschuss"), "des Haushaltsausschusses")
+        self.assertEqual(committee_genitive("Auswärtiger Ausschuss"), "des Auswärtigen Ausschusses")
+        self.assertEqual(committee_genitive("Ausschuss für Inneres und Heimat"), "des Ausschusses für Inneres und Heimat")
+        self.assertEqual(committee_genitive("Ältestenrat"), "des Ältestenrates")
+        self.assertEqual(committee_genitive("1. Untersuchungsausschuss"), "des 1. Untersuchungsausschusses")
+        self.assertEqual(
+            committee_genitive("Bundesministerium für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz"),
+            "des Bundesministeriums für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
+        )
+
+    def test_every_reference_urheber_inflects(self) -> None:
+        from features.votes import committee_genitive
+
+        for name in REFERENCE_URHEBER:
+            with self.subTest(name=name):
+                genitive = committee_genitive(name)
+                self.assertIsNotNone(genitive)
+                self.assertTrue(genitive.startswith("des "))
+                self.assertRegex(genitive, r"(ausschusses|Ausschusses|rates|iums)\b")
+
+    def test_an_unknown_shape_is_not_guessed(self) -> None:
+        from features.votes import committee_genitive
+
+        for name in ("Bundesregierung", "Fraktion der SPD", ""):
+            with self.subTest(name=name):
+                self.assertIsNone(committee_genitive(name))
+
+
+def _committee_report(vote: dict[str, object], *, under_vote_top: bool = True) -> tuple[dict[str, object], dict[str, object]]:
+    be = {
+        "dokumentnummer": "20/101",
+        "drucksachetyp": "Beschlussempfehlung und Bericht",
+        "urheber": ["Haushaltsausschuss"],
+        "url": "https://dserver.bundestag.de/btd/20/001/2000101.pdf",
+    }
+    item = {"votes": [vote], "api": {"linked_drucksachen": [be] if under_vote_top else []}}
+    other = {"api": {"linked_drucksachen": [] if under_vote_top else [be]}}
+    return item, {"agenda_items": [item, other]}
+
+
+class CommitteePanelTests(unittest.TestCase):
+    def committee_line(self, markup: str) -> str:
+        start = markup.index('<p class="vote-committee')
+        return markup[start:markup.index("</p>", start)]
+
+    def test_a_matched_beschlussempfehlung_is_cited_with_its_drucksache(self) -> None:
+        item, report = _committee_report(_vote(document_numbers=["20/101"]))
+        line = self.committee_line(render_vote_summary(item, report=report))
+        self.assertIn("Beschlussempfehlung des Haushaltsausschusses (Drucksache ", line)
+        self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/001/2000101.pdf">20/101</a>', line)
+        self.assertNotIn("federführend", line.lower())
+
+    def test_an_entschliessungsantrag_vote_cites_the_document_not_a_role(self) -> None:
+        item, report = _committee_report(_vote(title="Entschließungsantrag der Fraktion X", document_numbers=["20/105", "20/101"]))
+        line = self.committee_line(render_vote_summary(item, report=report))
+        self.assertIn("Beschlussempfehlung des Haushaltsausschusses (Drucksache ", line)
+        self.assertNotIn("Federführender", line)
+
+    def test_a_beschlussempfehlung_under_another_top_is_found_and_linked(self) -> None:
+        item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
+        line = self.committee_line(render_vote_summary(item, report=report))
+        self.assertIn("Beschlussempfehlung des Haushaltsausschusses", line)
+        self.assertIn('href="https://dserver.bundestag.de/btd/20/001/2000101.pdf"', line)
+
+    def test_no_beschlussempfehlung_says_ausschuss_nicht_ermittelt(self) -> None:
+        item, report = _committee_report(_vote(document_numbers=["20/200"]))
+        line = self.committee_line(render_vote_summary(item, report=report))
+        self.assertIn("Ausschuss nicht ermittelt", line)
+
+    def test_two_urheber_are_both_cited(self) -> None:
+        vote = _vote(document_numbers=["20/400"])
+        be = {"dokumentnummer": "20/400", "drucksachetyp": "Beschlussempfehlung",
+              "urheber": ["Ausschuss für Inneres und Heimat", "Rechtsausschuss"], "url": None}
+        line = self.committee_line(render_vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
+        self.assertIn("Beschlussempfehlung des Ausschusses für Inneres und Heimat und des Rechtsausschusses (Drucksache ", line)
+        self.assertIn('<span class="doc-link muted">20/400</span>', line)
+
+    def test_an_urheber_of_unknown_shape_is_named_without_inflection(self) -> None:
+        vote = _vote(document_numbers=["20/400"])
+        be = {"dokumentnummer": "20/400", "drucksachetyp": "Beschlussempfehlung", "urheber": ["Bundesregierung"]}
+        line = self.committee_line(render_vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
+        self.assertIn("Beschlussempfehlung, Urheber: Bundesregierung (Drucksache ", line)
+
+    def test_a_sitting_level_vote_uses_the_whole_report(self) -> None:
+        vote = _vote(document_numbers=["20/101"])
+        _, report = _committee_report(_vote(id="other"), under_vote_top=False)
+        report["sitting_votes"] = [vote]
+        line = self.committee_line(render_vote_summary({"votes": [vote]}, report=report))
+        self.assertIn("Beschlussempfehlung des Haushaltsausschusses", line)
+
+    def test_dossier_sections_pass_the_report(self) -> None:
+        from features.votes import COMPONENT
+
+        item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
+        markup = "".join(COMPONENT.dossier_sections(report, {"item": item}))
+        self.assertIn("Beschlussempfehlung des Haushaltsausschusses", markup)
