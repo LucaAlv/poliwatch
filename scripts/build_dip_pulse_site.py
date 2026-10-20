@@ -4433,7 +4433,8 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         abweichler = row.get("abweichler")
         abweichler_attr = f' data-abweichler="{pulse_html.esc(abweichler)}"' if abweichler is not None else ""
         abweichler_html = (
-            f' · <span class="archive-abweichler">{pulse_html.esc(pulse_html.format_count(abweichler, "Abweichler", "Abweichler"))}</span>'
+            f' · <span class="archive-abweichler">{pulse_html.esc(pulse_html.format_count(abweichler, "stimmt", "stimmen"))}'
+            " anders als die Mehrheit der eigenen Fraktion oder Gruppe</span>"
             if abweichler
             else ""
         )

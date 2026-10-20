@@ -309,8 +309,8 @@ def _roll_call(members: list[dict[str, str]], **overrides: object) -> dict[str, 
 
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
-GAP_NOTE = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
-NONE_NOTE = "Keine Abweichler"
+GAP_NOTE = "Einzelstimmen unvollständig – nicht ermittelbar, wer anders als die Mehrheit der eigenen Fraktion oder Gruppe stimmt"
+NONE_NOTE = "Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe"
 
 
 class AbweichlerPanelTests(unittest.TestCase):
@@ -362,8 +362,8 @@ class AbweichlerPanelTests(unittest.TestCase):
         markup = vote_summary({"votes": [_roll_call(members)]})
         self.assertNotIn('class="vote-abweichler"', markup)
         self.assertIn(
-            '<p class="vote-abweichler-none">Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine '
-            "Ja-Mehrheit der eigenen Fraktion oder Gruppe)</p>",
+            '<p class="vote-abweichler-none">Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe '
+            "(gezählt: Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit)</p>",
             markup,
         )
 

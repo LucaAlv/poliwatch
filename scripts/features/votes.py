@@ -129,9 +129,13 @@ def member_name_html(vote: dict[str, Any], member: dict[str, Any], panel: VotePa
 
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
-ABWEICHLER_GAP = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
+# Public text says what an Abweichler does, never the term (CONTEXT.md, Abweichler).
+ABWEICHLER_GAP = "Einzelstimmen unvollständig – nicht ermittelbar, wer anders als die Mehrheit der eigenen Fraktion oder Gruppe stimmt"
 # Spells out the CONTEXT.md rule: a Ja beside an Enthaltung majority or a tie is no Abweichung.
-ABWEICHLER_NONE = "Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit der eigenen Fraktion oder Gruppe)"
+ABWEICHLER_NONE = (
+    "Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe"
+    " (gezählt: Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit)"
+)
 #: Names shown before the rest of a group's Abweichler fold away (D6).
 ABWEICHLER_INLINE = 10
 ABWEICHLER_GAP_HTML = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'

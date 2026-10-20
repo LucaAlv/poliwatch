@@ -2488,7 +2488,9 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('data-abweichler="0"', markup)
         self.assertEqual(markup.count("data-abweichler="), 2)
         self.assertEqual(markup.count('<span class="archive-abweichler">'), 1)
-        self.assertIn('<span class="archive-abweichler">1 Abweichler</span>', markup)
+        self.assertIn(
+            '<span class="archive-abweichler">1 stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe</span>', markup
+        )
 
     # Value: protects=every archive link lands on exactly one panel of its dossier page (D9); fails_when=render and archive disagree on the anchor or a duplicated vote gets two ids; why_new=no vote anchor before B4; seam=none
     def test_every_archive_link_lands_on_exactly_one_panel(self) -> None:
