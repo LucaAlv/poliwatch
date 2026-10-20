@@ -739,8 +739,8 @@ class RepersistTests(unittest.TestCase):
         _, rebuilt = self.repersist()
         self.assertTrue(rebuilt.replaced)
 
-    def run_main(self, *extra: str) -> tuple[int, str]:
-        argv = ["build", "--offline", "--output-dir", str(self.output_dir), *extra]
+    def run_main(self, *extra: str, offline: bool = True) -> tuple[int, str]:
+        argv = ["build", *(["--offline"] if offline else []), "--output-dir", str(self.output_dir), *extra]
         err = io.StringIO()
         # What follows the re-persist (Daten export, page rendering) is not under
         # test here, and the fixture MPs carry profile URLs the renderer refuses.
@@ -748,9 +748,10 @@ class RepersistTests(unittest.TestCase):
             io.StringIO()
         ), mock.patch.object(build, "run_data_pipeline", return_value=(None, None, [], None, False)) as pipeline, mock.patch.object(
             build, "render_site", return_value=self.output_dir / "index.html"
-        ):
+        ) as render:
             code = build.main()
         self.pipeline = pipeline
+        self.render = render
         return code, err.getvalue()
 
     # Value: protects=an --offline --repersist build never reaches DIP for Vorgänge and still says how the Politikfelder came out; fails_when=the offline path calls refresh_vorgang_cache, or prints no Politikfeld line, so a cache miss (not_fetched) passes unseen; why_new=no test covered the offline side of the fetch; seam=none
@@ -793,6 +794,8 @@ class RepersistTests(unittest.TestCase):
             conn.execute("DROP TABLE agenda_item_politikfelder")
             conn.execute("DROP TABLE vote_politikfelder")
             conn.execute("ALTER TABLE proceedings DROP COLUMN sachgebiet")
+            conn.execute("DELETE FROM schema_migrations WHERE version >= 5")
+            conn.execute("INSERT OR IGNORE INTO schema_migrations VALUES (4, 'legacy fixture')")
             conn.commit()
         finally:
             conn.close()
@@ -826,6 +829,83 @@ class RepersistTests(unittest.TestCase):
             with self.assertRaisesRegex(build.DatabaseRebuildError, "Vorgang cache.*online update"):
                 self.repersist(vorgang_cache=empty)
         self.assertEqual(before, sha(self.database))
+
+    def test_identity_swap_refuses_the_command_and_preserves_the_store(self) -> None:
+        self.repersist()
+        cache = {"version": 1, "vorgaenge": {"fixture-procedure-21-6354": {"sachgebiet": ["Gesundheit"]}}, "dokumentnummern": {}}
+        self.repersist(vorgang_cache=cache)
+        # Recover one old missing identity while losing an existing fetched one.
+        with contextlib.closing(sqlite3.connect(self.database)) as conn, conn:
+            conn.execute("UPDATE agenda_item_politikfelder SET source='not_fetched' WHERE agenda_item_id IN "
+                         "(SELECT agenda_item_id FROM agenda_item_politikfelder WHERE source='untagged' LIMIT 1)")
+        before = sha(self.database)
+        code, err = self.run_main("--repersist")
+        self.assertEqual(code, 1)
+        self.assertIn("previously known", err)
+        self.assertIn("online update", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(sha(self.database), before)
+        self.pipeline.assert_not_called()
+        self.render.assert_not_called()
+
+    def test_partial_corrupt_or_locked_store_refuses_the_command(self) -> None:
+        for missing in ("agenda_item_politikfelder", "vote_politikfelder", "both", "corrupt", "locked"):
+            with self.subTest(missing=missing):
+                self.database.unlink(missing_ok=True)
+                self.repersist()
+                if missing == "corrupt":
+                    self.database.write_bytes(b"broken database")
+                elif missing != "locked":
+                    with contextlib.closing(sqlite3.connect(self.database)) as conn, conn:
+                        if missing == "both":
+                            conn.execute("DROP TABLE agenda_item_politikfelder")
+                            conn.execute("DROP TABLE vote_politikfelder")
+                        else:
+                            conn.execute(f"DROP TABLE {missing}")
+                before = sha(self.database)
+                with contextlib.ExitStack() as stack:
+                    if missing == "locked":
+                        conn = stack.enter_context(contextlib.closing(sqlite3.connect(self.database)))
+                        conn.execute("BEGIN EXCLUSIVE")
+                        stack.callback(conn.rollback)
+                    code, err = self.run_main("--repersist")
+                self.assertEqual(code, 1)
+                self.assertIn("ERROR [repersist]:", err)
+                self.assertIn(str(self.database), err)
+                self.assertNotIn("Traceback", err)
+                self.assertEqual(sha(self.database), before)
+                self.render.assert_not_called()
+
+    def test_cache_load_errors_stop_online_and_replay_before_any_writes(self) -> None:
+        self.repersist()
+        path = build.politikfelder.cache_path(self.output_dir)
+        for failure in ("future", "permission", "read"):
+            for offline in (True, False):
+                with self.subTest(failure=failure, offline=offline):
+                    path.write_text(json.dumps({"version": 2, "records": {}}) if failure == "future" else
+                                    json.dumps(build.politikfelder.empty_cache()), encoding="utf-8")
+                    original, before = path.read_bytes(), sha(self.database)
+                    real_read = Path.read_text
+
+                    def read(candidate, *args, **kwargs):
+                        if candidate == path and failure != "future":
+                            raise PermissionError("denied") if failure == "permission" else OSError("read failure")
+                        return real_read(candidate, *args, **kwargs)
+
+                    with mock.patch.object(Path, "read_text", read), mock.patch.object(build, "refresh_vorgang_cache") as refresh, \
+                            mock.patch.object(build.politikfelder, "save_cache") as save, \
+                            mock.patch.object(build, "rebuild_database_from_entries") as rebuild, \
+                            mock.patch.object(build.dip.ApiClient, "get_json") as fetch:
+                        code, err = self.run_main(*(["--repersist"] if offline else ["--api-key", "fixture"]), offline=offline)
+                    self.assertEqual(code, 1)
+                    self.assertIn(str(path), err)
+                    self.assertIn("compatible code" if failure == "future" else "restore read access", err)
+                    self.assertNotIn("Traceback", err)
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(sha(self.database), before)
+                    for operation in (refresh, save, rebuild, fetch, self.pipeline, self.render):
+                        operation.assert_not_called()
+                    self.assertEqual(list(self.output_dir.parent.rglob("*.corrupt")), [])
 
     def test_the_command_reports_a_failure_as_one_error_line_and_exits_1(self) -> None:
         self.repersist()

@@ -1538,7 +1538,14 @@ def refresh_vorgang_cache(
     build warns and goes on. Returns the fetch counts.
     """
     reports = [entry["report"] for entry in entries]
-    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0}
+    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0}
+
+    def shape_error(exc: dip.DipShapeError) -> None:
+        stats["shape_errors"] += 1
+
+    def warn_shape(exc: dip.DipShapeError) -> None:
+        shape_error(exc)
+        print(f"warning: Vorgang validation: {exc}", file=sys.stderr)
 
     def save() -> None:
         try:
@@ -1554,8 +1561,12 @@ def refresh_vorgang_cache(
             batch = ids[start : start + dip.VORGANG_BATCH]
             time.sleep(NUMBER_LOOKUP_PAUSE)
             try:
-                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch, page_pause=NUMBER_LOOKUP_PAUSE))
-                stats["vorgaenge"] += len(batch)
+                records = dip.fetch_vorgaenge(
+                    client, batch, page_pause=NUMBER_LOOKUP_PAUSE, on_shape_error=shape_error
+                )
+                cache["vorgaenge"].update(records)
+                stats["vorgaenge"] += len(records)
+                stats["vorgaenge_failed"] += len(set(batch) - records.keys())
                 failures = 0
             except dip.DipError as exc:
                 stats["vorgaenge_failed"] += len(batch)
@@ -1574,9 +1585,13 @@ def refresh_vorgang_cache(
         try:
             for position, number in enumerate(numbers):
                 time.sleep(NUMBER_LOOKUP_PAUSE)
+                complete = True
                 try:
                     documents = dip.resolve_dokumentnummer(client, number, page_pause=NUMBER_LOOKUP_PAUSE)
-                    records = {str(d["id"]): dip.vorgang_cache_record(d) for d in documents if d.get("id")}
+                except dip.DipShapeError as exc:
+                    warn_shape(exc)
+                    documents = exc.documents
+                    complete = False
                 except dip.DipError as exc:
                     stats["nummern_failed"] += 1
                     failures += 1
@@ -1586,10 +1601,26 @@ def refresh_vorgang_cache(
                         return
                     continue
                 failures = 0
-                stats["nummern"] += 1
-                cache["dokumentnummern"][number] = list(records)
-                cache["vorgaenge"].update(records)
-                if stats["nummern"] % CACHE_SAVE_EVERY == 0:
+                ids: list[str] = []
+                for document in documents:
+                    try:
+                        record_id = dip.vorgang_id(document)
+                    except dip.DipShapeError as exc:
+                        warn_shape(exc)
+                        complete = False
+                        continue
+                    if record_id not in ids:
+                        ids.append(record_id)
+                    try:
+                        cache["vorgaenge"][record_id] = dip.vorgang_cache_record(document)
+                    except dip.DipShapeError as exc:
+                        warn_shape(exc)
+                if complete:
+                    stats["nummern"] += 1
+                    cache["dokumentnummern"][number] = ids
+                else:
+                    stats["nummern_failed"] += 1
+                if (position + 1) % CACHE_SAVE_EVERY == 0:
                     save()
         finally:
             save()
@@ -1605,7 +1636,8 @@ def refresh_vorgang_cache(
         resolve_numbers(numbers)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
-        f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left as not_fetched)",
+        f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left retryable; "
+        f"{stats['shape_errors']} validation errors)",
         file=sys.stderr,
     )
     return stats
@@ -1652,51 +1684,59 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 def require_vorgang_cache_for_tags(
     database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
-    """Refuse a re-persist that would strip the store's Politikfelder: one that
-    would leave more TOPs or votes ``not_fetched`` than the current store has.
-    That happens when the Vorgang cache is missing, emptied or only partly
-    refilled; the Daten export would then publish the loss. A store without the
-    Politikfeld tables (an upgrade from before schema 5) or without tags taken
-    from the cache has nothing to lose, and tags that need no cache (an
-    Einzelplan heading) never count against it."""
+    """Refuse replay when a previously known TOP or vote becomes not_fetched.
+    Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
     try:
         conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
         try:
-            stored = sum(
-                conn.execute(f"SELECT COUNT(DISTINCT {key}) FROM {table} WHERE source = 'not_fetched'").fetchone()[0]
+            tables = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE name IN ('agenda_item_politikfelder', 'vote_politikfelder')"
+            )}
+            if not tables:
+                version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+                if type(version) is int and 0 < version < 5:
+                    return
+            if len(tables) != 2:
+                raise DatabaseRebuildError(
+                    f"Cannot check Politikfelder in {database_path}: incomplete store, tag tables are missing. "
+                    "Fix: restore a complete store before replay"
+                )
+            known_tops, known_votes = (
+                {row[0] for row in conn.execute(f"SELECT DISTINCT {key} FROM {table} WHERE source != 'not_fetched'")}
                 for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
             )
-            # Only Sachgebiet and Drucksache tags come from the cache; a vote's "top" tags
-            # follow its TOP's, which may be an Einzelplan heading's.
-            from_cache = conn.execute(
-                "SELECT COUNT(*) FROM agenda_item_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
-            ).fetchone()[0] + conn.execute(
-                "SELECT COUNT(*) FROM vote_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
-            ).fetchone()[0]
         finally:
             conn.close()
-    except sqlite3.Error:
-        return  # no Politikfeld tables yet: nothing to strip
-    if not from_cache:
-        return
+    except sqlite3.Error as exc:
+        raise DatabaseRebuildError(
+            f"The store {database_path.resolve()} cannot be read for the Politikfelder check: {exc}. "
+            "Fix: restore read access, release any database lock, or restore a healthy store before replay"
+        ) from exc
     cache = vorgang_cache or politikfelder.empty_cache()
-    missing_tops = 0
-    missing_votes: set[str] = set()
-    for entry in entries:
+    missing_tops: set[str] = set()
+    vote_sources: dict[str, str] = {}
+    for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
-        missing_tops += sum(source == "not_fetched" for _tags, source in item_tags)
+        protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
+        for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
+            if source == "not_fetched":
+                missing_tops.add(pulse_store.stable_key("agenda", protocol_id, source_index(item.get("index"))))
         for _item, vote in derive.iter_report_votes(report):
-            if vote.get("id") is not None and vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
-                missing_votes.add(str(vote["id"]))
-    would_miss = missing_tops + len(missing_votes)
-    if would_miss > stored:
+            vote_id = pulse_store.clean(vote.get("id"))
+            if vote_id:
+                # Match persistence's final overwrite for normalized duplicate IDs.
+                vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
+    regressed_tops = missing_tops & known_tops
+    regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
+    if regressed_tops or regressed_votes:
         raise DatabaseRebuildError(
             f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
-            f"{would_miss} TOPs and votes not_fetched where the store has {stored}, so it would strip their "
-            "Politikfelder. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+            f"{len(regressed_tops)} previously known TOPs and {len(regressed_votes)} previously known votes "
+            f"not_fetched (TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}). "
+            "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
 
@@ -4427,6 +4467,9 @@ def votes_archive_styles() -> str:
     }
     .chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .chip:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    @media (pointer:coarse) {
+      .chip { min-height:44px; }
+    }
     :root[data-theme="dark"] .chip { color:var(--ink); }
     :root[data-theme="dark"] .chip.is-active { background:var(--surface-2); color:var(--blue); }
     .archive-list { margin-top:20px; display:grid; gap:10px; }
@@ -5707,6 +5750,7 @@ def render_front_page(
     }}
     @media (pointer:coarse) {{
       .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
+      .radar-filter .chip {{ min-height:44px; }}
       .radar-open a {{ display:inline-block; min-height:44px; padding:12px 0; }}
     }}
     @media (prefers-reduced-motion: reduce) {{
@@ -11660,7 +11704,11 @@ def main() -> int:
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
     # The Vorgang cache the Politikfelder are derived from, loaded once per
     # build; an online build fills it before it persists.
-    vorgang_cache = politikfelder.load_cache(output_dir)
+    try:
+        vorgang_cache = politikfelder.load_cache(output_dir)
+    except politikfelder.CacheLoadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     # Explicit replay upgrades an old schema. Store consumers, including
     # no-persist rendering, require current persisted rules; an online rebuild
