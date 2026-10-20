@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.1.0] - 2026-10-20
+
+### Fixed
+
+- DIP refreshes retain valid Vorgänge when another record is malformed, leave incomplete lookups retryable, and distinguish validation errors from outages. ID lookups cannot overwrite unrelated cached Vorgänge.
+- Offline replay refuses any previously fetched TOP or vote becoming `not_fetched`, even when another identity recovers. Unreadable, locked, corrupt or incomplete stores stop replay without replacing the database.
+- Builds preserve unsupported or unreadable Vorgang caches and explain how to recover. Corruption backups have unique names, and atomic cache writes retry beside the cache when private staging fails, including during the final rename.
+- Politikfeld and Fraktion filter buttons on the week radar and votes archive have 44px touch targets; desktop sizing stays unchanged.
+
 ## [0.20.0.0] - 2026-10-19
 
 ### Added
