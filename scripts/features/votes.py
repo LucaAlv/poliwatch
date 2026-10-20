@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import derive
+import politikfelder
 import render_dip_pulse_html as html
 
 from . import BaseComponent, REGISTRY
@@ -194,18 +196,122 @@ def render_committee_line(committees: list[dict[str, Any]], item: dict[str, Any]
     return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
 
 
+CONTEXT_HEADING = "Worum es geht"
+CONTEXT_SOURCE = "Quelle: Deutscher Bundestag/Bundesrat – DIP"
+CONTEXT_NONE = "Keine Beschreibung in DIP"
+CONTEXT_NOT_FETCHED = "Vorgang nicht abgerufen"
+#: About this many characters of an abstract show before the rest folds away.
+CONTEXT_TEASER = 300
+# A full stop after these is no sentence end: "Abs. 2", "z. B.", "Nr. 3" fill DIP abstracts.
+_ABBREVIATIONS = frozenset(
+    "abs art nr nrn bzw ca vgl ggf usw etc inkl gem lit buchst ziff kap anl bgbl dr st bspw sog insb einschl zzgl"
+    " abschn bd jh mio mrd tsd".split()
+)
+_SENTENCE_END = re.compile(r"[.!?](?=\s)")
+
+
+def dip_vorgang_url(vorgang_id: str) -> str:
+    """DIP's page of a Vorgang; the slug before the id is free text DIP ignores."""
+    return f"https://dip.bundestag.de/vorgang/-/{vorgang_id}"
+
+
+def abstract_teaser(text: str) -> tuple[str, bool]:
+    """The part of a sanitised abstract shown inline, and whether more follows.
+
+    The first paragraph when it is short; else the text up to the last sentence
+    end within ``CONTEXT_TEASER`` characters (a full stop after a number, a
+    single letter or a known abbreviation ends none); else up to the last word
+    boundary, marked with an ellipsis."""
+    paragraphs = text.split("\n\n")
+    first = paragraphs[0]
+    if len(first) <= CONTEXT_TEASER:
+        return first, len(paragraphs) > 1
+    cut = None
+    for match in _SENTENCE_END.finditer(first, 0, CONTEXT_TEASER + 1):
+        token = first[: match.start()].rsplit(None, 1)[-1] if first[: match.start()].strip() else ""
+        if token.isdigit() or len(token) <= 1 or "." in token or token.casefold() in _ABBREVIATIONS:
+            continue
+        cut = match.end()
+    if cut is not None:
+        return first[:cut], True
+    space = first.rfind(" ", 0, CONTEXT_TEASER)
+    return first[: space if space > 0 else CONTEXT_TEASER].rstrip() + " …", True
+
+
+def _vorgang_label(vorgang_id: str, record: Mapping[str, Any] | None) -> str:
+    """"<titel> · DIP"; an offline build on records cached before titel was kept
+    falls back to "<Vorgangstyp> · DIP-Vorgang <id>" (F10)."""
+    record = record or {}
+    titel = " ".join(str(record.get("titel") or "").split())
+    if titel:
+        return f"{titel} · DIP"
+    vorgangstyp = " ".join(str(record.get("vorgangstyp") or "").split())
+    return f"{vorgangstyp} · DIP-Vorgang {vorgang_id}" if vorgangstyp else f"DIP-Vorgang {vorgang_id}"
+
+
+def render_vote_context(vorgang_ids: list[str], state: str, cache: Mapping[str, Any] | None) -> str:
+    """The "Worum es geht" block: one DIP abstract per Vorgang the vote is about
+    (``politikfelder.vote_vorgang_ids``). It describes the Vorhaben, not the vote's
+    result, which stays in the badge. "Keine Beschreibung in DIP" only where DIP was
+    asked and has none; "Vorgang nicht abgerufen" where the cache lacks the answer."""
+    records = (cache or {}).get("vorgaenge") or {}
+    blocks = []
+    if not vorgang_ids:
+        gap = CONTEXT_NOT_FETCHED if state == "not_fetched" else CONTEXT_NONE
+        blocks.append(f'<p class="vote-context-gap">{html.esc(gap)}</p>')
+    for vorgang_id in vorgang_ids:
+        record = records.get(vorgang_id)
+        label = html.esc(_vorgang_label(vorgang_id, record))
+        try:
+            label = f'<a href="{html.esc(html.source_url(dip_vorgang_url(vorgang_id), "bundestag-dip"))}">{label}</a>'
+        except (html.publication.PublicationStateError, ValueError):
+            pass
+        text = politikfelder.abstract_text((record or {}).get("abstract"))
+        if record is None:
+            body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NOT_FETCHED)}</p>'
+        elif not text:
+            body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NONE)}</p>'
+        else:
+            teaser, more = abstract_teaser(text)
+            body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
+            if more:
+                full = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in text.split("\n\n"))
+                body += f'<details class="vote-context-more"><summary>Ganze Beschreibung</summary>{full}</details>'
+        blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
+    return (
+        '<div class="vote-context">'
+        f'<p class="vote-context-head"><strong>{html.esc(CONTEXT_HEADING)}</strong> · {html.esc(CONTEXT_SOURCE)}</p>'
+        f'{"".join(blocks)}</div>'
+    )
+
+
+def vote_anchor_id(vote: Mapping[str, Any]) -> str | None:
+    """The HTML id of a vote's first panel on its dossier page (D9), or None for a
+    legacy vote without an id, which keeps its TOP anchor."""
+    return f"vote-{vote['id']}" if vote.get("id") is not None else None
+
+
 def render_vote_summary(
     item: dict[str, Any],
     acquisition: dict[str, Any] | None = None,
     mp_lookup: dict[str, str] | None = None,
     mp_prefix: str = "../abgeordnete/",
     report: dict[str, Any] | None = None,
+    *,
+    vote_contexts: Mapping[Any, tuple[list[str], str]] | None = None,
+    vorgang_cache: Mapping[str, Any] | None = None,
 ) -> str:
     """The vote panels of one TOP (or of a sitting's votes under no TOP).
 
     ``report`` is the sitting the TOP belongs to: the committee line looks a
     vote's Drucksachen up across all its TOPs (``derive.vote_committees``).
-    Without it, only this TOP's linked Drucksachen are searched.
+    Without it, only this TOP's linked Drucksachen are searched. A vote's panel
+    gets ``id="vote-<id>"`` where ``derive.iter_report_votes`` first meets the
+    vote, so a vote under two TOPs has one anchor (D9).
+
+    ``vote_contexts`` is ``politikfelder.report_vote_vorgaenge`` of the report, read
+    with ``vorgang_cache``, the same answer persist stores; without it no
+    "Worum es geht" block is drawn.
     """
     votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
     acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
@@ -237,7 +343,23 @@ def render_vote_summary(
             '</aside>'
         )
     report = report if report is not None else {"agenda_items": [item]}
+    # Where each vote is first met: its TOP, or None for a sitting-level vote,
+    # which is only ever drawn in the sitting's own section.
+    first_item = {derive.vote_identity(vote): first for first, vote in derive.iter_report_votes(report)}
+    anchored: set[Any] = set()
     for vote in votes:
+        key = derive.vote_identity(vote)
+        anchor = vote_anchor_id(vote)
+        first = first_item.get(key, item)
+        if anchor and key not in anchored and (first is item or first is None):
+            anchored.add(key)
+            panel_id = f' id="{html.esc(anchor)}"'
+        else:
+            panel_id = ""
+        context_html = ""
+        if vote_contexts is not None and key in vote_contexts:
+            context_ids, context_state = vote_contexts[key]
+            context_html = render_vote_context(context_ids, context_state, vorgang_cache)
         abweichler = derive.vote_abweichler(vote)
         # One gap note for the vote when no group has member rows, else one
         # under each group that is short.
@@ -325,12 +447,12 @@ def render_vote_summary(
             explanation = '<p class="vote-state-note">Abgestimmt wurde über die Empfehlung, den Antrag abzulehnen. Ja = Antrag ablehnen · Nein = Antrag annehmen</p>'
 
         panels.append(
-            '<section class="vote-panel">'
+            f'<section class="vote-panel"{panel_id}>'
             f'<div class="vote-head"><div><h3>Namentliche Abstimmung{result_badge}</h3>'
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
+            f'{context_html}{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
@@ -344,7 +466,13 @@ class VotesComponent(BaseComponent):
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
         return [
             render_vote_summary(
-                ctx["item"], acquisition, ctx.get("mp_lookup"), ctx.get("mp_prefix", "../abgeordnete/"), report=report
+                ctx["item"],
+                acquisition,
+                ctx.get("mp_lookup"),
+                ctx.get("mp_prefix", "../abgeordnete/"),
+                report=report,
+                vote_contexts=ctx.get("vote_contexts"),
+                vorgang_cache=ctx.get("vorgang_cache"),
             )
         ]
 

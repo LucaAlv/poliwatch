@@ -16,7 +16,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Item 2 (the topic filter on `votes/index.html`) is covered by B3.
+4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Done in B4 except the AI sentence for votes without a DIP abstract, which waits for "Deterministic validators". Item 2 (the topic filter) came with B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -46,6 +46,22 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
+
+### Store loses roll-call member rows in 22 groups of 11 votes
+
+**What:** In 22 of 1,498 stored `vote_fractions` groups, across 11 votes, the stored `vote_members` rows do not add up to the fraction counts (21 if nicht abgegeben is ignored). Most are short by exactly one member: Grüne, FDP and AfD on 2022-05-19/20 (votes 773–777), SPD on 2023-05-26 (853, 854) and 2023-06-15 (855–857). On 2024-02-02 (912) the fraktionslos group stores 5 Ja against 40 and AfD one nicht abgegeben short. The report JSON matches 1,498/1,498, so rows are lost or re-attributed at persist. Vote ids: 773, 774, 775, 776, 777, 853, 854, 855, 856, 857, 912 (measured on the reference store 2026-10-20).
+
+**Why:** Every store-side Abweichler figure (`r3-abweichler`, Fakten `meiste-abweichler`) and the Daten `vote_members` CSV inherit it, so the citable dataset is missing Stimmen. The vote panel is not affected: it reads the report.
+
+**Pros:** Fixes a silent loss in the export; B4's Abweichler parity then holds per group on the store too.
+
+**Cons:** Touches identity and stable ids (A.2 territory), possibly a stable-id format change.
+
+**Context:** Found in the B4 eng review (O4, D16). Start from the 11 vote ids. Suspects: namesake collisions of `stable_ids.vote_member_occurrence_id` (built from name and Zusammenschluss), though B.2 measured 0 D3 collisions, and the party attribution of former Linke/BSW MdBs (the fraktionslos group of 912).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** none
 
 ### Parse the "Entschuldigte Abgeordnete" appendix of each Plenarprotokoll
 
@@ -866,10 +882,10 @@ Done when the chart and the recipe give the same numbers on the same release, an
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
-1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Otherwise write a labelled AI sentence under the validators item.
+1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). **Still open:** a labelled AI sentence for the votes DIP gives no abstract (64 of 217 on the reference store before the first online build with B4's refetch), under the validators item. Those panels say "Keine Beschreibung in DIP".
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
-3. The named Abweichler per Fraktion on the vote panel. The data exists (recipe `r3-abweichler`).
-4. The responsible committee, from the Beschlussempfehlung.
+3. ~~The named Abweichler per Fraktion on the vote panel.~~ Done in B4 (`derive.vote_abweichler`; 632 Abweichler in 95 of 217 votes; archive rows carry the count where every group's Einzelstimmen are complete).
+4. ~~The responsible committee, from the Beschlussempfehlung.~~ Done in B4: "Beschlussempfehlung des <Ausschuss> (Drucksache …)" on 190 of 217 panels, recipe `r6-ausschuss`. Mitberatende committees are the follow-up "Mitberatende Ausschüsse on the vote panel".
 
 Done when a vote on the archive can be found by topic and its panel answers "what was decided, who voted how, who broke ranks, where is the source" without leaving the page.
 
@@ -879,15 +895,31 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Inverted-vote reading; Politikfeld tags (for 2); deterministic validators (only for the AI fallback in 1)
+**Depends on:** Deterministic validators (the AI fallback in 1, the only open part)
+
+### Mitberatende Ausschüsse on the vote panel
+
+**What:** Keep `ueberweisung` (`ausschuss`, `federfuehrung`) from the 1. Beratung positions, which `compact_position` (`scripts/validate_dip_protocol.py`) drops today, and show "mitberatend: …" next to the Beschlussempfehlung line of the vote panel.
+
+**Why:** abgeordnetenwatch lists the committees involved. B4 cites only the committee that issued the Beschlussempfehlung (D14).
+
+**Pros:** Completes the "committees involved" picture; the data is already in the cached raw positions (1,650 `federfuehrung: true` entries).
+
+**Cons:** `ueberweisung` sits on the 1. Beratung, not on the vote's TOP, so it needs a Vorgang-level join, and one more stored table.
+
+**Context:** `api.raw.positions` in the cached reports; B4's `vote_proceedings` gives the vote→Vorgang link (D17).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** B4
 
 ### Politikfelder: findings deferred from the B3 review
 
 **What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
 1. A missing lead Vorgang or number makes the tags come from the survivors with the wrong lead, and the source says `sachgebiet` or `drucksache`, not that something was missing. Record a partial flag, or count partial results in the build summary.
 2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
-3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Put a cache digest into `datenstand`, or render from the store.
-4. The cache sits in the published `data/` directory and holds DIP `abstract` text. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so move the cache out or drop `abstract` until a feature reads it.
+3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Since B4 the same holds for the vote panels' DIP abstracts and their Vorgang selection (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). Put a cache digest into `datenstand`, or render from the store; one fix covers all three.
+4. The cache sits in the published `data/` directory and holds DIP `abstract` and `titel` text, which the vote panels now show (B4), so dropping it is no longer an option. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so, hosting must exclude `data/dip-vorgang-cache.json` or the cache moves out of `data/`.
 5. The inline filter scripts on `votes/index.html` and the week radar are checked only by a headless-Chromium probe run by hand (2026-10-09), not by the suite. Add a browser test when the suite has one.
 6. A Vorgang DIP does not return, or a number it resolves to nothing, is stored as "fetched, nothing known" and counted as fetched, so an offline repersist stores `untagged`, not `not_fetched`, until the next online build. Empty Sachgebiet records (4,086 of 7,511 cached Vorgänge, most pulled in by numbers with a huge fan-out) and empty lookups are asked again on every online build, about 40 batches and a pause each; bound that with `aktualisiert` or a fetched-at date.
 7. A Sachgebiet label the mapping does not know is skipped at tag time, so tagging can fall through to a weaker source; the build summary names the label afterwards. Consider a `not_fetched`-like source for an unmapped label.

@@ -4266,12 +4266,29 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
+def _vote_procedure_type(
+    vote: dict[str, Any], item: dict[str, Any] | None, sitting_documents: dict[str, Any] | None = None
+) -> str:
+    """The DIP type of the first of the vote's Drucksachen its TOP links; else of the
+    first the sitting links under any TOP (``derive.report_drucksachen``, the map the
+    committee line reads, D4), which also serves a vote under no TOP; else "–"."""
     numbers = {str(number) for number in vote.get("document_numbers") or []}
-    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+    for doc in ((item or {}).get("api") or {}).get("linked_drucksachen") or []:
         if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
             return str(doc["drucksachetyp"])
+    for raw in vote.get("document_numbers") or []:
+        doc = (sitting_documents or {}).get(derive.canonical_document_number(raw))
+        if doc and doc.get("drucksachetyp"):
+            return str(doc["drucksachetyp"])
     return "–"
+
+
+def _abweichler_count(vote: dict[str, Any]) -> int | None:
+    """The vote's Abweichler, or None unless every group's member rows are complete."""
+    groups = derive.vote_abweichler(vote)
+    if not groups or any(group["state"] != "complete" for group in groups.values()):
+        return None
+    return sum(len(group["members"]) for group in groups.values())
 
 
 def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str | None:
@@ -4318,6 +4335,8 @@ def collect_votes_archive(
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
         _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
+        sitting_documents = derive.report_drucksachen(report)
+        page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
         for item, vote in derive.iter_report_votes(report):
             # persist_vote skips a vote without an id, so the archive does
             # too: the row count must equal SELECT count(*) FROM votes.
@@ -4336,13 +4355,10 @@ def collect_votes_archive(
                 "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
                 "fraction_positions": fraction_positions,
-                "procedure_type": _vote_procedure_type(vote, item) if item else "–",
-                "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
-                     if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
-                    if page_path
-                    else None
-                ),
+                "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
+                "abweichler": _abweichler_count(vote),
+                # The vote's own panel (D9): only votes with an id get a row.
+                "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
             }
     return sorted(
         rows.values(),
@@ -4397,13 +4413,22 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         title = vote.get("title") or vote.get("topic") or "Ohne Titel"
         title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
+        # Counted only where every group's Einzelstimmen are complete, so a
+        # missing badge never stands for zero (plan Slice 1).
+        abweichler = row.get("abweichler")
+        abweichler_attr = f' data-abweichler="{pulse_html.esc(abweichler)}"' if abweichler is not None else ""
+        abweichler_html = (
+            f' · <span class="archive-abweichler">{pulse_html.esc(pulse_html.format_count(abweichler, "Abweichler", "Abweichler"))}</span>'
+            if abweichler
+            else ""
+        )
         items.append(
-            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
+            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"{abweichler_attr}'
             f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\''
             f' data-politikfelder=\'{pulse_html.esc(json.dumps(row["politikfelder"], ensure_ascii=False))}\'>'
             f'<time>{pulse_html.esc(vote.get("date"))}</time>'
             f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
-            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}{abweichler_html}</p>'
             f'{pulse_html.render_politikfeld_tags(row["politikfelder"])}</div>'
             "</article>"
         )
@@ -4480,6 +4505,7 @@ def votes_archive_styles() -> str:
     .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
+    .archive-abweichler { color:var(--ink); font-weight:650; white-space:nowrap; }
 """ + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + pulse_html.POLITIKFELD_CHIP_CSS + """
     @media (max-width: 640px) {
       .archive-row { grid-template-columns:1fr; gap:4px; }

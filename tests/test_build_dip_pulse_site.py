@@ -2434,6 +2434,81 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
         self.assertEqual(rows[0]["procedure_type"], "–")
 
+    # Value: protects=the archive column reads the sitting-wide map the committee line reads (D4); fails_when=the lookup stays per TOP; why_new=new fallback; seam=none
+    def test_procedure_type_falls_back_to_a_drucksache_linked_under_another_top(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        other = {
+            "index": 2,
+            "votes": [],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Beschlussempfehlung und Bericht"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote]), other])])
+        self.assertEqual(rows[0]["procedure_type"], "Beschlussempfehlung und Bericht")
+
+    def test_procedure_type_of_a_sitting_vote_comes_from_the_sitting_map(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [{"index": 1, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Antrag"}]}}],
+        )
+        entry["report"]["sitting_votes"] = [vote]
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual(rows[0]["procedure_type"], "Antrag")
+
+    def test_procedure_type_of_the_own_top_wins_over_the_sitting_map(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1", "21/6561"]}
+        own = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        other = {"index": 2, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "drucksachetyp": "Antrag"}]}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [other, own])])
+        self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
+
+    # Value: protects=the archive badge never reads a partial roll call as a count; fails_when=a gap counts as zero or the badge ignores completeness; why_new=badge is new (plan Slice 1); seam=none
+    def test_the_abweichler_badge_shows_only_complete_counts(self) -> None:
+        members = [
+            {"name": "A", "faction": "SPD", "vote": "yes"},
+            {"name": "B", "faction": "SPD", "vote": "yes"},
+            {"name": "C", "faction": "SPD", "vote": "no"},
+        ]
+        fractions = [{"name": "SPD", "counts": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}]
+        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members}
+        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2]}
+        unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": fractions[:0] + [
+            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
+        rows = build_dip_pulse_site.collect_votes_archive(
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous])])]
+        )
+        by_id = {row["vote"]["id"]: row for row in rows}
+        self.assertEqual((by_id["v1"]["abweichler"], by_id["v2"]["abweichler"], by_id["v3"]["abweichler"]), (1, None, 0))
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-abweichler="1"', markup)
+        self.assertIn('data-abweichler="0"', markup)
+        self.assertEqual(markup.count("data-abweichler="), 2)
+        self.assertEqual(markup.count('<span class="archive-abweichler">'), 1)
+        self.assertIn('<span class="archive-abweichler">1 Abweichler</span>', markup)
+
+    # Value: protects=every archive link lands on exactly one panel of its dossier page (D9); fails_when=render and archive disagree on the anchor or a duplicated vote gets two ids; why_new=no vote anchor before B4; seam=none
+    def test_every_archive_link_lands_on_exactly_one_panel(self) -> None:
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        voted = next(item for item in report["agenda_items"] if item.get("votes"))
+        # The same vote under a second TOP renders twice; its anchor must not.
+        other = next(item for item in report["agenda_items"] if item is not voted)
+        other["votes"] = list(voted["votes"])
+        report["sitting_votes"] = [{**voted["votes"][0], "id": 99, "title": "Ohne TOP"}]
+        rows = build_dip_pulse_site.collect_votes_archive([{"report": report, "page_path": Path("plenarprotokoll-x.html")}])
+        page = pulse_html.render_html(report)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            fragment = row["href"].split("#", 1)[1]
+            self.assertEqual(page.count(f'id="{fragment}"'), 1, fragment)
+        self.assertEqual(page.count('class="vote-panel" id="vote-'), 2)
+
     def test_collect_handles_the_legacy_singular_vote_key(self) -> None:
         vote = {"id": "v-legacy", "date": "2026-06-10", "title": "Legacy"}
         item = {"index": 1, "vote": vote, "xml_drucksachen": [], "api": {}}
@@ -2587,7 +2662,7 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
         self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
         # votes/index.html sits one level down, so the dossier link climbs out.
-        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#top-3">T</a>', markup)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#vote-v1">T</a>', markup)
 
     def test_render_index_carries_the_site_foundation_and_a_working_hidden_rule(self) -> None:
         markup = build_dip_pulse_site.render_votes_archive_index([])

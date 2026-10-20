@@ -2944,7 +2944,15 @@ def render_html(
     if "agenda_items" in report:
         report = {**report, "agenda_items": items}
     # Tags are derived here, never read from or written into the report.
-    item_politikfelder, _ = politikfelder.report_politikfelder(report, vorgang_cache or politikfelder.empty_cache())
+    cache = vorgang_cache or politikfelder.empty_cache()
+    item_politikfelder, _ = politikfelder.report_politikfelder(report, cache)
+    # The Vorgänge each vote is about, once per page, as persist stores them.
+    vote_ctx = {
+        "mp_lookup": mp_lookup,
+        "mp_prefix": "../abgeordnete/",
+        "vorgang_cache": cache,
+        "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
+    }
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
@@ -3023,7 +3031,7 @@ def render_html(
             for party, count in stats["party_counts"].most_common()
         ]
         vote_sections = (
-            "".join(components["votes"].dossier_sections(report, {"item": item, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"}))
+            "".join(components["votes"].dossier_sections(report, {**vote_ctx, "item": item}))
             if "votes" in components
             else ""
         )
@@ -3106,7 +3114,7 @@ def render_html(
     sitting_vote_section = ""
     if sitting_votes and "votes" in components:
         vote_sections = "".join(
-            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"})
+            components["votes"].dossier_sections(report, {**vote_ctx, "item": {"votes": sitting_votes}})
         )
         sitting_vote_section = (
             '<section class="top-card sitting-votes" id="sitting-votes">'
@@ -3702,6 +3710,31 @@ def render_html(
     }}
     .vote-abweichler-more[open] summary {{ display:flex; margin-left:0; }}
     .vote-abweichler-gap {{ margin:4px 0 0 18px; font-size:12px; }}
+    .vote-context {{
+      margin:12px 0 0;
+      padding:10px 0 0;
+      border-top:1px solid var(--line);
+      font-size:14px;
+      line-height:1.5;
+    }}
+    .vote-context p {{ margin:0; max-width:72ch; }}
+    .vote-context-head {{ color:var(--muted); font-size:12px; }}
+    .vote-context-head strong {{ color:var(--ink); }}
+    .vote-context-block {{ margin-top:8px; }}
+    .vote-context-block + .vote-context-block {{ padding-top:8px; border-top:1px dashed var(--line); }}
+    .vote-context-label {{ font-size:13px; font-weight:650; overflow-wrap:anywhere; }}
+    .vote-context-teaser, .vote-context-more p {{ margin-top:4px !important; }}
+    .vote-context-gap {{ margin-top:4px !important; color:var(--muted); font-size:13px; }}
+    .vote-context-block:has(.vote-context-more[open]) .vote-context-teaser {{ display:none; }}
+    .vote-context-more summary {{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      cursor:pointer;
+      color:var(--blue, #174ea6);
+      font-size:13px;
+      font-weight:650;
+    }}
     .vote-committee, .vote-abweichler-none {{ margin:10px 0 0; font-size:13px; }}
     .vote-abweichler-none {{ color:var(--muted); }}
     .member-votes {{

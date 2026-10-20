@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 
 import _support  # noqa: F401
+import politikfelder
 from features.votes import (
+    CONTEXT_NONE,
+    CONTEXT_NOT_FETCHED,
+    CONTEXT_TEASER,
+    abstract_teaser,
     document_source_links,
     render_document_links,
     render_vote_summary,
@@ -519,3 +524,118 @@ class CommitteePanelTests(unittest.TestCase):
         item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
         markup = "".join(COMPONENT.dossier_sections(report, {"item": item}))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses", markup)
+
+
+def _context_cache(**records: dict[str, object]) -> dict[str, object]:
+    return {"version": 1, "vorgaenge": records, "dokumentnummern": {"20/1": ["1"], "20/2": ["2"]}}
+
+
+class AbstractTeaserTests(unittest.TestCase):
+    def test_a_short_first_paragraph_is_the_teaser(self) -> None:
+        self.assertEqual(abstract_teaser("Kurz.\n\nZweiter Absatz."), ("Kurz.", True))
+        self.assertEqual(abstract_teaser("Kurz."), ("Kurz.", False))
+
+    def test_a_long_paragraph_is_cut_at_a_sentence_not_at_an_abbreviation(self) -> None:
+        first = "Änderung des § 5 Abs. 2 Nr. 3 und Art. 1 z. B. bei Renten. " + "Weiterer Satz mit Inhalt. " * 20
+        teaser, more = abstract_teaser(first.strip())
+        self.assertTrue(more)
+        # The last whole sentence within the limit: nine more after the first.
+        self.assertEqual(teaser, "Änderung des § 5 Abs. 2 Nr. 3 und Art. 1 z. B. bei Renten. " + "Weiterer Satz mit Inhalt. " * 8 + "Weiterer Satz mit Inhalt.")
+        self.assertLessEqual(len(teaser), CONTEXT_TEASER)
+        # "Abs.", "Nr. 3", "Art. 1" and "z. B." end no sentence.
+        self.assertEqual(abstract_teaser("Nach § 5 Abs. 2 Nr. 3 z. B. gilt " + "x" * 300)[0], "Nach § 5 Abs. 2 Nr. 3 z. B. gilt …")
+
+    def test_without_a_sentence_end_it_is_cut_at_a_word_with_an_ellipsis(self) -> None:
+        teaser, more = abstract_teaser("wort " * 100)
+        self.assertTrue(more)
+        self.assertTrue(teaser.endswith("wort …"))
+        self.assertLessEqual(len(teaser), CONTEXT_TEASER + 2)
+
+
+class VoteContextPanelTests(unittest.TestCase):
+    def panel(self, ids: list[str], state: str, cache: dict[str, object]) -> str:
+        vote = _vote(document_numbers=["20/1"])
+        return render_vote_summary({"votes": [vote]}, vote_contexts={"1": (ids, state)}, vorgang_cache=cache)
+
+    def test_the_block_sits_above_the_tallies_with_its_source(self) -> None:
+        markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "Rentengesetz", "abstract": "Kurz."}}))
+        self.assertIn("<strong>Worum es geht</strong> · Quelle: Deutscher Bundestag/Bundesrat – DIP", markup)
+        self.assertLess(markup.index('class="vote-context"'), markup.index('class="vote-fractions"'))
+        self.assertIn('<a href="https://dip.bundestag.de/vorgang/-/1">Rentengesetz · DIP</a>', markup)
+        self.assertIn('<p class="vote-context-teaser">Kurz.</p>', markup)
+        self.assertNotIn("vote-context-more", markup)
+
+    # Value: protects=blocks stay distinguishable on an offline build whose cache predates titel; fails_when=the label needs titel; why_new=D12 labels are new; seam=none
+    def test_the_label_falls_back_to_the_vorgangstyp_then_the_id(self) -> None:
+        cache = _context_cache(**{"1": {"vorgangstyp": "Gesetzgebung", "abstract": "A."}, "2": {"abstract": "B."}})
+        markup = self.panel(["1", "2"], "resolved", cache)
+        self.assertIn(">Gesetzgebung · DIP-Vorgang 1</a>", markup)
+        self.assertIn(">DIP-Vorgang 2</a>", markup)
+        self.assertEqual(markup.count('class="vote-context-block"'), 2)
+
+    # Value: protects=no markup injection from DIP text; fails_when=the sanitiser is skipped or the text unescaped; why_new=no abstract rendering before B4; seam=none
+    def test_the_abstract_is_sanitised_escaped_and_folded(self) -> None:
+        raw = "<strong>Ziel</strong> &amp; Zweck<script>alert(1)</script><br />\r\nZweiter &lt;Absatz&gt;"
+        markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "T", "abstract": raw}}))
+        self.assertNotIn("<script", markup)
+        self.assertNotIn("<strong>Ziel", markup)
+        self.assertIn('<p class="vote-context-teaser">Ziel &amp; Zweck</p>', markup)
+        self.assertIn(
+            '<details class="vote-context-more"><summary>Ganze Beschreibung</summary>'
+            "<p>Ziel &amp; Zweck</p><p>Zweiter &lt;Absatz&gt;</p></details>",
+            markup,
+        )
+
+    # Value: protects=the panel never says DIP has nothing when we never asked; fails_when=none and not_fetched share copy; why_new=new states; seam=none
+    def test_none_and_not_fetched_read_differently(self) -> None:
+        self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NONE}</p>', self.panel([], "none", _context_cache()))
+        self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NOT_FETCHED}</p>', self.panel([], "not_fetched", _context_cache()))
+        # A resolved Vorgang with no record yet, and one DIP gives no abstract.
+        missing = self.panel(["1"], "resolved", _context_cache())
+        self.assertIn(CONTEXT_NOT_FETCHED, missing)
+        self.assertNotIn(CONTEXT_NONE, missing)
+        empty = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "T", "abstract": None}}))
+        self.assertIn(CONTEXT_NONE, empty)
+        self.assertNotIn(CONTEXT_NOT_FETCHED, empty)
+
+    def test_no_block_without_contexts(self) -> None:
+        self.assertNotIn("vote-context", render_vote_summary({"votes": [_vote()]}))
+
+    # Value: protects=a vote's two panels and its vote_proceedings name the same Vorgänge (D13); fails_when=the context is narrowed per rendering TOP; why_new=new block; seam=none
+    def test_a_vote_under_two_tops_shows_one_selection_on_both_panels(self) -> None:
+        vote = _vote(document_numbers=["20/1", "20/2"])
+        cache = {
+            "version": 1,
+            "vorgaenge": {"1": {"titel": "Eins", "abstract": "A."}, "2": {"titel": "Zwei", "abstract": "B."}},
+            "dokumentnummern": {"20/1": ["1"], "20/2": ["2"]},
+        }
+        first = {"index": 1, "votes": [vote], "api": {"positions": [{"vorgang_id": "2", "vorgangstyp": "Antrag"}]}}
+        second = {"index": 2, "votes": [vote], "api": {}}
+        report = {"protocol": {"wahlperiode": 20}, "agenda_items": [first, second]}
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        panels = [
+            render_vote_summary(item, report=report, vote_contexts=contexts, vorgang_cache=cache) for item in (first, second)
+        ]
+        self.assertEqual(contexts["1"], (["2"], "resolved"))
+        for markup in panels:
+            self.assertIn(">Zwei · DIP</a>", markup)
+            self.assertNotIn(">Eins · DIP</a>", markup)
+
+
+class VotePanelAnchorTests(unittest.TestCase):
+    # Value: protects=one valid anchor per vote (D9); fails_when=both copies get the id; why_new=no anchor before B4; seam=none
+    def test_a_vote_under_two_tops_has_one_id_on_its_first_panel(self) -> None:
+        vote = _vote(id=1002)
+        first, second = {"index": 1, "votes": [vote]}, {"index": 2, "votes": [vote]}
+        report = {"agenda_items": [first, second]}
+        self.assertIn('<section class="vote-panel" id="vote-1002">', render_vote_summary(first, report=report))
+        self.assertNotIn('id="vote-1002"', render_vote_summary(second, report=report))
+
+    def test_a_sitting_level_vote_is_anchored_in_the_sitting_section(self) -> None:
+        vote = _vote(id=7)
+        report = {"agenda_items": [], "sitting_votes": [vote]}
+        self.assertIn('id="vote-7"', render_vote_summary({"votes": [vote]}, report=report))
+
+    def test_a_vote_without_id_keeps_no_anchor(self) -> None:
+        vote = _vote(id=None)
+        self.assertNotIn('id="vote-', render_vote_summary({"index": 1, "votes": [vote]}))

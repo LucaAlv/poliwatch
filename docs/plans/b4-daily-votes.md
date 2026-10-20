@@ -1169,7 +1169,7 @@ Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
   - Surfaced by: Architecture F1 (D3), 185 vs 190.
   - Files: scripts/derive.py, tests/test_derive.py or test_mehrheitsvotum.py
   - Verify: unittest; replay expects 190/217, plus the per-vote check (D15)
-- [ ] **T2 (P1, human: ~2h / CC: ~10min)**: cache: keep `titel`; refetch vote Vorgänge with an empty abstract or no titel
+- [x] **T2 (P1, human: ~2h / CC: ~10min)**: cache: keep `titel`; refetch vote Vorgänge with an empty abstract or no titel
   - Surfaced by: Outside voice O1/O2 (D11, D12)
   - Files: scripts/validate_dip_protocol.py, scripts/politikfelder.py, tests/test_politikfelder.py
   - Verify: unittest; the next online build reports old/new abstract count for the 64 votes
@@ -1177,11 +1177,11 @@ Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
   - Surfaced by: Architecture F3 (D6); the state rule from plan Slice 1
   - Files: scripts/derive.py, scripts/features/votes.py, tests/test_features_votes.py, tests/test_mehrheitsvotum.py (per-vote SQL parity, C1)
   - Verify: unittest; replay total 632
-- [ ] **T4 (P2, human: ~4h / CC: ~20min)**: store/export schema 6 (`proceedings.abstract`/`title`, `vote_proceedings`, `votes.context_state`)
+- [x] **T4 (P2, human: ~4h / CC: ~20min)**: store/export schema 6 (`proceedings.abstract`/`title`, `vote_proceedings`, `votes.context_state`)
   - Surfaced by: Architecture F4 (D7); plan Slice 2
   - Files: scripts/persist_dip_pulse_store.py, scripts/build_dip_pulse_site.py, tests/test_persist_dip_pulse_store.py, tests/test_daten_export.py, tests/test_repersist.py, docs/data-license.md
   - Verify: unittest; the export round trip; the old store is refused
-- [ ] **T5 (P2, human: ~3h / CC: ~15min)**: context render with the union of linked ids, title labels with a fallback, and sanitizer
+- [x] **T5 (P2, human: ~3h / CC: ~15min)**: context render with the union of linked ids, title labels with a fallback, and sanitizer
   - Surfaced by: O3 (D13), D12, F10, F7, F5 (ctx threading)
   - Files: scripts/politikfelder.py, scripts/features/votes.py, scripts/render_dip_pulse_html.py, tests
   - Verify: unittest; DevTools check at desktop and 375px
@@ -1190,20 +1190,32 @@ Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
   - Done on b4-lane-b: the recipe id is `r6-ausschuss`, numbered like r1–r5.
   - Files: scripts/features/votes.py, scripts/build_dip_pulse_site.py, tests
   - Verify: unittest, including the Entschließungsantrag fixture
-- [ ] **T7 (P2, human: ~1.5h / CC: ~8min)**: first-panel anchor, archive href, sitting-wide procedure type
+- [x] **T7 (P2, human: ~1.5h / CC: ~8min)**: first-panel anchor, archive href, sitting-wide procedure type
   - Surfaced by: Test review F8 (D9), F1 side effect (D4)
   - Files: scripts/render_dip_pulse_html.py, scripts/build_dip_pulse_site.py, tests/test_b1_consumers.py, tests/test_build_dip_pulse_site.py
   - Verify: unittest; report the old/new '–' count
-- [ ] **T8 (P2, human: ~2h / CC: ~15min + 5min replay)**: regression contract and replay diff
+- [x] **T8 (P2, human: ~2h / CC: ~15min + 5min replay)**: regression contract and replay diff
   - Surfaced by: Test review F9 (D10), D15
   - Files: (verification only)
   - Verify: full suite green; the CSV diff shows only new columns and tables
-- [ ] **T9 (P3, human: ~30min / CC: ~5min)**: docs and TODOS
+- [x] **T9 (P3, human: ~30min / CC: ~5min)**: docs and TODOS
   - Surfaced by: Step 0, D5, D16, D17, B3 item 4
   - Files: docs/plans/b4-daily-votes.md, TODOS.md (B4 parts done, B3 items 3 and 4 text, T1 P2 entry, T2 P3 entry)
   - Verify: read-through
 
 Task JSONL for /autoplan: not persisted (host plan mode allows writes only to this file).
+
+### Implementation result (2026-10-20, T5/T7/T8/T9 after merging b4-lane-a and b4-lane-b)
+Replay on copies of the reference store, `--offline --repersist`, cffa6aa (409 s) vs this branch (423 s):
+- D10: the Daten CSVs are 27 → 28 (`vote_proceedings`, 260 rows). The only other differences are the new columns `proceedings.abstract` and `votes.context_state` and the `datenstand` row (export format 5 → 6, hashes). Every other cell is equal: tags 0 moved, 217 votes, and `proceedings` stays at 3,111 rows (no vote-only Vorgang was new to it).
+- Store: `context_state` is resolved on 217 of 217, 153 votes have a DIP abstract, and 39 votes resolve to more than one Vorgang (the plan's 42 is reproduced on the narrow tier before narrowing to the TOP union, 42 → 39). The r3 total is 632, the Python total is 632 and the archive `data-abweichler` sum is 632 (95 rows with N > 0).
+- D15: the panel and the store both cite a committee on 190 votes, with 0 per-vote differences.
+- D4 (page only): the procedure type '–' rows go 5 → 0 (votes 980, 961: Beschlussempfehlung; 898, 894: Gesetzentwurf; 897: Entschließungsantrag), with 0 type→'–' and 0 type→type.
+- D9: the 8 votes listed under several TOPs are 8 votes but render 2 to 7 times each (246 panels for 217 votes, not 225); each still has one id.
+- D9: all 217 archive links are `#vote-<id>` (before: `#top-N`), and each resolves to exactly one id on its page.
+- F10: the reference cache has no `titel` (0 of 7,511), so all 306 context labels on the replay pages are the fallback "<Vorgangstyp> · DIP-Vorgang <id>". The titel path is covered by unit tests only, until an online build.
+- The plan's Slice 1 archive badge (`data-abweichler`, "N Abweichler") was missing from lane B and was added with T7.
+- Not measured: D11's "how many of the 64 gained an abstract" needs an online build.
 
 ## Unresolved decisions
 None. D1–D17 were all answered.
