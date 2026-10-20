@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The "Worum es geht" block names each Vorgang by its DIP title. On the reference cache no context Vorgang had a title before (0 of 234; every label read "<Vorgangstyp> · DIP-Vorgang <id>"); after one online refetch all 234 have one, and DIP returned no empty title. The Vorgangstyp fallback and the refetch of records without a title are gone; a Vorgang with no record yet reads "DIP-Vorgang <id>".
+- The same refetch asked DIP again for the 86 context Vorgänge with an empty abstract: none had gained one, so 153 of 217 votes have a DIP abstract before and after.
+
 ## [0.20.0.0] - 2026-10-19
 
 ### Added

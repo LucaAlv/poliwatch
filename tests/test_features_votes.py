@@ -511,11 +511,11 @@ class VoteContextPanelTests(unittest.TestCase):
         self.assertIn('<p class="vote-context-teaser">Kurz.</p>', markup)
         self.assertNotIn("vote-context-more", markup)
 
-    # Value: protects=blocks stay distinguishable on an offline build whose cache predates titel; fails_when=the label needs titel; why_new=D12 labels are new; seam=none
-    def test_the_label_falls_back_to_the_vorgangstyp_then_the_id(self) -> None:
-        cache = _context_cache(**{"1": {"vorgangstyp": "Gesetzgebung", "abstract": "A."}, "2": {"abstract": "B."}})
-        markup = self.panel(["1", "2"], "resolved", cache)
-        self.assertIn(">Gesetzgebung · DIP-Vorgang 1</a>", markup)
+    # Value: protects=a block without a titel still names its Vorgang; fails_when=the label needs titel; why_new=D12 labels are new; seam=none
+    def test_a_block_without_a_titel_is_labelled_by_its_id(self) -> None:
+        cache = _context_cache(**{"1": {"vorgangstyp": "Gesetzgebung", "titel": "", "abstract": "A."}})
+        markup = self.panel(["1", "2"], "not_fetched", cache)
+        self.assertIn(">DIP-Vorgang 1</a>", markup)
         self.assertIn(">DIP-Vorgang 2</a>", markup)
         self.assertEqual(markup.count('class="vote-context-block"'), 2)
 

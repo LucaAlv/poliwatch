@@ -64,7 +64,7 @@ EINZELPLAENE_IN_THE_CACHE = (
 
 
 def vorgang(*sachgebiete: str, typ: str = "Gesetzgebung") -> dict[str, Any]:
-    """A complete cache record: a vote's Vorgang with a title and an abstract is not refetched (D11, D12)."""
+    """A complete cache record: a vote's Vorgang with an abstract is not refetched (D11); the title labels its block (D12)."""
     return {"sachgebiet": list(sachgebiete), "vorgangstyp": typ, "titel": "Titel", "abstract": "Worum es geht."}
 
 
@@ -809,10 +809,10 @@ class FetchTests(unittest.TestCase):
     # Value: protects=D12: the cache keeps a Vorgang's titel, the label of its "Worum es geht" block; fails_when=vorgang_cache_record drops titel, so blocks of vote-only Vorgänge have no name; why_new=the record kept no title before B4; seam=none
     def test_the_cache_record_keeps_the_titel(self) -> None:
         self.assertEqual(dip.vorgang_cache_record(dict(raw("Recht"), titel="Gesetz über X"))["titel"], "Gesetz über X")
-        self.assertIn("titel", dip.vorgang_cache_record({}))  # fetched without a title: the key says so, no refetch for it
+        self.assertIsNone(dip.vorgang_cache_record({})["titel"])  # DIP gave no title
 
-    # Value: protects=D11/D12: an online build asks DIP again for a vote's context Vorgang whose abstract is still empty or whose record predates titel, and for nothing else; fails_when=fetch_targets keeps refetching only on an empty Sachgebiet, so "Keine Beschreibung in DIP" stays false for good, or it refetches TOP-only or wide-tier Vorgänge on every build; why_new=the refetch rule is new in B4; seam=none
-    def test_fetch_targets_refetches_vote_vorgaenge_without_abstract_or_titel(self) -> None:
+    # Value: protects=D11: an online build asks DIP again for a vote's context Vorgang whose abstract is still empty, and for nothing else (a record without titel is not refetched for it); fails_when=fetch_targets keeps refetching only on an empty Sachgebiet, so "Keine Beschreibung in DIP" stays false for good, or it refetches TOP-only or wide-tier Vorgänge on every build; why_new=the refetch rule is new in B4; seam=none
+    def test_fetch_targets_refetches_vote_vorgaenge_without_abstract(self) -> None:
         complete = vorgang("Recht")
         no_abstract = dict(complete, abstract="")
         no_titel = {k: v for k, v in complete.items() if k != "titel"}
@@ -826,9 +826,8 @@ class FetchTests(unittest.TestCase):
             {"21/1": ["a"], "21/2": ["b"], "21/3": ["c"], "21/4": ["d"], "21/6": ["w1", "w2", "w3"]},
         )
         # top: a TOP's own Vorgang with a Sachgebiet; w1-w3: wide tier only, never the vote's prose.
-        self.assertEqual(pf.fetch_targets([report], cache), (["a", "b"], []))
+        self.assertEqual(pf.fetch_targets([report], cache), (["a"], []))
         cache["vorgaenge"]["a"] = complete
-        cache["vorgaenge"]["b"] = complete
         self.assertEqual(pf.fetch_targets([report], cache), ([], []))
 
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:

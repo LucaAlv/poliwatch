@@ -1215,7 +1215,7 @@ Replay on copies of the reference store, `--offline --repersist`, cffa6aa (409 s
 - D9: all 217 archive links are `#vote-<id>` (before: `#top-N`), and each resolves to exactly one id on its page.
 - F10: the reference cache has no `titel` (0 of 7,511), so all 306 context labels on the replay pages are the fallback "<Vorgangstyp> · DIP-Vorgang <id>". The titel path is covered by unit tests only, until an online build.
 - The plan's Slice 1 archive badge (`data-abweichler`, "N Abweichler") was missing from lane B and was added with T7.
-- Not measured: D11's "how many of the 64 gained an abstract" needs an online build.
+- D11, measured 2026-10-20 (review fixes Step 9, online refetch on a copy of the reference data): 4,289 Vorgänge refetched, 0 failed. The 64 votes without an abstract rest on 86 context Vorgänge with an empty abstract; 0 gained one, so votes with an abstract stay 153 → 153. F10: titel on context Vorgänge 0 → 234 of 234, 0 empty, so the Vorgangstyp fallback was deleted.
 
 ### Amendments from the code review (2026-10-20, `docs/plans/b4-review-fixes.md`)
 Scope the review flagged as beyond this plan, ratified as deliberate. Reverting any of it would lower quality.

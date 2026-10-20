@@ -194,14 +194,10 @@ def dip_vorgang_url(vorgang_id: str) -> str:
 
 
 def _vorgang_label(vorgang_id: str, record: Mapping[str, Any] | None) -> str:
-    """"<titel> · DIP"; an offline build on records cached before titel was kept
-    falls back to "<Vorgangstyp> · DIP-Vorgang <id>" (F10)."""
-    record = record or {}
-    titel = " ".join(str(record.get("titel") or "").split())
-    if titel:
-        return f"{titel} · DIP"
-    vorgangstyp = " ".join(str(record.get("vorgangstyp") or "").split())
-    return f"{vorgangstyp} · DIP-Vorgang {vorgang_id}" if vorgangstyp else f"DIP-Vorgang {vorgang_id}"
+    """"<titel> · DIP"; "DIP-Vorgang <id>" where there is no titel to show, a
+    record not fetched yet or (none on the reference cache) an empty one from DIP."""
+    titel = " ".join(str((record or {}).get("titel") or "").split())
+    return f"{titel} · DIP" if titel else f"DIP-Vorgang {vorgang_id}"
 
 
 def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextState, cache: Mapping[str, Any] | None) -> str:

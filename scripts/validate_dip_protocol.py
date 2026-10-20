@@ -284,8 +284,7 @@ VORGANG_BATCH = 100
 
 def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
     """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` and
-    ``titel`` are not used by the Politikfelder; a vote's "Worum es geht" reads them
-    (the key ``titel`` is always present, so a record without it predates the field).
+    ``titel`` are not used by the Politikfelder; a vote's "Worum es geht" reads them.
     A Sachgebiet that is not a list of labels raises DipError."""
     sachgebiet = document.get("sachgebiet") or []
     if not isinstance(sachgebiet, list) or not all(isinstance(label, str) for label in sachgebiet):

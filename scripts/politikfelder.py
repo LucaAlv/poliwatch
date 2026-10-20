@@ -617,8 +617,7 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
     Returns (Vorgang ids, Drucksache numbers). Ids: every id the TOPs name that
     is missing from the cache, plus cached ones still without a Sachgebiet (DIP
     may have filled it since), plus the Vorgänge a vote's context reads
-    (``report_vote_vorgaenge``) whose record has an empty abstract or predates
-    ``titel``. Numbers: those of every vote, and of every TOP without Vorgänge of its
+    (``report_vote_vorgaenge``) whose record has an empty abstract. Numbers: those of every vote, and of every TOP without Vorgänge of its
     own (``reads_cited_numbers``), that the cache has not resolved, plus the Vorgänge
     already resolved numbers name.
     """
@@ -654,11 +653,11 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
                 want_number(number)
                 for vorgang_id in resolved.get(str(number)) or ():
                     want_id(str(vorgang_id))
-        # DIP often adds an abstract after the Sachgebiet, and records cached before
-        # titel was kept lack it: ask again for the Vorgänge a vote's context shows.
+        # DIP often adds an abstract after the Sachgebiet (D11): ask again for the
+        # Vorgänge a vote's context shows while theirs is empty.
         for context in report_vote_vorgaenge(report, cache).values():
             for vorgang_id in context.vorgang_ids:
                 record = records.get(vorgang_id)
-                if record is not None and ("titel" not in record or not record.get("abstract")) and vorgang_id not in ids:
+                if record is not None and not record.get("abstract") and vorgang_id not in ids:
                     ids.append(vorgang_id)
     return ids, numbers
