@@ -16,7 +16,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Item 2 (the topic filter on `votes/index.html`) is covered by B3.
+4. "Vote reading misses half the inverted votes and never stores it" (P1, found 2026-10-20), then "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Item 2 (the topic filter on `votes/index.html`) is covered by B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -866,7 +866,11 @@ Done when the chart and the recipe give the same numbers on the same release, an
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
-1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Otherwise write a labelled AI sentence under the validators item.
+1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Where it is missing, use the two deterministic layers below; the labelled AI sentence under the validators item is deferred (decided 2026-10-20).
+   - **The gap depends on how a vote's Drucksachen are joined to Vorgänge:** 50, 67 or 77 of 217 votes in the reference store have no abstract (A3 agent: 64). Name the join in the spec. Of the 50 under the widest join, 45 are opposition Anträge, for which DIP writes no abstract.
+   - **Lead sentence from facts we already hold**, in the pattern of the bundestag.de Textarchiv: date, what was voted on (Gesetzentwurf / Beschlussempfehlung zu Antrag X), result with tally, committee.
+   - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free.
+   - **Link the bundestag.de "Debatte" text, never copy it.** It is editorial content of the Internetredaktion, private use only under their Impressum (215 of 217 votes have one). The vote page's `showItContainer_<articleId>_…` gives the article id exactly. One article covers up to 9 votes and its section headings can name the wrong Antrag (vote 1005), so match a vote to its section by Drucksache number. Consider adding these texts to the ADR 0003 consent e-mail (question 5).
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
 3. The named Abweichler per Fraktion on the vote panel. The data exists (recipe `r3-abweichler`).
 4. The responsible committee, from the Beschlussempfehlung.
@@ -875,11 +879,28 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong.
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. That item shipped, but the inversion it detects is incomplete and never reaches the page: see "Vote reading misses half the inverted votes and never stores it". Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Inverted-vote reading; Politikfeld tags (for 2); deterministic validators (only for the AI fallback in 1)
+**Depends on:** Vote reading misses half the inverted votes and never stores it; Politikfeld tags (for 2); deterministic validators (only for the deferred AI fallback in 1)
+
+### Vote reading misses half the inverted votes and never stores it
+
+**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
+1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
+2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
+3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
+
+Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
+
+**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
+
+**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
 
 ### Politikfelder: findings deferred from the B3 review
 
