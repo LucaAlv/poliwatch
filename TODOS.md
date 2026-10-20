@@ -244,7 +244,7 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 
 ### A chair printed as a speaker marker without a role is counted as a Zwischenfrage
 
-**What:** Recognize the Sitzungsleitung when the XML prints the chair as a `<p klasse="redner">` marker with no `rolle_lang` inside a member's `<rede>`, and exclude it like a presidium marker (rule 5, 6d). Seen in 21/17 (`nested:ID211701400:3`: Ortleb's "Herr Kollege Renner, erlauben Sie eine Zwischenfrage …", counted as her Zwischenfrage) and 18/10 (Bulmahn, still refused). Check 19/120 (Pau, 2 units) by hand. Evidence would be the person who chairs the sitting under `<name>`, plus chair wording; a rule needs the owner's yes.
+**What:** Recognize the Sitzungsleitung when the XML prints the chair as a `<p klasse="redner">` marker with no `rolle_lang` inside a member's `<rede>`, and exclude it like a presidium marker (rule 5, 6d). Seen in 21/17 (`nested:ID211701400:3`: Ortleb's "Herr Kollege Renner, erlauben Sie eine Zwischenfrage …", counted as her Zwischenfrage) and 18/10 (Bulmahn, still refused). Evidence would be the person who chairs the sitting under `<name>`, plus chair wording; a rule needs the owner's yes.
 
 **Why:** A chair's question is counted as an MdB's Zwischenfrage, also in WP 21 data ([rule-5 validation record](docs/plans/a3-rule5-validation.md), finding 2).
 

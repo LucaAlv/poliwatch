@@ -23,6 +23,11 @@ This file records the check of sub-rules 6a–6d ([a3-rule5-wp18-19.md](a3-rule5
 
 Every one of the 290 files keeps its `units_sha` after each of the four commits. No count moved.
 
+`scripts/audit_offline_turns.py` against the parser of 3f2bc97 (`--baseline-parser`, `--baseline-speech-kinds`):
+- 290 of 290 files accepted on both sides, with `count_changes` empty.
+- Every per-sitting field (counts, unresolved, turns, diagnostics, text hashes) is identical, and so is the committed record `offline-v5-audit.json`: 26267 Reden and 1433 Zwischenfragen.
+- On the 175 WP 18/19 files the same audit runs without error: 155 accepted, 20 rejected. That includes 18/10 at the split locator `ID1801002600:2 marker 4`.
+
 One existing test changed: `test_fresh_faction_authorization_requires_new_consent_after_refusal`.
 - **What it did:** it removed 20/51's consent and expected a refusal at Ullrich.
 - **Why it changed:** Ullrich opens "Vielen Dank, …, dass Sie die Zwischenfrage zulassen", which 6a part 2 reads as grant evidence over a carried refusal.
@@ -73,6 +78,28 @@ One existing test changed: `test_fresh_faction_authorization_requires_new_consen
 
 19/1 is part of these totals. Its Reden are the case described under "Exclusions".
 
+## Review of the units the new rules admit
+
+The harness shows that nothing regressed. It does not show that the units the new rules let through are right. So an instrumented copy of the parser logged every unit that exists only because of 6a–6d. For a Zwischenfrage, that means it fails the old test ("?", the old `announced`, continuation). The run covered all 465 files, and a second pass logged instead of refusing, so later turns in refused files were reached too. Every logged unit was read in the source.
+
+- **WP 20/21:** 0 new-rule units in 290 files.
+- **WP 18/19:** 23 new-rule units:
+
+| Rule | Units | Verdict |
+|---|---:|---|
+| 6a | 17 | correct (consent or opening thanks after a visible offer; a cancelled carried refusal was right in every case) |
+| 6b | 2 decided by 6b alone (19/210 m5, 19/216 m6), and 1 with 6a (19/148 m5) | correct |
+| 6c | 2 (18/70 Binder, 18/10 Bartz) | correct |
+| 6d | 1 Sitzungsleitung (18/100 m3, Lammert) and 1 election acceptance (19/1) | correct; no Präsident or Vizepräsident asking as an MdB was caught |
+
+Four are fragments. The kind is right, but one Zwischenfrage exchange yields two units, because nested turns are counted per marker, as they already are in WP 20/21:
+- 19/210 ID1921006100 m3: only a thanks line; the question is m5.
+- 19/190 ID1919001300 m7: only a name correction; the question is m8.
+- 19/148 ID1914809900 m6: the answer to the chair's "Was war jetzt die Frage?".
+- 19/104 ID1910406900 m6: restates the question after the chair's "die Frage ist angekommen".
+
+Whether a Zwischenfrage counts per exchange or per marker is a counting question for both encodings, not a defect of 6a. These four were left as they are.
+
 ## Remaining blockers (20)
 
 Each entry is the parser's first blocker in its file. Fixing one can expose the next.
@@ -121,16 +148,17 @@ The owner decided on 2026-10-20 that the constituent sittings are exclusions for
    It happens in 19/1 too (above). 6d covers only nested markers. These counts did not move, and the same TODO lists them.
 2. **A chair printed as a marker without a role.**
    - In 18/10 the chair (Bulmahn, SPD) is a `<p klasse="redner">` with no `rolle_lang`. Her question "gestatten Sie eine Zwischenfrage …?" has a question mark, so it would pass as her own Zwischenfrage. 18/10 stays refused, so nothing is counted.
-   - A scan of every parsing file (`tools/rule5/chair_scan.py`: a nested unit whose speaker's surname is a chair's in the same sitting) finds 5 units, none moved by this work:
+   - A scan of every parsing file (`tools/rule5/chair_scan.py`: a nested unit whose speaker's surname is a chair's in the same sitting) finds 5 units, none moved by this work; one is a real miscount:
      - 21/17 `nested:ID211701400:3`: Ortleb's "Herr Kollege Renner, erlauben Sie eine Zwischenfrage …", chair text counted as a Zwischenfrage in WP 21;
      - 20/102 (Kubicki, 2 units): read as his own MdB turn ("ich bin jetzt dran");
-     - 19/120 (Pau, 2 units: "Die Entwaffnung der Szene.", "Ja."): not yet checked.
+     - 19/120 (Pau, 2 units: "Die Entwaffnung der Szene.", "Ja."): not a chair. Pau asks as an MdB in a Befragung with Seehofer while Schäuble chairs. "Ja." is her answer to the chair's "Nachfrage?", counted as before this work.
 
    21/17 is a miscount in published-scope data and needs its own fix.
 
 ## Next steps
 
 1. The full WP 18/19 download (about 310 files) at a gentle rate, once dserver and DIP answer again. Then the counting audit on every file (step 3 of "How it gets checked").
+   - Still open: the DIP Aktivitäten cross-check for 6c (ADR 0002). It should list Binder's Rede in 18/70 as a Rede of its own. DIP did not answer in this session, and no cached Aktivitäten for 18/70 were found under `~/agent-runs/a3`.
 2. Owner review of the remaining blockers: exclusion or a later rule.
 3. The pilot re-run.
 4. Phase 3, which needs the owner's go.
