@@ -22,5 +22,17 @@
     "url": "https://dserver.bundestag.de/btp/19/19013.xml",
     "source_sha256": "e7bb3f7675bcb8990067bc569588b53abd496eb07e481e9df33e797f991cb36b",
     "editing": "First complete speaker marker for Klaus-Dieter Fritsche, redner 999990013; explicit structured and printed government role retained."
+  },
+  {
+    "fixture": "a3-wp18-18-150.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18150.xml",
+    "source_sha256": "a88563e7f2cb07e50ff4b9c0cee9a6c584189a52b8efd6737cf3f0da9d6f1d5d",
+    "editing": "A3 pilot: only the TOP with Reden of the Bundesminister der Justiz und für Verbraucherschutz; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-wp19-19-100.xml",
+    "url": "https://dserver.bundestag.de/btp/19/19100.xml",
+    "source_sha256": "4980eef52ea79e4788ac6130373ea23275945eb67fa09ab951c19c3645875341",
+    "editing": "A3 pilot: only the TOPs with Karliczek's Rede (role 'B undesministerin ...') and the spelling 'BÜNDNIS 90/DIE GRÜNE N'; J paragraphs without markup truncated to 300 characters."
   }
 ]

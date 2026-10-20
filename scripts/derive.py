@@ -217,10 +217,6 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     # Auxiliary organs of the Bundestag: neither government nor Bundesrat.
     (r"Wehrbeauftragte[r]? des Deutschen Bundestages", "weitere"),
     (r"Polizeibeauftragte[r]? des Bundes beim Deutschen Bundestag", "weitere"),
-    # The Bundestag's own presidium at the lectern (18/100 Lammert, 18/245
-    # Bulmahn and Singhammer, 19/1 Solms and Schäuble): an organ of the
-    # Bundestag, so a weitere Sprechrolle. Chairing a Sitzung is no Rede at all.
-    (r"(Vize|Alters)?[Pp]räsident(in)?", "weitere"),
     # Who speaks for the Bundesregierung: its members (Art. 62 GG) and those who
     # speak on its behalf (ADR 0001).
     (r"Bundeskanzler(in)?", "bundesregierung"),
