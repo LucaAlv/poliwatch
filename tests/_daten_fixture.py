@@ -259,6 +259,12 @@ def seed_store(path: Path) -> dict[str, Any]:
                 """,
                 (agenda_item_2, now, now),
             )
+            # v1 cites a committee's Beschlussempfehlung, the row R6 counts.
+            beschlussempfehlung = pulse_store.upsert_document(
+                conn, now=now, document_number="20/102", document_type="Beschlussempfehlung und Bericht",
+                title="Beschlussempfehlung zur Testbarkeit", origin=["Haushaltsausschuss"],
+            )
+            conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES ('v1', ?)", (beschlussempfehlung,))
         person_registry.reconcile(conn)
         conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
         conn.commit()

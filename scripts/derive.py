@@ -14,6 +14,7 @@ Each function follows the CONTEXT.md entry of the same term.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -459,6 +460,98 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
         add(number)
     return numbers
+
+
+#: Groups whose MdBs have no Zusammenschluss, so none of them can make an Abweichung.
+NO_ZUSAMMENSCHLUSS = frozenset({"fraktionslos", "Unbekannt"})
+
+
+def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """The Abweichler of one namentliche Abstimmung, per Zusammenschluss.
+
+    The Mehrheitsvotum comes from the group's reported fraction counts, never
+    from its member list; a member is an Abweichler on Ja against a Nein
+    Mehrheitsvotum or Nein against a Ja one. Inversion changes what Ja means,
+    not who voted unlike their group, so it plays no part here.
+
+        no member rows for the group ──────────► none     (nobody named)
+        member Stimmen ≠ fraction counts ──────► partial  (nobody named)
+        counts match ─► Mehrheitsvotum Ja/Nein? ─no─► complete, no members
+                                               └yes─► complete, members with
+                                                      the opposite Ja/Nein
+
+    fraktionslos and an unknown affiliation are no Zusammenschluss and get no
+    entry. Members come back alphabetical, as the Einzelstimmen list them.
+    """
+    members_by_group: dict[str, list[Mapping[str, Any]]] = {}
+    for member in vote.get("members") or []:
+        members_by_group.setdefault(zusammenschluss(member.get("faction")) or "Unbekannt", []).append(member)
+    result: dict[str, dict[str, Any]] = {}
+    for fraction in merge_fractions(vote.get("fractions")):
+        name = fraction["name"]
+        if name in NO_ZUSAMMENSCHLUSS:
+            continue
+        members = members_by_group.get(name) or []
+        if not members:
+            result[name] = {"members": [], "state": "none"}
+            continue
+        stimmen = Counter(str(member.get("vote") or "") for member in members)
+        if stimmen != Counter(fraction["counts"]):
+            result[name] = {"members": [], "state": "partial"}
+            continue
+        leading = majority_vote(fraction["counts"])
+        abweichler = [
+            member for member in members
+            if leading in {"yes", "no"} and member.get("vote") in {"yes", "no"} and member.get("vote") != leading
+        ]
+        result[name] = {"members": sorted(abweichler, key=lambda member: str(member.get("name") or "")), "state": "complete"}
+    return result
+
+
+def report_drucksachen(report: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Bundestag Drucksache number -> its DIP record, from every TOP of a sitting.
+
+    A vote's Drucksachen are often linked under another TOP of the same
+    sitting than the one the vote sits under (5 of 217 Beschlussempfehlungen
+    on the reference store), so a vote is matched against the whole sitting.
+    First-seen wins; Bundesrat papers, which share the number shape, are left out.
+    """
+    documents: dict[str, Mapping[str, Any]] = {}
+    for item in report.get("agenda_items") or []:
+        for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+            if document_issuer(doc.get("herausgeber"), doc.get("url")) != "BT":
+                continue
+            number = canonical_document_number(doc.get("dokumentnummer"))
+            if number:
+                documents.setdefault(number, doc)
+    return documents
+
+
+def vote_committees(vote: Mapping[str, Any], report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The Beschlussempfehlungen among a vote's Drucksachen, with their urheber.
+
+    One entry per matched Drucksache, in the vote's order: its number, DIP
+    type, the committees DIP names as its urheber, and its URL. This cites a
+    document and claims no role: a vote on an Entschließungsantrag lists the
+    law's Beschlussempfehlung too. A Beschlussempfehlung without an urheber
+    names no committee and is left out, as the store's join leaves it out.
+    """
+    documents = report_drucksachen(report)
+    committees: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in vote.get("document_numbers") or []:
+        number = canonical_document_number(raw)
+        doc = documents.get(number)
+        if not doc or number in seen or not str(doc.get("drucksachetyp") or "").startswith("Beschlussempfehlung"):
+            continue
+        urheber = list(dict.fromkeys(_clean(name) for name in doc.get("urheber") or [] if _clean(name)))
+        if not urheber:
+            continue
+        seen.add(number)
+        committees.append(
+            {"number": number, "drucksachetyp": str(doc.get("drucksachetyp")), "urheber": urheber, "url": doc.get("url")}
+        )
+    return committees
 
 
 def vote_outcome(vote: Mapping[str, Any]) -> str | None:

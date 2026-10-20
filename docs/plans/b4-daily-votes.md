@@ -1165,7 +1165,7 @@ Critical gaps (no test, no handling, and silent): **0** inside B4's scope. The t
 Synthesized from this review's findings. Each task derives from a specific finding above. Run with Claude Code or Codex; checkbox as you ship.
 Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
 
-- [ ] **T1 (P1, human: ~2h / CC: ~10min)**: derive: sitting-wide committee map and `vote_committees(vote, report)`
+- [x] **T1 (P1, human: ~2h / CC: ~10min)**: derive: sitting-wide committee map and `vote_committees(vote, report)`
   - Surfaced by: Architecture F1 (D3), 185 vs 190.
   - Files: scripts/derive.py, tests/test_derive.py or test_mehrheitsvotum.py
   - Verify: unittest; replay expects 190/217, plus the per-vote check (D15)
@@ -1173,7 +1173,7 @@ Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
   - Surfaced by: Outside voice O1/O2 (D11, D12)
   - Files: scripts/validate_dip_protocol.py, scripts/politikfelder.py, tests/test_politikfelder.py
   - Verify: unittest; the next online build reports old/new abstract count for the 64 votes
-- [ ] **T3 (P2, human: ~3h / CC: ~15min)**: Abweichler predicate and panel with a 10-name fold and three states
+- [x] **T3 (P2, human: ~3h / CC: ~15min)**: Abweichler predicate and panel with a 10-name fold and three states
   - Surfaced by: Architecture F3 (D6); the state rule from plan Slice 1
   - Files: scripts/derive.py, scripts/features/votes.py, tests/test_features_votes.py, tests/test_mehrheitsvotum.py (per-vote SQL parity, C1)
   - Verify: unittest; replay total 632
@@ -1185,8 +1185,9 @@ Effort assumptions: features ~30x, tests ~50x, bug fix ~20x (human ÷ CC).
   - Surfaced by: O3 (D13), D12, F10, F7, F5 (ctx threading)
   - Files: scripts/politikfelder.py, scripts/features/votes.py, scripts/render_dip_pulse_html.py, tests
   - Verify: unittest; DevTools check at desktop and 375px
-- [ ] **T6 (P2, human: ~1h / CC: ~5min)**: committee wording cites the Beschlussempfehlung; `r-ausschuss` recipe
+- [x] **T6 (P2, human: ~1h / CC: ~5min)**: committee wording cites the Beschlussempfehlung; `r-ausschuss` recipe
   - Surfaced by: O6 (D14), D1
+  - Done on b4-lane-b: the recipe id is `r6-ausschuss`, numbered like r1–r5.
   - Files: scripts/features/votes.py, scripts/build_dip_pulse_site.py, tests
   - Verify: unittest, including the Entschließungsantrag fixture
 - [ ] **T7 (P2, human: ~1.5h / CC: ~8min)**: first-panel anchor, archive href, sitting-wide procedure type

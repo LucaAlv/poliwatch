@@ -441,7 +441,7 @@ class RenderLandingPageDatenCardTests(unittest.TestCase):
         # source row also links to its destination, so identify the optional
         # data row by its unique description text.
         without_page = b.render_landing_page([], database_page_href=None, data_stand=None)
-        self.assertNotIn("fünf geprüfte SQL-Abfragen", without_page)
+        self.assertNotIn("geprüfte SQL-Abfragen", without_page)
 
 
 class RenderSiteUnavailablePageWiringTests(unittest.TestCase):

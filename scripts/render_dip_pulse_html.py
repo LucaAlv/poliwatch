@@ -3684,6 +3684,26 @@ def render_html(
       font-size:13px;
     }}
     .vote-fraction-row strong {{ overflow-wrap:anywhere; }}
+    .vote-fraction-group {{ min-width:0; }}
+    .vote-abweichler {{ margin:4px 0 0 18px; font-size:12px; line-height:1.45; }}
+    .vote-abweichler-label {{ display:block; color:var(--muted); font-weight:650; }}
+    .vote-abweichler-list {{ display:inline; margin:0; padding:0; list-style:none; }}
+    .vote-abweichler-list li {{ display:inline; }}
+    .vote-abweichler-list li + li::before {{ content:", "; }}
+    .vote-abweichler-more {{ display:inline; }}
+    .vote-abweichler-more summary {{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      margin-left:6px;
+      cursor:pointer;
+      color:var(--blue, #174ea6);
+      font-weight:650;
+    }}
+    .vote-abweichler-more[open] summary {{ display:flex; margin-left:0; }}
+    .vote-abweichler-gap {{ margin:4px 0 0 18px; font-size:12px; }}
+    .vote-committee, .vote-abweichler-none {{ margin:10px 0 0; font-size:13px; }}
+    .vote-abweichler-none {{ color:var(--muted); }}
     .member-votes {{
       margin-top:14px;
       border-top:1px solid #dce7e3;

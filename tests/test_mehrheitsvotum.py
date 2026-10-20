@@ -223,6 +223,91 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
                 conn.close()
 
 
+class AbweichlerParityTests(unittest.TestCase):
+    """C1: ``derive.vote_abweichler`` names the same (vote, MdB) pairs a per-vote
+    SQL with the r3 predicate finds in the store. r3 itself counts per MdB."""
+
+    R3_PAIRS = (
+        "SELECT vm.vote_id, m.display_name, p.name\n"
+        "FROM vote_members vm\n"
+        "JOIN vote_fractions vf ON vf.vote_id = vm.vote_id AND vf.party_id = vm.party_id\n"
+        "JOIN mps m ON m.id = vm.mp_id\n"
+        "JOIN parties p ON p.id = vm.party_id\n"
+        "WHERE vm.vote IN ('yes', 'no')\n"
+        "  AND vf.leading_vote IN ('yes', 'no')\n"
+        "  AND vm.vote <> vf.leading_vote\n"
+        "  AND p.name <> 'fraktionslos'"
+    )
+
+    @staticmethod
+    def roll_call(vote_id: str, rows: list[tuple[str, str, str]]) -> dict:
+        tallies: dict[str, dict[str, int]] = {}
+        for _, faction, stimme in rows:
+            counts = tallies.setdefault(faction, {"yes": 0, "no": 0, "abstain": 0, "absent": 0})
+            counts[stimme] += 1
+        return {
+            "id": vote_id,
+            "title": f"Abstimmung {vote_id}",
+            "date": "2024-05-15",
+            "detail_url": f"https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id={vote_id}",
+            "document_numbers": [],
+            "total": {},
+            "fractions": [{"name": name, "counts": counts, "total": sum(counts.values())} for name, counts in tallies.items()],
+            "members": [{"name": name, "faction": faction, "vote": stimme} for name, faction, stimme in rows],
+        }
+
+    def report(self) -> dict:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        report["agenda_items"][0]["votes"] = [
+            self.roll_call("901", [
+                # SPD: Ja majority; one Nein (counts), one Enthaltung (never).
+                ("Ada Eins", "SPD", "yes"), ("Bea Eins", "SPD", "yes"), ("Cem Eins", "SPD", "yes"),
+                ("Dora Eins", "SPD", "no"), ("Emil Eins", "SPD", "abstain"),
+                # CDU/CSU: Nein majority; one Ja (counts).
+                ("Finn Eins", "CDU/CSU", "no"), ("Gus Eins", "CDU/CSU", "no"), ("Hanna Eins", "CDU/CSU", "yes"),
+                # fraktionslos: a "minority" is never an Abweichung.
+                ("Ida Eins", "fraktionslos", "yes"), ("Jan Eins", "fraktionslos", "yes"), ("Kai Eins", "fraktionslos", "no"),
+            ]),
+        ]
+        report["sitting_votes"] = [
+            self.roll_call("902", [
+                # FDP: Enthaltung majority, so no Ja or Nein is an Abweichung.
+                ("Lia Zwei", "FDP", "abstain"), ("Max Zwei", "FDP", "abstain"), ("Nia Zwei", "FDP", "yes"),
+                # Grüne (a spelling variant): Nein majority, one Ja.
+                ("Ole Zwei", "Grüne", "no"), ("Pia Zwei", "BÜNDNIS 90/DIE GRÜNEN", "no"), ("Quinn Zwei", "Grüne", "yes"),
+                # A tie has no Mehrheitsvotum.
+                ("Rosa Zwei", "AfD", "yes"), ("Sam Zwei", "AfD", "no"),
+            ]),
+        ]
+        return report
+
+    def test_python_pairs_equal_the_r3_predicate_per_vote(self) -> None:
+        report = self.report()
+        python = {
+            (str(vote["id"]), row["name"], group)
+            for _, vote in derive.iter_report_votes(report)
+            for group, entry in derive.vote_abweichler(vote).items()
+            for row in entry["members"]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.initialize(conn)
+                with conn:
+                    pulse_store.persist_report(conn, report)
+                stored = {tuple(row) for row in conn.execute(self.R3_PAIRS)}
+            finally:
+                conn.close()
+        self.assertEqual(
+            python,
+            {("901", "Dora Eins", "SPD"), ("901", "Hanna Eins", "CDU/CSU"), ("902", "Quinn Zwei", "BÜNDNIS 90/DIE GRÜNEN")},
+        )
+        self.assertEqual(stored, python)
+        # Every group is complete, so per-group parity holds too.
+        states = {entry["state"] for _, vote in derive.iter_report_votes(report) for entry in derive.vote_abweichler(vote).values()}
+        self.assertEqual(states, {"complete"})
+
+
 class LabelTests(unittest.TestCase):
     def test_an_uncast_stimme_is_labelled_nicht_abgegeben_everywhere(self) -> None:
         import render_dip_pulse_html as html
