@@ -168,6 +168,37 @@ class GrantEvidenceTests(unittest.TestCase):
             parse(refused.format(turn='Schade, dass Sie die Zwischenbemerkung nicht zulassen. Meine Bemerkung.'))
 
 
+class AddressedMemberTests(unittest.TestCase):
+    """6b: the chair gives the floor to an MdB the Redner addressed; no question is asked."""
+
+    def body(self, turn, chair='<name>Vizepräsidentin Claudia Roth:</name><p>Herr Kollege.</p>'):
+        return ('<rede id="R">' + redner('A', 'Haupt') + '<p>Rede über Herrn Gast.</p>' + chair
+                + redner('B', 'Gast', 'DIE LINKE') + '<p>' + turn + '</p>'
+                + redner('A', 'Haupt') + '<p>Weiter.</p></rede>')
+
+    def test_an_addressed_member_given_the_floor_makes_a_zwischenbemerkung(self):
+        for turn in ['Vielen Dank. – Sie haben mich jetzt gerade direkt angesprochen, darum ein paar Anmerkungen.',
+                     'Darauf muss ich eingehen, weil Sie mich ja indirekt angesprochen haben. – Das trifft nicht zu.',
+                     'Ich wollte es nur korrigieren, weil Sie, lieber Kollege, es hier falsch zitiert haben.']:
+            with self.subTest(turn=turn):
+                _, contributions = parse(self.body(turn))
+                self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, turn)])
+
+    def test_a_floor_for_a_kurzintervention_is_not_a_zwischenbemerkung(self):
+        chair = ('<name>Vizepräsidentin Edelgard Bulmahn:</name>'
+                 '<p>Jetzt erhält der Kollege Gast das Wort zu einer Kurzintervention.</p>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body('Sehr geehrte Kollegin, Sie hatten mich direkt angesprochen.', chair=chair))
+
+    def test_a_turn_that_does_not_say_it_was_addressed_stays_refused(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body('Das trifft nicht zu.'))
+
+    def test_without_the_chair_giving_the_floor_it_stays_refused(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body('Sie haben mich angesprochen. Das trifft nicht zu.', chair=''))
+
+
 class SourceBlockerTests(unittest.TestCase):
     """Trimmed WP 18/19 blockers (provenance in fixtures/a1-source-manifest.json)."""
 

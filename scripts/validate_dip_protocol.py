@@ -540,6 +540,11 @@ _CONSENT_ATOM = (r"(?:aber\s+)?(?:ja|gerne?|bitte|selbstverständlich|natürlich
 NESTED_CONSENT = re.compile(
     rf"\W*{_CONSENT_ATOM}(?:[\s,–-]+{_CONSENT_ATOM})*(?:,?\s+(?:Herr|Frau)\s+(?:Vize)?Präsident(?:in)?)?\W*",
     re.IGNORECASE)
+# 6b: the chair gives the floor, with no question asked, to an MdB whose
+# turn says the Redner addressed them.
+ADDRESSED_MEMBER = re.compile(
+    r"\bangesprochen\b|\bSie haben (?:was |etwas )?(?:zu|über) mir gesagt\b|\bSie haben mich\b"
+    r"|\bweil Sie\b[^.!?]{0,40}\bzitiert\b", re.IGNORECASE)
 NESTED_OPENING_THANKS = re.compile(
     r"\b(?:be)?dank\w*[^;–?!]{0,60}\b(?:Zulassen|Zulassung|Möglichkeit)\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)"
     r"|\b(?:be)?dank\w*[^;–?!]{0,40}\bdass Sie\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)\s+zulassen\b"
@@ -756,6 +761,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                                    "grant_epoch": grant_epoch, "refused": refused,
                                    "recipient_mismatch": bool(recipient_mismatch),
                                    "granted": consent_turn is not None and nested_consent(consent_turn),
+                                   "chair_floor": bool(chair_text.strip()) and not re.search(r"Kurzintervention|Erwiderung", chair_text, re.IGNORECASE),
                                    "authorized": bool(grant_context) and (not interrupted_request_pending or floor_granted),
                                    "incomplete_exchange": interrupted_request_pending and not (request_accepted and floor_granted),
                                    "announcement": " ".join(filter(None, (grant_context, chair_text)))}
@@ -1179,7 +1185,8 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 side = derive.sprechrolle(segment["speaker"])
                 speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
                 announced = (segment.get("authorized") or segment.get("granted") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
-                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"]))
+                             or NESTED_GRANT_EVIDENCE.search(segment["announcement"])
+                             or (segment.get("chair_floor") and ADDRESSED_MEMBER.search(" ".join(segment["paragraphs"])[:300])))
                 continuation = speaker_id and speaker_id == granted_nested_speaker
                 if speech_kinds.BEFRAGUNG in top_format.formats:
                     if not side and not (segment["speaker"] or {}).get("fraktion"):
