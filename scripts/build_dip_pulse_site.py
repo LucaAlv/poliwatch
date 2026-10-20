@@ -2682,6 +2682,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "JOIN documents d ON d.id = vd.document_id\n"
             "JOIN json_each(d.origin_json) u\n"
             "WHERE d.document_type LIKE 'Beschlussempfehlung%'\n"
+            "  AND d.herausgeber = 'BT'\n"
             "GROUP BY u.value\n"
             "ORDER BY abstimmungen DESC, beschlussempfehlung_urheber\n"
             "LIMIT 5;"
