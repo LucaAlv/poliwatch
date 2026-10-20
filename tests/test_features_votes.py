@@ -7,8 +7,6 @@ import politikfelder
 from features.votes import (
     CONTEXT_NONE,
     CONTEXT_NOT_FETCHED,
-    CONTEXT_TEASER,
-    abstract_teaser,
     document_source_links,
     render_document_links,
     VotePanelContext,
@@ -424,60 +422,6 @@ class AbweichlerPanelTests(unittest.TestCase):
             self.assertNotIn(avoided, block)
 
 
-REFERENCE_URHEBER = (
-    # Every Beschlussempfehlung urheber on the reference store (2026-10-20).
-    "Petitionsausschuss", "Haushaltsausschuss", "Finanzausschuss", "Auswärtiger Ausschuss",
-    "Ausschuss für Inneres und Heimat", "Ausschuss für Klimaschutz und Energie", "Rechtsausschuss",
-    "Ausschuss für Arbeit und Soziales", "Wirtschaftsausschuss", "Ausschuss für Gesundheit", "Verkehrsausschuss",
-    "Ausschuss für Ernährung und Landwirtschaft", "Ausschuss für Wohnen, Stadtentwicklung, Bauwesen und Kommunen",
-    "Ausschuss für Wirtschaft und Energie", "Ausschuss für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
-    "Innenausschuss", "Ausschuss für Bildung, Forschung und Technikfolgenabschätzung",
-    "Ausschuss für Umwelt, Klimaschutz, Naturschutz und nukleare Sicherheit", "Ausschuss für Recht und Verbraucherschutz",
-    "Verteidigungsausschuss", "Ausschuss für wirtschaftliche Zusammenarbeit und Entwicklung",
-    "Ausschuss für Familie, Senioren, Frauen und Jugend", "Ausschuss für Wahlprüfung, Immunität und Geschäftsordnung",
-    "Ausschuss für Landwirtschaft, Ernährung und Heimat", "Ausschuss für Kultur und Medien", "Sportausschuss",
-    "Ausschuss für Digitales", "Vermittlungsausschuss", "Ältestenrat", "Ausschuss für Menschenrechte und humanitäre Hilfe",
-    "Ausschuss für Digitales und Staatsmodernisierung", "Wahlprüfungsausschuss",
-    "Ausschuss für die Angelegenheiten der Europäischen Union", "Ausschuss für Bildung, Familie, Senioren, Frauen und Jugend",
-    "Ausschuss für Tourismus", "Ausschuss für Sport und Ehrenamt",
-    "Bundesministerium für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
-    "Ausschuss für Forschung, Technologie, Raumfahrt und Technikfolgenabschätzung",
-    "2. Untersuchungsausschuss", "1. Untersuchungsausschuss",
-)
-
-
-class CommitteeGenitiveTests(unittest.TestCase):
-    def test_known_shapes(self) -> None:
-        from features.votes import committee_genitive
-
-        self.assertEqual(committee_genitive("Haushaltsausschuss"), "des Haushaltsausschusses")
-        self.assertEqual(committee_genitive("Auswärtiger Ausschuss"), "des Auswärtigen Ausschusses")
-        self.assertEqual(committee_genitive("Ausschuss für Inneres und Heimat"), "des Ausschusses für Inneres und Heimat")
-        self.assertEqual(committee_genitive("Ältestenrat"), "des Ältestenrates")
-        self.assertEqual(committee_genitive("1. Untersuchungsausschuss"), "des 1. Untersuchungsausschusses")
-        self.assertEqual(
-            committee_genitive("Bundesministerium für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz"),
-            "des Bundesministeriums für Umwelt, Naturschutz, nukleare Sicherheit und Verbraucherschutz",
-        )
-
-    def test_every_reference_urheber_inflects(self) -> None:
-        from features.votes import committee_genitive
-
-        for name in REFERENCE_URHEBER:
-            with self.subTest(name=name):
-                genitive = committee_genitive(name)
-                self.assertIsNotNone(genitive)
-                self.assertTrue(genitive.startswith("des "))
-                self.assertRegex(genitive, r"(ausschusses|Ausschusses|rates|iums)\b")
-
-    def test_an_unknown_shape_is_not_guessed(self) -> None:
-        from features.votes import committee_genitive
-
-        for name in ("Bundesregierung", "Fraktion der SPD", ""):
-            with self.subTest(name=name):
-                self.assertIsNone(committee_genitive(name))
-
-
 def _committee_report(vote: dict[str, object], *, under_vote_top: bool = True) -> tuple[dict[str, object], dict[str, object]]:
     be = {
         "dokumentnummer": "20/101",
@@ -552,28 +496,6 @@ class CommitteePanelTests(unittest.TestCase):
 
 def _context_cache(**records: dict[str, object]) -> dict[str, object]:
     return {"version": 1, "vorgaenge": records, "dokumentnummern": {"20/1": ["1"], "20/2": ["2"]}}
-
-
-class AbstractTeaserTests(unittest.TestCase):
-    def test_a_short_first_paragraph_is_the_teaser(self) -> None:
-        self.assertEqual(abstract_teaser("Kurz.\n\nZweiter Absatz."), ("Kurz.", True))
-        self.assertEqual(abstract_teaser("Kurz."), ("Kurz.", False))
-
-    def test_a_long_paragraph_is_cut_at_a_sentence_not_at_an_abbreviation(self) -> None:
-        first = "Änderung des § 5 Abs. 2 Nr. 3 und Art. 1 z. B. bei Renten. " + "Weiterer Satz mit Inhalt. " * 20
-        teaser, more = abstract_teaser(first.strip())
-        self.assertTrue(more)
-        # The last whole sentence within the limit: nine more after the first.
-        self.assertEqual(teaser, "Änderung des § 5 Abs. 2 Nr. 3 und Art. 1 z. B. bei Renten. " + "Weiterer Satz mit Inhalt. " * 8 + "Weiterer Satz mit Inhalt.")
-        self.assertLessEqual(len(teaser), CONTEXT_TEASER)
-        # "Abs.", "Nr. 3", "Art. 1" and "z. B." end no sentence.
-        self.assertEqual(abstract_teaser("Nach § 5 Abs. 2 Nr. 3 z. B. gilt " + "x" * 300)[0], "Nach § 5 Abs. 2 Nr. 3 z. B. gilt …")
-
-    def test_without_a_sentence_end_it_is_cut_at_a_word_with_an_ellipsis(self) -> None:
-        teaser, more = abstract_teaser("wort " * 100)
-        self.assertTrue(more)
-        self.assertTrue(teaser.endswith("wort …"))
-        self.assertLessEqual(len(teaser), CONTEXT_TEASER + 2)
 
 
 class VoteContextPanelTests(unittest.TestCase):

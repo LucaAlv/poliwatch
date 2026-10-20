@@ -22,7 +22,6 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, NamedTuple, get_args
 
@@ -585,53 +584,6 @@ def report_vote_vorgaenge(report: Mapping[str, Any], cache: Mapping[str, Any]) -
         )
         for _item, vote in derive.iter_report_votes(report)
     }
-
-
-class _AbstractParser(HTMLParser):
-    """Collects the text of a DIP abstract: a ``<br>`` or a block element ends a
-    paragraph, every other tag is dropped with its text kept, ``<script>`` and
-    ``<style>`` are dropped with their text."""
-
-    BREAKS = frozenset({"br", "p", "div", "li", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6"})
-    SKIPPED = frozenset({"script", "style"})
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.paragraphs: list[list[str]] = [[]]
-        self.skipping = 0
-
-    def handle_starttag(self, tag: str, attrs: Any) -> None:
-        if tag in self.SKIPPED:
-            self.skipping += 1
-        elif tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_startendtag(self, tag: str, attrs: Any) -> None:
-        if tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self.SKIPPED:
-            self.skipping = max(0, self.skipping - 1)
-        elif tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_data(self, data: str) -> None:
-        if not self.skipping:
-            self.paragraphs[-1].append(data)
-
-
-def abstract_text(raw: Any) -> str:
-    """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
-    whitespace inside a paragraph collapsed to single spaces, entities unescaped,
-    markup gone. The caller escapes the result; the raw text stays in the cache."""
-    if not raw:
-        return ""
-    parser = _AbstractParser()
-    parser.feed(str(raw))
-    parser.close()
-    paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
-    return "\n\n".join(p for p in paragraphs if p)
 
 
 def report_politikfelder(

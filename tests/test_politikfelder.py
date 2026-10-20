@@ -442,32 +442,6 @@ class VoteContextTests(unittest.TestCase):
         self.assertEqual(contexts["s"], (["a", "c"], "resolved"))  # a sitting-level vote has no TOP to narrow by
 
 
-class AbstractTextTests(unittest.TestCase):
-    """politikfelder.abstract_text: DIP abstract HTML to plain paragraphs (F7)."""
-
-    # Value: protects=DIP abstract markup (<br />\r\n runs, <strong>, nested or unclosed tags, entities, a <script>) becomes plain paragraphs the caller can escape; fails_when=the sanitizer is a regex that misses nesting or keeps script text, or <br> runs collapse into one paragraph; why_new=no abstract was stored or shown before B4; seam=none
-    def test_the_table(self) -> None:
-        cases = [
-            (None, ""),
-            ("", ""),
-            ("  Ein Satz.  ", "Ein Satz."),
-            ("Erster Absatz<br />\r\n<br />\r\nZweiter", "Erster Absatz\n\nZweiter"),
-            ("Eins<br>Zwei<BR/>Drei", "Eins\n\nZwei\n\nDrei"),
-            ("Zeile\r\nweiter  im\tText", "Zeile weiter im Text"),
-            ("<strong>Beschlussempfehlung:</strong> Annahme", "Beschlussempfehlung: Annahme"),
-            ("<strong>fett <a href='x'>und <em>tief</em></a></strong> verschachtelt", "fett und tief verschachtelt"),
-            ("&quot;Zitat&quot; &ndash; &bdquo;so&ldquo; &#39;x&#39; &amp;lt;", "\"Zitat\" – „so“ 'x' &lt;"),
-            ("Vor<script>alert(1)</script>nach<style>p{}</style>", "Vornach"),
-            ("<div>Block eins</div><div>Block zwei</div>", "Block eins\n\nBlock zwei"),
-            ("offen <strong>nie geschlossen", "offen nie geschlossen"),
-            ("a < b und c > d", "a < b und c > d"),
-            ("Ende<br />\r\n", "Ende"),
-        ]
-        for raw_text, expected in cases:
-            with self.subTest(raw=raw_text):
-                self.assertEqual(pf.abstract_text(raw_text), expected)
-
-
 class CacheFileTests(unittest.TestCase):
     def test_absent_file_is_an_empty_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

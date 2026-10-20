@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 import speech_kinds
 import derive
+import dip_text
 import person_registry as registry
 import politikfelder
 import publication_state as publication
@@ -1459,7 +1460,7 @@ def persist_politikfelder(
 def _abstract(record: dict[str, Any] | None) -> str | None:
     """A cached Vorgang's abstract as stored: sanitised plain text, NULL when the
     Vorgang is not in the cache or DIP gives no abstract."""
-    return politikfelder.abstract_text((record or {}).get("abstract")) or None
+    return dip_text.abstract_text((record or {}).get("abstract")) or None
 
 
 def persist_vote_context(

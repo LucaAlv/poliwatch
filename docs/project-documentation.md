@@ -32,6 +32,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- person_registry.py
     |-- stable_ids.py
     |-- politikfelder.py
+    |-- dip_text.py                  # DIP abstracts and committee names as display text
     |-- person_corrections.json
     |-- facts.py
     |-- abgeordnetenwatch.py
