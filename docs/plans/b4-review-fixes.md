@@ -138,6 +138,15 @@ Record these in `docs/plans/b4-daily-votes.md` as deliberate. Reverting them wou
 - **The `vorgang()` fixture edit in `test_politikfelder.py`:** D11 itself makes the old `fetch_targets` expectation refetch `d`, so "must pass untouched" conflicts with D11. Name it in R8's intentional updates.
 - **D9:** withdrawn as described in Step 2. **D7:** precedence per Step 5.
 
+## Result (2026-10-20)
+
+Steps 1–10 are committed (dd084e2 … 50b21ec). Offline replay of bdd9fa2 (after step 8) against 638e9ba, both on copies of the reference store, `--offline --repersist` (512 s / 615 s):
+
+- 28 CSVs both sides; every cell equal apart from `created_at`/`updated_at` and the `datenstand` row.
+- Tags 0 moved, 217 votes, archive `data-abweichler` sum 632, 190 votes with a BT Beschlussempfehlung, r6 rows identical (Step 6: 0 moved).
+- `votes.context_state` (Step 5): resolved 217 → 217, 0 moves. On this cache every resolved Vorgang has a record (0 of 234 missing), so the new D7 rule moves nothing yet.
+- Step 9 (online, on a copy): 4,289 Vorgänge refetched, 0 failed; titel 0 → 234 of 234 context Vorgänge, 0 empty; D11: 0 of 86 empty-abstract context Vorgänge gained one, votes with an abstract 153 → 153. The refreshed cache is in the scratch copy only, not promoted.
+
 ## Order and gates
 
 Do steps 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 as separate commits. Run the full test suite after each one.
