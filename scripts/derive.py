@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
 from urllib.parse import urlsplit
 
 import publication_state as publication
@@ -468,6 +468,11 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     return numbers
 
 
+#: What ``vote_abweichler`` knows of one group: ``no_members``, the report holds no
+#: member rows for it; ``partial``, its member Stimmen do not add up to its counts;
+#: ``complete``, they do, so its Abweichler are named.
+AbweichlerState = Literal["no_members", "partial", "complete"]
+
 #: Groups whose MdBs have no Zusammenschluss, so none of them can make an Abweichung.
 NO_ZUSAMMENSCHLUSS = frozenset({"fraktionslos", "Unbekannt"})
 
@@ -480,7 +485,7 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     Mehrheitsvotum or Nein against a Ja one. Inversion changes what Ja means,
     not who voted unlike their group, so it plays no part here.
 
-        no member rows, though counts say some ► none     (nobody named)
+        no member rows, though counts say some ► no_members (nobody named)
         member Stimmen ≠ fraction counts ──────► partial  (nobody named)
         counts match ─► Mehrheitsvotum Ja/Nein? ─no─► complete, no members
                                                └yes─► complete, members with
@@ -500,7 +505,7 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         members = members_by_group.get(name) or []
         stimmen = Counter(str(member.get("vote") or "") for member in members)
         if not members and stimmen != Counter(fraction["counts"]):
-            result[name] = {"members": [], "state": "none"}
+            result[name] = {"members": [], "state": "no_members"}
             continue
         if stimmen != Counter(fraction["counts"]):
             result[name] = {"members": [], "state": "partial"}

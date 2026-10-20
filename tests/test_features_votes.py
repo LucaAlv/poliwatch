@@ -579,7 +579,7 @@ class AbstractTeaserTests(unittest.TestCase):
 class VoteContextPanelTests(unittest.TestCase):
     def panel(self, ids: list[str], state: str, cache: dict[str, object]) -> str:
         vote = _vote(document_numbers=["20/1"])
-        return vote_summary({"votes": [vote]}, vote_contexts={"1": (ids, state)}, vorgang_cache=cache)
+        return vote_summary({"votes": [vote]}, vote_contexts={"1": politikfelder.VoteContext(ids, state)}, vorgang_cache=cache)
 
     def test_the_block_sits_above_the_tallies_with_its_source(self) -> None:
         markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "Rentengesetz", "abstract": "Kurz."}}))

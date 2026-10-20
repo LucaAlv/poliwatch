@@ -107,7 +107,7 @@ class VotePanelContext:
     read with ``vorgang_cache``, the same answer persist stores."""
 
     report: Mapping[str, Any]
-    vote_contexts: Mapping[str, Any]
+    vote_contexts: Mapping[str, politikfelder.VoteContext]
     vorgang_cache: Mapping[str, Any]
     mp_lookup: dict[str, str] | None
     mp_prefix: str
@@ -263,7 +263,7 @@ def _vorgang_label(vorgang_id: str, record: Mapping[str, Any] | None) -> str:
     return f"{vorgangstyp} · DIP-Vorgang {vorgang_id}" if vorgangstyp else f"DIP-Vorgang {vorgang_id}"
 
 
-def render_vote_context(vorgang_ids: list[str], state: str, cache: Mapping[str, Any] | None) -> str:
+def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextState, cache: Mapping[str, Any] | None) -> str:
     """The "Worum es geht" block: one DIP abstract per Vorgang the vote is about
     (``politikfelder.vote_vorgang_ids``). It describes the Vorhaben, not the vote's
     result, which stays in the badge. "Keine Beschreibung in DIP" only where DIP was
@@ -427,12 +427,12 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
     anchored: set[str] = set()
     document_links = document_source_links(item)
     for vote in votes:
-        context_ids, context_state = panel.vote_contexts[derive.vote_identity(vote)]
-        vote_context_html = render_vote_context(context_ids, context_state, panel.vorgang_cache)
+        context = panel.vote_contexts[derive.vote_identity(vote)]
+        vote_context_html = render_vote_context(context.vorgang_ids, context.state, panel.vorgang_cache)
         abweichler = derive.vote_abweichler(vote)
         # One gap note for the vote when no group has member rows, else one
         # under each group that is short.
-        no_members = bool(abweichler) and all(group["state"] == "none" for group in abweichler.values())
+        no_members = bool(abweichler) and all(group["state"] == "no_members" for group in abweichler.values())
         fraction_rows = "".join(
             _fraction_group_html(fraction, abweichler, no_members, panel, vote)
             for fraction in derive.merge_fractions(vote.get("fractions"))

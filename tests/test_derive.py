@@ -94,12 +94,12 @@ class VoteAbweichlerTests(unittest.TestCase):
     def test_no_member_rows_at_all_is_none(self) -> None:
         vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
         result = derive.vote_abweichler(vote)
-        self.assertEqual(result, {"CDU/CSU": {"members": [], "state": "none"}, "AfD": {"members": [], "state": "none"}})
+        self.assertEqual(result, {"CDU/CSU": {"members": [], "state": "no_members"}, "AfD": {"members": [], "state": "no_members"}})
 
     def test_a_group_without_member_rows_is_none_beside_a_complete_one(self) -> None:
         rows = [member("Ada", "SPD", "yes")]
         result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=1), fraction("AfD", no=3)]))
-        self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "complete", "AfD": "none"})
+        self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "complete", "AfD": "no_members"})
 
     def test_an_all_zero_row_without_members_is_complete_not_missing(self) -> None:
         rows = [member("Ada", "SPD", "yes")]

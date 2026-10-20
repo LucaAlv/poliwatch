@@ -24,7 +24,7 @@ import time
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping, NamedTuple, get_args
 
 import derive
 import person_registry as registry
@@ -519,7 +519,15 @@ def tags_for_vote(
 #: ``resolved``, the vote's narrow numbers name a Vorgang; ``not_fetched``, they name
 #: none and a number is missing from the cache (offline build, failed fetch);
 #: ``none``, the cache knows every number and none names a Vorgang narrowly.
-CONTEXT_STATES: tuple[str, ...] = ("resolved", "none", "not_fetched")
+ContextState = Literal["resolved", "none", "not_fetched"]
+CONTEXT_STATES: tuple[str, ...] = get_args(ContextState)
+
+
+class VoteContext(NamedTuple):
+    """``vote_vorgang_ids``'s answer: the Vorgänge, best first, and its state."""
+
+    vorgang_ids: list[str]
+    state: ContextState
 
 
 def vote_vorgang_ids(
@@ -528,7 +536,7 @@ def vote_vorgang_ids(
     *,
     wahlperiode: str = "",
     linked_vorgang_ids: Iterable[str] = (),
-) -> tuple[list[str], str]:
+) -> VoteContext:
     """The Vorgänge a vote is about, for its prose context, and the state of that
     answer (one of CONTEXT_STATES).
 
@@ -545,24 +553,24 @@ def vote_vorgang_ids(
     linked = {str(i) for i in linked_vorgang_ids}
     ids = [i for i in narrow if i in linked] if linked & set(narrow) else narrow
     if ids:
-        return ids, "resolved"
-    return [], "not_fetched" if missing else "none"
+        return VoteContext(ids, "resolved")
+    return VoteContext([], "not_fetched" if missing else "none")
 
 
 vote_key = derive.vote_identity
 
 
-def vote_linked_vorgang_ids(report: Mapping[str, Any]) -> dict[Any, list[str]]:
+def vote_linked_vorgang_ids(report: Mapping[str, Any]) -> dict[str, list[str]]:
     """The Vorgang ids of every TOP a vote sits under, keyed by ``vote_key``: the
     union over all of them, so a vote cited under two TOPs gets one answer."""
-    linked_ids: dict[Any, list[str]] = {}
+    linked_ids: dict[str, list[str]] = {}
     for item in report.get("agenda_items") or []:
         for vote in derive.item_votes(item):
             linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
     return linked_ids
 
 
-def report_vote_vorgaenge(report: Mapping[str, Any], cache: Mapping[str, Any]) -> dict[Any, tuple[list[str], str]]:
+def report_vote_vorgaenge(report: Mapping[str, Any], cache: Mapping[str, Any]) -> dict[str, VoteContext]:
     """``vote_vorgang_ids`` of every vote of one sitting report, keyed by ``vote_key``.
     Persist and render both read it, with the same cache, so a vote's
     ``vote_proceedings`` rows and its panels name the same Vorgänge."""
@@ -693,8 +701,8 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
                     want_id(str(vorgang_id))
         # DIP often adds an abstract after the Sachgebiet, and records cached before
         # titel was kept lack it: ask again for the Vorgänge a vote's context shows.
-        for context_ids, _state in report_vote_vorgaenge(report, cache).values():
-            for vorgang_id in context_ids:
+        for context in report_vote_vorgaenge(report, cache).values():
+            for vorgang_id in context.vorgang_ids:
                 record = records.get(vorgang_id)
                 if record is not None and ("titel" not in record or not record.get("abstract")) and vorgang_id not in ids:
                     ids.append(vorgang_id)

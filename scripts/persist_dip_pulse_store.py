@@ -1479,9 +1479,9 @@ def persist_vote_context(
     contexts = politikfelder.report_vote_vorgaenge(report, cache)
     for _item, vote in derive.iter_report_votes(report):
         vote_id = _vote_id(vote)
-        proceeding_ids, state = contexts[politikfelder.vote_key(vote)]
+        context = contexts[politikfelder.vote_key(vote)]
         conn.execute("DELETE FROM vote_proceedings WHERE vote_id = ?", (vote_id,))
-        for rank, proceeding_id in enumerate(proceeding_ids, start=1):
+        for rank, proceeding_id in enumerate(context.vorgang_ids, start=1):
             record = records.get(proceeding_id) or {}
             conn.execute(
                 """
@@ -1498,7 +1498,7 @@ def persist_vote_context(
                 "INSERT INTO vote_proceedings(vote_id, proceeding_id, rank) VALUES (?, ?, ?)",
                 (vote_id, proceeding_id, rank),
             )
-        conn.execute("UPDATE votes SET context_state = ? WHERE id = ?", (state, vote_id))
+        conn.execute("UPDATE votes SET context_state = ? WHERE id = ?", (context.state, vote_id))
 
 
 def persist_report(
