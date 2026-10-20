@@ -430,7 +430,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 27 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `5`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 28 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `6`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`, v6 added `vote_proceedings`, `votes.context_state` and `proceedings.abstract`) is bumped whenever that CSV layout or transformation changes, additive columns are not a bump.
 
 Summary options:
 
@@ -624,6 +624,7 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `votes`
 - `agenda_item_votes`
 - `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
+- `vote_proceedings` (the DIP Vorgänge a vote is about, ranked: the Vorgänge its Drucksache numbers name narrowly, at most two per number, narrowed to its TOPs' Vorgänge where they meet; `votes.context_state` says `resolved`, `none` or `not_fetched`; derived by `politikfelder.vote_vorgang_ids`)
 - `vote_documents`
 - `vote_fractions`
 - `vote_members`

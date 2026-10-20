@@ -64,7 +64,8 @@ EINZELPLAENE_IN_THE_CACHE = (
 
 
 def vorgang(*sachgebiete: str, typ: str = "Gesetzgebung") -> dict[str, Any]:
-    return {"sachgebiet": list(sachgebiete), "vorgangstyp": typ}
+    """A complete cache record: a vote's Vorgang with a title and an abstract is not refetched (D11, D12)."""
+    return {"sachgebiet": list(sachgebiete), "vorgangstyp": typ, "titel": "Titel", "abstract": "Worum es geht."}
 
 
 def position(vorgang_id: str, typ: str = "Antrag", *, twins: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -376,6 +377,93 @@ class VoteNumberTests(unittest.TestCase):
         report = {"protocol": {"dokumentnummer": "21/5"}, "agenda_items": [], "sitting_votes": [{"id": "s", "document_numbers": ["21/8"]}]}
         self.assertEqual(pf.fetch_targets([report], cache_of(numbers={"21/8": []})), ([], ["21/8"]))
         self.assertEqual(pf.fetch_targets([report], cache_of({"d": vorgang("Recht")}, {"21/8": ["d"]})), ([], []))
+
+
+class VoteContextTests(unittest.TestCase):
+    """politikfelder.vote_vorgang_ids: the Vorgänge a vote's "Worum es geht" reads (B4 Slice 2)."""
+
+    # Value: protects=a vote's prose context comes from its narrow numbers only, narrowed to its TOP's Vorgänge when they meet; fails_when=the wide tier (a Beschlussempfehlung bundle) feeds the context, so a vote shows abstracts of Vorgänge it is not about; why_new=B4 adds the helper; seam=none
+    def test_only_the_narrow_tier_counts_and_it_is_narrowed_to_the_tops_vorgaenge(self) -> None:
+        cache = cache_of(
+            {"a": vorgang(), "b": vorgang(), "x": vorgang(), "y": vorgang(), "z": vorgang()},
+            {"21/1": ["a", "b"], "21/2": ["x", "y", "z"]},
+        )
+        vote = {"document_numbers": ["21/1", "21/2"]}
+        self.assertEqual(pf.vote_vorgang_ids(vote, cache), (["a", "b"], "resolved"))
+        self.assertEqual(pf.vote_vorgang_ids(vote, cache, linked_vorgang_ids=["b"]), (["b"], "resolved"))
+        # The TOP's Vorgang is only in the wide tier: nothing to narrow by, and the wide tier is never prose.
+        self.assertEqual(pf.vote_vorgang_ids(vote, cache, linked_vorgang_ids=["z"]), (["a", "b"], "resolved"))
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/2"]}, cache), ([], "none"))
+
+    # Value: protects=the export tells "no Vorgang" from "not fetched" (D7) by one fixed precedence; fails_when=a cache miss is stored as none, so a fetch outage reads as "DIP has no description"; why_new=votes.context_state is new; seam=none
+    def test_the_state_is_resolved_then_not_fetched_then_none(self) -> None:
+        cache = cache_of({"a": vorgang()}, {"21/1": ["a"], "21/3": []})
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/1", "21/9"]}, cache), (["a"], "resolved"))
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/9"]}, cache), ([], "not_fetched"))
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/3"]}, cache), ([], "none"))
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": []}, cache), ([], "none"))
+        # A number of another Wahlperiode is not the vote's, so it is neither looked up nor missing.
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["76/787"]}, cache, wahlperiode="21"), ([], "none"))
+        self.assertEqual(set(pf.CONTEXT_STATES), {"resolved", "none", "not_fetched"})
+
+    # Value: protects=D8: where a vote's tags come from the narrow tier, tags and context read the same Vorgänge; fails_when=vote_vorgang_ids narrows or ranks differently from tags_for_vote; why_new=the two are separate entry points over one tier rule; seam=none
+    def test_context_and_narrow_tier_tags_pick_the_same_vorgaenge(self) -> None:
+        cache = cache_of(
+            {"mine": vorgang("Gesundheit"), "eu": vorgang("Europapolitik und Europäische Union"), "far": vorgang("Kultur")},
+            {"21/1": ["mine", "eu"], "21/2": ["mine"], "21/4": ["far", "mine", "eu"]},
+        )
+        for vote, linked in (
+            ({"document_numbers": ["21/1", "21/2", "21/4"]}, ()),
+            ({"document_numbers": ["21/1", "21/4"]}, ("eu",)),
+        ):
+            with self.subTest(vote=vote, linked=linked):
+                ids, _ = pf.vote_vorgang_ids(vote, cache, linked_vorgang_ids=linked)
+                tags, source = pf.tags_for_vote(vote, [], cache, linked_vorgang_ids=linked)
+                self.assertEqual(source, "drucksache")
+                self.assertEqual(tags, pf._from_vorgaenge(ids, cache)[0])
+
+    # Value: protects=D13: a vote under two TOPs gets one Vorgang selection, from the union of both TOPs' Vorgänge, like its tags; fails_when=the context is narrowed by one TOP only, so the vote's two panels and vote_proceedings can disagree; why_new=the union lived inside report_politikfelder; seam=none
+    def test_a_vote_under_two_tops_is_narrowed_by_the_union_of_both(self) -> None:
+        cache = cache_of({"a": vorgang(), "b": vorgang(), "c": vorgang()}, {"21/1": ["a", "c"], "21/2": ["b"]})
+        shared = {"id": "v1", "title": "Geteilt", "date": "2026-01-01", "document_numbers": ["21/1", "21/2"]}
+        report = {
+            "protocol": {"dokumentnummer": "21/5"},
+            "agenda_items": [
+                item(1, positions=(position("a"),), votes=(shared,)),
+                item(2, positions=(position("b"),), votes=(shared,)),
+            ],
+            "sitting_votes": [{"id": "s", "document_numbers": ["21/1"]}],
+        }
+        self.assertEqual(pf.vote_linked_vorgang_ids(report), {"v1": ["a", "b"]})
+        contexts = pf.report_vote_vorgaenge(report, cache)
+        self.assertEqual(contexts["v1"], (["a", "b"], "resolved"))
+        self.assertEqual(contexts["s"], (["a", "c"], "resolved"))  # a sitting-level vote has no TOP to narrow by
+
+
+class AbstractTextTests(unittest.TestCase):
+    """politikfelder.abstract_text: DIP abstract HTML to plain paragraphs (F7)."""
+
+    # Value: protects=DIP abstract markup (<br />\r\n runs, <strong>, nested or unclosed tags, entities, a <script>) becomes plain paragraphs the caller can escape; fails_when=the sanitizer is a regex that misses nesting or keeps script text, or <br> runs collapse into one paragraph; why_new=no abstract was stored or shown before B4; seam=none
+    def test_the_table(self) -> None:
+        cases = [
+            (None, ""),
+            ("", ""),
+            ("  Ein Satz.  ", "Ein Satz."),
+            ("Erster Absatz<br />\r\n<br />\r\nZweiter", "Erster Absatz\n\nZweiter"),
+            ("Eins<br>Zwei<BR/>Drei", "Eins\n\nZwei\n\nDrei"),
+            ("Zeile\r\nweiter  im\tText", "Zeile weiter im Text"),
+            ("<strong>Beschlussempfehlung:</strong> Annahme", "Beschlussempfehlung: Annahme"),
+            ("<strong>fett <a href='x'>und <em>tief</em></a></strong> verschachtelt", "fett und tief verschachtelt"),
+            ("&quot;Zitat&quot; &ndash; &bdquo;so&ldquo; &#39;x&#39; &amp;lt;", "\"Zitat\" – „so“ 'x' &lt;"),
+            ("Vor<script>alert(1)</script>nach<style>p{}</style>", "Vornach"),
+            ("<div>Block eins</div><div>Block zwei</div>", "Block eins\n\nBlock zwei"),
+            ("offen <strong>nie geschlossen", "offen nie geschlossen"),
+            ("a < b und c > d", "a < b und c > d"),
+            ("Ende<br />\r\n", "Ende"),
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(raw=raw_text):
+                self.assertEqual(pf.abstract_text(raw_text), expected)
 
 
 class CacheFileTests(unittest.TestCase):
@@ -741,6 +829,31 @@ class FetchTests(unittest.TestCase):
         self.assertNotIn("21/7", saved["dokumentnummern"])
         self.assertEqual((stats["vorgaenge_failed"], stats["nummern_failed"]), (1, 1))
         self.assertIn("unexpected sachgebiet", err)
+
+    # Value: protects=D12: the cache keeps a Vorgang's titel, the label of its "Worum es geht" block; fails_when=vorgang_cache_record drops titel, so blocks of vote-only Vorgänge have no name; why_new=the record kept no title before B4; seam=none
+    def test_the_cache_record_keeps_the_titel(self) -> None:
+        self.assertEqual(dip.vorgang_cache_record(dict(raw("Recht"), titel="Gesetz über X"))["titel"], "Gesetz über X")
+        self.assertIn("titel", dip.vorgang_cache_record({}))  # fetched without a title: the key says so, no refetch for it
+
+    # Value: protects=D11/D12: an online build asks DIP again for a vote's context Vorgang whose abstract is still empty or whose record predates titel, and for nothing else; fails_when=fetch_targets keeps refetching only on an empty Sachgebiet, so "Keine Beschreibung in DIP" stays false for good, or it refetches TOP-only or wide-tier Vorgänge on every build; why_new=the refetch rule is new in B4; seam=none
+    def test_fetch_targets_refetches_vote_vorgaenge_without_abstract_or_titel(self) -> None:
+        complete = vorgang("Recht")
+        no_abstract = dict(complete, abstract="")
+        no_titel = {k: v for k, v in complete.items() if k != "titel"}
+        untitled = dict(complete, titel=None)
+        report = {
+            "protocol": {"dokumentnummer": "21/5"},
+            "agenda_items": [item(1, positions=(position("top"),), votes=({"id": "v", "document_numbers": ["21/1", "21/2", "21/3", "21/4", "21/6"]},))],
+        }
+        cache = cache_of(
+            {"top": no_abstract, "a": no_abstract, "b": no_titel, "c": untitled, "d": complete, "w1": no_abstract, "w2": no_abstract, "w3": no_abstract},
+            {"21/1": ["a"], "21/2": ["b"], "21/3": ["c"], "21/4": ["d"], "21/6": ["w1", "w2", "w3"]},
+        )
+        # top: a TOP's own Vorgang with a Sachgebiet; w1-w3: wide tier only, never the vote's prose.
+        self.assertEqual(pf.fetch_targets([report], cache), (["a", "b"], []))
+        cache["vorgaenge"]["a"] = complete
+        cache["vorgaenge"]["b"] = complete
+        self.assertEqual(pf.fetch_targets([report], cache), ([], []))
 
     def test_fetch_targets_asks_for_nothing_when_the_cache_is_complete(self) -> None:
         reports = [self.entries[0]["report"]]

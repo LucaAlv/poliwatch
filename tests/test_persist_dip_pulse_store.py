@@ -22,6 +22,15 @@ class SchemaGuardTests(unittest.TestCase):
         self.assertNotIn("agenda_item_politikfelder", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
         conn.close()
 
+    # Value: protects=a schema 5 store (sachgebiet present, no proceedings.abstract) is refused with the repersist instruction instead of being stamped 6 with an empty vote_proceedings and NULL context states; fails_when=require_current_schema stops checking proceedings.abstract, so a plain --offline build exports a format 6 copy without any vote context; why_new=B4 bumps the schema to 6; seam=none
+    def test_a_schema_5_store_without_proceedings_abstract_is_refused(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE proceedings (id TEXT PRIMARY KEY, title TEXT, sachgebiet TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "Old build-store schema.*--offline --repersist"):
+            pulse_store.initialize(conn)
+        self.assertNotIn("vote_proceedings", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
+        conn.close()
+
 
     # Value: protects=a store written by this branch before the v0.19 merge (tag tables and sachgebiet present, documents keyed by URL) is refused with the repersist instruction and left unchanged; fails_when=the documents check is reordered or loosened, since it is the only guard that catches this shape; why_new=the guard tests used a bare proceedings table or the v0.19 shape; seam=none
     def test_a_pre_merge_politikfeld_store_is_refused(self):
@@ -43,6 +52,81 @@ class SchemaGuardTests(unittest.TestCase):
             finally:
                 conn.close()
             self.assertEqual(before, path.read_bytes())
+
+
+def _context_cache(numbers: dict, vorgaenge: dict) -> dict:
+    return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": numbers}
+
+
+class VoteContextPersistTests(unittest.TestCase):
+    """B4 schema 6: proceedings.abstract and title, vote_proceedings, votes.context_state."""
+
+    def persisted(self, cache, report=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = pulse_store.connect(Path(tmp.name) / "store.sqlite")
+        self.addCleanup(conn.close)
+        report = report or json.loads((FIXTURES / "report.json").read_text())
+        pulse_store.persist_report(conn, report, cache)
+        return conn
+
+    def rows(self, conn, sql):
+        return [tuple(r) for r in conn.execute(sql)]
+
+    # Value: protects=a vote's context Vorgänge reach the store with their sanitised abstract and cached titel, ranked, with state resolved, and a vote-only Vorgang gets a proceedings row; fails_when=persist skips vote_proceedings, stores raw HTML, or leaves vote-only Vorgänge without a row (FK) or title (D12); why_new=schema 6 is new; seam=none
+    def test_a_resolved_vote_stores_its_vorgaenge_abstracts_and_titles(self):
+        cache = _context_cache(
+            {"20/123": ["vote-only", "vorgang-1"]},
+            {
+                "vote-only": {"sachgebiet": ["Energie"], "titel": "Gesetz X", "vorgangstyp": "Antrag",
+                              "abstract": "Erster<br />\r\n<br />\r\n<strong>Zweiter</strong>"},
+                "vorgang-1": {"sachgebiet": ["Recht"], "titel": "Cache-Titel", "vorgangstyp": "Gesetzgebung", "abstract": "&bdquo;TOP&ldquo;"},
+            },
+        )
+        report = json.loads((FIXTURES / "report.json").read_text())
+        report["agenda_items"][0]["api"]["positions"] = []  # the TOP has no Vorgang: nothing narrows the vote's
+        conn = self.persisted(cache, report)
+        self.assertEqual(self.rows(conn, "SELECT vote_id, proceeding_id, rank FROM vote_proceedings ORDER BY rank"),
+                         [("12345", "vote-only", 1), ("12345", "vorgang-1", 2)])
+        self.assertEqual(self.rows(conn, "SELECT context_state FROM votes"), [("resolved",)])
+        self.assertEqual(
+            self.rows(conn, "SELECT id, title, proceeding_type, abstract, sachgebiet FROM proceedings ORDER BY id"),
+            [("vorgang-1", "Cache-Titel", None, "„TOP“", None),
+             ("vote-only", "Gesetz X", None, "Erster\n\nZweiter", None)],
+        )
+
+    # Value: protects=the vote path fills a proceedings title only where it is empty and never its type, so a TOP-linked Vorgang keeps its position title, in either persist order, and still gets its abstract; fails_when=the vote upsert lets the cache titel overwrite the position title, moving an existing proceedings cell (D10); why_new=the vote path writes proceedings for the first time; seam=none
+    def test_a_top_vorgang_keeps_its_position_title_and_gets_its_abstract(self):
+        cache = _context_cache(
+            {"20/123": ["vorgang-1"]},
+            {"vorgang-1": {"sachgebiet": ["Recht"], "titel": "Cache-Titel", "vorgangstyp": "Antrag", "abstract": "Kurz."}},
+        )
+        conn = self.persisted(cache)
+        report = json.loads((FIXTURES / "report.json").read_text())
+        pulse_store.persist_report(conn, report, cache)
+        self.assertEqual(self.rows(conn, "SELECT id, title, proceeding_type, abstract FROM proceedings"),
+                         [("vorgang-1", "Testgesetz", "Gesetzgebung", "Kurz.")])
+        self.assertEqual(self.rows(conn, "SELECT proceeding_id, rank FROM vote_proceedings"), [("vorgang-1", 1)])
+
+    # Value: protects=the store separates "no Vorgang" from "not fetched" (D7) and a vote never ends with a NULL state; fails_when=both collapse to no row, or a cache miss is stored as none; why_new=votes.context_state is new; seam=none
+    def test_none_and_not_fetched_are_stored_apart_without_rows(self):
+        for cache, state in ((None, "not_fetched"), (_context_cache({"20/123": []}, {}), "none")):
+            with self.subTest(state=state):
+                conn = self.persisted(cache)
+                self.assertEqual(self.rows(conn, "SELECT context_state FROM votes"), [(state,)])
+                self.assertEqual(self.rows(conn, "SELECT * FROM vote_proceedings"), [])
+                self.assertEqual(self.rows(conn, "SELECT abstract FROM proceedings"), [(None,)])
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("UPDATE votes SET context_state = 'geraten'")
+
+    # Value: protects=a re-persist replaces a vote's vote_proceedings rows and state with the current resolution; fails_when=rows are only inserted, so a Vorgang the cache no longer names stays linked; why_new=vote_proceedings is new; seam=none
+    def test_persisting_again_replaces_the_rows(self):
+        first = _context_cache({"20/123": ["a"]}, {"a": {"sachgebiet": [], "titel": "A", "abstract": "A."}})
+        conn = self.persisted(first)
+        report = json.loads((FIXTURES / "report.json").read_text())
+        pulse_store.persist_report(conn, report, _context_cache({"20/123": []}, {}))
+        self.assertEqual(self.rows(conn, "SELECT * FROM vote_proceedings"), [])
+        self.assertEqual(self.rows(conn, "SELECT context_state FROM votes"), [("none",)])
 
 
 class ParagraphMigrationTests(unittest.TestCase):

@@ -2628,6 +2628,13 @@ class VotesArchiveTests(unittest.TestCase):
                 self.assertEqual(build_dip_pulse_site.column_source(table, column), "derived", (table, column))
         self.assertEqual(build_dip_pulse_site.column_source("proceedings", "sachgebiet"), "dip")
 
+    # Value: protects=the Daten dictionary labels B4's vote context by origin: the vote→Vorgang selection and its state are derived, the sanitised abstract stays DIP text; fails_when=vote_proceedings or votes.context_state fall to the table defaults (dip, bundestag.de), so a derived selection is captioned as source data; why_new=schema 6 adds them; seam=none
+    def test_vote_context_columns_are_labelled_by_origin(self) -> None:
+        for column in ("vote_id", "proceeding_id", "rank"):
+            self.assertEqual(build_dip_pulse_site.column_source("vote_proceedings", column), "derived", column)
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "context_state"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("proceedings", "abstract"), "dip")
+
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")
         self.assertEqual(build_dip_pulse_site._month_label("2026-13-10"), "Unbekanntes Datum")
