@@ -63,7 +63,14 @@ The owner decided on 2026-10-20 to extend speech rule 5 to the WP 18/19 encoding
 3. Run the same audit on every WP 18/19 file. This needs the rest of the download, about 310 files, at a gentler rate once dserver answers again. The output is a counting record like offline-v5-validation.md: counts per kind, the remaining blockers, and the cases checked by hand.
 4. Only then: the pilot re-run, then Phase 3.
 
-## Decisions asked
+## Decisions (owner, 2026-10-20)
+
+- 6a, 6c and 6d: approved as proposed.
+- 6b: approved as a rule (Zwischenbemerkung, kind `zwischenfrage`).
+- 18/1 and 19/1: exclusions for now; official addresses get their own TODO.
+- 6e and 6f were not asked: their sittings stay refused until each is reviewed (exclusion or a later rule).
+
+## Decisions asked (answered above)
 
 - 6a, 6c and 6d as proposed?
 - 6b: rule or refuse?
