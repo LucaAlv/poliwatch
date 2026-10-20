@@ -9,35 +9,31 @@ Plan: [a3-coverage.md](a3-coverage.md), Phase 1. Status: **stopped early**. Two 
 - Batch 2, code e547eae (lanes A–D), `--sleep 1.0`, the other 18 sittings: DIP timed out on the very first catalog request for 32 minutes. I stopped it; no data.
 - Census without DIP: the 23 sample XML files plus the budget weeks 18/68–71 (Nov 2014) and 19/63–66 (Nov 2018), downloaded once from dserver.bundestag.de (public, 1 s apart), parsed with the current parser and read for roles, Fraktion strings and Einzelplan headings.
 
-## Finding 1: the parser rejects about a third of WP 18/19 sittings (D4)
+## Finding 1: the parser rejects a fifth to a third of WP 18/19 sittings (D4)
 
-The current parser (speech rule 5) rejects **10 of 31** WP 18/19 XML files with `unresolved nested contribution`:
+**Measured** on 175 WP 18/19 XML files: the 31 sample and budget-week files, plus a download of the newest WP 19 sittings, which dserver.bundestag.de stopped serving us after about 150 files. Census: `~/agent-runs/a3/wp18-19-census.json`. The current parser (speech rule 5) refuses:
 
-| Sitting | Locator |
-|---|---|
-| 18/1 | TOP 2, ID1800100100 marker 2 |
-| 18/10 | TOP 3, ID1801002600 marker 2 |
-| 18/50 | TOP 1 (Fortsetzung), ID1805001800 marker 4 |
-| 18/70 | TOP I (Fortsetzung), ID1807005100 marker 2 |
-| 18/71 | TOP I (Fortsetzung), ID1807101000 marker 3 |
-| 18/100 | TOP 3, ID1810000300 marker 3 |
-| 19/1 | TOP 3, ID19101200 marker 2 |
-| 19/13 | TOP 1, ID191304800 marker 2 |
-| 19/32 | Einzelplan 23, ID193207500 marker 3 |
-| 19/239 | TOP 2, ID1923903200 marker 6 |
+| | Files | Refused | Share |
+|---|---:|---:|---:|
+| WP 19 (19/79–19/239 and the sample) | 160 | 31 | 19% |
+| WP 18 (sample and budget weeks only) | 15 | 6 | 40% |
 
-Accepted (21): 18/13, 18/68, 18/69, 18/84, 18/150, 18/154, 18/200, 18/217, 18/245, 19/10, 19/50, 19/63–66, 19/79, 19/100, 19/145, 19/150, 19/200, 19/208.
+The WP 18 share comes from a biased sample: the A1 picks favour question formats. Extrapolated:
+- WP 19: about 45 of 239 sittings;
+- WP 18: somewhere between 50 and 100 of 245;
+- together, roughly 100–150 sittings that stop the backfill.
 
-**Cause, read from the XML.** WP 18/19 protocols encode the chair inside another member's `<rede>` as a `<p klasse="redner"><redner …>` marker whose `<rolle_lang>` is Präsident, Vizepräsident(in) or Alterspräsident. Examples:
-- 18/100: Präsident Lammert's "Herr Kollege." inside Carsten Schneider's Rede;
-- 18/1: Alterspräsident Riesenhuber running the election inside Kauder's Rede;
-- 19/13: in the Befragung, the minister hands a question to a Staatssekretär.
+The A3 TODO recorded that 18/1, 18/100, 19/1 and 19/239 parsed on 2026-09-30. They are refused now, so the refusals arrived with speech rules 3–5. Their audit ([offline-v5-validation.md](offline-v5-validation.md)) covered only the 290 WP 20/21 files.
 
-WP 20/21 encode the chair as a `<name>` element, which the parser already treats as Sitzungsleitung. The nested-marker rule therefore meets a turn it cannot classify and refuses the sitting, as D4 says it must.
+**What blocks.** In every refusal, a member's turn is nested inside another member's `<rede>` and rule 5 cannot classify it (`unresolved nested contribution at <Rede> marker <n>`). The blocking turn is an ordinary MdB in 33 of the 37 cases, and a presidium or government role in the others. Read from the XML, four kinds:
+1. **A whole Rede printed inside the previous one**, after the chair's "Als nächste Rednerin spricht …" (18/10 Bartz, 18/70 Binder). These are Reden with no `<rede>` of their own, so counting them is a structural decision.
+2. **Zwischenfragen and Zwischenbemerkungen whose grant rule 5 does not read.** The grant reads "Ja.", "Aber ja.", "Immer, ja.", or is a thank-you afterwards ("dass Sie die Zwischenbemerkung zulassen"), often with no question mark (18/50, 18/71, 19/101, 19/104, 19/108, 19/118).
+3. **A minister answering inside such an exchange** (18/50 Hendricks).
+4. **Chair and election turns.** The elected Präsident's "ich nehme die Wahl an" (18/1, 19/1), the Präsident's own floor-giving encoded as a nested `<redner>` with `<rolle_lang>Präsident` (18/100), and an answer to a Rückfrage from the chair (19/102).
 
-**Extrapolated:** about 32% of 484 WP 18/19 sittings, so roughly 155, would stop the backfill. The reviewed exclusion list (D2) was designed for rare refusals. Listing about 155 sittings would leave a third of WP 18/19 uncovered. The fix belongs in the parser (a rule 6 for presidium markers nested in a Rede), with its own counting record like [offline-v5-validation.md](offline-v5-validation.md).
+The reviewed exclusion list (D2) was designed for rare refusals. Listing 100–150 sittings would leave a large part of WP 18/19 uncovered. The fix is an extension of rule 5 to the WP 18/19 encodings, with its own audit record like offline-v5-validation.md, showing whether the 290 WP 20/21 files stay unchanged. That is a counting-rule change (A1 territory), so it is a decision.
 
-**The same encoding explains the unmapped roles.** The presidium roles Präsident (18/100, 19/1), Vizepräsident(in) (18/245) and Alterspräsident (19/1) occur in this census only as these nested chair markers. A first mapping of them to "weitere Sprechrolle" (2532c59) was reverted in 806a2f1. Chairing is never a Rede (CONTEXT.md, Sitzungsleitung), and a Präsident speaking from the lectern speaks "like any other Redner". So they stay unmapped (fail-fast) until the rule-6 decision.
+**Unmapped presidium roles.** Präsident (18/100, 19/1), Vizepräsident(in) (18/245) and Alterspräsident (19/1) occur in this census only on nested chair markers (kind 4). A first mapping of them to "weitere Sprechrolle" (2532c59) was reverted in 806a2f1: chairing is never a Rede (CONTEXT.md, Sitzungsleitung), and a Präsident speaking from the lectern speaks "like any other Redner". They stay unmapped (fail-fast) until rule 5 is extended.
 
 ## Finding 2: unexplained DIP timeouts
 
@@ -104,6 +100,6 @@ Changes made from this:
 
 ## What is open before Phase 3
 
-1. **Parser rule for presidium markers nested in a Rede** (Finding 1). Without it, D4 stops about a third of WP 18/19 sittings (10 of 31 sampled). This is a counting-rule change (A1 territory) and needs a decision.
-2. **A sustainable DIP request rate** (Finding 2). Re-measure with a smaller burst before choosing the backfill default.
+1. **Extend speech rule 5 to the WP 18/19 encodings** (Finding 1, four kinds). Without it, D4 stops roughly 100–150 WP 18/19 sittings. This is a counting-rule change (A1 territory) and needs a decision.
+2. **A sustainable request rate** (Finding 2). Both DIP and dserver.bundestag.de stopped answering us after a few hundred requests: dserver after about 150 XML downloads at 1 s spacing on 2026-10-20. Re-measure with a smaller burst before choosing the backfill default, and finish the WP 18 census when dserver answers again.
 3. **Pilot re-run** with 1 and 2 settled, to measure seconds per sitting, peak RSS of persist and render, and the abgeordnetenwatch share.
