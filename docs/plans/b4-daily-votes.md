@@ -1217,6 +1217,17 @@ Replay on copies of the reference store, `--offline --repersist`, cffa6aa (409 s
 - The plan's Slice 1 archive badge (`data-abweichler`, "N Abweichler") was missing from lane B and was added with T7.
 - Not measured: D11's "how many of the 64 gained an abstract" needs an online build.
 
+### Amendments from the code review (2026-10-20, `docs/plans/b4-review-fixes.md`)
+Scope the review flagged as beyond this plan, ratified as deliberate. Reverting any of it would lower quality.
+- **`committee_genitive`** (now in `scripts/dip_text.py`): "Beschlussempfehlung des <Ausschuss>" is only grammatical with the genitive, and the "Urheber: …" form is the refusal to guess a shape the rule does not know.
+- **`abstract_teaser`'s abbreviation list and word-boundary ellipsis**: without them, "about 300 characters cut at a sentence" cuts after "Abs." or mid-word.
+- **`.vote-no-result`**: the restyle in 638e9ba (spaced off the title, muted).
+- **`derive.report_drucksachen`'s BT filter**: Bundesrat papers share the number shape; the r6 recipe now filters `d.herausgeber = 'BT'` too (review fixes Step 6), so D1's equality holds by construction.
+- **The `vorgang()` fixture edit in `test_politikfelder.py`**: D11 itself makes the old `fetch_targets` expectation refetch `d`, so "must pass untouched" conflicted with D11. It joins R8's intentional updates.
+- **D9**: the id-less fallback ("a vote without an id keeps the TOP anchor") is withdrawn; 0 of 246 votes lack an id and report loading refuses that shape (`require_current_vote_shape`).
+- **D7**: precedence is now: a vote whose narrow numbers name Vorgänge is `resolved` only when every one has a cached record, else `not_fetched` with its `vote_proceedings` rows still written; with no Vorgang named, `not_fetched` when a number is missing from the cache, else `none`.
+- **R8**: `render_vote_summary(item, acquisition, panel)` takes one required `VotePanelContext` (E1); the vote-panel tests build it through `panel_for`.
+
 ## Unresolved decisions
 None. D1–D17 were all answered.
 
