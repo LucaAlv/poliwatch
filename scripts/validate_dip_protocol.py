@@ -531,6 +531,11 @@ NESTED_GRANT_EVIDENCE = re.compile(
     r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\b(?:zulass\w*|zugelassen haben)\b)",
     re.IGNORECASE,
 )
+# Matched against the role with whitespace removed ("Vizepräsident in").
+SITZUNGSLEITUNG_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
+# The elected Präsident's acceptance, answering the chair's question (6d).
+ELECTION_QUESTION = re.compile(r"\bNehmen Sie die Wahl an\?\s*$")
+ELECTION_ACCEPTANCE = re.compile(r"(?:(?:Herr|Frau) (?:Alters)?Präsident(?:in)?, )?[Ii]ch nehme die Wahl an\.")
 _NESTED_NAMED_ASKER = re.compile(
     r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
     r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"
@@ -554,6 +559,10 @@ def nested_grant_names(announcement: str) -> set[str] | None:
     return {name for name in surnames if name not in {"kollege", "kollegen", "kollegin", "fraktion", "ihnen", "zwischenfrage", "zwischenfragen", "frau", "herr"}
             and not any(re.search(pattern.pattern, name, re.IGNORECASE)
                         for pattern in speech_kinds.FRAKTION_WORDING.values())} or None
+
+
+def presidium_marker(redner: ET.Element | None) -> bool:
+    return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
 
 
 def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
@@ -583,6 +592,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
     floor_granted = False
     request_accepted = False
     declined_request = ""
+    last_text = ""
     candidates = {parse_redner(r)["last_name"].casefold(): r for r in rede.iter("redner")
                   if redner_key(r) != own and parse_redner(r).get("last_name")}
 
@@ -637,9 +647,17 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 marker += 1
                 redner = child.find("redner")
                 speaker, segment = redner_key(redner), None
+                if speaker not in (own, None) and presidium_marker(redner):
+                    # WP 18/19 prints the chair inside a member's Rede as a
+                    # marker with a presidium role (ADR 0004): chair text, kept
+                    # as a segment only for its procedural diagnostic.
+                    speaker = _SITZUNGSLEITUNG
+                    segment = {"speaker": parse_redner(redner), "marker": marker, "paragraphs": [],
+                               "announcement": "", "sitzungsleitung": True}
+                    nested.append(segment)
                 if speaker == own:
                     preceding_chair_text = chair_text
-                if speaker != own:
+                if speaker != own and speaker is not _SITZUNGSLEITUNG:
                     if speaker is not None:
                         candidate = parse_redner(redner)
                         named_in_grant = (candidate.get("last_name") and pending_nested_names
@@ -652,7 +670,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                             chair_text = ""
                         else:
                             grant_context = pending_nested_announcement
-                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [],
+                        segment = {"speaker": candidate, "marker": marker, "paragraphs": [], "prompt": last_text,
                                    "grant_epoch": grant_epoch, "refused": refused,
                                    "recipient_mismatch": bool(recipient_mismatch),
                                    "authorized": bool(grant_context) and (not interrupted_request_pending or floor_granted),
@@ -683,9 +701,12 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 text = elem_text(child)
             if not text:
                 continue
+            last_text = text
             if speaker is None:
                 unattributed += len(text)
             elif speaker is _SITZUNGSLEITUNG:
+                if segment is not None:
+                    segment["paragraphs"].append(text)
                 chair_text += " " + text
                 question_request = re.search(
                     r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
@@ -967,6 +988,12 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
             for segment in nested:
                 key = derive.first_redner_id(segment["speaker"].get("xml_redner_id"))
                 text = clean_text(" ".join(segment["paragraphs"]))
+                if segment.get("sitzungsleitung"):
+                    diagnostic(rid, segment, "procedural", "Sitzungsleitung: " + (segment["speaker"].get("role") or ""))
+                    continue
+                if ELECTION_QUESTION.search(segment.get("prompt") or "") and ELECTION_ACCEPTANCE.fullmatch(text):
+                    diagnostic(rid, segment, "procedural", "election acceptance: " + segment["prompt"])
+                    continue
                 short_reply = re.fullmatch(r"(?:Nein\.|Nein, ich antworte nicht\.|Sehr gerne\.|Ja\.)", text)
                 invited = re.search(r"(?:möchten Sie|dürfen.*Sie|Sie dürfen).*?(?:antworten|erwidern)", segment["announcement"], re.IGNORECASE)
                 reply_evidence = re.search(r"(?:antworten|erwidern)", chair_evidence, re.IGNORECASE)
