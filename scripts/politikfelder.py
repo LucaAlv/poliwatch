@@ -22,6 +22,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -514,7 +515,112 @@ def tags_for_vote(
     return [UNTAGGED], "not_fetched" if missing else "untagged"
 
 
+#: What ``vote_vorgang_ids`` says of a vote's context (``votes.context_state``):
+#: ``resolved``, the vote's narrow numbers name a Vorgang; ``not_fetched``, they name
+#: none and a number is missing from the cache (offline build, failed fetch);
+#: ``none``, the cache knows every number and none names a Vorgang narrowly.
+CONTEXT_STATES: tuple[str, ...] = ("resolved", "none", "not_fetched")
+
+
+def vote_vorgang_ids(
+    vote: Mapping[str, Any],
+    cache: Mapping[str, Any],
+    *,
+    wahlperiode: str = "",
+    linked_vorgang_ids: Iterable[str] = (),
+) -> tuple[list[str], str]:
+    """The Vorgänge a vote is about, for its prose context, and the state of that
+    answer (one of CONTEXT_STATES).
+
+    Only the narrow tier of the vote's Drucksache numbers counts, narrowed to the
+    Vorgänge of the TOPs the vote sits under when the two meet. The wide tier, which
+    ``tags_for_vote`` may still fall back to, is never used: a Beschlussempfehlung
+    bundle would show the abstracts of Vorgänge the vote is not about. Where a vote's
+    tags come from the narrow tier, both pick the same Vorgänge. A Vorgang id can be
+    resolved while its own record is not in the cache yet; the state stays
+    ``resolved`` and the abstract is simply absent."""
+    (narrow, _wide), missing = _vorgaenge_of_numbers(
+        vote_document_numbers(vote, wahlperiode), cache, narrow_first=True
+    )
+    linked = {str(i) for i in linked_vorgang_ids}
+    ids = [i for i in narrow if i in linked] if linked & set(narrow) else narrow
+    if ids:
+        return ids, "resolved"
+    return [], "not_fetched" if missing else "none"
+
+
 vote_key = derive.vote_identity
+
+
+def vote_linked_vorgang_ids(report: Mapping[str, Any]) -> dict[Any, list[str]]:
+    """The Vorgang ids of every TOP a vote sits under, keyed by ``vote_key``: the
+    union over all of them, so a vote cited under two TOPs gets one answer."""
+    linked_ids: dict[Any, list[str]] = {}
+    for item in report.get("agenda_items") or []:
+        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+            linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
+    return linked_ids
+
+
+def report_vote_vorgaenge(report: Mapping[str, Any], cache: Mapping[str, Any]) -> dict[Any, tuple[list[str], str]]:
+    """``vote_vorgang_ids`` of every vote of one sitting report, keyed by ``vote_key``.
+    Persist and render both read it, with the same cache, so a vote's
+    ``vote_proceedings`` rows and its panels name the same Vorgänge."""
+    wahlperiode = derive.report_wahlperiode(report)
+    linked_ids = vote_linked_vorgang_ids(report)
+    return {
+        vote_key(vote): vote_vorgang_ids(
+            vote, cache, wahlperiode=wahlperiode, linked_vorgang_ids=linked_ids.get(vote_key(vote), ())
+        )
+        for _item, vote in derive.iter_report_votes(report)
+    }
+
+
+class _AbstractParser(HTMLParser):
+    """Collects the text of a DIP abstract: a ``<br>`` or a block element ends a
+    paragraph, every other tag is dropped with its text kept, ``<script>`` and
+    ``<style>`` are dropped with their text."""
+
+    BREAKS = frozenset({"br", "p", "div", "li", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6"})
+    SKIPPED = frozenset({"script", "style"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.paragraphs: list[list[str]] = [[]]
+        self.skipping = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self.SKIPPED:
+            self.skipping += 1
+        elif tag in self.BREAKS:
+            self.paragraphs.append([])
+
+    def handle_startendtag(self, tag: str, attrs: Any) -> None:
+        if tag in self.BREAKS:
+            self.paragraphs.append([])
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.SKIPPED:
+            self.skipping = max(0, self.skipping - 1)
+        elif tag in self.BREAKS:
+            self.paragraphs.append([])
+
+    def handle_data(self, data: str) -> None:
+        if not self.skipping:
+            self.paragraphs[-1].append(data)
+
+
+def abstract_text(raw: Any) -> str:
+    """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
+    whitespace inside a paragraph collapsed to single spaces, entities unescaped,
+    markup gone. The caller escapes the result; the raw text stays in the cache."""
+    if not raw:
+        return ""
+    parser = _AbstractParser()
+    parser.feed(str(raw))
+    parser.close()
+    paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
+    return "\n\n".join(p for p in paragraphs if p)
 
 
 def report_politikfelder(
@@ -527,13 +633,12 @@ def report_politikfelder(
     wahlperiode = derive.report_wahlperiode(report)
     item_tags: list[Tagging] = []
     linked: dict[Any, list[Tagging]] = {}
-    linked_ids: dict[Any, list[str]] = {}
+    linked_ids = vote_linked_vorgang_ids(report)
     for item in report.get("agenda_items") or []:
         tagging = tags_for_agenda_item(item, cache, wahlperiode=wahlperiode)
         item_tags.append(tagging)
         for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
             linked.setdefault(vote_key(vote), []).append(tagging)
-            linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
     vote_tags: dict[Any, Tagging] = {}
     for _item, vote in derive.iter_report_votes(report):
         key = vote_key(vote)
@@ -548,9 +653,11 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
 
     Returns (Vorgang ids, Drucksache numbers). Ids: every id the TOPs name that
     is missing from the cache, plus cached ones still without a Sachgebiet (DIP
-    may have filled it since). Numbers: those of every vote, and of every TOP
-    without Vorgänge of its own (``reads_cited_numbers``), that the cache has not
-    resolved, plus the Vorgänge already resolved numbers name.
+    may have filled it since), plus the Vorgänge a vote's context reads
+    (``report_vote_vorgaenge``) whose record has an empty abstract or predates
+    ``titel``. Numbers: those of every vote, and of every TOP without Vorgänge of its
+    own (``reads_cited_numbers``), that the cache has not resolved, plus the Vorgänge
+    already resolved numbers name.
     """
     records = cache.get("vorgaenge") or {}
     resolved = cache.get("dokumentnummern") or {}
@@ -584,4 +691,11 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
                 want_number(number)
                 for vorgang_id in resolved.get(str(number)) or ():
                     want_id(str(vorgang_id))
+        # DIP often adds an abstract after the Sachgebiet, and records cached before
+        # titel was kept lack it: ask again for the Vorgänge a vote's context shows.
+        for context_ids, _state in report_vote_vorgaenge(report, cache).values():
+            for vorgang_id in context_ids:
+                record = records.get(vorgang_id)
+                if record is not None and ("titel" not in record or not record.get("abstract")) and vorgang_id not in ids:
+                    ids.append(vorgang_id)
     return ids, numbers

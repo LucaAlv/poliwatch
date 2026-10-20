@@ -30,7 +30,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -40,6 +40,10 @@ def require_current_schema(conn):
     proceedings = {row[1] for row in conn.execute("PRAGMA table_info(proceedings)")}
     if proceedings and "sachgebiet" not in proceedings:
         # Before schema 5: initialize() would add the Politikfeld tables empty and stamp version 5.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if proceedings and "abstract" not in proceedings:
+        # Schema 5: initialize() would add vote_proceedings empty, leave every
+        # votes.context_state NULL and stamp version 6.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -196,6 +200,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           title TEXT,
           proceeding_type TEXT,
           sachgebiet TEXT,
+          abstract TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -316,6 +321,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           inversion_source TEXT,
           inversion_excerpt TEXT,
           xlsx_url TEXT,
+          context_state TEXT CHECK (context_state IN (%(context_states)s)),
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -340,6 +346,13 @@ def initialize(conn: sqlite3.Connection) -> None:
           rank INTEGER NOT NULL,
           source TEXT NOT NULL CHECK (source IN (%(sources)s)),
           PRIMARY KEY (vote_id, politikfeld)
+        );
+
+        CREATE TABLE IF NOT EXISTS vote_proceedings (
+          vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+          proceeding_id TEXT NOT NULL REFERENCES proceedings(id) ON DELETE CASCADE,
+          rank INTEGER NOT NULL,
+          PRIMARY KEY (vote_id, proceeding_id)
         );
 
         CREATE TABLE IF NOT EXISTS vote_documents (
@@ -375,11 +388,16 @@ def initialize(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_contributions_mp ON contributions(mp_id);
         CREATE INDEX IF NOT EXISTS idx_contributions_agenda_item ON contributions(agenda_item_id);
         CREATE INDEX IF NOT EXISTS idx_positions_proceeding ON proceeding_positions(proceeding_id);
+        CREATE INDEX IF NOT EXISTS idx_vote_proceedings_proceeding ON vote_proceedings(proceeding_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_mp ON vote_members(mp_id);
         CREATE INDEX IF NOT EXISTS idx_vote_members_party ON vote_members(party_id);
         CREATE INDEX IF NOT EXISTS idx_votes_detail_url ON votes(detail_url);
         """
-        % {"labels": _sql_list(politikfelder.ALLOWED_LABELS), "sources": _sql_list(politikfelder.SOURCES)}
+        % {
+            "labels": _sql_list(politikfelder.ALLOWED_LABELS),
+            "sources": _sql_list(politikfelder.SOURCES),
+            "context_states": _sql_list(politikfelder.CONTEXT_STATES),
+        }
     )
     _migrate_mps_columns(conn)
     _migrate_speeches_columns(conn)
@@ -988,12 +1006,13 @@ def persist_positions(
             sachgebiet = None if record is None else dumps(record.get("sachgebiet") or [])
             conn.execute(
                 """
-                INSERT INTO proceedings(id, title, proceeding_type, sachgebiet, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO proceedings(id, title, proceeding_type, sachgebiet, abstract, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title = COALESCE(excluded.title, proceedings.title),
                   proceeding_type = COALESCE(excluded.proceeding_type, proceedings.proceeding_type),
                   sachgebiet = COALESCE(excluded.sachgebiet, proceedings.sachgebiet),
+                  abstract = COALESCE(excluded.abstract, proceedings.abstract),
                   updated_at = excluded.updated_at
                 """,
                 (
@@ -1001,6 +1020,7 @@ def persist_positions(
                     clean(position.get("titel")),
                     clean(position.get("vorgangstyp")),
                     sachgebiet,
+                    _abstract(record),
                     now,
                     now,
                 ),
@@ -1431,6 +1451,53 @@ def persist_politikfelder(
             )
 
 
+def _abstract(record: dict[str, Any] | None) -> str | None:
+    """A cached Vorgang's abstract as stored: sanitised plain text, NULL when the
+    Vorgang is not in the cache or DIP gives no abstract."""
+    return politikfelder.abstract_text((record or {}).get("abstract")) or None
+
+
+def persist_vote_context(
+    conn: sqlite3.Connection,
+    report: dict[str, Any],
+    vorgang_cache: dict[str, Any] | None,
+    now: str,
+) -> None:
+    """Write the Vorgänge each vote of ``report`` is about (``vote_proceedings``) and
+    the state of that answer (``votes.context_state``), from the same
+    ``report_vote_vorgaenge`` the vote panel reads. A Vorgang only a vote names gets
+    a proceedings row with the cached titel (D12); on a row a TOP already wrote, the
+    titel fills only an empty title, so a position's title stays. The Vorgangstyp is
+    left to the positions: filling it here would move existing cells (D10)."""
+    cache = vorgang_cache or politikfelder.empty_cache()
+    records = cache.get("vorgaenge") or {}
+    contexts = politikfelder.report_vote_vorgaenge(report, cache)
+    for _item, vote in derive.iter_report_votes(report):
+        vote_id = clean(vote.get("id"))
+        if not vote_id:
+            continue
+        proceeding_ids, state = contexts[politikfelder.vote_key(vote)]
+        conn.execute("DELETE FROM vote_proceedings WHERE vote_id = ?", (vote_id,))
+        for rank, proceeding_id in enumerate(proceeding_ids, start=1):
+            record = records.get(proceeding_id) or {}
+            conn.execute(
+                """
+                INSERT INTO proceedings(id, title, abstract, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title = COALESCE(proceedings.title, excluded.title),
+                  abstract = COALESCE(excluded.abstract, proceedings.abstract),
+                  updated_at = excluded.updated_at
+                """,
+                (proceeding_id, clean(record.get("titel")), _abstract(record), now, now),
+            )
+            conn.execute(
+                "INSERT INTO vote_proceedings(vote_id, proceeding_id, rank) VALUES (?, ?, ?)",
+                (vote_id, proceeding_id, rank),
+            )
+        conn.execute("UPDATE votes SET context_state = ? WHERE id = ?", (state, vote_id))
+
+
 def persist_report(
     conn: sqlite3.Connection, report: dict[str, Any], vorgang_cache: dict[str, Any] | None = None
 ) -> None:
@@ -1489,6 +1556,7 @@ def persist_report(
                         (agenda_item_id, vote_id),
                     )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
+        persist_vote_context(conn, report, vorgang_cache, now)
 
 
 def main() -> int:

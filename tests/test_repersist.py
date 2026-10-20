@@ -815,6 +815,34 @@ class RepersistTests(unittest.TestCase):
         finally:
             conn.close()
 
+    # Value: protects=a schema 5 store (no proceedings.abstract, votes.context_state or vote_proceedings) is refused byte for byte by a non-upgrade rebuild and upgraded to schema 6 with vote context by --repersist; fails_when=the abstract guard is dropped (a rebuild stamps 6 over a store without context) or the upgrade trips over the old store; why_new=B4 bumps the schema to 6; seam=none; no_claim=a store written by released code (the old shape is staged by dropping what schema 6 added)
+    @unittest.skipUnless(sqlite3.sqlite_version_info >= (3, 35), "ALTER TABLE ... DROP COLUMN needs SQLite 3.35+ to stage the old schema")
+    def test_a_schema_5_store_is_refused_by_an_online_rebuild_and_upgraded_by_repersist(self) -> None:
+        entries, _ = self.repersist()
+        conn = sqlite3.connect(self.database)
+        try:
+            conn.execute("DROP TABLE vote_proceedings")
+            conn.execute("ALTER TABLE votes DROP COLUMN context_state")
+            conn.execute("ALTER TABLE proceedings DROP COLUMN abstract")
+            conn.commit()
+        finally:
+            conn.close()
+        old = sha(self.database)
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "Old build-store schema.*--offline --repersist"):
+            build.rebuild_database_from_entries(self.database, entries, vorgang_cache={"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+        self.assertEqual(old, sha(self.database))
+
+        _, rebuilt = self.repersist()
+        self.assertTrue(rebuilt.replaced)
+        self.assertIn("abstract", self.columns("proceedings"))
+        self.assertIn("context_state", self.columns("votes"))
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM votes WHERE context_state IS NULL").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], pulse_store.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
     # Value: protects=a re-persist with the Vorgang cache missing refuses to strip a store's DIP-derived Politikfelder, byte for byte, and names the online update; fails_when=require_vorgang_cache_for_tags goes, so the upgrade command stores every tag as not_fetched and the export publishes that; why_new=nothing guarded the cache before the review fix; seam=none
     def test_a_repersist_without_the_vorgang_cache_keeps_a_tagged_store(self) -> None:
         self.repersist()
