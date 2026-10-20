@@ -326,6 +326,20 @@ class AbweichlerPanelTests(unittest.TestCase):
         self.assertNotIn('class="vote-abweichler"', markup)
         self.assertNotIn(GAP_NOTE, markup)
 
+    def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
+        members = (
+            _members("SPD", ["Ada", "Bea"], [])
+            + [{"name": n, "faction": "FDP", "vote": v} for n, v in (("Cem", "abstain"), ("Dora", "abstain"), ("Emil", "yes"))]
+            + _members("AfD", ["Finn"], ["Gus"])
+        )
+        markup = render_vote_summary({"votes": [_roll_call(members)]})
+        self.assertNotIn('class="vote-abweichler"', markup)
+        self.assertIn(
+            '<p class="vote-abweichler-none">Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine '
+            "Ja-Mehrheit der eigenen Fraktion oder Gruppe)</p>",
+            markup,
+        )
+
     def test_a_vote_without_member_rows_never_reads_as_zero(self) -> None:
         import json
         from _support import FIXTURES

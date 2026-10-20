@@ -112,7 +112,8 @@ def member_name_html(
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
 ABWEICHLER_GAP = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
-ABWEICHLER_NONE = "Keine Abweichler: niemand stimmte mit Ja oder Nein anders als die Mehrheit der eigenen Fraktion oder Gruppe"
+# Spells out the CONTEXT.md rule: a Ja beside an Enthaltung majority or a tie is no Abweichung.
+ABWEICHLER_NONE = "Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit der eigenen Fraktion oder Gruppe)"
 #: Names shown before the rest of a group's Abweichler fold away (D6).
 ABWEICHLER_INLINE = 10
 

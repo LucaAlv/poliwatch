@@ -474,7 +474,7 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     Mehrheitsvotum or Nein against a Ja one. Inversion changes what Ja means,
     not who voted unlike their group, so it plays no part here.
 
-        no member rows for the group ──────────► none     (nobody named)
+        no member rows, though counts say some ► none     (nobody named)
         member Stimmen ≠ fraction counts ──────► partial  (nobody named)
         counts match ─► Mehrheitsvotum Ja/Nein? ─no─► complete, no members
                                                └yes─► complete, members with
@@ -492,10 +492,10 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         if name in NO_ZUSAMMENSCHLUSS:
             continue
         members = members_by_group.get(name) or []
-        if not members:
+        stimmen = Counter(str(member.get("vote") or "") for member in members)
+        if not members and stimmen != Counter(fraction["counts"]):
             result[name] = {"members": [], "state": "none"}
             continue
-        stimmen = Counter(str(member.get("vote") or "") for member in members)
         if stimmen != Counter(fraction["counts"]):
             result[name] = {"members": [], "state": "partial"}
             continue

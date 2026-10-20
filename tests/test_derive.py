@@ -101,6 +101,11 @@ class VoteAbweichlerTests(unittest.TestCase):
         result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=1), fraction("AfD", no=3)]))
         self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "complete", "AfD": "none"})
 
+    def test_an_all_zero_row_without_members_is_complete_not_missing(self) -> None:
+        rows = [member("Ada", "SPD", "yes")]
+        result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=1), fraction("AfD")]))
+        self.assertEqual(result["AfD"], {"members": [], "state": "complete"})
+
     def test_an_inverted_vote_names_the_same_abweichler(self) -> None:
         rows = [member("Ada", "SPD", "yes"), member("Bea", "SPD", "yes"), member("Cem", "SPD", "no")]
         plain = derive.vote_abweichler(roll_call(rows))
