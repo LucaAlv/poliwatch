@@ -73,9 +73,20 @@
   await change(query, 'no such bill');
   assert(visible().length === 0 && !document.querySelector('[data-bill-no-results]').hidden, 'no-match state was not shown');
   await change(sort, 'title');
+  reset.focus();
+  assert(document.activeElement === reset, 'reset must have focus before activation');
   await reset.click(); await tick();
+  assert(reset.hidden && document.activeElement === query, 'hidden reset must return focus to search');
   assert(visible().length === 20 && sort.value === 'title', 'reset should restore results while preserving sort');
   assert(new URL(location.href).searchParams.get('sort') === 'title', 'reset dropped selected sort from URL');
+
+  await change(query, '21/');
+  await next.click(); await tick();
+  assert(new URL(location.href).searchParams.get('page') === '2', 'reset setup must reach page two');
+  reset.focus(); reset.click(); await tick();
+  assert(reset.hidden && document.activeElement === query && query.value === '' && year.value === '' &&
+    !new URL(location.href).searchParams.has('page') && sort.value === 'title',
+    'focused reset must clear filters, return to page one and retain sort');
 
   await change(sort, 'date-asc');
   assert(visible()[0].dataset.id === 'browser-00', 'oldest-first ordering failed');
@@ -84,7 +95,10 @@
   assert(years.includes('2022') && years.includes('2024') && years.includes('2026'), 'year options missed populated years');
   await change(year, '2022');
   assert(visible().every(row => row.dataset.date.startsWith('2022-')), 'year filter returned another year or a missing date');
-  await change(year, '');
+  await change(query, '21/');
+  reset.focus(); reset.click(); await tick();
+  assert(reset.hidden && document.activeElement === query && query.value === '' && year.value === '',
+    'reset must clear both query and year and focus search');
 
   await change(sort, 'title');
   const titleFirsts = visible().slice(0, 2).map(row => row.dataset.id);

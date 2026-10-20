@@ -6367,6 +6367,7 @@ def render_bill_script() -> str:
           year.value = '';
           state.page = 1;
           apply('push');
+          search.focus();
         }));
         prev.addEventListener('click', guarded(() => { state.page -= 1; apply('push', true); }));
         next.addEventListener('click', guarded(() => { state.page += 1; apply('push', true); }));
