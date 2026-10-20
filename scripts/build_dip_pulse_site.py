@@ -26,7 +26,7 @@
 #      the integrity checks (schema and writes live in ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, its CSVs and six executed SQL
+#   6. Export a distribution copy of the store, its CSVs and the executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -2345,7 +2345,7 @@ def write_report_and_page(
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
 # (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
-# CSV.gz files, and six SQL "recipes" executed at build time so a visitor can
+# CSV.gz files, and the SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
 # recipe rows, the schema cards - is read from one manifest (datenstand.json)
@@ -2512,7 +2512,7 @@ REPRESENTATIVE_SQL = (
     ")\n"
 )
 
-# The six recipes executed at build time against the distribution copy and
+# The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
 # addendum: R1/R3 join mp_canonical and group by the canonical id, so their
 # counts equal the pooled counts on the MP profile pages).
@@ -2689,6 +2689,14 @@ RECIPES: tuple[dict[str, Any], ...] = (
     },
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
+
+_NUMBER_WORDS = ("null", "eine", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf")
+
+
+def _recipe_count_word() -> str:
+    """``len(RECIPES)`` as the German word the Daten page and landing text use."""
+    count = len(RECIPES)
+    return _NUMBER_WORDS[count] if count < len(_NUMBER_WORDS) else str(count)
 
 
 class DataExportUnavailable(RuntimeError):
@@ -3585,7 +3593,7 @@ def render_daten_recipes(
 
 # Rendered without JS as hidden ("no dead button shows without JS") and
 # revealed once this script has wired up a click handler for it. One script
-# tag for all six recipe buttons, next to the markup it controls rather than
+# tag for all recipe buttons, next to the markup it controls rather than
 # folded into page_scripts (shared by every page, most of which have none).
 def recipe_copy_runtime_script() -> str:
     return """
@@ -3959,9 +3967,9 @@ def render_database_page(
         {datenstand_html}
       </section>
       <section class="rule-section">
-        <span class="eyebrow">Fünf Abfragen</span>
+        <span class="eyebrow">{_recipe_count_word().capitalize()} Abfragen</span>
         <h2>Rezepte</h2>
-        <p class="lede">Diese sechs SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
+        <p class="lede">Diese {_recipe_count_word()} SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
         <div class="recipes">{recipes_html}</div>
       </section>
       <section class="rule-section loslegen" id="loslegen">
@@ -4122,7 +4130,7 @@ def render_landing_page(
     data = ""
     if database_page_href:
         meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
-        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und sechs geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen, Abstimmungen und Ausschüssen.</p>{meta}</li>'
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und {_recipe_count_word()} geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen, Abstimmungen und Ausschüssen.</p>{meta}</li>'
 
     return f"""<!doctype html>
 <html lang="de">

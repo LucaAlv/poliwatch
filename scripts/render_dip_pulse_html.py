@@ -536,9 +536,9 @@ VOTE_RESULT_BADGE_CSS = """
     .vote-result-note { margin-left:4px; font-weight:500; }
     /* No result: plain muted text, spaced off the title like the pill. */
     .vote-no-result { margin-left:8px; color:var(--muted); font-size:12px; font-weight:500; vertical-align:middle; }
-    /* Only the archive row turns dark; the dossier .vote-panel stays light. */
-    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
-    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+    /* The archive row and the dossier .vote-panel both turn dark, so the outlined pill lightens in both. */
+    :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-accepted { color:#5eead4; }
+    :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-rejected { color:#fca5a5; }
 """
 
 
@@ -2950,7 +2950,7 @@ def render_html(
     cache = vorgang_cache or politikfelder.empty_cache()
     item_politikfelder, _ = politikfelder.report_politikfelder(report, cache)
     # The Vorgänge each vote is about, once per page, as persist stores them.
-    vote_ctx = {
+    votes_component_ctx = {
         "mp_lookup": mp_lookup,
         "mp_prefix": "../abgeordnete/",
         "vorgang_cache": cache,
@@ -3034,7 +3034,7 @@ def render_html(
             for party, count in stats["party_counts"].most_common()
         ]
         vote_sections = (
-            "".join(components["votes"].dossier_sections(report, {**vote_ctx, "item": item}))
+            "".join(components["votes"].dossier_sections(report, {**votes_component_ctx, "item": item}))
             if "votes" in components
             else ""
         )
@@ -3117,7 +3117,7 @@ def render_html(
     sitting_vote_section = ""
     if sitting_votes and "votes" in components:
         vote_sections = "".join(
-            components["votes"].dossier_sections(report, {**vote_ctx, "item": {"votes": sitting_votes}})
+            components["votes"].dossier_sections(report, {**votes_component_ctx, "item": {"votes": sitting_votes}})
         )
         sitting_vote_section = (
             '<section class="top-card sitting-votes" id="sitting-votes">'

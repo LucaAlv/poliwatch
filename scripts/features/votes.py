@@ -118,6 +118,7 @@ ABWEICHLER_GAP = "Einzelstimmen unvollständig – Abweichler nicht ermittelbar"
 ABWEICHLER_NONE = "Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine Ja-Mehrheit der eigenen Fraktion oder Gruppe)"
 #: Names shown before the rest of a group's Abweichler fold away (D6).
 ABWEICHLER_INLINE = 10
+ABWEICHLER_GAP_HTML = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
 
 
 def render_abweichler(
@@ -169,11 +170,11 @@ def committee_genitive(name: str) -> str | None:
     return None
 
 
-def _join_de(parts: list[str]) -> str:
+def join_with_und(parts: list[str]) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " und " + parts[-1]
 
 
-def render_committee_line(committees: list[dict[str, Any]], item: dict[str, Any]) -> str:
+def render_committee_line(committees: list[dict[str, Any]], links: dict[str, tuple[str, str]]) -> str:
     """One citation per Beschlussempfehlung among the vote's Drucksachen,
     "Beschlussempfehlung des <Ausschuss> (Drucksache <link>)". It cites the
     document and claims no role for this vote (D14), so it stays true for a
@@ -181,17 +182,16 @@ def render_committee_line(committees: list[dict[str, Any]], item: dict[str, Any]
     """
     if not committees:
         return '<p class="vote-committee muted">Ausschuss nicht ermittelt</p>'
-    # The Drucksache link comes from the sitting-wide match, then from this
-    # TOP's own sources, which win as they do for the vote's document list.
-    links = {row["number"]: (row["url"], "bundestag-dip") for row in committees if row.get("url")}
-    links.update(document_source_links(item))
+    # The Drucksache link comes from the sitting-wide match, then from ``links``,
+    # this TOP's own sources, which win as they do for the vote's document list.
+    links = {**{row["number"]: (row["url"], "bundestag-dip") for row in committees if row.get("url")}, **links}
     lines = []
     for row in committees:
         genitives = [committee_genitive(name) for name in row["urheber"]]
         if all(genitives):
-            who = "Beschlussempfehlung " + _join_de(genitives)
+            who = "Beschlussempfehlung " + join_with_und(genitives)
         else:
-            who = "Beschlussempfehlung, Urheber: " + _join_de(row["urheber"])
+            who = "Beschlussempfehlung, Urheber: " + join_with_und(row["urheber"])
         lines.append(f"{html.esc(who)} (Drucksache {render_document_links([row['number']], links)})")
     return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
 
@@ -356,10 +356,10 @@ def render_vote_summary(
             panel_id = f' id="{html.esc(anchor)}"'
         else:
             panel_id = ""
-        context_html = ""
+        vote_context_html = ""
         if vote_contexts is not None and key in vote_contexts:
             context_ids, context_state = vote_contexts[key]
-            context_html = render_vote_context(context_ids, context_state, vorgang_cache)
+            vote_context_html = render_vote_context(context_ids, context_state, vorgang_cache)
         abweichler = derive.vote_abweichler(vote)
         # One gap note for the vote when no group has member rows, else one
         # under each group that is short.
@@ -385,7 +385,7 @@ def render_vote_summary(
             if group and group["members"]:
                 note = render_abweichler(vote, group["members"], mp_lookup, mp_prefix)
             elif group and group["state"] != "complete" and not no_members:
-                note = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
+                note = ABWEICHLER_GAP_HTML
             fraction_rows.append(
                 '<div class="vote-fraction-group">'
                 '<div class="vote-fraction-row">'
@@ -398,10 +398,10 @@ def render_vote_summary(
             )
         abweichler_note = ""
         if no_members:
-            abweichler_note = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
+            abweichler_note = ABWEICHLER_GAP_HTML
         elif abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
             abweichler_note = f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
-        committee_line = render_committee_line(derive.vote_committees(vote, report), item)
+        committee_line = render_committee_line(derive.vote_committees(vote, report), document_source_links(item))
         member_groups: dict[str, list[dict[str, Any]]] = {}
         for member in vote.get("members") or []:
             member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
@@ -452,7 +452,7 @@ def render_vote_summary(
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{context_html}{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
+            f'{vote_context_html}{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
