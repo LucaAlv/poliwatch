@@ -1,6 +1,79 @@
 (async function () {
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const tick = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  if (document.querySelector('details#speech-4-ID0')) {
+    const first = document.getElementById('speech-4-ID0');
+    const second = document.getElementById('speech-4-ID1');
+    const keyboardLink = document.querySelector('[data-speech-keyboard-check]');
+    if (keyboardLink) {
+      assert(first.open && location.href === keyboardLink.href,
+        'real keyboard Enter must reopen speech without changing the fragment');
+      return { keyboardEnter: 'passed' };
+    }
+    assert(location.hash === '#speech-4-ID0' && first.open && !second.open,
+      'initial speech fragment must open only its card');
+    const link = document.createElement('a');
+    link.href = location.href;
+    link.innerHTML = '<span>Repeat speech link</span>';
+    first.before(link);
+    first.querySelector('summary').click(); await tick();
+    assert(!first.open, 'speech must close before repeated activation');
+    const originalUrl = location.href;
+    let prevented;
+    const observe = event => { prevented = event.defaultPrevented; };
+    window.addEventListener('click', observe);
+    link.firstElementChild.click(); await tick();
+    window.removeEventListener('click', observe);
+    assert(first.open && location.href === originalUrl && prevented === false,
+      'nested same-URL click must reopen speech while preserving native navigation');
+    assert(Math.abs(first.getBoundingClientRect().top) < innerHeight,
+      'reopened speech must scroll into view');
+
+    for (const hash of ['#speech-4-ID1', '#%E0%A4%A', '#speech-missing', '#top-4']) {
+      first.open = false; second.open = false;
+      link.href = hash; link.click(); await tick();
+      assert(!first.open && second.open === (hash === '#speech-4-ID1'),
+        'changed, malformed, missing or non-speech fragment revealed the wrong card: ' + hash);
+      const before = [...document.querySelectorAll('details[open]')];
+      link.click(); await tick();
+      assert([...document.querySelectorAll('details[open]')].every(el => before.includes(el)),
+        'repeated invalid fragment opened an unrelated disclosure');
+    }
+    link.href = '#speech-4-ID0'; link.click(); await tick();
+    first.open = false;
+    // Observe default handling after the runtime, then suppress navigation in this test only.
+    const suppress = event => { prevented = event.defaultPrevented; event.preventDefault(); };
+    window.addEventListener('click', suppress);
+    const unchanged = location.href;
+    for (const options of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      prevented = undefined;
+      link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...options }));
+      assert(!first.open && prevented === false, 'modified/non-primary click must keep native handling');
+    }
+    for (const [attribute, value] of [['download', 'speech.html'], ['target', '_blank'], ['target', 'other-frame']]) {
+      link.setAttribute(attribute, value); link.click();
+      assert(!first.open && prevented === false, attribute + ' link must keep native handling');
+      link.removeAttribute(attribute);
+    }
+    const cancel = event => event.preventDefault();
+    document.addEventListener('click', cancel);
+    link.click();
+    document.removeEventListener('click', cancel);
+    assert(!first.open && prevented === true, 'canceled click must not reopen speech');
+    for (const href of [unchanged.replace(location.origin, 'https://example.org'),
+      unchanged.replace(location.pathname, '/another.html'), unchanged.replace('#', '?different=1#'), '#top-4']) {
+      link.href = href; link.click();
+      assert(!first.open && prevented === false, 'unrelated resolved URL must keep native handling: ' + href);
+    }
+    window.removeEventListener('click', suppress);
+    assert(location.href === unchanged, 'test navigation suppression failed');
+    link.href = unchanged;
+    link.dataset.speechKeyboardCheck = '';
+    link.focus();
+    assert(document.activeElement === link && !first.open, 'ready for real keyboard Enter activation');
+    // Use the browser driver's Enter key, then run this check again to verify the result.
+    return { speechChecks: 'passed', keyboardEnter: 'pending on focused Repeat speech link' };
+  }
   const root = document.querySelector('[data-bills-index]');
   if (!root && document.querySelector('.bill-detail-grid')) {
     assert(document.querySelectorAll('main').length === 1, 'detail must have one reading landmark');

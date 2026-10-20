@@ -123,6 +123,18 @@ def write_browser_fixture(directory: Path) -> None:
         ]
     (directory / "detail.html").write_text(build.render_bill_detail(detail_bill, {}), encoding="utf-8")
     (directory / "empty.html").write_text(build.render_bills_index([]), encoding="utf-8")
+    report = entry([], [], number="21/1")["report"]
+    report["agenda_items"][0].update(
+        index=4, top_id="TOP 4", xml_speech_count=2,
+        xml_speakers=[
+            {"rede_id": f"ID{i}", "speaker": {"display_name": f"Person {i}", "fraktion": "SPD"},
+             "text": f"Rede {i}", "char_count": 6}
+            for i in range(2)
+        ],
+    )
+    protocols = directory.parent / "protocols"
+    protocols.mkdir(exist_ok=True)
+    (protocols / "plenarprotokoll-21-1.html").write_text(html.render_html(report), encoding="utf-8")
 
 
 class _Markup(HTMLParser):
