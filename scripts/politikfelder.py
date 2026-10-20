@@ -516,8 +516,10 @@ def tags_for_vote(
 
 
 #: What ``vote_vorgang_ids`` says of a vote's context (``votes.context_state``):
-#: ``resolved``, the vote's narrow numbers name a Vorgang; ``not_fetched``, they name
-#: none and a number is missing from the cache (offline build, failed fetch);
+#: ``resolved``, the vote's narrow numbers name Vorgänge and every one has a cached
+#: record; ``not_fetched``, at least one Vorgang or Drucksache is not in the cache
+#: (offline build, failed fetch): a named Vorgang has no record, or the numbers name
+#: none and one of them is missing; rows that are known are still listed;
 #: ``none``, the cache knows every number and none names a Vorgang narrowly.
 ContextState = Literal["resolved", "none", "not_fetched"]
 CONTEXT_STATES: tuple[str, ...] = get_args(ContextState)
@@ -545,15 +547,16 @@ def vote_vorgang_ids(
     ``tags_for_vote`` may still fall back to, is never used: a Beschlussempfehlung
     bundle would show the abstracts of Vorgänge the vote is not about. Where a vote's
     tags come from the narrow tier, both pick the same Vorgänge. A Vorgang id can be
-    resolved while its own record is not in the cache yet; the state stays
-    ``resolved`` and the abstract is simply absent."""
+    resolved while its own record is not in the cache yet; the ids are kept and the
+    state is ``not_fetched`` (D7)."""
     (narrow, _wide), missing = _vorgaenge_of_numbers(
         vote_document_numbers(vote, wahlperiode), cache, narrow_first=True
     )
     linked = {str(i) for i in linked_vorgang_ids}
     ids = [i for i in narrow if i in linked] if linked & set(narrow) else narrow
     if ids:
-        return VoteContext(ids, "resolved")
+        records = cache.get("vorgaenge") or {}
+        return VoteContext(ids, "resolved" if all(i in records for i in ids) else "not_fetched")
     return VoteContext([], "not_fetched" if missing else "none")
 
 

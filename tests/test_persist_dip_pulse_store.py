@@ -119,6 +119,12 @@ class VoteContextPersistTests(unittest.TestCase):
                 with self.assertRaises(sqlite3.IntegrityError):
                     conn.execute("UPDATE votes SET context_state = 'geraten'")
 
+    # Value: protects=D7: a resolved Vorgang without a cached record keeps its row but is not_fetched; fails_when=the state reads resolved over a missing abstract, or the row is dropped; why_new=review fix E2; seam=none
+    def test_a_resolved_vorgang_without_a_record_is_written_and_not_fetched(self):
+        conn = self.persisted(_context_cache({"20/123": ["vorgang-1"]}, {}))
+        self.assertEqual(self.rows(conn, "SELECT proceeding_id, rank FROM vote_proceedings"), [("vorgang-1", 1)])
+        self.assertEqual(self.rows(conn, "SELECT context_state FROM votes"), [("not_fetched",)])
+
     # Value: protects=a re-persist replaces a vote's vote_proceedings rows and state with the current resolution; fails_when=rows are only inserted, so a Vorgang the cache no longer names stays linked; why_new=vote_proceedings is new; seam=none
     def test_persisting_again_replaces_the_rows(self):
         first = _context_cache({"20/123": ["a"]}, {"a": {"sachgebiet": [], "titel": "A", "abstract": "A."}})

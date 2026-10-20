@@ -397,8 +397,10 @@ class VoteContextTests(unittest.TestCase):
 
     # Value: protects=the export tells "no Vorgang" from "not fetched" (D7) by one fixed precedence; fails_when=a cache miss is stored as none, so a fetch outage reads as "DIP has no description"; why_new=votes.context_state is new; seam=none
     def test_the_state_is_resolved_then_not_fetched_then_none(self) -> None:
-        cache = cache_of({"a": vorgang()}, {"21/1": ["a"], "21/3": []})
+        cache = cache_of({"a": vorgang()}, {"21/1": ["a"], "21/2": ["a", "gone"], "21/3": []})
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/1", "21/9"]}, cache), (["a"], "resolved"))
+        # A resolved Vorgang without a cached record: the ids stay, the answer is not_fetched (D7).
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/2"]}, cache), (["a", "gone"], "not_fetched"))
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/9"]}, cache), ([], "not_fetched"))
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/3"]}, cache), ([], "none"))
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": []}, cache), ([], "none"))
