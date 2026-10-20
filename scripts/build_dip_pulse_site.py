@@ -8762,7 +8762,9 @@ def render_facts_week(
 """
 
 
-def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_plural: str) -> str:
+def _facts_methodik_metric_items(
+    registry: tuple[dict[str, Any], ...], period_plural: str, coverage: str | None = None
+) -> str:
     items = []
     for metric in registry:
         gates = [f"mindestens {metric['min_history_weeks']} vergleichbare {period_plural}"]
@@ -8770,7 +8772,11 @@ def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_pl
             gates.append(f"Wert mindestens {pulse_html.format_int(int(metric['min_value']))}")
         if metric.get("requires_topic"):
             gates.append("Thema muss bestimmbar sein")
-        caveat = f'<p class="caveat">{pulse_html.esc(metric["caveat"])}</p>' if metric.get("caveat") else ""
+        caveat = (
+            f'<p class="caveat">{pulse_html.esc(facts.fill_caveat(metric["caveat"], coverage))}</p>'
+            if metric.get("caveat")
+            else ""
+        )
         direction_text = "größter" if metric["direction"] == "max" else "kleinster"
         per_period = "je Sitzungswoche" if period_plural == "Wochen" else "je Monat"
         items.append(
@@ -8781,10 +8787,10 @@ def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_pl
     return "".join(items)
 
 
-def render_facts_methodik(features: Selection | None = None) -> str:
+def render_facts_methodik(features: Selection | None = None, coverage: str | None = None) -> str:
     features = features or publication_selection()
-    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen")
-    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate")
+    weekly_items = _facts_methodik_metric_items(facts.REGISTRY, "Wochen", coverage)
+    monthly_items = _facts_methodik_metric_items(facts.MONTHLY_REGISTRY, "Monate", coverage)
     floor_pct = facts.format_percentile(facts.PUBLICATION_FLOOR)
     min_abweichler = int(facts.REGISTRY_BY_ID["meiste-abweichler"]["min_value"])
     return f"""<!doctype html>
@@ -8909,10 +8915,15 @@ def write_facts_pages(
     all_facts: list[dict[str, Any]] = []
     expected = {"index.html", "methodik.html"}
     read_store = not no_persist and database_path.exists()
+    coverage: str | None = None
     if read_store:
         conn = facts.open_readonly(database_path)
         try:
             all_facts = facts.load_facts(conn)
+            # The caveats that name the coverage start take it from this store.
+            coverage = facts.coverage_label(conn)
+            for row in all_facts:
+                row["coverage_label"] = coverage
             # An incomplete period says which sitting keeps it incomplete. The
             # store holds no acquisition state, so the reports the build is
             # holding and the cached catalog are read again here, exactly as the
@@ -8988,7 +8999,7 @@ def write_facts_pages(
     archive_path = facts_dir / "index.html"
     if read_store or not archive_path.exists():
         archive_path.write_text(render_facts_archive(all_facts, features=features), encoding="utf-8")
-    (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features), encoding="utf-8")
+    (facts_dir / "methodik.html").write_text(render_facts_methodik(features=features, coverage=coverage), encoding="utf-8")
     periods = {(row["period_kind"], row["period_key"]) for row in all_facts}
     posted = sum(1 for row in all_facts if row["publishable"])
     return {"periods": len(periods), "posted": posted, "index_path": facts_dir / "index.html"}

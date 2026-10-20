@@ -54,6 +54,10 @@ _SPELLINGS = {
     "b90/grüne": "BÜNDNIS 90/DIE GRÜNEN",
     "grüne": "BÜNDNIS 90/DIE GRÜNEN",
     "bündnis 90/die grünen": "BÜNDNIS 90/DIE GRÜNEN",
+    # Spellings the WP 18/19 XML prints (A3 pilot census, docs/plans/a3-pilot.md);
+    # only observed ones, no fuzzy whitespace folding that could merge names.
+    "bündnis 90/die grüne n": "BÜNDNIS 90/DIE GRÜNEN",
+    "bündnis 90/ die grünen": "BÜNDNIS 90/DIE GRÜNEN",
     "linke": "Die Linke",
     "die linke": "Die Linke",
     "fraktionslose": "fraktionslos",
@@ -213,10 +217,16 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     # Auxiliary organs of the Bundestag: neither government nor Bundesrat.
     (r"Wehrbeauftragte[r]? des Deutschen Bundestages", "weitere"),
     (r"Polizeibeauftragte[r]? des Bundes beim Deutschen Bundestag", "weitere"),
+    # The Bundestag's own presidium at the lectern (18/100 Lammert, 18/245
+    # Bulmahn and Singhammer, 19/1 Solms and Schäuble): an organ of the
+    # Bundestag, so a weitere Sprechrolle. Chairing a Sitzung is no Rede at all.
+    (r"(Vize|Alters)?[Pp]räsident(in)?", "weitere"),
     # Who speaks for the Bundesregierung: its members (Art. 62 GG) and those who
     # speak on its behalf (ADR 0001).
     (r"Bundeskanzler(in)?", "bundesregierung"),
     (r"Bundesminister(in)?( .+)?", "bundesregierung"),
+    # 19/100 Karliczek: the XML splits the first letter off.
+    (r"B undesminister(in)? .+", "bundesregierung"),
     (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
     # Explicit historical government role in 19/13, Redner 999990013.
     (r"Staatssekretär(in)? im Bundeskanzleramt", "bundesregierung"),

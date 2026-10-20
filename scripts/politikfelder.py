@@ -98,9 +98,59 @@ _WIRTSCHAFT = ("Wirtschaft & Finanzen",)
 #: Haushalt Einzelplan -> Politikfelder, keyed by (Wahlperiode, Einzelplan).
 #: The Bundestag recuts ministries between Wahlperioden, so the number alone
 #: does not say what an Einzelplan is about. Checked against the Einzelplan
-#: headings of the WP 20 and 21 sittings in the cache (2026-10-04); a pair not
-#: listed here is stored as ``einzelplan_unknown``.
+#: headings of the WP 20 and 21 sittings in the cache (2026-10-04) and, for WP
+#: 18 and 19, of the budget weeks 18/68-71 (Nov 2014) and 19/63-66 (Nov 2018)
+#: (A3 pilot census, 2026-10-20); a pair not listed here is stored as
+#: ``einzelplan_unknown``. Bau sat with Umwelt in WP 18 and with Inneres in WP 19
+#: and counts for Soziales, as the DIP Sachgebiet does.
 EINZELPLAN_TO_POLITIKFELDER: dict[tuple[str, str], tuple[str, ...]] = {
+    # Wahlperiode 18: Union and SPD
+    ("18", "01"): _STAAT,  # Bundespräsident und Bundespräsidialamt
+    ("18", "02"): _STAAT,  # Deutscher Bundestag
+    ("18", "03"): _STAAT,  # Bundesrat
+    ("18", "04"): _STAAT,  # Bundeskanzlerin und Bundeskanzleramt
+    ("18", "05"): ("Außenpolitik",),  # Auswärtiges Amt
+    ("18", "06"): ("Innere Sicherheit", "Migration"),  # Inneres
+    ("18", "07"): ("Justiz",),  # Justiz und Verbraucherschutz
+    ("18", "08"): _WIRTSCHAFT,  # Finanzen
+    ("18", "09"): ("Wirtschaft & Finanzen", "Energie & Klima"),  # Wirtschaft und Energie
+    ("18", "10"): _WIRTSCHAFT,  # Ernährung und Landwirtschaft
+    ("18", "11"): ("Soziales",),  # Arbeit und Soziales
+    ("18", "12"): ("Verkehr", "Digitales"),  # Verkehr und digitale Infrastruktur
+    ("18", "14"): ("Verteidigung",),
+    ("18", "15"): ("Gesundheit",),
+    ("18", "16"): ("Energie & Klima", "Soziales"),  # Umwelt, Naturschutz, Bau und Reaktorsicherheit
+    ("18", "17"): ("Soziales",),  # Familie, Senioren, Frauen und Jugend
+    ("18", "19"): _STAAT,  # Bundesverfassungsgericht
+    ("18", "20"): _STAAT,  # Bundesrechnungshof
+    ("18", "23"): ("Außenpolitik",),  # wirtschaftliche Zusammenarbeit und Entwicklung
+    ("18", "30"): ("Bildung",),  # Bildung und Forschung
+    ("18", "32"): _WIRTSCHAFT,  # Bundesschuld
+    ("18", "60"): _WIRTSCHAFT,  # Allgemeine Finanzverwaltung
+    # Wahlperiode 19: Union and SPD
+    ("19", "01"): _STAAT,
+    ("19", "02"): _STAAT,
+    ("19", "03"): _STAAT,
+    ("19", "04"): _STAAT,
+    ("19", "05"): ("Außenpolitik",),
+    ("19", "06"): ("Innere Sicherheit", "Migration", "Soziales"),  # Innern, für Bau und Heimat
+    ("19", "07"): ("Justiz",),  # Justiz und Verbraucherschutz
+    ("19", "08"): _WIRTSCHAFT,
+    ("19", "09"): ("Wirtschaft & Finanzen", "Energie & Klima"),  # Wirtschaft und Energie
+    ("19", "10"): _WIRTSCHAFT,  # Ernährung und Landwirtschaft
+    ("19", "11"): ("Soziales",),
+    ("19", "12"): ("Verkehr", "Digitales"),  # Verkehr und digitale Infrastruktur
+    ("19", "14"): ("Verteidigung",),
+    ("19", "15"): ("Gesundheit",),
+    ("19", "16"): ("Energie & Klima",),  # Umwelt, Naturschutz und nukleare Sicherheit
+    ("19", "17"): ("Soziales",),  # Familie, Senioren, Frauen und Jugend
+    ("19", "19"): _STAAT,
+    ("19", "20"): _STAAT,
+    ("19", "21"): ("Digitales",),  # Bundesbeauftragte für den Datenschutz und die Informationsfreiheit
+    ("19", "23"): ("Außenpolitik",),
+    ("19", "30"): ("Bildung",),  # Bildung und Forschung
+    ("19", "32"): _WIRTSCHAFT,
+    ("19", "60"): _WIRTSCHAFT,
     # Wahlperiode 20: Ampel
     ("20", "01"): _STAAT,  # Bundespräsident und Bundespräsidialamt
     ("20", "02"): _STAAT,  # Deutscher Bundestag

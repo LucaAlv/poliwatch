@@ -397,6 +397,20 @@ class CompareStoreValuesTests(unittest.TestCase):
         self.assertIn("week 2026-W10: Sitzung 21/2 fehlt", out)
         self.assertEqual(line_of(out, "publishable weeks", "stored facts"), "publishable weeks 1 -> 0 -1")
 
+    # Value (D6): protects=the old/new report for Fakt values a backfill moves behind an
+    # unchanged winner (CLAUDE.md "report the old and new values"); fails_when=a moved
+    # value, denominator or percentile of a shared period goes unlisted; seam=compare.main.
+    def test_moved_fakt_values_are_listed_per_period_and_metric(self) -> None:
+        old_row = {**_fact_row("u", value=5.0), "denominator": 20, "percentile": 0.9}
+        new_row = {**_fact_row("u", value=6.0), "denominator": 24, "percentile": 0.75}
+        old = make_output(self.tmp / "o", protocols={"21/1": []}, fact=old_row)
+        new = make_output(self.tmp / "n", protocols={"21/1": []}, fact=new_row)
+        _, out, _ = run(old, new)
+        self.assertIn("fakt values moved: 1 of 1 shared (period, metric)", out)
+        self.assertIn(f"week 2026-W10 {METRIC}: value 5 -> 6 +1; denominator 20 -> 24 +4; percentile 0.9 -> 0.75 -0.15", out)
+        _, same, _ = run(old, make_output(self.tmp / "s", protocols={"21/1": []}, fact=old_row))
+        self.assertIn("fakt values moved: 0 of 1 shared (period, metric)", same)
+
     def test_a_parties_name_that_disappears_is_listed_and_a_missing_roster_is_unavailable(self) -> None:
         old = make_output(
             self.tmp / "o", protocols={"21/1": [("R1", "SPDSPD", 5, None), ("R2", "SPD", 5, None)]}, roster=False

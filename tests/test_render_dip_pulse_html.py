@@ -1428,5 +1428,19 @@ class AgendaTopicTests(unittest.TestCase):
         )
 
 
+
+class PartyColorTests(unittest.TestCase):
+    # Value (plan 2.8): protects=every Zusammenschluss of WP 18-21 gets its own colour
+    # instead of the grey fallback; fails_when=FDP or a Gruppe falls back to grey;
+    # seam=PARTY_COLORS (renderer data).
+    def test_every_zusammenschluss_of_wp18_to_21_has_its_own_colour(self) -> None:
+        fallback = "#6b7280"
+        names = ("CDU/CSU", "SPD", "AfD", "BÜNDNIS 90/DIE GRÜNEN", "Die Linke", "FDP", "Gruppe Die Linke",
+                 "Gruppe BSW", "fraktionslos")
+        colours = [pulse_html.PARTY_COLORS.get(name, fallback) for name in names]
+        self.assertNotIn(fallback, colours)
+        self.assertEqual(len(set(colours)), len(colours))
+
+
 if __name__ == "__main__":
     unittest.main()

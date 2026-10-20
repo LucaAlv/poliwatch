@@ -413,8 +413,10 @@ REGISTRY: tuple[dict[str, Any], ...] = (
         # absolute floor would be a claim with nothing behind it.
         "min_value": None,
         "requires_topic": False,
+        # COVERAGE_SLOT becomes " seit <start>" of the store's coverage when the
+        # caveat is shown (card_caveat), so it never names a stale start.
         "caveat": (
-            "Erste Rede in unserer Abdeckung seit Januar 2022, nicht zwingend die erste "
+            "Erste Rede in unserer Abdeckung{abdeckung}, nicht zwingend die erste "
             "Rede im Bundestag."
         ),
     },
@@ -2430,10 +2432,38 @@ def card_sentence(row: Mapping[str, Any]) -> str:
     return f"{card_lead(row)}, {comparison_clause(row)}."
 
 
+COVERAGE_SLOT = "{abdeckung}"
+
+
+def coverage_label(conn: sqlite3.Connection) -> str | None:
+    """Where the store's coverage starts, worded like a baseline: "seit Beginn
+    der 18. Wahlperiode" when its earliest sitting is protocol 1 of its
+    Wahlperiode, else "seit <Monat Jahr>"; None for an empty store."""
+    row = conn.execute(
+        "SELECT document_number, date FROM protocols WHERE date IS NOT NULL ORDER BY date, document_number LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    number, day = str(row[0] or ""), date.fromisoformat(str(row[1])[:10])
+    wahlperiode, _, sitting = number.partition("/")
+    if sitting == "1" and wahlperiode.isdigit():
+        return f"seit Beginn der {int(wahlperiode)}. Wahlperiode"
+    return f"seit {MONTHS_DE[day.month - 1]} {day.year}"
+
+
+def fill_caveat(text: str | None, coverage: str | None) -> str | None:
+    """A registry caveat with its coverage slot filled (or dropped when the
+    coverage start is unknown)."""
+    if text is None:
+        return None
+    return text.replace(COVERAGE_SLOT, f" {coverage}" if coverage else "")
+
+
 def card_caveat(row: Mapping[str, Any]) -> str | None:
     """The metric's caveat, registry data since D27; rendered on every card and
-    week page that shows the metric."""
-    return REGISTRY_BY_ID[row["metric_id"]].get("caveat")
+    week page that shows the metric. A row's ``coverage_label`` (set by the
+    renderer from coverage_label) fills its coverage slot."""
+    return fill_caveat(REGISTRY_BY_ID[row["metric_id"]].get("caveat"), row.get("coverage_label"))
 
 
 def wrap_lines(text: str, width: int, max_lines: int) -> list[str]:

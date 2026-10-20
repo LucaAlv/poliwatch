@@ -177,6 +177,19 @@ class RoleTableTests(unittest.TestCase):
             derive.sprechrolle({"role": "Präsident des Bundesrates"})
         self.assertIsNone(derive.sprechrolle({"role": "Präsident des Bundesrates"}, strict=False))
 
+    # Value (A3 pilot census, docs/plans/a3-pilot.md): protects=every role a WP 18/19 Rede
+    # carries maps to a side, so the backfill does not stop on them; fails_when=a presidium
+    # Rede or the 19/100 typo is unmapped, or the Bundesrat's Präsident is swept in;
+    # seam=derive.side_of_role.
+    def test_the_wp18_19_roles_of_the_pilot_census_are_mapped(self) -> None:
+        for role in ("Präsident", "Präsidentin", "Vizepräsident", "Vizepräsidentin", "Alterspräsident"):
+            with self.subTest(role):
+                # 18/100 Lammert, 19/1 Solms and Schäuble, 18/245 Bulmahn and Singhammer
+                self.assertEqual(derive.side_of_role(role), "weitere")
+        # 19/100 Karliczek: the XML splits the first letter off.
+        self.assertEqual(derive.side_of_role("B undesministerin für Bildung und Forschung"), "bundesregierung")
+        self.assertIsNone(derive.side_of_role("Präsident des Bundesrates"))
+
     def test_a_land_in_brackets_is_the_bundesrat_even_for_a_staatsminister(self) -> None:
         self.assertEqual(derive.side_of_role("Staatsminister (Hessen)"), "bundesrat")
         self.assertEqual(derive.side_of_role("Staatsminister beim Bundeskanzler"), "bundesregierung")
