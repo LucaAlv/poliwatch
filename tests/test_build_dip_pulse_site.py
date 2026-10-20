@@ -2284,6 +2284,7 @@ class LegacyVoteShapeTests(unittest.TestCase):
         shapes = {
             "singular": {"index": 1, "vote": {"id": "v1", "title": "Alt"}},
             "no id": {"index": 1, "votes": [{"title": "Ohne Id", "date": "2026-06-10"}]},
+            "blank id": {"index": 1, "votes": [{"id": "  ", "title": "Leere Id", "date": "2026-06-10"}]},
         }
         for label, item in shapes.items():
             for strict in (False, True):

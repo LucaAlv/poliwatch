@@ -877,7 +877,7 @@ def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> Non
             )
     for item in [*(report.get("agenda_items") or []), {"votes": report.get("sitting_votes") or []}]:
         for vote in derive.item_votes(item):
-            if not isinstance(vote, dict) or vote.get("id") in (None, ""):
+            if not isinstance(vote, dict) or not pulse_store.clean(vote.get("id")):
                 raise CachedReportError(f"{report_path}: a roll-call vote has no id; an online update re-fetches it")
 
 

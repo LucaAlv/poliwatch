@@ -1195,7 +1195,8 @@ class RepersistGuardTests(unittest.TestCase):
             with self.assertRaises(build.DatabaseRebuildError):
                 build.require_vorgang_cache_for_tags(path, None, path.parent.parent, [{"report": report}])
 
-    def test_empty_vote_ids_are_skipped_and_normalized_duplicates_follow_persistence(self) -> None:
+    # Votes without an id never get here: report loading refuses them (require_current_vote_shape).
+    def test_stored_blank_ids_are_ignored_and_normalized_duplicates_follow_persistence(self) -> None:
         for final_missing in (True, False):
             with self.subTest(final_missing=final_missing), tempfile.TemporaryDirectory() as tmp:
                 path = self.store(tmp, [], [("v1", "untagged"), ("", "untagged"), ("  ", "untagged")])
@@ -1204,7 +1205,6 @@ class RepersistGuardTests(unittest.TestCase):
                 ]}
                 late = {"protocol": {"id": "p1", "datum": "2026-01-01"}, "sitting_votes": [
                     {"id": "v1", "document_numbers": ["21/2" if final_missing else "21/1"]},
-                    *[{"id": key, "document_numbers": ["21/2"]} for key in (None, "", "  ")],
                 ]}
                 entries = [{"report": late}, {"report": early}]
                 cache = cache_of({"V1": vorgang("Recht")}, {"21/1": ["V1"]})
