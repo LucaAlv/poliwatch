@@ -81,6 +81,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Document `--protocol-wahlperiode` in the README
 
+**Completed:** 2026-10-20 (A3, branch `worktree-a3-plan`). The flag now scopes `--limit` and `--backfill-incomplete` and defaults to 0 (every Wahlperiode), so the WP 21 trap is gone; the README flag table and the backfill section describe it.
+
 **What:** Add `--protocol-wahlperiode` to the README's update/backfill section. Say plainly that when `--limit N > 0` is set, the catalog fetch is limited to WP 21 unless `--protocol-wahlperiode 0` is passed.
 
 **Why:** The flag's help text says so (`scripts/build_dip_pulse_site.py:9235`, applied in `fetch_protocols` at :309), but the README never mentions it (`grep -c wahlperiode README.md` = 0). Someone doing a bounded backfill of WP 20 by following the README gets WP 21 only, with no warning. Originally noted as Task 2 of `docs/audit-remediation-plan.md` (2026-08-18) and never moved here.
@@ -204,6 +206,8 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Depends on:** Separate source acquisition and evidence-backed association; see [coverage evidence](docs/plans/a1-validation.md).
 
 ### Harden the vote acquisition and catalog completeness paths (open review findings)
+
+**Partly done (A3, 2026-10-20):** (2) the backfill now prints its judged range and the selected sittings per Wahlperiode, and judges from the v1 floor; (5) every online build ends with a summary of the sittings it did not acquire and exits 1 when one was lost to an outage.
 
 **What:** Findings from the /ship review rounds of fix-votes-completeness (2026-09-29) that were accepted, not fixed:
 (1) `source_stale` (`validate_dip_protocol.enrich_with_api`) holds a genuinely vote-free sitting of the last 14 days partial when the list head is older, delaying its week's and month's vote Fakt by up to two weeks; (2) the judged range starts at the earliest stored sitting, so one old cached dossier turns `--backfill-incomplete` into a job of hundreds of sittings and nothing prints the range; (3) the `numFound` check in `fetch_protocols` hard-stops every build if DIP's count ever includes unretrievable documents, with no override; (4) report JSON, SQLite and the catalog file are written at different points, so a build interrupted between them leaves `--offline` judging completeness from new reports against an old store; (5) a build whose every refresh was skipped exits 0; (6) the build-wide roll-call page cache is a snapshot, and list pagination can shift under a long build (duplicates a boundary entry); (7) `namenslisten_entries()` has no outage cooldown, so an outage costs about 3 minutes per vote; (8) an empty list page after page 1 counts as the end of the list; (9) catalog entries in range with no usable number or date only warn instead of failing closed, and duplicate document numbers keep the last; (10) `api_records.matched_roll_call_votes` and `roll_call_vote_candidates` describe the fresh scan while `agenda_items[].votes` may be cached after a no-scan run; (11) some date checks use the wall clock, not `--today`; (12) a failed vote-detail page stops matching for the rest of that sitting; (13) an uncaught `JSONDecodeError` from the DIP API aborts a build; (14) the offline build trusts the cached catalog with no age check; (15) the in-progress ISO week can be judged complete.
