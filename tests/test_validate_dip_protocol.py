@@ -427,3 +427,29 @@ class PersonCacheTests(unittest.TestCase):
         self.assertEqual(requests, ["/person/p1", "/person/p2", "/person/p2"])
         self.assertEqual([p["id"] for p in first["sampled_people"]], ["p1"])
         self.assertEqual(sorted(p["id"] for p in second["sampled_people"]), ["p1", "p2"])
+
+    # Value (A3 pilot, docs/plans/a3-pilot.md): protects=a DIP /person stall costs one sitting
+    # three failed lookups, not three timed-out attempts per remaining person (51 minutes for
+    # 18/154 in the pilot); fails_when=lookups continue after consecutive failures, or the
+    # skipped persons are not counted as failures; seam=enrich_with_api.
+    def test_person_lookups_stop_for_the_sitting_after_consecutive_failures(self) -> None:
+        requests: list[str] = []
+
+        class FakeClient:
+            def list_all(self, path, params):
+                if path == "/aktivitaet":
+                    return [{"id": f"a{n}", "person_id": f"p{n}"} for n in range(6)]
+                return []
+
+            def get_json(self, path):
+                requests.append(path)
+                if path == "/person/p0":
+                    return {"id": "p0"}
+                raise dip.DipError("timed out")
+
+        parsed = dip.parse_protocol_xml((FIXTURES / "protocol.xml").read_text(encoding="utf-8"))
+        with mock.patch("sys.stderr"):
+            result = dip.enrich_with_api(FakeClient(), {"id": "x", "dokumentnummer": "21/43", "datum": "2025-12-10"},
+                                         parsed, person_limit=0, vote_scan_pages=0, person_cache={})
+        self.assertEqual(requests, ["/person/p0", "/person/p1", "/person/p2", "/person/p3"])
+        self.assertEqual(result["api_totals"]["person_record_fetch_error_count"], 5)

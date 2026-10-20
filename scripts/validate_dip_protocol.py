@@ -2543,6 +2543,10 @@ def write_text_atomic(path: Path, text: str) -> None:
     os.replace(temp, path)
 
 
+#: Consecutive failed /person lookups after which a sitting stops asking.
+PERSON_FAILURE_LIMIT = 3
+
+
 def enrich_with_api(
     client: ApiClient,
     protocol: dict[str, Any],
@@ -2733,16 +2737,24 @@ def enrich_with_api(
         progress(f"Fetching {len(people_to_fetch)} person record(s).")
     person_records: list[dict[str, Any]] = []
     person_fetch_errors: list[dict[str, str]] = []
+    consecutive_failures = 0
     for person_index, person_id in enumerate(people_to_fetch, start=1):
         if person_cache is not None and person_id in person_cache:
             person_records.append(person_cache[person_id])
+        elif consecutive_failures >= PERSON_FAILURE_LIMIT:
+            # DIP stopped answering /person (a 2026-10-19 stall timed out every
+            # lookup for an hour): each further try costs three timed-out
+            # attempts, so the rest of this sitting's persons count as failed.
+            person_fetch_errors.append({"person_id": person_id, "error": f"skipped after {PERSON_FAILURE_LIMIT} consecutive failures"})
         else:
             try:
                 person = client.get_json(f"/person/{person_id}")
             except DipError as exc:
                 person_fetch_errors.append({"person_id": person_id, "error": str(exc)})
+                consecutive_failures += 1
             else:
                 person_records.append(person)
+                consecutive_failures = 0
                 if person_cache is not None:
                     person_cache[person_id] = person
         if progress and (person_index % 25 == 0 or person_index == len(people_to_fetch)):
