@@ -416,7 +416,8 @@ def select_acquisition_protocols(
 
 # A backfill sends DIP thousands of requests in one run; on 2026-10-04 about
 # four a second drew a bot challenge that made sittings source_unavailable.
-# The A3 pilot ran WP 18/19 at this pause without one (docs/plans/a3-pilot.md).
+# Not yet a measured safe rate: in the A3 pilot DIP stopped answering /person
+# after about 250 requests at this pause (docs/plans/a3-pilot.md).
 BACKFILL_SLEEP_SECONDS = 0.5
 
 

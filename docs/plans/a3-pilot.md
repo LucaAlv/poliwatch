@@ -39,7 +39,7 @@ WP 20/21 encode the chair as a `<name>` element, which the parser already treats
 
 **The same encoding explains the unmapped roles.** The presidium roles Präsident (18/100, 19/1), Vizepräsident(in) (18/245) and Alterspräsident (19/1) occur in this census only as these nested chair markers. A first mapping of them to "weitere Sprechrolle" (2532c59) was reverted in 806a2f1. Chairing is never a Rede (CONTEXT.md, Sitzungsleitung), and a Präsident speaking from the lectern speaks "like any other Redner". So they stay unmapped (fail-fast) until the rule-6 decision.
 
-## Finding 2: DIP throttles the pilot's request rate
+## Finding 2: unexplained DIP timeouts
 
 - Batch 1 sent 487 requests in 9,269 s:
   - `/person/{id}` 301 (196 distinct);
@@ -50,8 +50,9 @@ WP 20/21 encode the chair as a `<name>` element, which the parser already treats
   - dserver 6.
 - After about 250 requests at 0.5 s spacing, every `/person` lookup timed out: 26 persons × 3 attempts × 60 s. As a result, 18/154 took 3,058 s and 18/150 took 1,857 s, against 27–45 s for the three sittings before.
 - Spot probes of two of the failed ids later answered in 0.1–0.35 s.
-- Batch 2, hours later at 1.0 s spacing, stalled on its first catalog request.
-- So the safe rate is not known yet. 0.5 s is not safe for a sustained run.
+- Batch 2, hours later at 1.0 s spacing, stalled on its very first catalog request, right after curl probes had answered quickly. A rate limit does not explain a stall on the first request.
+- On 2026-10-20 one request through the project's `ApiClient` and one through curl both answered in under 0.2 s, so it is not the request's shape: DIP itself stopped answering for periods, for a reason not visible from here.
+- So a safe sustained rate is not known, and 0.5 s is not shown to be safe.
 
 Changes made from this:
 - **e547eae:** after 3 consecutive `/person` failures, a sitting stops looking up persons.
@@ -96,6 +97,10 @@ Changes made from this:
   - a plain `--offline` render 335 s and 1.5 GB.
 - At about 800 Sitzungen and linear growth that is about 21 min and 7 GB for a repersist. This is an estimate, and above the plan's 3.6 GB.
 - Disk: 22 GB free on 2026-10-20. A full store and site is estimated at 8 GB, plus clones.
+
+## Known limit of the exclusion list (D2)
+
+`--exclude-document-number` passes a sitting only when the parser refuses it with a source rejection (`DipError(source_rejected=True)`). A role no Sprechrolle rule maps raises `SprechrolleError` during acquisition instead. That error is not a `DipError`, so a listed number does not pass it: the run ends with a traceback and no `[summary]` (as batch 1 did on 18/100). With the presidium roles unmapped, sittings like 18/100 take that path. Treating an unmapped role at acquisition as a source rejection would change D4's semantics, so it is a decision, not a fix made here.
 
 ## What is open before Phase 3
 
