@@ -531,6 +531,28 @@ NESTED_GRANT_EVIDENCE = re.compile(
     r"|(?P<ack>\b(?:dank\w*|bedanke(?: mich)?)\b.{0,100}\b(?:Zwischenfrage|Frage|Zwischenbemerkung)\b.{0,70}\b(?:zulass\w*|zugelassen haben)\b)",
     re.IGNORECASE,
 )
+# 6a: a nested MdB turn is a Zwischenfrage/-bemerkung when (1) the Redner's last
+# turn before it is a short consent that followed the chair's offer of a
+# question, or (2) the turn itself opens by thanking for being allowed to ask.
+NESTED_OFFER = re.compile(r"\b(?:Zwischen)?(?:Fragen?|Bemerkung(?:en)?)\b", re.IGNORECASE)
+_CONSENT_ATOM = (r"(?:aber\s+)?(?:ja|gerne?|bitte|selbstverständlich|natürlich|immer|klar"
+                 r"|die will ich erlauben|an mir soll das nicht scheitern|das schaffe ich)")
+NESTED_CONSENT = re.compile(
+    rf"\W*{_CONSENT_ATOM}(?:[\s,–-]+{_CONSENT_ATOM})*(?:,?\s+(?:Herr|Frau)\s+(?:Vize)?Präsident(?:in)?)?\W*",
+    re.IGNORECASE)
+NESTED_OPENING_THANKS = re.compile(
+    r"\b(?:be)?dank\w*[^;–?!]{0,60}\b(?:Zulassen|Zulassung|Möglichkeit)\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)"
+    r"|\b(?:be)?dank\w*[^;–?!]{0,40}\bdass Sie\b[^;–?!]{0,40}\b(?:Zwischen)?(?:Frage|Bemerkung)\s+zulassen\b"
+    r"|\bEs zeichnet Sie aus, dass Sie\b[^;–?!]{0,60}\b(?:Zwischen)?(?:Frage|Bemerkung)\s+zulassen\b",
+    re.IGNORECASE)
+
+
+def nested_consent(turn: list[str]) -> bool:
+    text = clean_text(" ".join(turn))
+    # The first sentence is the consent; a "nein" or "nicht" anywhere takes it back.
+    return len(text.split()) <= 10 and not re.search(r"\b(?:nein|nee|nicht)\b", text, re.IGNORECASE) and bool(NESTED_CONSENT.fullmatch(speech_kinds._SENTENCE_END.split(text)[0]))
+
+
 # Matched against the role with whitespace removed ("Vizepräsident in").
 SITZUNGSLEITUNG_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNORECASE)
 # The elected Präsident's acceptance, answering the chair's question (6d).
@@ -650,6 +672,8 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
     request_accepted = False
     declined_request = ""
     last_text = ""
+    offer_open = False  # the chair offered a question and no MdB has taken it yet
+    consent_turn: list[str] | None = None  # the Redner's latest turn, if it followed an offer
     candidates = {parse_redner(r)["last_name"].casefold(): r for r in rede.iter("redner")
                   if redner_key(r) != own and parse_redner(r).get("last_name")}
 
@@ -714,6 +738,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     nested.append(segment)
                 if speaker == own:
                     preceding_chair_text = chair_text
+                    consent_turn = [] if offer_open else None
                 if speaker != own and speaker is not _SITZUNGSLEITUNG:
                     if speaker is not None:
                         candidate = parse_redner(redner)
@@ -730,10 +755,12 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                         segment = {"speaker": candidate, "marker": marker, "paragraphs": [], "prompt": last_text,
                                    "grant_epoch": grant_epoch, "refused": refused,
                                    "recipient_mismatch": bool(recipient_mismatch),
+                                   "granted": consent_turn is not None and nested_consent(consent_turn),
                                    "authorized": bool(grant_context) and (not interrupted_request_pending or floor_granted),
                                    "incomplete_exchange": interrupted_request_pending and not (request_accepted and floor_granted),
                                    "announcement": " ".join(filter(None, (grant_context, chair_text)))}
                         nested.append(segment)
+                        offer_open, consent_turn = False, None
                         if named_in_grant:
                             pending_nested_names.discard(candidate["last_name"].casefold())
                         elif faction_matches:
@@ -765,6 +792,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                 if segment is not None:
                     segment["paragraphs"].append(text)
                 chair_text += " " + text
+                offer_open = offer_open or bool(NESTED_OFFER.search(text))
                 question_request = re.search(
                     r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
                 interrupted_request = re.search(r"Ich wollte Sie fragen:.*\bHerr\b.*würde gerne\s*[–-]", chair_text)
@@ -797,6 +825,8 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     pending_nested_announcement += " " + chair_text
             elif speaker == own:
                 paragraphs.append(text)
+                if consent_turn is not None:
+                    consent_turn.append(text)
                 if all_speakers and segment is not None:
                     segment["paragraphs"].append(text)
                 grant = NESTED_GRANT_EVIDENCE.search(text)
@@ -824,6 +854,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     r"ich mache das sehr gerne|Die lasse ich doch zu|Eine Frage .*lasse ich gerne zu|"
                     r"Dann kann er gerne|Von der CDU/CSU\?\s*[–-]\s*Ja)\b", text, re.IGNORECASE)
                 if refusal:
+                    offer_open, consent_turn = False, None
                     declined_request = pending_request or preceding_chair_text
                     pending_nested_announcement = pending_request = ""
                     pending_nested_names = None
@@ -866,11 +897,23 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     refused = False
             elif segment is not None:
                 segment["paragraphs"].append(text)
+    granted_key = None
     for nested_segment in nested:
         text = " ".join(nested_segment["paragraphs"])
         evidence = NESTED_GRANT_EVIDENCE.search(text)
         if evidence and evidence.group("ack") and not nested_segment.get("refused") and not speech_kinds.NOT_GRANTED.search(evidence.group("ack")):
             nested_segment["announcement"] = " ".join(filter(None, (nested_segment["announcement"], evidence.group("ack"))))
+        if "grant_epoch" in nested_segment:
+            # 6a (2): an opening thank-you that is not negated grants, over a carried
+            # refusal; the same speaker's next turn continues that grant.
+            key = ((nested_segment["speaker"] or {}).get("xml_redner_id"), nested_segment["grant_epoch"])
+            thanks = NESTED_OPENING_THANKS.search(nested_segment["paragraphs"][0][:140]) if nested_segment["paragraphs"] else None
+            if nested_segment["granted"] or (thanks and not speech_kinds.NOT_GRANTED.search(thanks.group())):
+                nested_segment["granted"], granted_key = True, key
+            elif key[0] and key == granted_key:
+                nested_segment["granted"] = True
+            else:
+                granted_key = None
     return SpeechText(clean_text(" ".join(paragraphs)), paragraphs, unattributed), [s for s in nested if s["paragraphs"]]
 
 
@@ -1135,7 +1178,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 nested_kind = speech_kinds.ZWISCHENFRAGE
                 side = derive.sprechrolle(segment["speaker"])
                 speaker_id = (segment["speaker"] or {}).get("xml_redner_id")
-                announced = (segment.get("authorized") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
+                announced = (segment.get("authorized") or segment.get("granted") or re.search(r"Zwischenfrage|Zwischenbemerkung", segment["announcement"], re.IGNORECASE)
                              or NESTED_GRANT_EVIDENCE.search(segment["announcement"]))
                 continuation = speaker_id and speaker_id == granted_nested_speaker
                 if speech_kinds.BEFRAGUNG in top_format.formats:
@@ -1143,7 +1186,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested question-format speaker at {rid} marker {segment['marker']}")
                     nested_kind = speech_kinds.BEFRAGUNG_ANTWORT if side else speech_kinds.BEFRAGUNG_FRAGE
                 elif (segment.get("recipient_mismatch") or segment.get("incomplete_exchange") or segment.get("unsupported_reply")
-                      or segment.get("refused")
+                      or (segment.get("refused") and not segment.get("granted"))
                       or side or not (segment["speaker"] or {}).get("fraktion")
                       or not (any("?" in p for p in segment["paragraphs"])
                               or announced or continuation)):

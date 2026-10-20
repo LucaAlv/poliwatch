@@ -122,6 +122,52 @@ class NestedRedeTests(unittest.TestCase):
             parse(self.body(opening='Rede B.'))
 
 
+class GrantEvidenceTests(unittest.TestCase):
+    """6a: the Redner's short consent after an offer, or the asker's opening thanks."""
+
+    def body(self, offer, consent, turn='Meine Bemerkung.'):
+        return ('<rede id="R">' + redner('A', 'Haupt') + '<p>Rede.</p>'
+                '<name>Vizepräsidentin Petra Pau:</name><p>' + offer + '</p>'
+                + redner('A', 'Haupt') + '<p>' + consent + '</p>'
+                + redner('B', 'Gast', 'CDU/CSU') + '<p>' + turn + '</p>'
+                + redner('A', 'Haupt') + '<p>Weiter.</p></rede>')
+
+    def test_a_short_consent_after_the_offer_grants(self):
+        offer = 'Frau Kollegin, darf Ihnen der Kollege Gast eine Zwischenfrage stellen?'
+        for consent in ['Aber ja.', 'Aber gern.', 'Immer gerne.', 'Die will ich erlauben, ja.', 'Das schaffe ich.',
+                        'Ja, selbstverständlich.']:
+            with self.subTest(consent=consent):
+                _, contributions = parse(self.body(offer, consent))
+                self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, 'Meine Bemerkung.')])
+
+    def test_a_consent_without_an_offer_does_not_grant(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            parse(self.body('Weiter geht es.', 'Ja.'))
+
+    def test_a_long_or_mixed_answer_is_not_a_consent(self):
+        offer = 'Frau Kollegin, darf Ihnen der Kollege Gast eine Zwischenfrage stellen?'
+        for consent in ['Ja, wenn ich danach noch etwas länger über das Thema reden darf.', 'Ja. Nein, doch nicht.']:
+            with self.subTest(consent=consent):
+                with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+                    parse(self.body(offer, consent))
+
+    def test_opening_thanks_for_being_allowed_grants_over_a_carried_refusal(self):
+        refused = ('<rede id="R">' + redner('A', 'Haupt') + '<p>Rede.</p>'
+                   '<name>Vizepräsidentin Claudia Roth:</name><p>Gestatten Sie eine Zwischenfrage?</p>'
+                   + redner('A', 'Haupt') + '<p>Nein. Ich rede weiter.</p>'
+                   '<name>Vizepräsidentin Claudia Roth:</name><p>Gut. Jetzt ist Herr Gast dran.</p>'
+                   + redner('B', 'Gast', 'CDU/CSU') + '<p>{turn}</p>'
+                   + redner('A', 'Haupt') + '<p>Weiter.</p></rede>')
+        for turn in ['Vielen Dank, dass Sie die Zwischenbemerkung zulassen. Meine Bemerkung.',
+                     'Vielen Dank für die Möglichkeit einer Zwischenfrage. Meine Bemerkung.',
+                     'Es zeichnet Sie aus, dass Sie die Zwischenfrage zulassen. Meine Bemerkung.']:
+            with self.subTest(turn=turn):
+                _, contributions = parse(refused.format(turn=turn))
+                self.assertEqual(contributions, [(sk.ZWISCHENFRAGE, turn)])
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            parse(refused.format(turn='Schade, dass Sie die Zwischenbemerkung nicht zulassen. Meine Bemerkung.'))
+
+
 class SourceBlockerTests(unittest.TestCase):
     """Trimmed WP 18/19 blockers (provenance in fixtures/a1-source-manifest.json)."""
 
@@ -133,6 +179,11 @@ class SourceBlockerTests(unittest.TestCase):
         top = self.parse_source('18-100')
         self.assertEqual(top['contributions'], [])
         self.assertEqual([(d['marker_ordinal'], d['treatment']) for d in top['xml_turn_diagnostics']], [(3, 'procedural')])
+
+    def test_18_71_aber_ja_after_the_chair_offer_grants_burkert(self):
+        top = self.parse_source('18-71')
+        self.assertEqual([(c['kind'], c['rede_id'], c['speaker']['display_name']) for c in top['contributions']],
+                         [(sk.ZWISCHENFRAGE, 'nested:ID1807101000:3', 'Martin Burkert')])
 
     def test_18_70_binder_rede_printed_inside_rief_rede_is_its_own(self):
         top = self.parse_source('18-70')

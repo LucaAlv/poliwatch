@@ -169,6 +169,8 @@ class ContributionTests(unittest.TestCase):
         for p in rede.findall('p'):
             if dip.elem_text(p) == 'Von der CDU/CSU? – Ja.':
                 p.text = 'Vielen Dank.'
+            # The asker's opening thanks would be grant evidence of its own (rule 5, 6a).
+            p.text = (p.text or '').replace(', dass Sie die Zwischenfrage zulassen', '')
         with self.assertRaisesRegex(ValueError, 'ID205104600 marker 4'):
             dip.parse_protocol_xml(dip.ET.tostring(root, encoding='unicode'))
 
