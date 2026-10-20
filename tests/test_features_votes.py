@@ -11,6 +11,7 @@ from features.votes import (
     abstract_teaser,
     document_source_links,
     render_document_links,
+    VotePanelContext,
     render_vote_summary,
     result_badge_label,
 )
@@ -28,6 +29,27 @@ def _vote(**overrides: object) -> dict[str, object]:
     }
     vote.update(overrides)
     return vote
+
+
+def panel_for(item: dict[str, object], **overrides: object) -> VotePanelContext:
+    """The panel context a dossier page passes, for a report holding only ``item``
+    unless ``report`` is given; ``vote_contexts`` is derived from the report and
+    ``vorgang_cache`` as the page derives it."""
+    report = overrides.pop("report", None) or {"agenda_items": [item]}
+    cache = overrides.pop("vorgang_cache", None) or politikfelder.empty_cache()
+    fields = {
+        "report": report,
+        "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
+        "vorgang_cache": cache,
+        "mp_lookup": None,
+        "mp_prefix": "../abgeordnete/",
+    }
+    fields.update(overrides)
+    return VotePanelContext(**fields)
+
+
+def vote_summary(item: dict[str, object], acquisition: dict[str, object] | None = None, **overrides: object) -> str:
+    return render_vote_summary(item, acquisition, panel_for(item, **overrides))
 
 
 class ResultBadgeLabelTests(unittest.TestCase):
@@ -97,14 +119,14 @@ class RenderDocumentLinksTests(unittest.TestCase):
 class RenderVoteSummaryBadgeTests(unittest.TestCase):
     def test_accepted_vote_shows_angenommen_badge(self) -> None:
         item = {"votes": [_vote(result_raw="accepted")]}
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertIn('vote-result-accepted vote-result-derived"', markup)
         self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
 
     def test_tied_vote_is_rejected_not_a_guess(self) -> None:
         # GOBT Section 48 Abs. 2: a tie is answered no.
         vote = _vote(result_raw="rejected", total={"yes": 100, "no": 100, "abstain": 0, "absent": 0})
-        markup = render_vote_summary({"votes": [vote]})
+        markup = vote_summary({"votes": [vote]})
         self.assertIn('vote-result-rejected vote-result-derived"', markup)
         self.assertIn('>Abgelehnt <span class="vote-result-note">(berechnet)</span></span>', markup)
 
@@ -112,60 +134,60 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         # abstain (200) outnumbers both yes (60) and no (40); the outcome still
         # follows yes>no, never the largest bucket.
         vote = _vote(result_raw="accepted", total={"yes": 60, "no": 40, "abstain": 200, "absent": 0})
-        markup = render_vote_summary({"votes": [vote]})
+        markup = vote_summary({"votes": [vote]})
         self.assertIn('vote-result-accepted vote-result-derived"', markup)
         self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
 
     def test_official_result_is_solid_and_derived_one_says_berechnet(self) -> None:
-        official = render_vote_summary({"votes": [_vote(result_raw="accepted", result_source="official")]})
+        official = vote_summary({"votes": [_vote(result_raw="accepted", result_source="official")]})
         self.assertIn('class="vote-result vote-result-accepted" title="Laut Beschluss auf bundestag.de">Angenommen</span>', official)
         self.assertNotIn("berechnet", official)
-        derived = render_vote_summary({"votes": [_vote(result_raw="accepted", result_source="derived")]})
+        derived = vote_summary({"votes": [_vote(result_raw="accepted", result_source="derived")]})
         self.assertIn("vote-result-derived", derived)
         self.assertIn('title="Aus den Stimmenzahlen berechnet', derived)
         self.assertIn("(berechnet)", derived)
 
     def test_unknown_result_renders_no_badge(self) -> None:
         vote = _vote(result_raw=None, total={"yes": 0, "no": 0, "abstain": 0, "absent": 0})
-        markup = render_vote_summary({"votes": [vote]})
+        markup = vote_summary({"votes": [vote]})
         self.assertNotIn("vote-result", markup)
 
     def test_vote_without_a_recorded_result_renders_no_badge(self) -> None:
         vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
         vote.pop("result_raw", None)
         vote.pop("result_source", None)
-        self.assertNotIn("vote-result", render_vote_summary({"votes": [vote]}))
+        self.assertNotIn("vote-result", vote_summary({"votes": [vote]}))
 
     # Value: protects=the no-result note is spaced off the panel title; fails_when=the note loses its styled class; why_new=it ran into the title; seam=none
     def test_no_result_note_carries_its_spacing_class(self) -> None:
         vote = _vote(total={"yes": 100, "no": 100, "abstain": 5, "absent": 0})
         vote.pop("result_raw", None)
-        self.assertIn('<span class="vote-no-result">Kein Ergebnis verfügbar</span>', render_vote_summary({"votes": [vote]}))
+        self.assertIn('<span class="vote-no-result">Kein Ergebnis verfügbar</span>', vote_summary({"votes": [vote]}))
 
     def test_drucksache_renders_as_a_link_when_a_source_url_is_known(self) -> None:
         item = {
             "votes": [_vote(document_numbers=["21/6561"])],
             "xml_drucksachen": [{"dokumentnummer": "21/6561", "url": "https://dserver.bundestag.de/btd/21/065/2106561.pdf"}],
         }
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertIn('<a class="doc-link"', markup)
         self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
         self.assertIn("21/6561", markup)
 
     def test_drucksache_without_a_known_url_renders_unlinked(self) -> None:
         item = {"votes": [_vote(document_numbers=["21/9999"])]}
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertIn('<span class="doc-link muted">21/9999</span>', markup)
 
     def test_xlsx_link_present_when_url_is_known(self) -> None:
         item = {"votes": [_vote(xlsx_url="https://www.bundestag.de/resource/blob/1/x.xlsx")]}
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertIn("Abstimmungsliste (XLSX)", markup)
         self.assertIn("resource/blob/1/x.xlsx", markup)
 
     def test_xlsx_link_absent_when_url_is_missing(self) -> None:
         item = {"votes": [_vote(xlsx_url=None)]}
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertNotIn("XLSX", markup)
 
     def test_off_allowlist_xlsx_url_renders_the_rest_of_the_panel_instead_of_failing(self) -> None:
@@ -174,7 +196,7 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         # render_document_links already degrades gracefully for); an
         # off-allowlist value must not take the whole vote panel down.
         item = {"votes": [_vote(xlsx_url="https://evil.example/x.xlsx")]}
-        markup = render_vote_summary(item)
+        markup = vote_summary(item)
         self.assertNotIn("evil.example", markup)
 
 
@@ -189,7 +211,7 @@ class RenderVoteSummaryFractionTests(unittest.TestCase):
     ]
 
     def test_two_spellings_of_one_zusammenschluss_are_one_row_with_one_mehrheitsvotum(self) -> None:
-        panel = render_vote_summary({"votes": [_vote(fractions=self.SPELLINGS)]})
+        panel = vote_summary({"votes": [_vote(fractions=self.SPELLINGS)]})
         self.assertEqual(panel.count('class="vote-fraction-row"'), 1)
         self.assertEqual(panel.count("Gruppe BSW"), 1)
         self.assertEqual(panel.count('<em class="vote-pill vote-no">'), 1)
@@ -208,24 +230,24 @@ class VoteMemberProfileLinkTests(unittest.TestCase):
     def test_occurrence_key_resolves_to_internal_profile(self) -> None:
         from stable_ids import vote_member_occurrence_id
         key = vote_member_occurrence_id("vote-1", "Ada Beispiel", "SPD")
-        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={key: "ada-beispiel"})
+        markup = vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={key: "ada-beispiel"})
         self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
 
     def test_only_trusted_aw_id_resolves_internally(self) -> None:
         member = {"name": "Ada Beispiel", "faction": "SPD", "abgeordnetenwatch": {"id": 42, "match": "ext_id"}}
-        markup = render_vote_summary(self._item(member), mp_lookup={"aw:42": "ada-beispiel"})
+        markup = vote_summary(self._item(member), mp_lookup={"aw:42": "ada-beispiel"})
         self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
 
     def test_unresolved_member_falls_back_to_external_profile(self) -> None:
         member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.bundestag.de/abgeordnete/ada-beispiel"}
-        markup = render_vote_summary(self._item(member), mp_lookup={"other": "other-person"})
+        markup = vote_summary(self._item(member), mp_lookup={"other": "other-person"})
         self.assertIn('<a href="https://www.bundestag.de/abgeordnete/ada-beispiel">Ada Beispiel</a>', markup)
 
     def test_invalid_profile_fallback_keeps_member_and_vote_unlinked(self) -> None:
         for profile_url in ("https://evil.example/profile/ada", "javascript:alert(1)", "https://[invalid"):
             with self.subTest(profile_url=profile_url):
                 member = {"name": "Ada Beispiel", "faction": "SPD", "vote": "yes", "profile_url": profile_url}
-                markup = render_vote_summary(self._item(member), mp_lookup={})
+                markup = vote_summary(self._item(member), mp_lookup={})
                 self.assertIn('<li class="member-vote-row"><strong>Ada Beispiel</strong>', markup)
                 self.assertIn('<span class="vote-pill vote-yes">ja</span>', markup)
                 self.assertNotIn('<strong><a href=', markup)
@@ -235,16 +257,16 @@ class VoteMemberProfileLinkTests(unittest.TestCase):
         from stable_ids import vote_member_occurrence_id
         key = vote_member_occurrence_id("vote-1", "Ada Beispiel", "SPD")
         member = {"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://evil.example/profile/ada"}
-        markup = render_vote_summary(self._item(member), mp_lookup={key: "ada-beispiel"})
+        markup = vote_summary(self._item(member), mp_lookup={key: "ada-beispiel"})
         self.assertIn('<a href="../abgeordnete/ada-beispiel.html">Ada Beispiel</a>', markup)
 
     def test_member_without_any_profile_is_plain_text(self) -> None:
-        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={})
+        markup = vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD"}), mp_lookup={})
         self.assertIn("<strong>Ada Beispiel</strong>", markup)
         self.assertNotIn('<strong><a href=', markup)
 
     def test_missing_lookup_preserves_current_markup(self) -> None:
-        markup = render_vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.abgeordnetenwatch.de/profile/ada-beispiel"}))
+        markup = vote_summary(self._item({"name": "Ada Beispiel", "faction": "SPD", "profile_url": "https://www.abgeordnetenwatch.de/profile/ada-beispiel"}))
         self.assertIn(
             '<li class="member-vote-row"><strong><a href="https://www.abgeordnetenwatch.de/profile/ada-beispiel">Ada Beispiel</a></strong>'
             '<span class="vote-pill vote-"></span></li>',
@@ -297,7 +319,7 @@ class AbweichlerPanelTests(unittest.TestCase):
         return markup[start:markup.index("</div>", start)]
 
     def test_one_abweichler_is_named_under_its_group_with_no_fold(self) -> None:
-        markup = render_vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]})
+        markup = vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]})
         block = self.abweichler_block(markup)
         self.assertIn(f"{ABWEICHLER_HEADING} (1)", block)
         self.assertIn("<li>Cem</li>", block)
@@ -310,7 +332,7 @@ class AbweichlerPanelTests(unittest.TestCase):
             with self.subTest(count=count):
                 names = [f"MdB {n:02d}" for n in range(count)]
                 majority = [f"Ja {n:03d}" for n in range(count + 1)]
-                markup = render_vote_summary({"votes": [_roll_call(_members("SPD", majority, names))]})
+                markup = vote_summary({"votes": [_roll_call(_members("SPD", majority, names))]})
                 block = self.abweichler_block(markup)
                 self.assertEqual(block.count("<li>"), count)
                 if folded:
@@ -326,7 +348,7 @@ class AbweichlerPanelTests(unittest.TestCase):
 
     def test_every_group_complete_without_abweichler_says_so_once(self) -> None:
         members = _members("SPD", ["Ada", "Bea"], []) + _members("AfD", [], ["Cem"])
-        markup = render_vote_summary({"votes": [_roll_call(members)]})
+        markup = vote_summary({"votes": [_roll_call(members)]})
         self.assertEqual(markup.count(NONE_NOTE), 1)
         self.assertNotIn('class="vote-abweichler"', markup)
         self.assertNotIn(GAP_NOTE, markup)
@@ -337,7 +359,7 @@ class AbweichlerPanelTests(unittest.TestCase):
             + [{"name": n, "faction": "FDP", "vote": v} for n, v in (("Cem", "abstain"), ("Dora", "abstain"), ("Emil", "yes"))]
             + _members("AfD", ["Finn"], ["Gus"])
         )
-        markup = render_vote_summary({"votes": [_roll_call(members)]})
+        markup = vote_summary({"votes": [_roll_call(members)]})
         self.assertNotIn('class="vote-abweichler"', markup)
         self.assertIn(
             '<p class="vote-abweichler-none">Keine Abweichler (Ja gegen eine Nein-Mehrheit oder Nein gegen eine '
@@ -350,7 +372,7 @@ class AbweichlerPanelTests(unittest.TestCase):
         from _support import FIXTURES
 
         vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
-        markup = render_vote_summary({"votes": [vote]})
+        markup = vote_summary({"votes": [vote]})
         self.assertEqual(markup.count(GAP_NOTE), 1)
         self.assertNotIn(NONE_NOTE, markup)
 
@@ -359,7 +381,7 @@ class AbweichlerPanelTests(unittest.TestCase):
         vote = _roll_call(members)
         # AfD reports two Nein but only one member row is known.
         vote["fractions"][1]["counts"]["no"] = 2
-        markup = render_vote_summary({"votes": [vote]})
+        markup = vote_summary({"votes": [vote]})
         self.assertIn("<li>Cem</li>", markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)
         self.assertNotIn(NONE_NOTE, markup)
@@ -367,20 +389,20 @@ class AbweichlerPanelTests(unittest.TestCase):
         self.assertLess(markup.index("<strong>AfD</strong>"), markup.index(GAP_NOTE))
 
     def test_a_vote_without_fraction_rows_shows_neither_note(self) -> None:
-        markup = render_vote_summary({"votes": [_vote()]})
+        markup = vote_summary({"votes": [_vote()]})
         self.assertNotIn(NONE_NOTE, markup)
         self.assertNotIn(GAP_NOTE, markup)
 
     def test_only_fraktionslos_rows_show_neither_note(self) -> None:
-        markup = render_vote_summary({"votes": [_roll_call(_members("fraktionslos", ["Ada", "Bea"], ["Cem"]))]})
+        markup = vote_summary({"votes": [_roll_call(_members("fraktionslos", ["Ada", "Bea"], ["Cem"]))]})
         self.assertNotIn(NONE_NOTE, markup)
         self.assertNotIn(GAP_NOTE, markup)
         self.assertNotIn('class="vote-abweichler"', markup)
 
     def test_an_inverted_vote_lists_the_same_abweichler(self) -> None:
         members = _members("SPD", ["Ada", "Bea"], ["Cem"])
-        plain = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members)]}))
-        inverted = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members, inverted=True)]}))
+        plain = self.abweichler_block(vote_summary({"votes": [_roll_call(members)]}))
+        inverted = self.abweichler_block(vote_summary({"votes": [_roll_call(members, inverted=True)]}))
         self.assertEqual(inverted, plain)
 
     def test_abweichler_link_like_the_einzelstimmen(self) -> None:
@@ -390,14 +412,14 @@ class AbweichlerPanelTests(unittest.TestCase):
         members[2]["profile_url"] = "https://www.bundestag.de/abgeordnete/cem"
         members[3]["profile_url"] = "https://evil.example/dora"
         key = vote_member_occurrence_id("1", "Emil", "SPD")
-        block = self.abweichler_block(render_vote_summary({"votes": [_roll_call(members)]}, mp_lookup={key: "emil"}))
+        block = self.abweichler_block(vote_summary({"votes": [_roll_call(members)]}, mp_lookup={key: "emil"}))
         self.assertIn('<li><a href="https://www.bundestag.de/abgeordnete/cem">Cem</a></li>', block)
         self.assertIn("<li>Dora</li>", block)
         self.assertNotIn("evil.example", block)
         self.assertIn('<li><a href="../abgeordnete/emil.html">Emil</a></li>', block)
 
     def test_the_heading_avoids_the_glossary_avoid_list(self) -> None:
-        block = self.abweichler_block(render_vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]}))
+        block = self.abweichler_block(vote_summary({"votes": [_roll_call(_members("SPD", ["Ada", "Bea"], ["Cem"]))]}))
         for avoided in ("gegen die Linie", "gegen die eigene Fraktion", "Fraktionslinie"):
             self.assertNotIn(avoided, block)
 
@@ -475,54 +497,56 @@ class CommitteePanelTests(unittest.TestCase):
 
     def test_a_matched_beschlussempfehlung_is_cited_with_its_drucksache(self) -> None:
         item, report = _committee_report(_vote(document_numbers=["20/101"]))
-        line = self.committee_line(render_vote_summary(item, report=report))
+        line = self.committee_line(vote_summary(item, report=report))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses (Drucksache ", line)
         self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/001/2000101.pdf">20/101</a>', line)
         self.assertNotIn("federführend", line.lower())
 
     def test_an_entschliessungsantrag_vote_cites_the_document_not_a_role(self) -> None:
         item, report = _committee_report(_vote(title="Entschließungsantrag der Fraktion X", document_numbers=["20/105", "20/101"]))
-        line = self.committee_line(render_vote_summary(item, report=report))
+        line = self.committee_line(vote_summary(item, report=report))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses (Drucksache ", line)
         self.assertNotIn("Federführender", line)
 
     def test_a_beschlussempfehlung_under_another_top_is_found_and_linked(self) -> None:
         item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
-        line = self.committee_line(render_vote_summary(item, report=report))
+        line = self.committee_line(vote_summary(item, report=report))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses", line)
         self.assertIn('href="https://dserver.bundestag.de/btd/20/001/2000101.pdf"', line)
 
     def test_no_beschlussempfehlung_says_ausschuss_nicht_ermittelt(self) -> None:
         item, report = _committee_report(_vote(document_numbers=["20/200"]))
-        line = self.committee_line(render_vote_summary(item, report=report))
+        line = self.committee_line(vote_summary(item, report=report))
         self.assertIn("Ausschuss nicht ermittelt", line)
 
     def test_two_urheber_are_both_cited(self) -> None:
         vote = _vote(document_numbers=["20/400"])
         be = {"dokumentnummer": "20/400", "drucksachetyp": "Beschlussempfehlung",
               "urheber": ["Ausschuss für Inneres und Heimat", "Rechtsausschuss"], "url": None}
-        line = self.committee_line(render_vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
+        line = self.committee_line(vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
         self.assertIn("Beschlussempfehlung des Ausschusses für Inneres und Heimat und des Rechtsausschusses (Drucksache ", line)
         self.assertIn('<span class="doc-link muted">20/400</span>', line)
 
     def test_an_urheber_of_unknown_shape_is_named_without_inflection(self) -> None:
         vote = _vote(document_numbers=["20/400"])
         be = {"dokumentnummer": "20/400", "drucksachetyp": "Beschlussempfehlung", "urheber": ["Bundesregierung"]}
-        line = self.committee_line(render_vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
+        line = self.committee_line(vote_summary({"votes": [vote], "api": {"linked_drucksachen": [be]}}))
         self.assertIn("Beschlussempfehlung, Urheber: Bundesregierung (Drucksache ", line)
 
     def test_a_sitting_level_vote_uses_the_whole_report(self) -> None:
         vote = _vote(document_numbers=["20/101"])
         _, report = _committee_report(_vote(id="other"), under_vote_top=False)
         report["sitting_votes"] = [vote]
-        line = self.committee_line(render_vote_summary({"votes": [vote]}, report=report))
+        line = self.committee_line(vote_summary({"votes": [vote]}, report=report))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses", line)
 
     def test_dossier_sections_pass_the_report(self) -> None:
         from features.votes import COMPONENT
 
         item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
-        markup = "".join(COMPONENT.dossier_sections(report, {"item": item}))
+        cache = politikfelder.empty_cache()
+        ctx = {"item": item, "vorgang_cache": cache, "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache)}
+        markup = "".join(COMPONENT.dossier_sections(report, ctx))
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses", markup)
 
 
@@ -555,7 +579,7 @@ class AbstractTeaserTests(unittest.TestCase):
 class VoteContextPanelTests(unittest.TestCase):
     def panel(self, ids: list[str], state: str, cache: dict[str, object]) -> str:
         vote = _vote(document_numbers=["20/1"])
-        return render_vote_summary({"votes": [vote]}, vote_contexts={"1": (ids, state)}, vorgang_cache=cache)
+        return vote_summary({"votes": [vote]}, vote_contexts={"1": (ids, state)}, vorgang_cache=cache)
 
     def test_the_block_sits_above_the_tallies_with_its_source(self) -> None:
         markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "Rentengesetz", "abstract": "Kurz."}}))
@@ -598,9 +622,6 @@ class VoteContextPanelTests(unittest.TestCase):
         self.assertIn(CONTEXT_NONE, empty)
         self.assertNotIn(CONTEXT_NOT_FETCHED, empty)
 
-    def test_no_block_without_contexts(self) -> None:
-        self.assertNotIn("vote-context", render_vote_summary({"votes": [_vote()]}))
-
     # Value: protects=a vote's two panels and its vote_proceedings name the same Vorgänge (D13); fails_when=the context is narrowed per rendering TOP; why_new=new block; seam=none
     def test_a_vote_under_two_tops_shows_one_selection_on_both_panels(self) -> None:
         vote = _vote(document_numbers=["20/1", "20/2"])
@@ -614,7 +635,7 @@ class VoteContextPanelTests(unittest.TestCase):
         report = {"protocol": {"wahlperiode": 20}, "agenda_items": [first, second]}
         contexts = politikfelder.report_vote_vorgaenge(report, cache)
         panels = [
-            render_vote_summary(item, report=report, vote_contexts=contexts, vorgang_cache=cache) for item in (first, second)
+            vote_summary(item, report=report, vote_contexts=contexts, vorgang_cache=cache) for item in (first, second)
         ]
         self.assertEqual(contexts["1"], (["2"], "resolved"))
         for markup in panels:
@@ -628,11 +649,11 @@ class VotePanelAnchorTests(unittest.TestCase):
         vote = _vote(id=1002)
         first, second = {"index": 1, "votes": [vote]}, {"index": 2, "votes": [vote]}
         report = {"agenda_items": [first, second]}
-        self.assertIn('<section class="vote-panel" id="vote-1002">', render_vote_summary(first, report=report))
-        self.assertNotIn('id="vote-1002"', render_vote_summary(second, report=report))
+        self.assertIn('<section class="vote-panel" id="vote-1002">', vote_summary(first, report=report))
+        self.assertNotIn('id="vote-1002"', vote_summary(second, report=report))
 
     def test_a_sitting_level_vote_is_anchored_in_the_sitting_section(self) -> None:
         vote = _vote(id=7)
         report = {"agenda_items": [], "sitting_votes": [vote]}
-        self.assertIn('id="vote-7"', render_vote_summary({"votes": [vote]}, report=report))
+        self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
 

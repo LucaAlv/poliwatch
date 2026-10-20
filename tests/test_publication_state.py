@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _support  # noqa: F401
 import publication_state as publication
-from features.votes import render_vote_summary
+from test_features_votes import vote_summary
 
 
 class PublicationStateContractTests(unittest.TestCase):
@@ -140,7 +140,7 @@ class VoteStateCopyTests(unittest.TestCase):
         }
         for state, copy in expected.items():
             with self.subTest(state=state):
-                markup = render_vote_summary({}, {"acquisition_state": state})
+                markup = vote_summary({}, {"acquisition_state": state})
                 self.assertIn(copy, markup)
 
 

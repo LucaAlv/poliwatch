@@ -4285,7 +4285,7 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
 
 
 def _vote_procedure_type(
-    vote: dict[str, Any], item: dict[str, Any] | None, sitting_documents: dict[str, Any] | None = None
+    vote: dict[str, Any], item: dict[str, Any] | None, sitting_documents: dict[str, Any]
 ) -> str:
     """The DIP type of the first of the vote's Drucksachen its TOP links; else of the
     first the sitting links under any TOP (``derive.report_drucksachen``, the map the
@@ -4295,7 +4295,7 @@ def _vote_procedure_type(
         if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
             return str(doc["drucksachetyp"])
     for raw in vote.get("document_numbers") or []:
-        doc = (sitting_documents or {}).get(derive.canonical_document_number(raw))
+        doc = sitting_documents.get(derive.canonical_document_number(raw))
         if doc and doc.get("drucksachetyp"):
             return str(doc["drucksachetyp"])
     return "–"

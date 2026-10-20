@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -95,15 +96,30 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
     return f'<span class="doc-link-list">{"".join(parts)}</span>'
 
 
-def member_name_html(
-    vote: dict[str, Any], member: dict[str, Any], mp_lookup: dict[str, str] | None, mp_prefix: str
-) -> str:
+@dataclass(frozen=True)
+class VotePanelContext:
+    """What every vote panel of one dossier page reads besides the TOP itself.
+
+    ``report`` is the sitting the TOP belongs to: the committee line looks a
+    vote's Drucksachen up across all its TOPs (``derive.vote_committees``), and
+    a vote's anchor goes where ``derive.iter_report_votes`` first meets it.
+    ``vote_contexts`` is ``politikfelder.report_vote_vorgaenge`` of the report,
+    read with ``vorgang_cache``, the same answer persist stores."""
+
+    report: Mapping[str, Any]
+    vote_contexts: Mapping[str, Any]
+    vorgang_cache: Mapping[str, Any]
+    mp_lookup: dict[str, str] | None
+    mp_prefix: str
+
+
+def member_name_html(vote: dict[str, Any], member: dict[str, Any], panel: VotePanelContext) -> str:
     """A roll-call member's escaped name, linked to their Personenseite when the
     occurrence resolves to one, else to their public profile when that URL is
     allowed, else plain."""
     name = html.esc(member.get("name"))
     occurrence_id = derive.vote_member_key(vote.get("id"), member)
-    href = html.mp_page_href({**member, "occurrence_id": occurrence_id}, mp_lookup, mp_prefix)
+    href = html.mp_page_href({**member, "occurrence_id": occurrence_id}, panel.mp_lookup, panel.mp_prefix)
     if not href and member.get("profile_url"):
         try:
             href = html.source_url(member["profile_url"], "public-profile")
@@ -121,12 +137,10 @@ ABWEICHLER_INLINE = 10
 ABWEICHLER_GAP_HTML = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
 
 
-def render_abweichler(
-    vote: dict[str, Any], members: list[dict[str, Any]], mp_lookup: dict[str, str] | None, mp_prefix: str
-) -> str:
+def render_abweichler(vote: dict[str, Any], members: list[dict[str, Any]], panel: VotePanelContext) -> str:
     """The line under a group's tally row naming its Abweichler: the first ten
     inline, the rest behind a native <details>."""
-    items = [f"<li>{member_name_html(vote, member, mp_lookup, mp_prefix)}</li>" for member in members]
+    items = [f"<li>{member_name_html(vote, member, panel)}</li>" for member in members]
     inline, rest = items[:ABWEICHLER_INLINE], items[ABWEICHLER_INLINE:]
     more = (
         f'<details class="vote-abweichler-more"><summary>alle {len(items)} anzeigen</summary>'
@@ -290,37 +304,105 @@ def vote_anchor_id(vote: Mapping[str, Any]) -> str:
     return f"vote-{derive.vote_identity(vote)}"
 
 
-def render_vote_summary(
-    item: dict[str, Any],
-    acquisition: dict[str, Any] | None = None,
-    mp_lookup: dict[str, str] | None = None,
-    mp_prefix: str = "../abgeordnete/",
-    report: dict[str, Any] | None = None,
-    *,
-    vote_contexts: Mapping[Any, tuple[list[str], str]] | None = None,
-    vorgang_cache: Mapping[str, Any] | None = None,
+_STATUS_COPY = {
+    "not_requested": "Hinweis: Abstimmungsdaten wurden für diese Veröffentlichung nicht abgerufen.",
+    "partial": "Teilweise verfügbar: Abstimmungsdaten sind unvollständig. Bitte prüfen Sie die Originalquelle.",
+    "failed": "Nicht verfügbar: Abstimmungsdaten konnten nicht abgerufen werden.",
+}
+
+
+def _panel_id(vote: dict[str, Any], item: dict[str, Any], first_item: Mapping[str, Any], anchored: set[str]) -> str:
+    """``id="vote-<id>"`` on the panel where ``derive.iter_report_votes`` first
+    meets the vote (its TOP, or None for a sitting-level vote, which is only
+    ever drawn in the sitting's own section), so a vote under two TOPs has one
+    anchor (D9); "" on every other copy."""
+    key = derive.vote_identity(vote)
+    first = first_item.get(key, item)
+    if key in anchored or not (first is item or first is None):
+        return ""
+    anchored.add(key)
+    return f' id="{html.esc(vote_anchor_id(vote))}"'
+
+
+def _fraction_group_html(
+    fraction: dict[str, Any], abweichler: Mapping[str, Any], no_members: bool, panel: VotePanelContext, vote: dict[str, Any]
 ) -> str:
-    """The vote panels of one TOP (or of a sitting's votes under no TOP).
+    """One group's tally row, its Mehrheitsvotum pill, and its Abweichler line or gap note."""
+    name = fraction["name"]
+    counts = fraction["counts"]
+    # From the counts, never the report's cached leading_vote: a stale
+    # report must not show a Mehrheitsvotum the store does not hold.
+    leading = derive.majority_vote(counts)
+    color = html.PARTY_COLORS.get(name, "#6b7280")
+    # No Mehrheitsvotum (a tie, or nobody voted) is no pill, not a
+    # "nicht abgegeben" one.
+    position = (derive.fraction_position(counts, True) if vote.get("inverted") else html.VOTE_LABELS.get(leading))
+    pill = (
+        f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(position)}</em>'
+        if position
+        else ""
+    )
+    group = abweichler.get(name)
+    note = ""
+    if group and group["members"]:
+        note = render_abweichler(vote, group["members"], panel)
+    elif group and group["state"] != "complete" and not no_members:
+        note = ABWEICHLER_GAP_HTML
+    return (
+        '<div class="vote-fraction-group">'
+        '<div class="vote-fraction-row">'
+        f'<span class="party-dot" style="background:{color}"></span>'
+        f'<strong>{html.esc(name)}</strong>'
+        f'{html.render_vote_stack(counts, fraction["total"])}'
+        f"{pill}"
+        "</div>"
+        f"{note}</div>"
+    )
 
-    ``report`` is the sitting the TOP belongs to: the committee line looks a
-    vote's Drucksachen up across all its TOPs (``derive.vote_committees``).
-    Without it, only this TOP's linked Drucksachen are searched. A vote's panel
-    gets ``id="vote-<id>"`` where ``derive.iter_report_votes`` first meets the
-    vote, so a vote under two TOPs has one anchor (D9).
 
-    ``vote_contexts`` is ``politikfelder.report_vote_vorgaenge`` of the report, read
-    with ``vorgang_cache``, the same answer persist stores; without it no
-    "Worum es geht" block is drawn.
-    """
+def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool) -> str:
+    """The vote-wide line under the groups: one gap note when no group has
+    member rows, "Niemand stimmt anders …" when every group is complete and
+    has none, else nothing (each short group carries its own note)."""
+    if no_members:
+        return ABWEICHLER_GAP_HTML
+    if abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
+        return f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
+    return ""
+
+
+def _member_sections_html(vote: dict[str, Any], panel: VotePanelContext) -> str:
+    """The Einzelstimmen grid, one section per group, fraktionslos last."""
+    member_groups: dict[str, list[dict[str, Any]]] = {}
+    for member in vote.get("members") or []:
+        member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
+    member_sections = []
+    for faction in sorted(member_groups, key=lambda value: (value == "fraktionslos", value)):
+        rows = []
+        for member in sorted(member_groups[faction], key=lambda value: str(value.get("name") or "")):
+            vote_key = str(member.get("vote") or "")
+            name_html = member_name_html(vote, member, panel)
+            rows.append(
+                '<li class="member-vote-row">'
+                f"<strong>{name_html}</strong>"
+                f'<span class="vote-pill vote-{html.esc(vote_key)}">{html.esc(html.VOTE_LABELS.get(vote_key, vote_key))}</span>'
+                "</li>"
+            )
+        member_sections.append(
+            '<section class="member-vote-group">'
+            f"<h4>{html.esc(faction)}</h4>"
+            f'<ul class="member-vote-list">{"".join(rows)}</ul>'
+            "</section>"
+        )
+    return "".join(member_sections)
+
+
+def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None, panel: VotePanelContext) -> str:
+    """The vote panels of one TOP (or of a sitting's votes under no TOP)."""
     votes = derive.item_votes(item)
     acquisition_state = str((acquisition or {}).get("acquisition_state") or "complete")
-    status_copy = {
-        "not_requested": "Hinweis: Abstimmungsdaten wurden für diese Veröffentlichung nicht abgerufen.",
-        "partial": "Teilweise verfügbar: Abstimmungsdaten sind unvollständig. Bitte prüfen Sie die Originalquelle.",
-        "failed": "Nicht verfügbar: Abstimmungsdaten konnten nicht abgerufen werden.",
-    }
     if not votes:
-        message = status_copy.get(
+        message = _STATUS_COPY.get(
             acquisition_state,
             "Zu diesem TOP ist keine namentliche Abstimmung verzeichnet.",
         )
@@ -338,92 +420,25 @@ def render_vote_summary(
     if acquisition_state == "partial":
         panels.append(
             '<aside class="vote-state-note">'
-            f'<p>{html.esc(status_copy["partial"])}</p>'
+            f'<p>{html.esc(_STATUS_COPY["partial"])}</p>'
             '</aside>'
         )
-    report = report if report is not None else {"agenda_items": [item]}
-    # Where each vote is first met: its TOP, or None for a sitting-level vote,
-    # which is only ever drawn in the sitting's own section.
-    first_item = {derive.vote_identity(vote): first for first, vote in derive.iter_report_votes(report)}
-    anchored: set[Any] = set()
+    first_item = {derive.vote_identity(vote): first for first, vote in derive.iter_report_votes(panel.report)}
+    anchored: set[str] = set()
+    document_links = document_source_links(item)
     for vote in votes:
-        key = derive.vote_identity(vote)
-        anchor = vote_anchor_id(vote)
-        first = first_item.get(key, item)
-        if key not in anchored and (first is item or first is None):
-            anchored.add(key)
-            panel_id = f' id="{html.esc(anchor)}"'
-        else:
-            panel_id = ""
-        vote_context_html = ""
-        if vote_contexts is not None and key in vote_contexts:
-            context_ids, context_state = vote_contexts[key]
-            vote_context_html = render_vote_context(context_ids, context_state, vorgang_cache)
+        context_ids, context_state = panel.vote_contexts[derive.vote_identity(vote)]
+        vote_context_html = render_vote_context(context_ids, context_state, panel.vorgang_cache)
         abweichler = derive.vote_abweichler(vote)
         # One gap note for the vote when no group has member rows, else one
         # under each group that is short.
         no_members = bool(abweichler) and all(group["state"] == "none" for group in abweichler.values())
-        fraction_rows = []
-        for fraction in derive.merge_fractions(vote.get("fractions")):
-            name = fraction["name"]
-            counts = fraction["counts"]
-            # From the counts, never the report's cached leading_vote: a stale
-            # report must not show a Mehrheitsvotum the store does not hold.
-            leading = derive.majority_vote(counts)
-            color = html.PARTY_COLORS.get(name, "#6b7280")
-            # No Mehrheitsvotum (a tie, or nobody voted) is no pill, not a
-            # "nicht abgegeben" one.
-            position = (derive.fraction_position(counts, True) if vote.get("inverted") else html.VOTE_LABELS.get(leading))
-            pill = (
-                f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(position)}</em>'
-                if position
-                else ""
-            )
-            group = abweichler.get(name)
-            note = ""
-            if group and group["members"]:
-                note = render_abweichler(vote, group["members"], mp_lookup, mp_prefix)
-            elif group and group["state"] != "complete" and not no_members:
-                note = ABWEICHLER_GAP_HTML
-            fraction_rows.append(
-                '<div class="vote-fraction-group">'
-                '<div class="vote-fraction-row">'
-                f'<span class="party-dot" style="background:{color}"></span>'
-                f'<strong>{html.esc(name)}</strong>'
-                f'{html.render_vote_stack(counts, fraction["total"])}'
-                f"{pill}"
-                "</div>"
-                f"{note}</div>"
-            )
-        abweichler_note = ""
-        if no_members:
-            abweichler_note = ABWEICHLER_GAP_HTML
-        elif abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
-            abweichler_note = f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
-        committee_line = render_committee_line(derive.vote_committees(vote, report), document_source_links(item))
-        member_groups: dict[str, list[dict[str, Any]]] = {}
-        for member in vote.get("members") or []:
-            member_groups.setdefault(str(member.get("faction") or "Unbekannt"), []).append(member)
-        member_sections = []
-        for faction in sorted(member_groups, key=lambda value: (value == "fraktionslos", value)):
-            rows = []
-            for member in sorted(member_groups[faction], key=lambda value: str(value.get("name") or "")):
-                vote_key = str(member.get("vote") or "")
-                name_html = member_name_html(vote, member, mp_lookup, mp_prefix)
-                rows.append(
-                    '<li class="member-vote-row">'
-                    f"<strong>{name_html}</strong>"
-                    f'<span class="vote-pill vote-{html.esc(vote_key)}">{html.esc(html.VOTE_LABELS.get(vote_key, vote_key))}</span>'
-                    "</li>"
-                )
-            member_sections.append(
-                '<section class="member-vote-group">'
-                f"<h4>{html.esc(faction)}</h4>"
-                f'<ul class="member-vote-list">{"".join(rows)}</ul>'
-                "</section>"
-            )
+        fraction_rows = "".join(
+            _fraction_group_html(fraction, abweichler, no_members, panel, vote)
+            for fraction in derive.merge_fractions(vote.get("fractions"))
+        )
+        committee_line = render_committee_line(derive.vote_committees(vote, panel.report), document_links)
         total = vote.get("total") or {}
-        document_links = document_source_links(item)
         docs_html = render_document_links(vote.get("document_numbers") or [], document_links)
         docs_text = f" · Drucksachen {docs_html}" if docs_html else ""
         xlsx_url = vote.get("xlsx_url")
@@ -446,15 +461,16 @@ def render_vote_summary(
             explanation = '<p class="vote-state-note">Abgestimmt wurde über die Empfehlung, den Antrag abzulehnen. Ja = Antrag ablehnen · Nein = Antrag annehmen</p>'
 
         panels.append(
-            f'<section class="vote-panel"{panel_id}>'
+            f'<section class="vote-panel"{_panel_id(vote, item, first_item, anchored)}>'
             f'<div class="vote-head"><div><h3>Namentliche Abstimmung{result_badge}</h3>'
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{vote_context_html}{committee_line}{explanation}<div class="vote-fractions">{"".join(fraction_rows)}</div>{abweichler_note}'
+            f'{vote_context_html}{committee_line}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
+            f'{_abweichler_summary_html(abweichler, no_members)}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
-            f'<div class="member-vote-grid">{"".join(member_sections)}</div>'
+            f'<div class="member-vote-grid">{_member_sections_html(vote, panel)}</div>'
             "</details></section>"
         )
     return "".join(panels)
@@ -463,17 +479,14 @@ def render_vote_summary(
 class VotesComponent(BaseComponent):
     def dossier_sections(self, report: dict[str, Any], ctx: dict[str, Any]) -> list[str]:
         acquisition = (report.get("acquisition") or {}).get("votes") or {}
-        return [
-            render_vote_summary(
-                ctx["item"],
-                acquisition,
-                ctx.get("mp_lookup"),
-                ctx.get("mp_prefix", "../abgeordnete/"),
-                report=report,
-                vote_contexts=ctx.get("vote_contexts"),
-                vorgang_cache=ctx.get("vorgang_cache"),
-            )
-        ]
+        panel = VotePanelContext(
+            report=report,
+            vote_contexts=ctx["vote_contexts"],
+            vorgang_cache=ctx["vorgang_cache"],
+            mp_lookup=ctx.get("mp_lookup"),
+            mp_prefix=ctx.get("mp_prefix", "../abgeordnete/"),
+        )
+        return [render_vote_summary(ctx["item"], acquisition, panel)]
 
     def write_pages(self, output_dir: Path, ctx: dict[str, Any]) -> dict[str, Any]:
         selection = ctx.get("selection")

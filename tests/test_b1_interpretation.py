@@ -10,7 +10,7 @@ from unittest.mock import patch
 import _support
 import derive
 import validate_dip_protocol as dip
-from features import votes
+from test_features_votes import vote_summary
 
 
 class InterpretationTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class InterpretationTests(unittest.TestCase):
         self.assertEqual(vote['result_raw'], 'accepted')
         self.assertEqual(derive.vote_outcome(vote), 'rejected')
         self.assertEqual(vote['total'], raw)
-        panel = votes.render_vote_summary({'votes': [vote]})
+        panel = vote_summary({'votes': [vote]})
         self.assertIn('Ja = Antrag ablehnen · Nein = Antrag annehmen', panel)
         self.assertIn('Antrag: Abgelehnt', panel)
         self.assertIn('gegen den Antrag', panel)

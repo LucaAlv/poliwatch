@@ -17,7 +17,7 @@ import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
 from _support import FIXTURES
-from features import votes as votes_feature
+from test_features_votes import vote_summary
 
 
 class MajorityVoteTests(unittest.TestCase):
@@ -87,7 +87,7 @@ class StaleCachedReportTests(unittest.TestCase):
 
     def test_the_vote_panel_shows_no_pill_for_a_tie_or_nobody_voting(self) -> None:
         report = stale_report()
-        markup = votes_feature.render_vote_summary(report["agenda_items"][0])
+        markup = vote_summary(report["agenda_items"][0], report=report)
         rows = {
             re.search(r"<strong>([^<]+)</strong>", block).group(1): block
             for block in markup.split('<div class="vote-fraction-row">')[1:]
