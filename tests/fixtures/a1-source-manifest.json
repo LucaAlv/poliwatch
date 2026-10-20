@@ -34,5 +34,17 @@
     "url": "https://dserver.bundestag.de/btp/19/19100.xml",
     "source_sha256": "4980eef52ea79e4788ac6130373ea23275945eb67fa09ab951c19c3645875341",
     "editing": "A3 pilot: only the TOPs with Karliczek's Rede (role 'B undesministerin ...') and the spelling 'BÜNDNIS 90/DIE GRÜNE N'; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-rule5/18-70.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18070.xml",
+    "source_sha256": "64fb6a6ca70d0e00d5c851c9bbdf165cb344df50219c826294f8350a6e3b80d2",
+    "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1807005100; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "a3-rule5/18-100.xml",
+    "url": "https://dserver.bundestag.de/btp/18/18100.xml",
+    "source_sha256": "0b2ed597cb2cb800ac9d7ced3fbb39184767269821954ac4a599934efbd91ee2",
+    "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1810000300; J paragraphs without markup truncated to 300 characters."
   }
 ]

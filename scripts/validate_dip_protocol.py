@@ -536,6 +536,11 @@ SITZUNGSLEITUNG_ROLE = re.compile(r"(?:Vize|Alters)?Präsident(?:in)?", re.IGNOR
 # The elected Präsident's acceptance, answering the chair's question (6d).
 ELECTION_QUESTION = re.compile(r"\bNehmen Sie die Wahl an\?\s*$")
 ELECTION_ACCEPTANCE = re.compile(r"(?:(?:Herr|Frau) (?:Alters)?Präsident(?:in)?, )?[Ii]ch nehme die Wahl an\.")
+# The chair gives the floor in the form of the Rednerliste, and the turn opens
+# like a Rede (6c).
+NESTED_REDE_FLOOR = re.compile(r"\bAls nächste[rn]? Redner(?:in)?\b|\b[Dd]as Wort (?:hat|erhält)\b|\bgebe (?:ich )?(?:\w+ )?das Wort\b")
+NESTED_REDE_NOT_FLOOR = re.compile(r"Zwischenfrage|Zwischenbemerkung|Frage|Kurzintervention|Erwiderung|Bemerkung", re.IGNORECASE)
+REDE_SALUTATION = re.compile(r"Sehr geehrte[rn]?\b|(?:Frau|Herr) (?:Vize|Alters)?Präsident(?:in)?\s*!")
 _NESTED_NAMED_ASKER = re.compile(
     r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
     r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"
@@ -563,6 +568,58 @@ def nested_grant_names(announcement: str) -> set[str] | None:
 
 def presidium_marker(redner: ET.Element | None) -> bool:
     return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
+
+
+def split_nested_reden(top: ET.Element) -> None:
+    """6c: WP 18/19 can print a whole Rede inside the previous ``<rede>``.
+
+    When the chair gives that speaker the floor in the form of the Rednerliste
+    and the turn opens with a salutation, the turn and everything after it
+    becomes a Rede of its own, ``<outer id>:<marker>``; the outer Rede ends at
+    the marker. The tree is changed in place.
+    """
+    work = list(top.findall("rede"))
+    while work:
+        rede = work.pop(0)
+        rid = rede.get("id")
+        if not rid:
+            continue
+        own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+        children = list(rede)
+        marker = 0
+        chair = None
+        for index, child in enumerate(children):
+            if child.tag == "name":
+                chair = ""
+                continue
+            if child.tag != "p":
+                continue
+            if child.get("klasse") != "redner":
+                if chair is not None:
+                    chair += " " + elem_text(child)
+                continue
+            marker += 1
+            redner = child.find("redner")
+            key = redner_key(redner)
+            if key not in (own, None) and presidium_marker(redner):
+                chair = clean_text((redner.tail or "").partition(":")[2])
+                continue
+            last_name = (parse_redner(redner) or {}).get("last_name") or ""
+            if (key not in (own, None) and chair and last_name and NESTED_REDE_FLOOR.search(chair)
+                    and not NESTED_REDE_NOT_FLOOR.search(chair)
+                    and re.search(rf"(?<![\w-]){re.escape(last_name)}(?![\w-])", chair)):
+                tail = clean_text((redner.tail or "").partition(":")[2])
+                following = next((c for c in children[index + 1:] if c.tag == "p"), None)
+                opening = tail or (elem_text(following) if following is not None and following.get("klasse") != "redner" else "")
+                if REDE_SALUTATION.match(opening):
+                    split = ET.Element("rede", {"id": f"{rid}:{marker}"})
+                    for moved in children[index:]:
+                        rede.remove(moved)
+                        split.append(moved)
+                    top.insert(list(top).index(rede) + 1, split)
+                    work.insert(0, split)
+                    break
+            chair = None
 
 
 def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: bool = False) -> tuple[SpeechText, list[dict[str, Any]]]:
@@ -932,7 +989,12 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         # (20/143, 20/159) and no T_NaS/T_fett one: it is the heading then.
         heading = clean_text(" ".join(heading_lines or zusatz_lines))
         top_format = speech_kinds.top_format(heading, top.attrib.get("top-id"), seen_formats)
+        split_nested_reden(top)
         redes = top.findall("rede")
+        for rede in redes:
+            outer = (rede.get("id") or "").partition(":")[0]
+            if outer != rede.get("id") and outer in rid_pages:
+                rid_pages.setdefault(rede.get("id"), rid_pages[outer])
         try:
             labels = speech_kinds.classify_reden(top, top_format.formats, top_format.continuation)
         except ValueError as exc:

@@ -78,5 +78,69 @@ class ElectionAcceptanceTests(unittest.TestCase):
             parse(body)
 
 
+class NestedRedeTests(unittest.TestCase):
+    """6c: a whole Rede the chair gives the floor to, printed inside the previous one."""
+
+    def body(self, floor='Danke schön. – Als nächste Rednerin spricht die Kollegin Binder.',
+             opening='Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Rede B.'):
+        return ('<rede id="R">' + redner('A', 'Rief', 'CDU/CSU') + '<p>Frau Präsidentin! Rede A.</p>'
+                '<name>Vizepräsidentin Claudia Roth:</name><p>' + floor + '</p>'
+                + redner('B', 'Binder', 'DIE LINKE') + '<p>' + opening + '</p>'
+                '<name>Vizepräsidentin Claudia Roth:</name>'
+                '<p>Frau Kollegin Binder, erlauben Sie eine Zwischenfrage des Kollegen Gast?</p>'
+                + redner('B', 'Binder', 'DIE LINKE') + '<p>Gerne.</p>'
+                + redner('C', 'Gast', 'SPD') + '<p>Ist Ihnen das bekannt?</p>'
+                + redner('B', 'Binder', 'DIE LINKE') + '<p>Ja. Ende.</p></rede>')
+
+    def test_the_nested_rede_becomes_a_rede_of_its_own(self):
+        for floor in ['Danke schön. – Als nächste Rednerin spricht die Kollegin Binder.',
+                      'Ich schließe die Aussprache nicht. Jetzt gebe ich das Wort an Karin Binder für die Linke.',
+                      'Das Wort hat die Kollegin Binder.']:
+            with self.subTest(floor=floor):
+                top, contributions = parse(self.body(floor=floor))
+                self.assertEqual([(s['rede_id'], s['speaker']['xml_redner_id'], s['text']) for s in top['speeches']],
+                                 [('R', 'A', 'Frau Präsidentin! Rede A.'),
+                                  ('R:2', 'B', 'Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Rede B. Gerne. Ja. Ende.')])
+                self.assertEqual([(c['kind'], c['rede_id'], c['parent_rede_id']) for c in top['contributions']],
+                                 [(sk.ZWISCHENFRAGE, 'nested:R:2:3', 'R:2')])
+
+    def test_a_salutation_without_the_floor_is_not_a_rede(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body(floor='Danke schön.'))
+
+    def test_the_floor_to_someone_else_is_not_this_rede(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body(floor='Als nächste Rednerin spricht die Kollegin Müller.'))
+
+    def test_the_floor_for_a_question_is_not_a_rede(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body(floor='Das Wort zu einer Kurzintervention hat die Kollegin Binder.',
+                            opening='Sehr geehrte Frau Präsidentin! Eine Bemerkung.'))
+
+    def test_the_floor_without_a_salutation_is_not_a_rede(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.body(opening='Rede B.'))
+
+
+class SourceBlockerTests(unittest.TestCase):
+    """Trimmed WP 18/19 blockers (provenance in fixtures/a1-source-manifest.json)."""
+
+    def parse_source(self, stem):
+        top = dip.parse_protocol_xml((_support.FIXTURES / f'a3-rule5/{stem}.xml').read_text())['agenda_items'][0]
+        return top
+
+    def test_18_100_lammert_giving_the_floor_is_sitzungsleitung(self):
+        top = self.parse_source('18-100')
+        self.assertEqual(top['contributions'], [])
+        self.assertEqual([(d['marker_ordinal'], d['treatment']) for d in top['xml_turn_diagnostics']], [(3, 'procedural')])
+
+    def test_18_70_binder_rede_printed_inside_rief_rede_is_its_own(self):
+        top = self.parse_source('18-70')
+        self.assertEqual([(s['rede_id'], s['speaker']['display_name']) for s in top['speeches']],
+                         [('ID1807005100', 'Josef Rief'), ('ID1807005100:2', 'Karin Binder')])
+        self.assertEqual([(c['kind'], c['rede_id'], c['speaker']['display_name']) for c in top['contributions']],
+                         [(sk.ZWISCHENFRAGE, 'nested:ID1807005100:2:3', 'Dr. Wilhelm Priesmeier')])
+
+
 if __name__ == '__main__':
     unittest.main()

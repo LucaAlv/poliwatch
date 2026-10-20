@@ -3327,6 +3327,12 @@ def _run_export(
                 "SELECT COUNT(*) FROM speeches WHERE rede_id REGEXP '^[0-9]+:[0-9]+:[0-9]+$'"
             ).fetchone()[0]
         )
+        # A Rede that rule 5 (6c) split out of the <rede> it was printed in.
+        split_rede_ids = int(
+            snapshot_conn.execute(
+                "SELECT COUNT(*) FROM speeches WHERE rede_id REGEXP '^[^:]+:[0-9]+$'"
+            ).fetchone()[0]
+        )
         conflicting_votes = int(
             snapshot_conn.execute(
                 """
@@ -3505,6 +3511,7 @@ def _run_export(
                 for feature_id in ("votes", "aw-profiles", "mp-roster")
             },
             "synthetic_rede_ids": synthetic_rede_ids,
+            "split_rede_ids": split_rede_ids,
             "conflicting_votes": conflicting_votes,
             "source_rejected": sorted(excluded_sittings, key=lambda number: [int(part) for part in number.split("/") if part.isdigit()]),
         },

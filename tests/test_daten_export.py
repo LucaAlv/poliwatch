@@ -148,6 +148,25 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual((spd[18]["reden"], spd[18]["anteil_prozent"]), (1, 100.0))
         self.assertEqual(spd[20]["reden"], 3)
 
+    # Value (rule 5, 6c): protects=a Rede the parser split out of the <rede> it was printed
+    # in is counted in the manifest like a synthetic id; fails_when=the split id goes uncounted
+    # or is taken for a synthetic one; seam=export_distribution_data.
+    def test_a_split_rede_id_is_counted_in_the_manifest(self) -> None:
+        before = self.export(force=True)["coverage"]
+        conn = pulse_store.connect(self.db_path)
+        try:
+            with conn:
+                now = pulse_store.utc_now()
+                row = conn.execute("SELECT protocol_id, agenda_item_id, mp_id FROM speeches LIMIT 1").fetchone()
+                conn.execute("INSERT INTO speeches(id, protocol_id, agenda_item_id, rede_id, sequence, mp_id, char_count,"
+                             " text, fraktion, created_at, updated_at) VALUES ('s-split', ?, ?, 'ID1801002600:2', 99, ?,"
+                             " 500, 'Geteilt', 'SPD', ?, ?)", (*row, now, now))
+        finally:
+            conn.close()
+        after = self.export(force=True)["coverage"]
+        self.assertEqual(after["split_rede_ids"], before["split_rede_ids"] + 1)
+        self.assertEqual(after["synthetic_rede_ids"], before["synthetic_rede_ids"])
+
     # Value (D2): protects=a sitting kept out by a reviewed source refusal is a visible,
     # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
     # does not name it; seam=export_distribution_data + render_daten_datenstand.
