@@ -228,6 +228,29 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P3
 **Depends on:** None
 
+### Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)
+
+**What:** Detect and treat a turn given on behalf of the Bundestag or in exercise of the Sitzungsleitung when the XML gives it a `<rede>` of its own with a presidium `rolle_lang` (Präsident, Vizepräsident(in), Alterspräsident). Today such a `<rede>` is counted as a Rede of the speaker's Zusammenschluss. Found in the WP 18/19 rule-5 work ([validation record](docs/plans/a3-rule5-validation.md)):
+- 19/1: the Alterspräsident's Sitzungsleitung Reden (ID19100100, ID19100200, ID19101000, ID19101200) and Schäuble's inaugural address as the new Präsident (ID19101300), and his Sitzungsleitung ID19101900.
+- 18/1: the inaugural address after "ich nehme die Wahl an" (still refused at an earlier turn).
+- 18/245: Vizepräsidentin Bulmahn's farewell address (ID1824501400) and Vizepräsident Singhammer's announcement of an election result (ID1824502300).
+
+Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidium marker, 6d), an official address (its own kind, not a Fraktionsrede), or a debate Rede of an MdB who holds the office (counts for the Fraktion, ADR 0004). Until then 18/1 and 19/1 are excluded sittings (`--exclude-document-number`, owner decision 2026-10-20).
+
+**Why:** ADR 0004 says Sitzungsleitung is never a Rede and official addresses are not counted as Fraktionsreden automatically; the parser has the nested half of that (6d) but not the `<rede>` half.
+
+**Priority:** P1 (blocks counting 18/1 and 19/1, and moves 18/245)
+**Depends on:** an owner decision on the kinds; the full WP 18/19 download to list every case.
+
+### A chair printed as a speaker marker without a role is counted as a Zwischenfrage
+
+**What:** Recognize the Sitzungsleitung when the XML prints the chair as a `<p klasse="redner">` marker with no `rolle_lang` inside a member's `<rede>`, and exclude it like a presidium marker (rule 5, 6d). Seen in 21/17 (`nested:ID211701400:3`: Ortleb's "Herr Kollege Renner, erlauben Sie eine Zwischenfrage …", counted as her Zwischenfrage) and 18/10 (Bulmahn, still refused). Check 19/120 (Pau, 2 units) by hand. Evidence would be the person who chairs the sitting under `<name>`, plus chair wording; a rule needs the owner's yes.
+
+**Why:** A chair's question is counted as an MdB's Zwischenfrage, also in WP 21 data ([rule-5 validation record](docs/plans/a3-rule5-validation.md), finding 2).
+
+**Priority:** P2
+**Depends on:** none.
+
 ### v1 coverage: every Sitzung from WP 18 to the present
 
 **What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Re-measured on 2026-10-19 against the post-v0.20 replay of the reference store (`~/agent-runs/b3-review-replay/site`, a replay of `.context/dip-pulse-site`; catalog from 2026-10-06), counting only Bundestag entries:
