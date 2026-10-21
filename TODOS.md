@@ -149,17 +149,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### Recipe copy: compare the selection by range, not by text
-
-**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
-
-**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Validate final merged A1/A2 before the A3 backfill
 
 **What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
@@ -1126,6 +1115,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Recipe copy: compare the selection by range, not by text
+
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
+
+**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** 2026-10-21. Copy rejection now compares every range's saved endpoint nodes and offsets, preserving equal text selected elsewhere. The emitted-runtime regression failed before the fix; all 16 new recipe scenarios and existing browser checks pass. Python 3.13: 1,363 tests ran, one skipped. See [implementation receipt](docs/plans/recipe-copy-selection-race.md#implementation-receipt-2026-10-21).
 
 ### Keep keyboard focus on reset, and reopen a speech on a repeated link click
 
