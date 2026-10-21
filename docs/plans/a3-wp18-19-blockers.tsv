@@ -1,0 +1,221 @@
+sitting	rede	marker	group	near_6a_cause	reason
+18/1	ID1800100100	2	exclusion		Sitzung 18/1 (Konstituierung); "Herr Alterspräsident, lieber Kollege Riesenhuber, ich nehme die Wahl gerne an." ist nicht die bloße Annahme
+18/2	ID1800202300	4	go-debate		go-debate: § 29 GO debate after "ich schließe die Aussprache"; chair gives Oppermann the floor ("Jetzt hat Herr Kollege Oppermann das Wort") after Haßelmann and Korte
+18/3	ID1800301600	2	go-debate		go-debate: after "Ich schließe die Aussprache" chair gives Haßelmann the floor "zur Geschäftsordnung"; GO statement (§ 80/Antrag) printed nested, no Zwischenfrage
+18/3	ID1800301600	3	go-debate		go-debate: Oppermann answers Haßelmann in the same Geschäftsordnungs-Aussprache; chair only names him ("Thomas Oppermann.")
+18/3	ID1800305900	3	near-6a	offer-side	Offer is "Wollen Sie antworten?", consent "Ja, natürlich. Das ist abgesprochen"; chair then "Herr Kollege Ernst, Sie haben also eine Frage" names no Zwischenfrage; no "?" in turn
+18/6	ID1800602300	5	stale-pending-asker		stale-pending-asker: earlier asker Neu printed as a <name> element so his grant stays pending; Beck's offer "möchte eine Zwischenfrage stellen" is not recognized -> recipient mismatch
+18/8	ID1800803100	3	6f		Brandt (nächster Redner) tritt zurück 'Bitte schön. Ich ziehe mich zurück.' zugunsten der Kurzintervention Haßelmann; Ablauf-Absprache
+18/10	ID1801002600:2	4	role-less-chair		role-less-chair + nested Kurzintervention/Erwiderung inside a 6c-split Rede: chair Bulmahn printed without role, Liebich KI follows ("Sie hatten mich direkt angesprochen")
+18/11	ID1801101700	2	erwiderung-nested		erwiderung-nested: Riesenhuber antwortet auf Kurzintervention Heil; Chair 'wünschen Sie zu erwidern?' (Wortlaut nicht in 'invited'); Antwort ist nur 'Ich bedanke mich…'
+18/11	ID1801105900	3	recipients		Chair nennt 'Kollegin Klein- Schmeink' (Leerzeichen nach Bindestrich), Marke heißt Klein-Schmeink; Spahn 'Jederzeit.' nach Angebot
+18/11	ID1801105900	6	recipients		wie 18-11 m3: Chair 'weitere … der Kollegin Klein- Schmeink' (Leerzeichen) ≠ Klein-Schmeink -> Empfängerabweichung
+18/20	ID1802101000	3	near-6a	consent-side	Chair 'Darf der Kollege Meiwald Ihnen eine Zwischenfrage stellen?'; Uhl 'Wenn es denn sein muss.' nicht in Liste; Meiwald dankt nur 'Vielen Dank, Herr Kollege Uhl.'
+18/20	ID1802102900	2	erwiderung-nested		erwiderung-nested: Schmidt antwortet auf Kurzintervention/Zwischenbemerkung Birkwald, Chair gibt nur 'Frau Kollegin Schmidt.'; kein Angebot, kein '?'
+18/21	ID1802101000	3	near-6a	consent-side	Offer "Darf der Kollege Meiwald Ihnen eine Zwischenfrage stellen?"; consent "Wenn es denn sein muss." and opening thanks "Vielen Dank, Herr Kollege Uhl" not covered
+18/21	ID1802102900	2	asker-owned-rede		asker-owned-rede: offer cut off ("gestatten Sie eine – –"), Birkwald's question is its own <rede>, Schmidt's answer is the nested marker; chair only says "Frau Kollegin Schmidt."
+18/26	ID1802600400	2	6f		Chair named "direkten Erwiderung nach § 30" but the Erwiderung (Schiewerling) is printed nested
+18/26	ID1802601000	2	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Martin Rosemann ist der nächste Redner" not in NESTED_REDE_FLOOR
+18/26	ID1802603000	2	6c-floor-wording		6c-floor-wording: "Der nächste Redner ist Kai Gehring" not covered; opening also starts with a reply to the chair's wish, so REDE_SALUTATION misses
+18/26	ID1802603000	3	cascade		Gehring resumes after chair's rote-Lampe remark; only refused because m2 (his unsplit Rede, row above) was blanked
+18/26	ID1802606100	2	6c-floor-wording		6c-floor-wording: whole Rede nested; "Nächster Redner ist Wilfried Oellers" (no "Als") not in NESTED_REDE_FLOOR
+18/26	ID1802606300	2	6c-floor-wording		6c-floor-wording: whole Rede nested; "Nächster Redner für die CDU/CSU ist der Kollege Strebl" not covered
+18/26	ID1802606600	3	6c-floor-wording		6c-floor-wording: m2 Daldrup is a whole Rede ("Nächster Redner ist für die SPD der Kollege …"), passed unsplit via a "?"; his m3 consent then mismatches Kurth as asker
+18/26	ID1802607100	3	6c-floor-wording		6c-floor-wording: whole Rede nested; "Nächster Redner ist der Kollege Herbert Behrens" not covered
+18/26	ID1802607100	4	6c-floor-wording		6c-floor-wording: whole Rede nested; "Als nächstem Redner erteile ich … dem Kollegen Durz das Wort" (nächstem/erteile) not covered
+18/26	ID1802607900	2	6c-floor-wording		6c-floor-wording: whole Rede nested; "Jetzt hat Klaus-Dieter Gröhler das Wort" (hat … das Wort order) not covered
+18/26	ID1802607900	3	cascade		Gröhler declines the Zwischenfrage in his own Rede; refused only because m2 (unsplit Rede) was blanked, so Nord/Gröhler mismatch
+18/26	ID1802610500	2	6c-floor-wording		6c-floor-wording: whole Rede nested; "Für die CDU/CSU-Fraktion hat der Kollege Dr. Andreas Lenz das Wort" (hat … das Wort) not covered
+18/27	ID1802702400	2	6c-floor-wording		6c-floor-wording: ganze Rede Gabriele Schmidt ('Frau Präsidentin!') nach 'Nächste Rednerin ist …' (nicht in NESTED_REDE_FLOOR)
+18/29	ID1802902700	2	erklaerung-nested		erklaerung-abstimmung-nested: mündliche Erklärung zur Abstimmung nach § 31 GO (Groth) printed nested; chair "Ich gebe Frau Groth das Wort" after the vote
+18/33	ID1803300400	3	near-6a	consent-side	Heil 'Sehr gerne. Bitte schön.' ('Sehr' nicht in Liste); Lay dankt 'für das Gestatten dieser Zwischenfrage' (Gestatten fehlt in Dankmuster)
+18/33	ID1803302500	3	near-6a	consent-side	Chair 'Kollege Sarrazin fragt, ob er eine Zwischenfrage stellen darf'; Ulrich 'Herr Sarrazin immer.' (Name + immer) nicht in Liste; Sarrazin hat kein '?'
+18/33	ID1803308800	3	near-6a	consent-side	Chair-Angebot Zwischenfrage; Tack 'Ja, darf sie.' (Wiederholung des Angebots) nicht in Liste; Rüffer ohne '?'
+18/36	ID1803600500	2	6c-floor-wording		6c-floor-wording: whole Rede of Staatsministerin Özoguz nested; "Für die Bundesregierung hat nun die Staatsministerin Frau Özoguz das Wort" (hat … das Wort); also refused as government side
+18/36	ID1803601400	8	near-6a	other	Chair: "Herr Pfeiffer, der Kollege Dehm wünscht, eine Zwischenfrage zu stellen."; consent "In Ordnung." printed in a <name> element, not on the closed list
+18/36	ID1803605600	2	role-less-chair		Marker "Petra Pau (DIE LINKE)" without role, but text is the chair's ("Das Wort hat der Kollege Ingo Gädechens …"); Pau presides
+18/42	ID1804202000	2	erwiderung-nested		erwiderung-nested: Buchholz erwidert auf Ottes Kurzintervention; Chair "möchten Sie darauf erwidern?" (Wortlaut nicht in invited), "Aber gerne erwidere ich darauf."
+18/42	ID1804205300	2	erwiderung-nested		erwiderung-nested: Kekeritz antwortet auf Pfeiffers Kurzintervention; Chair "Kollege Kekeritz darf darauf antworten." (nicht in invited), kein Angebot
+18/42	ID1804207300	3	near-6a	consent-side	consent-side: Angebot "gestatten Sie eine Bemerkung oder Frage des Kollegen Grund?" ok; Zustimmung "Ich gestatte gerne eine Frage." nicht in NESTED_CONSENT (kein "zu" fuer Grant-Evidenz)
+18/43	ID1804301900:6	2	near-6a	other	Redner Heil offers the question himself ("Ich gebe Ihnen die Gelegenheit, eine Frage zu stellen, wenn die Präsidentin das erlaubt"); chair "Ich erlaube das selbstverständlich. – Herr Gehring."
+18/44	ID1804403900	2	6c-floor-wording		6c-floor-wording: ganze Rede Gottschalck ('Herr Präsident!') nach 'Für die Sozialdemokraten spricht jetzt die Kollegin …' (nicht in NESTED_REDE_FLOOR)
+18/46	ID1804606200	2	6c-floor-wording		6c-floor-wording: whole Rede nested (Staatsministerin Özoguz); chair "Nächste Rednerin in der Debatte ist Frau Staatsministerin ..." not covered
+18/50	ID1805001800	4	6e		Ministerin Hendricks antwortet innerhalb des Fuchs-Austauschs (chair: "Zwischenfrage oder Anmerkung von Frau Hendricks")
+18/60	ID1806005000	2	near-6a	offer-side	Redner selbst bietet an 'Du kannst gerne einen Einwand machen … Kollege Ebner möchte etwas sagen' (kein Frage-Wort); Chair 'Herr Kollege Ebner.'; Ebner dankt ohne Zwischenfrage
+18/63	ID1806302300	3	gov-member-asks		minister-asks-zwischenfrage: Bundesminister Schäuble (side bundesregierung) asks a granted Zwischenfrage of Schick; the side check refuses it
+18/67	ID1806700200	2	go-debate		go-antrag-nested: Hajduk (Grüne) stellt Geschäftsordnungsantrag vom Platz (Herbeirufung eines Ministers) nach 'Das Wort erhält nun die Kollegin Winkelmeier-Becker'
+18/67	ID1806700600	3	near-6a	consent-side	Chair 'Darf die Kollegin Keul eine Zwischenbemerkung machen oder eine Zwischenfrage stellen?'; Hoffmann 'Aber sehr gerne.' ('sehr' nicht in Liste); Keul ohne '?'
+18/76	ID1807606200	3	near-6a	consent-side	Offer "gestatten Sie eine Frage oder Bemerkung der Kollegin Haßelmann?"; consent "Mit besonderer Freude; denn das verlängert meine Redezeit." not on the closed list
+18/82	ID1808200300	3	near-6a	consent-side	consent-side: Angebot "darf der Kollege Ernst eine Frage stellen?" ok; Zustimmung "Ich nehme es zwar nicht ernst, aber okay." (okay nicht in Liste, "nicht" nimmt zurueck); Ernst: "keine Frage", Bemerkung
+18/82	ID1808200300	8	near-6a	consent-side	consent-side: Angebot "darf der Kollege Schlecht eine Zwischenbemerkung machen?" ok; Zustimmung "Na gut." nicht in Liste
+18/82	ID1808201400	12	near-6a	consent-side	consent-side: Angebot mit "Frage" ok; Becker m10 "Nein, wenn es wieder um Griechenland geht", dann bedingt "Wenn er zum Wirtschaftsthema fragt, dann lasse ich es zu." nicht in Liste; Dank mit "ermöglichen"
+18/83	ID1808301600	2	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Für die SPD spricht jetzt die Kollegin ..." not in 6c floor list (Als nächste Redner / Das Wort hat)
+18/83	ID1808301800	2	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Der Kollege ... ist der nächste Redner" not covered
+18/83	ID1808301800	4	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Als Nächstes hat das Wort der Kollege ..." (word order) not covered
+18/83	ID1808301800	5	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Abschließender Redner ... ist der Kollege ..." not covered
+18/83	ID1808301900	3	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Für die CDU/CSU spricht jetzt der Kollege ..." not covered
+18/83	ID1808301900	4	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Nächster Redner ist der Kollege ..." not covered
+18/83	ID1808301900	5	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Nächste Rednerin ist die Kollegin ..." not covered
+18/83	ID1808301900	6	cascade		Glöckner's "Bitte schön." consent; she is not the outer owner because her own Rede (m5) was blanked
+18/83	ID1808301900	8	cascade		Glöckner answers Ströbele; counted as nested non-owner only because m5 (her Rede) was blanked
+18/83	ID1808301900	9	cascade		Glöckner's "Ja." consent; cascade of blanked m5
+18/83	ID1808301900	11	cascade		Glöckner answers Liebich; cascade of blanked m5
+18/83	ID1808301900	13	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Nächster und letzter Redner in dieser Debatte: Dr. Egon Jüttner" not covered
+18/83	ID1808302000	3	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Nächste Rednerin in der Debatte: Gabriele Fograscher für die SPD" not covered
+18/83	ID1808302100	3	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Uli Grötsch für die SPD ist der nächste Redner" not covered
+18/83	ID1808302100	4	6c-floor-wording		6c-floor-wording + 6c-salutation-wording: "Nächster Redner ... ist Stephan Mayer" and opening "Sehr verehrte Frau Präsidentin!" both not covered
+18/83	ID1808302100	5	cascade		Mayer's "Selbstverständlich. Sehr gern." consent; cascade of blanked m4 (his Rede)
+18/83	ID1808302100	7	cascade		Mayer answers Mihalic; cascade of blanked m4
+18/83	ID1808302100	8	cascade		Mayer's "Selbstverständlich, sehr gerne." consent for Tempel; cascade of blanked m4
+18/83	ID1808302100	11	6f		Kurzintervention (Tempel) the chair named as such but printed nested in the outer Rede; its Redner Mayer is also blanked (m4)
+18/83	ID1808302200	3	6c-floor-wording		6c-floor-wording: whole Rede nested (Parl. Staatssekretärin Marks); chair "Nächste Rednerin in der Debatte ist ..." not covered
+18/83	ID1808302200	4	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Letzter Redner in dieser Debatte ist Paul Lehrieder" not covered
+18/83	ID1808302200	5	cascade		Lehrieder's remark to the chair; cascade of blanked m4 (his Rede)
+18/83	ID1808302200	6	cascade		Lehrieder's "Natürlich, ja." consent; cascade of blanked m4
+18/83	ID1808302200	8	cascade		Lehrieder answers Keul; cascade of blanked m4
+18/83	ID1808302300	3	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Der Kollege ... hat für die SPD-Fraktion das Wort" (hat ... das Wort) not covered
+18/83	ID1808302300	4	cascade		Saathoff's "Aber selbstverständlich" consent; cascade of blanked m3 (his Rede)
+18/83	ID1808302300	6	cascade		Saathoff's reply to Krischer; cascade of blanked m3
+18/83	ID1808302300	9	6c-floor-wording		6c-floor-wording + 6c-salutation-wording: "Für die CDU/CSU-Fraktion spricht nun der Kollege ..." and opening "Sehr verehrte Frau Präsidentin!" not covered
+18/83	ID1808302300	10	6c-floor-wording		6c-floor-wording: whole Rede nested; chair "Für die SPD-Fraktion hat der Kollege Florian Post das Wort" (hat ... das Wort) not covered
+18/88	ID1808801500	2	erwiderung-nested		erwiderung-nested: Angesprochener Lange erwidert auf Kurzintervention Wilms; Chair 'Kollege Lange möchte noch kurz erwidern' (3. Person, nicht von 'invited' gedeckt)
+18/88	ID1808802800	2	6c-floor-wording		6c-floor-wording: ganze Rede (Nick, 'Herr Präsident!') nach 'Als nächstem Redner erteile ich das Wort dem Abgeordneten' (Dativ/erteile nicht in NESTED_REDE_FLOOR)
+18/88	ID1808807800	12	near-6a	offer-side	Chair 'hat jetzt die Kollegin Leidig noch die Chance, etwas zu sagen' nennt keine Frage; Binninger 'So lange können 2 Minuten 31 Sekunden dauern' keine Einwilligung; Leidig macht Kurzintervention
+18/88	ID1808807800	17	near-6a	consent-side	Chair bietet Ströbele 'Zwischenfrage oder Bemerkung' an; Einwilligung Binningers als ganzer Satz ('noch nie eine Zwischenfrage verweigert') nicht in Liste; Ströbele ohne '?'
+18/89	ID1808902100	3	go-debate		go-debate: Redner declined the Zwischenfrage, chair "Dann gebe ich Ihnen das Wort zu einem Antrag zur Geschäftsordnung"; Haßelmann's GO-Antrag printed nested
+18/89	ID1808902100	5	cascade		Haßelmann continues her GO-Antrag after Becker's interjection (m4); refused carry from Becker's earlier "Nein", follows m3 (GO-Antrag)
+18/95	ID1809503000	2	role-less-chair		Singhammer (Vizepräsident of 18/95) printed as p.redner without role: "Für die SPD hat jetzt der Kollege Burkhard Blienert das Wort."
+18/97	ID1809705600	2	erklaerung-nested		erklaerung-zur-aussprache: chair gives Neu the floor "nach § 30 … zu einer Erklärung zur Aussprache"; Erklärung printed nested, then Kiesewetter's Erwiderung
+18/98	ID1809801300	3	near-6a	consent-side	Chair 'Kollege Kindler möchte eine Zwischenfrage stellen'; Hagedorn 'Also, ich will ihn gern zu Wort kommen lassen.' nicht in Liste; Kindler dankt nur 'Vielen lieben Dank, Frau Kollegin'
+18/98	ID1809802700	2	erklaerung-nested		persoenliche-erklaerung-nested: Wunderlich stellt Abstimmungsverhalten der Linken richtig, nach Chair 'am Ende der Debatte'; keine Frage, keine Zwischenfrage
+18/109	ID1810900300	3	near-6a	consent-side	Chair-Angebot 'Können wir das hier schnell erledigen?'; Fuchs 'Das soll er gerne haben.' nicht in Liste; Ernst ohne '?'
+18/109	ID1810900300	5	cascade		Ernst setzt nach Fuchs' Antwort fort; ohne Grant, weil m3 (Ernst, 'Das soll er gerne haben.') verweigert und geleert wurde
+18/110	ID1811002600	3	near-6a	consent-side	Offer "gestatten Sie eine Frage oder Bemerkung des Kollegen Ernst?"; consent "Eine würde ich versuchen. – Herr Ernst, legen Sie los" not on the closed list
+18/110	ID1811004200	2	6f		Addressee Hahn answers Schwabe's questions to him ("Herr Kollege Hahn."); no offer, no "angesprochen" wording
+18/112	ID1811200600	2	6f		Chair: "Zur direkten Erwiderung erhält jetzt die Kollegin Wagenknecht nach § 30 … das Wort"; Erwiderung printed nested
+18/113	ID1811303100	3	gov-member-asks		gov-member-asks: Bundesminister Schmidt asks a granted Zwischenfrage (authorized, chair "Jetzt der Abgeordnete Schmidt"); refused only because marker has a government role (side)
+18/117	ID1811702000	2	erklaerung-nested		persoenliche-erklaerung-nested: Chair kündigt 'Gelegenheit zur Abgabe einer persönlichen Erklärung' an, Liebich (Linke) erklärt in verschachtelter Marke
+18/118	ID1811801700	2	erklaerung-nested		erklaerung-zur-aussprache: chair gives Nüßlein the floor "zu einer persönlichen Erklärung zur Aussprache"; Erklärung printed nested
+18/122	ID1812200900	3	near-6a	consent-side	Chair 'darf die Kollegin Hagedorn noch eine Zwischenfrage stellen?'; Sendker 'Bitte schön, Frau Kollegin Hagedorn.' (Anrede angehängt) nicht von Einwilligungsmuster gedeckt
+18/122	ID1812200900	4	cascade		Hagedorn setzt nach Chair 'Frau Kollegin.' fort; nur verweigert weil m3 (Sendker 'Bitte schön, Frau Kollegin Hagedorn.') geleert wurde
+18/124	ID1812400500	2	refusal-misread		ausnahme-misread-as-refusal: Kauder "normalerweise lasse ich keine Fragen zu. Bei Ihnen mache ich eine Ausnahme." wird als Ablehnung gelesen (refused=True), Chair "Bitte schön" ohne Frage-Wort; Ausnahme nicht als Grant erkannt
+18/127	ID1812705000	2	erwiderung-nested		erwiderung-nested: Kipping erwidert auf Richtigstellung Sorges (Zwischenbemerkung ohne Frage); Chair verlangt 'die Antwort auf die Richtigstellung' in kurzer Zeit
+18/136	ID1813605700	3	recipient-initial		recipient-initial: Matthias W. Birkwald parsed last_name "W. Birkwald" vs Chair "Birkwald" -> recipient_mismatch; Angebot, Zustimmung "Ja" und Dank "dass Sie die Frage zulassen" sind in Ordnung
+18/136	ID1813605700	5	cascade		Birkwald setzt nach Strackes "Nein." (Antwort) fort; verweigert nur, weil m3 (recipient-initial) die Anfrage nicht verbraucht hat
+18/143	ID1814305400	4	refusal-misread		nein-prefix-misread-as-refusal: nach Zustimmung "Wenn er hier mehr zu Wort kommen kann, gerne." (bedingt, nicht in NESTED_CONSENT) folgt "– Nein, ich wundere mich nur." (Reaktion auf Zuruf) und gilt als Ablehnung
+18/143	ID1814305400	6	cascade		Ströbele setzt nach Kiesewetters Einwurf fort; nur verweigert, weil m4 (nein-prefix) geleert wurde
+18/143	ID1814305400	8	cascade		Ströbele setzt fort (Frage an Soldaten); Folge von m4 (refused weitergetragen)
+18/143	ID1814305400	10	cascade		Ströbele setzt fort nach "Bin ich nicht mehr!"; Folge von m4 (refused weitergetragen)
+18/146	ID1814603100	3	recipient-initial		recipient-initial: Charles M. Huber parsed last_name "M. Huber" vs Chair "Kollegen Huber" -> recipient_mismatch; Angebot und "Mit Vergnügen." sind in Ordnung
+18/146	ID1814603100	5	cascade		Huber setzt nach Kippings Zwischenruf fort; nur verweigert, weil m3 (recipient-initial) pending_names offen hält
+18/146	ID1814603100	7	cascade		Huber setzt fort; recipient_mismatch aus m3 (recipient-initial) weitergetragen
+18/146	ID1814603100	8	cascade		Huber nach Chair "Eine kurze Frage, bitte."; recipient_mismatch aus m3 (recipient-initial) weitergetragen
+18/147	ID1814701600	3	recipient-initial		recipient-initial: Redner "Matthias W. Birkwald" parsed last_name "W. Birkwald" never equals chair's "Birkwald" -> false recipient_mismatch; offer, consent and thanks are fine
+18/149	ID1814908800	3	near-6a	consent-side	Chair offers a Zwischenfrage only indirectly ("dass er Ihnen gerne Zeit … gibt"); Lehrieder: "Ich habe nur meine Bereitschaft erklärt"; chair "Bitte schön"
+18/152	ID1815205600	3	recipient-initial		recipient-initial: Matthias W. Birkwald parsed last_name "W. Birkwald" vs Chair "Kollegen Birkwald" -> recipient_mismatch; Angebot, "Ja, bitte schön." und Dank "dass Sie die Bemerkung zulassen" in Ordnung
+18/152	ID1815205600	5	cascade		Birkwald setzt nach Weiß' "Ja, man muss es ja einmal erklären." fort; recipient_mismatch aus m3 (recipient-initial) weitergetragen
+18/158	ID1815826800	2	6f		Rede-Inhaberin Krellmann (Zwischenfrage mit Dank) fragt; die Angesprochene Hiller-Ohm antwortet als verschachtelte Marke ohne Chair
+18/158	ID1815828300	2	6f		Rede-Inhaber Liebich fragt; Angesprochener Brähmig antwortet verschachtelt, ohne Chair
+18/158	ID1815828500	2	6f		Rede-Inhaber Weiler fragt; Angesprochene Jelpke antwortet verschachtelt, ohne Chair
+18/158	ID1815828700	2	6f		Rede-Inhaberin Haßelmann fragt; Angesprochener Nietan antwortet verschachtelt, ohne Chair
+18/159	ID1815914100	2	6f		Rede-Inhaber Lenkert fragt ('Vielen Dank, dass Sie die Zwischenfrage gestatten'); Angesprochener Krischer antwortet verschachtelt, ohne Chair
+18/160	ID1816000400	2	asker-owned-rede		asker-rede-answer-nested: Hänsel's Zwischenfrage is printed as its own Rede; Oppermann (the interrupted Redner) answers and goes on nested in it, no grant
+18/161	ID1816110200	3	near-6a	consent-side	Offer "Gestatten Sie eine Frage oder Bemerkung der Kollegin Pothmer?"; consent "Ich bitte darum." not on the closed list
+18/161	ID1816110600	5	6f		Birkwald answers the chair's Rückfrage ("sind Sie sich sicher, dass Sie sich melden wollen?") with "Na gut …" and withdraws
+18/162	ID1816201500	3	near-6a	consent-side	Offer "möchte eine Zwischenfrage stellen. Darf er das?"; consent "Ich will versuchen, sie zu beantworten." not on the closed list; no "?" in turn
+18/164	ID1816405800	3	near-6a	consent-side	Chair 'Darf er etwas sagen oder fragen?' ohne Zwischenfrage-Wort; Barthel 'Er darf, natürlich.' nicht in Liste; Movassat ohne '?'
+18/165	ID1816501900	3	recipient-initial		recipient-initial: "Matthias W. Birkwald" last_name "W. Birkwald" vs chair "Herrn Birkwald" -> false recipient_mismatch; offer names Zwischenfrage
+18/168	ID1816802500	3	recipient-initial		last-name-with-initial: parsed last_name "W. Birkwald" never matches chair's "Kollegen Birkwald" -> recipient mismatch despite "Bitte." and opening thanks
+18/170	ID1817004600	4	recipients		Chair nennt 'Kollegen Birkwald'; Marke hat Nachname 'W. Birkwald' (Initiale im Nachnamen) -> Empfängerabweichung trotz Dank-Grant
+18/171	ID1817101300	3	near-6a	consent-side	Chair 'darf die Kollegin Sitte eine Zwischenfrage stellen?'; Einwilligung 'Aber sicher.' nicht in geschlossener Liste; Sitte ohne '?'
+18/171	ID1817101800	8	refusal-misread		nein-prefix-misread-as-refusal: Straubinger m5 beginnt '– Nein, nein. – Aber ich bin gerne bereit, die Fragen zuzulassen' (Zwischenruf-Antwort), als Ablehnung gelesen -> refused trägt weiter
+18/171	ID1817101800	11	refusal-misread		nein-prefix-misread-as-refusal: dieselbe Fehllesung m5 hält refused=True bis Barthel; zusätzlich 'Jawohl.' nicht in Einwilligungsliste
+18/173	ID1817303100	3	near-6a	offer-side	offer-side: Angebot "Herr Birkwald möchte gern etwas zum Gesamtbild sagen. Möchten Sie das zulassen?" enthält weder Frage noch Bemerkung; Zustimmung "Ja, ich lasse das zu." nicht in Liste
+18/174	ID1817403600	3	recipient-initial		recipient-initial: "Matthias W. Birkwald" last_name "W. Birkwald" vs chair "des Kollegen Birkwald" -> false recipient_mismatch; offer names Zwischenfrage
+18/180	ID1818000700	3	near-6a	offer-side	Zustimmung "Gern." (nicht "gerne") nach Angebot "Darf sie das?", Chair "Bitte."; Zustimmungsliste greift nicht
+18/180	ID1818003300	3	near-6a	consent-side	Zustimmung "Von mir aus." nicht in der Liste; Angebot "Frage oder Bemerkung des Kollegen Meiwald?"
+18/180	ID1818004800	3	refusal-misread		nein-prefix-misread-as-refusal: Schuster beginnt "Nein, ich lasse sie nicht zu … – Gut, ich lasse sie zu.", Chair "Ausnahmsweise."; als Ablehnung gelesen
+18/184	ID1818402200	3	6f		Chair nennt "Zu einer Kurzintervention hat der Kollege Jan van Aken das Wort", Intervention steht aber verschachtelt (Erwiderung "Nein, danke" folgt)
+18/190	ID1819003600	6	recipient-initial		recipient-initial: "Matthias W. Birkwald" last_name "W. Birkwald" vs Chair "Kollegen Birkwald"; Rüffer "Ja, gerne." nach Angebot; Turn nur "Hier sitze ich."
+18/190	ID1819003600	8	recipient-initial		recipient-initial: "W. Birkwald" vs Chair-Name; Dank "dass Sie die Zwischenfrage zulassen" und Frage sind in Ordnung
+18/190	ID1819003600	10	cascade		Birkwalds Ergänzung nach der Antwort (m9 "Gerne."); Folge von m8 (geleert), Chair "Wir sind jetzt bei der Beantwortung"
+18/190	ID1819003600	12	chair-grant-without-consent		chair-grant-without-consent: Chair "ich lasse … noch eine Zwischenfrage zu, wenn Sie einverstanden sind … Frau Rawert, Sie haben das Wort", Rüffer sagt nichts; Rawert ohne Frage
+18/193	ID1819306800	6	near-6a	other	Zustimmung "Jederzeit." (Angebot "Zwischenfrage oder eine Bemerkung?") nicht in der Liste
+18/193	ID1819306800	10	near-6a	other	Angebot "Wollen Sie sie beantworten?" nennt keine Frage (nur Regie-Hinweis auf Meldung Klein-Schmeink); "Natürlich. Das ist doch klar." dann Chair "Aber dann reicht es."
+18/197	ID1819701400	3	near-6a	consent-side	Zustimmung "Alles andere hätte mich überrascht. Ich gestatte sie natürlich." nicht in der Liste; von Notz' Turn ist ein Scherz ohne "?"
+18/199	ID1819906100	7	near-6a	consent-side	Chair "Drei weitere Kollegen haben den Wunsch, Fragen zu stellen" ohne Namen/Zwischenfrage; Arnold "Ich beantworte gerne alle Fragen"; Brugger dankt ohne "zulassen"
+18/210	ID1821001700	7	near-6a	consent-side	Zustimmung "Aber sehr gerne. Ja, ich erlaube dem Kollegen Koenigs das …" nicht in der Liste; Koenigs-Turn ohne "?"
+18/215	ID1821502200	5	recipients		chair-adds-second-asker: Chair nennt nur Lisa Paus, Radwan "Von mir aus auch von beiden", dann Chair "Gestatten Sie es oder nicht? … Herr Schick."
+18/218	ID1821808300	3	near-6a	consent-side	Zustimmung "Mit dem größten Vergnügen, Frau Präsidentin." nicht in der Liste (Chair "Bitte schön.")
+18/219	ID1821900300	4	near-6a	other	Zustimmung ironisch/umschrieben: "Kollege Ströbele hat gern die Chance." nicht in der Liste (Angebot "Ströbele … ebenfalls eine Zwischenfrage stellen")
+18/219	ID1821901000	3	near-6a	consent-side	Angebot "hätte gerne eine Zwischenfrage gestellt" (Konjunktiv/Perfekt); Zustimmung "Gerne, das verlängert meine knappe Redezeit."
+18/219	ID1821904900	2	6f		asker-owned-rede: Schipanskis Frage ist eigene Rede; Hein (Angesprochene) antwortet verschachtelt, Chair "Überwiegend antwortet jetzt Frau Dr. Hein."
+18/221	ID1822109800	5	asker-self-offer		asker-self-offer: Hendricks kündigt selbst an "Wenn Sie erlauben, mache ich eine Zwischenbemerkung." ohne Chair-Angebot; Kühn "Gerne."
+18/221	ID1822109800	7	cascade		Hendricks' eigentliche Zwischenbemerkung nach Kühns "Gerne."; Folge von m5 (geleert)
+18/235	ID1823501800	3	near-6a	consent-side	Zustimmung "Sehr gerne." und Dank "dass ich eine Frage stellen darf" nicht in den Listen (Angebot "darf Frau Rößner eine Zwischenfrage stellen?")
+18/238	ID1823805100	3	near-6a	consent-side	Chair "Ich entnehme Ihrer Armbewegung …, dass Sie diese Frage zulassen"; Özdemir "So ist es." nicht in der Liste; Zeulner-Turn ohne "?"
+18/241	ID1824101400	7	near-6a	other	Angebot "erneut Bedarf an einer Zwischenfrage" ohne Namen ("Aus der SPD-Fraktion"); Ernst "Gerne. Wer denn? … Aha. Okay."
+18/243	ID1824306500	3	near-6a	consent-side	Zustimmung "Aber jederzeit doch." nicht in der Liste; Dank "für die Gelegenheit, Ihnen eine Frage zu stellen" statt "zulassen"
+18/243	ID1824306500	8	near-6a	consent-side	Zustimmung "Jawohl, auch das." nicht in der Liste; Scharfenbergs Turn "Diese Redezeit verlängere ich gern." ist nur ein Scherz ohne Frage
+18/243	ID1824306500	10	cascade		Scharfenbergs eigentliche Bemerkung nach Stritzls "Bitte, Frau Scharfenberg."; Folge von m8 (geleert)
+19/12	ID191202900	2	erwiderung-nested		erwiderung-nested: Straetmanns' Kurzintervention, Zimmer "Nein, es lohnt sich nicht." auf Chair-Rückfrage "Wollen Sie antworten, Herr Kollege?" (Wortlaut nicht in invited)
+19/12	ID191203800	3	refusal-misread		nein-prefix-misread-as-refusal: Klein beginnt "Nein, ich will erst einmal im Zusammenhang vortragen." und lässt am Ende "– bitte." zu, Chair "So, Ihre Zwischenfrage, Frau Kollegin."
+19/13	ID191304800	2	6e		Befragung: Minister Schmidt gibt die Frage an PStS Silberhorn weiter
+19/13	ID191305000	2	6e		Befragung: Minister Schmidt gibt gern an Kollegen Silberhorn weiter (Chair: "wollen Sie den Kollegen Silberhorn wieder bitten?")
+19/13	ID191306000	2	6e		Befragung: Minister Schmidt übergibt an Staatsministerin Böhmer (AA)
+19/14	ID191411900	2	erwiderung-nested		erwiderung-nested: Högl "Nein." auf Chair "Wollen Sie darauf antworten?" nach Münz' Kurzintervention (Wortlaut nicht in invited)
+19/18	ID191806500	5	near-6a	consent-side	Zustimmung "Das sofort. Jetzt hat er ja etwas zu sagen …" nicht in der Liste (zuvor "Nein" in m3, Angebot "gestatten Sie eine Zwischenfrage des Kollegen Ernst?")
+19/18	ID191806600	2	6f		asker-owned-rede: Drögen Frage ist eigene Rede ("dass auch ich noch fragen darf"); Hirte antwortet verschachtelt, kein Chair-Angebot
+19/20	ID192001100	2	6e		Haßelmanns Bemerkung als eigene Rede; Bundesaußenminister Maas "Nein." auf Chair "Sie können antworten, Sie müssen aber nicht."
+19/20	ID192003100	2	6f		asker-owned-rede: Gottschalks Frage an Binding ist eigene Rede; Binding "Ich verzichte" verschachtelt nach Chair "Dann gebe ich das Wort Lothar Binding."
+19/23	ID192304600	6	recipients		Chair nennt "Ich lasse die Frage von Herrn Müller … zu" (später "des Kollegen Müller"), Kober fragt; Stracke "Nur zu, nur zu." zusätzlich nicht in der Liste
+19/27	ID192704300	3	near-6a	offer-side	Angebot nennt "Zusatzfrage der Kollegin Konrad?" (nicht Zwischenfrage/-bemerkung); Ebner "Ja, gerne."
+19/32	ID193207500	3	6f		Kurzintervention, vom Chair so benannt, aber verschachtelt gedruckt
+19/36	ID193612200	6	decline-then-kurzintervention		decline-then-kurzintervention: Kiesewetter "Nein, ich ermögliche ihm eine Kurzintervention" auf Zwischenfrage-Angebot, Chair gibt "Ihre Zwischenfrage, bitte."; Neus Turn ohne "?"
+19/36	ID193612200	8	cascade		Neus Fortsetzung nach Kiesewetters Zwischenruf "Zwischenfrage!"; Folge von m6 (geleert)
+19/40	ID194002300	2	near-6a	other	Chair "Wenn Sie … zulassen, dann hat er jetzt das Wort" ohne Zustimmung des Redners; Dank "dass Sie sie zulassen" (Pronomen statt Zwischenfrage)
+19/42	ID194214000	4	chair-grant-without-consent		chair-grant-without-consent: Kiziltepe "Nein." auf Zwischenfrage-Angebot, Chair "… Sie erlauben die Zwischenfrage. – Herr Kollege, bitte." ohne Zustimmungs-Turn
+19/44	ID194407800	3	6f		asker-owned-rede: von Storchs Frage ist eigene Rede; Weinberg "Jetzt nicht mehr, vielen Dank." auf Chair-Rückfrage nach weiterer Zwischenfrage
+19/47	ID194701300	3	6f		Kahrs verzichtet auf die angebotene Kurzintervention ("Ach, ich will seine Redezeit nicht verlängern"), Antwort auf Chair-Angebot verschachtelt
+19/52	ID195212000	3	near-6a	consent-side	Chair-Angebot als Bedingung ("nur dann weiterreden, wenn Sie … Zwischenfrage … akzeptieren"); Frei "Ja, das mache ich selbstverständlich. Vielen Dank, Herr Präsident."
+19/59	ID195905700	2	6f		asker-owned-rede: Gottschalks Frage ist eigene Rede; Gutting antwortet verschachtelt, Chair "Jetzt ist Herr Gutting dran."
+19/61	ID196110900	3	recipients		Chair schreibt "Müller-<soft hyphen>Rosentritt" (U+00AD) → Empfänger passt nicht zu Marke Müller-Rosentritt (pattern recipient-soft-hyphen); Braun "Bitte schön … gerne."
+19/68	ID196811500	3	near-6a	consent-side	Zustimmung "Nur wenn ich hier nicht gegen Regeln verstoße … von mir aus gern." nicht in der Liste; De Ridders Turn nur "Herr Herrmann, –" (unterbrochen), Chair "Bitte."
+19/68	ID196811600	3	recipients		Chair nennt erst Herrn Curio, korrigiert "das war nicht Herr Curio … Herr Spangenberg" (chair-corrects-asker); Lindh "werde ich gestatten"
+19/69	ID196908400	3	near-6a	consent-side	Zustimmung "Bitte schön. Ja. Mein Zug kommt aber auch." mit Zusatzsatz; Janeceks m3 ist ein Einwurf ohne "?", Chair "Zügig, bitte.", Frage erst in m4
+19/92	ID199211200	11	6f		Der Angesprochene (Sitte) beantwortet die Frage des Redners ("Nein, nein, den habe ich ja vorhin schon zitiert")
+19/101	ID1910104500	3	near-6a	offer-side	Angebot "Gestatten Sie? – Okay." nennt keine Frage; "Ja, denn meine Redezeit ist gerade zu Ende." nicht in der Zustimmungsliste
+19/102	ID1910206000	2	6f		Antwort auf die Rückfrage des Präsidenten zum Zitat (für das Protokoll)
+19/127	ID1912711500	3	near-6a	consent-side	Zustimmung "Sicherlich, Herr Kollege." - "Sicherlich" nicht in der geschlossenen Liste
+19/158	ID1915809200	2	chair-grant-without-consent		chair-grant-without-consent: Redner fragt den Präsidenten ("Wenn ich ihm die Möglichkeit geben darf?"), chair "Sie dürfen.", kein Zustimmungs-Turn des Redners
+19/158	ID1915809200	4	cascade		Lehmanns Frage selbst; Fortsetzung des abgelehnten m2 (derselbe Asker)
+19/170	ID1917006200	3	near-6a	other	Ja, gerne. gefolgt von "– Nein, nein, …" im selben Turn; Asker dankt "dass Sie mir die Frage ermöglichen" (ermöglichen statt zulassen)
+19/173	ID1917304200	11	chair-adds-second-asker		chair-adds-second-asker: Präsidentin nennt zweite Fragerin (Müller-Gemmeke) hinzu, Redner Straubinger stimmt nie zu
+19/173	ID1917304200	12	cascade		Spierings "Moment." (Fortsetzung des Fragestellers); abgelehnter m11 ist der Anker
+19/189	ID1918907900	2	6f		Redner beantwortet Chair-Angebot "Wollen Sie beide zusammen?" - Kurzintervention-Reihenfolge (prozedural)
+19/192	ID1919201800	3	recipients		Chair nennt "Dr. Höcke" (Fehler), Fragesteller ist Hocker -> recipient_mismatch
+19/192	ID1919201800	5	cascade		Hockers zweite Frage nach Ebners "Ich war doch noch gar nicht fertig."; Fortsetzung des abgelehnten m3 (Pau lässt sie später ausdrücklich nicht zu)
+19/193	ID1919306300	2	6f		Maske (prozedural): Redner nimmt auf Bitte des Chairs die Maske ab
+19/201	ID1920109100	6	near-6a	offer-side	Chair "Mögen Sie?" ohne Fragewort ("weiteren Gesprächsbedarf"); "Gerne." dann Krellmann "Sie haben was zu mir gesagt."
+19/201	ID1920109100	8	cascade		Krellmann setzt fort (Fortsetzung des abgelehnten m6)
+19/201	ID1920109100	10	cascade		Krellmann setzt fort (Fortsetzung des abgelehnten m6)
+19/201	ID1920109100	12	near-6a	offer-side	Zweiter Mitfragesteller Heil: gleiches Angebot "Gesprächsbedarf ... Mögen Sie?" ohne Fragewort, Chair "hat das Wort"; Turn "Ich bin auch Abgeordneter" nicht 6b
+19/215	ID1921513700	4	near-6b		– Herr Kollege. ist Text des Redners, nicht des Chairs; 6b (Chair gibt das Wort) greift nicht
+19/225	ID1922500300	3	near-6a	consent-side	Zustimmung "Och ja.", Asker: "Ich danke für diese Großzügigkeit" - beides nicht in den Listen
+19/227	ID1922705300	4	near-6a	consent-side	Zustimmung "Der ist wieder da, ja." und Dank "Danke schön, lieber Hans" (Gegenrede/Kurzintervention-artig, Wortlaut außerhalb der Listen) in zweiter Rede
+19/239	ID1923903200	6	recipients		Chair nennt Kubicki vor "Frage oder Bemerkung", nur Kleinwächter wird als Empfänger erkannt -> recipient_mismatch; "Das schaffe ich." wäre Zustimmung
+18/42			conflicting-roles		conflicting roles at redner 999990325: 'Staatsminister' / 'Staatsminister (Sachsen)'
+18/82			conflicting-roles		conflicting roles at redner 999990238: 'Minister' / 'Minister (Brandenburg)'
+18/101			conflicting-roles		conflicting roles at redner 999990377: 'Ministerin' / 'Ministerin (Thüringen)'
+18/103			conflicting-roles		conflicting roles at redner 999990291: 'Minister' / 'Minister (Niedersachsen)'
+18/124			conflicting-roles		18/124: conflicting roles at redner 11002733: 'Parl. Staatssekretär BMF' / 'Parl. Staatssekretär beim Bundesminister der Finanzen'
+18/133			conflicting-roles		18/133: conflicting roles at redner 11000687: 'Parl. Staatssekretärin BMWi' / 'Parl. Staatssekretärin beim Bundesminister für Wirtschaft und Energie'
+18/136			conflicting-roles		18/136: conflicting roles at redner 11003498: 'Parl. Staatssekretär BMWi' / 'Parl. Staatssekretär beim Bundesminister für Wirtschaft und Energie'
+18/143			conflicting-roles		18/143: conflicting roles at redner 11003450: 'Parl. Staatssekretär BMJV' / 'Parl. Staatssekretär beim Bundesminister der Justiz und für Verbraucherschutz'
+18/146			conflicting-roles		18/146: conflicting roles at redner 11003628: 'Parl. Staatssekretär BMI' / 'Parl. Staatssekretär beim Bundesminister des Innern'
+18/151			conflicting-roles		18/151: conflicting roles at redner 11003574: 'Parl. Staatssekretär BMI' / 'Parl. Staatssekretär beim Bundesminister des Innern.'
+18/152			conflicting-roles		18/152: conflicting roles at redner 11003168: 'Parl. Staatssekretär BMJV' / 'Parl. Staatssekretär beim Bundesminister der Justiz und für Verbraucherschutz'
+18/173			conflicting-roles		18/173: conflicting roles at redner 11000198: 'Parl. Staatssekretär BMEL' / 'Parl. Staatssekretär beim Bundesminister für Ernährung und Landwirtschaft'
+18/176			conflicting-roles		18/176: conflicting roles at redner 11003847: 'Parl. Staats\xadsekretärin BMUB' / 'Parl. Staatssekretärin bei der Bundesministerin für Umwelt, Naturschutz, Bau und Reaktorsicherheit'
+18/179			conflicting-roles		18/179: conflicting roles at redner 11003168: 'Parl. Staatssekretär BMJV' / 'Parl. Staatssekretär beim Bundesminister der Justiz und für Verbraucherschutz'
+18/183			conflicting-roles		conflicting roles at redner 999990055: 'Senator' / 'Senator (Berlin)'

@@ -157,6 +157,8 @@ The owner decided on 2026-10-20 that the constituent sittings are exclusions for
 
 ## Next steps
 
+Steps 1 and 2 are done: the full audit of all 484 files, the 6c DIP cross-check (7 of 7 splits confirmed) and the grouped blockers are in [a3-wp18-19-audit.md](a3-wp18-19-audit.md); the rule candidates are in [a3-rule5-wp18-19-round2.md](a3-rule5-wp18-19-round2.md).
+
 1. The full WP 18/19 download (about 310 files) at a gentle rate, once dserver and DIP answer again. Then the counting audit on every file (step 3 of "How it gets checked").
    - Still open: the DIP Aktivitäten cross-check for 6c (ADR 0002). It should list Binder's Rede in 18/70 as a Rede of its own. DIP did not answer in this session, and no cached Aktivitäten for 18/70 were found under `~/agent-runs/a3`.
 2. Owner review of the remaining blockers: exclusion or a later rule.
