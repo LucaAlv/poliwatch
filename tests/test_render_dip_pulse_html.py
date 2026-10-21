@@ -181,7 +181,7 @@ class ParliamentaryGlossaryTests(unittest.TestCase):
 
 
 class AttentionRankingTests(unittest.TestCase):
-    """The Aufmerksamkeitsrang aside on the dossier page.
+    """The Meiste Reden aside on the dossier page.
 
     The aside is sticky on desktop and stacks above the TOP list at or below
     1120px. These tests pin the two shapes that fix the "tail of the ranking
@@ -270,7 +270,7 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertRegex(aside, r'<aside[^>]*id="aufmerksamkeitsrang"')
         rows = self._assert_rows_resolve(markup, aside, 7)
         self.assertEqual(rows, ["2", "6", "4", "7", "3", "1", "5"], "rows must be sorted by speech count, descending")
-        self.assertNotIn("<h2>Aufmerksamkeitsrang <span", aside, "no count badge; the header tile already carries the number")
+        self.assertNotIn("<h2>Meiste Reden <span", aside, "no count badge; the header tile already carries the number")
 
     def test_row_titles_show_topic_and_keep_full_heading_in_tooltip(self) -> None:
         topic = (
@@ -336,6 +336,7 @@ class AttentionRankingTests(unittest.TestCase):
     def test_empty_states_replace_the_list_but_keep_the_anchor(self) -> None:
         none = self._aside(self._render([]))
         self.assertRegex(none, r'<aside[^>]*id="aufmerksamkeitsrang"')
+        self.assertIn("<h2>Meiste Reden</h2>", none)
         self.assertIn('<p class="ranking-empty">Keine Tagesordnungspunkte im XML-Protokoll gefunden.</p>', none)
         self.assertNotIn('class="attention-row"', none)
         self.assertNotIn('<button class="attention-toggle"', none)
@@ -427,7 +428,7 @@ class AttentionRankingTests(unittest.TestCase):
 
         self.assertRegex(
             aside,
-            r'<div class="ranking-head">\s*<h2>Aufmerksamkeitsrang</h2>\s*'
+            r'<div class="ranking-head">\s*<h2>Meiste Reden</h2>\s*'
             r'<div class="legend"><span><i></i>Reden</span><span><i></i>Redetext</span></div>\s*</div>',
         )
         self.assertRegex(
@@ -451,7 +452,7 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertRegex(
             head,
             r'<span class="eyebrow">TOP 1 · [^<]+</span>\s*'
-            r'<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Aufmerksamkeitsrang</a>\s*'
+            r'<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Meiste Reden</a>\s*'
             r"<h2>Beratung des Antrags 1</h2>",
         )
         self.assertEqual(f"#{aside_id}", re.search(r'class="back-to-rank" href="([^"]+)"', head).group(1))

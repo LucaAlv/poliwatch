@@ -53,7 +53,7 @@ VOTE_LABELS = {
     "absent": "nicht abgegeben",
 }
 
-# Aufmerksamkeitsrang sidebar on the dossier page. On desktop the aside is
+# Meiste Reden sidebar on the dossier page. On desktop the aside is
 # sticky and its rows scroll inside it; at or below the 1120px breakpoint the
 # aside sits above the TOP list, so only the first rows are shown and a toggle
 # reveals the rest (3 rows on phones, where the page header alone is ~330px).
@@ -889,7 +889,7 @@ def theme_bootstrap_script() -> str:
 
 
 def attention_runtime_script() -> str:
-    """Behaviour for the dossier's Aufmerksamkeitsrang aside.
+    """Behaviour for the dossier's Meiste Reden aside.
 
     Emitted only by render_html (page_scripts is shared by every page), and
     emitted directly after the aside rather than at the end of the body: the
@@ -3019,7 +3019,7 @@ def render_html(
     )
 
     back_to_rank = (
-        '<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Aufmerksamkeitsrang</a>' if has_ranking else ""
+        '<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Meiste Reden</a>' if has_ranking else ""
     )
 
     top_sections = []
@@ -3387,7 +3387,7 @@ def render_html(
       --aside-gap:14px;
     }}
     /*
-      Aufmerksamkeitsrang aside — CSS layer order:
+      Meiste Reden aside — CSS layer order:
         base                              sticky, capped to the viewport, only .attention-list scrolls
         @media (max-width:1120px), (max-height:480px), print
                                           aside static (above <main> when narrow); cap removed, fade off
@@ -4062,7 +4062,7 @@ def render_html(
     <div class="layout">
       <aside id="aufmerksamkeitsrang"{aside_attrs}>
         <div class="ranking-head">
-          <h2>Aufmerksamkeitsrang</h2>
+          <h2>Meiste Reden</h2>
           {ranking_legend}
         </div>
         {ranking_note}
