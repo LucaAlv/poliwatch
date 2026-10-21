@@ -428,7 +428,7 @@ class PageTests(unittest.TestCase):
         markup = build.render_bill_detail(bill, {})
         nodes = parsed(markup)
         ids = [a.get("id") for _, a in nodes if a.get("id")]
-        expected = ["verlauf", "debatten", "redner", "abstimmungen", "dokumente", "quellen"]
+        expected = ["verlauf", "plenarstellen", "redner", "abstimmungen", "dokumente", "quellen"]
         positions = [ids.index(anchor) for anchor in expected]
         self.assertEqual(positions, sorted(positions))
         # Native details keeps the remaining names available without a script.
@@ -441,6 +441,32 @@ class PageTests(unittest.TestCase):
         self.assertIn("Dokumente", text)
         self.assertIn("Urheber der verknüpften Dokumente", text)
         self.assertFalse(any("data-follow-id" in a for _, a in nodes))
+
+    def test_plenary_labels_count_and_link_every_reference_including_without_speeches(self) -> None:
+        refs = [
+            {"protocol_number": "21/1", "href": "../protocols/plenarprotokoll-21-1.html#top-1", "speech_count": 0},
+            {"protocol_number": "21/2", "href": "../protocols/plenarprotokoll-21-2.html#top-2", "speech_count": 3},
+            {"protocol_number": "21/3", "href": "../protocols/plenarprotokoll-21-3.html#top-3"},
+        ]
+        for count, label in ((0, "Beratungen im Plenum"), (1, "Beratung im Plenum"), (3, "Beratungen im Plenum")):
+            with self.subTest(count=count):
+                bill = browser_fixture_bills()[0]
+                bill["protocol_refs"] = refs[:count]
+                overview = build.render_bills_index([bill])
+                self.assertIn(f"{count} {label}", " ".join(_MarkupText(overview).text))
+                detail = build.render_bill_detail(bill, {})
+                self.assertIn('<a href="#plenarstellen">Beratungen im Plenum</a>', detail)
+                self.assertIn('id="plenarstellen"><h2>Beratungen im Plenum</h2>', detail)
+                self.assertIn('aria-label="Beratungen im Plenum und Beteiligte"', detail)
+                section = detail.split('id="plenarstellen"')[1].split('id="redner"')[0]
+                self.assertEqual(section.count("<li>"), count)
+                for ref in refs[:count]:
+                    self.assertIn(f'<a href="{ref["href"]}">Sitzung {ref["protocol_number"]}</a>', section)
+                text = " ".join(_MarkupText(section).text)
+                self.assertIn("einer Sitzung, an dem dieses Vorhaben behandelt wurde – auch ohne erfasste Rede.", text)
+                self.assertIn("Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.", text)
+                self.assertNotIn('id="debatten"', detail)
+                self.assertNotIn('href="#debatten"', detail)
 
     # Value: protects=every glossary link on bill pages lands on an id the sources page really renders; fails_when=a slug/prefix/alias drifts from the sources-page anchor; why_new=only the href string of single terms was asserted, never the target; seam=none; no_claim=tooltip JS and in-browser :target scrolling (static HTML only)
     def test_every_glossary_link_on_bill_pages_resolves_to_a_sources_page_anchor(self) -> None:
@@ -540,7 +566,7 @@ class PageTests(unittest.TestCase):
         self.assertIn('datetime="2026-06-01"', dates[0])
         self.assertIn('datetime="2025-12-01"', dates[1])
         self.assertEqual(dates[2], "Datum nicht erfasst")
-        timeline = markup.split('id="verlauf"')[1].split('id="debatten"')[0]
+        timeline = markup.split('id="verlauf"')[1].split('id="plenarstellen"')[0]
         self.assertNotIn(f"<p>{title}</p>", timeline, "an event title equal to the bill title is not repeated")
         self.assertIn("Überweisung &lt;b&gt;an&lt;/b&gt; den Ausschuss", timeline)
         self.assertIn("Quelle nicht verknüpft", timeline)
@@ -551,7 +577,7 @@ class PageTests(unittest.TestCase):
         self.assertIn(">Drucksache</a>", documents)
         self.assertIn("Dokument 21/501", documents)
         # A TOP id reads "Tagesordnungspunkt N" once; Zusatzpunkte and Einzelplaene keep their own label.
-        debates = markup.split('id="debatten"')[1].split('id="redner"')[0]
+        debates = markup.split('id="plenarstellen"')[1].split('id="redner"')[0]
         visible = re.sub(r'<span class="bill-tooltip".*?</span>', "", debates)
         labels = [" ".join("".join(_MarkupText(row).text).split()) for row in re.findall(r"<li>(.*?)</li>", visible, flags=re.S)]
         self.assertEqual([label.split(" · ", 1)[1] for label in labels], [
@@ -611,7 +637,7 @@ class PageTests(unittest.TestCase):
         text = " ".join(_MarkupText(markup).text)
         for message in (
             "Unbenanntes Gesetzesvorhaben", "Datum nicht erfasst", "Erfasster Vorgang",
-            "Keine Verlaufseinträge in den erfassten Daten.", "Keine Debatten in den erfassten Daten verknüpft.",
+            "Keine Verlaufseinträge in den erfassten Daten.", "Keine Beratungen im Plenum in den erfassten Daten verknüpft.",
             "Keine Reden in den erfassten Daten zugeordnet.", "Keine namentliche Abstimmung in den erfassten Daten verknüpft.",
             "Keine Dokumente in den erfassten Daten verknüpft.", "Urheber der verknüpften Dokumente: nicht erfasst.",
             "DIP-Vorgang: nicht erfasst.",

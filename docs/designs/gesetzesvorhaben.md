@@ -59,16 +59,18 @@ Do not offer “ongoing/completed”, party-of-initiator or policy-topic filters
 
 Replace the technical subtitle and four metric boxes with a compact context area: “Zuletzt erfasst”, its date, latest event label and a primary-source link when available. Put the DIP identifier in source/data information. Use German date formatting throughout. Explain that the latest recorded event is not necessarily the present legal status; omit a speculative progress bar.
 
-Keep sections visibly available and add simple anchor navigation: “Verlauf”, “Debatten”, “Rednerinnen und Redner”, “Abstimmungen”, “Dokumente”, “Quellen und Daten”. The current implementation has panels rather than true tabs; anchor links preserve direct linking, browser search and no-JavaScript reading. The anchor order follows the mobile document order accepted in D3.
+Terminology correction (2026-10-22): “Beratungen im Plenum” supersedes the earlier “Debatten” label, retaining D3’s accepted section order. The section anchor is `#plenarstellen`; counts still include every linked plenary record.
+
+Keep sections visibly available and add simple anchor navigation: “Verlauf”, “Beratungen im Plenum”, “Rednerinnen und Redner”, “Abstimmungen”, “Dokumente”, “Quellen und Daten”. The current implementation has panels rather than true tabs; anchor links preserve direct linking, browser search and no-JavaScript reading. The anchor order follows the mobile document order accepted in D3.
 
 - **Verlauf:** group entries by date, lead with the event/document type, then its source link. Avoid repeating the unchanged law title in every row; retain titles when they supply distinct information. Keep all distinct events and source links, including multiple events on the same date. Do not silently infer a sequence among them.
-- **Debatten:** replace unexplained “Plenarstellen” with a clear section name and show Sitzung/date and Tagesordnungspunkt, linked to the dossier anchor. Explain that associated agenda items may discuss multiple procedures.
+- **Beratungen im Plenum:** count and list every linked plenary record, including records without speeches, and show Sitzung/date and Tagesordnungspunkt, linked to the dossier anchor. Explain that associated agenda items may discuss multiple procedures.
 - **Rednerinnen und Redner:** use dedicated speaker styling, separate from document/timeline grids. Name on the first line, Fraktion or Sprechrolle beneath it, then smaller speech figures with correct singular/plural. Let long names and affiliations wrap. Keep profile links where resolvable and plain text where not. Make Zeichen secondary. Keep the current ordering for this refinement, disclose it as “nach Zahl der erfassten Reden”, and explain the coverage. If more than twelve exist, show the total and offer a native expandable “Weitere Rednerinnen und Redner” section containing the rest.
 - **Abstimmungen:** expose links for recorded roll-call votes already present in the bill data. Use “Keine namentliche Abstimmung in den erfassten Daten verknüpft” for zero, rather than implying no parliamentary vote happened.
 - **Dokumente:** show document number, type and author in a layout designed for documents. Rename the full mixed list “Dokumente”; use “Drucksache” specifically for those entries. Label aggregated authors “Urheber der verknüpften Dokumente”, rather than “Eingebracht von”. Do not change source data to fit a cleaner label.
 - **Quellen und Daten:** keep raw JSON collapsed at the end and retain access to source/method documentation. State gaps where they occur. Keep the wording about other procedures on the same TOP; do not imply those are amendments to this law.
 
-On desktop retain a main reading column and supporting sidebar, reusing the current panel padding and section/list spacing. On narrow screens use this explicit sequence: title/context → section navigation → Verlauf → Debatten → Rednerinnen und Redner → Abstimmungen → Dokumente (including other procedures on the same TOP) → Quellen und Daten. The source/document order must support that sequence without JavaScript or CSS visual reordering that contradicts keyboard/screen-reader reading order. Wrap source links. Essential explanations remain visible; tooltips add detail.
+On desktop retain a main reading column and supporting sidebar, reusing the current panel padding and section/list spacing. On narrow screens use this explicit sequence: title/context → section navigation → Verlauf → Beratungen im Plenum → Rednerinnen und Redner → Abstimmungen → Dokumente (including other procedures on the same TOP) → Quellen und Daten. The source/document order must support that sequence without JavaScript or CSS visual reordering that contradicts keyboard/screen-reader reading order. Wrap source links. Essential explanations remain visible; tooltips add detail.
 
 **Readable type hierarchy (D9=A):** retain the existing bill-page title at 34px, 28px at the existing phone breakpoint, and section headings at 21px. Overview law titles retain the 21px heading scale. Use 16px for essential reading text: speaker names and affiliations/roles, document/event labels, explanations and source-link text. Speaker names are semibold; affiliation/role is regular text on its own line; supplementary figures are 14px on their own line. Use `--ink` for primary text and `--muted` only where the text remains legible against its actual theme surface. Keep the existing font family and use approximately 1.5 line height for reading text. Full names/titles wrap; no essential affiliation, event label or source name is clipped to retain density.
 
@@ -203,7 +205,7 @@ Detail
   Section links (in content order)
   Mobile reading sequence (D3):
     Verlauf
-    Debatten ────────────────► Sitzung dossier/TOP
+    Beratungen im Plenum ───► Sitzung dossier/TOP
     Rednerinnen und Redner ──► person profile when available
     Abstimmungen ────────────► linked roll-call source
     Dokumente ───────────────► official source document
