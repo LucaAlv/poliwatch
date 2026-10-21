@@ -165,17 +165,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### Recipe copy: compare the selection by range, not by text
-
-**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
-
-**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Validate final merged A1/A2 before the A3 backfill
 
 **What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
@@ -261,17 +250,6 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 
 ## Protokoll-Dossier
 
-### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
-
-**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
-
-**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
 
 **What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
@@ -324,7 +302,7 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 ### LLM five-word topic label per Tagesordnungspunkt
 
-**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title, replacing the deterministic boilerplate-stripped fallback now used there.
+**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier "Meiste Reden" row title, replacing the deterministic boilerplate-stripped fallback now used there.
 
 **Why:** The DIP Vorgang title is up to 200 characters and, for Antrag-only groups, the lead title is one Fraktion's slogan chosen by DIP ordering. A generated neutral label reads in five seconds and sidesteps the lead-title problem; the Vorgang title stays as the deterministic fallback.
 
@@ -475,18 +453,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Depends on:** Approach B; a bill/timeline page; the LLM topic-label item
 
 ## Gesetzesvorhaben
-
-### Keep keyboard focus on reset, and reopen a speech on a repeated link click
-
-**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
-
-**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
-
-**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
 
 ### Stop calling a Plenarstelle a "Debatte" on the bill pages
 
@@ -1169,6 +1135,45 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
+
+**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
+
+**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.4.0 (2026-10-21). The heading and back links now say "Meiste Reden"; the sources entry explains sorting by Reden and the bars’ Redeanteil and Textanteil within the Sitzung. The existing `#aufmerksamkeitsrang` anchor is preserved. Heading, link, empty-state and sources-copy assertions cover the wording; local desktop/mobile rendering and the back link were checked. Python 3.13: 1,364 tests ran, one skipped.
+
+### Recipe copy: compare the selection by range, not by text
+
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
+
+**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** 2026-10-21. Copy rejection now compares every range's saved endpoint nodes and offsets, preserving equal text selected elsewhere. The emitted-runtime regression failed before the fix; all 16 new recipe scenarios and existing browser checks pass. Python 3.13: 1,363 tests ran, one skipped. See [implementation receipt](docs/plans/recipe-copy-selection-race.md#implementation-receipt-2026-10-21).
+
+### Keep keyboard focus on reset, and reopen a speech on a repeated link click
+
+**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
+
+**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
+
+**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** v0.20.2.0 (2026-10-20). Reset focuses search; repeated speech links reopen their card. Automated desktop/mobile Chrome checks cover reset state, link guards and actual Enter-key activation.
+
 
 ### Politikfelder: harden the Vorgang fetch and the repersist guard
 

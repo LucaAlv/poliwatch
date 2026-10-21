@@ -3695,14 +3695,24 @@ def recipe_copy_runtime_script() -> str:
             selectFallback();
             return;
           }
-          const selectionAtClick = String(window.getSelection() || "");
+          const selection = window.getSelection();
+          const selectionAtClick = Array.from({ length: selection ? selection.rangeCount : 0 }, (_, i) => {
+            const range = selection.getRangeAt(i);
+            return [range.startContainer, range.startOffset, range.endContainer, range.endOffset];
+          });
           navigator.clipboard.writeText(code.textContent).then(
             () => {
               if (copy === latestCopy) flash("Kopiert");
             },
             () => {
               if (copy !== latestCopy) return;
-              const untouched = String(window.getSelection() || "") === selectionAtClick;
+              const current = window.getSelection();
+              const untouched = (current ? current.rangeCount : 0) === selectionAtClick.length &&
+                selectionAtClick.every(([startContainer, startOffset, endContainer, endOffset], i) => {
+                  const range = current.getRangeAt(i);
+                  return range.startContainer === startContainer && range.startOffset === startOffset &&
+                    range.endContainer === endContainer && range.endOffset === endOffset;
+                });
               if (untouched) selectFallback();
               else flash("Nicht kopiert");
             },
@@ -6444,6 +6454,7 @@ def render_bill_script() -> str:
           year.value = '';
           state.page = 1;
           apply('push');
+          search.focus();
         }));
         prev.addEventListener('click', guarded(() => { state.page -= 1; apply('push', true); }));
         next.addEventListener('click', guarded(() => { state.page += 1; apply('push', true); }));
@@ -10145,7 +10156,7 @@ def render_sources_page(
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
           <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
-          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet; Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
+          <li><strong>Meiste Reden</strong><span>Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>

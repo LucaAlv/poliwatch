@@ -9,6 +9,25 @@ All notable changes to this project will be documented in this file.
 - The "Worum es geht" block names each Vorgang by its DIP title. On the reference cache no context Vorgang had a title before (0 of 234; every label read "<Vorgangstyp> · DIP-Vorgang <id>"); after one online refetch all 234 have one, and DIP returned no empty title. The Vorgangstyp fallback and the refetch of records without a title are gone; a Vorgang with no record yet reads "DIP-Vorgang <id>".
 - The same refetch asked DIP again for the 86 context Vorgänge with an empty abstract: none had gained one, so 153 of 217 votes have a DIP abstract before and after.
 
+## [0.20.4.0] - 2026-10-21
+
+### Changed
+
+- The dossier sidebar now says "Meiste Reden". Its methodology explains that topics are ranked by speech count and the bars show speech and text shares within the sitting. Existing links to the ranking still work.
+
+## [0.20.3.0] - 2026-10-21
+
+### Fixed
+
+- A failed SQL recipe copy preserves text selected elsewhere, including identical text in another recipe, instead of replacing the reader's selection.
+
+## [0.20.2.0] - 2026-10-20
+
+### Fixed
+
+- Resetting the Gesetzesvorhaben filters returns keyboard focus to the search field, clears the query, year and page, and keeps the selected sort order.
+- Following the same speech link again reopens a closed speech card, including when activated with Enter. Modified clicks, downloads and links targeting another browsing context keep their native behavior.
+
 ## [0.20.1.0] - 2026-10-20
 
 ### Fixed
