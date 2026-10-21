@@ -55,6 +55,33 @@ Changes made from this:
 - **D5 cache:** it removes the 35% repeat lookups (301 vs 196).
 - The backfill default sleep stays 0.5 s in code until a rate is measured.
 
+### Rate measurement, 2026-10-20 (dserver.bundestag.de)
+
+The WP 18/19 XML download (`~/agent-runs/a3/tools/fetch_wp18_19.py`; one line per request in `~/agent-runs/a3/wp18-19-fetch.log`, probes in `dserver-probes.log`). Each request is one plenary XML of about 0.7 MB.
+
+| Window (CEST) | Spacing | Requests answered | Then |
+|---|---:|---:|---|
+| 15:52–15:53 | 3 s | 20 of 20, ≤ 0.36 s | burst ended as planned |
+| 15:53–15:57 | 2 s | 73 of 73; the last one took 35 s | 3 timeouts of 60 s; stopped |
+| 16:20 | probe | none | still blocked (30 s timeout) |
+| 18:51–18:59 | 5 s | 70 (one stop was a bug in my script, the UTF-8 BOM check); the last three took 19–35 s | 1 timeout; stopped |
+| 19:15 | probe | none | still blocked |
+| 20:39–20:45 | 5 s | 63; the last one took 19 s | stopped on the slow answer, before a timeout |
+| 21:11, 21:31 | probe | none | still blocked |
+| 21:52–21:58 | 5 s | 61, no slow answer first | 1 timeout; stopped |
+| 22:18 | probe | none | still blocked |
+| 22:38–22:39 | 5 s | 2; the second took 36 s | stopped on the slow answer |
+| 22:59–23:01 | 5 s | 20 of 20 | download complete (484 files) |
+
+DIP (`search.dip.bundestag.de`) and `www.bundestag.de` answered normally (0.2–0.3 s) whenever dserver was blocked.
+
+What it shows:
+- **The block is a budget, not a rate.** dserver stops answering after about 60–90 requests, roughly 45–65 MB, within a few minutes. That holds at 2 s and at 5 s spacing. Slower spacing did not buy more requests per window.
+- **Warning sign:** answers usually slow to 19–36 s just before the cutoff, though not always (21:58). Stopping at the first answer over 10 s (`--slow-stop 10`) ended two windows before a timeout.
+- **Block length:** 20 to about 65 min. Probes were still blocked 33 and 46 min after the 20:45 stop, and dserver answered again at 66 min. After the 21:58 cutoff it answered at 40 min, but only 2 files went through before it slowed. The budget seems to refill gradually, not reset all at once. 20 more files went through after another 20 min.
+
+**Proposal for the backfill `--sleep` (not changed in code):** keep spacing at 2 s for dserver, because spacing does not matter within a window. What matters is a per-window cap: about 50 XML downloads, then a pause of about 60 min, and a stop on the first answer over 10 s. For DIP, nothing in today's runs re-measures Finding 2's `/person` timeouts. The 6c cross-check sent 6 DIP requests at 2 s, all under 0.2 s. A WP 18/19 backfill of ~484 sittings needs about 10 such windows for the XML alone, so it spans hours, not minutes.
+
 ## Census
 
 **Roles** (`<rolle_lang>`, 31 files): 46 mapped, plus:
