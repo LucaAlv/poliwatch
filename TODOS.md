@@ -1127,6 +1127,21 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ## Completed
 
+### Keep keyboard focus on reset, and reopen a speech on a repeated link click
+
+**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
+
+**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
+
+**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** v0.20.2.0 (2026-10-20). Reset focuses search; repeated speech links reopen their card. Automated desktop/mobile Chrome checks cover reset state, link guards and actual Enter-key activation.
+
+
 ### Politikfelder: harden the Vorgang fetch and the repersist guard
 
 **Completed:** v0.20.1.0 (2026-10-20). Implemented `docs/plans/politikfelder-hardening.md`, including its adversarial additions: partial-response salvage without negative-caching incomplete membership, separate validation/outage accounting, identity-based replay protection and explicit store-read refusal, cache version/read-error preservation, unique corruption backups, complete atomic-save fallback, and 44px coarse-pointer chips. ID fetches also preserve unrelated cached records. Python 3.13: 1,363 tests ran with one skipped; demo publication checks and Chrome DevTools mobile/desktop fixture checks passed. No live cache/store changes or DIP requests.
