@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.4.0] - 2026-10-21
+
+### Changed
+
+- The dossier sidebar now says "Meiste Reden". Its methodology explains that topics are ranked by speech count and the bars show speech and text shares within the sitting. Existing links to the ranking still work.
+
 ## [0.20.3.0] - 2026-10-21
 
 ### Fixed

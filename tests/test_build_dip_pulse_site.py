@@ -1938,6 +1938,18 @@ class SittingWeekComparisonTests(unittest.TestCase):
             self.assertLessEqual(len(entry["kurz"]), 200, msg=f"{kind}: bubble text too long")
         self.assertIsNone(pulse_html.vorgangstyp_anchor("Nie gesehen"))
 
+    def test_sources_page_explains_speech_ranking_and_text_share(self) -> None:
+        markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
+
+        self.assertIn(
+            '<strong>Meiste Reden</strong><span>'
+            'Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. '
+            'Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. '
+            'Beiträge, die keine Reden sind, gehen nicht ein.</span>',
+            markup,
+        )
+        self.assertNotIn("Aufmerksamkeitsranking", markup)
+
     def test_sources_page_has_a_glossary_entry_per_vorgangstyp(self) -> None:
         markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
 
