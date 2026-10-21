@@ -3641,14 +3641,24 @@ def recipe_copy_runtime_script() -> str:
             selectFallback();
             return;
           }
-          const selectionAtClick = String(window.getSelection() || "");
+          const selection = window.getSelection();
+          const selectionAtClick = Array.from({ length: selection ? selection.rangeCount : 0 }, (_, i) => {
+            const range = selection.getRangeAt(i);
+            return [range.startContainer, range.startOffset, range.endContainer, range.endOffset];
+          });
           navigator.clipboard.writeText(code.textContent).then(
             () => {
               if (copy === latestCopy) flash("Kopiert");
             },
             () => {
               if (copy !== latestCopy) return;
-              const untouched = String(window.getSelection() || "") === selectionAtClick;
+              const current = window.getSelection();
+              const untouched = (current ? current.rangeCount : 0) === selectionAtClick.length &&
+                selectionAtClick.every(([startContainer, startOffset, endContainer, endOffset], i) => {
+                  const range = current.getRangeAt(i);
+                  return range.startContainer === startContainer && range.startOffset === startOffset &&
+                    range.endContainer === endContainer && range.endOffset === endOffset;
+                });
               if (untouched) selectFallback();
               else flash("Nicht kopiert");
             },
