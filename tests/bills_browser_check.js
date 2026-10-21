@@ -1,3 +1,4 @@
+// Value: protects=same-URL speech clicks honor inherited base targets; fails_when=the click handler ignores <base target>; why_new=anchor target tests do not exercise the inherited target branch; seam=none; no_claim=browser behavior outside Chrome/Chromium
 (async function () {
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const tick = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
@@ -55,6 +56,10 @@
       assert(!first.open && prevented === false, attribute + ' link must keep native handling');
       link.removeAttribute(attribute);
     }
+    const base = document.createElement('base'); base.target = '_blank'; document.head.append(base);
+    link.click();
+    assert(!first.open && prevented === false, 'inherited base target must keep native handling');
+    base.remove();
     const cancel = event => event.preventDefault();
     document.addEventListener('click', cancel);
     link.click();
