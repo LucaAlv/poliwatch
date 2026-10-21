@@ -234,17 +234,6 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 
 ## Protokoll-Dossier
 
-### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
-
-**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
-
-**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
 
 **What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
@@ -297,7 +286,7 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 ### LLM five-word topic label per Tagesordnungspunkt
 
-**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title, replacing the deterministic boilerplate-stripped fallback now used there.
+**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier "Meiste Reden" row title, replacing the deterministic boilerplate-stripped fallback now used there.
 
 **Why:** The DIP Vorgang title is up to 200 characters and, for Antrag-only groups, the lead title is one Fraktion's slogan chosen by DIP ordering. A generated neutral label reads in five seconds and sidesteps the lead-title problem; the Vorgang title stays as the deterministic fallback.
 
@@ -1115,6 +1104,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
+
+**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
+
+**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.4.0 (2026-10-21). The heading and back links now say "Meiste Reden"; the sources entry explains sorting by Reden and the bars’ Redeanteil and Textanteil within the Sitzung. The existing `#aufmerksamkeitsrang` anchor is preserved. Heading, link, empty-state and sources-copy assertions cover the wording; local desktop/mobile rendering and the back link were checked. Python 3.13: 1,364 tests ran, one skipped.
 
 ### Recipe copy: compare the selection by range, not by text
 
