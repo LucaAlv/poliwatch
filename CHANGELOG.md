@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.2.0] - 2026-10-20
+
+### Fixed
+
+- Resetting the Gesetzesvorhaben filters returns keyboard focus to the search field, clears the query, year and page, and keeps the selected sort order.
+- Following the same speech link again reopens a closed speech card, including when activated with Enter. Modified clicks, downloads and links targeting another browsing context keep their native behavior.
+
 ## [0.20.1.0] - 2026-10-20
 
 ### Fixed

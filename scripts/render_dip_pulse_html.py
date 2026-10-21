@@ -1211,6 +1211,17 @@ def speech_hash_runtime_script() -> str:
       }
       revealSpeech();
       addEventListener('hashchange', revealSpeech);
+      addEventListener('click', event => {
+        if (event.defaultPrevented || event.button !== 0 ||
+            event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+        if (!link || link.hasAttribute('download')) return;
+        const target = link.target || document.querySelector('base[target]')?.target || '_self';
+        if (target.toLowerCase() !== '_self') return;
+        let url;
+        try { url = new URL(link.href); } catch { return; }
+        if (url.href === location.href) revealSpeech();
+      });
     })();
     </script>"""
 

@@ -1,0 +1,12 @@
+{
+  "runner": "python3.13 tests/run_pregate.py {files}",
+  "strays": {"allow": [".gstack/pregate.json"]},
+  "dependencies": {
+    "VERSION": ["tests/test_bills.py"],
+    ".github/workflows/ci.yml": ["tests/test_bills.py"],
+    "scripts/render_dip_pulse_html.py": ["tests/test_render_dip_pulse_html.py", "tests/test_bills.py"],
+    "tests/bills_browser_check.js": ["tests/test_bills.py"],
+    "tests/run_bills_browser_check.mjs": ["tests/test_bills.py"],
+    "tests/run_pregate.py": ["tests/test_bills.py"]
+  }
+}

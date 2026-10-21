@@ -27,6 +27,16 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Set up Node for browser checks
+        if: matrix.python-version == '3.13'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run browser checks
+        if: matrix.python-version == '3.13'
+        run: node tests/run_bills_browser_check.mjs python
+
       - name: Build and validate zero-network demo
         run: |
           python scripts/build_demo_site.py --output-dir /tmp/bundestag-puls-demo
