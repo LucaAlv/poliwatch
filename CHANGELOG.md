@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.3.0] - 2026-10-21
+
+### Fixed
+
+- A failed SQL recipe copy preserves text selected elsewhere, including identical text in another recipe, instead of replacing the reader's selection.
+
 ## [0.20.2.0] - 2026-10-20
 
 ### Fixed
