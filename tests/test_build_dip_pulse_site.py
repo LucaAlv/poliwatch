@@ -2371,6 +2371,71 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
                 self.assertIn("--document-number", stderr.getvalue())
 
+    # Value: protects=the two online load sites of main (the --backfill-incomplete scan and the cached-dossier merge) end a build on a stale cached report with the same ERROR line, fix and exit 1 as the offline sites, before any dossier is fetched; fails_when=either site loses its CachedReportError handler so the build dies with a traceback, or the handler returns before the message names the file; why_new=the offline test above reaches only the --offline and --fetch-xml sites; seam=none; no_claim=the DIP client and catalog fetch (patched out)
+    def test_an_online_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
+        item = {"index": 1, "vote": {"id": "v1"}}
+        for backfill in (True, False):
+            with self.subTest(backfill_incomplete=backfill), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                protocols = [{"dokumentnummer": "21/82"}]
+                args = SimpleNamespace(
+                    output_dir=Path(tmp), database_path=None, offline=False, no_persist=True,
+                    week=None, today=None, api_key="test-key", no_abgeordnetenwatch=True, sleep=0,
+                    protocol_wahlperiode=0, backfill_incomplete=backfill, document_number=None, limit=None,
+                    detail_limit=None, dossier_document_number=[],
+                )
+                with (
+                    mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                    mock.patch.object(build_dip_pulse_site.dip, "ApiClient"),
+                    mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=protocols),
+                    mock.patch.object(build_dip_pulse_site, "select_acquisition_protocols", return_value=protocols),
+                    mock.patch.object(build_dip_pulse_site, "protocols_for_detail_pages", return_value=protocols),
+                    mock.patch.object(
+                        build_dip_pulse_site, "add_explicit_dossier_protocols", return_value=(protocols, protocols)
+                    ),
+                    mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(build_dip_pulse_site.main(), 1)
+                render_site.assert_not_called()
+                self.assertIn("ERROR [cached input]: ", stderr.getvalue())
+                self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
+                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+
+
+class VoteContextPageWiringTests(unittest.TestCase):
+    # Value: protects=the Vorgang cache the build holds reaches the written dossier page, so "Worum es geht" shows the DIP abstract persist stores for the same vote; fails_when=write_report_files or rebuild_cached_detail_pages stops passing vorgang_cache on, so every live vote panel says "Vorgang nicht abgerufen" while the store reads resolved; why_new=the panel and persist tests call the renderer with a cache directly, no test went through the page writers; seam=none; no_claim=the online fetch that fills the cache (fixture cache)
+    def test_the_page_writers_hand_the_vorgang_cache_to_the_vote_panel(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "Rentenpaket", "document_numbers": ["21/100"],
+                "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1"}
+        report = {
+            "protocol": {"dokumentnummer": "21/82", "wahlperiode": 21, "datum": "2026-06-10", "titel": "Sitzung"},
+            "agenda_items": [{"index": 1, "votes": [vote], "api": {}}],
+        }
+        cache = {
+            "version": 1,
+            "vorgaenge": {"vg-1": {"titel": "Rentengesetz", "abstract": "Der Vorgang sichert die Rente."}},
+            "dokumentnummern": {"21/100": ["vg-1"]},
+        }
+        writers = {
+            "write_report_files": lambda out: build_dip_pulse_site.write_report_files(report, out, vorgang_cache=cache),
+            "rebuild_cached_detail_pages": lambda out: build_dip_pulse_site.rebuild_cached_detail_pages(
+                out, [], cached_entries=[{"report": report}], vorgang_cache=cache
+            ),
+        }
+        for name, write in writers.items():
+            with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "data").mkdir()
+                (Path(tmp) / "protocols").mkdir()
+                write(Path(tmp))
+                page = next(Path(tmp).rglob("plenarprotokoll-21-82.html")).read_text(encoding="utf-8")
+                self.assertIn("Der Vorgang sichert die Rente.", page)
+                self.assertIn("Rentengesetz · DIP", page)
+                self.assertNotIn("Vorgang nicht abgerufen", page)
+
 
 class VotesArchiveTests(unittest.TestCase):
     def _entry(self, datum: str, document_number: str, items: list[dict[str, Any]]) -> dict[str, Any]:

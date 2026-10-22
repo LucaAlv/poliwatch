@@ -435,6 +435,9 @@ class RenderLandingPageDatenCardTests(unittest.TestCase):
         self.assertIn("Stand 15.09.2026, 12:00 MESZ · 42 Protokolle", with_page)
         self.assertNotIn("Datenbank erkunden", with_page)
         self.assertRegex(with_page, r'<li><h3><a href="database.html">Daten</a></h3>')
+        # Value: protects=the landing card counts the recipes the Daten page runs ("sechs geprüfte SQL-Abfragen" for six); fails_when=the card's count word is hard-coded again and stays "fünf" after a recipe is added; why_new=the Daten page test counts its own eyebrow, nothing read the landing card's number; seam=none; no_claim=German wording beyond the count word
+        word = {5: "fünf", 6: "sechs", 7: "sieben", 8: "acht"}[len(b.RECIPES)]
+        self.assertIn(f"{word} geprüfte SQL-Abfragen", with_page)
 
         # The global header nav always links to database.html regardless (a
         # separate, always-on NAV_ITEMS entry), and a second, unrelated
