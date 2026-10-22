@@ -160,6 +160,34 @@ The list, for `--exclude-document-number`:
      Proposal: extend R2's closed list with these spellings.
 2. **19/25:** exclude, as proposed above, or a rule for an asker who owns the `<rede>`.
 
+## Owner decisions (round 2 result, 2026-10-22)
+
+The owner asked for the costs before deciding. The figures come from the parse audit `parse-r2b.json`. An excluded sitting loses every unit it holds, not just the wrong ones.
+
+| Group | Sittings | Reden in them | Wrong units |
+|---|---:|---:|---|
+| D2's six that parse (18/2, 18/29, 18/83, 18/245, 19/1, 19/25) | 6 | 172 | a few per sitting |
+| Official and presidium addresses | 5 | 53 | the addresses |
+| A Vizepräsident(in)'s own Fraktionsrede | 17 | 1,015 | 21 Reden |
+| All parsing WP 18/19 sittings | 412 | 26,842 | |
+
+0. **D2: a listed number is skipped before acquisition**, whatever the parser says. There is no report, no store row and no fetch. The number is recorded in `data/coverage-exclusions.json` the way a source rejection is. Parser rules shrink the list later.
+1. **Official and presidium addresses** (18/178, 18/223, 19/9, 19/19, 19/73): exclude them, as 18/245 and 19/1 are.
+2. **A Vizepräsident(in)'s own Fraktionsrede: build the rule this round.** The owner chose this over exclusion, which would have cost 1,015 Reden to keep out 21. The rule follows ADR 0004 and its boundary is exact:
+   - **When it fires:** the marker that owns a `<rede>` (its first `redner`) has the role Vizepräsident or Vizepräsidentin (whitespace removed), and the marker prints a `<fraktion>`.
+   - **What it does:** the unit is that MdB's Rede for the printed Fraktion. The presidium role gives no Sprechrolle.
+   - **What it leaves alone:**
+     - Präsident and Alterspräsident are not covered.
+     - A presidium marker inside someone else's `<rede>` stays Sitzungsleitung, as before.
+   - **The scan behind the boundary** covered all 484 WP 18/19 files and the 290 WP 20/21 files:
+     - 24 owner markers with a Fraktion fit the rule, in 18 sittings. Three of those sittings are already on the list for other reasons: 18/110, 18/112 and 18/113.
+     - 3 owner markers have no Fraktion: 18/245 Bulmahn and Singhammer, and 18/215.
+     - WP 20/21 has 0.
+   - **What tells a debate Rede from a presidium address:** only the printed Fraktion. The code cannot tell a debate item apart. 18/245's Vizepräsident(in) Reden carry no `<fraktion>`, so they stay unmapped, and 18/245 stays out because it is on the list.
+   - **18/90 is not covered.** Pau's Vizepräsidentin marker there is a Fragestunde Nachfrage outside any `<rede>`, not a `<rede>` she owns. The rule is not widened to it. 18/90 goes on the list, and the case goes back to the owner.
+3. **Role spellings:** extend R2's closed list with the eight spellings proposed above.
+4. **19/25:** exclude it. Excluding it costs 15 Reden and about 200 Befragung and Fragestunde units, to keep out 2 swapped units. Revisit if more cases turn up.
+
 ## Pilot re-run: not run
 
 - **Disk:** 3.2 GB free (100% used) on 2026-10-22. A v6 `--offline --repersist` of the 290-sitting store (2.6 GB, staged beside the 353 MB store; peak RSS 2.6 GB at the gate) plus a render needs more than that leaves as margin.
