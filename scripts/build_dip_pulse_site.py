@@ -2467,8 +2467,9 @@ def iter_tables(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 # column comes from the DIP XML/API extraction. A short list of overrides marks
 # the columns that come from elsewhere, so "primary sources only" is checkable
 # per column instead of asserted for the whole page.
-_COLUMN_SOURCE_ABGEORDNETENWATCH = {("mps", "aw_politician_id"), ("mps", "profile_url")}
-_COLUMN_SOURCE_DIP_ROSTER = {
+_COLUMN_SOURCE_ABGEORDNETENWATCH = {
+    ("mps", "aw_politician_id"),
+    ("mps", "profile_url"),
     ("mps", "birth_year"),
     ("mps", "gender"),
     ("mps", "profession"),
@@ -2515,14 +2516,12 @@ def column_source(table: str, column: str) -> str:
         return "derived"
     if (table, column) in _COLUMN_SOURCE_ABGEORDNETENWATCH:
         return "abgeordnetenwatch"
-    if (table, column) in _COLUMN_SOURCE_DIP_ROSTER:
-        return "dip"
     if table in _TABLE_SOURCE_BUNDESTAG:
         return "bundestag.de"
     return "dip"
 
 
-EXPORT_FORMAT = 5
+EXPORT_FORMAT = 6
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 

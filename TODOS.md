@@ -684,16 +684,6 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Priority:** P2
 **Depends on:** Lawyer answer on the address (ADR 0003, question 1)
 
-### Tag the abgeordnetenwatch MP columns with their real source
-
-**What:** Move `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` from `_COLUMN_SOURCE_DIP_ROSTER` to `_COLUMN_SOURCE_ABGEORDNETENWATCH` (`scripts/build_dip_pulse_site.py`), with a test that pins the tags. Afterwards, delete the "Known gap" paragraph in `docs/data-license.md`.
-
-**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Cite protocols as „BT-PlPr." per DIP no. 4c
 
 **What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
@@ -1092,6 +1082,16 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Tag the abgeordnetenwatch MP columns with their real source
+
+**Completed:** v0.20.5.1 (2026-10-22). `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` now carry the `abgeordnetenwatch` source tag. The export test pins all seven abgeordnetenwatch MP columns, export format 6 invalidates cached manifests, and the "Known gap" paragraph in `docs/data-license.md` is removed.
+
+**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
 
 ### Stop calling a Plenarstelle a "Debatte" on the bill pages
 

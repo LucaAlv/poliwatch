@@ -36,10 +36,6 @@ The DIP terms, in particular no. 5, continue to apply to any reuse of the DIP la
 - `fact_metrics`, `facts` and `fact_sources` are computed by `scripts/facts.py` at build time (percentiles, baselines, receipts). `mp_canonical` and `datenstand` are created by `scripts/build_dip_pulse_site.py` during export.
 - The site's machine-generated summaries are not part of the export.
 
-## Known gap
-
-Until the provenance fix in TODOS.md lands, the manifest still tags `mps.birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` as `dip`. The table above gives their real source, abgeordnetenwatch.
-
 ## Disclaimer
 
 No warranty for correctness; this also applies to the sources (DIP no. 6). This notice is not legal advice. The questions still open for a lawyer are listed in ADR 0003.

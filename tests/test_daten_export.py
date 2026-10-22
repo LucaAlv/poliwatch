@@ -281,8 +281,10 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_tables_carry_column_provenance_and_fk_targets(self) -> None:
         manifest = self.export()
         mps_table = next(t for t in manifest["tables"] if t["name"] == "mps")
-        aw_column = next(c for c in mps_table["columns"] if c["name"] == "aw_politician_id")
-        self.assertEqual(aw_column["source"], "abgeordnetenwatch")
+        mp_columns = {c["name"]: c for c in mps_table["columns"]}
+        for name in ("aw_politician_id", "profile_url", "birth_year", "gender", "profession", "wahlkreis", "bundesland"):
+            with self.subTest(column=name):
+                self.assertEqual(mp_columns[name]["source"], "abgeordnetenwatch")
         speeches_table = next(t for t in manifest["tables"] if t["name"] == "speeches")
         mp_id_column = next(c for c in speeches_table["columns"] if c["name"] == "mp_id")
         self.assertEqual(mp_id_column["fk"], "mps.id")
