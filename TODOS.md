@@ -684,16 +684,6 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Priority:** P2
 **Depends on:** Lawyer answer on the address (ADR 0003, question 1)
 
-### Cite protocols as „BT-PlPr." per DIP no. 4c
-
-**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
-
-**Why:** DIP no. 4c prescribes the abbreviations exactly.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Settle the roll-call source for redistribution
 
 **What:**
@@ -1082,6 +1072,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Cite protocols as „BT-PlPr." per DIP no. 4c
+
+**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
+
+**Why:** DIP no. 4c prescribes the abbreviations exactly.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.0 (2026-10-22). Protocol labels now use `BT-PlPr.`; document citations preserve issuer and type, including BR and protocol documents. Fact receipts resolve the issuer by document ID. See the [implementation and citation audit](docs/plans/protocol-citation-labels.md#implementation-and-citation-audit-2026-10-22).
 
 ### Tag the abgeordnetenwatch MP columns with their real source
 

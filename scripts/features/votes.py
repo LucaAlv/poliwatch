@@ -72,7 +72,27 @@ def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
     return links
 
 
-def render_document_links(document_numbers: list[str], links: dict[str, tuple[str, str]]) -> str:
+def document_source_chambers(item: dict[str, Any]) -> dict[str, str]:
+    links = document_source_links(item)
+    documents = [*(item.get("xml_drucksachen") or []), *((item.get("api") or {}).get("linked_drucksachen") or [])]
+    chambers = {}
+    for doc in documents:
+        number = str(doc.get("dokumentnummer") or "")
+        if not number:
+            continue
+        link = links.get(number)
+        # XML chooses the URL; DIP metadata applies only to that same document.
+        if link and doc.get("url") != link[0]:
+            continue
+        if chamber := html.document_chamber(doc):
+            chambers[number] = chamber
+    return chambers
+
+
+
+def render_document_links(
+    document_numbers: list[str], links: dict[str, tuple[str, str]], chambers: dict[str, str] | None = None,
+) -> str:
     parts = []
     for number in document_numbers:
         link = links.get(str(number))
@@ -84,10 +104,14 @@ def render_document_links(document_numbers: list[str], links: dict[str, tuple[st
             except (html.publication.PublicationStateError, ValueError):
                 # An off-allowlist URL from DIP/XML loses its link, never the build.
                 href = None
+        chamber = (chambers or {}).get(str(number)) or html.document_chamber({
+            "dokumentnummer": number, "url": link[0] if link else None,
+        })
+        label = f"BR-Drs. {number}" if chamber == "BR" else number
         if href:
-            parts.append(f'<a class="doc-link" href="{html.esc(href)}">{html.esc(number)}</a>')
+            parts.append(f'<a class="doc-link" href="{html.esc(href)}">{html.esc(label)}</a>')
         else:
-            parts.append(f'<span class="doc-link muted">{html.esc(number)}</span>')
+            parts.append(f'<span class="doc-link muted">{html.esc(label)}</span>')
     if not parts:
         return ""
     return f'<span class="doc-link-list">{"".join(parts)}</span>'
@@ -188,7 +212,7 @@ def render_vote_summary(
             )
         total = vote.get("total") or {}
         document_links = document_source_links(item)
-        docs_html = render_document_links(vote.get("document_numbers") or [], document_links)
+        docs_html = render_document_links(vote.get("document_numbers") or [], document_links, document_source_chambers(item))
         docs_text = f" · Drucksachen {docs_html}" if docs_html else ""
         xlsx_url = vote.get("xlsx_url")
         xlsx_href = None
