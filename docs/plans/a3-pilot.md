@@ -198,3 +198,31 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
 - The full catalog fetch opens every run, so it counts against any DIP budget.
 - **Open before Phase 3:** the scan found 9 Vizepräsident(in) markers with a Fraktion inside someone else's `<rede>`. They are read as Sitzungsleitung. Five are in sittings that will be counted: 18/79, 18/85, 18/91, 18/96 and 18/109. In 18/62 and 18/90 the same presidium reading misclassified a Vizepräsidentin acting as an MdB, so these 9 need one read: if any is her own Zwischenfrage, it is silently dropped.
 - **Not done:** the Phase 1 measurements (Sprechrollen, Fraktion strings, Einzelplan, abgeordnetenwatch share, roll-call match rate, rate and seconds per sitting, render RSS, extrapolation) and the identity check.
+
+## Presidium markers inside a `<rede>`, read 2026-10-22
+
+- **Scan:** `~/agent-runs/a3/review/round2/vp_scan.py` lists every Präsident(in) or Vizepräsident(in) marker that prints a `<fraktion>`. WP 18/19 has 12 markers inside a `<rede>` that is not their own: the nine Vizepräsident(in) markers already known, plus three for Lammert (Präsident): 18/41, 18/74 and 18/100. WP 20/21 has none.
+- **Read:** one Sonnet reader (`inside-markers.tsv`). I re-checked the non-chair verdicts myself with `dump_rede.py`.
+  - **Chair text (9):** 18/41, 18/60, 18/74, 18/79, 18/82, 18/85, 18/89, 18/91 and 18/100. Each one gives the floor or announces the next speaker.
+  - **18/96 Pau, inside de Maizière's Befragung answer:** her own Nachfrage ("Herr Minister, genau da will ich anknüpfen…"). Bulmahn presides and gives her the floor. **Silent miscount:** one Befragung question is dropped. 18/96 is counted.
+  - **18/109 Bulmahn, second marker of her own Rede:** after Ulla Schmidt's "Sie müssen zum Schluss kommen", Bulmahn finishes her Rede ("Ich plädiere deshalb ausdrücklich dafür, dieser Mission zuzustimmen…"). The Rede is counted (ADR 0004 rule), but **its closing text is dropped.** 18/109 is counted.
+  - **18/113 Pau, inside Castellucci's Rede:** her own Zwischenfrage. 18/113 is on the list.
+- **Presiding signal** (`presiding.py`, the last chair `<name>` line before the marker):
+  - In 10 of the 12, the marker's own person is the one presiding. In 18/96, 18/109 and 18/113 someone else presides.
+  - **The exception is 18/60:** Lammert presides, and Singhammer's marker is chair text. That is a chair handover with no printed `<name>` line.
+
+### Rule proposals (owner decision, nothing built)
+
+- **(a) Continuation of the owner's own Rede.**
+  - **When it fires:** a later presidium marker inside a `<rede>` has the same redner id as the `<rede>`'s owner, and the owner was mapped by the ADR 0004 rule.
+  - **What it does:** it continues that Rede, as for any MdB who resumes after an interruption.
+  - **Reach:** exact, with no counterexample. In WP 18/19 it only touches 18/109, where the Rede gains its closing text. The unit count is unchanged. WP 20/21 has 0.
+- **(b) A presidium member's own contribution while another member presides.**
+  - **When it fires:** a presidium marker with a Fraktion sits inside someone else's `<rede>`, and the last chair `<name>` line names a different person.
+  - **What it does:** the marker is that MdB's Zwischenfrage, or in a Befragung a `befragung_frage`, for the printed Fraktion.
+  - **Reach:**
+    - 18/96: +1 `befragung_frage`, counted.
+    - 18/113: listed. It would leave the list only if its other refusal goes too.
+    - 18/60: **wrong.** The chair handover would become a contribution. 18/60 is listed, for other reasons.
+  - **Risk:** a handover with no printed name line. The scan above is the whole population for WP 18/19 (12 markers), so every case the rule would reach is known, and 18/60 is the only wrong one.
+  - The alternative to (b) is to put 18/96 on the list. That costs every unit in it, to keep out one missed question.
