@@ -272,10 +272,11 @@ def _fraction_group_html(
     leading = derive.majority_vote(counts)
     color = html.PARTY_COLORS.get(name, "#6b7280")
     # No Mehrheitsvotum (a tie, or nobody voted) is no pill, not a
-    # "nicht abgegeben" one.
+    # "nicht abgegeben" one. An inverted vote names a tie ("geteilt"),
+    # which gets its own colour.
     position = (derive.fraction_position(counts, True) if vote.get("inverted") else html.VOTE_LABELS.get(leading))
     pill = (
-        f'<em class="vote-pill{f" vote-{html.esc(leading)}" if leading else ""}">{html.esc(position)}</em>'
+        f'<em class="vote-pill vote-{html.esc(leading or "split")}">{html.esc(position)}</em>'
         if position
         else ""
     )

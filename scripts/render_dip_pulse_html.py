@@ -3677,6 +3677,8 @@ def render_html(
     .vote-no {{ background:#b91c1c; }}
     .vote-abstain {{ background:#b06b00; }}
     .vote-absent {{ background:#7a8699; }}
+    /* A tie ("geteilt"): neutral, and darker than the absent grey, which means "nicht abgegeben". */
+    .vote-split {{ background:#4b5563; }}
     .vote-pill {{
       display:inline-flex;
       align-items:center;

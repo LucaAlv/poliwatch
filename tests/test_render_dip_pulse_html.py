@@ -128,6 +128,13 @@ class DossierLayoutTests(unittest.TestCase):
         self.assertIn(".vote-result-rejected { background:#b91c1c; }", markup)
         self.assertIn(".vote-no-result { margin-left:8px;", markup)
 
+    def test_every_pill_colour_class_has_a_background_rule(self) -> None:
+        # .vote-pill sets white text and no background, so a colour class
+        # without a rule renders an invisible pill (the "geteilt" tie did).
+        markup = pulse_html.render_html(self.report)
+        for key in ("yes", "no", "abstain", "absent", "split"):
+            self.assertRegex(markup, rf"\.vote-{key} \{{ background:#[0-9a-f]{{6}}; \}}")
+
     def test_dark_mode_keeps_vote_gap_lines_muted(self) -> None:
         # The dark theme forces every <p> to --ink; these muted vote lines must
         # be listed in the later --muted override or they lose their dimming.

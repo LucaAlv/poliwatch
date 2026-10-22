@@ -403,11 +403,11 @@ class AbweichlerPanelTests(unittest.TestCase):
         inverted = self.abweichler_block(vote_summary({"votes": [_roll_call(members, inverted=True)]}))
         self.assertEqual(inverted, plain)
 
-    # Value: protects=a tied group on an inverted vote shows its "geteilt" pill with the plain pill class; fails_when=the class is built from a missing Mehrheitsvotum, giving class="vote-pill vote-" and an unstyled pill; why_new=no test rendered a tie on an inverted vote; seam=none
-    def test_a_tie_on_an_inverted_vote_gets_a_plain_pill(self) -> None:
+    # Value: protects=a tied group on an inverted vote shows its "geteilt" pill with its own split class; fails_when=the pill gets no colour class (white text on no background) or a class built from the missing Mehrheitsvotum ("vote-pill vote-"); why_new=no test rendered a tie on an inverted vote; seam=none
+    def test_a_tie_on_an_inverted_vote_gets_the_split_pill(self) -> None:
         members = _members("SPD", ["Ada"], ["Bea"])
         markup = vote_summary({"votes": [_roll_call(members, inverted=True)]})
-        self.assertIn('<em class="vote-pill">geteilt</em>', markup)
+        self.assertIn('<em class="vote-pill vote-split">geteilt</em>', markup)
         self.assertNotIn('vote-pill vote-"', markup)
 
     def test_abweichler_link_like_the_einzelstimmen(self) -> None:
