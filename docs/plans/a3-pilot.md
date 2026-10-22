@@ -65,6 +65,20 @@ The planned measurement was small bursts of `/person/{id}` at 2 s and then 1 s s
 
 So DIP stopped answering after a few dozen requests at 2 s, not after hundreds. As in batch 2 (2026-10-19), a rate limit does not explain it. The pilot re-run stopped here, as its brief says, and nothing was retried. A sustainable DIP rate is still not known.
 
+### DIP `/person` probe, 2026-10-22 evening (pilot re-run)
+
+The probe ran at 18:26 UTC, about 4.5 h after the timeout above.
+- **Single probes:**
+  - dserver `19/19001.xml`: 200 in 0.39 s.
+  - DIP `/plenarprotokoll?f.dokumentnummer=19/1`: 200 in 0.32 s.
+- **`person_probe.py`:**
+  - 1 `/person` list request;
+  - 20 `/person/{id}` at 2 s spacing (18:26);
+  - after a pause of about 1 min, 20 more at 1 s spacing (18:27).
+- **Result:** all 41 answered 200. The slowest took 0.21 s and the mean was 0.10 s. There were no failures and nothing was retried.
+
+So at this hour DIP answered `/person` normally at 1 s spacing. Together with the 14:01 timeout after 63 requests, this points to periods when DIP is unavailable rather than a request-count limit. The pilot below is the larger measurement.
+
 ### Rate measurement, 2026-10-20 (dserver.bundestag.de)
 
 The WP 18/19 XML download (`~/agent-runs/a3/tools/fetch_wp18_19.py`; one line per request in `~/agent-runs/a3/wp18-19-fetch.log`, probes in `dserver-probes.log`). Each request is one plenary XML of about 0.7 MB.
@@ -140,3 +154,21 @@ What it shows:
 1. **Extend speech rule 5 to the WP 18/19 encodings** (Finding 1, four kinds). Without it, D4 stops roughly 100–150 WP 18/19 sittings. This is a counting-rule change (A1 territory) and needs a decision.
 2. **A sustainable request rate** (Finding 2). Both DIP and dserver.bundestag.de stopped answering us after a few hundred requests: dserver after about 150 XML downloads at 1 s spacing on 2026-10-20. Re-measure with a smaller burst before choosing the backfill default, and finish the WP 18 census when dserver answers again.
 3. **Pilot re-run** with 1 and 2 settled, to measure seconds per sitting, peak RSS of persist and render, and the abgeordnetenwatch share.
+
+## Pilot re-run, 2026-10-22
+
+### Setup
+
+- **Clone:** `~/agent-runs/a3/pilot` is a copy-on-write clone (`cp -c`, APFS) of `.context/dip-pulse-site`. It costs almost no disk until files change. Free disk was 8–9 GB before the run and 5.1 GB after the repersist.
+- **Repersist:** `--offline --repersist` with speech rules v6, at 5cc5982.
+  - Exit 0, 290 reports persisted, store replaced.
+  - **Time:** 665 s (the gate took 453 s).
+  - **Peak RSS:** 2.36 GB (the gate took 2.6 GB).
+- **Probes:** see Finding 2, 2026-10-22 evening.
+- **Sample (27 sittings):**
+  - the 21 of `a1-turn-investigation.md:17`;
+  - first and last of each WP: 18/1, 18/245, 19/1, 19/239;
+  - the nearest that parse with mapped roles: 18/4, 18/244, 19/2, 19/238.
+  - 8 of the 27 are on the 84-number list and test the D2 skip: 18/1, 18/10, 18/50, 18/245, 19/1, 19/13, 19/32, 19/239.
+  - Befragung, Fragestunde and Aktuelle Stunde occur in each WP: 18/154, 18/217, 19/10, 19/79, 19/100, 19/145.
+- **Settings:** `--sleep 2`, `--vote-scan-pages 90`, the 84 numbers via `--exclude-document-number`, and the default enrichment. A disk watchdog stops the run below 1.5 GB free. The argument list is `~/agent-runs/a3/pilot-args.txt` and the log is `~/agent-runs/a3/pilot-run.log`.
