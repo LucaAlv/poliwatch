@@ -185,7 +185,9 @@ def render_abweichler(vote: dict[str, Any], members: list[dict[str, Any]], panel
     )
 
 
-def render_committee_line(committees: list[dict[str, Any]], links: dict[str, tuple[str, str]]) -> str:
+def render_committee_line(
+    committees: list[dict[str, Any]], links: dict[str, tuple[str, str]], chambers: dict[str, str] | None = None,
+) -> str:
     """One citation per Beschlussempfehlung among the vote's Drucksachen,
     "Beschlussempfehlung des <Ausschuss> (Drucksache <link>)". It cites the
     document and claims no role for this vote (D14), so it stays true for a
@@ -194,8 +196,15 @@ def render_committee_line(committees: list[dict[str, Any]], links: dict[str, tup
     if not committees:
         return '<p class="vote-committee muted">Ausschuss nicht ermittelt</p>'
     # The Drucksache link comes from the sitting-wide match, then from ``links``,
-    # this TOP's own sources, which win as they do for the vote's document list.
-    links = {**{row["number"]: (row["url"], "bundestag-dip") for row in committees if row.get("url")}, **links}
+    # this TOP's own sources, which win as they do for the vote's document list,
+    # except a Bundesrat paper with the same number: a Beschlussempfehlung is the
+    # Bundestag's (``derive.report_drucksachen``).
+    top_links = {
+        number: link for number, link in links.items()
+        if (chambers or {}).get(number) != "BR"
+        and html.document_chamber({"dokumentnummer": number, "url": link[0]}) != "BR"
+    }
+    links = {**{row["number"]: (row["url"], "bundestag-dip") for row in committees if row.get("url")}, **top_links}
     lines = []
     for row in committees:
         genitives = [dip_text.committee_genitive(name) for name in row["urheber"]]
@@ -203,7 +212,7 @@ def render_committee_line(committees: list[dict[str, Any]], links: dict[str, tup
             who = "Beschlussempfehlung " + dip_text.join_with_und(genitives)
         else:
             who = "Beschlussempfehlung, Urheber: " + dip_text.join_with_und(row["urheber"])
-        lines.append(f"{html.esc(who)} (Drucksache {render_document_links([row['number']], links)})")
+        lines.append(f"{html.esc(who)} (Drucksache {render_document_links([row['number']], links, {row['number']: 'BT'})})")
     return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
 
 
@@ -410,7 +419,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             _fraction_group_html(fraction, abweichler, no_members, panel, vote)
             for fraction in derive.merge_fractions(vote.get("fractions"))
         )
-        committee_line = render_committee_line(derive.vote_committees(vote, panel.report), document_links)
+        committee_line = render_committee_line(derive.vote_committees(vote, panel.report), document_links, document_chambers)
         total = vote.get("total") or {}
         docs_html = render_document_links(vote.get("document_numbers") or [], document_links, document_chambers)
         docs_text = f" · Drucksachen {docs_html}" if docs_html else ""

@@ -84,6 +84,14 @@ class AbstractTextTests(unittest.TestCase):
                 self.assertEqual(abstract_text(f"Vor {raw} nach"), f"Vor {char} nach")
         self.assertEqual(abstract_text("&#x0000110000; &#000099999999;"), "\ufffd \ufffd")
 
+    # Value: protects=a decimal reference padded with thousands of zeros reads as its character instead of raising; fails_when=leading zeros reach int() again, which counts them toward its 4,300-digit limit and stops persist and render; why_new=e3028b2 let them through (B4 ship run 3 review); seam=none; no_claim=none
+    def test_thousands_of_leading_zeros_do_not_raise(self) -> None:
+        self.assertEqual(abstract_text("Vor &#" + "0" * 5000 + "65; nach"), "Vor A nach")
+        self.assertEqual(abstract_text("Vor &#x" + "0" * 5000 + "41; nach"), "Vor A nach")
+        self.assertEqual(abstract_text("Vor &#" + "0" * 5000 + "99999999; nach"), "Vor \ufffd nach")
+        self.assertEqual(abstract_text("<p title='&#" + "0" * 5000 + "1;'>Vor nach</p>"), "Vor nach")
+        self.assertEqual(abstract_text("<![oops]> Vor &#" + "0" * 5000 + "65; nach"), "Vor A nach")
+
     # Value: protects=only the first MAX_ABSTRACT_CHARS characters are read, so markup the parser handles in quadratic time stays bounded; fails_when=the cap goes and a 64 KB unclosed "<script " run stalls persist; why_new=Claude and Codex adversarial review, B4 ship run 2; seam=none
     def test_only_the_first_max_abstract_chars_are_read(self) -> None:
         self.assertEqual(abstract_text("a" * MAX_ABSTRACT_CHARS + "b" * 50), "a" * MAX_ABSTRACT_CHARS)

@@ -338,19 +338,25 @@ def member_profile_url(member: Mapping[str, Any]) -> str | None:
     return aw_url or person_profile_url(member.get("profile_url"))
 
 
+_UNSAFE_URL_CHARS = re.compile(r"[\\\s\x00-\x1f\x7f]")
+
+
 def person_profile_url(url: Any) -> str | None:
     """``url`` when it is a page about one person: an MdB biography on
     https on bundestag.de (``/abgeordnete/…``) or abgeordnetenwatch (``/profile/…``); else None.
     bundestag.de links an MP without a biography back to the Abstimmung itself
-    (77 rows on the reference cache); that page names nobody."""
-    if not url:
+    (77 rows on the reference cache); that page names nobody. A URL a browser
+    could read as another host (a backslash, user info, a port, whitespace or a
+    control character) is none."""
+    if not url or _UNSAFE_URL_CHARS.search(str(url)):
         return None
     try:
         parts = urlsplit(str(url))
         host = parts.hostname
+        port = parts.port
     except ValueError:
         return None
-    if parts.scheme != "https":
+    if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None:
         return None
     if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
         return str(url)

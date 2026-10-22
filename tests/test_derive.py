@@ -341,6 +341,13 @@ class VoteMemberIdentityTests(unittest.TestCase):
             ("https://www.abgeordnetenwatch.de/profile/ada-beispiel", True),
             ("https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853", False),
             ("https://evil.example/abgeordnete/x", False),
+            # A browser reads these as another host or user: no profile (B4 ship run 3 review).
+            ("https://evil.example\\@www.bundestag.de/abgeordnete/x", False),
+            ("https://u:p@www.bundestag.de/abgeordnete/x", False),
+            ("https://www.bundestag.de:443/abgeordnete/x", False),
+            ("https://www.bundestag.de:99999/abgeordnete/x", False),
+            ("https://www.bundestag.de/abgeordnete/x\ty", False),
+            ("https://www.abgeordnetenwatch.de/profile/ada beispiel", False),
             ("https://[invalid", False),
             (None, False),
         ):

@@ -32,9 +32,10 @@ _SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE
 #: html.parser and the fallback slow down quadratically on some malformed markup.
 MAX_ABSTRACT_CHARS = 10_000
 # A numeric character reference past U+10FFFF names no character; with more than
-# 4,300 digits html.unescape raises instead of reading it as U+FFFD. Leading zeros
-# do not count: "&#x0000041;" is "A".
-_OVERLONG_CHARREF = re.compile(r"&#(?:[xX]0*[1-9a-fA-F][0-9a-fA-F]{6,}|0*[1-9][0-9]{7,});?")
+# 4,300 digits html.unescape raises instead of reading it as U+FFFD; int() counts
+# leading zeros as digits, so they go first: "&#x0000041;" is "A".
+_CHARREF_ZEROS = re.compile(r"&#(?:([xX])0+(?=[0-9a-fA-F])|0+(?=[0-9]))")
+_OVERLONG_CHARREF = re.compile(r"&#(?:[xX][0-9a-fA-F]{7,}|[0-9]{8,});?")
 
 
 def _strip_tags(text: str) -> str:
@@ -107,7 +108,8 @@ def abstract_text(raw: Any) -> str:
     Only the first ``MAX_ABSTRACT_CHARS`` characters are read."""
     if not raw:
         return ""
-    raw = _OVERLONG_CHARREF.sub("\ufffd", str(raw)[:MAX_ABSTRACT_CHARS])
+    raw = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), str(raw)[:MAX_ABSTRACT_CHARS])
+    raw = _OVERLONG_CHARREF.sub("\ufffd", raw)
     parser = _AbstractParser()
     try:
         parser.feed(raw)

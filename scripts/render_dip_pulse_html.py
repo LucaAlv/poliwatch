@@ -540,6 +540,8 @@ VOTE_RESULT_BADGE_CSS = """
     /* The archive row and the dossier .vote-panel both turn dark, so the outlined pill lightens in both. */
     :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-accepted { color:#5eead4; }
     :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+    /* .member-votes summary is a fixed light-mode blue, about 2.2:1 on the dark panel. */
+    :root[data-theme="dark"] .member-votes summary { color:var(--blue); }
 """
 
 

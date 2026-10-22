@@ -485,6 +485,19 @@ class CommitteePanelTests(unittest.TestCase):
         self.assertIn("Beschlussempfehlung des Haushaltsausschusses", line)
         self.assertIn('href="https://dserver.bundestag.de/btd/20/001/2000101.pdf"', line)
 
+    # Value: protects=a Bundesrat paper with the Beschlussempfehlung's number in the TOP's sources does not replace its Bundestag link or label; fails_when=the TOP's number-keyed links win for committee rows regardless of chamber; why_new=red team, B4 ship run 3; seam=none; no_claim=none
+    def test_a_bundesrat_paper_with_the_same_number_is_not_cited_as_the_beschlussempfehlung(self) -> None:
+        for br in (
+            {"dokumentnummer": "20/101", "herausgeber": "BR", "url": "https://dip.bundestag.de/drucksache/br-20-101"},
+            {"dokumentnummer": "20/101", "url": "https://dserver.bundestag.de/brd/2020/0101-20.pdf"},
+        ):
+            with self.subTest(url=br["url"]):
+                item, report = _committee_report(_vote(document_numbers=["20/101"]), under_vote_top=False)
+                item["api"]["linked_drucksachen"] = [br]
+                line = self.committee_line(vote_summary(item, report=report))
+                self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/001/2000101.pdf">20/101</a>', line)
+                self.assertNotIn("BR-Drs.", line)
+
     def test_no_beschlussempfehlung_says_ausschuss_nicht_ermittelt(self) -> None:
         item, report = _committee_report(_vote(document_numbers=["20/200"]))
         line = self.committee_line(vote_summary(item, report=report))
