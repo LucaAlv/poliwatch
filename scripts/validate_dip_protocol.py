@@ -565,9 +565,13 @@ ELECTION_QUESTION = re.compile(r"\bNehmen Sie die Wahl an\?\s*$")
 ELECTION_ACCEPTANCE = re.compile(r"(?:(?:Herr|Frau) (?:Alters)?Präsident(?:in)?, )?[Ii]ch nehme die Wahl an\.")
 # The chair gives the floor in the form of the Rednerliste, and the turn opens
 # like a Rede (6c).
-NESTED_REDE_FLOOR = re.compile(r"\bAls nächste[rn]? Redner(?:in)?\b|\b[Dd]as Wort (?:hat|erhält)\b|\bgebe (?:ich )?(?:\w+ )?das Wort\b")
+NESTED_REDE_FLOOR = re.compile(
+    r"\b[Nn]ächste[rnm]? Redner(?:in)?\b|\b(?:[Ll]etzte|[Aa]bschließende)[rn]? Redner(?:in)?\b"
+    r"|\b[Dd]as Wort (?:hat|erhält)\b|\bhat (?:[^.!?]{1,80} )?das Wort\b"
+    r"|\b(?:gebe|erteile) (?:ich )?(?:[^.!?]{1,80} )?das Wort\b|\bspricht (?:jetzt|nun)\b"
+)
 NESTED_REDE_NOT_FLOOR = re.compile(r"Zwischenfrage|Zwischenbemerkung|Frage|Kurzintervention|Erwiderung|Bemerkung", re.IGNORECASE)
-REDE_SALUTATION = re.compile(r"Sehr geehrte[rn]?\b|(?:Frau|Herr) (?:Vize|Alters)?Präsident(?:in)?\s*!")
+REDE_SALUTATION = re.compile(r"Sehr (?:geehrte|verehrte)[rn]?\b|(?:Frau|Herr) (?:Vize|Alters)?Präsident(?:in)?\s*!")
 _NESTED_NAMED_ASKER = re.compile(
     r"\b(?i:Kollegen?|Kollegin|Abgeordnete[nr]?|von|vom)\s+(?:(?:Dr\.|Prof\.|Frau|Herrn?)\s+)*"
     r"([A-ZÄÖÜ][\wÄÖÜäöüß-]*(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]*)*)"

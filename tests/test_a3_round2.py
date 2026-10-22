@@ -100,5 +100,43 @@ class MiddleInitialTests(unittest.TestCase):
             parse(self.body('W. Birkholz'))
 
 
+class NestedRedeFloorWordingTests(unittest.TestCase):
+    """R3: the WP 18 chair's other ways of giving the next Redner the floor (6c)."""
+
+    def body(self, floor, opening='Sehr geehrte Frau Präsidentin! Liebe Kolleginnen und Kollegen! Rede B?'):
+        return ('<rede id="R">' + redner('A', 'Rief', 'CDU/CSU') + '<p>Frau Präsidentin! Rede A.</p>'
+                '<name>Vizepräsidentin Claudia Roth:</name><p>' + floor + '</p>'
+                + redner('B', 'Gehring', 'BÜNDNIS 90/DIE GRÜNEN') + '<p>' + opening + '</p></rede>')
+
+    def test_each_floor_form_splits_the_nested_rede(self):
+        for floor in ['Nächster Redner ist Kai Gehring.',
+                      'Nächster Redner: Kai Gehring.',
+                      'Nächster Redner in der Debatte: Kai Gehring.',
+                      'Der nächste Redner ist Kai Gehring.',
+                      'Kai Gehring ist der nächste Redner.',
+                      'Für Bündnis 90/Die Grünen spricht jetzt Kai Gehring.',
+                      'Jetzt spricht nun Kai Gehring.',
+                      'Kai Gehring hat für die Fraktion Bündnis 90/Die Grünen das Wort.',
+                      'Jetzt hat Kai Gehring das Wort.',
+                      'Als Nächstes hat das Wort Kai Gehring.',
+                      'Als nächstem Redner erteile ich Kai Gehring das Wort.',
+                      'Letzter Redner in dieser Debatte ist Kai Gehring.',
+                      'Abschließender Redner in dieser Aussprache ist Kai Gehring.']:
+            with self.subTest(floor=floor):
+                top, contributions = parse(self.body(floor))
+                self.assertEqual([s['rede_id'] for s in top['speeches']], ['R', 'R:2'])
+                self.assertEqual(contributions, [])
+
+    def test_sehr_verehrte_opens_a_rede(self):
+        top, contributions = parse(self.body('Nächster Redner ist Kai Gehring.',
+                                             opening='Sehr verehrte Frau Präsidentin! Meine Damen und Herren! Rede B?'))
+        self.assertEqual([s['rede_id'] for s in top['speeches']], ['R', 'R:2'])
+        self.assertEqual(contributions, [])
+
+    def test_a_floor_form_naming_a_question_is_not_a_rede(self):
+        top, contributions = parse(self.body('Jetzt hat Kai Gehring das Wort zu einer Zwischenfrage.'))
+        self.assertEqual([s['rede_id'] for s in top['speeches']], ['R'])
+
+
 if __name__ == '__main__':
     unittest.main()
