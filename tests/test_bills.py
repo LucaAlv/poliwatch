@@ -419,6 +419,10 @@ class PageTests(unittest.TestCase):
         markup = build.render_bills_index(browser_fixture_bills())
         nodes = parsed(markup)
         attrs = [attrs for _, attrs in nodes]
+        controls = [a for a in attrs if "bill-controls" in (a.get("class") or "").split()]
+        self.assertEqual(len(controls), 1)
+        self.assertEqual(controls[0].get("role"), "search")
+        self.assertEqual(controls[0].get("aria-label"), "Gesetzesvorhaben finden")
         rows = [a for a in attrs if "data-bill-row" in a]
         self.assertEqual(len(rows), 41)
         self.assertTrue(all("hidden" not in row for row in rows), "server-rendered rows must remain visible before enhancement")
@@ -442,6 +446,7 @@ class PageTests(unittest.TestCase):
         markup = build.render_bills_index([])
         nodes = parsed(markup)
         attrs = [attrs for _, attrs in nodes]
+        self.assertFalse(any("bill-controls" in (a.get("class") or "").split() for a in attrs))
         self.assertFalse(any(any(k in a for k in ("data-bill-search", "data-bill-year", "data-bill-sort", "data-bill-reset", "data-bill-prev", "data-bill-next")) for a in attrs))
         self.assertTrue(any(a.get("href") == "../overview.html" for a in attrs))
         self.assertIn("Noch keine Gesetzesvorhaben verfügbar", " ".join(_MarkupText(markup).text))
