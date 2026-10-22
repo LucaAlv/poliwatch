@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.6.2] - 2026-10-22
+
+### Changed
+
+- The refresh guide now explains how `--protocol-wahlperiode` works with acquisition limits, with examples for the current period, older periods and all periods.
+
 ## [0.20.6.1] - 2026-10-22
 
 ### Fixed
