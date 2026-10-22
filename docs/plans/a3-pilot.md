@@ -172,3 +172,26 @@ What it shows:
   - 8 of the 27 are on the 84-number list and test the D2 skip: 18/1, 18/10, 18/50, 18/245, 19/1, 19/13, 19/32, 19/239.
   - Befragung, Fragestunde and Aktuelle Stunde occur in each WP: 18/154, 18/217, 19/10, 19/79, 19/100, 19/145.
 - **Settings:** `--sleep 2`, `--vote-scan-pages 90`, the 84 numbers via `--exclude-document-number`, and the default enrichment. A disk watchdog stops the run below 1.5 GB free. The argument list is `~/agent-runs/a3/pilot-args.txt` and the log is `~/agent-runs/a3/pilot-run.log`.
+
+### Result: stopped by DIP before the first sitting
+
+- The run started at 18:37:21 UTC. Its first DIP request was the catalog (`/plenarprotokoll`, page 1). It timed out three times (60 s each, with the client's 2 built-in retries) and the run ended at 18:40:41 with exit 1.
+- **Nothing was acquired.** No sitting was fetched and the store was not touched; it is still the repersisted v6 store. The run took 185 s with a peak RSS of 97 MB.
+- **What DIP answered before:**
+  - 41 `/person` requests at 18:26–18:27, at 2 s and 1 s spacing, all fast;
+  - one curl `/plenarprotokoll` at 18:26.
+  - About 10 minutes later the first request of the run did not answer.
+- **This is the third time,** with the same shape each time:
+
+| When | Requests answered first | Spacing | Then |
+|---|---:|---|---|
+| 2026-10-19, batch 2 | many earlier in batch 1 | 1 s | the first catalog request stalled |
+| 2026-10-22, 14:01 | 63 | 2 s | the first `/person` list request timed out |
+| 2026-10-22, 18:37 | 43 | 2 s and 1 s, then a pause of about 10 min | the first catalog request timed out |
+
+- **A hypothesis, not established:** DIP stops answering this key or IP for a while after roughly 40–60 requests in a window of unknown length. Batch 1's ~250 requests at 0.5 s before its timeouts do not fit a plain count. The window and the recovery time are both still unmeasured.
+- **What a re-run needs:**
+  1. Leave DIP idle for several hours.
+  2. Start the pilot directly, with no probe burst that spends the budget first.
+  3. Log every DIP request with its time, so the point where DIP stops is known exactly.
+- **Not done:** the Phase 1 measurements (Sprechrollen, Fraktion strings, Einzelplan, abgeordnetenwatch share, roll-call match rate, rate and seconds per sitting, render RSS, extrapolation) and the identity check.
