@@ -145,15 +145,44 @@ MEMBER = "member"
 OFFICIAL = "official"
 
 
+# WP 18 prints a Parl. Staatssekretär's ministry as an abbreviation in
+# <rolle_kurz> and in full after the name ("… BMF" / "… beim Bundesminister der
+# Finanzen"): one role in two spellings.
+MINISTRY_ABBREVIATIONS = {
+    "BMF": "der Finanzen",
+    "BMWi": "für Wirtschaft und Energie",
+    "BMJV": "der Justiz und für Verbraucherschutz",
+    "BMI": "des Innern",
+    "BMEL": "für Ernährung und Landwirtschaft",
+    "BMUB": "für Umwelt, Naturschutz, Bau und Reaktorsicherheit",
+}
+_ABBREVIATED_ROLE = re.compile(rf"(?P<title>.+) (?P<abbr>{'|'.join(MINISTRY_ABBREVIATIONS)})")
+
+
+def _role_text(elem: ET.Element | None) -> str | None:
+    return _text(elem).replace("\xad", "") or None
+
+
+def _same_role(structured: str, printed: str) -> bool:
+    """The structured and the printed role are spellings of one role: the
+    ministry abbreviation of the long form, or the bare title of a "(Land)" one."""
+    abbreviated = _ABBREVIATED_ROLE.fullmatch(structured)
+    if abbreviated:
+        ministry = re.escape(MINISTRY_ABBREVIATIONS[abbreviated["abbr"]])
+        title = re.escape(abbreviated["title"])
+        return bool(re.fullmatch(rf"{title} (?:beim|bei der) Bundesminister(?:in)? {ministry}\.?", printed))
+    return printed.startswith(f"{structured} (") and derive.side_of_role(printed) == "bundesrat"
+
+
 def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
     """Occurrence-specific structured or printed role; never a person's job."""
     if redner is None:
         return None, None
-    long = _text(redner.find("name/rolle/rolle_lang")) or None
-    short = _text(redner.find("name/rolle/rolle_kurz")) or None
+    long = _role_text(redner.find("name/rolle/rolle_lang"))
+    short = _role_text(redner.find("name/rolle/rolle_kurz"))
     printed = None
     # A role follows the printed name and a comma, before the label's colon.
-    label = _clean(redner.tail).split(":", 1)[0]
+    label = _clean(redner.tail).replace("\xad", "").split(":", 1)[0]
     for match in re.finditer(",", label):
         suffix = label[match.end():].strip()
         if derive.side_of_role(suffix):
@@ -161,7 +190,10 @@ def effective_role(redner: ET.Element | None) -> tuple[str | None, str | None]:
             break
     structured = long or short
     if structured and printed and derive.side_of_role(structured) != derive.side_of_role(printed):
-        raise ValueError(f"conflicting roles at redner {redner.get('id')}: {structured!r} / {printed!r}")
+        if not _same_role(structured, printed):
+            raise ValueError(f"conflicting roles at redner {redner.get('id')}: {structured!r} / {printed!r}")
+        # The printed spelling is the one a Sprechrolle rule maps.
+        return printed, short
     return (long, short) if structured else (printed, None)
 
 
