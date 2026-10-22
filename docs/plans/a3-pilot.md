@@ -77,7 +77,7 @@ The probe ran at 18:26 UTC, about 4.5 h after the timeout above.
   - after a pause of about 1 min, 20 more at 1 s spacing (18:27).
 - **Result:** all 41 answered 200. The slowest took 0.21 s and the mean was 0.10 s. There were no failures and nothing was retried.
 
-So at this hour DIP answered `/person` normally at 1 s spacing. Together with the 14:01 timeout after 63 requests, this points to periods when DIP is unavailable rather than a request-count limit. The pilot below is the larger measurement.
+So at this hour DIP answered `/person` normally at 1 s spacing. The pilot run that followed timed out on its first request (see "Result" below), so this probe does not settle the question of a request-count limit.
 
 ### Rate measurement, 2026-10-20 (dserver.bundestag.de)
 
@@ -194,4 +194,7 @@ What it shows:
   1. Leave DIP idle for several hours.
   2. Start the pilot directly, with no probe burst that spends the budget first.
   3. Log every DIP request with its time, so the point where DIP stops is known exactly.
+- **Not a local fault:** at 18:43 UTC, three minutes after the timeout, dserver answered `19/19002.xml` with 200 in 0.29 s.
+- The full catalog fetch opens every run, so it counts against any DIP budget.
+- **Open before Phase 3:** the scan found 9 Vizepräsident(in) markers with a Fraktion inside someone else's `<rede>`. They are read as Sitzungsleitung. Five are in sittings that will be counted: 18/79, 18/85, 18/91, 18/96 and 18/109. In 18/62 and 18/90 the same presidium reading misclassified a Vizepräsidentin acting as an MdB, so these 9 need one read: if any is her own Zwischenfrage, it is silently dropped.
 - **Not done:** the Phase 1 measurements (Sprechrollen, Fraktion strings, Einzelplan, abgeordnetenwatch share, roll-call match rate, rate and seconds per sitting, render RSS, extrapolation) and the identity check.
