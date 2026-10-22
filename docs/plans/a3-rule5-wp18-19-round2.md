@@ -67,3 +67,19 @@ The chair says "Birkwald", so the recipient match fails. WP 20/21 has none.
 3. R3: yes or no. If no, 18/17, 18/30, 18/39 and 18/94 must be excluded although they parse.
 4. R4: yes or no; and whether `last_name` should drop the initial (identity).
 5. Recurring kinds with no rule proposed yet (erwiderung-nested 7 sittings, erklaerung-nested 5, go-debate 4): exclusions now, or a later round.
+
+## Owner decisions, 2026-10-22
+
+1. **R1: R1b + R1c.** Structural consent and the extra offer phrasings. R1a (a longer closed list) is declined.
+2. **R2: yes.**
+3. **R3: yes.**
+4. **R4: yes**, for the recipient match only. Whether `last_name` drops the initial is deferred. After the pilot re-run, check whether the identity merge joins the 7 initial-printed MdBs across WP 18/19 and WP 20/21, and fix it then if it does not.
+5. **erwiderung-nested, erklaerung-nested, go-debate:** excluded now, with rules in a later round. Each gets a TODO, and each sitting leaves the list when its rule lands (with old/new figures).
+6. **Exclusion list approved: 73 of 484 sittings.** This corrects the 68 in the audit record: 5 sittings are blocked only by the 8 near-6a markers whose cause R1 does not fix. The list holds 70 refused sittings plus 18/28, 18/245 and 19/1, which parse but count wrongly:
+   18/1, 18/2, 18/3, 18/6, 18/8, 18/10, 18/11, 18/20, 18/21, 18/26, 18/28, 18/29, 18/36, 18/42, 18/43, 18/50, 18/63, 18/67, 18/83, 18/88, 18/89, 18/95, 18/97, 18/98, 18/110, 18/112, 18/113, 18/117, 18/118, 18/124, 18/127, 18/143, 18/158, 18/159, 18/160, 18/161, 18/170, 18/171, 18/180, 18/184, 18/190, 18/193, 18/215, 18/219, 18/221, 18/241, 18/245, 19/1, 19/12, 19/13, 19/14, 19/18, 19/20, 19/23, 19/32, 19/36, 19/40, 19/42, 19/44, 19/47, 19/59, 19/61, 19/68, 19/92, 19/102, 19/158, 19/170, 19/173, 19/189, 19/192, 19/193, 19/215, 19/239.
+   It is computed from [a3-wp18-19-blockers.tsv](a3-wp18-19-blockers.tsv) and assumes the R1–R4 sittings pass their unit review. A sitting that fails its review goes back on the list.
+7. **Role-less chair: built in this round** (TODO "Recognize the Sitzungsleitung …"). It fixes the live WP 21 miscount 21/17, and should take 18/28 and 18/95 off the list (18/10 too, unless another blocker turns up behind it). **Presidium Reden (ADR 0004): stays a TODO.** 18/1, 18/245 and 19/1 stay excluded.
+8. **Zwischenfrage counting: per exchange.** Consecutive asker markers inside one open exchange, with no new chair offer between them, are one unit. This applies to all Wahlperioden, so report the moved WP 20/21 counts old/new.
+9. **Backfill pacing: adopted and built in.** 2 s spacing, about 50 XML per window, a 60-minute pause, and a stop on the first answer over 10 s. Build it test-first. Measure DIP `/person` at the start of the pilot re-run, in small bursts, and stop on the first block.
+
+Build order for the round: R2, R4, R3, R1b+R1c, role-less chair, per-exchange counting, pacing. Each step is test-first and committed with its result. Then the new-rule unit review, the DIP check of the new 6c splits, the exclusion file, and the pilot re-run. Phase 3 still needs the owner's explicit go.
