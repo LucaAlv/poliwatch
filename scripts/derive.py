@@ -340,7 +340,7 @@ def member_profile_url(member: Mapping[str, Any]) -> str | None:
 
 def person_profile_url(url: Any) -> str | None:
     """``url`` when it is a page about one person: an MdB biography on
-    bundestag.de (``/abgeordnete/…``) or an abgeordnetenwatch profile; else None.
+    https on bundestag.de (``/abgeordnete/…``) or abgeordnetenwatch (``/profile/…``); else None.
     bundestag.de links an MP without a biography back to the Abstimmung itself
     (77 rows on the reference cache); that page names nobody."""
     if not url:
@@ -350,9 +350,11 @@ def person_profile_url(url: Any) -> str | None:
         host = parts.hostname
     except ValueError:
         return None
+    if parts.scheme != "https":
+        return None
     if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
         return str(url)
-    if host in {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"}:
+    if host in {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"} and parts.path.startswith("/profile/"):
         return str(url)
     return None
 

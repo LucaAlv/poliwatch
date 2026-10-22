@@ -342,7 +342,14 @@ class VoteMemberIdentityTests(unittest.TestCase):
         own = "https://www.bundestag.de/abgeordnete/biografien/A/x-1"
         aw = "https://www.abgeordnetenwatch.de/profile/ada-beispiel"
         self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": aw}, "profile_url": own}), aw)
-        for bad in ("https://evil.example/profile/ada", "javascript:alert(1)", "https://[invalid"):
+        for bad in (
+            "https://evil.example/profile/ada",
+            "javascript:alert(1)",
+            "javascript://www.abgeordnetenwatch.de/profile/x",
+            "http://www.abgeordnetenwatch.de/profile/ada-beispiel",
+            "https://www.abgeordnetenwatch.de/",
+            "https://[invalid",
+        ):
             with self.subTest(aw=bad):
                 self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}, "profile_url": own}), own)
                 self.assertIsNone(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}}))

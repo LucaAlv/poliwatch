@@ -1167,7 +1167,7 @@ class RepersistGuardTests(unittest.TestCase):
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
             build.require_vorgang_cache_for_tags(path, cache_of({"V1": vorgang("Recht")}), path.parent.parent, [{"report": report}])
 
-    # Value: protects=a replay refuses a cache that would turn a stored resolved or none vote context (votes.context_state, none since D5) into not_fetched even while the vote's tags stay known; fails_when=the guard checks only the tag tables, so a partial cache silently drops abstracts and vote_proceedings; why_new=the guard covered tags only; seam=none
+    # Value: protects=a replay refuses a cache that would turn a stored resolved or none vote context (votes.context_state; none since the B4 ship run 2 review, 2026-10-22) into not_fetched even while the vote's tags stay known; fails_when=the guard checks only the tag tables, so a partial cache silently drops abstracts and vote_proceedings; why_new=the guard covered tags only; seam=none
     def test_a_resolved_vote_context_is_protected_even_when_its_tags_stay_known(self) -> None:
         positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "document_numbers": ["21/1"]}])
         report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [positioned]}
@@ -1191,7 +1191,7 @@ class RepersistGuardTests(unittest.TestCase):
                 else:
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
                 build.require_vorgang_cache_for_tags(path, full, path.parent.parent, [{"report": report}])
-        # A context stored as none is a known answer too (D5, 2026-10-22); one stored
+        # A context stored as none is a known answer too (B4 ship run 2 review, 2026-10-22); one stored
         # as not_fetched or NULL was never known and may stay or degrade.
         for stored in ("none", "not_fetched", None):
             with self.subTest(stored=stored), tempfile.TemporaryDirectory() as tmp:

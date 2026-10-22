@@ -4,15 +4,13 @@ import unittest
 
 import _support  # noqa: F401
 import politikfelder
-from _votes_fixture import fractions_of, panel_for, vote_summary
+from _votes_fixture import fractions_of, vote_summary
 from features.votes import (
     CONTEXT_NO_VORGANG,
     CONTEXT_NONE,
     CONTEXT_NOT_FETCHED,
     document_source_links,
     render_document_links,
-    VotePanelContext,
-    render_vote_summary,
     result_badge_label,
 )
 
@@ -536,6 +534,9 @@ class VoteContextPanelTests(unittest.TestCase):
         self.assertIn("T · DIP", partial)
         self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NOT_FETCHED}</p>', partial)
         self.assertNotIn(CONTEXT_NOT_FETCHED, self.panel(["1"], "resolved", cache))
+        # A known Vorgang without a record says it in its own block, once.
+        recordless = self.panel(["1", "2"], "not_fetched", cache)
+        self.assertEqual(recordless.count(CONTEXT_NOT_FETCHED), 1)
 
     # Value: protects=a vote's two panels and its vote_proceedings name the same Vorgänge (D13); fails_when=the context is narrowed per rendering TOP; why_new=new block; seam=none
     def test_a_vote_under_two_tops_shows_one_selection_on_both_panels(self) -> None:

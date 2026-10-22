@@ -234,7 +234,9 @@ def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextStat
                 full = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in text.split("\n\n"))
                 body += f'<details class="vote-context-more"><summary>Ganze Beschreibung</summary>{full}</details>'
         blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
-    if vorgang_ids and state == "not_fetched":
+    # A Vorgang without a record already says so in its own block; the note marks
+    # what no block shows, a number the cache cannot resolve (D7).
+    if vorgang_ids and state == "not_fetched" and all(vorgang_id in records for vorgang_id in vorgang_ids):
         blocks.append(f'<p class="vote-context-gap">{html.esc(CONTEXT_NOT_FETCHED)}</p>')
     return (
         '<div class="vote-context">'
