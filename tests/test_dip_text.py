@@ -66,6 +66,7 @@ class AbstractTextTests(unittest.TestCase):
             with self.subTest(size=len(raw)):
                 started = time.perf_counter()
                 abstract_text(raw)
+                # gstack-timing-ok: the bound is the contract; a backtracking scan takes seconds, the linear one milliseconds
                 self.assertLess(time.perf_counter() - started, 0.5)
 
 
