@@ -415,10 +415,11 @@ def select_acquisition_protocols(
 
 
 # A backfill sends DIP thousands of requests in one run; on 2026-10-04 about
-# four a second drew a bot challenge that made sittings source_unavailable.
-# Not yet a measured safe rate: in the A3 pilot DIP stopped answering /person
-# after about 250 requests at this pause (docs/plans/a3-pilot.md).
-BACKFILL_SLEEP_SECONDS = 0.5
+# four a second drew a bot challenge that made sittings source_unavailable, and
+# in the A3 pilot DIP stopped answering /person after about 250 requests at
+# 0.5 s (docs/plans/a3-pilot.md). Decision 9 of the WP 18/19 round 2 sets 2 s;
+# the dserver XML of the same run is paced by dip.XmlPacer.
+BACKFILL_SLEEP_SECONDS = 2.0
 
 
 # A backfill's roll-call scan budget, in list pages of ten votes. It is a cap,
@@ -1597,7 +1598,8 @@ def reparse_cached_xml(
     return reparsed
 
 
-def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25) -> tuple[int, int]:
+def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause: float = 0.25,
+                      pacer: Any = None) -> tuple[int, int]:
     """Download the Plenarprotokoll XML of every cached report that has none in
     ``data/xml/`` (a public bundestag.de file, no API key). Returns (fetched,
     failed). Older builds did not keep the XML."""
@@ -1618,7 +1620,7 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
             continue
         try:
             publication.validate_external_url(protocol["xml_url"], "bundestag-xml")
-            text = dip.fetch_text(protocol["xml_url"])
+            text = pacer.fetch(protocol["xml_url"]) if pacer is not None else dip.fetch_text(protocol["xml_url"])
             # An error or maintenance page served with HTTP 200 must not become the cache.
             root = dip.ET.fromstring(text)
             wahlperiode, _, sitzung = document_number.partition("/")
@@ -1637,7 +1639,7 @@ def fetch_missing_xml(output_dir: Path, entries: list[dict[str, Any]], *, pause:
         path.parent.mkdir(parents=True, exist_ok=True)
         dip.write_text_atomic(path, text)
         fetched += 1
-        if pause:
+        if pause and pacer is None:
             time.sleep(pause)
     return fetched, failed
 
@@ -2396,6 +2398,7 @@ def write_report_and_page(
     roll_call_page_cache: dict[str, str] | None = None,
     vorgang_cache: dict[str, Any] | None = None,
     person_cache: dict[str, dict[str, Any]] | None = None,
+    xml_pacer: dip.XmlPacer | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -2427,6 +2430,7 @@ def write_report_and_page(
         roll_call_page_cache=roll_call_page_cache,
         person_cache=person_cache,
         xml_sink=xml_sink,
+        xml_pacer=xml_pacer,
     )
     report = dip.build_report(args, protocol=protocol)
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
@@ -11905,7 +11909,7 @@ def main() -> int:
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
         entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
-        fetched, failed = fetch_missing_xml(output_dir, entries)
+        fetched, failed = fetch_missing_xml(output_dir, entries, pacer=dip.XmlPacer())
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
             print("fetch-xml: next, run --offline --repersist to re-read Reden and Beiträge from it.", file=sys.stderr)
@@ -12156,6 +12160,7 @@ def main() -> int:
         )
 
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    xml_pacer = dip.XmlPacer()  # one dserver window budget for the whole run
     # One roll-call list page cache per build: every sitting reads the same
     # pages from the top, so only the first one pays for them.
     roll_call_page_cache: dict[str, str] = {}
@@ -12264,6 +12269,7 @@ def main() -> int:
                     database_page_href=dossier_database_page_href(args, database_path),
                     roll_call_page_cache=roll_call_page_cache,
                     person_cache=person_cache,
+                    xml_pacer=xml_pacer,
                     vorgang_cache=vorgang_cache,
                 ),
             )

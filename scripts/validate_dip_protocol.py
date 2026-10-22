@@ -27,7 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -74,6 +74,14 @@ class DipError(RuntimeError):
     def __init__(self, message: str, *, source_rejected: bool = False):
         super().__init__(message)
         self.source_rejected = source_rejected
+
+
+class SourceSlowError(RuntimeError):
+    """A source answered slower than the pacing allows: the run stops.
+
+    Deliberately not a DipError, which a build skips as one unavailable
+    sitting and goes on: a slow answer is dserver's first sign of a block.
+    """
 
 
 class SummaryError(RuntimeError):
@@ -329,6 +337,46 @@ def resolve_dokumentnummer(client: ApiClient, number: str, *, page_pause: float 
 
 def fetch_text(url: str) -> str:
     return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
+
+
+@dataclass
+class XmlPacer:
+    """Paces Plenarprotokoll XML requests to dserver.bundestag.de across one run
+    (decision 9, docs/plans/a3-rule5-wp18-19-round2.md). dserver grants a request
+    budget per window, not a rate (docs/plans/a3-pilot.md, Finding 2): about 50
+    XML at 2 s spacing, then a 60-minute pause, and the first answer over 10 s
+    stops the run."""
+
+    spacing: float = 2.0
+    window_size: int = 50
+    window_pause: float = 3600.0
+    slow_stop: float = 10.0
+    clock: Callable[[], float] = field(default=time.monotonic, repr=False)
+    sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
+    in_window: int = 0
+    last: float | None = None
+
+    def fetch(self, url: str) -> str:
+        if self.in_window >= self.window_size:
+            print(f"[xml] {self.in_window} XML in this window; pausing {self.window_pause / 60:g} minutes.",
+                  file=sys.stderr, flush=True)
+            self.sleep(self.window_pause)
+            self.in_window, self.last = 0, None
+        elif self.last is not None:
+            wait = self.spacing - (self.clock() - self.last)
+            if wait > 0:
+                self.sleep(wait)
+        started = self.clock()
+        try:
+            return fetch_text(url)
+        finally:
+            self.last = self.clock()
+            self.in_window += 1
+            took = self.last - started
+            if took > self.slow_stop:
+                raise SourceSlowError(
+                    f"{url} took {took:.1f} s (over {self.slow_stop:g} s): stopping before dserver blocks. "
+                    "Resume after a pause; fetched XML is kept.")
 
 
 def fetch_html(url: str) -> str:
@@ -3228,7 +3276,8 @@ def build_report(
         raise DipError(f"Protocol {protocol.get('id')} has no fundstelle.xml_url.")
 
     progress("Downloading XML transcript.")
-    xml_text = fetch_text(xml_url)
+    pacer = getattr(args, "xml_pacer", None)
+    xml_text = pacer.fetch(xml_url) if isinstance(pacer, XmlPacer) else fetch_text(xml_url)
     # The caller decides whether to keep the report; only then does its XML become
     # the cache, so a cached XML never outlives the report it was parsed into.
     xml_sink = getattr(args, "xml_sink", None)
