@@ -527,7 +527,7 @@ Each panel gets id="vote-<id>-top-<n>" (sitting-level: vote-<id>-sitzung); archi
 
 State: approved
 Actual answer: A) Id on the first panel only (D9, user answer 2026-10-19)
-Accepted scope: render passes a per-page set of seen vote ids. The first rendering in `iter_report_votes` order gets `id="vote-<id>"`, and later copies get no id. The archive href becomes `page#vote-<id>`. ~~A vote without an id keeps `#top-N` / `#sitting-votes`.~~ Tests: a duplicated vote has exactly one id and the archive href targets it. _Amended 2026-10-20: "a vote without an id keeps the TOP anchor" is withdrawn, because none exist (0/246) and `require_current_vote_shape` refuses the shape at report loading._
+Accepted scope: render passes a per-page set of seen vote ids. The first rendering in `iter_report_votes` order gets `id="vote-<id>"`, and later copies get no id. The archive href becomes `page#vote-<id>`. ~~A vote without an id keeps `#top-N` / `#sitting-votes`.~~ Tests: a duplicated vote has exactly one id and the archive href targets it. _Amended 2026-10-20: "a vote without an id keeps the TOP anchor" is withdrawn, because none exist (0/246) and `require_current_vote_shape` (now `derive.require_vote_shape`) refuses the shape at report loading._
 History: none
 
 ### R8: regression contract for existing behaviour
@@ -1224,7 +1224,7 @@ Scope the review flagged as beyond this plan, ratified as deliberate. Reverting 
 - **`.vote-no-result`**: the restyle in 638e9ba (spaced off the title, muted).
 - **`derive.report_drucksachen`'s BT filter**: Bundesrat papers share the number shape; the r6 recipe now filters `d.herausgeber = 'BT'` too (review fixes Step 6), so D1's equality holds by construction.
 - **The `vorgang()` fixture edit in `test_politikfelder.py`**: D11 itself makes the old `fetch_targets` expectation refetch `d`, so "must pass untouched" conflicted with D11. It joins R8's intentional updates.
-- **D9**: the id-less fallback ("a vote without an id keeps the TOP anchor") is withdrawn; 0 of 246 votes lack an id and report loading refuses that shape (`require_current_vote_shape`).
+- **D9**: the id-less fallback ("a vote without an id keeps the TOP anchor") is withdrawn; 0 of 246 votes lack an id and report loading, persist and the standalone renderer refuse that shape (`derive.require_vote_shape`, amended 2026-10-22).
 - **D7**: precedence is now: a vote whose narrow numbers name Vorgänge is `resolved` only when every one has a cached record and none of its numbers is missing from the cache (amended 2026-10-22, B4 ship review), else `not_fetched` with its `vote_proceedings` rows still written; with no Vorgang named, `not_fetched` when a number is missing from the cache, else `none`.
 - **R8**: `render_vote_summary(item, acquisition, panel)` takes one required `VotePanelContext` (E1); the vote-panel tests build it through `panel_for`.
 

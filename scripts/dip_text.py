@@ -22,7 +22,10 @@ _ABBREVIATIONS = frozenset(
     " abschn bd jh mio mrd tsd".split()
 )
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
-_TAG = re.compile(r"<[^>]*>")
+# The fallback for markup html.parser cannot read: a "<" that opens no tag stays text,
+# and a closed <script> or <style> goes with its text, as on the parser's path.
+_TAG = re.compile(r"<[!/?a-zA-Z][^>]*>")
+_SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
 
 
 class _AbstractParser(HTMLParser):
@@ -74,7 +77,8 @@ def abstract_text(raw: Any) -> str:
         malformed = True
     if malformed:
         # Keep the words rather than lose them: tags out, entities read, one paragraph.
-        return " ".join(html_module.unescape(_TAG.sub(" ", str(raw))).split())
+        text = _TAG.sub(" ", _SKIPPED_BLOCK.sub(" ", str(raw)))
+        return " ".join(html_module.unescape(text).split())
     paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
     return "\n\n".join(p for p in paragraphs if p)
 

@@ -36,6 +36,10 @@ class AbstractTextTests(unittest.TestCase):
         cases = [
             ("Vor <![oops]> nach &amp; mehr", "Vor nach & mehr"),
             ("<p>Eins</p> <script>zwei", "Eins zwei"),
+            # A closed <script> or <style> loses its text, as on the parser's path.
+            ("<style>p{}</style>Eins <SCRIPT>x()</script ><![oops]> zwei", "Eins zwei"),
+            # A "<" that opens no tag is text, not the start of one.
+            ("a < b und c > d <![oops]>", "a < b und c > d"),
         ]
         for raw_text, expected in cases:
             with self.subTest(raw=raw_text):

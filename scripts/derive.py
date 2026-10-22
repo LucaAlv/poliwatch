@@ -339,10 +339,11 @@ def item_votes(item: Mapping[str, Any]) -> list[dict[str, Any]]:
 def require_vote_shape(report: Mapping[str, Any]) -> None:
     """Raise ValueError for a report whose votes a reader would lose: a TOP's
     singular ``"vote"`` (a shape from before ``"votes"``), a ``votes`` or
-    ``sitting_votes`` value that is not a list, or a vote without an id. An absent,
-    null or empty value is no vote. None of these occurs in the current cache (0 of
-    246 votes); report loading, persist and the standalone renderer all refuse them,
-    so a stale report fails loudly instead of persisting as a sitting without votes."""
+    ``sitting_votes`` value that is not a list (``{}`` and ``""`` included), or a vote
+    without an id. An absent or null value, an empty list, or an empty ``"vote"`` is
+    no vote. None of these occurs in the current cache (0 of 246 votes); report
+    loading, persist and the standalone renderer all refuse them, so a stale report
+    fails loudly instead of persisting as a sitting without votes."""
     items = report.get("agenda_items") or []
     for item in items:
         if item.get("vote"):

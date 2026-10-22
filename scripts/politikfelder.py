@@ -539,9 +539,10 @@ def tags_for_vote(
 
 #: What ``vote_vorgang_ids`` says of a vote's context (``votes.context_state``):
 #: ``resolved``, the vote's narrow numbers name Vorgänge and every one has a cached
-#: record; ``not_fetched``, at least one Vorgang or Drucksache is not in the cache
-#: (offline build, failed fetch): a named Vorgang has no record, or the numbers name
-#: none and one of them is missing; rows that are known are still listed;
+#: record, and the cache knows all of its numbers; ``not_fetched``, at least one
+#: Vorgang or Drucksache is not in the cache (offline build, failed fetch): a named
+#: Vorgang has no record, or one of the vote's numbers is missing, whether or not the
+#: others name a Vorgang; rows that are known are still listed;
 #: ``none``, the cache knows every number and none names a Vorgang narrowly.
 ContextState = Literal["resolved", "none", "not_fetched"]
 CONTEXT_STATES: tuple[str, ...] = get_args(ContextState)
