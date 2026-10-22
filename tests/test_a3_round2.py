@@ -138,5 +138,70 @@ class NestedRedeFloorWordingTests(unittest.TestCase):
         self.assertEqual([s['rede_id'] for s in top['speeches']], ['R'])
 
 
+class ConsentAndOfferTests(unittest.TestCase):
+    """R1b: a short Redner turn after the chair's offer is consent unless it refuses.
+    R1c: "Darf sie (das)?", "Mögen Sie?", "Gestatten Sie?" and "Zusatzfrage" are
+    an offer when the chair's turn names the asker."""
+
+    # 18/171: no request wording, so only the Redner's consent grants (6a).
+    OFFER = 'Herr Kollege Haupt, darf die Kollegin Konrad eine Zwischenfrage stellen?'
+
+    def body(self, offer, consent, asker='Konrad'):
+        return ('<rede id="R">' + redner('A', 'Haupt', 'CDU/CSU') + '<p>Rede.</p>'
+                '<name>Vizepräsidentin Petra Pau:</name><p>' + offer + '</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>' + consent + '</p>'
+                + redner('B', asker, 'FDP') + '<p>Ich halte das für falsch.</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Weiter.</p></rede>')
+
+    def assert_granted(self, offer, consent):
+        _top, contributions = parse(self.body(offer, consent))
+        self.assertEqual(contributions, [('zwischenfrage', 'Ich halte das für falsch.')])
+
+    def assert_refused(self, offer, consent, asker='Konrad'):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            parse(self.body(offer, consent, asker))
+
+    def test_a_short_turn_after_the_offer_is_consent(self):
+        for consent in ['Aber sicher.', 'Wenn es denn sein muss.', 'Von mir aus.', 'Sicherlich, Herr Kollege.',
+                        'Mit dem größten Vergnügen, Frau Präsidentin.', 'Ich bitte darum.', 'Och ja.',
+                        'Gerne, das verlängert meine knappe Redezeit.']:
+            with self.subTest(consent=consent):
+                self.assert_granted(self.OFFER, consent)
+
+    def test_a_refusal_word_or_a_long_turn_is_not_consent(self):
+        for consent in ['Nein, danke.', 'Nee.', 'Lieber nicht.', 'Jetzt nicht, Frau Präsidentin.', 'Keine Zwischenfragen.',
+                        'Später gerne.',
+                        'Ich würde gerne erst einmal meinen Gedanken zu Ende führen, dann sehen wir weiter, ja.']:
+            with self.subTest(consent=consent):
+                self.assert_refused(self.OFFER, consent)
+
+    def test_the_asker_must_still_match_the_offer(self):
+        self.assert_refused('Gestatten Sie eine Zwischenfrage der Kollegin Meier?', 'Aber sicher.')
+
+    def test_short_offer_wordings_that_name_the_asker(self):
+        for offer in ['Die Kollegin Konrad möchte Ihnen das gerne erklären. Darf sie das?',
+                      'Frau Konrad würde gerne etwas sagen. Darf sie?',
+                      'Frau Kollegin Konrad hat noch Gesprächsbedarf mit Ihnen. Mögen Sie?',
+                      'Frau Konrad möchte etwas fragen. Gestatten Sie?',
+                      'Herr Kollege Haupt, gestatten Sie eine Zusatzfrage der Kollegin Konrad?']:
+            with self.subTest(offer=offer):
+                self.assert_granted(offer, 'Gern.')
+
+    def test_a_short_offer_wording_must_name_the_asker(self):
+        for offer in ['Darf sie das?', 'Mögen Sie?', 'Gestatten Sie?', 'Eine Zusatzfrage?']:
+            with self.subTest(offer=offer):
+                self.assert_refused(offer, 'Gern.')
+
+    def test_a_short_offer_naming_someone_else_is_a_mismatch(self):
+        body = ('<rede id="R">' + redner('A', 'Haupt', 'CDU/CSU') + '<p>Rede.</p>'
+                '<name>Vizepräsidentin Petra Pau:</name><p>Frau Meier möchte etwas sagen. Darf sie?</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Gern.</p>'
+                + redner('B', 'Konrad', 'FDP') + '<p>Ich halte das für falsch.</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Weiter.</p>'
+                + redner('C', 'Meier', 'SPD') + '<p>Das ist doch so.</p></rede>')
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            parse(body)
+
+
 if __name__ == '__main__':
     unittest.main()

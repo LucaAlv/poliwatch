@@ -146,7 +146,7 @@ class GrantEvidenceTests(unittest.TestCase):
 
     def test_a_long_or_mixed_answer_is_not_a_consent(self):
         offer = 'Frau Kollegin, darf Ihnen der Kollege Gast eine Zwischenfrage stellen?'
-        for consent in ['Ja, wenn ich danach noch etwas länger über das Thema reden darf.', 'Ja. Nein, doch nicht.']:
+        for consent in ['Ja, wenn ich danach noch etwas länger über das wichtige Thema reden darf.', 'Ja. Nein, doch nicht.']:
             with self.subTest(consent=consent):
                 with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
                     parse(self.body(offer, consent))

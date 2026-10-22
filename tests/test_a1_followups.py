@@ -168,7 +168,8 @@ class ContributionTests(unittest.TestCase):
         rede = root.find(".//rede[@id='ID205104600']")
         for p in rede.findall('p'):
             if dip.elem_text(p) == 'Von der CDU/CSU? – Ja.':
-                p.text = 'Vielen Dank.'
+                # A turn that carries on is no consent; a short one would be (R1b).
+                p.text = 'Ich fahre mit meinem Gedanken fort, denn die Zeit ist knapp und das Thema wichtig.'
             # The asker's opening thanks would be grant evidence of its own (rule 5, 6a).
             p.text = (p.text or '').replace(', dass Sie die Zwischenfrage zulassen', '')
         with self.assertRaisesRegex(ValueError, 'ID205104600 marker 4'):

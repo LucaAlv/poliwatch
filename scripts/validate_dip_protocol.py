@@ -535,11 +535,12 @@ NESTED_GRANT_EVIDENCE = re.compile(
 # turn before it is a short consent that followed the chair's offer of a
 # question, or (2) the turn itself opens by thanking for being allowed to ask.
 NESTED_OFFER = re.compile(r"\b(?:Zwischen)?(?:Fragen?|Bemerkung(?:en)?)\b", re.IGNORECASE)
-_CONSENT_ATOM = (r"(?:aber\s+)?(?:ja|gerne?|bitte|selbstverständlich|natürlich|immer|klar"
-                 r"|die will ich erlauben|an mir soll das nicht scheitern|das schaffe ich)")
-NESTED_CONSENT = re.compile(
-    rf"\W*{_CONSENT_ATOM}(?:[\s,–-]+{_CONSENT_ATOM})*(?:,?\s+(?:Herr|Frau)\s+(?:Vize)?Präsident(?:in)?)?\W*",
-    re.IGNORECASE)
+# R1c: short offers that name no Frage or Bemerkung. They are an offer only
+# when the chair's turn names the would-be asker.
+NAMED_OFFER = re.compile(r"\bDarf (?:er|sie)(?: das)?\?|\bMögen Sie\?|\bGestatten Sie\?|\bZusatzfrage\b", re.IGNORECASE)
+# R1b: the Redner's short turn after an offer is consent unless it refuses.
+CONSENT_MAX_WORDS = 12
+CONSENT_REFUSAL = re.compile(r"\b(?:nein|nee|nicht|kein\w*|später)\b", re.IGNORECASE)
 # 6b: the chair gives the floor, with no question asked, to an MdB whose
 # turn says the Redner addressed them.
 ADDRESSED_MEMBER = re.compile(
@@ -554,8 +555,7 @@ NESTED_OPENING_THANKS = re.compile(
 
 def nested_consent(turn: list[str]) -> bool:
     text = clean_text(" ".join(turn))
-    # The first sentence is the consent; a "nein" or "nicht" anywhere takes it back.
-    return len(text.split()) <= 10 and not re.search(r"\b(?:nein|nee|nicht)\b", text, re.IGNORECASE) and bool(NESTED_CONSENT.fullmatch(speech_kinds._SENTENCE_END.split(text)[0]))
+    return 0 < len(text.split()) <= CONSENT_MAX_WORDS and not CONSENT_REFUSAL.search(text)
 
 
 # Matched against the role with whitespace removed ("Vizepräsident in").
@@ -810,6 +810,11 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     segment["paragraphs"].append(text)
                 chair_text += " " + text
                 offer_open = offer_open or bool(NESTED_OFFER.search(text))
+                if NAMED_OFFER.search(text) and not NESTED_OFFER.search(chair_text):
+                    named = {name for name in candidates
+                             if re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", chair_text, re.IGNORECASE)}
+                    if named:
+                        offer_open, pending_nested_names = True, named
                 question_request = re.search(
                     r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
                 interrupted_request = re.search(r"Ich wollte Sie fragen:.*\bHerr\b.*würde gerne\s*[–-]", chair_text)
