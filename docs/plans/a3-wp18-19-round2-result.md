@@ -200,7 +200,7 @@ The owner asked for the costs before deciding. The figures come from the parse a
 - A listed number is skipped before acquisition.
 - `coverage-exclusions.json` records it with the reason `excluded`, a new failure code. It no longer keeps a D4 diagnostic, because nothing is parsed.
 - The coverage line now reads "nicht erfasst (ausgeschlossen)". The manifest key `coverage.source_rejected` is unchanged.
-- **Known limit:** `--offline --repersist` and `--fetch-xml` read cached reports and do not consult the list. A sitting cached before it was listed would still be re-persisted.
+- **Known limit:** `--offline --repersist` and `--fetch-xml` read cached reports and do not consult the list. A sitting cached before it was listed would still be re-persisted. *Fixed after round 3: offline runs and `--fetch-xml` leave out every sitting the exclusion record lists.*
 
 **Parse audit:**
 - The reference store's XML stands in for the deleted gate. The parser before this round reproduces `parse-r2b.json` exactly on it.

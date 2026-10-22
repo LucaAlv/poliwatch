@@ -147,7 +147,7 @@ What it shows:
 
 ## Known limit of the exclusion list (D2)
 
-`--exclude-document-number` passes a sitting only when the parser refuses it with a source rejection (`DipError(source_rejected=True)`). A role no Sprechrolle rule maps raises `SprechrolleError` during acquisition instead. That error is not a `DipError`, so a listed number does not pass it: the run ends with a traceback and no `[summary]` (as batch 1 did on 18/100). With the presidium roles unmapped, sittings like 18/100 take that path. Treating an unmapped role at acquisition as a source rejection would change D4's semantics, so it is a decision, not a fix made here.
+Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatever the parser says, so an unmapped role in it no longer ends the run. Since the commit after abd3ddf, offline runs and `--fetch-xml` also leave out every sitting `data/coverage-exclusions.json` lists, so a report cached before its sitting was listed stays out of the store.
 
 ## What is open before Phase 3
 

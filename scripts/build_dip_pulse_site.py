@@ -573,6 +573,17 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The cached entries minus the sittings the exclusion record lists (D2). An
+    offline run passes no list, and a report cached before its sitting was
+    listed is still on disk; the record keeps it out of the store."""
+    recorded = {normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)}
+    return [
+        entry for entry in entries
+        if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in recorded
+    ]
+
+
 def update_coverage_exclusions(
     output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
@@ -1860,7 +1871,7 @@ def repersist_cached_reports(
     XML; a report from before A1 without one stops the run. Returns the loaded entries (the render reuses them) and the
     ``Rebuilt`` result. Raises CachedReportError or DatabaseRebuildError
     with the previous store untouched."""
-    cached = load_existing_detail_entries(output_dir, protocols, strict=True)
+    cached = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols, strict=True))
     reparse_cached_xml(output_dir, cached)
     require_parsed_reports(cached)
     entries = merge_detail_entries(protocols, cached, [])
@@ -11893,7 +11904,7 @@ def main() -> int:
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
-        entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
         fetched, failed = fetch_missing_xml(output_dir, entries, pacer=dip.XmlPacer())
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
@@ -12058,7 +12069,7 @@ def main() -> int:
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
-            cached_entries = load_existing_detail_entries(output_dir, protocols)
+            cached_entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols))
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2

@@ -440,6 +440,50 @@ class ReparseCachedXmlTests(unittest.TestCase):
         self.assertEqual(build.reparse_cached_xml(self.output_dir, entries), 0)
         self.assertEqual(entries[0]["report"]["agenda_items"][0]["xml_speakers"][0]["rede_id"], "OLD")
 
+    def _cache_listed_sitting(self) -> None:
+        """21/7 cached before it was listed: its XML holds a role no rule maps, and
+        the record of a later run lists it as excluded (D2)."""
+        xml = (FIXTURES / "speech-kinds-befragung-fragestunde.xml").read_text(encoding="utf-8")
+        xml = xml.replace('sitzung-nr="6"', 'sitzung-nr="7"').replace("Bundesminister des Innern", "Hofnarr")
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-7.xml").write_text(xml, encoding="utf-8")
+        report = json.loads(json.dumps(self.report))
+        report["protocol"] = {"id": "5710", "dokumentnummer": "21/7", "datum": "2025-05-15",
+                              "xml_url": "https://dserver.bundestag.de/7.xml"}
+        (self.output_dir / "data" / "plenarprotokoll-21-7.json").write_text(json.dumps(report), encoding="utf-8")
+        record = {"exclusions": [{"document_number": "21/7", "date": "2025-05-15", "reason": "excluded",
+                                  "recorded_at": "2026-10-22T00:00:00Z"}]}
+        (self.output_dir / "data" / build.COVERAGE_EXCLUSIONS_FILENAME).write_text(json.dumps(record), encoding="utf-8")
+
+    # Value (D2): protects=a sitting on the exclusion record stays out of the store when an
+    # offline repersist re-reads the cache it was written to before it was listed;
+    # fails_when=repersist re-parses every cached report, so the listed sitting's unmapped role
+    # stops the run or its units reach the store; seam=repersist_cached_reports.
+    def test_repersist_leaves_out_a_recorded_exclusion_cached_before_it_was_listed(self) -> None:
+        self._cache_listed_sitting()
+        entries, _ = build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
+        self.assertEqual([e["report"]["protocol"]["dokumentnummer"] for e in entries], ["21/6"])
+        conn = sqlite3.connect(self.database)
+        try:
+            self.assertEqual([r[0] for r in conn.execute("SELECT DISTINCT protocol_id FROM speeches")], [
+                conn.execute("SELECT id FROM protocols WHERE document_number = '21/6'").fetchone()[0]])
+        finally:
+            conn.close()
+
+    # Value (D2): protects=--fetch-xml spends no download on a sitting the record excludes;
+    # fails_when=the fetch reads every cached report; seam=main(--fetch-xml) with the fetch stubbed.
+    def test_fetch_xml_skips_a_recorded_exclusion(self) -> None:
+        self._cache_listed_sitting()
+        (self.output_dir / "data" / "xml" / "plenarprotokoll-21-7.xml").unlink()
+        stderr = io.StringIO()
+        argv = ["build", "--fetch-xml", "--output-dir", str(self.output_dir)]
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(
+            build.dip, "fetch_text", return_value=protocol_xml("21/7")
+        ) as fetch, contextlib.redirect_stderr(stderr):
+            code = build.main()
+        self.assertEqual(code, 0, stderr.getvalue())
+        fetch.assert_not_called()
+        self.assertFalse((self.output_dir / "data" / "xml" / "plenarprotokoll-21-7.xml").exists())
+
     def test_repersist_stores_reden_and_contributions_apart(self) -> None:
         build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
         conn = sqlite3.connect(self.database)
