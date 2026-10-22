@@ -153,6 +153,39 @@ def load_local_env(path: Path | None = None) -> None:
             os.environ[key] = value
 
 
+#: Set to a file path to append one line per outbound request attempt (UTC time,
+#: source, target, attempt, outcome, seconds), so the moment a source stops
+#: answering is known exactly (A3 pilot, Finding 2). The DIP key is never written.
+REQUEST_LOG_ENV = "DIP_REQUEST_LOG"
+_APIKEY_RE = re.compile(r"apikey=[^&\s]*")
+
+
+def _read_logged(req: urllib.request.Request, timeout: float, source: str, target: str, attempt: int) -> bytes:
+    """urlopen and read the body; with DIP_REQUEST_LOG set, log the attempt
+    whatever its outcome."""
+    started = time.monotonic()
+    outcome = "?"
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            body = res.read()
+            outcome = str(getattr(res, "status", "") or "ok")
+        return body
+    except urllib.error.HTTPError as exc:
+        outcome = f"HTTP {exc.code}"
+        raise
+    except BaseException as exc:
+        outcome = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        log_path = os.environ.get(REQUEST_LOG_ENV)
+        if log_path:
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            fields = [stamp, source, target, f"attempt {attempt + 1}", outcome, f"{time.monotonic() - started:.2f}s"]
+            line = _APIKEY_RE.sub("apikey=…", "\t".join(" ".join(f.split()) for f in fields))
+            with open(log_path, "a", encoding="utf-8") as log:
+                log.write(line + "\n")
+
+
 @dataclass(frozen=True)
 class ApiClient:
     api_key: str
@@ -176,11 +209,11 @@ class ApiClient:
         params["apikey"] = self.api_key
         params.setdefault("format", "json")
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params, doseq=True)}"
+        target = f"{path}?{urllib.parse.urlencode({k: v for k, v in params.items() if k != 'apikey'}, doseq=True)}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         for attempt in range(self.retries + 1):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as res:
-                    data = json.loads(res.read().decode("utf-8"))
+                data = json.loads(_read_logged(req, self.timeout, "dip", target, attempt).decode("utf-8"))
                 break
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
@@ -253,10 +286,11 @@ def _fetch_page(url: str, accept: str, kind: str) -> str:
     votes to partial.
     """
     req = urllib.request.Request(url, headers={"Accept": accept})
+    parts = urllib.parse.urlsplit(url)
+    target = parts.path + (f"?{parts.query}" if parts.query else "")
     for attempt in range(PAGE_FETCH_RETRIES + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as res:
-                return res.read().decode("utf-8")
+            return _read_logged(req, 60, parts.netloc, target, attempt).decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DipError(f"Failed to fetch {kind} {url}: {exc}") from exc
         except urllib.error.HTTPError as exc:

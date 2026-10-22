@@ -48,6 +48,7 @@ SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Fo
 | bash + git | The preview script is bash. On Windows use WSL, or call `build_dip_pulse_site.py` directly. |
 | `DIP_API_KEY` | Required for every online fetch. Not needed for offline rebuilds. |
 | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Only for generating optional AI summaries. |
+| `DIP_REQUEST_LOG` | Optional. A file path: every DIP API, XML and bundestag.de request attempt appends one tab-separated line (UTC time, `dip` or the host, path and query, attempt, status or error, seconds). The API key is never written. Use it to see exactly when a source stopped answering. |
 
 Getting a DIP API key: the Bundestag publishes a shared public key on the [DIP API help page](https://dip.bundestag.de/%C3%BCber-dip/hilfe/api) (no registration), or you can request a personal, permanently valid key by e-mail to `parlamentsdokumentation@bundestag.de`.
 
