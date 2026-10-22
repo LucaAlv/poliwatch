@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.6.0] - 2026-10-22
+
+### Fixed
+
+- Protocol citations now consistently use `BT-PlPr.` with their document number. Bill timelines and fact sources identify Bundestag and Bundesrat documents by chamber and type while preserving their source links.
+
 ## [0.20.5.1] - 2026-10-22
 
 ### Fixed
