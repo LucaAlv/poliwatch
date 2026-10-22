@@ -167,12 +167,13 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(after["split_rede_ids"], before["split_rede_ids"] + 1)
         self.assertEqual(after["synthetic_rede_ids"], before["synthetic_rede_ids"])
 
-    # Value (D2): protects=a sitting kept out by a reviewed source refusal is a visible,
+    # Value (D2): protects=a sitting kept out by the reviewed exclusion list is a visible,
     # counted coverage gap on the Daten page; fails_when=the export forgets it or the page
     # does not name it; seam=export_distribution_data + render_daten_datenstand.
     def test_an_excluded_sitting_is_counted_as_not_covered(self) -> None:
         manifest = self.export(excluded_sittings=["18/84"])
-        self.assertEqual(manifest["coverage"]["source_rejected"], ["18/84"])
+        self.assertEqual(manifest["coverage"]["excluded"], ["18/84"])
+        self.assertNotIn("source_rejected", manifest["coverage"])
         html = b.render_daten_datenstand(manifest)
         self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84", html)
         self.assertNotIn("ausgeschlossen", b.render_daten_datenstand(self.export(force=True)))

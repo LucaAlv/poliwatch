@@ -2886,7 +2886,7 @@ def _inputs_hash(
         "issues_url": issues_url,
         "catalog_count": catalog_count,
         "dossier_count": dossier_count,
-        "source_rejected": sorted(excluded_sittings),
+        "excluded": sorted(excluded_sittings),
         "readiness": {
             feature_id: (readiness or {}).get(feature_id, "unavailable") for feature_id in ("votes", "aw-profiles", "mp-roster")
         },
@@ -3502,7 +3502,7 @@ def _run_export(
             "synthetic_rede_ids": synthetic_rede_ids,
             "split_rede_ids": split_rede_ids,
             "conflicting_votes": conflicting_votes,
-            "source_rejected": sorted(excluded_sittings, key=lambda number: [int(part) for part in number.split("/") if part.isdigit()]),
+            "excluded": sorted(excluded_sittings, key=lambda number: [int(part) for part in number.split("/") if part.isdigit()]),
         },
     }
     return manifest
@@ -3636,11 +3636,11 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         f"{pulse_html.format_int(coverage['dossier_count'])} von {pulse_html.format_int(coverage['catalog_count'])} "
         "Protokollen im Katalog als Dossier erfasst"
     )
-    rejected = coverage.get("source_rejected") or []
-    if rejected:
+    excluded = coverage.get("excluded") or []
+    if excluded:
         coverage_line += (
-            f" &middot; {pulse_html.format_int(len(rejected))} nicht erfasst (ausgeschlossen): "
-            + pulse_html.esc(", ".join(rejected))
+            f" &middot; {pulse_html.format_int(len(excluded))} nicht erfasst (ausgeschlossen): "
+            + pulse_html.esc(", ".join(excluded))
         )
     bausteine_labels = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
     bausteine_line = " &middot; ".join(
