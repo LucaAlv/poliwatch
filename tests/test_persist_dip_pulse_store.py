@@ -22,7 +22,7 @@ class SchemaGuardTests(unittest.TestCase):
         self.assertNotIn("agenda_item_politikfelder", {r[0] for r in conn.execute("SELECT name FROM sqlite_master")})
         conn.close()
 
-    # Value: protects=a schema 5 store (sachgebiet present, no proceedings.abstract) is refused with the repersist instruction instead of being stamped 6 with an empty vote_proceedings and NULL context states; fails_when=require_current_schema stops checking proceedings.abstract, so a plain --offline build exports a format 6 copy without any vote context; why_new=B4 bumps the schema to 6; seam=none
+    # Value: protects=a schema 5 store (sachgebiet present, no proceedings.abstract) is refused with the repersist instruction instead of being stamped 6 with an empty vote_proceedings and NULL context states; fails_when=require_current_schema stops checking proceedings.abstract, so a plain --offline build exports a format 7 copy without any vote context; why_new=B4 bumps the schema to 6; seam=none
     def test_a_schema_5_store_without_proceedings_abstract_is_refused(self):
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE proceedings (id TEXT PRIMARY KEY, title TEXT, sachgebiet TEXT)")

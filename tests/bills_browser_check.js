@@ -83,7 +83,12 @@
   if (!root && document.querySelector('.bill-detail-grid')) {
     assert(document.querySelectorAll('main').length === 1, 'detail must have one reading landmark');
     assert([...document.querySelectorAll('main section')].map(s => s.id).join(',') ===
-      'verlauf,debatten,redner,abstimmungen,dokumente,quellen', 'detail source order changed');
+      'verlauf,plenarstellen,redner,abstimmungen,dokumente,quellen', 'detail source order changed');
+    const plenaryLink = document.querySelector('.bill-section-nav a[href="#plenarstellen"]');
+    const plenarySection = document.getElementById(plenaryLink?.hash.slice(1));
+    assert(plenaryLink?.textContent === 'Beratungen im Plenum' &&
+      plenarySection?.querySelector('h2').textContent === 'Beratungen im Plenum',
+      'plenary navigation must resolve to its matching section heading');
     const speakers = [...document.querySelectorAll('.bill-speakers li')];
     assert(speakers.length === 15 && speakers.filter(e => e.checkVisibility()).length === 12,
       'detail must retain all speakers while initially showing twelve');

@@ -263,7 +263,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
-    # Value: protects=format 6 carries a vote's context to the download: proceedings.abstract, the vote_proceedings junction and votes.context_state round-trip, with captions on the Daten page; fails_when=a new column or table is dropped from the export, or the page falls back to the generic caption; why_new=B4 adds them (D7); seam=none
+    # Value: protects=format 7 carries a vote's context to the download: proceedings.abstract, the vote_proceedings junction and votes.context_state round-trip, with captions on the Daten page; fails_when=a new column or table is dropped from the export, or the page falls back to the generic caption; why_new=B4 adds them (D7); seam=none
     def test_vote_context_round_trips_in_format_6_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
@@ -274,7 +274,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 6)
+        self.assertEqual(manifest["export_format"], 7)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -311,8 +311,10 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_tables_carry_column_provenance_and_fk_targets(self) -> None:
         manifest = self.export()
         mps_table = next(t for t in manifest["tables"] if t["name"] == "mps")
-        aw_column = next(c for c in mps_table["columns"] if c["name"] == "aw_politician_id")
-        self.assertEqual(aw_column["source"], "abgeordnetenwatch")
+        mp_columns = {c["name"]: c for c in mps_table["columns"]}
+        for name in ("aw_politician_id", "profile_url", "birth_year", "gender", "profession", "wahlkreis", "bundesland"):
+            with self.subTest(column=name):
+                self.assertEqual(mp_columns[name]["source"], "abgeordnetenwatch")
         speeches_table = next(t for t in manifest["tables"] if t["name"] == "speeches")
         mp_id_column = next(c for c in speeches_table["columns"] if c["name"] == "mp_id")
         self.assertEqual(mp_id_column["fk"], "mps.id")

@@ -1,6 +1,6 @@
 # Stable IDs, person URLs and build-store backups
 
-Build-store schema **6** and export format **6** use source-derived text IDs. Schema 3 and export format 2 replaced insertion-order IDs with them; schema 4 and export format 4 key a Drucksache by its issuer and number instead of its URL; schema 5 and export format 5 add the Politikfeld tag tables, which carry no ids of their own; schema 6 and export format 6 add a vote's DIP context (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`), again without new ids. Existing stores require explicit replay:
+Build-store schema **6** and export format **7** use source-derived text IDs. Schema 3 and export format 2 replaced insertion-order IDs with them; schema 4 and export format 4 key a Drucksache by its issuer and number instead of its URL; schema 5 and export format 5 add the Politikfeld tag tables, which carry no ids of their own; export format 6 corrects the abgeordnetenwatch MP column source tags without changing row ids or the store schema; schema 6 and export format 7 add a vote's DIP context (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`), again without new ids. Existing stores require explicit replay:
 
 ```bash
 python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir>

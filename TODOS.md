@@ -454,18 +454,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Stop calling a Plenarstelle a "Debatte" on the bill pages
-
-**What:** The bill detail section "Debatten" and the overview count "N Debatten" (`render_bill_detail`, `render_bills_index` in `scripts/build_dip_pulse_site.py`) count Plenarstellen, i.e. `protocol_refs`. Relabel them (for example "Beratungen im Plenum" or "Plenarstellen", with a glossary tooltip) or count only Plenarstellen with at least one Rede as Debatten. Update the section anchor `#debatten`, the harness section-order assertion and the CHANGELOG wording of the next release.
-
-**Why:** CONTEXT.md lists "Debatte" under Avoid for Plenarstelle and Tagesordnungspunkt, because a Tagesordnungspunkt can pass without any Rede; a count of "3 Debatten" can include sittings where nobody spoke. The v0.18.0.0 docs audit blocked on this; the owner kept the glossary rule and shipped with the conflict named.
-
-**Context:** `xml_speech_count` on each ref (`protocol_refs[].speech_count`) already says whether anyone spoke. Decide label vs count semantics before editing.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Bill overview polish: controls role, same-day step ties, diacritic-insensitive search
 
 **What:** (1) Give `<div class="bill-controls" aria-label=…>` a `role="search"` (or `group`) so the label is announced. (2) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (3) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
@@ -711,16 +699,6 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Effort:** M
 **Priority:** P2
 **Depends on:** Lawyer answer on the address (ADR 0003, question 1)
-
-### Tag the abgeordnetenwatch MP columns with their real source
-
-**What:** Move `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` from `_COLUMN_SOURCE_DIP_ROSTER` to `_COLUMN_SOURCE_ABGEORDNETENWATCH` (`scripts/build_dip_pulse_site.py`), with a test that pins the tags. Afterwards, delete the "Known gap" paragraph in `docs/data-license.md`.
-
-**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
 
 ### Cite protocols as „BT-PlPr." per DIP no. 4c
 
@@ -1166,6 +1144,30 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Tag the abgeordnetenwatch MP columns with their real source
+
+**Completed:** v0.20.5.1 (2026-10-22). `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` now carry the `abgeordnetenwatch` source tag. The export test pins all seven abgeordnetenwatch MP columns, export format 6 invalidates cached manifests, and the "Known gap" paragraph in `docs/data-license.md` is removed.
+
+**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Stop calling a Plenarstelle a "Debatte" on the bill pages
+
+**What:** The bill detail section "Debatten" and the overview count "N Debatten" (`render_bill_detail`, `render_bills_index` in `scripts/build_dip_pulse_site.py`) count Plenarstellen, i.e. `protocol_refs`. Relabel them (for example "Beratungen im Plenum" or "Plenarstellen", with a glossary tooltip) or count only Plenarstellen with at least one Rede as Debatten. Update the section anchor `#debatten`, the harness section-order assertion and the CHANGELOG wording of the next release.
+
+**Why:** CONTEXT.md lists "Debatte" under Avoid for Plenarstelle and Tagesordnungspunkt, because a Tagesordnungspunkt can pass without any Rede; a count of "3 Debatten" can include sittings where nobody spoke. The v0.18.0.0 docs audit blocked on this; the owner kept the glossary rule and shipped with the conflict named.
+
+**Context:** `xml_speech_count` on each ref (`protocol_refs[].speech_count`) already says whether anyone spoke. Decide label vs count semantics before editing.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** v0.20.5.0 (2026-10-22). Implemented [the relabeling plan](docs/plans/relabel-bill-debatten.md): overview counts, detail heading/navigation, accessible label, empty state and discovery copy now use "Beratungen im Plenum"; the section anchor is `#plenarstellen`. Every protocol reference still counts and remains linked, including zero or missing speech counts. The explanation reuses the Tagesordnungspunkt glossary. Design documentation and the next-release changelog are aligned. Validation: 28 bill tests passed; the full Python 3.13 suite ran 1,365 tests with one skipped; desktop/mobile browser checks passed. Collection, persisted data and count calculations are unchanged.
 
 ### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
 
