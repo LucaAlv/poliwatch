@@ -1165,6 +1165,31 @@ class RepersistGuardTests(unittest.TestCase):
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
             build.require_vorgang_cache_for_tags(path, cache_of({"V1": vorgang("Recht")}), path.parent.parent, [{"report": report}])
 
+    # Value: protects=a replay refuses a cache that would turn a stored resolved vote context (votes.context_state) into not_fetched even while the vote's tags stay known; fails_when=the guard checks only the tag tables, so a partial cache silently drops abstracts and vote_proceedings; why_new=the guard covered tags only; seam=none
+    def test_a_resolved_vote_context_is_protected_even_when_its_tags_stay_known(self) -> None:
+        positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "document_numbers": ["21/1"]}])
+        report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [positioned]}
+        full = cache_of({"V1": vorgang("Recht"), "A": vorgang("Recht")}, {"21/1": ["A"]})
+        partial = cache_of({"V1": vorgang("Recht")})
+        for with_context in (True, False):
+            with self.subTest(schema6=with_context), tempfile.TemporaryDirectory() as tmp:
+                path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
+                with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                    if with_context:
+                        conn.execute("CREATE TABLE votes (id, context_state)")
+                        conn.execute("INSERT INTO votes VALUES ('v1', 'resolved')")
+                    else:
+                        conn.execute("CREATE TABLE votes (id)")  # schema 5: no context stored yet
+                        conn.execute("INSERT INTO votes VALUES ('v1')")
+                if with_context:
+                    with self.assertRaisesRegex(
+                        build.DatabaseRebuildError, "0 previously known votes not_fetched and 1 previously resolved vote contexts"
+                    ):
+                        build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+                else:
+                    build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+                build.require_vorgang_cache_for_tags(path, full, path.parent.parent, [{"report": report}])
+
     def test_equal_swaps_and_net_improvements_cannot_hide_a_known_identity_loss(self) -> None:
         for kind in ("top", "vote"):
             for recovered in (1, 2):

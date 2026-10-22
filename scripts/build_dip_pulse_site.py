@@ -863,6 +863,11 @@ class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read."""
 
 
+# What a build prints when a cached report stops it before any network work, so
+# the online update that would re-fetch the sitting cannot run either.
+CACHED_REPORT_FIX = "Fix: move that report out of data/; an online update then re-fetches its sitting"
+
+
 def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> None:
     """Refuse a report with a TOP's singular ``"vote"`` or a vote without an id.
 
@@ -872,13 +877,12 @@ def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> Non
     for item in report.get("agenda_items") or []:
         if "vote" in item:
             raise CachedReportError(
-                f"{report_path}: TOP {item.get('index')} has a singular \"vote\" (a shape from before \"votes\"); "
-                "an online update re-fetches it"
+                f"{report_path}: TOP {item.get('index')} has a singular \"vote\" (a shape from before \"votes\")"
             )
     for item in [*(report.get("agenda_items") or []), {"votes": report.get("sitting_votes") or []}]:
         for vote in derive.item_votes(item):
             if not isinstance(vote, dict) or not pulse_store.clean(vote.get("id")):
-                raise CachedReportError(f"{report_path}: a roll-call vote has no id; an online update re-fetches it")
+                raise CachedReportError(f"{report_path}: a roll-call vote has no id")
 
 
 # Collect cached dossiers from data/ for the given protocols (every online build
@@ -1698,7 +1702,8 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 def require_vorgang_cache_for_tags(
     database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
-    """Refuse replay when a previously known TOP or vote becomes not_fetched.
+    """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
+    vote whose context (``votes.context_state``) was resolved would lose it.
     Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
@@ -1721,6 +1726,12 @@ def require_vorgang_cache_for_tags(
                 {row[0] for row in conn.execute(f"SELECT DISTINCT {key} FROM {table} WHERE source != 'not_fetched'")}
                 for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
             )
+            # A schema-5 store has no context yet, so there is nothing to lose.
+            vote_columns = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
+            known_contexts = (
+                {row[0] for row in conn.execute("SELECT id FROM votes WHERE context_state = 'resolved'")}
+                if "context_state" in vote_columns else set()
+            )
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -1731,9 +1742,11 @@ def require_vorgang_cache_for_tags(
     cache = vorgang_cache or politikfelder.empty_cache()
     missing_tops: set[str] = set()
     vote_sources: dict[str, str] = {}
+    context_states: dict[str, str] = {}
     for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
         protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
         for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
             if source == "not_fetched":
@@ -1743,13 +1756,17 @@ def require_vorgang_cache_for_tags(
             if vote_id:
                 # Match persistence's final overwrite for normalized duplicate IDs.
                 vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
+                context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
-    if regressed_tops or regressed_votes:
+    regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts
+    if regressed_tops or regressed_votes or regressed_contexts:
         raise DatabaseRebuildError(
             f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
             f"{len(regressed_tops)} previously known TOPs and {len(regressed_votes)} previously known votes "
-            f"not_fetched (TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}). "
+            f"not_fetched and {len(regressed_contexts)} previously resolved vote contexts not_fetched "
+            f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
+            f"context examples: {sorted(regressed_contexts)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
@@ -2394,7 +2411,7 @@ def write_report_and_page(
 #
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
-# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
+# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), its
 # CSV.gz files, and the SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
@@ -11729,7 +11746,11 @@ def main() -> int:
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
-        entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        try:
+            entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         fetched, failed = fetch_missing_xml(output_dir, entries)
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
@@ -11898,7 +11919,11 @@ def main() -> int:
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
-            cached_entries = load_existing_detail_entries(output_dir, protocols)
+            try:
+                cached_entries = load_existing_detail_entries(output_dir, protocols)
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
@@ -12042,7 +12067,11 @@ def main() -> int:
         # What this run acquires is one scope; what the store keeps is another.
         # Every cached dossier of the catalog stays, whatever the acquisition
         # was narrowed to, and only the acquired sittings are refreshed.
-        existing_entries = load_existing_detail_entries(output_dir, protocols)
+        try:
+            existing_entries = load_existing_detail_entries(output_dir, protocols)
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.

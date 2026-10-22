@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
 import publication_state as publication
@@ -467,11 +467,6 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
         add(number)
     return numbers
 
-
-#: What ``vote_abweichler`` knows of one group: ``no_members``, the report holds no
-#: member rows for it; ``partial``, its member Stimmen do not add up to its counts;
-#: ``complete``, they do, so its Abweichler are named.
-AbweichlerState = Literal["no_members", "partial", "complete"]
 
 #: Groups whose MdBs have no Zusammenschluss, so none of them can make an Abweichung.
 NO_ZUSAMMENSCHLUSS = frozenset({"fraktionslos", "Unbekannt"})
