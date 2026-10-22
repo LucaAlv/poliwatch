@@ -365,7 +365,7 @@ A fixed caution some Kennzahlen must carry wherever their Fakt is shown, such as
 _Avoid_: footnote, disclaimer
 
 **Karte**:
-The shareable image of exactly one Fakt, naming its subject and its Perzentil against its Vergleichsbasis; its Belege are on the Fakt's page, not on the Karte. Later periods never change a Karte; a correction to the data or a change to the rule can.
+The shareable image of exactly one Fakt, naming its subject and its Perzentil against its Vergleichsbasis; its Belege are on the Fakt's page, not on the Karte. Each site rebuild generates Karten again, so data corrections and changes to rules or wording can change them; a Karte disappears if its Beleg no longer resolves.
 _Avoid_: card in public text, one Karte per period
 
 **Beleg**:

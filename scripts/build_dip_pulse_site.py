@@ -162,7 +162,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
     "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
     "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
-    "fact_sources": "Belege je Fakt: Rede, Abstimmung, Sitzung oder Drucksache, aus denen der Wert stammt.",
+    "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
 
 ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
@@ -8277,7 +8277,8 @@ def _fact_status_text(row: dict[str, Any] | None, *, with_note: bool = True) -> 
         return (f"unvollständig erfasst: {note}" if note else "unvollständig erfasst"), None, False
     if row.get("publishable"):
         return f"Platz {row['rank']}", row["metric_id"], True
-    return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
+    text = facts.comparison_clause(row) if row.get("withheld") in facts.WITHHELD_CLAUSES else "kein Fakt"
+    return text, None, False
 
 
 def _series_value_text(metric: dict[str, Any], row: dict[str, Any]) -> str:
@@ -8382,7 +8383,7 @@ def _render_fact_sources(
         items.append(f"<li>{' · '.join(bits)}</li>")
     if not items:
         return ""
-    return f'<div class="sources"><span class="eyebrow">Quellen</span><ul>{"".join(items)}</ul></div>'
+    return f'<div class="sources"><span class="eyebrow">Belege</span><ul>{"".join(items)}</ul></div>'
 
 
 def _render_fact_section(
@@ -8518,7 +8519,7 @@ def render_facts_week(
     features = features or publication_selection()
     sample = period_rows[0]
     period_kind = sample["period_kind"]
-    plural, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
+    _, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
     if period_kind == "month":
         period_text = facts.month_display(period_key)
     else:
@@ -8577,7 +8578,7 @@ def render_facts_week(
     </header>
     {content}
     <footer>
-      Spätere {pulse_html.esc(plural)} ändern diese Karten nicht; nur eine Korrektur an den Rohdaten kann es.
+      Diese Karten werden bei jedem Neubau neu erzeugt; Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern.
       <a href="methodik.html">Methodik</a>
     </footer>
   </div>
@@ -8674,11 +8675,11 @@ def render_facts_methodik(features: Selection | None = None) -> str:
       <ul class="method-list">{monthly_items}</ul>
     </section>
     <section>
-      <h2>Was sich nicht ändert</h2>
-      <p>Spätere Sitzungswochen ändern frühere Karten nicht, und spätere Monate ändern ihre
-      Monatskarten ebenso wenig. Nur eine Korrektur an den zugrunde liegenden Daten kann eine
-      veröffentlichte Karte im Nachhinein verändern; das Build-Log verzeichnet jede solche
-      Änderung.</p>
+      <h2>Was sich bei einem Neubau ändern kann</h2>
+      <p>Wochen- und Monatskarten werden bei jedem Neubau der Website neu erzeugt.
+      Korrekturen an den Daten und Änderungen an den Regeln (etwa Schwellen oder Mindestwerten)
+      können frühere Karten verändern; auch geänderte Formulierungen erscheinen auf ihnen.
+      Lässt sich ein Beleg nicht mehr auflösen, entfällt die zugehörige Karte.</p>
     </section>
     <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
