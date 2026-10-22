@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.8.0] - 2026-10-23
+
+### Fixed
+
+- The Debattenprofil now counts each agenda item once per procedure type in both compared calendar weeks, so bundled petitions no longer inflate the profile. The card and glossary explain the counting rule.
+- Returning procedures now appear under “Wieder auf der Tagesordnung”, with notes consistently calling them Vorgänge.
+
 ## [0.20.7.0] - 2026-10-23
 
 ### Fixed
