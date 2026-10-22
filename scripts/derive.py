@@ -224,12 +224,20 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     # 19/100 Karliczek: the XML splits the first letter off.
     (r"B undesminister(in)? .+", "bundesregierung"),
     (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
-    # WP 18 <rolle_kurz>: the ministry as an abbreviation (R2, a closed list).
-    (r"Parl\. Staatssekretär(in)? (BMF|BMWi|BMJV|BMI|BMEL|BMUB)", "bundesregierung"),
+    # WP 18 <rolle_kurz>: the ministry as an abbreviation (R2, a closed list;
+    # BMBF, BMG, BMZ added by the owner 2026-10-22).
+    (r"Parl\. Staatssekretär(in)? (BMF|BMWi|BMJV|BMI|BMEL|BMUB|BMBF|BMG|BMZ)", "bundesregierung"),
+    # 18/124 and 18/211: the ministry named without the minister (owner, 2026-10-22).
+    (r"Parl\. Staatssekretär im Bundesministerium des Innern", "bundesregierung"),
+    (r"Parl\. Staatssekretär für Verkehr und digitale Infrastruktur", "bundesregierung"),
     # Explicit historical government role in 19/13, Redner 999990013.
     (r"Staatssekretär(in)? im Bundeskanzleramt", "bundesregierung"),
     (r"Staatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),
+    # 19/70: the split first letter, as "B undesminister" above.
+    (r"S taatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),
     (r"Beauftragte[r]? (der Bundesregierung|des Bundesministeriums) .+", "bundesregierung"),
+    # 18/109 (owner, 2026-10-22).
+    (r"Drogenbeauftragte der Bundesregierung", "bundesregierung"),
     (r"Koordinator(in)? der Bundesregierung .+", "bundesregierung"),
 )
 _COMPILED_RULES = tuple((re.compile(pattern), side) for pattern, side in SPRECHROLLE_RULES)

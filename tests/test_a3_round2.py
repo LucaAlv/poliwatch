@@ -58,10 +58,39 @@ class RoleSpellingTests(unittest.TestCase):
                       'Parl. Staatssekretär BMJV', 'Parl. Staatssekretär BMI', 'Parl. Staatssekretär BMEL']:
             with self.subTest(short=short):
                 self.assertEqual(derive.sprechrolle(dip.parse_redner(role_redner(short=short))), 'bundesregierung')
-        # Outside R2's six: still unmapped, for the owner to decide.
-        for short in ['Parl. Staatssekretär BMG', 'Parl. Staatssekretärin BMZ', 'Parl. Staatssekretär BMBF']:
+
+    # Owner decision 2026-10-22: the spellings outside R2's six, one closed list.
+    def test_the_further_abbreviations_are_the_government(self):
+        # 19/67, 19/106: the abbreviation alone.
+        for short in ['Parl. Staatssekretär BMBF', 'Parl. Staatssekretär BMG', 'Parl. Staatssekretärin BMZ']:
             with self.subTest(short=short):
-                self.assertIsNone(derive.side_of_role(short))
+                self.assertEqual(derive.sprechrolle(dip.parse_redner(role_redner(short=short))), 'bundesregierung')
+        # 18/136, 18/173: the abbreviation and its long form for one person.
+        for short, printed in [
+            ('Parl. Staatssekretär BMBF', 'Parl. Staatssekretär bei der Bundesministerin für Bildung und Forschung'),
+            ('Parl. Staatssekretärin BMG', 'Parl. Staatssekretärin beim Bundesminister für Gesundheit'),
+        ]:
+            with self.subTest(short=short, printed=printed):
+                self.assertEqual(derive.sprechrolle(dip.parse_redner(role_redner(short=short, printed=printed))),
+                                 'bundesregierung')
+
+    def test_the_ministry_named_without_the_minister_is_the_government(self):
+        # 18/124: "im Bundesministerium des Innern" beside "BMI" for one person.
+        self.assertEqual(derive.side_of_role('Parl. Staatssekretär im Bundesministerium des Innern'), 'bundesregierung')
+        speaker = dip.parse_redner(role_redner(
+            short='Parl. Staatssekretär BMI', printed='Parl. Staatssekretär im Bundesministerium des Innern'))
+        self.assertEqual(derive.sprechrolle(speaker), 'bundesregierung')
+        # 18/211: "für" with no ministry word.
+        self.assertEqual(derive.side_of_role('Parl. Staatssekretär für Verkehr und digitale Infrastruktur'),
+                         'bundesregierung')
+
+    def test_the_split_first_letter_of_staatsminister_is_the_government(self):
+        # 19/70, the defect "B undesminister" already covers.
+        self.assertEqual(derive.side_of_role('S taatsministerin bei der Bundeskanzlerin'), 'bundesregierung')
+
+    def test_the_drogenbeauftragte_is_the_government(self):
+        # 18/109.
+        self.assertEqual(derive.side_of_role('Drogenbeauftragte der Bundesregierung'), 'bundesregierung')
 
     def test_a_real_conflict_still_raises(self):
         for kwargs in [
