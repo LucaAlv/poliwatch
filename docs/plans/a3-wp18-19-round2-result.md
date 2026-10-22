@@ -188,6 +188,51 @@ The owner asked for the costs before deciding. The figures come from the parse a
 3. **Role spellings:** extend R2's closed list with the eight spellings proposed above.
 4. **19/25:** exclude it. Excluding it costs 15 Reden and about 200 Befragung and Fragestunde units, to keep out 2 swapped units. Revisit if more cases turn up.
 
+## Built from the owner decisions (2026-10-22)
+
+| Commit | Change | Result |
+|---|---|---|
+| 27a93d5 | D2: a listed number is skipped before acquisition | Tests: the listed sitting that parses is not counted, the one with an unmapped role does not raise, an unlisted refusal still stops the run |
+| 691b4fa | The eight role spellings | WP 18/19 parse 412 → 413 |
+| 5cc5982 | A Vizepräsident(in)'s own Rede counts for the Fraktion | 15 of 17 sittings: no unmapped role left |
+
+**D2 in detail:**
+- A listed number is skipped before acquisition.
+- `coverage-exclusions.json` records it with the reason `excluded`, a new failure code. It no longer keeps a D4 diagnostic, because nothing is parsed.
+- The coverage line now reads "nicht erfasst (ausgeschlossen)". The manifest key `coverage.source_rejected` is unchanged.
+- **Known limit:** `--offline --repersist` and `--fetch-xml` read cached reports and do not consult the list. A sitting cached before it was listed would still be re-persisted.
+
+**Parse audit:**
+- The reference store's XML stands in for the deleted gate. The parser before this round reproduces `parse-r2b.json` exactly on it.
+- After all three commits, WP 20/21 is unchanged: 290 of 290 files, by status, `units_sha` and `roles_sha`. The runs are `parse-d2base.json`, `parse-sp.json` and `parse-vp.json`.
+
+**Spellings:**
+- 18/136 now parses. Its 7 Zwischenfragen and 2 merges were reviewed: 9 correct, 0 wrong (`~/agent-runs/a3/review/round3/result-18-136.tsv`). Schwarzelühr-Sutter's turn is an MdB Zwischenfrage: she is printed "(SPD)", with no government role. 18/136 leaves the list.
+- 18/124 and 18/173 lose their role conflict, but now refuse at a turn ("unresolved nested contribution"), so both stay listed.
+- 19/67, 19/106, 18/211 and 19/70 have no unmapped role left, and their units are unchanged.
+
+**The Vizepräsident(in) rule:**
+- **Review:** all 24 Vizepräsident(in)-owned `<rede>` elements that carry a Fraktion were reviewed. 19 are debate Reden and 5 are Befragung questions. None is an address or chair text (`result-vp-owned.tsv`).
+- **Moved units, all corrections.** A Vizepräsidentin asking in the Befragung had been counted as the government's answer:
+  - **18/65 Bulmahn:** befragung_antwort → befragung_frage.
+  - **18/81 Pau:** befragung_antwort → befragung_frage.
+  - **18/96 Pau:** two befragung_antwort → befragung_frage. The opening exchange had been counted as two Reden; it is now Pau's befragung_frage and de Maizière's befragung_antwort. Rede 15 → 13.
+- **Not covered:** in 18/62 and 18/90 Pau asks in the Fragestunde, outside any `<rede>`, and is read as a fragestunde_antwort with an unmapped role. In 18/62 Singhammer's chair turn is read the same way. Both go on the list. A Fragestunde rule would be a new owner question.
+- `speech_kinds.VERSION` is not bumped. Only sittings that strict persist refused before have changed.
+
+## Exclusion list: 78 → 84
+
+- **Added (7):**
+  - the official and presidium addresses 18/178, 18/223, 19/9, 19/19, 19/73;
+  - 18/62 and 18/90: a Vizepräsidentin in the Fragestunde.
+- **Removed (1):** 18/136, which parses and passed review.
+- 13 of the 84 parse and are kept out only by D2: 18/2, 18/29, 18/62, 18/83, 18/90, 18/178, 18/223, 18/245, 19/1, 19/9, 19/19, 19/25, 19/73.
+- **Check:** every one of the 400 WP 18/19 sittings off the list parses, and every role in them is mapped. They hold 26,685 Reden.
+
+The list, for `--exclude-document-number`:
+
+18/1, 18/2, 18/3, 18/6, 18/8, 18/10, 18/11, 18/20, 18/21, 18/26, 18/29, 18/36, 18/42, 18/43, 18/50, 18/60, 18/62, 18/63, 18/67, 18/82, 18/83, 18/88, 18/89, 18/90, 18/97, 18/98, 18/110, 18/112, 18/113, 18/117, 18/118, 18/124, 18/127, 18/143, 18/158, 18/159, 18/160, 18/161, 18/171, 18/173, 18/178, 18/180, 18/184, 18/193, 18/210, 18/215, 18/219, 18/221, 18/223, 18/241, 18/245, 19/1, 19/9, 19/12, 19/13, 19/14, 19/18, 19/19, 19/20, 19/23, 19/25, 19/32, 19/36, 19/40, 19/42, 19/44, 19/47, 19/59, 19/61, 19/68, 19/73, 19/92, 19/101, 19/102, 19/158, 19/170, 19/173, 19/189, 19/192, 19/193, 19/201, 19/215, 19/227, 19/239.
+
 ## Pilot re-run: not run
 
 - **Disk:** 3.2 GB free (100% used) on 2026-10-22. A v6 `--offline --repersist` of the 290-sitting store (2.6 GB, staged beside the 353 MB store; peak RSS 2.6 GB at the gate) plus a render needs more than that leaves as margin.
