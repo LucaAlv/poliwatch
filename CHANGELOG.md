@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.7.0] - 2026-10-23
+
+### Fixed
+
+- Fact citations now say “Belege”, and the data export description includes agenda items among the evidence types.
+- Monthly facts without an observation now say “diesen Monat nicht messbar”.
+- Fact pages and Methodik now explain that rebuilding can change earlier cards after data, rule or wording changes, and that cards disappear when their evidence no longer resolves.
+
 ## [0.20.6.2] - 2026-10-22
 
 ### Changed

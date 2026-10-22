@@ -1067,7 +1067,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Priority:** P3
 **Depends on:** None; (3) interacts with the publication ledger item
 
-**Completed:** 2026-10-22. Fact citation lists now say "Belege"; the Daten description also names Tagesordnungspunkte. Shared comparison copy uses the existing period kind for "diese Woche" and "diesen Monat", including archive/page status text. Methodik and weekly/monthly page footers explain that rebuilds regenerate cards and data/rule/wording changes can alter them; Methodik also notes that an unresolvable Beleg removes a card. Validation: 153 fact tests and the full Python 3.13 suite (1,373 tests; one skipped) passed, along with script compilation and diff checks. The publication ledger remains a separate open item.
+**Completed:** v0.20.7.0 (2026-10-23). Fact citation lists now say "Belege"; the Daten description also names Tagesordnungspunkte. Shared comparison copy uses the existing period kind for "diese Woche" and "diesen Monat", including archive/page status text. Methodik and weekly/monthly page footers explain that rebuilds regenerate cards and data/rule/wording changes can alter them; Methodik also notes that an unresolvable Beleg removes a card. Validation: 153 fact tests and the full Python 3.13 suite (1,373 tests; one skipped) passed, along with script compilation and diff checks. The publication ledger remains a separate open item.
 
 ### Add an accessible role to bill search controls
 
