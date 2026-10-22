@@ -2677,12 +2677,15 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
         # no_members: the fractions have counts but bundestag.de listed no Einzelstimmen.
         no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": []}
+        # Value: protects=a vote whose member rows name a group with no fraction row gets no archive count, not the count of the groups that can be checked; fails_when=the unlisted group drops out and the badge reads 1; why_new=only derive and the panel saw the unlisted group; seam=none; no_claim=none
+        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "members": members + [
+            {"name": "D", "faction": "AfD", "vote": "yes"}, {"name": "E", "faction": "AfD", "vote": "no"}]}
         rows = build_dip_pulse_site.collect_votes_archive(
-            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members])])]
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted])])]
         )
         by_id = {row["vote"]["id"]: row for row in rows}
         self.assertEqual(
-            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4")), (1, None, 0, None)
+            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5")), (1, None, 0, None, None)
         )
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-abweichler="1"', markup)

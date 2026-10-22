@@ -32,8 +32,9 @@ _SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE
 #: html.parser and the fallback slow down quadratically on some malformed markup.
 MAX_ABSTRACT_CHARS = 10_000
 # A numeric character reference past U+10FFFF names no character; with more than
-# 4,300 digits html.unescape raises instead of reading it as U+FFFD.
-_OVERLONG_CHARREF = re.compile(r"&#(?:[xX]0*[0-9a-fA-F]{7,}|0*[0-9]{8,});?")
+# 4,300 digits html.unescape raises instead of reading it as U+FFFD. Leading zeros
+# do not count: "&#x0000041;" is "A".
+_OVERLONG_CHARREF = re.compile(r"&#(?:[xX]0*[1-9a-fA-F][0-9a-fA-F]{6,}|0*[1-9][0-9]{7,});?")
 
 
 def _strip_tags(text: str) -> str:

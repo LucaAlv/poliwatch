@@ -176,6 +176,23 @@ class RenderVoteSummaryBadgeTests(unittest.TestCase):
         markup = vote_summary(item)
         self.assertIn('<span class="doc-link muted">21/9999</span>', markup)
 
+    # Value: protects=a vote panel labels a Bundesrat Drucksache "BR-Drs." in its Drucksachen list, for every vote of the item, and leaves a Bundestag one with the same number bare; fails_when=render_vote_summary stops passing document_chambers (or reads them per vote from the wrong item); why_new=only render_document_links was tested directly, not the panel call after the main merge; seam=none; no_claim=the committee line's own citation
+    def test_the_vote_panel_labels_a_bundesrat_drucksache_in_each_votes_document_list(self) -> None:
+        votes = [_vote(id="1", document_numbers=["21/1"]), _vote(id="2", document_numbers=["21/1", "21/2"])]
+        item = {
+            "votes": votes,
+            "xml_drucksachen": [{"dokumentnummer": "21/2", "url": "https://dserver.bundestag.de/btd/21/000/2100002.pdf"}],
+            "api": {"linked_drucksachen": [
+                {"dokumentnummer": "21/1", "herausgeber": "BR", "url": "https://dip.bundestag.de/x"},
+                {"dokumentnummer": "21/2", "herausgeber": "BR", "url": "https://dip.bundestag.de/y"},
+            ]},
+        }
+        markup = vote_summary(item)
+        self.assertEqual(markup.count('href="https://dip.bundestag.de/x">BR-Drs. 21/1</a>'), 2)
+        # XML chose a different (Bundestag) document for 21/2; DIP's Bundesrat metadata does not apply to it.
+        self.assertIn('href="https://dserver.bundestag.de/btd/21/000/2100002.pdf">21/2</a>', markup)
+        self.assertNotIn("BR-Drs. 21/2", markup)
+
     def test_xlsx_link_present_when_url_is_known(self) -> None:
         item = {"votes": [_vote(xlsx_url="https://www.bundestag.de/resource/blob/1/x.xlsx")]}
         markup = vote_summary(item)

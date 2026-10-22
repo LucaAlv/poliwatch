@@ -77,6 +77,13 @@ class AbstractTextTests(unittest.TestCase):
                 self.assertEqual(abstract_text(raw), "Vor \ufffd nach")
         self.assertEqual(abstract_text("A &#228; &#x1F600;"), "A \u00e4 \U0001f600")
 
+    # Value: protects=a valid numeric character reference padded with leading zeros still reads as its character; fails_when=_OVERLONG_CHARREF counts the zeros as digits (0* backtracks) and replaces "&#x0000041;" with U+FFFD; why_new=the guard tests only use references past U+10FFFF; seam=none; no_claim=none
+    def test_a_zero_padded_valid_character_reference_still_reads_as_its_character(self) -> None:
+        for raw, char in (("&#x0000041;", "A"), ("&#00000065;", "A"), ("&#x00000000041", "A"), ("&#x0000e4;", "\u00e4")):
+            with self.subTest(raw=raw):
+                self.assertEqual(abstract_text(f"Vor {raw} nach"), f"Vor {char} nach")
+        self.assertEqual(abstract_text("&#x0000110000; &#000099999999;"), "\ufffd \ufffd")
+
     # Value: protects=only the first MAX_ABSTRACT_CHARS characters are read, so markup the parser handles in quadratic time stays bounded; fails_when=the cap goes and a 64 KB unclosed "<script " run stalls persist; why_new=Claude and Codex adversarial review, B4 ship run 2; seam=none
     def test_only_the_first_max_abstract_chars_are_read(self) -> None:
         self.assertEqual(abstract_text("a" * MAX_ABSTRACT_CHARS + "b" * 50), "a" * MAX_ABSTRACT_CHARS)
