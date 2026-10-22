@@ -242,3 +242,19 @@ The list, for `--exclude-document-number`:
   - pass `--sleep 2` explicitly (without `--backfill-incomplete` the default is 0);
   - pass the 78 via `--exclude-document-number`;
   - put the nearest parsing sittings with mapped roles in place of 18/245 and 19/1, whose unmapped roles would end the run.
+
+## Owner decisions (round 3, 2026-10-22)
+
+1. **18/62 and 18/90 stay excluded.** No Fragestunde rule.
+   - **Why:** a scan of all WP 18/19 files found 5 presidium markers that print a Fraktion outside any `<rede>`, all in these two sittings: Pau's Nachfragen (3 in 18/62, 1 in 18/90) and Singhammer in 18/62.
+   - Singhammer's marker has the same printed form as Pau's, "Johannes Singhammer (CDU/CSU)", but its text is chair text ("Sie, Frau Kollegin, haben mit Sicherheit eine Nachfrage.").
+   - A rule reading such a marker as an MdB question would turn that chair turn into a question. Only the content tells the two apart.
+   - **Cost of exclusion:** 24 Reden and 281 Befragung/Fragestunde units (18/62: 11 + 161, 18/90: 13 + 120), to keep out about 5 wrong units. This matches the 19/25 decision.
+   - Revisit if more cases turn up.
+2. **The three changes made without a decision are confirmed:**
+   - the coverage label "nicht erfasst (ausgeschlossen)";
+   - the failure code `excluded`;
+   - the manifest key `coverage.source_rejected` is renamed to `coverage.excluded`.
+   - **Check before confirming:** the key exists only on this branch (not on `origin/main`), so no published export carries it. The `[summary]` and D2 code paths only put listed sittings in it; an unlisted source rejection still stops the run.
+   - README.md still described the old D2 behaviour ("Quelle abgelehnt", "with its diagnostic", "a listed sitting the parser accepts again is acquired"). It is corrected with the rename.
+3. **Push:** not yet.
