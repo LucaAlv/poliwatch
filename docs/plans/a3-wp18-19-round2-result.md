@@ -88,6 +88,14 @@ A per-turn diff against the parser before round 2 (e13f60f) lists 422 changed tu
 
 21/78 Paus m3 may belong to the same exchange as m4, which would mean one unit fewer. It is left split: undermerging is the old behaviour.
 
+**The kind that proved wrong, checked in all 414 merges:** one wrong merge came from a chair-granted Kurzintervention, a kind the flag regex did not look for. So the untruncated between-text of every merge (`merges-full.tsv`) was searched for Kurzintervention, Erwiderung and erwidern. There are six hits, and only 18/83 is a grant. The others are the chair reminding the asker inside the same exchange:
+- 20/109 Throm: "Sie müssen zum Ende Ihrer Kurzintervention kommen";
+- 21/25 Emmerich: "keine Kurzintervention, bitte";
+- 19/140 Mast, twice: "Sie sollen keine Kurzintervention, sondern eine Zwischenbemerkung machen";
+- 19/231 Rosemann: "Es kann vielleicht noch die Möglichkeit einer Kurzintervention … geben".
+
+No WP 20/21 count moves.
+
 **6c splits, DIP Aktivitäten check (ADR 0002):**
 - 63 new splits in 19 sittings, 70 in all.
 - Each was matched by its printed page to the speaker's DIP activity on that page (`split_pages.py`, cache `dip-aktivitaeten-6c-r2.json`).
@@ -128,8 +136,13 @@ The list, for `--exclude-document-number`:
 - **dserver's `18020.xml` is sitting 21.** Its `sitzung-nr` is 21, with the same date as 18/21, and the content differs slightly. The real 18/20 is not in the corpus. 18/20 is excluded. `fetch_missing_xml` already refuses an XML whose Wahlperiode or Sitzungsnummer differs from the request, so 18/21 cannot be cached twice.
 - **R2 follow-up:** with the six abbreviations mapped in `SPRECHROLLE_RULES`, an abbreviation and its long form agree on the side by themselves. `effective_role` now reconciles only the bare title against its "(Land)" form.
 
+## The exclusion list cannot exclude a sitting that parses
+
+`--exclude-document-number` (D2) is consulted only when the parser rejects a sitting (`build_dossiers_with_progress`: the `source_rejected` branch). A listed sitting that parses is acquired and counted like any other. Six of the 78 parse: 18/2, 18/29, 18/83, 18/245, 19/1 and 19/25. A backfill would count their wrong units (whole Reden as Zwischenfragen, an Erklärung as a Rede, presidium Reden). And a role no Sprechrolle rule maps raises at acquisition whether or not the sitting is listed (pilot record, "Known limit"). So "exclude" for a parsing sitting cannot be carried out with today's mechanism.
+
 ## Questions for the owner
 
+0. **D2's semantics.** Should a listed number be skipped before acquisition, whatever the parser says? That would carry out the six exclusions above and the proposals below. The alternative is a rule for each kind. This is not built.
 1. **26 parsing sittings off the list carry a role no Sprechrolle rule maps.**
    - **Why it matters:** strict persist (`derive.check_sprechrollen`) refuses the whole run on any one of them. As the pilot record notes, an unmapped role raises at acquisition and is not passed by `--exclude-document-number` either.
    - **Official and presidium addresses,** the same kind as 18/245 and 19/1 (ADR 0004 TODO): 18/178 (Lammert), 18/223 (Bundespräsidenten, Präsidentin des Bundesrates), 19/9 (Schäuble, Präsident der Assemblée nationale), 19/19 (Präsident: oath and government formation), 19/73 (Schäuble). Proposal: exclude, as 18/245 and 19/1 are.
@@ -147,4 +160,12 @@ The list, for `--exclude-document-number`:
      Proposal: extend R2's closed list with these spellings.
 2. **19/25:** exclude, as proposed above, or a rule for an asker who owns the `<rede>`.
 
-The pilot (Phase 1) sample includes 18/245 and 19/1, which would end the run on their unmapped roles. Both are excluded anyway, so the pilot uses the nearest sittings that parse with mapped roles in their place.
+## Pilot re-run: not run
+
+- **Disk:** 3.2 GB free (100% used) on 2026-10-22. A v6 `--offline --repersist` of the 290-sitting store (2.6 GB, staged beside the 353 MB store; peak RSS 2.6 GB at the gate) plus a render needs more than that leaves as margin.
+- **DIP:** it did not answer the first `/person` probe (a3-pilot.md, Finding 2, 2026-10-22).
+- Both block step 4.
+- **When it runs:**
+  - pass `--sleep 2` explicitly (without `--backfill-incomplete` the default is 0);
+  - pass the 78 via `--exclude-document-number`;
+  - put the nearest parsing sittings with mapped roles in place of 18/245 and 19/1, whose unmapped roles would end the run.

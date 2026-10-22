@@ -55,6 +55,16 @@ Changes made from this:
 - **D5 cache:** it removes the 35% repeat lookups (301 vs 196).
 - The backfill default sleep stays 0.5 s in code until a rate is measured.
 
+### DIP `/person` probe, 2026-10-22 (pilot re-run, step 1)
+
+The planned measurement was small bursts of `/person/{id}` at 2 s and then 1 s spacing, with a stop on the first failure or answer over 10 s and no retry (`~/agent-runs/a3/round2/person_probe.py`, log `person-probe.log`).
+- dserver answered the first probe: `19/19001.xml`, 200 in 0.39 s.
+- DIP did not. The first request, `/person?f.wahlperiode=18` at 14:01 UTC, timed out after 30 s, so no `/person/{id}` request was sent.
+- The same API had answered all 17 `/aktivitaet` sittings of the 6c check, at 2 s spacing and at most 0.25 s, about an hour earlier.
+- That makes 63 DIP requests that day before the timeout, all with the project key.
+
+So DIP stopped answering after a few dozen requests at 2 s, not after hundreds. As in batch 2 (2026-10-19), a rate limit does not explain it. The pilot re-run stopped here, as its brief says, and nothing was retried. A sustainable DIP rate is still not known.
+
 ### Rate measurement, 2026-10-20 (dserver.bundestag.de)
 
 The WP 18/19 XML download (`~/agent-runs/a3/tools/fetch_wp18_19.py`; one line per request in `~/agent-runs/a3/wp18-19-fetch.log`, probes in `dserver-probes.log`). Each request is one plenary XML of about 0.7 MB.
