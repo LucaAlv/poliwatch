@@ -899,17 +899,18 @@ Done when the 14 votes above render the inversion legend, a test pins one WP 20 
 **Priority:** P3
 **Depends on:** B4
 
-### B4 review findings that need a design call
+### B4 review findings: lower-priority edges
 
-**What:** Edges the B4 `/ship` adversarial passes found (2026-10-22, Codex and a Claude subagent), deferred because each needs a decision rather than a quick fix:
-1. **Partial cache passes the replay guard.** `politikfelder.vote_vorgang_ids` (`scripts/politikfelder.py`, the `VoteContext(ids, "resolved" …)` return) ignores a missing Drucksache lookup once any Vorgang resolves, so a cache that lost one of two numbers keeps the vote `resolved` with fewer Vorgänge; `require_vorgang_cache_for_tags` passes and the replay drops a `vote_proceedings` link. D7 defines the state this way; decide whether a missing number with known ids is `not_fetched`, or let the guard compare the stored `vote_proceedings` rows.
-2. **One stale report outside the catalog stops every build.** `require_current_vote_shape` runs inside `load_existing_detail_entries` before the catalog filter, and `"vote" in item` fires on key presence (`"vote": null` too). Decide whether out-of-catalog reports only warn, and test the value, not the key.
-3. **Library callers skip the shape check.** The standalone renderer and `persist_dip_pulse_store.persist_report` do not refuse a singular `"vote"`; `derive.item_votes` reads it as no votes, so persist deletes the stored vote. Refuse it in shared code.
-4. **Duplicate member rows pass the completeness check.** `derive.vote_abweichler` compares Stimmen counts only, so a duplicated member row can list one Abweichler twice while the store collapses it. Check unique member identities first.
+**What:** Edges the B4 `/ship` adversarial passes found (2026-10-22, Codex and a Claude subagent) and left open; the four that could lose stored data or stop a build were fixed on the B4 branch the same day:
+1. No per-vote cap on "Worum es geht" blocks.
+2. `abstract_text` output can differ across Python patch levels (it feeds the content-hashed export).
+3. CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles).
+4. The teaser can cut after "(Abs.".
+5. `derive.vote_identity` uses the raw id while persist cleans it.
+6. One member/count mismatch hides a whole group's Abweichler.
+7. `derive.vote_abweichler` dedupes member rows by name within a group, while the store collapses them by `mp_id` (abgeordnetenwatch id first), so two spellings of one person still count twice in derive and once in the store.
 
-**Why:** 1 and 3 can silently lose stored data; 2 turns one stale file into a stopped build.
-
-**Context:** Lower-priority items from the same passes: no per-vote cap on "Worum es geht" blocks; `abstract_text` output can differ across Python patch levels (it feeds the content-hashed export); CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles); the teaser can cut after "(Abs."; `derive.vote_identity` uses the raw id while persist cleans it; one member/count mismatch hides a whole group's Abweichler.
+**Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export; 7 can put a wrong Abweichler count on a page.
 
 **Effort:** M
 **Priority:** P2
@@ -919,11 +920,9 @@ Done when the 14 votes above render the inversion legend, a test pins one WP 20 
 
 **What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290):
 1. The `--backfill-incomplete` stop reuses `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`; give that call site "move it out and re-run `--backfill-incomplete`", and fill in the report's number instead of `<its number>`.
-2. `require_current_vote_shape`'s docstring names two of its three refusals.
-3. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
-4. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
-5. The non-list check reads the value after `or []`, so `{}`, `0` and `""` pass; check the raw value.
-6. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
+2. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
+3. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
+4. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
 
 **Why:** These lines are the only guide out of a stopped build; each should name a command that works.
 

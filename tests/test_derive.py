@@ -91,6 +91,16 @@ class VoteAbweichlerTests(unittest.TestCase):
         result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=2)]))
         self.assertEqual(result["SPD"]["state"], "partial")
 
+    # Value: protects=a member row listed twice counts once, as the store keeps it; fails_when=a duplicate standing in for a missing member matches the counts and lists one Abweichler twice; why_new=B4 ship review (2026-10-22); seam=none
+    def test_a_member_listed_twice_counts_once(self) -> None:
+        voters = [member(name, "SPD", "yes") for name in ("Ada", "Bea", "Eva")]
+        # Dora's Nein is missing and Cem's is listed twice: the counts would match.
+        stand_in = derive.vote_abweichler(roll_call(voters + [member("Cem", "SPD", "no")] * 2, [fraction("SPD", yes=3, no=2)]))
+        self.assertEqual(stand_in["SPD"], {"members": [], "state": "partial"})
+        # A plain duplicate row is one member.
+        plain = derive.vote_abweichler(roll_call(voters + [member("Cem", "SPD", "no")] * 2, [fraction("SPD", yes=3, no=1)]))
+        self.assertEqual(self.names(plain, "SPD"), ["Cem"])
+
     def test_no_member_rows_at_all_is_none(self) -> None:
         vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
         result = derive.vote_abweichler(vote)

@@ -2291,7 +2291,7 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
 
 
 class LegacyVoteShapeTests(unittest.TestCase):
-    """require_current_vote_shape: a stale report fails loudly, never drops votes."""
+    """derive.require_vote_shape on report load: a stale report fails loudly, never drops votes."""
 
     def test_a_singular_vote_or_an_id_less_vote_is_refused_on_every_load(self) -> None:
         shapes = {
@@ -2310,6 +2310,35 @@ class LegacyVoteShapeTests(unittest.TestCase):
                         build_dip_pulse_site.load_existing_detail_entries(
                             Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
                         )
+
+    # Value: protects=a stale report outside the build's catalog, or one whose "vote"/"votes" value is null or empty, loads without stopping the build; fails_when=the check runs before the catalog filter or tests key presence, so one unused file stops every build; why_new=B4 ship review (2026-10-22); seam=none
+    def test_an_out_of_catalog_stale_report_and_an_empty_vote_value_do_not_stop_a_load(self) -> None:
+        reports = {
+            "21-81": {"protocol": {"dokumentnummer": "21/81"}, "agenda_items": [{"index": 1, "vote": {"id": "v1"}}]},
+            "21-82": {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [
+                {"index": 1, "vote": None, "votes": None}, {"index": 2, "vote": {}, "votes": []},
+            ], "sitting_votes": None},
+        }
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                for stem, report in reports.items():
+                    (data / f"plenarprotokoll-{stem}.json").write_text(json.dumps(report), encoding="utf-8")
+                entries = build_dip_pulse_site.load_existing_detail_entries(
+                    Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
+                )
+                self.assertEqual([entry["report"]["protocol"]["dokumentnummer"] for entry in entries], ["21/82"])
+
+    # Value: protects=the standalone renderer refuses a stale vote shape instead of rendering a sitting without its votes; fails_when=render_html reads a singular "vote" as no votes; why_new=B4 ship review (2026-10-22); seam=none
+    def test_the_standalone_renderer_refuses_a_stale_vote_shape(self) -> None:
+        for reason, votes in (
+            ('singular "vote"', {"vote": {"id": "v1"}}),
+            ("not a list", {"votes": {}}),
+            ("has no id", {"votes": [{"id": " "}]}),
+        ):
+            with self.subTest(votes=votes), self.assertRaisesRegex(ValueError, reason):
+                pulse_html.render_html({"protocol": {}, "agenda_items": [{"index": 1, **votes}]})
 
     # Value: protects=a build stopped by a stale cached report ends with an ERROR line naming the file and a fix that works (move it out, then update online), not a traceback; fails_when=a lenient call site lets CachedReportError escape main, or the message points back to the online update that just failed; why_new=the load refusal was tested, its call sites in main were not; seam=none; no_claim=the online entry point (same handler, needs a DIP client)
     def test_a_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:

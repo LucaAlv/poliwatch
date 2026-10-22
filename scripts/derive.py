@@ -336,9 +336,30 @@ def item_votes(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     return item.get("votes") or []
 
 
+def require_vote_shape(report: Mapping[str, Any]) -> None:
+    """Raise ValueError for a report whose votes a reader would lose: a TOP's
+    singular ``"vote"`` (a shape from before ``"votes"``), a ``votes`` or
+    ``sitting_votes`` value that is not a list, or a vote without an id. An absent,
+    null or empty value is no vote. None of these occurs in the current cache (0 of
+    246 votes); report loading, persist and the standalone renderer all refuse them,
+    so a stale report fails loudly instead of persisting as a sitting without votes."""
+    items = report.get("agenda_items") or []
+    for item in items:
+        if item.get("vote"):
+            raise ValueError(f'TOP {item.get("index")} has a singular "vote" (a shape from before "votes")')
+    for votes in [*(item.get("votes") for item in items), report.get("sitting_votes")]:
+        if votes is None:
+            continue
+        if not isinstance(votes, list):
+            raise ValueError("roll-call votes are not a list")
+        for vote in votes:
+            if not isinstance(vote, dict) or not _clean(vote.get("id")):
+                raise ValueError("a roll-call vote has no id")
+
+
 def vote_identity(vote: Mapping[str, Any]) -> str:
     """A vote's identity within a sitting: its id. The scraper always sets one,
-    and report loading refuses a vote without it."""
+    and ``require_vote_shape`` refuses a vote without it."""
     return str(vote["id"])
 
 
@@ -488,16 +509,20 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
     fraktionslos and an unknown affiliation are no Zusammenschluss and get no
     entry. Members come back alphabetical, as the Einzelstimmen list them.
+
+    A member listed twice counts once, with the last row's Stimme, as the store
+    keeps them; a duplicate standing in for a missing member then fails the count.
     """
-    members_by_group: dict[str, list[Mapping[str, Any]]] = {}
+    members_by_group: dict[str, dict[str, Mapping[str, Any]]] = {}
     for member in vote.get("members") or []:
-        members_by_group.setdefault(zusammenschluss(member.get("faction")) or "Unbekannt", []).append(member)
+        group = zusammenschluss(member.get("faction")) or "Unbekannt"
+        members_by_group.setdefault(group, {})[_clean(member.get("name"))] = member
     result: dict[str, dict[str, Any]] = {}
     for fraction in merge_fractions(vote.get("fractions")):
         name = fraction["name"]
         if name in NO_ZUSAMMENSCHLUSS:
             continue
-        members = members_by_group.get(name) or []
+        members = list((members_by_group.get(name) or {}).values())
         stimmen = Counter(str(member.get("vote") or "") for member in members)
         if not members and stimmen != Counter(fraction["counts"]):
             result[name] = {"members": [], "state": "no_members"}

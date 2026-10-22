@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - The "Worum es geht" block names each Vorgang by its DIP title. On the reference cache no context Vorgang had a title before (0 of 234; every label read "<Vorgangstyp> · DIP-Vorgang <id>"); after one online refetch all 234 have one, and DIP returned no empty title. The Vorgangstyp fallback and the refetch of records without a title are gone; a Vorgang with no record yet reads "DIP-Vorgang <id>".
 - The same refetch asked DIP again for the 86 context Vorgänge with an empty abstract: none had gained one, so 153 of 217 votes have a DIP abstract before and after.
 
+### Fixed
+
+- A vote's context is `resolved` only when every one of its Drucksache numbers is in the Vorgang cache, so an offline replay with a cache that lost one number stops instead of dropping a `vote_proceedings` row. On the reference store all 217 votes stay `resolved`.
+- Persist and the standalone renderer refuse a stale vote shape (a TOP's singular `"vote"`, non-list votes, a vote without an id) instead of treating the sitting as voteless; a stale report outside the build's catalog no longer stops the build, and a null or empty `"vote"` passes.
+- A member listed twice in an Einzelstimmen list counts once for the Abweichler, so a duplicate row can no longer stand in for a missing member (0 of 217 votes on the reference store have one).
+
 ## [0.20.4.0] - 2026-10-21
 
 ### Changed

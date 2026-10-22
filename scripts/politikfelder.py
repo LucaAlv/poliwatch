@@ -569,8 +569,9 @@ def vote_vorgang_ids(
     ``tags_for_vote`` may still fall back to, is never used: a Beschlussempfehlung
     bundle would show the abstracts of Vorgänge the vote is not about. Where a vote's
     tags come from the narrow tier, both pick the same Vorgänge. A Vorgang id can be
-    resolved while its own record is not in the cache yet; the ids are kept and the
-    state is ``not_fetched`` (D7)."""
+    resolved while its own record is not in the cache yet, or while another of the
+    vote's numbers is not; the ids are kept and the state is ``not_fetched`` (D7), so
+    a cache that lost one number fails the replay guard."""
     (narrow, _wide), missing = _vorgaenge_of_numbers(
         vote_document_numbers(vote, wahlperiode), cache, narrow_first=True
     )
@@ -578,7 +579,8 @@ def vote_vorgang_ids(
     ids = [i for i in narrow if i in linked] if linked & set(narrow) else narrow
     if ids:
         records = cache.get("vorgaenge") or {}
-        return VoteContext(ids, "resolved" if all(i in records for i in ids) else "not_fetched")
+        complete = not missing and all(i in records for i in ids)
+        return VoteContext(ids, "resolved" if complete else "not_fetched")
     return VoteContext([], "not_fetched" if missing else "none")
 
 

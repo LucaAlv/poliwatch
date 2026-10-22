@@ -398,7 +398,9 @@ class VoteContextTests(unittest.TestCase):
     # Value: protects=the export tells "no Vorgang" from "not fetched" (D7) by one fixed precedence; fails_when=a cache miss is stored as none, so a fetch outage reads as "DIP has no description"; why_new=votes.context_state is new; seam=none
     def test_the_state_is_resolved_then_not_fetched_then_none(self) -> None:
         cache = cache_of({"a": vorgang()}, {"21/1": ["a"], "21/2": ["a", "gone"], "21/3": []})
-        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/1", "21/9"]}, cache), (["a"], "resolved"))
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/1"]}, cache), (["a"], "resolved"))
+        # Another of the vote's numbers is not in the cache: the ids stay, the answer is not_fetched.
+        self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/1", "21/9"]}, cache), (["a"], "not_fetched"))
         # A resolved Vorgang without a cached record: the ids stay, the answer is not_fetched (D7).
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/2"]}, cache), (["a", "gone"], "not_fetched"))
         self.assertEqual(pf.vote_vorgang_ids({"document_numbers": ["21/9"]}, cache), ([], "not_fetched"))
@@ -1197,6 +1199,24 @@ class RepersistGuardTests(unittest.TestCase):
                     conn.execute("CREATE TABLE votes (id, context_state)")
                     conn.execute("INSERT INTO votes VALUES ('v1', ?)", (stored,))
                 build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+
+    # Value: protects=a replay refuses a cache that lost one of a resolved vote's two numbers while the other still names a Vorgang; fails_when=the context stays resolved with fewer Vorgänge, the guard passes and the replay drops a vote_proceedings row; why_new=B4 ship review (2026-10-22) found the gap; seam=none
+    def test_a_cache_that_lost_one_of_two_vote_numbers_is_refused(self) -> None:
+        positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "document_numbers": ["21/1", "21/2"]}])
+        report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [positioned]}
+        records = {"V1": vorgang("Recht"), "A": vorgang("Recht"), "B": vorgang("Recht")}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
+            with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                conn.execute("CREATE TABLE votes (id, context_state)")
+                conn.execute("INSERT INTO votes VALUES ('v1', 'resolved')")
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "1 previously resolved vote contexts"):
+                build.require_vorgang_cache_for_tags(
+                    path, cache_of(records, {"21/1": ["A"]}), path.parent.parent, [{"report": report}]
+                )
+            build.require_vorgang_cache_for_tags(
+                path, cache_of(records, {"21/1": ["A"], "21/2": ["B"]}), path.parent.parent, [{"report": report}]
+            )
 
     def test_equal_swaps_and_net_improvements_cannot_hide_a_known_identity_loss(self) -> None:
         for kind in ("top", "vote"):

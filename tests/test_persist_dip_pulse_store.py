@@ -134,7 +134,7 @@ class VoteContextPersistTests(unittest.TestCase):
         self.assertEqual(self.rows(conn, "SELECT * FROM vote_proceedings"), [])
         self.assertEqual(self.rows(conn, "SELECT context_state FROM votes"), [("none",)])
 
-    # Value: protects=persist refuses a roll-call vote without a usable id and rolls the whole report back, instead of skipping the vote as before B4; fails_when=_vote_id goes back to a silent skip, so the store lacks a vote the archive and export count, or the failed write leaves a half-replaced sitting; why_new=the old skip test was dropped with the legacy shapes and nothing asserts the refusal; seam=none
+    # Value: protects=persist refuses a roll-call vote without a usable id and rolls the whole report back, instead of skipping the vote as before B4; fails_when=persist stops calling derive.require_vote_shape and skips the vote, so the store lacks a vote the archive and export count, or the failed write leaves a half-replaced sitting; why_new=the old skip test was dropped with the legacy shapes and nothing asserts the refusal; seam=none
     def test_a_vote_without_a_usable_id_is_refused_and_the_store_stays_as_it_was(self):
         cache = _context_cache({"20/123": []}, {})
         conn = self.persisted(cache)
@@ -144,9 +144,21 @@ class VoteContextPersistTests(unittest.TestCase):
             with self.subTest(vote_id=bad_id):
                 report = json.loads((FIXTURES / "report.json").read_text())
                 report["agenda_items"][0]["votes"][0]["id"] = bad_id
-                with self.assertRaisesRegex(ValueError, "roll-call vote without an id"):
+                with self.assertRaisesRegex(ValueError, "a roll-call vote has no id"):
                     pulse_store.persist_report(conn, report, cache)
                 self.assertEqual(self.rows(conn, "SELECT id, protocol_id, context_state FROM votes"), before)
+
+    # Value: protects=a library caller handing persist a report with a TOP's singular "vote" is refused before any write; fails_when=persist reads the TOP as voteless and deletes the sitting's stored vote; why_new=only report loading refused the shape (B4 ship review 2026-10-22); seam=none
+    def test_a_singular_vote_is_refused_and_the_store_stays_as_it_was(self):
+        cache = _context_cache({"20/123": []}, {})
+        conn = self.persisted(cache)
+        before = self.rows(conn, "SELECT id, protocol_id, context_state FROM votes")
+        self.assertEqual(len(before), 1)
+        report = json.loads((FIXTURES / "report.json").read_text())
+        report["agenda_items"][0]["vote"] = report["agenda_items"][0].pop("votes")[0]
+        with self.assertRaisesRegex(ValueError, 'singular "vote"'):
+            pulse_store.persist_report(conn, report, cache)
+        self.assertEqual(self.rows(conn, "SELECT id, protocol_id, context_state FROM votes"), before)
 
 
 class ParagraphMigrationTests(unittest.TestCase):

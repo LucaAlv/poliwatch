@@ -1225,7 +1225,7 @@ Scope the review flagged as beyond this plan, ratified as deliberate. Reverting 
 - **`derive.report_drucksachen`'s BT filter**: Bundesrat papers share the number shape; the r6 recipe now filters `d.herausgeber = 'BT'` too (review fixes Step 6), so D1's equality holds by construction.
 - **The `vorgang()` fixture edit in `test_politikfelder.py`**: D11 itself makes the old `fetch_targets` expectation refetch `d`, so "must pass untouched" conflicted with D11. It joins R8's intentional updates.
 - **D9**: the id-less fallback ("a vote without an id keeps the TOP anchor") is withdrawn; 0 of 246 votes lack an id and report loading refuses that shape (`require_current_vote_shape`).
-- **D7**: precedence is now: a vote whose narrow numbers name Vorgänge is `resolved` only when every one has a cached record, else `not_fetched` with its `vote_proceedings` rows still written; with no Vorgang named, `not_fetched` when a number is missing from the cache, else `none`.
+- **D7**: precedence is now: a vote whose narrow numbers name Vorgänge is `resolved` only when every one has a cached record and none of its numbers is missing from the cache (amended 2026-10-22, B4 ship review), else `not_fetched` with its `vote_proceedings` rows still written; with no Vorgang named, `not_fetched` when a number is missing from the cache, else `none`.
 - **R8**: `render_vote_summary(item, acquisition, panel)` takes one required `VotePanelContext` (E1); the vote-panel tests build it through `panel_for`.
 
 ## Unresolved decisions

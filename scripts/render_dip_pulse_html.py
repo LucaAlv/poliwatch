@@ -2934,6 +2934,7 @@ def render_html(
     database_page_href: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
 ) -> str:
+    derive.require_vote_shape(report)
     features = publication_selection()
     from features.loader import load as load_components
 

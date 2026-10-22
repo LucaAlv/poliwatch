@@ -1512,6 +1512,7 @@ def persist_report(
     if not protocol_id:
         raise ValueError("Report has no protocol.id")
 
+    derive.require_vote_shape(report)
     derive.check_sprechrollen([report])
     _warn_merged_redner_ids(report)
     with conn:

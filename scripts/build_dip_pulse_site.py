@@ -872,25 +872,6 @@ CACHED_REPORT_FIX = (
 )
 
 
-def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> None:
-    """Refuse a report with a TOP's singular ``"vote"`` or a vote without an id.
-
-    Neither occurs in the current cache (0 of 246 votes); a stale report with
-    either fails loudly instead of losing its votes. Raised even on a lenient
-    load, which would otherwise drop the whole sitting with a warning."""
-    for item in report.get("agenda_items") or []:
-        if "vote" in item:
-            raise CachedReportError(
-                f"{report_path}: TOP {item.get('index')} has a singular \"vote\" (a shape from before \"votes\")"
-            )
-    for item in [*(report.get("agenda_items") or []), {"votes": report.get("sitting_votes") or []}]:
-        if not isinstance(derive.item_votes(item), list):
-            raise CachedReportError(f"{report_path}: roll-call votes are not a list")
-        for vote in derive.item_votes(item):
-            if not isinstance(vote, dict) or not pulse_store.clean(vote.get("id")):
-                raise CachedReportError(f"{report_path}: a roll-call vote has no id")
-
-
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
@@ -924,7 +905,6 @@ def load_existing_detail_entries(
             indexes = [source_index(item.get("index")) for item in items]
             if len(set(indexes)) != len(indexes):
                 raise ValueError("agenda_items repeat a source index")
-            require_current_vote_shape(report, report_path)
             for item in [report, *items]:
                 for key in SPEAKER_LISTS:
                     units = item.get(key) or []
@@ -941,6 +921,12 @@ def load_existing_detail_entries(
             raise CachedReportError(f"{report_path} has no document number; restore source identity before replay")
         if not document_number or document_number not in protocol_numbers:
             continue
+        # Raised even on a lenient load, which would otherwise drop the whole
+        # sitting with a warning; a report outside the catalog is never read.
+        try:
+            derive.require_vote_shape(report)
+        except ValueError as exc:
+            raise CachedReportError(f"{report_path}: {exc}") from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
