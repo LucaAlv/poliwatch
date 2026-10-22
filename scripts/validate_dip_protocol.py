@@ -693,6 +693,31 @@ def mark_roleless_chairs(root: ET.Element) -> None:
                 redner.set("sitzungsleitung", "1")
 
 
+# Matched against the role with whitespace removed, as SITZUNGSLEITUNG_ROLE.
+VIZEPRAESIDIUM_ROLE = re.compile(r"Vizepräsident(?:in)?", re.IGNORECASE)
+
+
+def mark_presidium_fraktionsreden(root: ET.Element) -> None:
+    """ADR 0004: a Vizepräsident(in) who owns a ``<rede>`` and is printed with a
+    ``<fraktion>`` gives that Fraktion's Rede (18/46 Pau). The presidium
+    ``<rolle>`` is removed from the owner's markers in that ``<rede>``, so the
+    Rede reads as an MdB's. Without a Fraktion (18/245) the role stays and no
+    Sprechrolle rule maps it; the Präsident and Alterspräsident are not covered.
+    """
+    for rede in root.iter("rede"):
+        first = rede.find("./p[@klasse='redner']/redner")
+        if first is None or not child_text(first.find("name"), "fraktion"):
+            continue
+        role = first.find("name/rolle")
+        if role is None or not VIZEPRAESIDIUM_ROLE.fullmatch(re.sub(r"\s+", "", child_text(role, "rolle_lang"))):
+            continue
+        own = redner_key(first)
+        for redner in rede.iter("redner"):
+            name = redner.find("name")
+            if redner_key(redner) == own and name is not None and name.find("rolle") is not None:
+                name.remove(name.find("rolle"))
+
+
 def presidium_marker(redner: ET.Element | None) -> bool:
     if redner is not None and redner.get("sitzungsleitung") == "1":
         return True
@@ -1123,6 +1148,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
 
     agenda_items: list[dict[str, Any]] = []
     seen_formats: dict[str, frozenset[str]] = {}
+    mark_presidium_fraktionsreden(root)
     try:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
     except ValueError as exc:

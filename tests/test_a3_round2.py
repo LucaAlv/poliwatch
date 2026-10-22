@@ -325,3 +325,51 @@ class ZwischenfragePerExchangeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def presidium(rid, last, role, fraktion=None):
+    fr = f'<fraktion>{fraktion}</fraktion>' if fraktion else ''
+    return (f'<p klasse="redner"><redner id="{rid}"><name><nachname>{last}</nachname>{fr}'
+            f'<rolle><rolle_lang>{role}</rolle_lang></rolle></name></redner></p>')
+
+
+class PresidiumFraktionsredeTests(unittest.TestCase):
+    """ADR 0004, owner decision 2026-10-22: a Vizepräsident(in) who owns a <rede>
+    and is printed with a Fraktion gives that Fraktion's Rede (18/46 Pau)."""
+
+    def test_the_vizepraesidentin_owning_a_rede_speaks_for_her_fraktion(self):
+        for role in ('Vizepräsidentin', 'Vizepräsident', 'Vizepräsident in'):
+            with self.subTest(role=role):
+                top, contributions = parse(
+                    '<rede id="R">' + presidium('P', 'Pau', role, 'DIE LINKE') + '<p>Rede der Kollegin.</p>'
+                    + '<name>Präsident Dr. Norbert Lammert:</name><p>Frau Kollegin, Ihre Redezeit.</p>'
+                    + presidium('P', 'Pau', role, 'DIE LINKE') + '<p>Letzter Satz.</p></rede>')
+                [speech] = top['speeches']
+                self.assertEqual(speech['speaker']['fraktion'], 'DIE LINKE')
+                self.assertIsNone(speech['speaker']['role'])
+                self.assertIsNone(derive.sprechrolle(speech['speaker']))
+                self.assertEqual(contributions, [])
+
+    def test_another_vizepraesident_chairing_inside_her_rede_is_sitzungsleitung(self):
+        top, contributions = parse(
+            '<rede id="R">' + presidium('P', 'Pau', 'Vizepräsidentin', 'DIE LINKE') + '<p>Rede der Kollegin.</p>'
+            + presidium('S', 'Singhammer', 'Vizepräsident', 'CDU/CSU') + '<p>Frau Kollegin, Ihre Redezeit.</p>'
+            + presidium('P', 'Pau', 'Vizepräsidentin', 'DIE LINKE') + '<p>Letzter Satz.</p></rede>')
+        [speech] = top['speeches']
+        self.assertEqual(speech['speaker']['last_name'], 'Pau')
+        self.assertIsNone(speech['speaker']['role'])
+        self.assertEqual(contributions, [])
+
+    def test_without_a_fraktion_the_role_stays_unmapped(self):
+        # 18/245 Bulmahn, Singhammer: presidium Reden with no <fraktion>.
+        top, _contributions = parse(
+            '<rede id="R">' + presidium('B', 'Bulmahn', 'Vizepräsidentin') + '<p>Abschied.</p></rede>')
+        speaker = top['speeches'][0]['speaker']
+        self.assertEqual(speaker['role'], 'Vizepräsidentin')
+        with self.assertRaises(derive.SprechrolleError):
+            derive.sprechrolle(speaker)
+
+    def test_the_praesident_is_not_covered(self):
+        top, _contributions = parse(
+            '<rede id="R">' + presidium('L', 'Lammert', 'Präsident', 'CDU/CSU') + '<p>Ansprache.</p></rede>')
+        self.assertEqual(top['speeches'][0]['speaker']['role'], 'Präsident')
