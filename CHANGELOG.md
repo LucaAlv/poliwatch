@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.5.1] - 2026-10-22
+
+### Fixed
+
+- Data exports now correctly identify abgeordnetenwatch as the source of MP birth year, gender, profession, constituency and state. Export format 6 refreshes cached provenance labels without changing row IDs or the store schema.
+
 ## [0.20.5.0] - 2026-10-22
 
 ### Changed
