@@ -380,16 +380,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
 
-### Fakt der Woche, copy fixes from the glossary review
-
-**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
-
-**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None; (3) interacts with the publication ledger item
-
 ### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
 
 **What:** `meistdiskutierter-vorgang` (`scripts/facts.py`) credits every speech of a Tagesordnungspunkt to its lead Vorgang (`LEAD_PROCEEDING_CTE`: first Gesetzgebung by `proceeding_positions.id`, else lowest id). Decide how the metric handles a Tagesordnungspunkt that deals with several Vorgänge: skip bundled TOPs, count per Tagesordnungspunkt instead, or count only TOPs whose Vorgang set is a single Vorgang. Done when no Vorgang can win on Reden given under a TOP it merely shares.
@@ -1066,6 +1056,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 ### Document `--protocol-wahlperiode` in the README
 
 **Completed:** v0.20.6.2 (2026-10-22). README's update section now documents the default `21`, filtering only with positive `--limit`, older-Wahlperiode and all-Wahlperioden examples, the separate `--detail-limit`, and explicit/backfill selection. The former TODO's catalog-filter claim was stale: online builds always fetch the whole catalog; the Wahlperiode filter applies only to acquisition. Verified against `parse_args()`, `main()`, `select_acquisition_protocols()` and offline parser/selection checks of the examples.
+
+### Fakt der Woche, copy fixes from the glossary review
+
+**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
+
+**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; (3) interacts with the publication ledger item
+
+**Completed:** 2026-10-22. Fact citation lists now say "Belege"; the Daten description also names Tagesordnungspunkte. Shared comparison copy uses the existing period kind for "diese Woche" and "diesen Monat", including archive/page status text. Methodik and weekly/monthly page footers explain that rebuilds regenerate cards and data/rule/wording changes can alter them; Methodik also notes that an unresolvable Beleg removes a card. Validation: 153 fact tests and the full Python 3.13 suite (1,373 tests; one skipped) passed, along with script compilation and diff checks. The publication ledger remains a separate open item.
 
 ### Add an accessible role to bill search controls
 
