@@ -459,7 +459,9 @@ class ContributionTests(unittest.TestCase):
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         parsed = dip.parse_protocol_xml(xml)
         nested = parsed['agenda_items'][0]['contributions']
-        self.assertEqual([c['rede_id'] for c in nested], ['nested:R:2', 'nested:R:4'])
+        # One exchange, one Zwischenfrage: the chair's "zum Schluss Ihrer Frage" offers no new one.
+        self.assertEqual([(c['rede_id'], c['text']) for c in nested],
+                         [('nested:R:2', 'Eine Bemerkung ohne Fragezeichen. Erklären Sie uns doch mal.')])
 
     def test_question_mark_evidence_carries_through_chair_interruption(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -475,8 +477,8 @@ class ContributionTests(unittest.TestCase):
                '<fraktion>Grüne</fraktion></name></redner></p><p>Das war der Punkt.</p>'
                '</rede></tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
         parsed = dip.parse_protocol_xml(xml)
-        self.assertEqual([c['rede_id'] for c in parsed['agenda_items'][0]['contributions']],
-                         ['nested:R:2', 'nested:R:4'])
+        self.assertEqual([(c['rede_id'], c['text']) for c in parsed['agenda_items'][0]['contributions']],
+                         [('nested:R:2', 'Was meinen Sie? Das war der Punkt.')])
 
     def test_nested_grant_does_not_cross_rede_boundary(self):
         xml = ('<dbtplenarprotokoll wahlperiode="21" sitzung-nr="1"><sitzungsverlauf>'
@@ -627,7 +629,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
-            self.assertEqual(sk.VERSION, 5)
+            self.assertEqual(sk.VERSION, 6)
             self.assertEqual(store.SCHEMA_VERSION, 5)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:

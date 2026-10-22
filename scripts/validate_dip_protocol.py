@@ -540,6 +540,8 @@ NESTED_OFFER = re.compile(r"\b(?:Zwischen)?(?:Fragen?|Bemerkung(?:en)?)\b", re.I
 NAMED_OFFER = re.compile(r"\bDarf (?:er|sie)(?: das)?\?|\bMögen Sie\?|\bGestatten Sie\?|\bZusatzfrage\b", re.IGNORECASE)
 # R1b: the Redner's short turn after an offer is consent unless it refuses.
 CONSENT_MAX_WORDS = 12
+# With a Frage/Bemerkung word, the chair asks for a (new) question: a new exchange.
+NEW_OFFER_WORDING = re.compile(r"\b(?:darf|dürfen|möchten?|wünscht|will|wollen)\b", re.IGNORECASE)
 CONSENT_REFUSAL = re.compile(r"\b(?:nein|nee|nicht|kein\w*|später)\b", re.IGNORECASE)
 # 6b: the chair gives the floor, with no question asked, to an MdB whose
 # turn says the Redner addressed them.
@@ -730,6 +732,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
     declined_request = ""
     last_text = ""
     offer_open = False  # the chair offered a question and no MdB has taken it yet
+    exchange = 0  # counts the chair's offers; one asker's turns within one are one Zwischenfrage
     consent_turn: list[str] | None = None  # the Redner's latest turn, if it followed an offer
     candidates = {asker_name(parse_redner(r)["last_name"]): r for r in rede.iter("redner")
                   if redner_key(r) != own and parse_redner(r).get("last_name")}
@@ -810,7 +813,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                         else:
                             grant_context = pending_nested_announcement
                         segment = {"speaker": candidate, "marker": marker, "paragraphs": [], "prompt": last_text,
-                                   "grant_epoch": grant_epoch, "refused": refused,
+                                   "grant_epoch": grant_epoch, "refused": refused, "exchange": exchange,
                                    "recipient_mismatch": bool(recipient_mismatch),
                                    "granted": consent_turn is not None and nested_consent(consent_turn),
                                    "chair_floor": bool(chair_text.strip()) and not re.search(r"Kurzintervention|Erwiderung", chair_text, re.IGNORECASE),
@@ -856,12 +859,16 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                              if re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", chair_text, re.IGNORECASE)}
                     if named:
                         offer_open, pending_nested_names = True, named
+                        exchange += 1
                 question_request = re.search(
                     r"\b(?:Zwischenfragen?|Zwischenbemerkung|Frage(?:n|wunsch)?|Nachfrage|Rückfrage|Wortmeldung)\b", chair_text, re.IGNORECASE)
                 interrupted_request = re.search(r"Ich wollte Sie fragen:.*\bHerr\b.*würde gerne\s*[–-]", chair_text)
                 request_wording = re.search(
                     r"gestatt|erlaub|zulass|lassen.*\bzu\b|es gibt|es gäbe|es würde.*geben|wir haben|Sagen Sie Ja oder Nein|hat sich gemeldet|Fragewunsch|hat die Möglichkeit|Sind Sie bereit|würde[^.!?]{0,30}gerne?|geben Sie",
                     chair_text, re.IGNORECASE)
+                if ((question_request and request_wording) or interrupted_request
+                        or (NESTED_OFFER.search(text) and NEW_OFFER_WORDING.search(text))):
+                    exchange += 1
                 if (question_request and request_wording) or interrupted_request:
                     request_accepted = False
                     interrupted_request_pending = bool(interrupted_request)
@@ -1218,6 +1225,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 own_text = SpeechText(clean_text(" ".join(merged)), merged, own_text.unattributed_chars)
             granted_nested_speaker = None
             grant_epoch = 0
+            open_exchange = None
             text, paragraphs, unattributed_chars = own_text
             page_ref = rid_pages.get(rid or "")
             if page_ref:
@@ -1237,7 +1245,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                 raise ValueError(f"nested contribution needs a source rede id at {top.get('top-id')} sequence {sequence}")
             for segment in nested:
                 if segment["grant_epoch"] != grant_epoch:
-                    granted_nested_speaker = None
+                    granted_nested_speaker = open_exchange = None
                     grant_epoch = segment["grant_epoch"]
                 nested_kind = speech_kinds.ZWISCHENFRAGE
                 side = derive.sprechrolle(segment["speaker"])
@@ -1257,6 +1265,20 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                               or announced or continuation)):
                     raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
                 granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                exchange_key = (speaker_id, segment.get("exchange")) if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                if exchange_key and exchange_key == open_exchange:
+                    # The same asker again, with no new chair offer since: one
+                    # Zwischenfrage, not one per marker.
+                    first = nested_units[-1]
+                    nested_units[-1] = contribution_unit(
+                        nested_kind, first["rede_id"], rid, 0, first["speaker"],
+                        first["paragraphs"] + segment["paragraphs"], first["source_page"])
+                    diagnostics.append({"source_rede_id": rid, "marker_ordinal": segment["marker"],
+                                        "speaker": segment["speaker"], "text": clean_text(" ".join(segment["paragraphs"])),
+                                        "evidence": "same asker, same exchange", "treatment": "merged_zwischenfrage",
+                                        "target_rede_id": first["rede_id"]})
+                    continue
+                open_exchange = exchange_key
                 nested_units.append(contribution_unit(
                     nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                     segment["speaker"], segment["paragraphs"], page_ref))

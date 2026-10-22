@@ -21,7 +21,7 @@ import derive
 
 #: The counting rule a parsed report was made under. A report without it predates
 #: A1 (Kurzinterventionen, Fragen and Antworten counted as Reden) and is warned about.
-VERSION = 5
+VERSION = 6
 
 KURZINTERVENTION = "kurzintervention"
 ERWIDERUNG = "erwiderung"

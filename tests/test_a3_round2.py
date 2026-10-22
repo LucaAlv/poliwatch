@@ -247,5 +247,44 @@ class RolelessChairTests(unittest.TestCase):
                   + '<p>Herr Kollege Renner, erlauben Sie eine Zwischenfrage der Kollegin Gast.</p></rede>')
 
 
+class ZwischenfragePerExchangeTests(unittest.TestCase):
+    """Consecutive asker markers in one open exchange, with no new chair offer
+    between them, are one Zwischenfrage (all Wahlperioden)."""
+
+    def body(self, between, second='Meine Frage ist: Warum?', asker2=('B', 'Gast', 'FDP')):
+        return ('<rede id="R">' + redner('A', 'Haupt', 'CDU/CSU') + '<p>Rede.</p>'
+                '<name>Vizepräsidentin Petra Pau:</name><p>Gestatten Sie eine Zwischenfrage des Kollegen Gast?</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Ja.</p>'
+                + redner('B', 'Gast', 'FDP') + '<p>Vielen Dank, Frau Präsidentin.</p>'
+                + between
+                + redner(*asker2) + f'<p>{second}</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Antwort.</p></rede>')
+
+    def test_the_askers_turns_in_one_exchange_are_one_unit(self):
+        for wp in (18, 20):
+            for between in [redner('A', 'Haupt', 'CDU/CSU') + '<p>Bitte.</p>',
+                            '<name>Vizepräsidentin Petra Pau:</name><p>Was war jetzt die Frage?</p>',
+                            '<name>Vizepräsidentin Petra Pau:</name><p>Frau Gast hat das Wort.</p>']:
+                with self.subTest(wp=wp, between=between):
+                    top, contributions = parse(self.body(between), wp=wp)
+                    self.assertEqual(contributions, [('zwischenfrage', 'Vielen Dank, Frau Präsidentin. Meine Frage ist: Warum?')])
+                    self.assertEqual([c['rede_id'] for c in top['contributions']], ['nested:R:3'])
+                    merged = [(d['marker_ordinal'], d['treatment'], d.get('target_rede_id')) for d in top['xml_turn_diagnostics']]
+                    self.assertEqual(merged, [(merged[0][0], 'merged_zwischenfrage', 'nested:R:3')])
+
+    def test_a_new_chair_offer_starts_a_new_unit(self):
+        top, contributions = parse(self.body(
+            '<name>Vizepräsidentin Petra Pau:</name><p>Gestatten Sie eine weitere Zwischenfrage des Kollegen Gast?</p>'
+            + redner('A', 'Haupt', 'CDU/CSU') + '<p>Ja.</p>'))
+        self.assertEqual([k for k, _t in contributions], ['zwischenfrage', 'zwischenfrage'])
+        self.assertEqual(top['xml_turn_diagnostics'], [])
+
+    def test_another_asker_is_another_unit(self):
+        _top, contributions = parse(self.body(
+            '<name>Vizepräsidentin Petra Pau:</name><p>Gestatten Sie auch eine Zwischenfrage der Kollegin Meier?</p>'
+            + redner('A', 'Haupt', 'CDU/CSU') + '<p>Ja.</p>', asker2=('C', 'Meier', 'SPD')))
+        self.assertEqual([k for k, _t in contributions], ['zwischenfrage', 'zwischenfrage'])
+
+
 if __name__ == '__main__':
     unittest.main()
