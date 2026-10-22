@@ -4126,7 +4126,7 @@ def render_landing_page(
     areas = [
         ("Sitzungen", "overview.html", "Sitzungsprotokolle und verfügbare Auswertungen im Archiv."),
         ("Abstimmungen", "votes/index.html", "Namentliche Abstimmungen, Ergebnisse und einzelne Stimmen."),
-        ("Gesetzesvorhaben", "bills/index.html", "Debatten, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
+        ("Gesetzesvorhaben", "bills/index.html", "Beratungen im Plenum, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
         ("Abgeordnete", "abgeordnete/index.html", "Reden und erfasste Abstimmungen einzelner Abgeordneter."),
         ("Fakten", "fakt/index.html", "Auswertungen zu Wochen und Monaten mit ihren Belegen."),
     ]
@@ -6773,7 +6773,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
         event = pulse_html.render_parliamentary_term(str(bill.get("latest_step") or "Erfasster Vorgang"), tip_id=f"result-{index}-event")
         counts = " · ".join((
             pulse_html.format_count(len(bill.get("documents") or []), "Dokument", "Dokumente"),
-            pulse_html.format_count(len(bill.get("protocol_refs") or []), "Debatte", "Debatten"),
+            pulse_html.format_count(len(bill.get("protocol_refs") or []), "Beratung im Plenum", "Beratungen im Plenum"),
             pulse_html.format_count(len(bill.get("votes") or []), "namentliche Abstimmung", "namentliche Abstimmungen"),
         ))
         rows.append(f"""
@@ -6981,7 +6981,7 @@ def render_bill_detail(
     latest = next((event for event in bill.get("events") or [] if event.get("date") == bill.get("latest_date") and event.get("kind") == bill.get("latest_step")), {})
     source_link = f' · <a href="{pulse_html.esc(_bill_event_href(latest["url"]))}">Quelle öffnen</a>' if latest.get("url") else ""
     authors = pulse_html.esc(", ".join(bill.get("introduced_by") or []) or "nicht erfasst")
-    sections = (("verlauf", "Verlauf"), ("debatten", "Debatten"), ("redner", "Rednerinnen und Redner"),
+    sections = (("verlauf", "Verlauf"), ("plenarstellen", "Beratungen im Plenum"), ("redner", "Rednerinnen und Redner"),
                 ("abstimmungen", "Abstimmungen"), ("dokumente", "Dokumente"), ("quellen", "Quellen und Daten"))
     anchors = "".join(f'<a href="#{id}">{label}</a>' for id, label in sections)
     return f"""<!doctype html>
@@ -7006,10 +7006,10 @@ def render_bill_detail(
       <div class="bill-reading-lead"><section class="panel" id="verlauf"><h2>Verlauf</h2>
         {''.join(timeline) if timeline else '<p>Keine Verlaufseinträge in den erfassten Daten.</p>'}
       </section></div>
-      <aside class="bill-support" aria-label="Debatten und Beteiligte">
-        <section class="panel" id="debatten"><h2>Debatten</h2>
-          <p>Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.</p>
-          {'<ul class="bill-debates">' + ''.join(debates) + '</ul>' if debates else '<p>Keine Debatten in den erfassten Daten verknüpft.</p>'}
+      <aside class="bill-support" aria-label="Beratungen im Plenum und Beteiligte">
+        <section class="panel" id="plenarstellen"><h2>Beratungen im Plenum</h2>
+          <p>Jeder Eintrag verknüpft einen {term("Tagesordnungspunkt", tip_id="plenarstellen-top")} einer Sitzung, an dem dieses Vorhaben behandelt wurde – auch ohne erfasste Rede. Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.</p>
+          {'<ul class="bill-debates">' + ''.join(debates) + '</ul>' if debates else '<p>Keine Beratungen im Plenum in den erfassten Daten verknüpft.</p>'}
         </section>
         <section class="panel" id="redner"><h2>Rednerinnen und Redner</h2>
           <p>Erfasste Personen: {len(speakers)}. Nach Zahl der erfassten Reden.</p>

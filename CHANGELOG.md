@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.5.0] - 2026-10-22
+
+### Changed
+
+- Bill pages now label linked plenary records as ‘Beratungen im Plenum’, including records without speeches; counts are unchanged and the section anchor is now #plenarstellen.
+
 ## [0.20.4.0] - 2026-10-21
 
 ### Changed
