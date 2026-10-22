@@ -224,6 +224,8 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
     # 19/100 Karliczek: the XML splits the first letter off.
     (r"B undesminister(in)? .+", "bundesregierung"),
     (r"Parl\. Staatssekretär(in)? (beim|bei der|bei) .+", "bundesregierung"),
+    # WP 18 <rolle_kurz>: the ministry as an abbreviation (R2, a closed list).
+    (r"Parl\. Staatssekretär(in)? (BMF|BMWi|BMJV|BMI|BMEL|BMUB)", "bundesregierung"),
     # Explicit historical government role in 19/13, Redner 999990013.
     (r"Staatssekretär(in)? im Bundeskanzleramt", "bundesregierung"),
     (r"Staatsminister(in)? (beim|bei der|bei|im) .+", "bundesregierung"),

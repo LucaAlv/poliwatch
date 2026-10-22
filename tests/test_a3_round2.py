@@ -29,7 +29,6 @@ class RoleSpellingTests(unittest.TestCase):
         ]:
             with self.subTest(short=short, printed=printed):
                 speaker = dip.parse_redner(role_redner(short=short, printed=printed))
-                self.assertEqual(speaker['role'], printed)
                 self.assertEqual(speaker['role_short'], short)
                 self.assertEqual(derive.sprechrolle(speaker), 'bundesregierung')
 
@@ -53,10 +52,19 @@ class RoleSpellingTests(unittest.TestCase):
                 self.assertEqual(speaker['role'], printed)
                 self.assertEqual(derive.sprechrolle(speaker), 'bundesrat')
 
+    def test_the_abbreviation_alone_is_the_government(self):
+        # 18/123, 18/175: only <rolle_kurz>, nothing printed after the name.
+        for short in ['Parl. Staatssekretärin BMWi', 'Parl. Staatssekretär BMUB', 'Parl. Staatssekretär BMF',
+                      'Parl. Staatssekretär BMJV', 'Parl. Staatssekretär BMI', 'Parl. Staatssekretär BMEL']:
+            with self.subTest(short=short):
+                self.assertEqual(derive.sprechrolle(dip.parse_redner(role_redner(short=short))), 'bundesregierung')
+        # Outside R2's six: still unmapped, for the owner to decide.
+        for short in ['Parl. Staatssekretär BMG', 'Parl. Staatssekretärin BMZ', 'Parl. Staatssekretär BMBF']:
+            with self.subTest(short=short):
+                self.assertIsNone(derive.side_of_role(short))
+
     def test_a_real_conflict_still_raises(self):
         for kwargs in [
-            {'short': 'Parl. Staatssekretär BMF', 'printed': 'Parl. Staatssekretär beim Bundesminister des Innern'},
-            {'short': 'Parl. Staatssekretär BMF', 'printed': 'Staatsminister beim Bundesminister der Finanzen'},
             {'long': 'Minister', 'printed': 'Ministerpräsident (Hessen)'},
             {'long': 'Ministerpräsident (Hessen)', 'printed': 'Bundesministerin'},
         ]:

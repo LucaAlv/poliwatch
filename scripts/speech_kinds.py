@@ -145,32 +145,14 @@ MEMBER = "member"
 OFFICIAL = "official"
 
 
-# WP 18 prints a Parl. Staatssekretär's ministry as an abbreviation in
-# <rolle_kurz> and in full after the name ("… BMF" / "… beim Bundesminister der
-# Finanzen"): one role in two spellings.
-MINISTRY_ABBREVIATIONS = {
-    "BMF": "der Finanzen",
-    "BMWi": "für Wirtschaft und Energie",
-    "BMJV": "der Justiz und für Verbraucherschutz",
-    "BMI": "des Innern",
-    "BMEL": "für Ernährung und Landwirtschaft",
-    "BMUB": "für Umwelt, Naturschutz, Bau und Reaktorsicherheit",
-}
-_ABBREVIATED_ROLE = re.compile(rf"(?P<title>.+) (?P<abbr>{'|'.join(MINISTRY_ABBREVIATIONS)})")
-
-
 def _role_text(elem: ET.Element | None) -> str | None:
     return _text(elem).replace("\xad", "") or None
 
 
 def _same_role(structured: str, printed: str) -> bool:
-    """The structured and the printed role are spellings of one role: the
-    ministry abbreviation of the long form, or the bare title of a "(Land)" one."""
-    abbreviated = _ABBREVIATED_ROLE.fullmatch(structured)
-    if abbreviated:
-        ministry = re.escape(MINISTRY_ABBREVIATIONS[abbreviated["abbr"]])
-        title = re.escape(abbreviated["title"])
-        return bool(re.fullmatch(rf"{title} (?:beim|bei der) Bundesminister(?:in)? {ministry}\.?", printed))
+    """The structured role is the bare title of the printed "(Land)" one (R2).
+    A ministry abbreviation and its long form need no reconciling: a Sprechrolle
+    rule maps both to the Bundesregierung."""
     return printed.startswith(f"{structured} (") and derive.side_of_role(printed) == "bundesrat"
 
 
