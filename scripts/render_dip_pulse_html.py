@@ -1522,9 +1522,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
                 vote_top_count += 1
                 if first_vote_index is None:
                     first_vote_index = source_index(item.get("index"))
+            item_types: set[str] = set()
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
-                    vorgangstyp_counts[str(position["vorgangstyp"])] += 1
+                    kind = str(position["vorgangstyp"])
+                    if kind not in item_types:
+                        vorgangstyp_counts[kind] += 1
+                        item_types.add(kind)
                 if position.get("vorgang_id"):
                     vorgang_ids.add(str(position["vorgang_id"]))
         for _, vote in derive.iter_report_votes(report):
@@ -2351,13 +2355,13 @@ def render_type_mix(
     limit: int = 6,
     glossary_href: str = "sources.html",
 ) -> str:
-    """Which kinds of business the week was made of, against the week before.
+    """TOP counts per distinct Vorgangstyp, against the week before.
 
     Known vorgangstyp labels link to their glossary entry on ``glossary_href``
     and carry the one-line explanation as ``data-tip`` for the hover bubble.
     """
     if not sum(current.values()):
-        return '<p class="week-note">Keine Vorgangspositionen zugeordnet.</p>'
+        return '<p class="week-note">Keine Vorgangstypen zugeordnet.</p>'
     peak = max(current.values())
     rows = []
     for kind, count in current.most_common(limit):

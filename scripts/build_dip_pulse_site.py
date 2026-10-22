@@ -4740,7 +4740,7 @@ def render_week_comparison_section(
             )
         returning_html = f'<ul class="week-list">{"".join(rows)}</ul>'
         returning_note = (
-            f"{len(returning)} von {len(current['vorgang_ids'])} Verfahren dieser Woche "
+            f"{len(returning)} von {len(current['vorgang_ids'])} Vorgängen dieser Woche "
             "standen schon in einer früheren Sitzungswoche auf der Tagesordnung."
         )
         if len(shown) < len(returning):
@@ -4748,7 +4748,7 @@ def render_week_comparison_section(
     else:
         returning_html = ""
         returning_note = (
-            "Kein Verfahren dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
+            "Kein Vorgang dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
             "der erzeugten Auswertungen."
         )
 
@@ -4807,10 +4807,10 @@ def render_week_comparison_section(
         <article class="week-card">
           <h3>Debattenprofil</h3>
           {pulse_html.render_type_mix(current["vorgangstyp_counts"], previous["vorgangstyp_counts"])}
-          <p class="week-note">Vorgangspositionen nach Art, Ver&auml;nderung gegen&uuml;ber {pulse_html.esc(previous["label"])}. <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Was die Typen bedeuten</a></p>
+          <p class="week-note">Je Kalenderwoche zählt jeder Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp; Veränderung gegenüber {pulse_html.esc(previous["label"])}. <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Was die Typen bedeuten</a></p>
         </article>
         <article class="week-card">
-          <h3>Verfahren, die zur&uuml;ckkehren</h3>
+          <h3>Wieder auf der Tagesordnung</h3>
           {returning_html}
           <p class="week-note">{pulse_html.esc(returning_note)}</p>
         </article>{votes_card}
@@ -10121,7 +10121,7 @@ def render_sources_page(
       </section>
       <section class="panel" id="{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">
         <h2>Vorgangstypen im Debattenprofil</h2>
-        <p>Jede Vorgangsposition einer Sitzung gehört zu einem Vorgang im DIP, und jeder Vorgang hat dort einen Typ. Das Debattenprofil auf der Puls-Seite zählt die Vorgangspositionen der Sitzungswoche nach diesem Typ. Die Bezeichnungen folgen der DIP-Klassifikation; die Erläuterungen fassen zusammen, was jeweils dahintersteht.</p>
+        <p>Jede Vorgangsposition einer Sitzung gehört zu einem Vorgang im DIP, und jeder Vorgang hat dort einen Typ. Das Debattenprofil auf der Puls-Seite zählt je Kalenderwoche jeden Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp: Wiederholte Vorgangspositionen desselben Typs zählen einmal, mehrere verschiedene Typen desselben Tagesordnungspunkts jeweils einmal. Die Bezeichnungen folgen der DIP-Klassifikation; die Erläuterungen fassen zusammen, was jeweils dahintersteht.</p>
         <ul class="method-list glossary">
           {vorgangstyp_items}
         </ul>
