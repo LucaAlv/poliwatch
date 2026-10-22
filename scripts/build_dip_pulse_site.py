@@ -11881,7 +11881,8 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
+                    "Fix: repair that cached report, or move it out of data/ and re-fetch its sitting with an online update "
+                    "and --document-number <its number>, then re-run. "
                     "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
