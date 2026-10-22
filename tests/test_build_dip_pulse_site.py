@@ -2625,13 +2625,17 @@ class VotesArchiveTests(unittest.TestCase):
         fractions = [{"name": "SPD", "counts": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}]
         complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members}
         partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2]}
-        unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": fractions[:0] + [
+        unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": [
             {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
+        # no_members: the fractions have counts but bundestag.de listed no Einzelstimmen.
+        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": []}
         rows = build_dip_pulse_site.collect_votes_archive(
-            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous])])]
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members])])]
         )
         by_id = {row["vote"]["id"]: row for row in rows}
-        self.assertEqual((by_id["v1"]["abweichler"], by_id["v2"]["abweichler"], by_id["v3"]["abweichler"]), (1, None, 0))
+        self.assertEqual(
+            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4")), (1, None, 0, None)
+        )
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-abweichler="1"', markup)
         self.assertIn('data-abweichler="0"', markup)

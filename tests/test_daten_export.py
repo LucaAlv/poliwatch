@@ -264,7 +264,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
     # Value: protects=format 7 carries a vote's context to the download: proceedings.abstract, the vote_proceedings junction and votes.context_state round-trip, with captions on the Daten page; fails_when=a new column or table is dropped from the export, or the page falls back to the generic caption; why_new=B4 adds them (D7); seam=none
-    def test_vote_context_round_trips_in_format_6_with_captions(self) -> None:
+    def test_vote_context_round_trips_in_format_7_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
             conn.execute("UPDATE proceedings SET abstract = ? WHERE id = 'vg-1'", ("Erster Absatz\n\nZweiter",))

@@ -186,6 +186,7 @@ def render_committee_line(committees: list[dict[str, Any]], links: dict[str, tup
 CONTEXT_HEADING = "Worum es geht"
 CONTEXT_SOURCE = "Quelle: Deutscher Bundestag/Bundesrat – DIP"
 CONTEXT_NONE = "Keine Beschreibung in DIP"
+CONTEXT_NO_VORGANG = "Kein einzelner DIP-Vorgang ermittelt"
 CONTEXT_NOT_FETCHED = "Vorgang nicht abgerufen"
 
 
@@ -205,11 +206,14 @@ def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextStat
     """The "Worum es geht" block: one DIP abstract per Vorgang the vote is about
     (``politikfelder.vote_vorgang_ids``). It describes the Vorhaben, not the vote's
     result, which stays in the badge. "Keine Beschreibung in DIP" only where DIP was
-    asked and has none; "Vorgang nicht abgerufen" where the cache lacks the answer."""
+    asked and has none; "Vorgang nicht abgerufen" where the cache lacks the answer,
+    also after the known blocks of a partial ``not_fetched`` answer; "Kein einzelner
+    DIP-Vorgang ermittelt" for ``none``, which also covers Drucksachen that name a
+    bundle of Vorgänge DIP does describe."""
     records = (cache or {}).get("vorgaenge") or {}
     blocks = []
     if not vorgang_ids:
-        gap = CONTEXT_NOT_FETCHED if state == "not_fetched" else CONTEXT_NONE
+        gap = CONTEXT_NOT_FETCHED if state == "not_fetched" else CONTEXT_NO_VORGANG
         blocks.append(f'<p class="vote-context-gap">{html.esc(gap)}</p>')
     for vorgang_id in vorgang_ids:
         record = records.get(vorgang_id)
@@ -230,6 +234,8 @@ def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextStat
                 full = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in text.split("\n\n"))
                 body += f'<details class="vote-context-more"><summary>Ganze Beschreibung</summary>{full}</details>'
         blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
+    if vorgang_ids and state == "not_fetched":
+        blocks.append(f'<p class="vote-context-gap">{html.esc(CONTEXT_NOT_FETCHED)}</p>')
     return (
         '<div class="vote-context">'
         f'<p class="vote-context-head"><strong>{html.esc(CONTEXT_HEADING)}</strong> · {html.esc(CONTEXT_SOURCE)}</p>'

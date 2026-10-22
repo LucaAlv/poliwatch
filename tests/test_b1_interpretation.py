@@ -10,7 +10,7 @@ from unittest.mock import patch
 import _support
 import derive
 import validate_dip_protocol as dip
-from test_features_votes import vote_summary
+from _votes_fixture import vote_summary
 
 
 class InterpretationTests(unittest.TestCase):

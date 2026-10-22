@@ -4,7 +4,9 @@ import unittest
 
 import _support  # noqa: F401
 import politikfelder
+from _votes_fixture import fractions_of, panel_for, vote_summary
 from features.votes import (
+    CONTEXT_NO_VORGANG,
     CONTEXT_NONE,
     CONTEXT_NOT_FETCHED,
     document_source_links,
@@ -27,27 +29,6 @@ def _vote(**overrides: object) -> dict[str, object]:
     }
     vote.update(overrides)
     return vote
-
-
-def panel_for(item: dict[str, object], **overrides: object) -> VotePanelContext:
-    """The panel context a dossier page passes, for a report holding only ``item``
-    unless ``report`` is given; ``vote_contexts`` is derived from the report and
-    ``vorgang_cache`` as the page derives it."""
-    report = overrides.pop("report", None) or {"agenda_items": [item]}
-    cache = overrides.pop("vorgang_cache", None) or politikfelder.empty_cache()
-    fields = {
-        "report": report,
-        "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
-        "vorgang_cache": cache,
-        "mp_lookup": None,
-        "mp_prefix": "../abgeordnete/",
-    }
-    fields.update(overrides)
-    return VotePanelContext(**fields)
-
-
-def vote_summary(item: dict[str, object], acquisition: dict[str, object] | None = None, **overrides: object) -> str:
-    return render_vote_summary(item, acquisition, panel_for(item, **overrides))
 
 
 class ResultBadgeLabelTests(unittest.TestCase):
@@ -298,12 +279,7 @@ def _members(faction: str, yes: list[str], no: list[str]) -> list[dict[str, str]
 
 def _roll_call(members: list[dict[str, str]], **overrides: object) -> dict[str, object]:
     """A vote whose fraction counts are exactly its member rows."""
-    tallies: dict[str, dict[str, int]] = {}
-    for member in members:
-        counts = tallies.setdefault(member["faction"], {"yes": 0, "no": 0, "abstain": 0, "absent": 0})
-        counts[member["vote"]] += 1
-    fractions = [{"name": name, "counts": counts, "total": sum(counts.values())} for name, counts in tallies.items()]
-    return _vote(fractions=fractions, members=members, **overrides)
+    return _vote(fractions=fractions_of(members), members=members, **overrides)
 
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
@@ -541,7 +517,9 @@ class VoteContextPanelTests(unittest.TestCase):
 
     # Value: protects=the panel never says DIP has nothing when we never asked; fails_when=none and not_fetched share copy; why_new=new states; seam=none
     def test_none_and_not_fetched_read_differently(self) -> None:
-        self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NONE}</p>', self.panel([], "none", _context_cache()))
+        no_vorgang = self.panel([], "none", _context_cache())
+        self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NO_VORGANG}</p>', no_vorgang)
+        self.assertNotIn(CONTEXT_NONE, no_vorgang)
         self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NOT_FETCHED}</p>', self.panel([], "not_fetched", _context_cache()))
         # A resolved Vorgang with no record yet, and one DIP gives no abstract.
         missing = self.panel(["1"], "resolved", _context_cache())
@@ -550,6 +528,14 @@ class VoteContextPanelTests(unittest.TestCase):
         empty = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "T", "abstract": None}}))
         self.assertIn(CONTEXT_NONE, empty)
         self.assertNotIn(CONTEXT_NOT_FETCHED, empty)
+
+    # Value: protects=a partial not_fetched answer (one known Vorgang, another number missing from the cache) says something is missing; fails_when=the gap note is shown only when no Vorgang is known, so a partial context reads as complete; why_new=D7 made such votes not_fetched but the panel showed only the known blocks; seam=none
+    def test_a_partial_not_fetched_answer_says_a_vorgang_is_missing(self) -> None:
+        cache = _context_cache(**{"1": {"titel": "T", "abstract": "A."}})
+        partial = self.panel(["1"], "not_fetched", cache)
+        self.assertIn("T · DIP", partial)
+        self.assertIn(f'<p class="vote-context-gap">{CONTEXT_NOT_FETCHED}</p>', partial)
+        self.assertNotIn(CONTEXT_NOT_FETCHED, self.panel(["1"], "resolved", cache))
 
     # Value: protects=a vote's two panels and its vote_proceedings name the same Vorgänge (D13); fails_when=the context is narrowed per rendering TOP; why_new=new block; seam=none
     def test_a_vote_under_two_tops_shows_one_selection_on_both_panels(self) -> None:

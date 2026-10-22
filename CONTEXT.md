@@ -249,7 +249,7 @@ An MdB who makes an Abweichung in a namentliche Abstimmung. In public text this 
 _Avoid_: Dissident, Rebell; Fraktionslinie in public text
 
 **Vorgangsbeschreibung**:
-The "Worum es geht" block of a namentliche Abstimmung: DIP's abstract of each Vorgang the Abstimmung is about, as the Bundestag and Bundesrat wrote it, with its title and a link to DIP. It describes the Vorhaben and never the result, which only the Abstimmung's own badge states. Where DIP has no abstract it says so; where the Vorgang was not fetched it says that instead, never the same.
+The "Worum es geht" block of a namentliche Abstimmung: DIP's abstract of each Vorgang the Abstimmung is about, as the Bundestag and Bundesrat wrote it, with its title and a link to DIP. It describes the Vorhaben and never the result, which only the Abstimmung's own badge states. Where DIP has no abstract it says so; where the Vorgang was not fetched it says that instead, never the same, also after the known Vorgänge when one is missing. Where no single Vorgang was found (context_state none, which includes Drucksachen that name a bundle of Vorgänge) it says "Kein einzelner DIP-Vorgang ermittelt", never that DIP has no description.
 _Avoid_: Zusammenfassung (this site writes none here), reading it as what the Abstimmung decided, filling a missing abstract with a guess
 
 **Beschlussempfehlung (zitiert)**:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _support  # noqa: F401
 import publication_state as publication
-from test_features_votes import vote_summary
+from _votes_fixture import vote_summary
 
 
 class PublicationStateContractTests(unittest.TestCase):

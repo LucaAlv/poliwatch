@@ -333,11 +333,9 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
 
 def member_profile_url(member: Mapping[str, Any]) -> str | None:
     """A roll-call member's profile URL: the abgeordnetenwatch profile, else the
-    member's own link when it names a person (``person_profile_url``)."""
-    aw_url = (member.get("abgeordnetenwatch") or {}).get("url")
-    if aw_url:
-        return aw_url
-    return person_profile_url(member.get("profile_url"))
+    member's own link; either only when it names a person (``person_profile_url``)."""
+    aw_url = person_profile_url((member.get("abgeordnetenwatch") or {}).get("url"))
+    return aw_url or person_profile_url(member.get("profile_url"))
 
 
 def person_profile_url(url: Any) -> str | None:

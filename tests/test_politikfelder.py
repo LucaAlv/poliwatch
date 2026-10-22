@@ -1167,7 +1167,7 @@ class RepersistGuardTests(unittest.TestCase):
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
             build.require_vorgang_cache_for_tags(path, cache_of({"V1": vorgang("Recht")}), path.parent.parent, [{"report": report}])
 
-    # Value: protects=a replay refuses a cache that would turn a stored resolved vote context (votes.context_state) into not_fetched even while the vote's tags stay known; fails_when=the guard checks only the tag tables, so a partial cache silently drops abstracts and vote_proceedings; why_new=the guard covered tags only; seam=none
+    # Value: protects=a replay refuses a cache that would turn a stored resolved or none vote context (votes.context_state, none since D5) into not_fetched even while the vote's tags stay known; fails_when=the guard checks only the tag tables, so a partial cache silently drops abstracts and vote_proceedings; why_new=the guard covered tags only; seam=none
     def test_a_resolved_vote_context_is_protected_even_when_its_tags_stay_known(self) -> None:
         positioned = item(1, positions=(position("V1"),), votes=[{"id": "v1", "document_numbers": ["21/1"]}])
         report = {"protocol": {"id": "p1", "dokumentnummer": "21/5"}, "agenda_items": [positioned]}
@@ -1185,20 +1185,25 @@ class RepersistGuardTests(unittest.TestCase):
                         conn.execute("INSERT INTO votes VALUES ('v1')")
                 if with_context:
                     with self.assertRaisesRegex(
-                        build.DatabaseRebuildError, "0 previously known votes not_fetched and 1 previously resolved vote contexts"
+                        build.DatabaseRebuildError, "0 previously known votes not_fetched and 1 previously known vote contexts not_fetched \\(1 resolved, 0 none\\)"
                     ):
                         build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
                 else:
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
                 build.require_vorgang_cache_for_tags(path, full, path.parent.parent, [{"report": report}])
-        # Only a resolved context is protected: one stored as none, not_fetched or NULL may stay or degrade.
+        # A context stored as none is a known answer too (D5, 2026-10-22); one stored
+        # as not_fetched or NULL was never known and may stay or degrade.
         for stored in ("none", "not_fetched", None):
             with self.subTest(stored=stored), tempfile.TemporaryDirectory() as tmp:
                 path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
                 with contextlib.closing(sqlite3.connect(path)) as conn, conn:
                     conn.execute("CREATE TABLE votes (id, context_state)")
                     conn.execute("INSERT INTO votes VALUES ('v1', ?)", (stored,))
-                build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+                if stored == "none":
+                    with self.assertRaisesRegex(build.DatabaseRebuildError, r"1 previously known vote contexts not_fetched \(0 resolved, 1 none\)"):
+                        build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
+                else:
+                    build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
 
     # Value: protects=a replay refuses a cache that lost one of a resolved vote's two numbers while the other still names a Vorgang; fails_when=the context stays resolved with fewer Vorgänge, the guard passes and the replay drops a vote_proceedings row; why_new=B4 ship review (2026-10-22) found the gap; seam=none
     def test_a_cache_that_lost_one_of_two_vote_numbers_is_refused(self) -> None:
@@ -1210,7 +1215,7 @@ class RepersistGuardTests(unittest.TestCase):
             with contextlib.closing(sqlite3.connect(path)) as conn, conn:
                 conn.execute("CREATE TABLE votes (id, context_state)")
                 conn.execute("INSERT INTO votes VALUES ('v1', 'resolved')")
-            with self.assertRaisesRegex(build.DatabaseRebuildError, "1 previously resolved vote contexts"):
+            with self.assertRaisesRegex(build.DatabaseRebuildError, "1 previously known vote contexts"):
                 build.require_vorgang_cache_for_tags(
                     path, cache_of(records, {"21/1": ["A"]}), path.parent.parent, [{"report": report}]
                 )

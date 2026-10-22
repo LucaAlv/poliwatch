@@ -428,6 +428,7 @@ class AttentionRankingTests(unittest.TestCase):
         # The heading's light-theme #0f5f59 would read at about 2.3:1 on that surface.
         self.assertIn(':root[data-theme="dark"] .vote-panel .vote-head h3 { color:var(--teal); }', markup)
 
+    # Value: protects=Abweichler names ("Nachname, Vorname") are separated by semicolons, not commas; fails_when=the list separator rule is dropped or turned back into a comma; why_new=lane B split the names (c1da05b); seam=none
     def test_abweichler_names_are_separated_by_semicolons(self) -> None:
         # Names read "Nachname, Vorname"; a comma between them hides where one ends.
         css = self._page_css(self._render([self._item(1, 1)]))

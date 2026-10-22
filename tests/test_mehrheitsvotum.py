@@ -17,7 +17,7 @@ import build_dip_pulse_site as build
 import derive
 import persist_dip_pulse_store as pulse_store
 from _support import FIXTURES
-from test_features_votes import vote_summary
+from _votes_fixture import fractions_of, vote_summary
 
 
 class MajorityVoteTests(unittest.TestCase):
@@ -241,10 +241,7 @@ class AbweichlerParityTests(unittest.TestCase):
 
     @staticmethod
     def roll_call(vote_id: str, rows: list[tuple[str, str, str]]) -> dict:
-        tallies: dict[str, dict[str, int]] = {}
-        for _, faction, stimme in rows:
-            counts = tallies.setdefault(faction, {"yes": 0, "no": 0, "abstain": 0, "absent": 0})
-            counts[stimme] += 1
+        members = [{"name": name, "faction": faction, "vote": stimme} for name, faction, stimme in rows]
         return {
             "id": vote_id,
             "title": f"Abstimmung {vote_id}",
@@ -252,8 +249,8 @@ class AbweichlerParityTests(unittest.TestCase):
             "detail_url": f"https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id={vote_id}",
             "document_numbers": [],
             "total": {},
-            "fractions": [{"name": name, "counts": counts, "total": sum(counts.values())} for name, counts in tallies.items()],
-            "members": [{"name": name, "faction": faction, "vote": stimme} for name, faction, stimme in rows],
+            "fractions": fractions_of(members),
+            "members": members,
         }
 
     def report(self) -> dict:

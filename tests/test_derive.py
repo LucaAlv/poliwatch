@@ -10,6 +10,7 @@ from collections import Counter
 import _support  # noqa: F401
 import derive
 from _support import FIXTURES
+from _votes_fixture import fractions_of
 
 
 def member(name: str, faction: str, vote: str) -> dict[str, str]:
@@ -23,12 +24,7 @@ def fraction(name: str, yes: int = 0, no: int = 0, abstain: int = 0, absent: int
 
 def roll_call(members: list[dict[str, str]], fractions: list[dict[str, object]] | None = None) -> dict[str, object]:
     """A vote whose fraction counts are exactly its member rows, unless given."""
-    if fractions is None:
-        tallies: dict[str, Counter] = {}
-        for row in members:
-            tallies.setdefault(row["faction"], Counter())[row["vote"]] += 1
-        fractions = [fraction(name, **dict(counts)) for name, counts in tallies.items()]
-    return {"id": "7", "fractions": fractions, "members": members}
+    return {"id": "7", "fractions": fractions_of(members) if fractions is None else fractions, "members": members}
 
 
 class VoteAbweichlerTests(unittest.TestCase):
@@ -298,9 +294,6 @@ class CommitteeRecipeParityTests(unittest.TestCase):
         self.assertEqual(rows[0], {"beschlussempfehlung_urheber": "Haushaltsausschuss", "abstimmungen": 2})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class VoteMemberIdentityTests(unittest.TestCase):
     """derive.vote_member_identity is the key persist hands upsert_mp for a vote member."""
@@ -343,3 +336,17 @@ class VoteMemberIdentityTests(unittest.TestCase):
         ):
             with self.subTest(url=url):
                 self.assertEqual(derive.member_profile_url({"profile_url": url}), url if expected else None)
+
+    # Value: protects=the abgeordnetenwatch URL passes the same person-page check as the member's own link before it becomes an identity key or mps.profile_url; fails_when=member_profile_url returns any aw url as-is again; why_new=only the bundestag.de link was checked (B4 ship review 2026-10-22); seam=none
+    def test_an_abgeordnetenwatch_url_must_name_a_person_too(self) -> None:
+        own = "https://www.bundestag.de/abgeordnete/biografien/A/x-1"
+        aw = "https://www.abgeordnetenwatch.de/profile/ada-beispiel"
+        self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": aw}, "profile_url": own}), aw)
+        for bad in ("https://evil.example/profile/ada", "javascript:alert(1)", "https://[invalid"):
+            with self.subTest(aw=bad):
+                self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}, "profile_url": own}), own)
+                self.assertIsNone(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}}))
+
+
+if __name__ == "__main__":
+    unittest.main()

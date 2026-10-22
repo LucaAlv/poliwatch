@@ -1695,7 +1695,8 @@ def require_vorgang_cache_for_tags(
     database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
     """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
-    vote whose context (``votes.context_state``) was resolved would lose it.
+    vote whose context (``votes.context_state``) was known, resolved or none, would
+    become not_fetched.
     Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
@@ -1721,8 +1722,8 @@ def require_vorgang_cache_for_tags(
             # A schema-5 store has no context yet, so there is nothing to lose.
             vote_columns = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
             known_contexts = (
-                {row[0] for row in conn.execute("SELECT id FROM votes WHERE context_state = 'resolved'")}
-                if "context_state" in vote_columns else set()
+                dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
+                if "context_state" in vote_columns else {}
             )
         finally:
             conn.close()
@@ -1751,12 +1752,14 @@ def require_vorgang_cache_for_tags(
                 context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
-    regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts
+    regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
+    regressed_none = sum(1 for key in regressed_contexts if known_contexts[key] == "none")
     if regressed_tops or regressed_votes or regressed_contexts:
         raise DatabaseRebuildError(
             f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
             f"{len(regressed_tops)} previously known TOPs and {len(regressed_votes)} previously known votes "
-            f"not_fetched and {len(regressed_contexts)} previously resolved vote contexts not_fetched "
+            f"not_fetched and {len(regressed_contexts)} previously known vote contexts not_fetched "
+            f"({len(regressed_contexts) - regressed_none} resolved, {regressed_none} none) "
             f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
             f"context examples: {sorted(regressed_contexts)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"

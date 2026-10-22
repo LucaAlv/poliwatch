@@ -12,6 +12,7 @@
     "scripts/validate_dip_protocol.py": ["tests/test_politikfelder.py"],
     "scripts/render_dip_pulse_html.py": ["tests/test_render_dip_pulse_html.py", "tests/test_bills.py"],
     "tests/_daten_fixture.py": ["tests/test_daten_export.py"],
+    "tests/_votes_fixture.py": ["tests/test_features_votes.py", "tests/test_derive.py", "tests/test_mehrheitsvotum.py", "tests/test_b1_interpretation.py", "tests/test_publication_state.py"],
     "tests/bills_browser_check.js": ["tests/test_bills.py"],
     "tests/recipe_copy_browser_check.js": ["tests/test_daten_page.py"],
     "tests/run_bills_browser_check.mjs": ["tests/test_bills.py"],

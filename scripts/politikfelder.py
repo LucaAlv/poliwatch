@@ -643,8 +643,10 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
     Returns (Vorgang ids, Drucksache numbers). Ids: every id the TOPs name that
     is missing from the cache, plus cached ones still without a Sachgebiet (DIP
     may have filled it since), plus the Vorgänge a vote's context reads
-    (``report_vote_vorgaenge``) whose record has an empty abstract. Numbers: those of every vote, and of every TOP without Vorgänge of its
-    own (``reads_cited_numbers``), that the cache has not resolved, plus the Vorgänge
+    (``report_vote_vorgaenge``) whose record has an empty abstract.
+
+    Numbers: those of every vote, and of every TOP without Vorgänge of its own
+    (``reads_cited_numbers``), that the cache has not resolved, plus the Vorgänge
     already resolved numbers name.
     """
     records = cache.get("vorgaenge") or {}
