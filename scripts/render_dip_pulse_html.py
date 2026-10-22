@@ -17,6 +17,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 import derive
 import politikfelder
@@ -2405,11 +2406,32 @@ def render_vote_pills(counts: dict[str, Any]) -> str:
     )
 
 
+def document_chamber(doc: dict[str, Any]) -> str:
+    """Presentation needs evidence; stable_ids.document_issuer defaults to BT."""
+    issuer = str(doc.get("herausgeber") or "").strip().upper()
+    if issuer in {"BT", "BR"}:
+        return issuer
+    try:
+        url = urlparse(str(doc.get("url") or ""))
+    except ValueError:
+        url = urlparse("")
+    if url.hostname == "dserver.bundestag.de":
+        if url.path.startswith("/brd/"):
+            return "BR"
+        if url.path.startswith(("/btd/", "/btp/")):
+            return "BT"
+    if str(doc.get("dokumentnummer") or "").strip().endswith("(B)"):
+        return "BR"
+    return ""
+
+
 def render_source_links(item: dict[str, Any]) -> str:
     links = []
     for doc in item.get("xml_drucksachen") or []:
         url = doc.get("url")
         number = doc.get("dokumentnummer")
+        if document_chamber(doc) == "BR":
+            number = f"BR-Drs. {number}"
         href = None
         if url:
             # The XML's Drucksache references are extracted from running text,
