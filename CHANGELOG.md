@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.6.1] - 2026-10-22
+
+### Fixed
+
+- Assistive technology can now identify the bill overview's search and filter controls as a search landmark named “Gesetzesvorhaben finden”. Empty publications continue to omit the controls.
+
 ## [0.20.6.0] - 2026-10-22
 
 ### Fixed
