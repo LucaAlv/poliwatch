@@ -454,13 +454,13 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: controls role, same-day step ties, diacritic-insensitive search
+### Bill overview polish: same-day step ties, diacritic-insensitive search
 
-**What:** (1) Give `<div class="bill-controls" aria-label=…>` a `role="search"` (or `group`) so the label is announced. (2) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (3) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
+**What:** (1) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (2) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
 
 **Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
 
-**Context:** (2) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
+**Context:** (1) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
 
 **Effort:** S
 **Priority:** P3
@@ -699,16 +699,6 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Effort:** M
 **Priority:** P2
 **Depends on:** Lawyer answer on the address (ADR 0003, question 1)
-
-### Cite protocols as „BT-PlPr." per DIP no. 4c
-
-**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
-
-**Why:** DIP no. 4c prescribes the abbreviations exactly.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Settle the roll-call source for redistribution
 
@@ -1147,6 +1137,30 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Add an accessible role to bill search controls
+
+**What:** Give `.bill-controls` `role="search"`, retaining `aria-label="Gesetzesvorhaben finden"`, so the bill overview exposes a named search landmark. Empty publications omit the controls.
+
+**Why:** Accessibility finding from the v0.18.0.0 adversarial review. See [implementation plan](docs/plans/bill-search-accessible-role.md).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.1 (2026-10-22). Added the named search landmark and nonempty/empty markup assertions. Validation passed: 29 bill tests, the full suite (1,371 tests; 1 skipped), and desktop/mobile browser checks.
+
+### Cite protocols as „BT-PlPr." per DIP no. 4c
+
+**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
+
+**Why:** DIP no. 4c prescribes the abbreviations exactly.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.0 (2026-10-22). Protocol labels now use `BT-PlPr.`; document citations preserve issuer and type, including BR and protocol documents. Fact receipts resolve the issuer by document ID. See the [implementation and citation audit](docs/plans/protocol-citation-labels.md#implementation-and-citation-audit-2026-10-22).
 
 ### Tag the abgeordnetenwatch MP columns with their real source
 

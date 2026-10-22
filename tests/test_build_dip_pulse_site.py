@@ -62,8 +62,8 @@ class DossierProgressTests(unittest.TestCase):
 
         output = stderr.getvalue()
         self.assertIn("[dossiers] Processing 2 dossier(s).", output)
-        self.assertIn("[1/2] Downloading new dossier: BT-PlPr 21/87 (ID 5805) from 2026-06-25.", output)
-        self.assertIn("[2/2] Refreshing cached dossier: BT-PlPr 21/88 (ID 5806) from 2026-06-26.", output)
+        self.assertIn("[1/2] Downloading new dossier: BT-PlPr. 21/87 (ID 5805) from 2026-06-25.", output)
+        self.assertIn("[2/2] Refreshing cached dossier: BT-PlPr. 21/88 (ID 5806) from 2026-06-26.", output)
         self.assertIn("[dossiers] Completed 2/2 dossier(s)", output)
         self.assertEqual(built, [("5805", None), ("5806", cached_report)])
         self.assertEqual(len(entries), 2)
@@ -718,6 +718,46 @@ class CollectAbgeordneteTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT person_id FROM mps WHERE id=?", (speaker_mp_id,)).fetchone()[0], person_id)
             finally:
                 conn.close()
+
+
+class CitationLabelTests(unittest.TestCase):
+    def test_overview_catalog_and_mp_history_keep_protocol_links(self) -> None:
+        protocol = CurrentPulseOrderTests._protocol("21/84", "5799", "2026-06-12")
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = CurrentPulseOrderTests._entry(Path(tmp), protocol)
+            overview = build_dip_pulse_site.render_overview([protocol], [entry])
+            rows, _ = build_dip_pulse_site.build_catalog_rows([protocol], [entry])
+        for markup in (overview, "".join(rows)):
+            self.assertIn("BT-PlPr. 21/84", markup)
+            self.assertIn('href="protocols/plenarprotokoll-21-84.html"', markup)
+        mp = {"name": "Example", "speeches": [{"document_number": "21/84", "page": "7B", "heading": "<TOP>"}]}
+        mp["contribution_counts"] = {"zwischenfrage": 1}
+        mp["contribution_links"] = [{"document_number": "21/84", "id": "c1", "kind": "zwischenfrage"}]
+        markup = build_dip_pulse_site.render_abgeordnete_detail(mp)
+        self.assertIn('href="../protocols/plenarprotokoll-21-84.html#contribution-c1">BT-PlPr. 21/84', markup)
+        self.assertIn('href="../protocols/plenarprotokoll-21-84.html">BT-PlPr. 21/84</a>', markup)
+        self.assertIn("S. 7B", markup)
+        self.assertIn("&lt;TOP&gt;", markup)
+
+    def test_xml_pills_qualify_bundesrat_and_preserve_unsafe_fallback(self) -> None:
+        docs = [
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/001/2100001.pdf"},
+            {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/brd/2021/0001-21.pdf"},
+            {"dokumentnummer": "<21/2>", "herausgeber": "BR", "url": "javascript:alert(1)"},
+        ]
+        markup = build_dip_pulse_site.pulse_html.render_source_links({"xml_drucksachen": docs})
+        self.assertIn('>21/1</a>', markup)
+        self.assertIn('>BR-Drs. 21/1</a>', markup)
+        self.assertIn('<span class="doc-link muted">BR-Drs. &lt;21/2&gt;</span>', markup)
+        self.assertNotIn("javascript:", markup)
+        self.assertEqual(build_dip_pulse_site.pulse_html.document_chamber({"url": "https://[invalid"}), "")
+
+    def test_recipe_protocol_label_does_not_change_manifest(self) -> None:
+        row = {"proceeding_id": "1", "title": "Test", "typ": "Gesetzgebung", "erste_drucksache": "21/84", "reden": 2, "sitzungen": 1}
+        manifest = {"recipes": [{"id": "r5-vorgaenge-meiste-reden", "title": "Test", "sql": "SELECT ...", "rows": [row]}]}
+        markup = build_dip_pulse_site.render_daten_recipes(manifest, mp_lookup={}, document_numbers={"21/84"}, bill_slugs=set())
+        self.assertIn("<td>BT-PlPr. 21/84</td>", markup)
+        self.assertEqual(row["erste_drucksache"], "21/84")
 
 
 class CurrentPulseOrderTests(unittest.TestCase):
@@ -2450,6 +2490,14 @@ class VotesArchiveTests(unittest.TestCase):
 
     def _item(self, index: int, votes: list[dict[str, Any]]) -> dict[str, Any]:
         return {"index": index, "votes": votes, "xml_drucksachen": [], "api": {}}
+
+    def test_archive_keeps_explicit_bundesrat_issuer_for_document_pills(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1"]}
+        item = self._item(1, [vote])
+        item["api"] = {"linked_drucksachen": [{"dokumentnummer": "21/1", "herausgeber": "BR", "url": "https://dip.bundestag.de/x"}]}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('href="https://dip.bundestag.de/x">BR-Drs. 21/1</a>', markup)
 
     def test_collect_deduplicates_a_vote_attached_to_two_agenda_items(self) -> None:
         shared = {"id": "v1", "date": "2026-06-10", "title": "Geteilt", "total": {"yes": 1, "no": 0}}

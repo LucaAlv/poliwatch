@@ -10,6 +10,7 @@ from features.votes import (
     CONTEXT_NONE,
     CONTEXT_NOT_FETCHED,
     document_source_links,
+    document_source_chambers,
     render_document_links,
     result_badge_label,
 )
@@ -58,6 +59,25 @@ class DocumentSourceLinksTests(unittest.TestCase):
 
 
 class RenderDocumentLinksTests(unittest.TestCase):
+    def test_bundesrat_labels_use_metadata_for_the_selected_link(self) -> None:
+        item = {"api": {"linked_drucksachen": [
+            {"dokumentnummer": "21/1", "herausgeber": "BR", "url": "https://dip.bundestag.de/x"},
+        ]}}
+        links = document_source_links(item)
+        self.assertIn('>BR-Drs. 21/1</a>', render_document_links(["21/1"], links, document_source_chambers(item)))
+        # XML selected a different, Bundestag document with the same number.
+        item["xml_drucksachen"] = [{"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/001/2100001.pdf"}]
+        markup = render_document_links(["21/1"], document_source_links(item), document_source_chambers(item))
+        self.assertIn('>21/1</a>', markup)
+        self.assertNotIn("BR-Drs.", markup)
+        self.assertIn('>BR-Drs. 557/25(B)</span>', render_document_links(["557/25(B)"], {}))
+        item["api"]["linked_drucksachen"][0].update(herausgeber="BT", url="https://dserver.bundestag.de/brd/2025/example.pdf")
+        item["xml_drucksachen"][0]["url"] = "https://dserver.bundestag.de/brd/2025/example.pdf"
+        self.assertEqual(document_source_chambers(item), {"21/1": "BT"})
+        item = {"api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "herausgeber": "BR"}]}}
+        self.assertEqual(document_source_chambers(item), {"21/1": "BR"})
+
+
     def test_linked_number_becomes_an_anchor(self) -> None:
         links = {"21/6561": ("https://dserver.bundestag.de/btd/21/065/2106561.pdf", "bundestag-xml")}
         html = render_document_links(["21/6561"], links)

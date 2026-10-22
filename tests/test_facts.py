@@ -2170,7 +2170,7 @@ class PageTests(StoreCase):
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn('<section id="laengste-rede"', html)
         self.assertIn('<a href="../abgeordnete/7.html">Ada Lovelace</a>', html)
-        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">Plenarprotokoll 21/9</a>', html)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">BT-PlPr. 21/9</a>', html)
 
     # Value: protects=a fact's speaker link resolves through the persisted person key even when no external id of the speaker is a page key; fails_when=_fact_speech_citation stops passing person_id to mp_page_href; why_new=the speech-receipt test only resolves through the legacy xml key; seam=none
     def test_speech_receipt_links_the_speaker_through_the_persisted_person_key(self) -> None:
@@ -2223,7 +2223,7 @@ class PageTests(StoreCase):
         output_dir, _ = self.write_pages(specs)
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn('<section id="laengste-sitzung"', html)
-        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">Plenarprotokoll 21/9</a>', html)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">BT-PlPr. 21/9</a>', html)
 
     def test_vote_receipt_resolves_by_detail_url_not_a_store_id(self) -> None:
         specs = week_specs(9)
@@ -2271,6 +2271,11 @@ class PageTests(StoreCase):
             "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
             "VALUES (2, 'BT', '21/501', 'https://not-allowlisted.example/drucksache/501', 't', 't')"
         )
+        conn.execute(
+            "INSERT INTO documents(id, herausgeber, document_number, url, created_at, updated_at) "
+            "VALUES (3, 'BR', '21/500', 'https://dip.bundestag.de/drucksache/other', 't', 't')"
+        )
+        conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 3)", (vote_id,))
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 1)", (vote_id,))
         conn.execute("INSERT INTO vote_documents(vote_id, document_id) VALUES (?, 2)", (vote_id,))
         conn.commit()
@@ -2282,9 +2287,10 @@ class PageTests(StoreCase):
         build.write_facts_pages(output_dir, self.path, False, {}, document_numbers, set())
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
         self.assertIn(
-            '<li><a href="https://www.bundestag.de/drucksache/500">Drucksache 21/500</a></li>', html
+            '<li><a href="https://www.bundestag.de/drucksache/500">BT-Drs. 21/500</a></li>', html
         )
-        self.assertIn("<li>Drucksache 21/501</li>", html)
+        self.assertIn("<li>BT-Drs. 21/501</li>", html)
+        self.assertIn('href="https://dip.bundestag.de/drucksache/other">BR-Drs. 21/500</a>', html)
         self.assertNotIn("not-allowlisted.example", html)
 
     def test_a_fact_whose_citation_no_longer_resolves_renders_the_placeholder_and_skips_its_card(self) -> None:
@@ -2340,7 +2346,7 @@ class PageTests(StoreCase):
         section = re.search(r'<section id="erste-reden".*?</section>', html, re.S).group(0)
         for name in ("Neu Eins", "Neu Zwei", "Neu Drei"):
             self.assertIn(name, section)
-        self.assertEqual(section.count("Plenarprotokoll 21/9"), 3)
+        self.assertEqual(section.count("BT-PlPr. 21/9"), 3)
 
     def test_a_longest_title_and_longest_name_still_wrap_once_written_to_disk(self) -> None:
         specs = week_specs(9, speaker="A" * 45 + " von Sehr Langer Nachname")

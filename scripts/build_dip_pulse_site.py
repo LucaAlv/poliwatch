@@ -256,7 +256,7 @@ def build_dossiers_with_progress(
     for index, protocol in enumerate(protocols, start=1):
         existing_report = load_existing(protocol)
         action = "Refreshing cached dossier" if existing_report is not None else "Downloading new dossier"
-        label = f"BT-PlPr {protocol_label(protocol)}"
+        label = f"BT-PlPr. {protocol_label(protocol)}"
         protocol_date = str(protocol.get("datum") or "").strip()
         if protocol_date:
             label = f"{label} from {protocol_date}"
@@ -3612,6 +3612,9 @@ def render_daten_recipes(
                         cells.append(f'<td class="num">{text_value}</td>')
                         continue
                     text_value = str(value)
+                    if column["name"] == "erste_drucksache":
+                        # r5 selects protocols.document_number despite this export column's name.
+                        text_value = f"BT-PlPr. {text_value}"
                     title_attr = ""
                     if column.get("truncate"):
                         truncated, full = _truncate(text_value, column["truncate"])
@@ -4430,6 +4433,7 @@ def collect_votes_archive(
                 "vote": vote,
                 "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
+                "document_chambers": votes_feature.document_source_chambers(item) if item else {},
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
                 "abweichler": _abweichler_count(vote),
@@ -4485,7 +4489,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
             items.append(f'<h2 class="archive-month" data-month="{pulse_html.esc(month)}">{pulse_html.esc(month)}</h2>')
             current_month = month
         badge_html = votes_feature.render_result_badge(vote)
-        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"])
+        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"], row.get("document_chambers"))
         title = vote.get("title") or vote.get("topic") or "Ohne Titel"
         title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
@@ -6194,7 +6198,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                             "date": first_value(doc.get("datum"), protocol.get("datum")),
                             "kind": first_value(doc.get("drucksachetyp"), "Drucksache"),
                             "title": first_value(doc.get("titel"), position.get("titel")),
-                            "source": first_value(doc.get("dokumentnummer")),
+                            "source": _document_citation(doc) if doc.get("dokumentnummer") else "",
                             "url": doc.get("url"),
                         }
                     )
@@ -6203,7 +6207,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                         "date": protocol.get("datum"),
                         "kind": first_value(position.get("vorgangsposition"), "Plenarberatung"),
                         "title": first_value(position.get("titel"), item.get("heading")),
-                        "source": f"BT-PlPr {protocol.get('dokumentnummer')} · {item.get('top_id')}",
+                        "source": f"BT-PlPr. {protocol.get('dokumentnummer')} · {item.get('top_id')}",
                         "url": ref["href"],
                     }
                 )
@@ -6879,7 +6883,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     if rows:
         year_options = "".join(f'<option value="{year}">{year}</option>' for year in sorted(years, reverse=True))
         controls = f"""
-      <div class="bill-controls" aria-label="Gesetzesvorhaben finden">
+      <div class="bill-controls" role="search" aria-label="Gesetzesvorhaben finden">
         <div class="bill-control"><label for="bill-search">Gesetzesvorhaben suchen</label>
           <input id="bill-search" type="search" data-bill-search aria-describedby="bill-search-hint" disabled>
           <small id="bill-search-hint">Titel oder Drucksachennummer</small></div>
@@ -6942,9 +6946,19 @@ def _bill_event_href(value: Any) -> str:
 
 
 def _is_bundesrat_document(doc: dict[str, Any]) -> bool:
-    """DIP marks Bundesrat papers by a "(B)" number suffix and the /brd/ path."""
+    return pulse_html.document_chamber(doc) == "BR"
+
+
+def _document_citation(doc: dict[str, Any]) -> str:
     number = str(doc.get("dokumentnummer") or "").strip()
-    return number.endswith("(B)") or "/brd/" in str(doc.get("url") or "")
+    kind = str(doc.get("drucksachetyp") or doc.get("dokumentart") or "")
+    protocol = "plenarprotokoll" in kind.lower() or bool(re.match(r"PlPr\.?\s", number, re.I))
+    if protocol:
+        number = re.sub(r"^PlPr\.?\s+", "", number, flags=re.I)
+    chamber = pulse_html.document_chamber(doc)
+    if chamber:
+        return f"{chamber}-{'PlPr.' if protocol else 'Drs.'} {number}"
+    return f"{'Plenarprotokoll' if protocol else 'Drucksache'} {number} (Kammer nicht erfasst)"
 
 
 # PAGE: bills/bill-<slug>.html. DOM order stays readable without scripts.
@@ -6987,7 +7001,7 @@ def render_bill_detail(
         # Bundesrat papers ("557/25(B)", served under /brd/) are not Bundestag
         # Drucksachen; the glossary's Drucksache tooltip would misattribute them.
         if _is_bundesrat_document(doc):
-            document_label_html = "Bundesrat-Drucksache"
+            document_label_html = "Bundesrat-Plenarprotokoll" if "plenarprotokoll" in kind.lower() else "Bundesrat-Drucksache"
         else:
             document_label = "Plenarprotokoll" if "plenarprotokoll" in kind.lower() else (
                 "Drucksache" if kind in {"Gesetzentwurf", "Beschlussempfehlung", "Beschlussempfehlung und Bericht", "Bericht", "Unterrichtung", "Stellungnahme"} else "Dokument"
@@ -7021,7 +7035,7 @@ def render_bill_detail(
         speech_refs = speaker.get("speeches") or []
         for index, ref in enumerate(speech_refs, start=1):
             date = pulse_html.format_date(ref.get("protocol_date")) or "Datum nicht erfasst"
-            source = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+            source = f'BT-PlPr. {ref.get("protocol_number") or "ohne Nummer"}'
             page = pulse_html.source_page_text(ref.get("source_page"))
             action = 'Rede lesen' if len(speech_refs) == 1 else f'Rede {index}'
             label = f'{action} · {date} · {source}' + (f' · S. {page}' if page else '')
@@ -7040,7 +7054,7 @@ def render_bill_detail(
 
     debates = []
     for index, ref in enumerate(bill.get("protocol_refs") or []):
-        label = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+        label = f'BT-PlPr. {ref.get("protocol_number") or "ohne Nummer"}'
         if ref.get("href"):
             label = f'<a href="{pulse_html.esc(_bill_event_href(ref["href"]))}">{pulse_html.esc(label)}</a>'
         else:
@@ -7781,7 +7795,7 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     )
     links = "".join(
         f'<li><a href="../protocols/plenarprotokoll-{slugify_document_number(c["document_number"])}.html#contribution-{pulse_html.esc(c["id"])}">'
-        f'{pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
+        f'BT-PlPr. {pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
         for c in mp.get("contribution_links") or []
     )
     return (
@@ -7838,7 +7852,7 @@ def render_abgeordnete_detail(
         snippet = pulse_html.esc((speech.get("snippet") or "").strip())
         speeches.append(
             '<li class="speech-row">'
-            f'<span class="meta"><a href="{pulse_html.esc(href)}">BT-PlPr {pulse_html.esc(speech.get("document_number"))}</a><br>{pulse_html.esc(speech.get("date") or "")} · {pulse_html.esc(page)}</span>'
+            f'<span class="meta"><a href="{pulse_html.esc(href)}">BT-PlPr. {pulse_html.esc(speech.get("document_number"))}</a><br>{pulse_html.esc(speech.get("date") or "")} · {pulse_html.esc(page)}</span>'
             f'<span><strong>{heading}</strong>{("<br>" + snippet) if snippet else ""}</span>'
             "</li>"
         )
@@ -8324,6 +8338,18 @@ def _renderable_fact(conn: sqlite3.Connection, fact_row: dict[str, Any]) -> dict
         return None
     row = dict(fact_row)
     row["citation"] = citation
+    # Resolve issuer/type from the receipt's exact document id, never its number.
+    row["receipts"] = []
+    for receipt in fact_row.get("receipts") or []:
+        receipt = dict(receipt)
+        if receipt["entity_kind"] == "document":
+            document = conn.execute(
+                "SELECT herausgeber, document_type FROM documents WHERE id = ?",
+                (receipt.get("source_entity_id"),),
+            ).fetchone()
+            if document:
+                receipt.update(herausgeber=document["herausgeber"], dokumentart=document["document_type"])
+        row["receipts"].append(receipt)
     return row
 
 
@@ -8404,7 +8430,10 @@ def _render_fact_sources(
         document_number = receipt.get("document_number")
         if receipt["entity_kind"] == "document":
             url = pulse_html.safe_href(receipt.get("official_url"))
-            label = f"Drucksache {document_number}"
+            label = _document_citation({
+                "dokumentnummer": document_number, "url": receipt.get("official_url"),
+                "herausgeber": receipt.get("herausgeber"), "dokumentart": receipt.get("dokumentart"),
+            })
             items.append(
                 f'<li><a href="{pulse_html.esc(url)}">{pulse_html.esc(label)}</a></li>'
                 if url else f"<li>{pulse_html.esc(label)}</li>"
@@ -8413,7 +8442,7 @@ def _render_fact_sources(
         href = resolve_entity_link(
             "document", document_number, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs
         )
-        protocol_text = f"Plenarprotokoll {document_number}"
+        protocol_text = f"BT-PlPr. {document_number}"
         bits = [
             f'<a href="../{pulse_html.esc(href)}">{pulse_html.esc(protocol_text)}</a>' if href else pulse_html.esc(protocol_text)
         ]
@@ -8939,7 +8968,7 @@ def render_overview(
             <article class="session-card">
               <div class="session-main">
                 <div>
-                  <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
+                  <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
                   <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
                 </div>
@@ -9320,7 +9349,7 @@ def build_catalog_rows(
             f"""
             <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-docnumber="{pulse_html.esc(document_number)}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
               <div>
-                <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
+                <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
                 <p>{pulse_html.esc(protocol.get('datum'))} · aktualisiert {pulse_html.esc(protocol.get('aktualisiert'))}</p>
               </div>
