@@ -28,6 +28,12 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s)")
 _COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 _TAG_START = frozenset("!/?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+#: Raw abstract characters read; the longest on the reference cache has 5,111. Both
+#: html.parser and the fallback slow down quadratically on some malformed markup.
+MAX_ABSTRACT_CHARS = 10_000
+# A numeric character reference past U+10FFFF names no character; with more than
+# 4,300 digits html.unescape raises instead of reading it as U+FFFD.
+_OVERLONG_CHARREF = re.compile(r"&#(?:[xX]0*[0-9a-fA-F]{7,}|0*[0-9]{8,});?")
 
 
 def _strip_tags(text: str) -> str:
@@ -96,19 +102,21 @@ class _AbstractParser(HTMLParser):
 def abstract_text(raw: Any) -> str:
     """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
     whitespace inside a paragraph collapsed to single spaces, entities unescaped,
-    markup gone. The caller escapes the result; the raw text stays in the cache."""
+    markup gone. The caller escapes the result; the raw text stays in the cache.
+    Only the first ``MAX_ABSTRACT_CHARS`` characters are read."""
     if not raw:
         return ""
+    raw = _OVERLONG_CHARREF.sub("\ufffd", str(raw)[:MAX_ABSTRACT_CHARS])
     parser = _AbstractParser()
     try:
-        parser.feed(str(raw))
+        parser.feed(raw)
         parser.close()
         malformed = parser.skipping > 0  # an unclosed <script> or <style> would swallow the rest
     except AssertionError:  # html.parser's answer to markup it cannot read, e.g. "<![oops]>"
         malformed = True
     if malformed:
         # Keep the words rather than lose them: tags out, entities read, one paragraph.
-        text = _strip_tags(_SKIPPED_BLOCK.sub(" ", _COMMENT.sub(" ", str(raw))))
+        text = _strip_tags(_SKIPPED_BLOCK.sub(" ", _COMMENT.sub(" ", raw)))
         return " ".join(html_module.unescape(text).split())
     paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
     return "\n\n".join(p for p in paragraphs if p)

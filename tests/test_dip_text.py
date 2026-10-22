@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 import _support  # noqa: F401
-from dip_text import CONTEXT_TEASER, abstract_teaser, abstract_text, committee_genitive
+from dip_text import CONTEXT_TEASER, MAX_ABSTRACT_CHARS, abstract_teaser, abstract_text, committee_genitive
 
 
 class AbstractTextTests(unittest.TestCase):
@@ -68,6 +68,19 @@ class AbstractTextTests(unittest.TestCase):
                 abstract_text(raw)
                 # gstack-timing-ok: the bound is the contract; a backtracking scan takes seconds, the linear one milliseconds
                 self.assertLess(time.perf_counter() - started, 0.5)
+
+
+    # Value: protects=a numeric character reference too long for int() reads as U+FFFD instead of stopping persist and every render; fails_when=html.unescape or html.parser sees the raw reference (ValueError past 4,300 digits); why_new=Codex adversarial review, B4 ship run 2; seam=none
+    def test_an_overlong_character_reference_reads_as_a_replacement_character(self) -> None:
+        for raw in ("Vor &#" + "1" * 5000 + "; nach", "<p>Vor &#x" + "f" * 5000 + " nach</p>", "<![oops]> Vor &#" + "9" * 5000 + "; nach"):
+            with self.subTest(raw=raw[:12]):
+                self.assertEqual(abstract_text(raw), "Vor \ufffd nach")
+        self.assertEqual(abstract_text("A &#228; &#x1F600;"), "A \u00e4 \U0001f600")
+
+    # Value: protects=only the first MAX_ABSTRACT_CHARS characters are read, so markup the parser handles in quadratic time stays bounded; fails_when=the cap goes and a 64 KB unclosed "<script " run stalls persist; why_new=Claude and Codex adversarial review, B4 ship run 2; seam=none
+    def test_only_the_first_max_abstract_chars_are_read(self) -> None:
+        self.assertEqual(abstract_text("a" * MAX_ABSTRACT_CHARS + "b" * 50), "a" * MAX_ABSTRACT_CHARS)
+        self.assertGreater(MAX_ABSTRACT_CHARS, 5111)  # the longest abstract on the reference cache
 
 
 class AbstractTeaserTests(unittest.TestCase):

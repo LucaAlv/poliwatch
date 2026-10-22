@@ -40,6 +40,16 @@ class VoteAbweichlerTests(unittest.TestCase):
         self.assertEqual(self.names(result, "AfD"), ["Finn"])
         self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "complete", "AfD": "complete"})
 
+    # Value: protects=a Zusammenschluss with member rows but no fraction row is never counted complete, so nobody is told "Niemand stimmt anders"; fails_when=vote_abweichler only visits fraction rows and the unchecked group drops out; why_new=Claude and Codex adversarial review, B4 ship run 2; seam=none
+    def test_a_group_without_a_fraction_row_is_partial(self) -> None:
+        rows = [member("Ada", "SPD", "yes"), member("Bea", "SPD", "yes"), member("Dora", "AfD", "yes"), member("Finn", "AfD", "no")]
+        result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=2)]))
+        self.assertEqual(result["SPD"], {"members": [], "state": "complete"})
+        self.assertEqual(result["AfD"], {"members": [], "state": "partial", "unlisted": True})
+        # fraktionslos needs no fraction row; it is no Zusammenschluss.
+        alone = derive.vote_abweichler(roll_call(rows[:2] + [member("Gil", "fraktionslos", "no")], [fraction("SPD", yes=2)]))
+        self.assertEqual(set(alone), {"SPD"})
+
     def test_members_come_back_alphabetical(self) -> None:
         rows = [member(name, "SPD", "no") for name in ("Zoe", "Ada", "Mia")] + [member(f"J{n}", "SPD", "yes") for n in range(4)]
         self.assertEqual(self.names(derive.vote_abweichler(roll_call(rows)), "SPD"), ["Ada", "Mia", "Zoe"])

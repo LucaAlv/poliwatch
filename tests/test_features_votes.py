@@ -325,6 +325,15 @@ class AbweichlerPanelTests(unittest.TestCase):
         self.assertNotIn('class="vote-abweichler"', markup)
         self.assertNotIn(GAP_NOTE, markup)
 
+    # Value: protects=a vote whose member rows name a group with no fraction row shows the gap note, not "Niemand stimmt anders"; fails_when=the vote-wide line ignores groups the fraction chart left out; why_new=adversarial review, B4 ship run 2; seam=none
+    def test_a_group_missing_from_the_fraction_rows_shows_the_gap_note(self) -> None:
+        members = _members("SPD", ["Ada", "Bea"], []) + _members("AfD", ["Dora"], ["Finn"])
+        vote = _roll_call(members)
+        vote["fractions"] = [row for row in vote["fractions"] if row["name"] == "SPD"]
+        markup = vote_summary({"votes": [vote]})
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+
     def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
         members = (
             _members("SPD", ["Ada", "Bea"], [])

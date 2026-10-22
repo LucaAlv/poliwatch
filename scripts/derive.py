@@ -552,7 +552,10 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
                                                       the opposite Ja/Nein
 
     fraktionslos and an unknown affiliation are no Zusammenschluss and get no
-    entry. Members come back alphabetical, as the Einzelstimmen list them.
+    entry. Where other groups have fraction rows, a Zusammenschluss with member
+    rows but none has no counts to check them against: partial, marked
+    ``unlisted``. A vote with no fraction row at all has no groups. Members come back
+    alphabetical, as the Einzelstimmen list them.
 
     A member listed twice (the same identity key the store binds on,
     ``vote_member_identity``) counts once, with the last row's Stimme and
@@ -583,6 +586,8 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             if leading in {"yes", "no"} and member.get("vote") in {"yes", "no"} and member.get("vote") != leading
         ]
         result[name] = {"members": sorted(abweichler, key=lambda member: str(member.get("name") or "")), "state": "complete"}
+    for name in (members_by_group.keys() - result.keys() - NO_ZUSAMMENSCHLUSS) if result else ():
+        result[name] = {"members": [], "state": "partial", "unlisted": True}
     return result
 
 

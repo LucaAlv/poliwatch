@@ -309,9 +309,10 @@ def _fraction_group_html(
 
 def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool) -> str:
     """The vote-wide line under the groups: one gap note when no group has
-    member rows, "Niemand stimmt anders …" when every group is complete and
-    has none, else nothing (each short group carries its own note)."""
-    if no_members:
+    member rows or a group has member rows but no fraction row (it has no row
+    to carry its own note), "Niemand stimmt anders …" when every group is
+    complete and has none, else nothing (each short group carries its own note)."""
+    if no_members or any(group.get("unlisted") for group in abweichler.values()):
         return ABWEICHLER_GAP_HTML
     if abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
         return f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
