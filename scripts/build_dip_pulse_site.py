@@ -6793,7 +6793,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     if rows:
         year_options = "".join(f'<option value="{year}">{year}</option>' for year in sorted(years, reverse=True))
         controls = f"""
-      <div class="bill-controls" aria-label="Gesetzesvorhaben finden">
+      <div class="bill-controls" role="search" aria-label="Gesetzesvorhaben finden">
         <div class="bill-control"><label for="bill-search">Gesetzesvorhaben suchen</label>
           <input id="bill-search" type="search" data-bill-search aria-describedby="bill-search-hint" disabled>
           <small id="bill-search-hint">Titel oder Drucksachennummer</small></div>

@@ -438,13 +438,13 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: controls role, same-day step ties, diacritic-insensitive search
+### Bill overview polish: same-day step ties, diacritic-insensitive search
 
-**What:** (1) Give `<div class="bill-controls" aria-label=…>` a `role="search"` (or `group`) so the label is announced. (2) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (3) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
+**What:** (1) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (2) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
 
 **Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
 
-**Context:** (2) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
+**Context:** (1) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
 
 **Effort:** S
 **Priority:** P3
@@ -1072,6 +1072,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Add an accessible role to bill search controls
+
+**What:** Give `.bill-controls` `role="search"`, retaining `aria-label="Gesetzesvorhaben finden"`, so the bill overview exposes a named search landmark. Empty publications omit the controls.
+
+**Why:** Accessibility finding from the v0.18.0.0 adversarial review. See [implementation plan](docs/plans/bill-search-accessible-role.md).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.1 (2026-10-22). Added the named search landmark and nonempty/empty markup assertions. Validation passed: 29 bill tests, the full suite (1,371 tests; 1 skipped), and desktop/mobile browser checks.
 
 ### Cite protocols as „BT-PlPr." per DIP no. 4c
 
