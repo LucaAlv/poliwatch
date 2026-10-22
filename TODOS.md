@@ -242,13 +242,34 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P1 (blocks counting 18/1 and 19/1, and moves 18/245)
 **Depends on:** an owner decision on the kinds; the full WP 18/19 download to list every case.
 
-### A chair printed as a speaker marker without a role is counted as a Zwischenfrage
+### WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns (rule 5, a later round)
 
-**What:** Recognize the Sitzungsleitung when the XML prints the chair as a `<p klasse="redner">` marker with no `rolle_lang` inside a member's `<rede>`, and exclude it like a presidium marker (rule 5, 6d). Seen in 21/17 (`nested:ID211701400:3`: Ortleb's "Herr Kollege Renner, erlauben Sie eine Zwischenfrage …", counted as her Zwischenfrage) and 18/10 (Bulmahn, still refused). Evidence would be the person who chairs the sitting under `<name>`, plus chair wording; a rule needs the owner's yes.
+**What:** Three recurring kinds that WP 18/19 prints inside another speaker's `<rede>`, each needing its own rule. Until a rule lands, their sittings stay on the reviewed exclusion list; each leaves the list when its rule lands, with old/new figures (owner decision 5, 2026-10-22, [round 2](docs/plans/a3-rule5-wp18-19-round2.md)).
+- **erwiderung-nested:** the addressee answers a Kurzintervention nested, and the chair's wording ("möchte noch kurz erwidern", "wünschen Sie zu erwidern?") is outside `invited`. 18/11, 18/20, 18/42, 18/88, 18/127, 19/12, 19/14.
+- **erklaerung-nested:** a persönliche Erklärung, an Erklärung zur Aussprache (§ 30) or zur Abstimmung (§ 31) printed nested. 18/29, 18/97, 18/98, 18/117, 18/118. In 18/29, R3's wider floor wording now splits Groth's § 31 Erklärung (`ID1802902700:2`) as a Rede of its own; DIP lists it as "Mündliche Erklärung gem. § 31", so the rule must keep an Erklärung out of 6c.
+- **go-debate:** Geschäftsordnung statements or motions printed nested. 18/2, 18/3, 18/67, 18/89.
 
-**Why:** A chair's question is counted as an MdB's Zwischenfrage, also in WP 21 data ([rule-5 validation record](docs/plans/a3-rule5-validation.md), finding 2).
+**Why:** Each kind blocks 4–7 sittings; together they are about a quarter of the remaining WP 18/19 exclusions ([audit](docs/plans/a3-wp18-19-audit.md), [round-2 result](docs/plans/a3-wp18-19-round2-result.md)).
 
 **Priority:** P2
+**Depends on:** an owner yes per rule, then a test-first build and a new-rule unit review, as in round 2.
+
+### Check that the identity merge joins the MdBs WP 18/19 prints with an initial
+
+**What:** WP 18/19 XML prints seven MdBs with a middle initial inside `<nachname>`: W. Birkwald, G. Lämmel, G. Wöhrl, S. Neu, M. Huber, E. Fischer, A. Lamers. R4 strips the initial only for the chair's recipient match; the stored `last_name` keeps it (decision 4). After the pilot re-run, check whether the identity merge (name+party pass) joins each of them across WP 18/19 and WP 20/21, and fix `last_name` or the merge if it does not.
+
+**Why:** One person split into two Abgeordnete would halve their counts on both pages.
+
+**Priority:** P2
+**Depends on:** the pilot re-run (A3 Phase 1).
+
+### `audit_offline_turns.py` stops on a non-locator ValueError
+
+**What:** `scripts/audit_offline_turns.py` raises out of the whole run on the first `ValueError` that names no `at <rede> marker <n>` locator (for example "conflicting roles"), so one such sitting ends the audit of a directory. Record such a file as a hard error in its result and go on, as the scratch harness `~/agent-runs/a3/tools/rule5/audit_all.py` does. Test-first.
+
+**Why:** The WP 18/19 audit had to run around it twice (18/101 in round 1; 18/124, 18/136, 18/173 in round 2).
+
+**Priority:** P3
 **Depends on:** none.
 
 ### v1 coverage: every Sitzung from WP 18 to the present
