@@ -1381,19 +1381,14 @@ def persist_vote(
         party_id = party(party_name)
         profile = member.get("abgeordnetenwatch") or {}
         aw_politician_id = profile.get("id") if isinstance(profile.get("id"), int) else None
-        profile_url = profile.get("url") or member.get("profile_url")
+        profile_url = derive.member_profile_url(member)
         mp_id = upsert_mp(
             conn,
             now=now,
             display_name=clean(member.get("name")) or "Unbekannt",
             party_id=party_id,
-            identity_key=mp_identity(
-                aw_politician_id=aw_politician_id,
-                aw_match=profile.get("match"),
-                profile_url=profile_url,
-                display_name=member.get("name"),
-                party_name=party_name,
-            ),
+            # The key vote_abweichler dedupes on, so derive and the store agree.
+            identity_key=derive.vote_member_identity(member),
             occurrence_id=derive.vote_member_key(vote_id, member),
             profile_url=profile_url,
             aw_politician_id=aw_politician_id,

@@ -101,6 +101,36 @@ class VoteAbweichlerTests(unittest.TestCase):
         plain = derive.vote_abweichler(roll_call(voters + [member("Cem", "SPD", "no")] * 2, [fraction("SPD", yes=3, no=1)]))
         self.assertEqual(self.names(plain, "SPD"), ["Cem"])
 
+    # Value: protects=duplicates are judged on the identity key persist binds on, so two spellings sharing a trusted abgeordnetenwatch id are one member, as in the store; fails_when=vote_abweichler dedupes by name and calls a stand-in "complete" while the store holds one row fewer; why_new=Codex review of 143a49d (2026-10-22); seam=none
+    def test_two_spellings_with_one_trusted_aw_id_are_one_member(self) -> None:
+        voters = [member(name, "SPD", "yes") for name in ("Ada", "Bea", "Eva")]
+        cem = [{**member(spelling, "SPD", "no"), "abgeordnetenwatch": {"id": 42, "match": "ext_id"}} for spelling in ("Cem", "Cem  Çelik")]
+        stand_in = derive.vote_abweichler(roll_call(voters + cem, [fraction("SPD", yes=3, no=2)]))
+        self.assertEqual(stand_in["SPD"], {"members": [], "state": "partial"})
+
+    # Value: protects=an abgeordnetenwatch id found by name is no identity, so two people sharing one stay two members; fails_when=the dedupe trusts any aw id; why_new=Codex review of 143a49d; seam=none
+    def test_an_untrusted_aw_id_does_not_merge_two_members(self) -> None:
+        voters = [member(name, "SPD", "yes") for name in ("Ada", "Bea", "Eva")]
+        guessed = [{**member(name, "SPD", "no"), "abgeordnetenwatch": {"id": 42, "match": "name"}} for name in ("Cem", "Dora")]
+        result = derive.vote_abweichler(roll_call(voters + guessed, [fraction("SPD", yes=3, no=2)]))
+        self.assertEqual(result["SPD"]["state"], "complete")
+        self.assertEqual(self.names(result, "SPD"), ["Cem", "Dora"])
+
+    # Value: protects=bundestag.de links an MP without a biography back to the Abstimmung page; that link names nobody, so such MPs stay distinct; fails_when=the Abstimmung URL serves as a profile identity and folds every such MP of a vote into one (63 rows on the reference store); why_new=found while keying the dedupe on identity (2026-10-22); seam=none
+    def test_members_linked_to_the_abstimmung_page_stay_distinct(self) -> None:
+        page = "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853"
+        rows = [{**member(name, "SPD", "yes"), "profile_url": page} for name in ("Ada", "Bea")] + [member("Cem", "SPD", "no")]
+        result = derive.vote_abweichler(roll_call(rows))
+        self.assertEqual(result["SPD"], {"members": [rows[2]], "state": "complete"})
+
+    # Value: protects=a row whose identity also appears in another group is one member, in the group of its last row, as vote_members (keyed on the vote and the MP) keeps it; fails_when=the dedupe is per group and counts the MP in both; why_new=the store keys member rows vote-wide; seam=none
+    def test_one_identity_in_two_groups_counts_in_the_last_rows_group(self) -> None:
+        profile = "https://www.bundestag.de/abgeordnete/biografien/C/cem-1"
+        rows = [member("Ada", "SPD", "yes"), {**member("Cem", "SPD", "no"), "profile_url": profile},
+                member("Dora", "AfD", "no"), {**member("Cem", "AfD", "no"), "profile_url": profile}]
+        result = derive.vote_abweichler(roll_call(rows, [fraction("SPD", yes=1, no=1), fraction("AfD", no=2)]))
+        self.assertEqual({group: row["state"] for group, row in result.items()}, {"SPD": "partial", "AfD": "complete"})
+
     def test_no_member_rows_at_all_is_none(self) -> None:
         vote = json.loads((FIXTURES / "roll_call_1002.json").read_text(encoding="utf-8"))
         result = derive.vote_abweichler(vote)
@@ -270,3 +300,46 @@ class CommitteeRecipeParityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VoteMemberIdentityTests(unittest.TestCase):
+    """derive.vote_member_identity is the key persist hands upsert_mp for a vote member."""
+
+    # Value: protects=derive and persist key a vote member identically, so the Abweichler dedupe and vote_members cannot drift; fails_when=either side changes its rule alone; why_new=Codex review of 143a49d; seam=persist_dip_pulse_store.mp_identity
+    def test_it_matches_what_persist_passes_mp_identity(self) -> None:
+        from persist_dip_pulse_store import mp_identity
+
+        biography = "https://www.bundestag.de/abgeordnete/biografien/A/ada-1"
+        shapes = [
+            member("Ada  Lovelace", "SPD", "yes"),
+            member("", "", "no"),
+            {**member("Ada", "Gruppe BSW", "no"), "profile_url": biography},
+            {**member("Ada", "SPD", "no"), "profile_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853"},
+            {**member("Ada", "SPD", "yes"), "abgeordnetenwatch": {"id": 7, "match": "ext_id", "url": "https://www.abgeordnetenwatch.de/profile/ada"}},
+            {**member("Ada", "SPD", "yes"), "abgeordnetenwatch": {"id": 7, "match": "name"}, "profile_url": biography},
+            {**member("Ada", "SPD", "yes"), "abgeordnetenwatch": {"id": "7", "match": "ext_id"}},
+        ]
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                profile = shape.get("abgeordnetenwatch") or {}
+                persisted = mp_identity(
+                    aw_politician_id=profile.get("id") if isinstance(profile.get("id"), int) else None,
+                    aw_match=profile.get("match"),
+                    profile_url=derive.member_profile_url(shape),
+                    display_name=shape.get("name"),
+                    party_name=derive.zusammenschluss(shape.get("faction")) or "Unbekannt",
+                )
+                self.assertEqual(derive.vote_member_identity(shape), persisted)
+
+    def test_only_a_page_about_one_person_is_a_profile(self) -> None:
+        for url, expected in (
+            ("https://www.bundestag.de/abgeordnete/biografien/A/abdi_sanae-861028?subview=na", True),
+            ("https://www.bundestag.de/abgeordnete/biografien20/A/x-1?subview=na", True),
+            ("https://www.abgeordnetenwatch.de/profile/ada-beispiel", True),
+            ("https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853", False),
+            ("https://evil.example/abgeordnete/x", False),
+            ("https://[invalid", False),
+            (None, False),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(derive.member_profile_url({"profile_url": url}), url if expected else None)

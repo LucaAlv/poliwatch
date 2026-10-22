@@ -1844,7 +1844,8 @@ def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
         profile_url = None
         if profile_match:
             href = unescape(profile_match.group(1))
-            profile_url = href if href.startswith("http") else f"{BT_BASE_URL}{href}"
+            # An MP without a biography links back to the Abstimmung: no profile.
+            profile_url = derive.person_profile_url(href if href.startswith("http") else f"{BT_BASE_URL}{href}")
         vote_key = {
             "ja": "yes",
             "nein": "no",

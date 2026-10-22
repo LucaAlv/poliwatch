@@ -908,9 +908,9 @@ Done when the 14 votes above render the inversion legend, a test pins one WP 20 
 4. The teaser can cut after "(Abs.".
 5. `derive.vote_identity` uses the raw id while persist cleans it.
 6. One member/count mismatch hides a whole group's Abweichler.
-7. `derive.vote_abweichler` dedupes member rows by name within a group, while the store collapses them by `mp_id` (abgeordnetenwatch id first), so two spellings of one person still count twice in derive and once in the store.
+7. ~~`derive.vote_abweichler` dedupes member rows by name~~ Done 2026-10-22 (B4 Codex P2 F3): it dedupes on `derive.vote_member_identity`, the key persist hands `upsert_mp`, vote-wide. The 63 occurrences the old Abstimmung-page "profile URL" folded were unfolded by rebuilding the reference store's registry from scratch (2026-10-22, `vote_members` 154,078). Left: merges `registry.bind` makes later are not seen by derive.
 
-**Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export; 7 can put a wrong Abweichler count on a page.
+**Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export.
 
 **Effort:** M
 **Priority:** P2

@@ -251,6 +251,23 @@ class PersistReportTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    # Value: protects=two MPs whose member cards link back to the Abstimmung stay two vote_members rows; fails_when=the Abstimmung URL serves as a profile identity and folds them into one mp (63 rows lost on the reference store); why_new=found while keying the Abweichler dedupe on identity (2026-10-22); seam=derive.vote_member_identity
+    def test_members_linked_to_the_abstimmung_page_stay_two_mps(self) -> None:
+        report = json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
+        vote = report["agenda_items"][0]["votes"][0]
+        for member in vote["members"]:
+            member["profile_url"] = vote["detail_url"]
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = pulse_store.connect(Path(tmp) / "pulse.sqlite")
+            try:
+                pulse_store.persist_report(conn, report)
+                rows = conn.execute(
+                    "SELECT m.display_name, m.profile_url FROM vote_members vm JOIN mps m ON vm.mp_id = m.id ORDER BY 1"
+                ).fetchall()
+                self.assertEqual([tuple(row) for row in rows], [("Ada Lovelace", None), ("Bruno Beispiel", None)])
+            finally:
+                conn.close()
+
     # Value: protects=a Beitrag shares its speaker's mps row with that Person's Rede; a silent asker keeps the announced name with no mp; re-persist adds no rows;
     #   fails_when=persist_contributions makes a second mps row, invents an mp for an id-less asker, or a second persist duplicates contributions/mps;
     #   why_new=test_repersist asserts only counts by kind and that mp_id is set, not identity with the Rede's row, the NULL-asker branch or a same-store second persist; seam=none

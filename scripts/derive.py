@@ -331,6 +331,49 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
 
 
+def member_profile_url(member: Mapping[str, Any]) -> str | None:
+    """A roll-call member's profile URL: the abgeordnetenwatch profile, else the
+    member's own link when it names a person (``person_profile_url``)."""
+    aw_url = (member.get("abgeordnetenwatch") or {}).get("url")
+    if aw_url:
+        return aw_url
+    return person_profile_url(member.get("profile_url"))
+
+
+def person_profile_url(url: Any) -> str | None:
+    """``url`` when it is a page about one person: an MdB biography on
+    bundestag.de (``/abgeordnete/…``) or an abgeordnetenwatch profile; else None.
+    bundestag.de links an MP without a biography back to the Abstimmung itself
+    (77 rows on the reference cache); that page names nobody."""
+    if not url:
+        return None
+    try:
+        parts = urlsplit(str(url))
+        host = parts.hostname
+    except ValueError:
+        return None
+    if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
+        return str(url)
+    if host in {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"}:
+        return str(url)
+    return None
+
+
+def vote_member_identity(member: Mapping[str, Any]) -> str:
+    """The identity key persist hands ``upsert_mp`` for a roll-call member, built
+    as ``persist_dip_pulse_store.mp_identity`` builds it from what a vote row
+    carries: a trusted abgeordnetenwatch id, else the profile URL, else name and
+    Zusammenschluss. Merges the identity registry makes later are not seen here."""
+    aw_id = trusted_aw_id(member.get("abgeordnetenwatch"))
+    if aw_id:
+        return f"aw:{aw_id}"
+    profile_url = member_profile_url(member)
+    if profile_url:
+        return f"profile:{profile_url}"
+    name = _clean(member.get("name")) or "Unbekannt"
+    return f"name-party:{name}|{zusammenschluss(member.get('faction')) or 'Unbekannt'}"
+
+
 def item_votes(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The roll-call votes listed under one TOP."""
     return item.get("votes") or []
@@ -511,19 +554,22 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     fraktionslos and an unknown affiliation are no Zusammenschluss and get no
     entry. Members come back alphabetical, as the Einzelstimmen list them.
 
-    A member listed twice counts once, with the last row's Stimme, as the store
-    keeps them; a duplicate standing in for a missing member then fails the count.
+    A member listed twice (the same identity key the store binds on,
+    ``vote_member_identity``) counts once, with the last row's Stimme and
+    Zusammenschluss, as vote_members keeps one row per vote and MP; a duplicate
+    standing in for a missing member then fails the count. Merges the identity
+    registry makes later are not seen here.
     """
-    members_by_group: dict[str, dict[str, Mapping[str, Any]]] = {}
-    for member in vote.get("members") or []:
-        group = zusammenschluss(member.get("faction")) or "Unbekannt"
-        members_by_group.setdefault(group, {})[_clean(member.get("name"))] = member
+    latest = {vote_member_identity(member): member for member in vote.get("members") or []}
+    members_by_group: dict[str, list[Mapping[str, Any]]] = {}
+    for member in latest.values():
+        members_by_group.setdefault(zusammenschluss(member.get("faction")) or "Unbekannt", []).append(member)
     result: dict[str, dict[str, Any]] = {}
     for fraction in merge_fractions(vote.get("fractions")):
         name = fraction["name"]
         if name in NO_ZUSAMMENSCHLUSS:
             continue
-        members = list((members_by_group.get(name) or {}).values())
+        members = members_by_group.get(name) or []
         stimmen = Counter(str(member.get("vote") or "") for member in members)
         if not members and stimmen != Counter(fraction["counts"]):
             result[name] = {"members": [], "state": "no_members"}

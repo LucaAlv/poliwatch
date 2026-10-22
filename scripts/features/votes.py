@@ -120,9 +120,10 @@ def member_name_html(vote: dict[str, Any], member: dict[str, Any], panel: VotePa
     name = html.esc(member.get("name"))
     occurrence_id = derive.vote_member_key(vote.get("id"), member)
     href = html.mp_page_href({**member, "occurrence_id": occurrence_id}, panel.mp_lookup, panel.mp_prefix)
-    if not href and member.get("profile_url"):
+    profile_url = derive.member_profile_url(member)
+    if not href and profile_url:
         try:
-            href = html.source_url(member["profile_url"], "public-profile")
+            href = html.source_url(profile_url, "public-profile")
         except (html.publication.PublicationStateError, ValueError):
             href = None
     return f'<a href="{html.esc(href)}">{name}</a>' if href else name
