@@ -593,6 +593,13 @@ def nested_grant_names(announcement: str) -> set[str] | None:
                         for pattern in speech_kinds.FRAKTION_WORDING.values())} or None
 
 
+def asker_name(last_name: str | None) -> str:
+    """The surname the chair names an asker by: WP 18/19 prints some with a
+    middle initial inside ``<nachname>`` ("W. Birkwald"), the chair says
+    "Birkwald" (R4). The stored ``last_name`` keeps the initial."""
+    return re.sub(r"^[A-ZÄÖÜ]\.\s+", "", last_name or "").casefold()
+
+
 def presidium_marker(redner: ET.Element | None) -> bool:
     return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
 
@@ -679,11 +686,11 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
     last_text = ""
     offer_open = False  # the chair offered a question and no MdB has taken it yet
     consent_turn: list[str] | None = None  # the Redner's latest turn, if it followed an offer
-    candidates = {parse_redner(r)["last_name"].casefold(): r for r in rede.iter("redner")
+    candidates = {asker_name(parse_redner(r)["last_name"]): r for r in rede.iter("redner")
                   if redner_key(r) != own and parse_redner(r).get("last_name")}
 
     candidate_keys = {name: {redner_key(r) for r in rede.iter("redner")
-                             if redner_key(r) != own and parse_redner(r).get("last_name", "").casefold() == name}
+                             if redner_key(r) != own and asker_name(parse_redner(r).get("last_name")) == name}
                       for name in candidates}
 
     def recipients(context):
@@ -748,7 +755,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                     if speaker is not None:
                         candidate = parse_redner(redner)
                         named_in_grant = (candidate.get("last_name") and pending_nested_names
-                                          and candidate["last_name"].casefold() in pending_nested_names)
+                                          and asker_name(candidate["last_name"]) in pending_nested_names)
                         faction_matches = derive.zusammenschluss(candidate.get("fraktion")) in pending_factions
                         recipient_mismatch = ((pending_nested_names is not None or bool(pending_factions))
                                               and not (named_in_grant or faction_matches))
@@ -768,7 +775,7 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
                         nested.append(segment)
                         offer_open, consent_turn = False, None
                         if named_in_grant:
-                            pending_nested_names.discard(candidate["last_name"].casefold())
+                            pending_nested_names.discard(asker_name(candidate["last_name"]))
                         elif faction_matches:
                             pending_factions.discard(derive.zusammenschluss(candidate.get("fraktion")))
                         if not pending_nested_names and not pending_factions:

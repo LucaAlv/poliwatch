@@ -65,5 +65,40 @@ class RoleSpellingTests(unittest.TestCase):
                     dip.parse_redner(role_redner(**kwargs))
 
 
+def redner(rid, last, fraktion='SPD'):
+    return (f'<p klasse="redner"><redner id="{rid}"><name><nachname>{last}</nachname>'
+            f'<fraktion>{fraktion}</fraktion></name></redner></p>')
+
+
+def parse(body, wp=18):
+    xml = (f'<dbtplenarprotokoll wahlperiode="{wp}" sitzung-nr="1"><sitzungsverlauf>'
+           f'<tagesordnungspunkt top-id="T1">{body}</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+    top = dip.parse_protocol_xml(xml)['agenda_items'][0]
+    return top, [(c['kind'], c['text']) for c in top['contributions']]
+
+
+class MiddleInitialTests(unittest.TestCase):
+    """R4: the chair names "Birkwald"; WP 18/19 prints <nachname>W. Birkwald</nachname>."""
+
+    def body(self, asker):
+        return ('<rede id="R">' + redner('A', 'Haupt', 'CDU/CSU') + '<p>Rede.</p>'
+                '<name>Vizepräsidentin Petra Pau:</name>'
+                '<p>Gestatten Sie eine Zwischenfrage des Kollegen Birkwald?</p>'
+                + redner('A', 'Haupt', 'CDU/CSU') + '<p>Ja.</p>'
+                + redner('B', asker, 'DIE LINKE') + '<p>Meine Frage an Sie.</p></rede>')
+
+    def test_named_asker_matches_the_surname_after_its_initial(self):
+        _top, contributions = parse(self.body('W. Birkwald'))
+        self.assertEqual(contributions, [('zwischenfrage', 'Meine Frage an Sie.')])
+
+    def test_the_stored_last_name_keeps_the_initial(self):
+        top, _contributions = parse(self.body('W. Birkwald'))
+        self.assertEqual(top['contributions'][0]['speaker']['last_name'], 'W. Birkwald')
+
+    def test_another_surname_is_still_a_mismatch(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 3'):
+            parse(self.body('W. Birkholz'))
+
+
 if __name__ == '__main__':
     unittest.main()
