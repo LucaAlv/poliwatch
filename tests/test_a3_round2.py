@@ -203,5 +203,49 @@ class ConsentAndOfferTests(unittest.TestCase):
             parse(body)
 
 
+def person(rid, first, last, fraktion='SPD'):
+    return (f'<p klasse="redner"><redner id="{rid}"><name><vorname>{first}</vorname><nachname>{last}</nachname>'
+            f'<fraktion>{fraktion}</fraktion></name></redner>{first} {last} ({fraktion}):</p>')
+
+
+class RolelessChairTests(unittest.TestCase):
+    """A role-less marker of the sitting's chair, saying chair text, is Sitzungsleitung (like 6d)."""
+
+    # The person chairs this sitting: a <name> chair element names her elsewhere.
+    OPENING = ('<rede id="R0">' + person('Z', 'Uwe', 'Zahl') + '<p>Erste Rede.</p>'
+               '<name>Vizepräsidentin Josephine Ortleb:</name><p>Danke schön.</p></rede>')
+
+    def test_the_chairs_offer_is_sitzungsleitung(self):
+        top, contributions = parse(self.OPENING + '<rede id="R">' + person('A', 'Martin', 'Renner', 'AfD') + '<p>Rede.</p>'
+                                   + person('O', 'Josephine', 'Ortleb')
+                                   + '<p>Herr Kollege Renner, erlauben Sie eine Zwischenfrage der Kollegin Gast?</p>'
+                                   + person('A', 'Martin', 'Renner', 'AfD') + '<p>Ja.</p>'
+                                   + person('B', 'Anna', 'Gast', 'AfD') + '<p>Meine Bemerkung.</p></rede>')
+        self.assertEqual(contributions, [('zwischenfrage', 'Meine Bemerkung.')])
+        self.assertEqual([(d['marker_ordinal'], d['treatment']) for d in top['xml_turn_diagnostics']],
+                         [(2, 'procedural')])
+
+    def test_the_chairs_floor_starts_a_nested_rede(self):
+        top, contributions = parse(self.OPENING + '<rede id="R">' + person('A', 'Frank', 'Tempel', 'DIE LINKE') + '<p>Rede.</p>'
+                                   + person('O', 'Josephine', 'Ortleb')
+                                   + '<p>Für die SPD hat jetzt der Kollege Burkhard Blienert das Wort.</p>'
+                                   + person('B', 'Burkhard', 'Blienert')
+                                   + '<p>Sehr geehrte Frau Präsidentin! Rede B.</p></rede>')
+        self.assertEqual([s['rede_id'] for s in top['speeches']], ['R0', 'R', 'R:3'])
+        self.assertEqual(contributions, [])
+
+    def test_the_chair_asking_as_a_member_is_her_zwischenfrage(self):
+        _top, contributions = parse(self.OPENING + '<rede id="R">' + person('A', 'Martin', 'Renner', 'AfD') + '<p>Rede.</p>'
+                                    + person('O', 'Josephine', 'Ortleb')
+                                    + '<p>Herr Renner, habe ich Sie richtig verstanden, dass Sie zustimmen würden?</p></rede>')
+        self.assertEqual(contributions, [('zwischenfrage', 'Herr Renner, habe ich Sie richtig verstanden, dass Sie zustimmen würden?')])
+
+    def test_a_namesake_of_the_chair_is_not_the_chair(self):
+        with self.assertRaisesRegex(ValueError, 'unresolved nested contribution at R marker 2'):
+            parse(self.OPENING + '<rede id="R">' + person('A', 'Martin', 'Renner', 'AfD') + '<p>Rede.</p>'
+                  + person('O', 'Dagmar', 'Ortleb')
+                  + '<p>Herr Kollege Renner, erlauben Sie eine Zwischenfrage der Kollegin Gast.</p></rede>')
+
+
 if __name__ == '__main__':
     unittest.main()

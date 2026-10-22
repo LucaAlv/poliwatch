@@ -604,7 +604,48 @@ def asker_name(last_name: str | None) -> str:
     return re.sub(r"^[A-ZÄÖÜ]\.\s+", "", last_name or "").casefold()
 
 
+# The chair's own words: an offer to the Redner, or the floor to the next one.
+CHAIR_OFFER = re.compile(r"\b(?:gestatten|erlauben)\s+Sie\b[^.!?]{0,80}\b(?:Zwischen)?(?:frage|bemerkung)", re.IGNORECASE)
+
+
+def mark_roleless_chairs(root: ET.Element) -> None:
+    """WP 18/19 (and 21/17) can print the chair inside a member's ``<rede>`` as
+    a plain MdB marker, with no presidium role. Such a marker is Sitzungsleitung
+    when its person chairs this sitting (a ``<name>`` chair element ends with
+    their first and last name) and their turn is chair text. It is marked
+    ``sitzungsleitung="1"`` in place, so ``presidium_marker`` reads it as 6d.
+    A Vizepräsident(in) asking as an MdB says no chair text and stays a member.
+    """
+    verlauf = root.find("sitzungsverlauf")
+    if verlauf is None:
+        return
+    chairs = [elem_text(name) for name in verlauf.iter("name") if name.find("nachname") is None]
+    for rede in verlauf.iter("rede"):
+        own = redner_key(rede.find("./p[@klasse='redner']/redner"))
+        children = list(rede)
+        for index, child in enumerate(children):
+            if child.tag != "p" or child.get("klasse") != "redner":
+                continue
+            redner = child.find("redner")
+            if redner is None or redner_key(redner) in (own, None) or any(speech_kinds.effective_role(redner)):
+                continue
+            full = clean_text(f"{child_text(redner.find('name'), 'vorname') or ''} {child_text(redner.find('name'), 'nachname') or ''}")
+            if not any(re.search(rf"(?<![\w-]){re.escape(full)}\s*:?$", chair) for chair in chairs):
+                continue
+            turn = [clean_text((redner.tail or "").partition(":")[2])]
+            for following in children[index + 1:]:
+                if following.tag == "name" or following.get("klasse") == "redner":
+                    break
+                if following.tag == "p":
+                    turn.append(elem_text(following))
+            text = " ".join(filter(None, turn))
+            if CHAIR_OFFER.search(text) or (NESTED_REDE_FLOOR.search(text) and not NESTED_REDE_NOT_FLOOR.search(text)):
+                redner.set("sitzungsleitung", "1")
+
+
 def presidium_marker(redner: ET.Element | None) -> bool:
+    if redner is not None and redner.get("sitzungsleitung") == "1":
+        return True
     return redner is not None and bool(SITZUNGSLEITUNG_ROLE.fullmatch(re.sub(r"\s+", "", parse_redner(redner).get("role") or "")))
 
 
@@ -1031,6 +1072,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
         asker_candidates = speech_kinds.asker_candidates(root.iter("redner"))
     except ValueError as exc:
         raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')}: {exc}") from exc
+    mark_roleless_chairs(root)
     for index, top in enumerate(root.findall("./sitzungsverlauf/tagesordnungspunkt"), start=1):
         heading_lines: list[str] = []
         zusatz_lines: list[str] = []
