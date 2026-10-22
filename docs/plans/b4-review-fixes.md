@@ -72,7 +72,7 @@ This also covers Standards #1 for `vote_anchor_id` and the duplicated idiom.
 ## Step 4: types for the context answer
 
 1. Add `politikfelder.VoteContext(NamedTuple)` with `vorgang_ids: list[str]` and `state: ContextState`, where `ContextState = Literal["resolved", "none", "not_fetched"]`. `CONTEXT_STATES` is derived from `get_args`. `vote_vorgang_ids`, `report_vote_vorgaenge`, the persist loop and the panel read `.vorgang_ids` and `.state` instead of unpacking a tuple.
-2. In `derive.vote_abweichler`, the state `"none"` (no member rows) becomes `"no_members"` so it no longer collides with the context `"none"`. Add `AbweichlerState = Literal["no_members", "partial", "complete"]`.
+2. In `derive.vote_abweichler`, the state `"none"` (no member rows) becomes `"no_members"` so it no longer collides with the context `"none"`. Add `AbweichlerState = Literal["no_members", "partial", "complete"]`. _Amended at ship (/ship review, 2026-10-22): the alias was dropped as unreferenced; the states stay documented in `vote_abweichler`._
 
 ## Step 5: D7 state (E2)
 

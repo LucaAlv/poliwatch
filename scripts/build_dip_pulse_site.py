@@ -863,9 +863,13 @@ class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read."""
 
 
-# What a build prints when a cached report stops it before any network work, so
-# the online update that would re-fetch the sitting cannot run either.
-CACHED_REPORT_FIX = "Fix: move that report out of data/; an online update then re-fetches its sitting"
+# What a build prints when a cached report stops it before any dossier is
+# fetched, so the online update that would re-fetch the sitting cannot run
+# either. A plain update re-fetches only the newest sittings, hence the flag.
+CACHED_REPORT_FIX = (
+    "Fix: move that report out of data/, then re-fetch its sitting with an online update "
+    "and --document-number <its number>"
+)
 
 
 def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> None:
@@ -880,6 +884,8 @@ def require_current_vote_shape(report: dict[str, Any], report_path: Path) -> Non
                 f"{report_path}: TOP {item.get('index')} has a singular \"vote\" (a shape from before \"votes\")"
             )
     for item in [*(report.get("agenda_items") or []), {"votes": report.get("sitting_votes") or []}]:
+        if not isinstance(derive.item_votes(item), list):
+            raise CachedReportError(f"{report_path}: roll-call votes are not a list")
         for vote in derive.item_votes(item):
             if not isinstance(vote, dict) or not pulse_store.clean(vote.get("id")):
                 raise CachedReportError(f"{report_path}: a roll-call vote has no id")
@@ -12022,8 +12028,13 @@ def main() -> int:
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
         if getattr(args, "backfill_incomplete", False):
+            try:
+                backfill_entries = load_existing_detail_entries(output_dir, protocols)
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
-                load_existing_detail_entries(output_dir, protocols),
+                backfill_entries,
                 protocols,
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,

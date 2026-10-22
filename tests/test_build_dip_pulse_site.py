@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import itertools
 import json
 import os
 import re
@@ -2312,11 +2313,16 @@ class LegacyVoteShapeTests(unittest.TestCase):
 
     # Value: protects=a build stopped by a stale cached report ends with an ERROR line naming the file and a fix that works (move it out, then update online), not a traceback; fails_when=a lenient call site lets CachedReportError escape main, or the message points back to the online update that just failed; why_new=the load refusal was tested, its call sites in main were not; seam=none; no_claim=the online entry point (same handler, needs a DIP client)
     def test_a_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
-        for mode in ("offline", "fetch_xml"):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+        shapes = {
+            "a roll-call vote has no id": {"index": 1, "votes": [{"id": " "}]},
+            'has a singular "vote"': {"index": 1, "vote": {"id": "v1"}},
+            "roll-call votes are not a list": {"index": 1, "votes": 5},
+        }
+        for (reason, item), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
+            with self.subTest(reason=reason, mode=mode), tempfile.TemporaryDirectory() as tmp:
                 data = Path(tmp) / "data"
                 data.mkdir()
-                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [{"index": 1, "votes": [{"id": " "}]}]}
+                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
                 (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
                 args = SimpleNamespace(
                     output_dir=Path(tmp), database_path=None, offline=mode == "offline", no_persist=True,
@@ -2331,8 +2337,10 @@ class LegacyVoteShapeTests(unittest.TestCase):
                     self.assertEqual(build_dip_pulse_site.main(), 1)
                 render_site.assert_not_called()
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
-                self.assertIn("plenarprotokoll-21-82.json: a roll-call vote has no id", stderr.getvalue())
-                self.assertIn("move that report out of data/", stderr.getvalue())
+                self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
+                self.assertIn(reason, stderr.getvalue())
+                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+                self.assertIn("--document-number", stderr.getvalue())
 
 
 class VotesArchiveTests(unittest.TestCase):

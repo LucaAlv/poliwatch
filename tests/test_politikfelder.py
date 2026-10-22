@@ -1189,6 +1189,14 @@ class RepersistGuardTests(unittest.TestCase):
                 else:
                     build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
                 build.require_vorgang_cache_for_tags(path, full, path.parent.parent, [{"report": report}])
+        # Only a resolved context is protected: one stored as none, not_fetched or NULL may stay or degrade.
+        for stored in ("none", "not_fetched", None):
+            with self.subTest(stored=stored), tempfile.TemporaryDirectory() as tmp:
+                path = self.store(tmp, [(self.top_id(1), "sachgebiet")], [("v1", "top")])
+                with contextlib.closing(sqlite3.connect(path)) as conn, conn:
+                    conn.execute("CREATE TABLE votes (id, context_state)")
+                    conn.execute("INSERT INTO votes VALUES ('v1', ?)", (stored,))
+                build.require_vorgang_cache_for_tags(path, partial, path.parent.parent, [{"report": report}])
 
     def test_equal_swaps_and_net_improvements_cannot_hide_a_known_identity_loss(self) -> None:
         for kind in ("top", "vote"):
