@@ -29,6 +29,7 @@ SOURCE_IDS = {
 }
 FAILURE_CODES = {
     "source_unavailable",
+    "excluded",
     "provider_timeout",
     "invalid_payload",
     "invalid_citations",

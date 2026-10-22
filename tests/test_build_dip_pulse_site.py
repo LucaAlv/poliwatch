@@ -91,10 +91,9 @@ class DossierProgressTests(unittest.TestCase):
         self.assertIn("Completed 1/2 dossier(s)", stderr.getvalue())
 
 
-    # Value (D2): protects=D4's abort for any rejection nobody reviewed, while a reviewed
-    # exclusion lets a long backfill pass it; fails_when=an unlisted rejection is skipped, or a
-    # listed one still aborts or vanishes without its diagnostic; seam=build_dossiers_with_progress.
-    def test_a_rejected_source_aborts_unless_its_number_is_excluded(self) -> None:
+    # Value (D4): protects=the abort for any source refusal that reaches acquisition (listed
+    # sittings never do, D2); fails_when=a refusal is skipped; seam=build_dossiers_with_progress.
+    def test_a_rejected_source_aborts_the_build(self) -> None:
         protocols = [
             {"id": "5805", "dokumentnummer": "18/84"},
             {"id": "5806", "dokumentnummer": "18/85"},
@@ -109,18 +108,6 @@ class DossierProgressTests(unittest.TestCase):
             with self.assertRaises(build_dip_pulse_site.dip.DipError):
                 build_dip_pulse_site.build_dossiers_with_progress(
                     [dict(p) for p in protocols], load_existing=lambda _p: None, build_dossier=build)
-            with self.assertRaises(build_dip_pulse_site.dip.DipError):
-                build_dip_pulse_site.build_dossiers_with_progress(
-                    [dict(p) for p in protocols], load_existing=lambda _p: None, build_dossier=build,
-                    excluded={"18/85"})
-            stderr = io.StringIO()
-            with mock.patch("sys.stderr", stderr):
-                entries = build_dip_pulse_site.build_dossiers_with_progress(
-                    protocols, load_existing=lambda _p: None, build_dossier=build, excluded={"18/84"})
-        self.assertEqual([entry["report"]["protocol"]["id"] for entry in entries], ["5806"])
-        self.assertEqual(protocols[0]["dossier_failure_reasons"], ["source_rejected"])
-        self.assertIn("18/84 T1", protocols[0]["source_rejected_diagnostic"])
-        self.assertIn("Skipped excluded", stderr.getvalue())
 
 
 class CollectAbgeordneteTests(unittest.TestCase):

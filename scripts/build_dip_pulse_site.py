@@ -238,14 +238,11 @@ def build_dossiers_with_progress(
     protocols: list[dict[str, Any]],
     load_existing: Callable[[dict[str, Any]], dict[str, Any] | None],
     build_dossier: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
-    *,
-    excluded: Collection[str] = (),
 ) -> list[dict[str, Any]]:
     """Build dossiers sequentially while emitting human-readable progress to stderr.
 
-    A source refusal stops the build (D4) unless the sitting's number is in
-    ``excluded``, the reviewed list of ``--exclude-document-number`` (D2): such a
-    sitting is skipped and keeps its diagnostic on the protocol."""
+    A source refusal stops the build (D4). The sittings of
+    ``--exclude-document-number`` (D2) never reach this loop."""
     # Dossier building is the slow part of a build (XML download, DIP lookups,
     # roll-call scraping, optionally LLM calls), so each sitting gets a
     # numbered start/finish line on stderr. Failures print the elapsed time
@@ -268,24 +265,13 @@ def build_dossiers_with_progress(
 
         started = time.monotonic()
         protocol.pop("dossier_failure_reasons", None)
-        protocol.pop("source_rejected_diagnostic", None)
         print(f"[dossiers] [{index}/{total}] {action}: {label}.", file=sys.stderr, flush=True)
         try:
             entry = build_dossier(protocol, existing_report)
         except dip.DipError as exc:
             elapsed = time.monotonic() - started
             if exc.source_rejected:
-                if normalized_document_number(protocol.get("dokumentnummer")) not in excluded:
-                    raise  # D4: no staged store may replace accepted data after source refusal.
-                protocol["dossier_failure_reasons"] = ["source_rejected"]
-                protocol["source_rejected_diagnostic"] = str(exc)
-                print(
-                    f"[dossiers] [{index}/{total}] Skipped excluded {label} after {elapsed:.1f}s "
-                    f"(source rejected, listed in --exclude-document-number): {exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                continue
+                raise  # D4: no staged store may replace accepted data after source refusal.
             protocol["dossier_failure_reasons"] = ["source_unavailable"]
             print(
                 f"[dossiers] [{index}/{total}] Skipped unavailable {label} after {elapsed:.1f}s: {exc}",
@@ -574,8 +560,8 @@ COVERAGE_EXCLUSIONS_FILENAME = "coverage-exclusions.json"
 
 
 def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
-    """The reviewed sittings whose rejected source keeps them out of the store
-    (D2), oldest first; empty when the record does not exist."""
+    """The reviewed sittings of ``--exclude-document-number`` kept out of the
+    store (D2), oldest first; empty when the record does not exist."""
     path = output_dir / "data" / COVERAGE_EXCLUSIONS_FILENAME
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -588,24 +574,23 @@ def load_coverage_exclusions(output_dir: Path) -> list[dict[str, Any]]:
 
 
 def update_coverage_exclusions(
-    output_dir: Path, attempted: list[dict[str, Any]], generated: list[dict[str, Any]]
+    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
-    """Record each excluded sitting whose source this run rejected, with its D4
-    diagnostic, and drop a recorded sitting this run acquired. Untouched when
-    neither happened, so a build without exclusions writes no file."""
+    """Record each sitting this run excluded (D2) and drop a recorded sitting
+    the store now holds. Untouched when neither happened, so a build without
+    exclusions writes no file."""
     entries = {entry["document_number"]: entry for entry in load_coverage_exclusions(output_dir)}
     before = dict(entries)
-    for entry in generated:
+    for entry in stored:
         protocol = (entry.get("report") or {}).get("protocol") or {}
         entries.pop(normalized_document_number(protocol.get("dokumentnummer")), None)
-    for protocol in attempted:
-        if "source_rejected" in (protocol.get("dossier_failure_reasons") or []):
-            number = normalized_document_number(protocol.get("dokumentnummer"))
+    for protocol in excluded:
+        number = normalized_document_number(protocol.get("dokumentnummer"))
+        if number not in entries:
             entries[number] = {
                 "document_number": number,
                 "date": str(protocol.get("datum") or "")[:10],
-                "reason": "source_rejected",
-                "diagnostic": protocol.get("source_rejected_diagnostic") or "",
+                "reason": "excluded",
                 "recorded_at": dip.utc_now(),
             }
     if entries == before:
@@ -618,7 +603,7 @@ def update_coverage_exclusions(
 def acquisition_summary_lines(protocols: list[dict[str, Any]]) -> tuple[list[str], bool]:
     """The end-of-run summary of the sittings this run tried and did not acquire,
     by reason, and whether any of them should fail the run: every skip does
-    except a source refusal on the reviewed exclusion list."""
+    except a sitting on the reviewed exclusion list."""
     by_reason: dict[str, list[str]] = {}
     for protocol in protocols:
         for reason in protocol.get("dossier_failure_reasons") or []:
@@ -629,7 +614,7 @@ def acquisition_summary_lines(protocols: list[dict[str, Any]]) -> tuple[list[str
     lines = [f"[summary] {len(skipped)} of {len(protocols)} sitting(s) not acquired:"]
     for reason, numbers in sorted(by_reason.items()):
         lines.append(f"  {reason}: {', '.join(numbers)}")
-    failing = any(reason != "source_rejected" for reason in by_reason)
+    failing = any(reason != "excluded" for reason in by_reason)
     if failing:
         lines.append("  Fix: re-run the same command once DIP answers; acquired sittings are kept.")
     return lines, failing
@@ -3118,8 +3103,8 @@ def export_distribution_data(
     force: bool = False,
     excluded_sittings: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """``excluded_sittings``: the reviewed source refusals of
-    coverage-exclusions.json, counted as nicht erfasst (Quelle abgelehnt)."""
+    """``excluded_sittings``: the reviewed exclusions of
+    coverage-exclusions.json, counted as nicht erfasst (ausgeschlossen)."""
     if sqlite3.sqlite_version_info < (3, 35, 0):
         raise DataExportUnavailable(
             f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
@@ -3654,7 +3639,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     rejected = coverage.get("source_rejected") or []
     if rejected:
         coverage_line += (
-            f" &middot; {pulse_html.format_int(len(rejected))} nicht erfasst (Quelle abgelehnt): "
+            f" &middot; {pulse_html.format_int(len(rejected))} nicht erfasst (ausgeschlossen): "
             + pulse_html.esc(", ".join(rejected))
         )
     bausteine_labels = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
@@ -11503,10 +11488,10 @@ def parse_args() -> argparse.Namespace:
         default=[],
         metavar="DOCUMENT_NUMBER",
         help=(
-            "Skip this sitting if DIP's source for it is rejected (repeatable), instead of stopping the run. "
-            "Add a number only after reading its rejection diagnostic: the sitting is recorded in "
-            "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (Quelle abgelehnt). "
-            "Any other rejection still stops the build before the store is replaced."
+            "Keep this sitting out of the build (repeatable), whatever the parser says: it is not fetched, "
+            "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
+            "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
+            "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
         ),
     )
     parser.add_argument(
@@ -12222,10 +12207,20 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
+        # D2: a listed sitting is skipped before acquisition, whatever the parser
+        # would say: no fetch, no report, no store row.
+        listed = {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
+        excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
+        for protocol in excluded_protocols:
+            protocol["dossier_failure_reasons"] = ["excluded"]
+        detail_protocols = [p for p in detail_protocols if normalized_document_number(p.get("dokumentnummer")) not in listed]
         # What this run acquires is one scope; what the store keeps is another.
         # Every cached dossier of the catalog stays, whatever the acquisition
         # was narrowed to, and only the acquired sittings are refreshed.
-        existing_entries = load_existing_detail_entries(output_dir, protocols)
+        existing_entries = [
+            entry for entry in load_existing_detail_entries(output_dir, protocols)
+            if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
+        ]
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.
@@ -12245,7 +12240,6 @@ def main() -> int:
             # report and HTML page as a side effect.
             generated_entries = build_dossiers_with_progress(
                 detail_protocols,
-                excluded={normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])},
                 load_existing=lambda protocol: load_existing_report(output_dir, protocol),
                 build_dossier=lambda protocol, existing_report: write_report_and_page(
                     protocol=protocol,
@@ -12273,7 +12267,7 @@ def main() -> int:
                     vorgang_cache=vorgang_cache,
                 ),
             )
-            update_coverage_exclusions(output_dir, detail_protocols, generated_entries)
+            update_coverage_exclusions(output_dir, excluded_protocols, [*existing_entries, *generated_entries])
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
             # a second time afterwards because mp_lookup only exists now, and it
@@ -12419,7 +12413,7 @@ def main() -> int:
         vorgang_cache=vorgang_cache,
     )
     print(index_path)
-    summary, failing = acquisition_summary_lines(detail_protocols)
+    summary, failing = acquisition_summary_lines([*detail_protocols, *excluded_protocols])
     for line in summary:
         print(line, file=sys.stderr)
     return 1 if failing else 0

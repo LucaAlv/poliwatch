@@ -518,19 +518,25 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertIn("[summary] 1 of 2 sitting(s) not acquired", stderr.getvalue())
         self.assertIn("source_unavailable: 21/2", stderr.getvalue())
 
-    # Value (D2): protects=an unreviewed source refusal still stops the run before the store
-    # is rebuilt, and a reviewed one is skipped with its diagnostic on record; fails_when=the
-    # flag skips unlisted numbers, the rebuild runs after an unlisted refusal, or the record
-    # loses or keeps the wrong entries; seam=main (argv), DIP calls stubbed.
-    def test_a_rejected_source_is_recorded_only_when_its_number_is_excluded(self) -> None:
+    # Value (D2, owner decision 2026-10-22): protects=a listed sitting stays out of the store
+    # whatever the parser says, and an unreviewed refusal still stops the run (D4);
+    # fails_when=a listed sitting is fetched, persisted from its cached report, or ends the
+    # run on an unmapped role, an unlisted refusal is passed, or the record loses the entry;
+    # seam=main (argv), DIP calls stubbed.
+    def test_a_listed_sitting_is_skipped_before_acquisition(self) -> None:
         catalog = [catalog_protocol("21/3", "pp-3", "2026-06-13"), catalog_protocol("21/2", "pp-2", "2026-06-12"),
                    catalog_protocol("21/1", "pp-1", "2026-06-11")]
         rejected = {"21/2"}
+        written: list[str] = []
 
         def fake_write(protocol, **_kwargs):
-            if protocol["dokumentnummer"] in rejected:
+            number = protocol["dokumentnummer"]
+            written.append(number)
+            if number in rejected:
                 raise build.dip.DipError("21/2: protocol source rejected: 21/2 T4 marker 3", source_rejected=True)
-            return {"report": report_for(int(protocol["dokumentnummer"].split("/")[1]), acquisition=COMPLETE_VOTES)}
+            if number == "21/3":
+                raise build.derive.SprechrolleError('no Sprechrolle rule maps the role "Vizepräsidentin"')
+            return {"report": report_for(int(number.split("/")[1]), acquisition=COMPLETE_VOTES)}
 
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "site"
@@ -540,6 +546,7 @@ class BackfillSelectionTests(unittest.TestCase):
             record = output_dir / "data" / "coverage-exclusions.json"
 
             def run(*extra):
+                written.clear()
                 argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
                         "--backfill-incomplete", "--sleep", "0", *extra]
                 with (
@@ -556,28 +563,42 @@ class BackfillSelectionTests(unittest.TestCase):
                     mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
                     mock.patch.object(sys, "stdout", new_callable=io.StringIO),
                 ):
-                    code = build.main()
-                return code, rebuild, stderr.getvalue()
+                    try:
+                        code = build.main()
+                    except build.derive.SprechrolleError as exc:
+                        code = repr(exc)
+                persisted = sorted(
+                    entry["report"]["protocol"]["dokumentnummer"] for entry in rebuild.call_args.args[1]
+                ) if rebuild.called else None
+                return code, persisted, stderr.getvalue()
 
-            code, rebuild, stderr = run()
+            # An unlisted refusal still stops the run before the store is rebuilt (D4).
+            code, persisted, stderr = run("--exclude-document-number", "21/3")
             self.assertEqual(code, 1, stderr)
-            rebuild.assert_not_called()
+            self.assertIsNone(persisted)
             self.assertIn("21/2 T4 marker 3", stderr)
-            self.assertFalse(record.exists())
+            self.assertNotIn("21/3", written)
 
-            code, rebuild, stderr = run("--exclude-document-number", "21/2")
+            # Listed: 21/3 (unmapped role) and 21/1 (parses, cached) are neither fetched nor
+            # persisted; 21/2's refusal is never reached.
+            code, persisted, stderr = run("--exclude-document-number", "21/3", "--exclude-document-number", "21/2",
+                                          "--exclude-document-number", "21/1")
             self.assertEqual(code, 0, stderr)
-            rebuild.assert_called_once()
+            self.assertEqual(written, [])
+            self.assertEqual(persisted, [])
             entries = json.loads(record.read_text(encoding="utf-8"))["exclusions"]
             self.assertEqual([(e["document_number"], e["date"], e["reason"]) for e in entries],
-                             [("21/2", "2026-06-12", "source_rejected")])
-            self.assertIn("21/2 T4 marker 3", entries[0]["diagnostic"])
-            self.assertIn("source_rejected: 21/2", stderr)
+                             [("21/1", "2026-06-11", "excluded"), ("21/2", "2026-06-12", "excluded"),
+                              ("21/3", "2026-06-13", "excluded")])
+            self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
 
-            rejected.clear()  # the parser accepts it now: the sitting is acquired and leaves the record
-            code, _rebuild, stderr = run("--exclude-document-number", "21/2")
+            # Taken off the list, a sitting that parses is acquired and leaves the record.
+            rejected.clear()
+            code, persisted, stderr = run("--exclude-document-number", "21/3")
             self.assertEqual(code, 0, stderr)
-            self.assertEqual(json.loads(record.read_text(encoding="utf-8"))["exclusions"], [], stderr)
+            self.assertEqual(persisted, ["21/1", "21/2"])
+            self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]],
+                             ["21/3"], stderr)
 
     def test_a_backfill_waits_between_dip_requests_unless_told_otherwise(self) -> None:
         cases = (

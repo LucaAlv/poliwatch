@@ -174,8 +174,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         manifest = self.export(excluded_sittings=["18/84"])
         self.assertEqual(manifest["coverage"]["source_rejected"], ["18/84"])
         html = b.render_daten_datenstand(manifest)
-        self.assertIn("1 nicht erfasst (Quelle abgelehnt): 18/84", html)
-        self.assertNotIn("Quelle abgelehnt", b.render_daten_datenstand(self.export(force=True)))
+        self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84", html)
+        self.assertNotIn("ausgeschlossen", b.render_daten_datenstand(self.export(force=True)))
 
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
