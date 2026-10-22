@@ -398,6 +398,7 @@ Common options:
 | `--validate-publication PATH` | none | Validate a completed output tree's manifest and presentation surfaces |
 | `--api-key KEY` | `DIP_API_KEY` | DIP API key for online fetches |
 | `--limit N` | `0` | Acquire only the newest N protocols of `--protocol-wahlperiode`; `0` means no cap. The catalog is always fetched whole |
+| `--protocol-wahlperiode N` | `21` | Select this Wahlperiode only when `--limit` is positive; `0` selects across all Wahlperioden. With `--limit 0`, no Wahlperiode filter applies. The catalog is always fetched whole |
 | `--detail-limit N` | `5` | Number of fetched protocols to enrich into detail pages; `0` means all, `-1` means none |
 | `--document-number NUM` | none | Acquire only this protocol; can be repeated. The catalog and every cached dossier are kept |
 | `--dossier-document-number NUM` | none | Generate/regenerate an extra dossier without restricting the catalog; can be repeated |
