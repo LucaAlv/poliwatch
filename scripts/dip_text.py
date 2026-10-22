@@ -23,9 +23,40 @@ _ABBREVIATIONS = frozenset(
 )
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
 # The fallback for markup html.parser cannot read: a "<" that opens no tag stays text,
-# and a closed <script> or <style> goes with its text, as on the parser's path.
-_TAG = re.compile(r"<[!/?a-zA-Z][^>]*>")
+# and a closed <script> or <style> goes with its text, as on the parser's path. A
+# comment goes first, to its "-->" or, unclosed, to the end.
+_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+_TAG_START = frozenset("!/?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_tags(text: str) -> str:
+    """Each tag in ``text`` replaced by a space: ``<`` and a letter, ``!``, ``/``
+    or ``?``, up to the first ``>`` outside a quoted attribute value. A ``<``
+    whose tag never closes stays text. Linear time: a regex retried at every
+    ``<`` rescans to the end for each unclosed quote."""
+    # closes[i]: where a tag still open at i, outside quotes, ends; -1 if never.
+    closes = [-1] * (len(text) + 1)
+    for i in range(len(text) - 1, -1, -1):
+        char = text[i]
+        if char == ">":
+            closes[i] = i
+        elif char in "\"'":
+            quote_end = text.find(char, i + 1)
+            closes[i] = closes[quote_end + 1] if quote_end != -1 else -1
+        else:
+            closes[i] = closes[i + 1]
+    parts: list[str] = []
+    start = i = 0
+    while i < len(text) - 1:
+        if text[i] == "<" and text[i + 1] in _TAG_START and closes[i + 1] != -1:
+            parts.append(text[start:i])
+            parts.append(" ")
+            start = i = closes[i + 1] + 1
+        else:
+            i += 1
+    parts.append(text[start:])
+    return "".join(parts)
 
 
 class _AbstractParser(HTMLParser):
@@ -77,7 +108,7 @@ def abstract_text(raw: Any) -> str:
         malformed = True
     if malformed:
         # Keep the words rather than lose them: tags out, entities read, one paragraph.
-        text = _TAG.sub(" ", _SKIPPED_BLOCK.sub(" ", str(raw)))
+        text = _strip_tags(_SKIPPED_BLOCK.sub(" ", _COMMENT.sub(" ", str(raw))))
         return " ".join(html_module.unescape(text).split())
     paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
     return "\n\n".join(p for p in paragraphs if p)

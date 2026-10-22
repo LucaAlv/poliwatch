@@ -45,6 +45,29 @@ class AbstractTextTests(unittest.TestCase):
             with self.subTest(raw=raw_text):
                 self.assertEqual(abstract_text(raw_text), expected)
 
+    # Value: protects=on the fallback a ">" inside a quoted attribute or a comment does not end the tag, so no attribute or comment text reaches the page; fails_when=the fallback's tag pattern stops at the first ">" or comments are not stripped first; why_new=the fallback cases had no quoted ">" and no comment; seam=none; no_claim=no such abstract occurs in the reference cache (0 of 3,922 take the fallback)
+    def test_the_fallback_keeps_quoted_and_commented_text_out(self) -> None:
+        cases = [
+            ('vor <a title=">GEHEIM">sichtbar</a> <![oops]>', "vor sichtbar"),
+            ("vor <a title='>GEHEIM'>sichtbar</a> <![oops]>", "vor sichtbar"),
+            ("x <!-- a > b --> y <![oops]>", "x y"),
+            ("x <!-- a\n> b\n--> y <!-- c --> z <![oops]>", "x y z"),
+            ("x <![oops]> y <!-- nie > geschlossen", "x y"),
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(raw=raw_text):
+                self.assertEqual(abstract_text(raw_text), expected)
+
+    # Value: protects=unclosed quotes in tags on the fallback cost linear time, not a hang; fails_when=the tag scan backtracks or restarts at every "<" (a regex took 61 s on 20,000 unclosed tags); why_new=quoted values are new to the fallback; seam=none
+    def test_unclosed_quotes_on_the_fallback_return_quickly(self) -> None:
+        import time
+
+        for raw in ('<![oops]> <a title="' + "x" * 100_000, "<![oops]> " + '<a title="' * 20_000):
+            with self.subTest(size=len(raw)):
+                started = time.perf_counter()
+                abstract_text(raw)
+                self.assertLess(time.perf_counter() - started, 0.5)
+
 
 class AbstractTeaserTests(unittest.TestCase):
     def test_a_short_first_paragraph_is_the_teaser(self) -> None:
