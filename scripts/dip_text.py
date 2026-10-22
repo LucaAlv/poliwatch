@@ -8,6 +8,7 @@ caller escapes the result).
 
 from __future__ import annotations
 
+import html as html_module
 import re
 from html.parser import HTMLParser
 from typing import Any
@@ -21,6 +22,7 @@ _ABBREVIATIONS = frozenset(
     " abschn bd jh mio mrd tsd".split()
 )
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
+_TAG = re.compile(r"<[^>]*>")
 
 
 class _AbstractParser(HTMLParser):
@@ -64,8 +66,15 @@ def abstract_text(raw: Any) -> str:
     if not raw:
         return ""
     parser = _AbstractParser()
-    parser.feed(str(raw))
-    parser.close()
+    try:
+        parser.feed(str(raw))
+        parser.close()
+        malformed = parser.skipping > 0  # an unclosed <script> or <style> would swallow the rest
+    except AssertionError:  # html.parser's answer to markup it cannot read, e.g. "<![oops]>"
+        malformed = True
+    if malformed:
+        # Keep the words rather than lose them: tags out, entities read, one paragraph.
+        return " ".join(html_module.unescape(_TAG.sub(" ", str(raw))).split())
     paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
     return "\n\n".join(p for p in paragraphs if p)
 

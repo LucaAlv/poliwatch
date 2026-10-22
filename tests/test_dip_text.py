@@ -31,6 +31,16 @@ class AbstractTextTests(unittest.TestCase):
             with self.subTest(raw=raw_text):
                 self.assertEqual(abstract_text(raw_text), expected)
 
+    # Value: protects=markup html.parser cannot read (a bad marked section, an unclosed <script>) still yields the abstract's words as one plain paragraph; fails_when=the AssertionError escapes and stops the build, or an unclosed <script> swallows the rest of the text; why_new=the table only has markup the parser reads; seam=none; no_claim=no such abstract occurs in the reference cache (0 of 3,922)
+    def test_markup_the_parser_cannot_read_keeps_its_words(self) -> None:
+        cases = [
+            ("Vor <![oops]> nach &amp; mehr", "Vor nach & mehr"),
+            ("<p>Eins</p> <script>zwei", "Eins zwei"),
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(raw=raw_text):
+                self.assertEqual(abstract_text(raw_text), expected)
+
 
 class AbstractTeaserTests(unittest.TestCase):
     def test_a_short_first_paragraph_is_the_teaser(self) -> None:
@@ -52,6 +62,12 @@ class AbstractTeaserTests(unittest.TestCase):
         self.assertTrue(more)
         self.assertTrue(teaser.endswith("wort …"))
         self.assertLessEqual(len(teaser), CONTEXT_TEASER + 2)
+
+    # Value: protects=a first paragraph with no space inside the limit (one long token, e.g. a URL) is cut at the limit with an ellipsis, not emptied; fails_when=the word-boundary cut takes rfind's -1 as an index, leaving a teaser of one character; why_new=the table only has paragraphs with spaces; seam=none
+    def test_a_single_long_token_is_cut_at_the_limit(self) -> None:
+        teaser, more = abstract_teaser("x" * (CONTEXT_TEASER + 50))
+        self.assertTrue(more)
+        self.assertEqual(teaser, "x" * CONTEXT_TEASER + " …")
 
 
 REFERENCE_URHEBER = (

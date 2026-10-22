@@ -4594,13 +4594,14 @@ def votes_archive_styles() -> str:
     }
     .archive-row[hidden], .archive-month[hidden] { display:none; }
     .archive-row time { color:var(--muted); font-size:13px; }
-    .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
+    .archive-row-body h3 { margin:0 0 4px; font-size:15px; overflow-wrap:break-word; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
-    .archive-abweichler { color:var(--ink); font-weight:650; white-space:nowrap; }
+    .archive-abweichler { color:var(--ink); font-weight:650; }
 """ + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + pulse_html.POLITIKFELD_CHIP_CSS + """
     @media (max-width: 640px) {
-      .archive-row { grid-template-columns:1fr; gap:4px; }
+      /* minmax(0, ...): a long title or chip wraps instead of widening the page. */
+      .archive-row { grid-template-columns:minmax(0,1fr); gap:4px; }
     }
 """
 

@@ -785,6 +785,8 @@ def global_header_styles() -> str:
       border-color:var(--line) !important;
       color:var(--ink) !important;
     }
+    /* The vote panel turns dark, so its heading leaves the light theme's dark teal. */
+    :root[data-theme="dark"] .vote-panel .vote-head h3 { color:var(--teal); }
     :root[data-theme="dark"] :is(
       .badge, .summary-count, .session-summary-sources a,
       .session-summary-sources span, .radar-receipts a, .radar-receipts span,

@@ -275,7 +275,7 @@ def _fraction_group_html(
     # "nicht abgegeben" one.
     position = (derive.fraction_position(counts, True) if vote.get("inverted") else html.VOTE_LABELS.get(leading))
     pill = (
-        f'<em class="vote-pill vote-{html.esc(leading)}">{html.esc(position)}</em>'
+        f'<em class="vote-pill{f" vote-{html.esc(leading)}" if leading else ""}">{html.esc(position)}</em>'
         if position
         else ""
     )

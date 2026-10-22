@@ -418,6 +418,8 @@ class AttentionRankingTests(unittest.TestCase):
         # names, committee line and Abweichler notes were light on light.
         markup = self._render([self._item(1, 1)])
         self.assertRegex(markup, r':root\[data-theme="dark"\] :is\([^)]*\.vote-panel[,\s][^)]*\)\s*\{\s*background:var\(--panel\)')
+        # The heading's light-theme #0f5f59 would read at about 2.3:1 on that surface.
+        self.assertIn(':root[data-theme="dark"] .vote-panel .vote-head h3 { color:var(--teal); }', markup)
 
     def test_abweichler_names_are_separated_by_semicolons(self) -> None:
         # Names read "Nachname, Vorname"; a comma between them hides where one ends.

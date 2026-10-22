@@ -2363,6 +2363,16 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         self.assertEqual(len(rows), 1)
 
+    # Value: protects=the archive fits a 375px phone: the Abweichler sentence wraps, the row column may shrink, a long compound title breaks; fails_when=the badge is nowrap again or the column is plain 1fr (measured: 492px, then 407px, then 394px wide at 375px); why_new=no test checked the badge's wrapping; seam=none; no_claim=layout itself (string-level CSS check; the browser measurement was manual)
+    def test_the_abweichler_badge_can_wrap(self) -> None:
+        css = build_dip_pulse_site.votes_archive_styles()
+        rule = re.search(r"\.archive-abweichler \{[^}]*\}", css)
+        self.assertIsNotNone(rule)
+        self.assertNotIn("nowrap", rule.group(0))
+        # The phone column may shrink below its content, and a long compound title breaks.
+        self.assertIn(".archive-row { grid-template-columns:minmax(0,1fr); gap:4px; }", css)
+        self.assertRegex(css, r"\.archive-row-body h3 \{[^}]*overflow-wrap:break-word")
+
     def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
         rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote])])])
