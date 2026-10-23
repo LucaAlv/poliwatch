@@ -105,6 +105,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import render_dip_pulse_html as pulse_html
 import persist_dip_pulse_store as pulse_store
 import validate_dip_protocol as dip
+import dip_cache
 import abgeordnetenwatch as aw
 import derive
 import speech_kinds
@@ -2483,6 +2484,8 @@ def write_report_and_page(
     vorgang_cache: dict[str, Any] | None = None,
     person_cache: dict[str, dict[str, Any]] | None = None,
     xml_pacer: dip.XmlPacer | None = None,
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] | None = None,
+    save_dip_caches: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -2513,10 +2516,16 @@ def write_report_and_page(
         sleep=sleep,
         roll_call_page_cache=roll_call_page_cache,
         person_cache=person_cache,
+        vorgang_drucksachen_cache=vorgang_drucksachen_cache,
         xml_sink=xml_sink,
         xml_pacer=xml_pacer,
     )
-    report = dip.build_report(args, protocol=protocol)
+    try:
+        report = dip.build_report(args, protocol=protocol)
+    finally:
+        # What this sitting fetched stays fetched, even when it failed part-way.
+        if save_dip_caches is not None:
+            save_dip_caches()
     keep_cached_dossier_when_votes_failed(report, existing_report, vote_scan_pages)
     if summary_mode in {"auto", "required"}:
         reconcile_generated_and_cached_summaries(report, existing_report)
@@ -12267,9 +12276,12 @@ def main() -> int:
     # One roll-call list page cache per build: every sitting reads the same
     # pages from the top, so only the first one pays for them.
     roll_call_page_cache: dict[str, str] = {}
-    # One DIP /person record per person per build (D5): a backfill meets the
-    # same MdBs in hundreds of sittings.
+    # One DIP /person record per person (D5): a backfill meets the same MdBs in
+    # hundreds of sittings. Filled from and saved to the cross-run DIP caches
+    # (dip_cache) once the catalog names the newest Wahlperiode.
     person_cache: dict[str, dict[str, Any]] = {}
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] = {}
+    dip_request_cache: dip_cache.DipCache | None = None
     try:
         # Step 1: the catalog, then the subset of it that gets a dossier.
         # --dossier-document-number can add sittings to the dossier list without
@@ -12278,6 +12290,12 @@ def main() -> int:
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         # The whole catalog, whatever narrows the acquisition below.
         protocols, catalog_full_fetched_at = fetch_catalog(client, output_dir)
+        dip_request_cache = dip_cache.DipCache.load(
+            output_dir, newest_wahlperiode=max(filter(None, map(wahlperiode_of, protocols)), default=None)
+        )
+        person_cache.update(dip_request_cache.persons)
+        vorgang_drucksachen_cache.update(dip_request_cache.vorgang_drucksachen)
+        dip_request_cache.persons, dip_request_cache.vorgang_drucksachen = person_cache, vorgang_drucksachen_cache
         # D2: the exclusion list is the record plus this run's flag, minus what the
         # run takes back. A listed sitting is skipped before acquisition, whatever
         # the parser would say: no fetch, no report, no store row.
@@ -12388,6 +12406,8 @@ def main() -> int:
                     person_cache=person_cache,
                     xml_pacer=xml_pacer,
                     vorgang_cache=vorgang_cache,
+                    vorgang_drucksachen_cache=vorgang_drucksachen_cache,
+                    save_dip_caches=dip_request_cache.save,
                 ),
             )
             update_coverage_exclusions(

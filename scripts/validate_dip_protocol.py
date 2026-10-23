@@ -2905,10 +2905,15 @@ def enrich_with_api(
     progress: Callable[[str], None] | None = None,
     roll_call_page_cache: dict[str, str] | None = None,
     person_cache: dict[str, dict[str, Any]] | None = None,
+    vorgang_drucksachen_cache: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """``person_cache`` maps a DIP person id to its /person record for the whole
     build, so a person seen in an earlier sitting costs no request (D5). Only
-    successful fetches are cached; a failed one is tried again next sitting."""
+    successful fetches are cached; a failed one is tried again next sitting.
+    ``vorgang_drucksachen_cache`` maps a Vorgang id to its Drucksache positions
+    (``compact_drucksache_position``, all the derivation reads of a Vorgang) and
+    the Wahlperiode of the sitting that fetched them, so a Vorgang met again
+    costs no request (two per Vorgang otherwise)."""
     protocol_id = protocol["id"]
     positions = client.list_all("/vorgangsposition", {"f.plenarprotokoll": protocol_id})
     if progress:
@@ -2944,23 +2949,23 @@ def enrich_with_api(
             )
     roll_call_cache: dict[str, dict[str, Any]] = {}
 
-    positions_by_vorgang: dict[str, list[dict[str, Any]]] = {}
-    linked_drucksachen_by_vorgang: dict[str, list[dict[str, Any]]] = {}
-
-    def load_vorgang_positions(vorgang_id: str) -> list[dict[str, Any]]:
-        if vorgang_id not in positions_by_vorgang:
-            positions_by_vorgang[vorgang_id] = client.list_all("/vorgangsposition", {"f.vorgang": vorgang_id})
-        return positions_by_vorgang[vorgang_id]
+    linked_drucksachen_by_vorgang: dict[str, dict[str, Any]] = (
+        vorgang_drucksachen_cache if vorgang_drucksachen_cache is not None else {}
+    )
 
     def linked_drucksachen_for_vorgang(vorgang_id: str) -> list[dict[str, Any]]:
         if vorgang_id not in linked_drucksachen_by_vorgang:
+            # A list that fails part-way raises here, so nothing partial is cached.
             drucksache_positions = [
                 compact_drucksache_position(position)
-                for position in load_vorgang_positions(vorgang_id)
+                for position in client.list_all("/vorgangsposition", {"f.vorgang": vorgang_id})
                 if position.get("dokumentart") == "Drucksache"
             ]
-            linked_drucksachen_by_vorgang[vorgang_id] = drucksache_positions
-        return linked_drucksachen_by_vorgang[vorgang_id]
+            linked_drucksachen_by_vorgang[vorgang_id] = {
+                "wahlperiode": protocol.get("wahlperiode"),
+                "drucksachen": drucksache_positions,
+            }
+        return linked_drucksachen_by_vorgang[vorgang_id]["drucksachen"]
 
     def position_drucksache_numbers(position: dict[str, Any]) -> set[str]:
         numbers: set[str] = set()
@@ -3384,6 +3389,7 @@ def build_report(
         progress=progress,
         roll_call_page_cache=getattr(args, "roll_call_page_cache", None),
         person_cache=getattr(args, "person_cache", None),
+        vorgang_drucksachen_cache=getattr(args, "vorgang_drucksachen_cache", None),
     )
 
     agenda_items = enrichment["agenda_items"]

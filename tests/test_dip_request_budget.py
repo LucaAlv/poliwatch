@@ -9,6 +9,7 @@ from unittest import mock
 
 import _support  # noqa: F401
 import build_dip_pulse_site as build
+import dip_cache
 import validate_dip_protocol as dip
 
 
@@ -180,6 +181,130 @@ class CatalogReuseTests(unittest.TestCase):
         payload = build.catalog_payload([protocol("21/1")], full_fetched_at="2026-10-20T00:00:00Z")
         self.assertEqual(payload["full_fetched_at"], "2026-10-20T00:00:00Z")
         self.assertTrue(payload["authoritative"])
+
+
+
+class VorgangDrucksachenCacheTests(unittest.TestCase):
+    """A Vorgang's Drucksachen cost two requests (2026-10-23 pilot: 23 Vorgänge, 46 requests
+    for one sitting); a Vorgang met again costs none."""
+
+    def setUp(self) -> None:
+        self.parsed = dip.parse_protocol_xml((_support.FIXTURES / "protocol.xml").read_text(encoding="utf-8"))
+        self.requests: list[str] = []
+        requests = self.requests
+
+        class FakeClient:
+            def list_all(self, path, params):
+                if path == "/vorgangsposition" and "f.plenarprotokoll" in params:
+                    return [{"id": "pp1", "vorgang_id": "v1", "titel": "Beratung Testgesetz",
+                             "fundstelle": {"anfangsseite": "101", "endseite": "101"}}]
+                if path == "/vorgangsposition":
+                    requests.append(params["f.vorgang"])
+                    return [{"id": "d1", "vorgang_id": "v1", "dokumentart": "Drucksache", "titel": "Testgesetz",
+                             "fundstelle": {"dokumentnummer": "21/100", "herausgeber": "BT"}},
+                            {"id": "d2", "vorgang_id": "v1", "dokumentart": "Plenarprotokoll", "fundstelle": {}}]
+                return []
+
+            def get_json(self, path):
+                return {}
+
+        self.client = FakeClient()
+
+    def enrich(self, cache: dict, number: str = "21/43", wahlperiode: int = 21) -> dict:
+        with mock.patch("sys.stderr"):
+            return dip.enrich_with_api(
+                self.client, {"id": number, "dokumentnummer": number, "wahlperiode": wahlperiode, "datum": "2025-12-10"},
+                self.parsed, person_limit=0, vote_scan_pages=0, vorgang_drucksachen_cache=cache,
+            )
+
+    # Value: protects=a Vorgang's Drucksachen are fetched once per cache, and a cached Vorgang
+    # links the same Drucksachen as a fetched one; fails_when=the cache is ignored, or it holds
+    # what the derivation does not read; seam=enrich_with_api(vorgang_drucksachen_cache=...).
+    def test_a_vorgang_met_again_costs_no_request(self) -> None:
+        cache: dict = {}
+        first = self.enrich(cache)
+        second = self.enrich(cache, "21/44")
+        self.assertEqual(self.requests, ["v1"])
+        self.assertEqual(first["agenda_items"], second["agenda_items"])
+        self.assertEqual(cache["v1"]["wahlperiode"], 21)
+        self.assertEqual([d["dokumentnummer"] for d in cache["v1"]["drucksachen"]], ["21/100"])
+
+
+class DipCacheFileTests(unittest.TestCase):
+    """Owner decisions 2026-10-23: a closed Wahlperiode's Vorgang Drucksachen are kept across
+    runs with no expiry; a /person record for 30 days."""
+
+    NOW = build.datetime(2026, 10, 23, 12, 0, tzinfo=build.timezone.utc)
+
+    def setUp(self) -> None:
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.output_dir = build.Path(tmp.name)
+        (self.output_dir / "data").mkdir()
+
+    # Value: protects=a restarted backfill pays nothing for what an earlier run fetched,
+    # while a current-Wahlperiode Vorgang, which DIP still extends, is fetched fresh;
+    # fails_when=current-WP entries persist, closed ones do not, or the files do not
+    # round-trip; seam=dip_cache.DipCache load/save.
+    def test_closed_wahlperiode_vorgaenge_and_persons_round_trip(self) -> None:
+        cache = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=self.NOW)
+        cache.vorgang_drucksachen["v19"] = {"wahlperiode": 19, "drucksachen": [{"dokumentnummer": "19/1"}]}
+        cache.vorgang_drucksachen["v21"] = {"wahlperiode": 21, "drucksachen": []}
+        cache.vorgang_drucksachen["vx"] = {"wahlperiode": None, "drucksachen": []}
+        cache.persons["p1"] = {"id": "p1"}
+        cache.save()
+        again = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=self.NOW)
+        self.assertEqual(sorted(again.vorgang_drucksachen), ["v19"])
+        self.assertEqual(again.vorgang_drucksachen["v19"]["drucksachen"], [{"dokumentnummer": "19/1"}])
+        self.assertEqual(again.persons, {"p1": {"id": "p1"}})
+
+    # Value: protects=a person record older than 30 days is fetched again, keeping its first
+    # fetch time while it lives (a re-save must not make it young); seam=DipCache load/save.
+    def test_a_person_expires_30_days_after_its_fetch(self) -> None:
+        cache = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=self.NOW)
+        cache.persons["p1"] = {"id": "p1"}
+        cache.save()
+        later = self.NOW + build.timedelta(days=29)
+        kept = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=later)
+        self.assertIn("p1", kept.persons)
+        kept.save()
+        expired = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=self.NOW + build.timedelta(days=31))
+        self.assertEqual(expired.persons, {})
+
+    def test_an_unreadable_file_is_an_empty_cache(self) -> None:
+        for name in (dip_cache.VORGANG_FILENAME, dip_cache.PERSON_FILENAME):
+            (self.output_dir / "data" / name).write_text("{not json", encoding="utf-8")
+        with mock.patch("sys.stderr"):
+            cache = dip_cache.DipCache.load(self.output_dir, newest_wahlperiode=21, now=self.NOW)
+        self.assertEqual((cache.vorgang_drucksachen, cache.persons), ({}, {}))
+
+
+    # Value: protects=a sitting that fails part-way still leaves what it fetched in the cache
+    # files (the 2026-10-23 run ended on SIGTERM after DIP stopped); fails_when=the caches are
+    # saved only at the end of the run, or not after a failed sitting; seam=write_report_and_page
+    # with dip.build_report stubbed.
+    def test_the_caches_are_saved_after_each_sitting_even_a_failed_one(self) -> None:
+        saved = mock.Mock()
+        seen: dict = {}
+
+        def build_report(args, protocol):
+            seen.update(person=args.person_cache, vorgang=args.vorgang_drucksachen_cache)
+            raise dip.DipError("DIP API request failed for /person/309: timed out")
+
+        caches = ({"p": {}}, {"v": {}})
+        with mock.patch.object(build.dip, "build_report", side_effect=build_report), \
+                self.assertRaises(dip.DipError):
+            build.write_report_and_page(
+                protocol={"id": "1", "dokumentnummer": "19/238"}, output_dir=self.output_dir, api_key="k", sleep=0,
+                person_limit=0, vote_scan_pages=0, roll_call_list_id=None, summary_mode="off",
+                summary_provider="anthropic", anthropic_api_key=None, gemini_api_key=None, summary_model=None,
+                existing_report=None, person_cache=caches[0], vorgang_drucksachen_cache=caches[1],
+                save_dip_caches=saved,
+            )
+        saved.assert_called_once()
+        self.assertIs(seen["person"], caches[0])
+        self.assertIs(seen["vorgang"], caches[1])
 
 
 if __name__ == "__main__":
