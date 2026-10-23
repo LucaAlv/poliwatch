@@ -207,6 +207,41 @@ def holds_all(documents: list[dict[str, Any]], count: int | None) -> bool:
     return len({str(d["id"]) for d in documents}) >= count
 
 
+#: Consecutive DIP requests that may fail (after their retries) before the run
+#: stops asking DIP. A blocked DIP times out every attempt at 60 s, and on
+#: 2026-10-23 the run kept asking (a3-pilot.md, second attempt).
+DIP_FAILURE_LIMIT = 2
+
+
+class DipUnavailable(DipError):
+    """DIP failed DIP_FAILURE_LIMIT requests in a row; this run sends it no more."""
+
+
+@dataclass
+class DipBreaker:
+    """One per run, shared by every sitting's ApiClient: counts DIP requests that
+    failed in a row (timeouts, resets, 429/5xx, unreadable bodies; a 404 is an
+    answer) and, at ``limit``, stops the run's further DIP requests."""
+
+    limit: int = DIP_FAILURE_LIMIT
+    consecutive: int = 0
+    last_error: str = ""
+
+    def check(self) -> None:
+        if self.consecutive >= self.limit:
+            raise DipUnavailable(
+                f"DIP stopped answering: {self.consecutive} requests in a row failed (last: {self.last_error}); "
+                "this run sends it no more requests"
+            )
+
+    def failed(self, error: BaseException) -> None:
+        self.consecutive += 1
+        self.last_error = str(error)
+
+    def answered(self) -> None:
+        self.consecutive = 0
+
+
 @dataclass(frozen=True)
 class ApiClient:
     api_key: str
@@ -215,6 +250,7 @@ class ApiClient:
     timeout: int = 60
     retries: int = 2
     retry_delay_seconds: float = 1.5
+    breaker: DipBreaker | None = None
 
     def _retry_delay(self, path: str, exc: BaseException, attempt: int) -> None:
         delay = self.retry_delay_seconds * (attempt + 1)
@@ -232,21 +268,30 @@ class ApiClient:
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params, doseq=True)}"
         target = f"{path}?{urllib.parse.urlencode({k: v for k, v in params.items() if k != 'apikey'}, doseq=True)}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        if self.breaker is not None:
+            self.breaker.check()
         for attempt in range(self.retries + 1):
             try:
                 data = json.loads(_read_logged(req, self.timeout, "dip", target, attempt).decode("utf-8"))
                 break
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
-                if exc.code in {429, 500, 502, 503, 504} and attempt < self.retries:
+                transient = exc.code in {429, 500, 502, 503, 504}
+                if transient and attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None and transient:
+                    self.breaker.failed(exc)
+                elif self.breaker is not None:
+                    self.breaker.answered()  # a 404 or 400 is DIP answering
                 raise DipError(f"DIP API HTTP {exc.code} for {path}: {body[:500]}") from exc
             except ValueError as exc:
                 # A 200 that is not JSON (an HTML bot-challenge page, a cut-off body): retried like a reset.
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None:
+                    self.breaker.failed(exc)
                 raise DipError(f"DIP API returned an unreadable body for {path}: {exc}") from exc
             except (OSError, http.client.HTTPException) as exc:
                 # URLError and timeouts are OSErrors, and so is a connection
@@ -255,7 +300,11 @@ class ApiClient:
                 if attempt < self.retries:
                     self._retry_delay(path, exc, attempt)
                     continue
+                if self.breaker is not None:
+                    self.breaker.failed(exc)
                 raise DipError(f"DIP API request failed for {path}: {exc}") from exc
+        if self.breaker is not None:
+            self.breaker.answered()
         if self.sleep_seconds:
             time.sleep(self.sleep_seconds)
         return data
@@ -3348,7 +3397,10 @@ def build_report(
     if not api_key:
         raise DipError("Provide a DIP API key via --api-key or DIP_API_KEY.")
 
-    client = ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    breaker = getattr(args, "dip_breaker", None)
+    if breaker is not None:
+        breaker.check()  # after the run's stop, a sitting sends nothing, not even its XML request
+    client = ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=breaker)
     if protocol is None:
         protocol = find_protocol(client, args.protocol_id, args.document_number)
     document_number = str(protocol.get("dokumentnummer") or protocol.get("id") or "unknown")

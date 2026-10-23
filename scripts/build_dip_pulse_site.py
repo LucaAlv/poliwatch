@@ -707,7 +707,9 @@ def update_coverage_exclusions(
     dip.write_text_atomic(path, json.dumps({"exclusions": ordered}, ensure_ascii=False, indent=2) + "\n")
 
 
-def acquisition_summary_lines(protocols: list[dict[str, Any]]) -> tuple[list[str], bool]:
+def acquisition_summary_lines(
+    protocols: list[dict[str, Any]], *, dip_stopped: str | None = None
+) -> tuple[list[str], bool]:
     """The end-of-run summary of the sittings this run tried and did not acquire,
     by reason, and whether any of them should fail the run: every skip does
     except a sitting on the reviewed exclusion list."""
@@ -722,6 +724,11 @@ def acquisition_summary_lines(protocols: list[dict[str, Any]]) -> tuple[list[str
     for reason, numbers in sorted(by_reason.items()):
         lines.append(f"  {reason}: {', '.join(numbers)}")
     failing = any(reason != "excluded" for reason in by_reason)
+    if dip_stopped:
+        lines.append(
+            f"  DIP stopped answering ({dip_stopped}); the run asked it nothing more, so the sittings after "
+            "the stop were not tried. DIP's block lasts hours: wait before re-running."
+        )
     if failing:
         lines.append("  Fix: re-run the same command once DIP answers; acquired sittings are kept.")
     return lines, failing
@@ -2493,6 +2500,7 @@ def write_report_and_page(
     xml_pacer: dip.XmlPacer | None = None,
     vorgang_drucksachen_cache: dict[str, dict[str, Any]] | None = None,
     save_dip_caches: Callable[[], None] | None = None,
+    dip_breaker: dip.DipBreaker | None = None,
 ) -> dict[str, Any]:
     features = publication_selection()
     # "reuse" is a mode of *this* script, not of the report builder: tell the
@@ -2524,6 +2532,7 @@ def write_report_and_page(
         roll_call_page_cache=roll_call_page_cache,
         person_cache=person_cache,
         vorgang_drucksachen_cache=vorgang_drucksachen_cache,
+        dip_breaker=dip_breaker,
         xml_sink=xml_sink,
         xml_pacer=xml_pacer,
     )
@@ -12278,7 +12287,10 @@ def main() -> int:
             sleep_seconds=args.abgeordnetenwatch_sleep,
         )
 
-    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep)
+    # One per run: after DIP_FAILURE_LIMIT failed DIP requests in a row, no
+    # sitting or later step asks DIP again (a3-pilot.md, 2026-10-23).
+    dip_breaker = dip.DipBreaker()
+    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=dip_breaker)
     xml_pacer = dip.XmlPacer()  # one dserver window budget for the whole run
     # One roll-call list page cache per build: every sitting reads the same
     # pages from the top, so only the first one pays for them.
@@ -12415,6 +12427,7 @@ def main() -> int:
                     vorgang_cache=vorgang_cache,
                     vorgang_drucksachen_cache=vorgang_drucksachen_cache,
                     save_dip_caches=dip_request_cache.save,
+                    dip_breaker=dip_breaker,
                 ),
             )
             update_coverage_exclusions(
@@ -12566,7 +12579,10 @@ def main() -> int:
         vorgang_cache=vorgang_cache,
     )
     print(index_path)
-    summary, failing = acquisition_summary_lines([*detail_protocols, *excluded_protocols])
+    summary, failing = acquisition_summary_lines(
+        [*detail_protocols, *excluded_protocols],
+        dip_stopped=dip_breaker.last_error if dip_breaker.consecutive >= dip_breaker.limit else None,
+    )
     for line in summary:
         print(line, file=sys.stderr)
     return 1 if failing else 0

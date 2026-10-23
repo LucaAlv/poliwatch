@@ -332,5 +332,106 @@ class DipCacheFileTests(unittest.TestCase):
         self.assertIs(seen["vorgang"], caches[1])
 
 
+
+class DipBreakerTests(unittest.TestCase):
+    """2026-10-23: a blocked DIP times out every attempt at 60 s, and the run kept asking.
+    After DIP_FAILURE_LIMIT consecutive failed requests the run stops asking DIP."""
+
+    def get(self, client: dip.ApiClient, opener: mock.Mock) -> object:
+        with mock.patch.object(dip.urllib.request, "urlopen", opener), mock.patch.object(dip.time, "sleep"), \
+                mock.patch("sys.stderr"):
+            try:
+                return client.get_json("/person/1")
+            except dip.DipError as exc:
+                return exc
+
+    # Value: protects=once DIP has failed DIP_FAILURE_LIMIT requests in a row, no further
+    # request is sent in this run, and the error names the stop; fails_when=every later
+    # request still waits out three 60 s timeouts; seam=ApiClient.get_json with a DipBreaker.
+    def test_consecutive_failures_open_the_breaker_and_stop_requests(self) -> None:
+        breaker = dip.DipBreaker()
+        client = dip.ApiClient(api_key="k", retries=1, breaker=breaker)
+        opener = mock.Mock(side_effect=TimeoutError("timed out"))
+        for _ in range(dip.DIP_FAILURE_LIMIT):
+            self.assertIsInstance(self.get(client, opener), dip.DipError)
+        sent = opener.call_count
+        self.assertEqual(sent, dip.DIP_FAILURE_LIMIT * 2)
+        stopped = self.get(dip.ApiClient(api_key="k", breaker=breaker), opener)  # a later sitting's client
+        self.assertIsInstance(stopped, dip.DipUnavailable)
+        self.assertIn("stopped answering", str(stopped))
+        self.assertEqual(opener.call_count, sent)
+        with self.assertRaises(dip.DipUnavailable):
+            breaker.check()
+
+    # Value: protects=only consecutive failures count, and an answer that is a refusal (404)
+    # is an answer; fails_when=failures spread over a long run add up, or a missing person
+    # stops the run; seam=ApiClient.get_json with a DipBreaker.
+    def test_an_answer_resets_the_count_and_a_404_is_an_answer(self) -> None:
+        import urllib.error
+        breaker = dip.DipBreaker()
+        client = dip.ApiClient(api_key="k", retries=0, breaker=breaker)
+        fail = mock.Mock(side_effect=TimeoutError("timed out"))
+        ok = mock.Mock(return_value=_Response('{"id": "1"}'))
+        not_found = mock.Mock(side_effect=urllib.error.HTTPError("u", 404, "nf", {}, None))
+        for _ in range(3):
+            self.get(client, fail)
+            self.assertEqual(self.get(client, ok), {"id": "1"})
+        for _ in range(dip.DIP_FAILURE_LIMIT + 1):
+            self.get(client, not_found)
+        self.assertEqual(self.get(client, ok), {"id": "1"})
+
+    # Value: protects=after the stop, a remaining sitting costs no request at all, not even its
+    # dserver XML; fails_when=each sitting builds a fresh client without the run's breaker, or
+    # downloads its XML before the first DIP call fails; seam=write_report_and_page -> build_report.
+    def test_a_sitting_after_the_stop_sends_nothing(self) -> None:
+        import tempfile
+        breaker = dip.DipBreaker()
+        for _ in range(dip.DIP_FAILURE_LIMIT):
+            breaker.failed(TimeoutError("timed out"))
+        opener = mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(dip.urllib.request, "urlopen", opener), \
+                mock.patch("sys.stderr"), self.assertRaises(dip.DipUnavailable):
+            build.write_report_and_page(
+                protocol={"id": "1", "dokumentnummer": "19/237",
+                          "fundstelle": {"xml_url": "https://dserver.bundestag.de/btp/19/19237.xml"}},
+                output_dir=build.Path(tmp), api_key="k", sleep=0, person_limit=0, vote_scan_pages=0,
+                roll_call_list_id=None, summary_mode="off", summary_provider="anthropic", anthropic_api_key=None,
+                gemini_api_key=None, summary_model=None, existing_report=None, dip_breaker=breaker,
+            )
+        opener.assert_not_called()
+
+    # Value: protects=the run's summary says DIP stopped and that the remaining sittings were
+    # not asked, so the operator waits instead of re-running at once; seam=acquisition_summary_lines.
+    def test_the_summary_names_the_stop(self) -> None:
+        protocols = [{"dokumentnummer": "19/237", "dossier_failure_reasons": ["source_unavailable"]}]
+        lines, failing = build.acquisition_summary_lines(protocols, dip_stopped="timed out")
+        self.assertTrue(failing)
+        self.assertTrue(any("DIP stopped answering" in line and "timed out" in line for line in lines), lines)
+        self.assertFalse(any("DIP stopped" in line for line in build.acquisition_summary_lines(protocols)[0]))
+
+    def test_without_a_breaker_nothing_stops(self) -> None:
+        client = dip.ApiClient(api_key="k", retries=0)
+        opener = mock.Mock(side_effect=TimeoutError("timed out"))
+        for _ in range(dip.DIP_FAILURE_LIMIT + 2):
+            self.get(client, opener)
+        self.assertEqual(opener.call_count, dip.DIP_FAILURE_LIMIT + 2)
+
+
+class _Response:
+    status = 200
+
+    def __init__(self, body: str) -> None:
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self.body.encode("utf-8")
+
+
 if __name__ == "__main__":
     unittest.main()
