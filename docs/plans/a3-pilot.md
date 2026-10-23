@@ -286,3 +286,16 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - a run-level stop after N consecutive DIP failures. The 2026-10-23 run kept sending 60 s timeouts after DIP had stopped;
   - a per-window DIP cap like `XmlPacer`, once the window and the recovery are known.
 - **The 19-sitting pilot itself:** about 19 × 26 + 48 ≈ 540 DIP requests, roughly 5 windows at the rates seen so far. Each sitting saves its caches, so a re-run after a stop pays only for what is new. The `--document-number` sittings are re-acquired, but cached Vorgänge and persons make that cheap.
+
+### Workaround while the personal key is pending: the drip runner (started 2026-10-23)
+
+- **Run-level stop (2921e1c):** after 2 DIP requests in a row fail, the run sends DIP nothing more, and the remaining sittings cost no request.
+- **Batching is not possible.** The DIP spec (OpenAPI 1.2) marks only `f.id`, `f.wahlperiode`, `f.dokumentnummer` and `f.frage_nummer` as repeatable. `f.vorgang` and `f.plenarprotokoll` take one value per request, and pages hold at most 100 entries.
+- **Option B, sizing only:** a bulk download of a Wahlperiode's Drucksache positions (`/vorgangsposition?f.wahlperiode=N&f.dokumentart=Drucksache`) could replace the ~18 per-Vorgang requests per sitting. The drip sends the two count requests once, and records `numFound` in `drip-state.json`.
+- **`~/agent-runs/a3/drip.py`** (outside the repo; started with `nohup`, PID in `drip.out`):
+  - It runs the pilot arguments on the sittings not yet acquired, taken from the run's `[summary]`.
+  - When the run's last DIP request failed, it waits `--wait-hours` (3, the owner's starting value) and runs again.
+  - It also rests 3 h after the request log's last DIP failure before its first cycle.
+  - A source refusal, a crash, the disk watchdog, or a run that fails without a DIP block stops it for a human. So does a cap of 20 cycles.
+  - **Files:** `drip.log` holds one line per event, `drip-state.json` the state, `pilot-run-<n>.log` each run, and `pilot-requests.log` every request.
+- **What it will measure:** requests per window, and how long DIP needs to recover, read from the request log across cycles.
