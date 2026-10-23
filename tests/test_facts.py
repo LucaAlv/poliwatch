@@ -2136,11 +2136,22 @@ class FactStatusTextTests(unittest.TestCase):
         for reason, clause in facts.WITHHELD_CLAUSES.items():
             with self.subTest(reason=reason):
                 row = {"metric_id": KNAPPSTE, "complete": 1, "withheld": reason, "publishable": 0}
-                self.assertEqual(build._fact_status_text(row), (clause, None, False))
+                self.assertEqual(build._fact_status_text(row), (clause.format(period="diese Woche"), None, False))
         self.assertEqual(set(facts.WITHHELD_CLAUSES), {
             facts.WITHHELD_NO_OBSERVATION, facts.WITHHELD_NOT_COMPARABLE,
             facts.WITHHELD_BELOW_MIN_VALUE, facts.WITHHELD_NO_TOPIC, facts.WITHHELD_BELOW_FLOOR,
         })
+
+    def test_unmeasurable_copy_uses_the_reporting_period(self) -> None:
+        for kind, metric, expected in (
+            ("week", KNAPPSTE, "diese Woche nicht messbar"),
+            ("month", AKTIVSTE, "diesen Monat nicht messbar"),
+        ):
+            with self.subTest(period_kind=kind):
+                row = {"metric_id": metric, "period_kind": kind, "complete": 1,
+                       "withheld": facts.WITHHELD_NO_OBSERVATION, "publishable": 0}
+                self.assertEqual(facts.comparison_clause(row), expected)
+                self.assertEqual(build._fact_status_text(row), (expected, None, False))
 
     def test_a_posted_fact_reads_its_rank_and_links_by_metric_id(self) -> None:
         row = {"metric_id": LAENGSTE, "complete": 1, "withheld": None, "publishable": 1, "rank": 2}
@@ -2148,6 +2159,11 @@ class FactStatusTextTests(unittest.TestCase):
 
 
 class PageHelperTests(unittest.TestCase):
+    def test_fact_sources_description_names_agenda_items(self) -> None:
+        description = build.DATABASE_TABLE_DESCRIPTIONS["fact_sources"]
+        self.assertIn("Belege je Fakt", description)
+        self.assertIn("Tagesordnungspunkte", description)
+
     def test_every_metric_has_an_archive_column_label(self) -> None:
         self.assertEqual(set(build.FACTS_METRIC_LABELS), set(facts.REGISTRY_BY_ID))
 
@@ -2168,6 +2184,10 @@ class PageTests(StoreCase):
         people = {"Ada Lovelace": {"display_name": "Ada Lovelace", "party": "SPD", "identity_key": "xml:ada", "xml_redner_id": "ada"}}
         output_dir, _ = self.write_pages(week_specs(9), people=people, mp_lookup={"xml:ada": 7})
         html = (output_dir / "fakt" / "2025-W11.html").read_text(encoding="utf-8")
+        self.assertIn('<span class="eyebrow">Belege</span>', html)
+        self.assertNotIn('<span class="eyebrow">Quellen</span>', html)
+        self.assertIn("Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern", html)
+        self.assertNotIn("nur eine Korrektur an den Rohdaten", html)
         self.assertIn('<section id="laengste-rede"', html)
         self.assertIn('<a href="../abgeordnete/7.html">Ada Lovelace</a>', html)
         self.assertIn('<a href="../protocols/plenarprotokoll-21-9.html">BT-PlPr. 21/9</a>', html)
@@ -2409,6 +2429,8 @@ class PageTests(StoreCase):
         month_page = output_dir / "fakt" / "2020-07.html"
         self.assertTrue(month_page.exists())
         html = month_page.read_text(encoding="utf-8")
+        self.assertIn("Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern", html)
+        self.assertNotIn("nur eine Korrektur an den Rohdaten", html)
         self.assertIn(f'<section id="{AKTIVSTE}"', html)
         self.assertIn(f'<section id="{VORGANG}"', html)
         self.assertIn("Fleissig6", html)
@@ -2481,7 +2503,11 @@ class PageTests(StoreCase):
             self.assertIn(metric["title"], html)
             if metric["caveat"]:
                 self.assertIn(metric["caveat"], html)
-        self.assertIn("Spätere Sitzungswochen ändern frühere Karten nicht", html)
+        self.assertIn("Wochen- und Monatskarten werden bei jedem Neubau", html)
+        self.assertIn("Schwellen oder Mindestwerten", html)
+        self.assertIn("geänderte Formulierungen", html)
+        self.assertIn("entfällt die zugehörige Karte", html)
+        self.assertNotIn("Was sich nicht ändert", html)
         # T11: the stub sentence is gone, replaced by the real monthly rule.
         self.assertNotIn("noch nicht gebaut", html)
         self.assertIn("vergleichbare Monate", html)

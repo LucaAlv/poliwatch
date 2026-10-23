@@ -93,16 +93,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P3
 **Depends on:** None (A1 works without it)
 
-### Document `--protocol-wahlperiode` in the README
-
-**What:** Add `--protocol-wahlperiode` to the README's update/backfill section. Say plainly that when `--limit N > 0` is set, the catalog fetch is limited to WP 21 unless `--protocol-wahlperiode 0` is passed.
-
-**Why:** The flag's help text says so (`scripts/build_dip_pulse_site.py:9235`, applied in `fetch_protocols` at :309), but the README never mentions it (`grep -c wahlperiode README.md` = 0). Someone doing a bounded backfill of WP 20 by following the README gets WP 21 only, with no warning. Originally noted as Task 2 of `docs/audit-remediation-plan.md` (2026-08-18) and never moved here.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Line-by-line audit of the ingestion modules
 
 **What:** Review `scripts/validate_dip_protocol.py` (XML parsing, roll-call scraping, DIP enrichment) and `scripts/abgeordnetenwatch.py` line by line, adding fixture tests for every parse branch that has none. Include the roll-call `fetch_html` path, which has a 60 s timeout but no retry/backoff, unlike `ApiClient.get_json`.
@@ -405,16 +395,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Effort:** M
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
-
-### Fakt der Woche, copy fixes from the glossary review
-
-**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
-
-**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None; (3) interacts with the publication ledger item
 
 ### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
 
@@ -1137,6 +1117,22 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Document `--protocol-wahlperiode` in the README
+
+**Completed:** v0.20.6.2 (2026-10-22). README's update section now documents the default `21`, filtering only with positive `--limit`, older-Wahlperiode and all-Wahlperioden examples, the separate `--detail-limit`, and explicit/backfill selection. The former TODO's catalog-filter claim was stale: online builds always fetch the whole catalog; the Wahlperiode filter applies only to acquisition. Verified against `parse_args()`, `main()`, `select_acquisition_protocols()` and offline parser/selection checks of the examples.
+
+### Fakt der Woche, copy fixes from the glossary review
+
+**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
+
+**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; (3) interacts with the publication ledger item
+
+**Completed:** v0.20.7.0 (2026-10-23). Fact citation lists now say "Belege"; the Daten description also names Tagesordnungspunkte. Shared comparison copy uses the existing period kind for "diese Woche" and "diesen Monat", including archive/page status text. Methodik and weekly/monthly page footers explain that rebuilds regenerate cards and data/rule/wording changes can alter them; Methodik also notes that an unresolvable Beleg removes a card. Validation: 153 fact tests and the full Python 3.13 suite (1,373 tests; one skipped) passed, along with script compilation and diff checks. The publication ledger remains a separate open item.
 
 ### Add an accessible role to bill search controls
 

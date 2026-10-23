@@ -152,6 +152,7 @@ Related knobs, in the order you will reach for them:
 | Flag | Effect |
 |---|---|
 | `--limit N` | Acquire only the newest N protocols of `--protocol-wahlperiode`. Default `0` = no cap. The catalog is always fetched whole. |
+| `--protocol-wahlperiode N` | Wahlperiode used to select protocols when `--limit` is positive. Default `21`; `0` = all Wahlperioden. With `--limit 0`, no Wahlperiode filter applies. |
 | `--detail-limit N` | Protocols enriched into dossiers. Default `5`; `0` = all fetched, `-1` = none. |
 | `--document-number 21/90` | Acquire only this protocol (repeatable); the catalog and every cached dossier are kept. |
 | `--dossier-document-number 21/90` | Also acquire this protocol on top of what `--detail-limit` selects. Repeatable. |
@@ -159,6 +160,19 @@ Related knobs, in the order you will reach for them:
 | `--summary-mode auto` | Regenerate summaries with an LLM. Default `reuse` keeps existing summaries without new calls. |
 | `--enrich ID` | Add optional profile or full-roster acquisition to this update (`aw-profiles`, `mp-roster`, `all`). Votes are already on by default. |
 | `--no-votes` | Skip roll-call vote acquisition for this update. Cached votes and their acquisition state are kept. |
+
+`--protocol-wahlperiode` narrows acquisition only when `--limit N > 0`; it never narrows the catalog fetch. With the defaults (`--limit 0 --protocol-wahlperiode 21`), acquisition considers all Wahlperioden, and `--detail-limit 5` selects the newest five sittings with XML for dossiers. Setting `--protocol-wahlperiode 20` alone does not restrict acquisition to WP 20.
+
+```bash
+# Newest five protocols of WP 21 (the default Wahlperiode for a positive limit)
+scripts/preview_dip_pulse_site.sh update --limit 5
+# Newest five protocols of an older Wahlperiode
+scripts/preview_dip_pulse_site.sh update --limit 5 --protocol-wahlperiode 20
+# Newest five protocols across all Wahlperioden
+scripts/preview_dip_pulse_site.sh update --limit 5 --protocol-wahlperiode 0
+```
+
+`--detail-limit` still caps dossier enrichment within that selection. To acquire every protocol with XML across all Wahlperioden, use `update --limit 0 --detail-limit 0`. Explicit `--document-number` selections and `--backfill-incomplete` bypass the `--limit` and `--protocol-wahlperiode` selection.
 
 To iterate on one dossier without touching the rest of a site, build it into its own directory: `scripts/build_dip_pulse_site.py --output-dir .context/scratch --document-number 21/90`.
 

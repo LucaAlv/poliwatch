@@ -18,6 +18,20 @@ All notable changes to this project will be documented in this file.
 - A member listed twice in an Einzelstimmen list counts once for the Abweichler, so a duplicate row can no longer stand in for a missing member. "Twice" means the same identity key persist binds the vote member on (a trusted abgeordnetenwatch id, else the profile URL, else name and Zusammenschluss), across the whole vote, not the same name within a group; merges the identity registry makes later are not seen. On the reference store 0 of 1,281 group results move (632 Abweichler before and after).
 - An Einzelstimmen card that links back to the Abstimmung (bundestag.de does this for an MP without a biography; 77 rows in 14 votes) is no profile URL any more: it no longer serves as an identity that folded every such MP of a vote into one, is not stored as the MP's profile (14 → 0 mps), and the name is no longer linked to the vote page. The registry kept the 63 occurrences it had already folded on their records, so the reference store was rebuilt without its earlier registry: `vote_members` 154,015 → 154,078, persons 4,265 → 4,298 (47 records, one per affected MP, replace the 14 folded ones; 41 stale `xml:` records from an older identity rule fold into their MPs' current records with no speech or contribution changing person; 10 bindings to speeches and contributions that no longer exist are gone). Abweichler are unchanged (632).
 
+## [0.20.7.0] - 2026-10-23
+
+### Fixed
+
+- Fact citations now say “Belege”, and the data export description includes agenda items among the evidence types.
+- Monthly facts without an observation now say “diesen Monat nicht messbar”.
+- Fact pages and Methodik now explain that rebuilding can change earlier cards after data, rule or wording changes, and that cards disappear when their evidence no longer resolves.
+
+## [0.20.6.2] - 2026-10-22
+
+### Changed
+
+- The refresh guide now explains how `--protocol-wahlperiode` works with acquisition limits, with examples for the current period, older periods and all periods.
+
 ## [0.20.6.1] - 2026-10-22
 
 ### Fixed
