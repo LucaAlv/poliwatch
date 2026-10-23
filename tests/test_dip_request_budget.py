@@ -69,5 +69,104 @@ class NumFoundStopTests(unittest.TestCase):
         self.assertEqual(client.get_json.call_count, 2)
 
 
+
+def protocol(number: str, *, xml: bool = True) -> dict:
+    wp, _, n = number.partition("/")
+    return {"id": f"{wp}{int(n):04d}", "dokumentnummer": number,
+            "fundstelle": {"xml_url": f"https://dserver.bundestag.de/btp/{wp}/{wp}{int(n):03d}.xml" if xml else ""}}
+
+
+class CatalogReuseTests(unittest.TestCase):
+    """Owner decision 2026-10-23: a closed Wahlperiode's catalog comes from the cache;
+    the whole catalog is fetched when the cache is missing, older than 7 days since
+    its last full fetch, or does not add up to DIP's total."""
+
+    NOW = build.datetime(2026, 10, 23, 12, 0, tzinfo=build.timezone.utc)
+
+    def setUp(self) -> None:
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.output_dir = build.Path(tmp.name)
+        (self.output_dir / "data").mkdir()
+        self.cached = [protocol("21/2"), protocol("21/1"), protocol("20/2"), protocol("20/1"), protocol("19/1")]
+
+    def write_cache(self, protocols: list[dict], *, full: str = "2026-10-20T00:00:00Z") -> None:
+        payload = {"authoritative": True, "fetched_at": "2026-10-22T00:00:00Z", "full_fetched_at": full,
+                   "protocols": protocols}
+        (self.output_dir / "data" / build.facts.CATALOG_FILENAME).write_text(build.json.dumps(payload), encoding="utf-8")
+
+    def client(self, total: int, by_wp: dict[int, list[dict]]) -> mock.Mock:
+        def get_json(path, params):
+            wp = params.get("f.wahlperiode")
+            if wp is None:
+                return {"documents": [protocol("21/3")], "cursor": "x", "numFound": total}
+            documents = by_wp[int(wp)]
+            return {"documents": documents, "cursor": "c", "numFound": len(documents)}
+        client = mock.Mock()
+        client.get_json.side_effect = get_json
+        return client
+
+    def fetch(self, client: mock.Mock) -> tuple[list[str], str, mock.Mock]:
+        full = mock.Mock(return_value=[protocol("21/3"), *self.cached])
+        with mock.patch.object(build, "fetch_protocols", full):
+            protocols, full_fetched_at = build.fetch_catalog(client, self.output_dir, now=self.NOW)
+        return sorted(p["dokumentnummer"] for p in protocols), full_fetched_at, full
+
+    # Value: protects=a run pays for the current Wahlperiode and one count, not 48 catalog pages;
+    # fails_when=closed Wahlperioden are fetched again, or the merged catalog drops or repeats
+    # a sitting; seam=fetch_catalog with the client stubbed.
+    def test_a_fresh_cache_supplies_the_closed_wahlperioden(self) -> None:
+        self.write_cache(self.cached)
+        client = self.client(6, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")]})
+        numbers, full_fetched_at, full = self.fetch(client)
+        self.assertEqual(numbers, ["19/1", "20/1", "20/2", "21/1", "21/2", "21/3"])
+        self.assertEqual(full_fetched_at, "2026-10-20T00:00:00Z")
+        full.assert_not_called()
+        self.assertEqual(client.get_json.call_count, 2)
+
+    # Value: protects=the merged catalog is only used when it adds up to DIP's total, so a new
+    # Wahlperiode or a gap in the cache forces the full fetch; seam=fetch_catalog.
+    def test_a_count_mismatch_falls_back_to_the_full_fetch(self) -> None:
+        self.write_cache(self.cached)
+        numbers, full_fetched_at, full = self.fetch(self.client(7, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")]}))
+        full.assert_called_once()
+        self.assertEqual(full_fetched_at, "2026-10-23T12:00:00Z")
+        self.assertEqual(len(numbers), 6)
+
+    def test_a_missing_or_old_cache_falls_back_to_the_full_fetch(self) -> None:
+        for case in ("missing", "old", "not authoritative"):
+            with self.subTest(case=case):
+                path = self.output_dir / "data" / build.facts.CATALOG_FILENAME
+                path.unlink(missing_ok=True)
+                if case == "old":
+                    self.write_cache(self.cached, full="2026-10-15T11:59:00Z")
+                elif case == "not authoritative":
+                    path.write_text(build.json.dumps({"protocols": self.cached}), encoding="utf-8")
+                client = self.client(6, {})
+                _, _, full = self.fetch(client)
+                full.assert_called_once()
+                client.get_json.assert_not_called()
+
+    # Value: protects=a closed Wahlperiode whose sitting has no XML yet is fetched fresh, so the
+    # sitting becomes acquirable once DIP lists its XML; seam=fetch_catalog.
+    def test_a_closed_wahlperiode_with_a_sitting_without_xml_is_fetched_fresh(self) -> None:
+        self.cached[2] = protocol("20/2", xml=False)
+        self.write_cache(self.cached)
+        client = self.client(6, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")],
+                                 20: [protocol("20/2"), protocol("20/1")]})
+        numbers, _, full = self.fetch(client)
+        full.assert_not_called()
+        self.assertEqual(client.get_json.call_count, 3)
+        self.assertEqual(numbers, ["19/1", "20/1", "20/2", "21/1", "21/2", "21/3"])
+
+    # Value: protects=the age counts from the last full fetch, not the last merge, so a run every
+    # day still refetches the whole catalog weekly; seam=render_site's catalog file.
+    def test_a_merged_catalog_keeps_its_full_fetch_time(self) -> None:
+        payload = build.catalog_payload([protocol("21/1")], full_fetched_at="2026-10-20T00:00:00Z")
+        self.assertEqual(payload["full_fetched_at"], "2026-10-20T00:00:00Z")
+        self.assertTrue(payload["authoritative"])
+
+
 if __name__ == "__main__":
     unittest.main()

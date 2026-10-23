@@ -369,6 +369,87 @@ def fetch_protocols(
     return protocols if fetch_all else protocols[:limit]
 
 
+#: Days after the last full catalog fetch until a run fetches the whole catalog
+#: again; in between, closed Wahlperioden come from the cached catalog (owner
+#: decision 2026-10-23: DIP answers only about a hundred requests in a window).
+CATALOG_FULL_FETCH_DAYS = 7
+
+
+def _catalog_list(client: dip.ApiClient, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every protocol of one filtered catalog list, checked against DIP's count."""
+    params = dict(params)
+    protocols: list[dict[str, Any]] = []
+    previous_cursor = None
+    num_found: int | None = None
+    while True:
+        page = client.get_json("/plenarprotokoll", params)
+        protocols.extend(page.get("documents") or [])
+        num_found = dip.page_count(page) if dip.page_count(page) is not None else num_found
+        cursor = page.get("cursor")
+        if not cursor or cursor == previous_cursor or dip.holds_all(protocols, num_found):
+            break
+        previous_cursor = cursor
+        params["cursor"] = cursor
+    if num_found is None or len({str(p.get("id")) for p in protocols}) != num_found:
+        raise dip.DipError(f"DIP listed {len(protocols)} protocols for {params}, not {num_found}")
+    return protocols
+
+
+def catalog_payload(protocols: list[dict[str, Any]], *, full_fetched_at: str | None) -> dict[str, Any]:
+    """The cached catalog file. ``full_fetched_at`` is the last time the whole
+    catalog was fetched; a run that merged cached Wahlperioden keeps it."""
+    now = dip.utc_now()
+    return {"authoritative": True, "fetched_at": now, "full_fetched_at": full_fetched_at or now, "protocols": protocols}
+
+
+def fetch_catalog(
+    client: dip.ApiClient, output_dir: Path, *, now: datetime | None = None
+) -> tuple[list[dict[str, Any]], str]:
+    """The whole DIP catalog and when it was last fetched in full.
+
+    A cached catalog fully fetched in the last CATALOG_FULL_FETCH_DAYS supplies
+    every Wahlperiode before the newest in which each sitting has an XML URL
+    (a closed Wahlperiode does not change); the rest is fetched fresh. The
+    merge is used only when it adds up to DIP's total count, so a new
+    Wahlperiode or a gap in the cache falls back to the full fetch, as does a
+    missing, unreadable or old cache."""
+    now = now or datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    full = lambda: (fetch_protocols(client, 0, [], None), stamp)  # noqa: E731
+    try:
+        payload = json.loads((output_dir / "data" / facts.CATALOG_FILENAME).read_text(encoding="utf-8"))
+        cached = [p for p in payload["protocols"] if isinstance(p, dict)] if payload.get("authoritative") is True else []
+        full_fetched_at = str(payload.get("full_fetched_at") or "")
+        fetched = datetime.strptime(full_fetched_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return full()
+    if not cached or now - fetched > timedelta(days=CATALOG_FULL_FETCH_DAYS):
+        return full()
+    by_wp: dict[int, list[dict[str, Any]]] = {}
+    for protocol in cached:
+        wahlperiode = wahlperiode_of(protocol)
+        if wahlperiode is None:
+            return full()
+        by_wp.setdefault(wahlperiode, []).append(protocol)
+    newest = max(by_wp)
+    frozen = {wp for wp, protocols in by_wp.items() if wp < newest and all(protocol_xml_url(p) for p in protocols)}
+    try:
+        total = dip.page_count(client.get_json("/plenarprotokoll", {"f.zuordnung": "BT"}))
+        merged = [p for wp in sorted(frozen) for p in by_wp[wp]]
+        for wahlperiode in sorted(set(by_wp) - frozen):
+            merged.extend(_catalog_list(client, {"f.zuordnung": "BT", "f.wahlperiode": wahlperiode}))
+    except dip.DipError as exc:
+        print(f"warning: [catalog] the cached catalog could not be completed ({exc}); fetching it whole.", file=sys.stderr)
+        return full()
+    if total is None or len({str(p.get("id")) for p in merged}) != total:
+        print(f"[catalog] cached and fresh lists hold {len(merged)} protocols, DIP {total}; fetching the whole catalog.",
+              file=sys.stderr)
+        return full()
+    print(f"[catalog] {len(merged)} protocols: Wahlperiode {', '.join(map(str, sorted(frozen)))} from the cache "
+          f"(full fetch {full_fetched_at}), the rest fresh.", file=sys.stderr)
+    return merged, full_fetched_at
+
+
 # Which sittings of the catalog this run acquires. --document-number and
 # --limit narrow the acquisition only: the catalog stays whole, because
 # completeness is judged against everything DIP lists and the store keeps every
@@ -10756,6 +10837,7 @@ def render_site(
     is_remote_manifest: bool = False,
     bill_slugs: set[str] | None = None,
     authoritative_catalog: bool = False,
+    catalog_full_fetched_at: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
 ) -> Path:
     # Publication is intentionally independent from update-time enrichments.
@@ -10821,7 +10903,7 @@ def render_site(
         dip.write_text_atomic(
             catalog_path,
             json.dumps(
-                {"authoritative": True, "fetched_at": dip.utc_now(), "protocols": protocols},
+                catalog_payload(protocols, full_fetched_at=catalog_full_fetched_at),
                 ensure_ascii=False,
                 indent=2,
             )
@@ -12189,7 +12271,7 @@ def main() -> int:
         # re-filters that combined list for a usable XML URL.
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         # The whole catalog, whatever narrows the acquisition below.
-        protocols = fetch_protocols(client, 0, [], None)
+        protocols, catalog_full_fetched_at = fetch_catalog(client, output_dir)
         # D2: the exclusion list is the record plus this run's flag, minus what the
         # run takes back. A listed sitting is skipped before acquisition, whatever
         # the parser would say: no fetch, no report, no store row.
@@ -12447,6 +12529,7 @@ def main() -> int:
         is_remote_manifest=is_remote_manifest,
         bill_slugs=bill_slugs,
         authoritative_catalog=True,
+        catalog_full_fetched_at=catalog_full_fetched_at,
         vorgang_cache=vorgang_cache,
     )
     print(index_path)
