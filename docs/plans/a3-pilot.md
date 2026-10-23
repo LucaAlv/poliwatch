@@ -259,9 +259,9 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
 - **What this shows:**
   - The cutoff is not a fixed count. That fits a budget shared with others, such as the public DIP key that README.md §1 points to, or a per-IP limit with slow refill. Neither is established.
   - **DIP cost per sitting is far higher than assumed.** 19/238 alone took 58 DIP requests before its persons: 4 for the sitting, 46 for 23 Vorgänge and 6+ for persons.
-  - On top of that, the 48-page catalog opens every run. At ~60 per sitting, the ~400 WP 18/19 sittings need about 24,000 DIP requests. At ~100 per window, Phase 3 is not feasible as built.
+  - On top of that, the 48-page catalog opens every run. At ~60 per sitting (one sitting measured), the ~400 WP 18/19 sittings need about 24,000 DIP requests. At ~100 per window, Phase 3 is not feasible as built.
 - **Ways to cut DIP requests (proposals, nothing built):**
-  1. Stop paging when a page holds all of `numFound`. Every `/vorgangsposition` list paid a second, empty page (23 of the 46).
+  1. Stop paging when a page holds all of `numFound`. Each of the 23 Vorgänge took exactly 2 pages. That suggests the second page is only the end-of-list check, which would make 23 of the 46 avoidable. Not verified: the log has no document counts.
   2. Cache `/vorgangsposition?f.vorgang` across sittings and runs. A Vorgang recurs across sittings, as the D5 person cache already does for persons within one build.
   3. Persist the person cache across runs.
   4. Reuse the cached catalog in a backfill, or fetch it by Wahlperiode, instead of 48 pages per run.
