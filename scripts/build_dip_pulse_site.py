@@ -26,7 +26,7 @@
 #      the integrity checks (schema and writes live in ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, its CSVs and five executed SQL
+#   6. Export a distribution copy of the store, its CSVs and the executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -140,16 +140,17 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
-    "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten verbunden werden.",
+    "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
-    "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
+    "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite; context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
     "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
@@ -660,12 +661,6 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
     return None, " ".join(tokens[start:])
 
 
-# Agenda items carry either a list of roll-call votes ("votes") or a single
-# legacy "vote" dict. Normalise both shapes into a list.
-def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
-    return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
-
-
 # Every list of an agenda item that holds speakers: Reden and Beiträge.
 SPEAKER_LISTS = ("xml_speakers", "xml_speakers_first", "xml_contributions")
 
@@ -868,6 +863,15 @@ class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read."""
 
 
+# What a build prints when a cached report stops it before any dossier is
+# fetched, so the online update that would re-fetch the sitting cannot run
+# either. A plain update re-fetches only the newest sittings, hence the flag.
+CACHED_REPORT_FIX = (
+    "Fix: move that report out of data/, then re-fetch its sitting with an online update "
+    "and --document-number <its number>"
+)
+
+
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
@@ -917,6 +921,12 @@ def load_existing_detail_entries(
             raise CachedReportError(f"{report_path} has no document number; restore source identity before replay")
         if not document_number or document_number not in protocol_numbers:
             continue
+        # Raised even on a lenient load, which would otherwise drop the whole
+        # sitting with a warning; a report outside the catalog is never read.
+        try:
+            derive.require_vote_shape(report)
+        except ValueError as exc:
+            raise CachedReportError(f"{report_path}: {exc}") from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1684,7 +1694,9 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 def require_vorgang_cache_for_tags(
     database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
-    """Refuse replay when a previously known TOP or vote becomes not_fetched.
+    """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
+    vote whose context (``votes.context_state``) was known, resolved or none, would
+    become not_fetched.
     Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
@@ -1707,6 +1719,12 @@ def require_vorgang_cache_for_tags(
                 {row[0] for row in conn.execute(f"SELECT DISTINCT {key} FROM {table} WHERE source != 'not_fetched'")}
                 for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
             )
+            # A schema-5 store has no context yet, so there is nothing to lose.
+            vote_columns = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
+            known_contexts = (
+                dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
+                if "context_state" in vote_columns else {}
+            )
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -1717,9 +1735,11 @@ def require_vorgang_cache_for_tags(
     cache = vorgang_cache or politikfelder.empty_cache()
     missing_tops: set[str] = set()
     vote_sources: dict[str, str] = {}
+    context_states: dict[str, str] = {}
     for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
         protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
         for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
             if source == "not_fetched":
@@ -1729,13 +1749,19 @@ def require_vorgang_cache_for_tags(
             if vote_id:
                 # Match persistence's final overwrite for normalized duplicate IDs.
                 vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
+                context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
-    if regressed_tops or regressed_votes:
+    regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
+    regressed_none = sum(1 for key in regressed_contexts if known_contexts[key] == "none")
+    if regressed_tops or regressed_votes or regressed_contexts:
         raise DatabaseRebuildError(
             f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
             f"{len(regressed_tops)} previously known TOPs and {len(regressed_votes)} previously known votes "
-            f"not_fetched (TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}). "
+            f"not_fetched and {len(regressed_contexts)} previously known vote contexts not_fetched "
+            f"({len(regressed_contexts) - regressed_none} resolved, {regressed_none} none) "
+            f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
+            f"context examples: {sorted(regressed_contexts)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
@@ -2000,11 +2026,8 @@ def reuse_existing_dossier_enrichments(
         # unambiguously (equal top_id when both have one): an index match alone
         # can be another TOP. Nothing is merged into a TOP that has votes.
         top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
-        if votes and not _iter_report_votes(item) and _iter_report_votes(previous) and len(top_ids) <= 1:
-            if previous.get("votes"):
-                item["votes"] = copy.deepcopy(previous["votes"])
-            elif previous.get("vote"):
-                item["vote"] = copy.deepcopy(previous["vote"])
+        if votes and not derive.item_votes(item) and derive.item_votes(previous) and len(top_ids) <= 1:
+            item["votes"] = copy.deepcopy(previous["votes"])
         if not profiles:
             continue
 
@@ -2383,8 +2406,8 @@ def write_report_and_page(
 #
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
-# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
-# CSV.gz files, and five SQL "recipes" executed at build time so a visitor can
+# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), its
+# CSV.gz files, and the SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
 # recipe rows, the schema cards - is read from one manifest (datenstand.json)
@@ -2483,10 +2506,15 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 #
 # The Politikfeld tables are derived by scripts/politikfelder.py from DIP's
 # Sachgebiet labels (proceedings.sachgebiet, which is raw DIP data and so stays
-# "dip"); no model writes them.
+# "dip"); no model writes them. vote_proceedings is the same module's choice of
+# the Vorgänge a vote is about; proceedings.abstract is DIP's text with the HTML
+# stripped, so it stays "dip".
 _TABLE_SOURCE_DERIVED = (
     set(registry.REGISTRY_TABLES)
-    | {"mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder"}
+    | {
+        "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
+        "vote_proceedings",
+    }
     | set(facts.FACTS_TABLES)
 )
 
@@ -2500,6 +2528,8 @@ _COLUMN_SOURCE_DERIVED = {
     ("votes", "inverted"),
     ("votes", "inversion_source"),
     ("votes", "inversion_excerpt"),
+    # Whether vote_proceedings found the vote's Vorgang (politikfelder.CONTEXT_STATES).
+    ("votes", "context_state"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -2521,7 +2551,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 6
+EXPORT_FORMAT = 7
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -2543,7 +2573,7 @@ REPRESENTATIVE_SQL = (
     ")\n"
 )
 
-# The five recipes executed at build time against the distribution copy and
+# The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
 # addendum: R1/R3 join mp_canonical and group by the canonical id, so their
 # counts equal the pooled counts on the MP profile pages).
@@ -2691,8 +2721,44 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "caveat": None,
     },
+    {
+        # The same Beschlussempfehlung urheber the vote panels cite
+        # (derive.vote_committees), joined by the vote's Drucksache numbers.
+        "id": "r6-ausschuss",
+        "title": "Aus welchen Ausschüssen kommen die Beschlussempfehlungen namentlicher Abstimmungen?",
+        "sql": (
+            "SELECT u.value AS beschlussempfehlung_urheber,\n"
+            "       COUNT(DISTINCT vd.vote_id) AS abstimmungen\n"
+            "FROM vote_documents vd\n"
+            "JOIN documents d ON d.id = vd.document_id\n"
+            "JOIN json_each(d.origin_json) u\n"
+            "WHERE d.document_type LIKE 'Beschlussempfehlung%'\n"
+            "  AND d.herausgeber = 'BT'\n"
+            "GROUP BY u.value\n"
+            "ORDER BY abstimmungen DESC, beschlussempfehlung_urheber\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "beschlussempfehlung_urheber", "align": "text"},
+            {"name": "abstimmungen", "align": "num"},
+        ),
+        "depends_on": "votes",
+        "caveat": (
+            "Zählt die Abstimmungen, unter deren Drucksachen eine Beschlussempfehlung dieses Ausschusses ist "
+            "(Urheber laut DIP). Das zitiert das Dokument und sagt nicht, dass der Ausschuss federführend war: "
+            "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz."
+        ),
+    },
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
+
+_NUMBER_WORDS = ("null", "eine", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf")
+
+
+def _recipe_count_word() -> str:
+    """``len(RECIPES)`` as the German word the Daten page and landing text use."""
+    count = len(RECIPES)
+    return _NUMBER_WORDS[count] if count < len(_NUMBER_WORDS) else str(count)
 
 
 class DataExportUnavailable(RuntimeError):
@@ -3592,7 +3658,7 @@ def render_daten_recipes(
 
 # Rendered without JS as hidden ("no dead button shows without JS") and
 # revealed once this script has wired up a click handler for it. One script
-# tag for all five recipe buttons, next to the markup it controls rather than
+# tag for all recipe buttons, next to the markup it controls rather than
 # folded into page_scripts (shared by every page, most of which have none).
 def recipe_copy_runtime_script() -> str:
     return """
@@ -3976,9 +4042,9 @@ def render_database_page(
         {datenstand_html}
       </section>
       <section class="rule-section">
-        <span class="eyebrow">Fünf Abfragen</span>
+        <span class="eyebrow">{_recipe_count_word().capitalize()} Abfragen</span>
         <h2>Rezepte</h2>
-        <p class="lede">Diese fünf SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
+        <p class="lede">Diese {_recipe_count_word()} SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
         <div class="recipes">{recipes_html}</div>
       </section>
       <section class="rule-section loslegen" id="loslegen">
@@ -4139,7 +4205,7 @@ def render_landing_page(
     data = ""
     if database_page_href:
         meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
-        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.</p>{meta}</li>'
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und {_recipe_count_word()} geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen, Abstimmungen und Ausschüssen.</p>{meta}</li>'
 
     return f"""<!doctype html>
 <html lang="de">
@@ -4283,12 +4349,29 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
+def _vote_procedure_type(
+    vote: dict[str, Any], item: dict[str, Any] | None, sitting_documents: dict[str, Any]
+) -> str:
+    """The DIP type of the first of the vote's Drucksachen its TOP links; else of the
+    first the sitting links under any TOP (``derive.report_drucksachen``, the map the
+    committee line reads, D4), which also serves a vote under no TOP; else "–"."""
     numbers = {str(number) for number in vote.get("document_numbers") or []}
-    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+    for doc in ((item or {}).get("api") or {}).get("linked_drucksachen") or []:
         if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
             return str(doc["drucksachetyp"])
+    for raw in vote.get("document_numbers") or []:
+        doc = sitting_documents.get(derive.canonical_document_number(raw))
+        if doc and doc.get("drucksachetyp"):
+            return str(doc["drucksachetyp"])
     return "–"
+
+
+def _abweichler_count(vote: dict[str, Any]) -> int | None:
+    """The vote's Abweichler, or None unless every group's member rows are complete."""
+    groups = derive.vote_abweichler(vote)
+    if not groups or any(group["state"] != "complete" for group in groups.values()):
+        return None
+    return sum(len(group["members"]) for group in groups.values())
 
 
 def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str | None:
@@ -4335,11 +4418,9 @@ def collect_votes_archive(
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
         _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
+        sitting_documents = derive.report_drucksachen(report)
+        page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
         for item, vote in derive.iter_report_votes(report):
-            # persist_vote skips a vote without an id, so the archive does
-            # too: the row count must equal SELECT count(*) FROM votes.
-            if not vote.get("id"):
-                continue
             key = pulse_html.vote_key(vote)
             if key in rows:
                 continue
@@ -4354,13 +4435,10 @@ def collect_votes_archive(
                 "document_links": votes_feature.document_source_links(item) if item else {},
                 "document_chambers": votes_feature.document_source_chambers(item) if item else {},
                 "fraction_positions": fraction_positions,
-                "procedure_type": _vote_procedure_type(vote, item) if item else "–",
-                "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
-                     if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
-                    if page_path
-                    else None
-                ),
+                "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
+                "abweichler": _abweichler_count(vote),
+                # The vote's own panel (D9).
+                "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
             }
     return sorted(
         rows.values(),
@@ -4415,13 +4493,23 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
         title = vote.get("title") or vote.get("topic") or "Ohne Titel"
         title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
+        # Counted only where every group's Einzelstimmen are complete, so a
+        # missing badge never stands for zero (plan Slice 1).
+        abweichler = row.get("abweichler")
+        abweichler_attr = f' data-abweichler="{pulse_html.esc(abweichler)}"' if abweichler is not None else ""
+        abweichler_html = (
+            f' · <span class="archive-abweichler">{pulse_html.esc(pulse_html.format_count(abweichler, "stimmt", "stimmen"))}'
+            " anders als die Mehrheit der eigenen Fraktion oder Gruppe</span>"
+            if abweichler
+            else ""
+        )
         items.append(
-            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
+            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"{abweichler_attr}'
             f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\''
             f' data-politikfelder=\'{pulse_html.esc(json.dumps(row["politikfelder"], ensure_ascii=False))}\'>'
             f'<time>{pulse_html.esc(vote.get("date"))}</time>'
             f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
-            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}{abweichler_html}</p>'
             f'{pulse_html.render_politikfeld_tags(row["politikfelder"])}</div>'
             "</article>"
         )
@@ -4498,12 +4586,14 @@ def votes_archive_styles() -> str:
     }
     .archive-row[hidden], .archive-month[hidden] { display:none; }
     .archive-row time { color:var(--muted); font-size:13px; }
-    .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
+    .archive-row-body h3 { margin:0 0 4px; font-size:15px; overflow-wrap:break-word; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
+    .archive-abweichler { color:var(--ink); font-weight:650; }
 """ + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + pulse_html.POLITIKFELD_CHIP_CSS + """
     @media (max-width: 640px) {
-      .archive-row { grid-template-columns:1fr; gap:4px; }
+      /* minmax(0, ...): a long title or chip wraps instead of widening the page. */
+      .archive-row { grid-template-columns:minmax(0,1fr); gap:4px; }
     }
 """
 
@@ -11681,7 +11771,11 @@ def main() -> int:
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
-        entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        try:
+            entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         fetched, failed = fetch_missing_xml(output_dir, entries)
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
@@ -11806,7 +11900,8 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
+                    "Fix: repair that cached report, or move it out of data/ and re-fetch its sitting with an online update "
+                    "and --document-number <its number>, then re-run. "
                     "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
@@ -11850,7 +11945,11 @@ def main() -> int:
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
-            cached_entries = load_existing_detail_entries(output_dir, protocols)
+            try:
+                cached_entries = load_existing_detail_entries(output_dir, protocols)
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
@@ -11949,8 +12048,13 @@ def main() -> int:
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
         if getattr(args, "backfill_incomplete", False):
+            try:
+                backfill_entries = load_existing_detail_entries(output_dir, protocols)
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
-                load_existing_detail_entries(output_dir, protocols),
+                backfill_entries,
                 protocols,
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
@@ -11994,7 +12098,11 @@ def main() -> int:
         # What this run acquires is one scope; what the store keeps is another.
         # Every cached dossier of the catalog stays, whatever the acquisition
         # was narrowed to, and only the acquired sittings are refreshed.
-        existing_entries = load_existing_detail_entries(output_dir, protocols)
+        try:
+            existing_entries = load_existing_detail_entries(output_dir, protocols)
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.

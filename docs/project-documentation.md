@@ -32,6 +32,7 @@ The codebase is intentionally small. There is no package manager or web framewor
     |-- person_registry.py
     |-- stable_ids.py
     |-- politikfelder.py
+    |-- dip_text.py                  # DIP abstracts and committee names as display text
     |-- person_corrections.json
     |-- facts.py
     |-- abgeordnetenwatch.py
@@ -151,21 +152,21 @@ Important generated files:
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
 | `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
-| `database.html` | "Daten" page: download panel, Datenstand, five executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
+| `database.html` | "Daten" page: download panel, Datenstand, the executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
 | `data/xml/plenarprotokoll-<slug>.xml` | The protocol's Plenarprotokoll XML as fetched; `--offline --repersist` re-reads Reden and Beiträge from it, so a change to what counts as a Rede needs no re-fetch; `--fetch-xml` fills it for reports built before |
-| `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol |
+| `protocols/plenarprotokoll-<slug>.html` | Dossier page for one protocol. Each vote panel shows what the vote is about (the DIP abstract of each Vorgang its narrow Drucksache numbers name, labelled "<titel> · DIP", or "DIP-Vorgang <id>" where the cache has no title), the Beschlussempfehlung's committee, the tallies, the Abweichler per Zusammenschluss and the Einzelstimmen; its first panel carries `id="vote-<id>"`, which the archive links to |
 | `abgeordnete/index.html` and `abgeordnete/<person_id>.html` | MP index/detail pages with roster data, speeches, and roll-call vote participation; a retired or guess-merged person key is a redirect page to the surviving person (see [docs/stable-ids.md](stable-ids.md)) |
-| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter and a Politikfeld filter (`?politikfeld=Migration` opens it filtered) |
+| `votes/index.html` | "Abstimmungen" archive: every roll-call vote across every built sitting, including votes without a TOP assignment, reverse-chronological and grouped by month, with a Fraktion filter and a Politikfeld filter (`?politikfeld=Migration` opens it filtered); each row links to the vote's panel, names the type of its first Drucksache the sitting links (the vote's own TOP first) and, where every group's Einzelstimmen are complete, its Abweichler count |
 | `fakt/index.html` | "Fakten" archive: every posted Fakt der Woche card across all sitting weeks and months |
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
 | `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
-| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 27 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
+| `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz` + 28 `.csv.gz`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
 | `data/dip-vorgang-cache.json` | DIP Vorgang records (Sachgebiet, Sachbegriffe, abstract) and the Vorgang each Drucksache number resolves to, which the Politikfelder are derived from. Only an online build fetches it (batches of 100 ids, then one lookup per Drucksache number; the fetch pauses 0.5 s before every DIP request and a lookup takes two requests, so it stays near 1.5 requests a second and the first fill of about 2,400 numbers takes about 45 minutes; later builds fetch only what is new or has no Sachgebiet yet). Drucksache numbers are taken by the store's rules: DIP's `herausgeber` and the XML host decide what is a Bundestag Drucksache, and numbers are in canonical form. The cache is saved atomically, its temporary file staged in the private directory beside OUTPUT (`.OUTPUT.private/`, `person_registry.private_dir`); corrupt JSON is moved to a uniquely named `.corrupt` file, preferably there. Unsupported versions and read errors stop the build before fetch or writes, leaving the cache untouched. `--offline` builds read it and never call DIP; a TOP or vote whose entry is missing is stored as `untagged` with source `not_fetched`, and the build log counts them. `--offline --repersist` refuses if a previously known TOP or vote would become `not_fetched`; already-missing identities may remain missing or recover, and new missing identities do not block replay |
 
@@ -405,7 +406,7 @@ Common options:
 | `--output-dir PATH` | `.context/dip-pulse-site` | Static site output directory |
 | `--offline` | off | Render only from cached files; makes no DIP/XML/vote/profile/LLM requests |
 | `--fetch-xml` | off | Download the Plenarprotokoll XML of every cached report that has none in `OUTPUT_DIR/data/xml/` (public bundestag.de files, no API key), then exit; not combinable with `--offline`, `--repersist` or `--backfill-incomplete`. `--offline --repersist` re-reads Reden and Beiträge from those files |
-| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. It is also refused, with the store untouched, if the Vorgang cache (`data/dip-vorgang-cache.json`) would make any previously known TOP or vote `not_fetched`; run an online update or restore the cache. Already-`not_fetched` identities may stay missing or recover, and new missing identities do not block replay. Legacy schemas 1–4 upgrade when both Politikfeld tag tables are absent; a missing single tag table or an unreadable store refuses replay. See README "Re-persist the cached reports" |
+| `--repersist` | off | With `--offline`: persist every cached report into a fresh SQLite store (MdB roster rows and stored facts kept), re-reading Reden and Beiträge where cached XML exists. A report with stale counting rules and no XML is refused; fetch its XML first with `--fetch-xml`. The new store replaces the old one only when every report persisted; any failure exits 1 and leaves the previous store untouched. It is also refused, with the store untouched, if the Vorgang cache (`data/dip-vorgang-cache.json`) would make any previously known TOP or vote `not_fetched`, or a vote whose context was known (`resolved` or `none` in `votes.context_state`) `not_fetched`; run an online update or restore the cache. Already-`not_fetched` identities may stay missing or recover, and new missing identities do not block replay. Legacy schemas 1–4 upgrade when both Politikfeld tag tables are absent; a missing single tag table or an unreadable store refuses replay. See README "Re-persist the cached reports" |
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week, and prints it as "Auswertung vom"; the homepage uses the same date to label its selected week |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. Both `puls.html` and the homepage use that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path |
@@ -431,7 +432,7 @@ Daten export options (`data/exports/`, the Daten page's download panel, Datensta
 | `--data-license TEXT` | `""` or `$BUNDESTAG_PULSE_DATA_LICENSE` | Licence string recorded in the manifest and shown on the page (placeholder text until set) |
 | `--data-issues-url URL` | none or `$BUNDESTAG_PULSE_DATA_ISSUES_URL` | Optional "Fragen und Fehler" footer link on the Daten page; must start with `https://`, `http://`, `mailto:` or `/` |
 
-The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 27 CSV.gz files and executes the five `RECIPES` SQL statements against it; `export_format` (currently `6`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`, v6 corrected the abgeordnetenwatch MP column source tags) is bumped whenever that CSV layout, transformation or provenance changes; additive columns are not a bump.
+The export writes a distribution copy of the store (`speeches.paragraphs_json` dropped, `mp_canonical` and `datenstand` tables added, requires SQLite ≥ 3.35) plus 28 CSV.gz files and executes the `RECIPES` SQL statements against it; `export_format` (currently `7`: v2 made every row id a stable text key, v3 added `contributions.csv.gz` and kept only Reden in `speeches`, v4 keys `documents` by issuer and number with one row per Drucksache and adds `documents.herausgeber`, v5 added the two Politikfeld tables `agenda_item_politikfelder` and `vote_politikfelder` and `proceedings.sachgebiet`, v6 corrected the abgeordnetenwatch MP column source tags, v7 added `vote_proceedings`, `votes.context_state` and `proceedings.abstract`) is bumped whenever that CSV layout, transformation or provenance changes; additive columns are not a bump.
 
 Summary options:
 
@@ -563,7 +564,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (5), or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (6), or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -625,6 +626,7 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `votes`
 - `agenda_item_votes`
 - `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
+- `vote_proceedings` (the DIP Vorgänge a vote is about, ranked: the Vorgänge its Drucksache numbers name narrowly, at most two per number, narrowed to its TOPs' Vorgänge where they meet; `votes.context_state` says `resolved`, `none` or `not_fetched`; derived by `politikfelder.vote_vorgang_ids`)
 - `vote_documents`
 - `vote_fractions`
 - `vote_members`
