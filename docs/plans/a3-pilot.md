@@ -299,3 +299,22 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - A source refusal, a crash, the disk watchdog, or a run that fails without a DIP block stops it for a human. So does a cap of 20 cycles.
   - **Files:** `drip.log` holds one line per event, `drip-state.json` the state, `pilot-run-<n>.log` each run, and `pilot-requests.log` every request.
 - **What it will measure:** requests per window, and how long DIP needs to recover, read from the request log across cycles.
+
+### Option B, the bulk prefetch (built 2026-10-23, handoff [a3-option-b-handoff.md](a3-option-b-handoff.md))
+
+- **Built (64b064d, f273495, 1ae2807), test-first, no live request yet:** `scripts/prefetch_dip_bulk.py --output-dir OUT --wahlperiode N [--drucksachen] [--persons] [--max-chunks K]`.
+  - Month chunks over the Wahlperiode's sittings, newest first, the first and last chunk open. Each chunk is staged under `data/dip-bulk/wp<N>/` once it matches its `numFound`.
+  - The Vorgang cache is merged only when the chunk counts, the distinct ids and the WP total all agree. Entries are grouped per Vorgang in date, then position id, order.
+  - Only Vorgänge the bulk saw are written. A differing cached entry is kept and reported. A Vorgang in two Wahlperioden is dropped.
+  - Persons are cached as fetched now, with the 30-day expiry unchanged. Owner, 2026-10-23: re-run `--persons` at the start of each backfill session.
+  - Exit codes: 0 done, 2 `--max-chunks` reached, 3 DIP silent (rest), 1 needs a human.
+- **Owner decisions 2026-10-23:** the separate prefetch; stop the drip once the code is ready; the drip's `--wait-hours` is now 6 (restarted 20:48 UTC); the person refresh as above.
+- **Reference data for the match checks** is frozen in `~/agent-runs/a3/bulk-reference/` (the 23 Vorgänge, the 12 persons, the 19/238 report), copied before any bulk write. The checker is `~/agent-runs/a3/tools/compare_bulk.py`.
+- **Runner:** `~/agent-runs/a3/bulk_drip.py` runs one prefetch stage after another. On exit 3 it rests 6 h. It first rests until 6 h after the last DIP failure in either request log. Its files are `bulk.log`, `bulk-run-<n>.log` and `bulk-requests.log`.
+- **First window: purpose and expected cost, written before sending.**
+  1. WP 19 Drucksachen, `--max-chunks 3`: the open chunk from 2021-09-01, then August and July 2021.
+     - These cover all 23 reference Vorgänge (their Drucksachen run from 2021-07-23 to 2021-09-29).
+     - The WP total is not re-asked: the 73,849 measured at 17:55 UTC is seeded in `total.json`.
+     - About 15 pages per month at the WP average of ~1,540 positions, so roughly 30–60 requests.
+  2. WP 19 persons, `--persons`: size unknown, roughly 10–30 pages. Its `differing` output is the step-4 comparison against the cache, which still equals the reference for those 12 persons.
+  3. Stop, and run `compare_bulk.py`. The rest of WP 19, then WP 18, follow only if both comparisons match.
