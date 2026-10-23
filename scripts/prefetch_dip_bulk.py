@@ -77,9 +77,12 @@ class PersonsResult:
     differing: dict[str, list[str]] = field(default_factory=dict)
 
 
-def counted_list(client: Any, path: str, params: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+def counted_list(
+    client: Any, path: str, params: dict[str, Any], *, below: int | None = None
+) -> tuple[list[dict[str, Any]], int]:
     """Every document of a cursor-paged list and DIP's count, raising unless the
-    distinct ids equal the count."""
+    distinct ids equal the count, and after the first page when the count is not
+    ``below`` the given bound."""
     params = dict(params)
     documents: list[dict[str, Any]] = []
     num_found: int | None = None
@@ -91,6 +94,9 @@ def counted_list(client: Any, path: str, params: dict[str, Any]) -> tuple[list[d
             raise dip.DipError(f"DIP API returned an unexpected body for {path}: {str(page)[:200]}")
         documents.extend(batch)
         num_found = dip.page_count(page) if dip.page_count(page) is not None else num_found
+        if below is not None and (num_found is None or num_found >= below):
+            raise PrefetchError(f"DIP counts {num_found} documents for {path} {params}, not fewer than {below}")
+        below = None
         cursor = page.get("cursor")
         if not batch or not cursor or cursor == previous_cursor or dip.holds_all(documents, num_found):
             break
@@ -206,6 +212,20 @@ def prefetch_drucksachen(
     now = now or datetime.now(timezone.utc)
     chunks = month_chunks(*sitting_span(output_dir, wahlperiode))
     base = {"f.wahlperiode": wahlperiode, "f.dokumentart": "Drucksache"}
+    # A dated chunk must be smaller than the whole Wahlperiode: one that is not
+    # had its date filter ignored, and paging it would spend several windows.
+    total_path = staging_dir(output_dir, wahlperiode) / "total.json"
+    wahlperiode_total: int | None = None
+    if any(_read_chunk(_chunk_path(output_dir, wahlperiode, chunk)) is None for chunk in chunks):
+        try:
+            wahlperiode_total = int(json.loads(total_path.read_text(encoding="utf-8"))["numFound"])
+        except (OSError, ValueError, KeyError, TypeError):
+            wahlperiode_total = dip.page_count(client.get_json("/vorgangsposition", base))
+            if wahlperiode_total is None:
+                raise PrefetchError(f"DIP gives no count for Wahlperiode {wahlperiode}'s Drucksache positions")
+            total_path.parent.mkdir(parents=True, exist_ok=True)
+            dip.write_text_atomic(total_path, json.dumps({"numFound": wahlperiode_total, "fetched_at": now.strftime(
+                "%Y-%m-%dT%H:%M:%SZ")}) + "\n")
     fetched = 0
     for chunk in chunks:
         path = _chunk_path(output_dir, wahlperiode, chunk)
@@ -215,7 +235,9 @@ def prefetch_drucksachen(
             break
         start, end = chunk
         params = {**base, **({"f.datum.start": start} if start else {}), **({"f.datum.end": end} if end else {})}
-        documents, num_found = counted_list(client, "/vorgangsposition", params)
+        documents, num_found = counted_list(
+            client, "/vorgangsposition", params, below=wahlperiode_total if len(chunks) > 1 else None
+        )
         positions = [_staged_position(d) for d in documents if d.get("dokumentart") == "Drucksache"]
         path.parent.mkdir(parents=True, exist_ok=True)
         dip.write_text_atomic(path, json.dumps(

@@ -107,7 +107,7 @@ class DrucksachenTests(PrefetchTestCase):
         with mock.patch("sys.stderr"):
             result = prefetch.prefetch_drucksachen(fake, self.output_dir, 19, now=NOW, max_chunks=2)
         self.assertEqual((result.complete, result.chunks_staged, result.chunks), (False, 2, 3))
-        self.assertEqual(len(fake.requests), 2)
+        self.assertEqual(len(fake.requests), 3)  # the Wahlperiode's total, then one page per chunk
         self.assertEqual(self.cache().vorgang_drucksachen, {})
         self.assertEqual(len(prefetch.staged_positions(self.output_dir, 19)), 2)
 
@@ -119,7 +119,7 @@ class DrucksachenTests(PrefetchTestCase):
     def test_a_stopped_run_resumes_at_the_first_chunk_not_staged(self) -> None:
         positions = [position("1", "v1", "2017-01-05", "19/1"), position("2", "v1", "2017-11-02", "19/2"),
                      position("3", "v2", "2018-03-01", "19/3")]
-        stopped = FakeDip(positions, fail_after=1)
+        stopped = FakeDip(positions, fail_after=2)
         with self.assertRaises(dip.DipUnavailable):
             self.drucksachen(stopped)
         self.assertEqual(self.cache().vorgang_drucksachen, {})
@@ -128,8 +128,8 @@ class DrucksachenTests(PrefetchTestCase):
         self.assertTrue(result.complete)
         self.assertEqual((result.chunks, result.total, result.positions), (3, 3, 3))
         # Newest first: the open last chunk was staged before the stop and is not asked again.
-        self.assertEqual(stopped.requests[0].get("f.datum.start"), "2017-12-01")
-        self.assertNotIn("f.datum.end", stopped.requests[0])
+        self.assertEqual(stopped.requests[1].get("f.datum.start"), "2017-12-01")
+        self.assertNotIn("f.datum.end", stopped.requests[1])
         self.assertTrue(all(r.get("f.datum.start") != "2017-12-01" for r in resumed.requests))
         self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v1", "v2"])
 
@@ -170,7 +170,7 @@ class DrucksachenTests(PrefetchTestCase):
         cache.vorgang_drucksachen["v3"] = {"wahlperiode": 19, "drucksachen": []}
         cache.save()
         result = self.drucksachen(FakeDip([position("1", "v1", "2017-11-02", "19/1"),
-                                           position("2", "v2", "2017-11-03", "19/2")]))
+                                           position("2", "v2", "2017-12-03", "19/2")]))
         entries = self.cache().vorgang_drucksachen
         self.assertEqual(sorted(entries), ["v1", "v2", "v3"])
         self.assertEqual(entries["v1"]["drucksachen"], [{"dokumentnummer": "19/0"}])
@@ -189,6 +189,19 @@ class DrucksachenTests(PrefetchTestCase):
         result = self.drucksachen(fake, wahlperiode=19)
         self.assertEqual(result.vorgaenge_in_two_wahlperioden, ["v1"])
         self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v2", "v9"])
+
+    # Value: protects=a dated chunk that DIP answers with the whole Wahlperiode (a date filter
+    # ignored or misnamed) stops after one page, before paging ~740 pages of it; fails_when=
+    # the chunk is paged through and passes its own count; seam=prefetch_drucksachen.
+    def test_a_chunk_as_large_as_the_whole_wahlperiode_stops_after_one_page(self) -> None:
+        fake = FakeDip([position(str(i), "v1", "2017-11-02", f"19/{i}") for i in range(1, 6)])
+        real = fake.get_json
+        fake.get_json = lambda path, params=None: real(path, {k: v for k, v in (params or {}).items()
+                                                               if not k.startswith("f.datum")})
+        with self.assertRaises(prefetch.PrefetchError):
+            self.drucksachen(fake)
+        self.assertEqual(len(fake.requests), 2)  # the Wahlperiode's total, then the chunk's first page
+        self.assertEqual(prefetch.staged_positions(self.output_dir, 19), [])
 
 
 class PersonsTests(PrefetchTestCase):
