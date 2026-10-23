@@ -227,3 +227,43 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
     - 18/60: **wrong.** The chair handover would become a contribution. 18/60 is listed, for other reasons.
   - **Risk:** a handover with no printed name line. The scan above is the whole population for WP 18/19 (12 markers), so every case the rule would reach is known, and 18/60 is the only wrong one.
   - The alternative to (b) is to put 18/96 on the list. That costs every unit in it, to keep out one missed question.
+
+## Pilot re-run, second attempt, 2026-10-23: DIP stopped after 104 requests
+
+- **Setup:** as on 2026-10-22, plus `DIP_REQUEST_LOG` (`~/agent-runs/a3/pilot-requests.log`, 134 lines, no key in it). DIP had been idle for 17 h (last request 2026-10-22 18:40 UTC). There was no probe first. 29 GB were free.
+- **Timeline (UTC):**
+
+| Window | Requests | What |
+|---|---:|---|
+| 11:45:54–11:47:37 | 48 DIP | `/plenarprotokoll`, the whole catalog (48 pages) |
+| 11:48:02 | 1 dserver | `19/19238.xml`, the first sitting of 19 (8 listed sittings skipped) |
+| 11:48:03–11:48:09 | 4 DIP | `/vorgangsposition?f.plenarprotokoll`, `/aktivitaet` (2 pages each) |
+| 11:48:11–11:48:16 | 28 bundestag.de | roll-call list |
+| 11:48:16–11:49:50 | 46 DIP | `/vorgangsposition?f.vorgang=…`, 23 Vorgänge × 2 pages |
+| 11:49:52–11:50:03 | 6 DIP | `/person/{id}`, all 200 in 0.10–0.11 s |
+| 11:50:05 on | 5 DIP | `/person/309` × 3 and `/person/1500` × 2: each timed out at 60 s |
+
+- **DIP stopped abruptly** after **104** answered requests in 249 s (one every 2.4 s on average). The last good answer took 0.10 s, so there was no slowdown first, unlike dserver.
+- **Stopped by hand at 11:55:53** (SIGTERM, exit 143). The run took 598 s, with a peak RSS of 1.45 GB.
+  - No sitting was acquired, and the store is untouched (mtime 2026-10-22 20:31). No exclusion record was written.
+  - **Runner bug:** the first SIGINT had no effect, because a background job of a non-interactive zsh ignores SIGINT. The disk watchdog had the same flaw. `run-pilot.sh` now sends SIGTERM.
+- **The four stops so far:**
+
+| When | DIP requests answered first | Then |
+|---|---:|---|
+| 2026-10-19 batch 1 | ~250 at 0.5 s | `/person` timeouts |
+| 2026-10-22 14:01 | 63 over the day | timeout |
+| 2026-10-22 18:37 | 43, then a 10 min pause | timeout on the first request |
+| 2026-10-23 11:50 | 104 after 17 h idle | timeout |
+
+- **What this shows:**
+  - The cutoff is not a fixed count. That fits a budget shared with others, such as the public DIP key that README.md §1 points to, or a per-IP limit with slow refill. Neither is established.
+  - **DIP cost per sitting is far higher than assumed.** 19/238 alone took 58 DIP requests before its persons: 4 for the sitting, 46 for 23 Vorgänge and 6+ for persons.
+  - On top of that, the 48-page catalog opens every run. At ~60 per sitting, the ~400 WP 18/19 sittings need about 24,000 DIP requests. At ~100 per window, Phase 3 is not feasible as built.
+- **Ways to cut DIP requests (proposals, nothing built):**
+  1. Stop paging when a page holds all of `numFound`. Every `/vorgangsposition` list paid a second, empty page (23 of the 46).
+  2. Cache `/vorgangsposition?f.vorgang` across sittings and runs. A Vorgang recurs across sittings, as the D5 person cache already does for persons within one build.
+  3. Persist the person cache across runs.
+  4. Reuse the cached catalog in a backfill, or fetch it by Wahlperiode, instead of 48 pages per run.
+  5. A personal DIP API key, if the shared public key is what is limited. Ask the Bundestag's DIP team; that is the owner's call.
+- **The Phase 1 measurements are still not taken.** The identity check needs pilot data too.
