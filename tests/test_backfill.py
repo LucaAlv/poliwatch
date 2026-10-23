@@ -592,13 +592,36 @@ class BackfillSelectionTests(unittest.TestCase):
                               ("21/3", "2026-06-13", "excluded")])
             self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
 
-            # Taken off the list, a sitting that parses is acquired and leaves the record.
+            # The record is the durable list (owner decision 2026-10-23, option A): a run that
+            # forgets the flag still skips every recorded sitting, refusal or not.
             rejected.clear()
-            code, persisted, stderr = run("--exclude-document-number", "21/3")
+            code, persisted, stderr = run()
             self.assertEqual(code, 0, stderr)
+            self.assertEqual(written, [])
+            self.assertEqual(persisted, [])
+            self.assertIn("excluded: 21/3, 21/2, 21/1", stderr)
+            self.assertIn("[backfill] 0 incomplete or missing sitting(s) to acquire", stderr)
+
+            # Only --include-document-number takes a sitting off the list: it is acquired and
+            # leaves the record.
+            code, persisted, stderr = run("--include-document-number", "21/2", "--include-document-number", "21/1")
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(written, ["21/2"])
             self.assertEqual(persisted, ["21/1", "21/2"])
             self.assertEqual([e["document_number"] for e in json.loads(record.read_text(encoding="utf-8"))["exclusions"]],
                              ["21/3"], stderr)
+
+    # Value (D2 option A): protects=a number cannot be both excluded and included, and an
+    # inclusion needs an online run that can acquire it; fails_when=the conflict is resolved
+    # silently one way; seam=parse_args.
+    def test_include_document_number_conflicts_are_refused(self) -> None:
+        for argv in (["build", "--exclude-document-number", "21/2", "--include-document-number", "21/2"],
+                     ["build", "--offline", "--include-document-number", "21/2"]):
+            with self.subTest(argv=argv), mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                build.parse_args()
+        with mock.patch.object(sys, "argv", ["build", "--include-document-number", "21/2"]):
+            self.assertEqual(build.parse_args().include_document_number, ["21/2"])
 
     def test_a_backfill_waits_between_dip_requests_unless_told_otherwise(self) -> None:
         cases = (

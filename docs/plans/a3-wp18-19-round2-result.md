@@ -260,3 +260,11 @@ The list, for `--exclude-document-number`:
 3. **Push:** not yet.
 4. **Inside presidium markers** (a3-pilot.md, "Presidium markers inside a `<rede>`"): proposals (a) and (b) stay proposals. Nothing is built, and 18/96 and 18/109 stay counted with the known miss.
 5. **Pilot start:** on the owner's go, the next day. DIP is not probed meanwhile.
+6. **The exclusion record is the durable list (option A, 2026-10-23).**
+   - **What it does:** every run, online and offline, leaves out each sitting in `data/coverage-exclusions.json`. `--backfill-incomplete` no longer counts such a sitting as missing.
+   - `--exclude-document-number` adds numbers to the record. Only the new `--include-document-number` (online runs only) takes one off.
+   - **Why:** before this, a run that forgot the 84 numbers would have acquired and counted the 13 listed sittings that parse, without warning, and reversed the decisions on 18/62, 18/90, 19/25 and the addresses. It also would have stopped on the others.
+   - **Rejected:**
+     - B, keep the flag per run: the silent re-admission stays.
+     - C, stop the run when a recorded sitting lacks the flag: every run must still carry all 84 numbers.
+   - **Moved counts:** none. No store has a record yet.

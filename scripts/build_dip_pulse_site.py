@@ -585,13 +585,15 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
 
 
 def update_coverage_exclusions(
-    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]]
+    output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]], *, included: set[str] = frozenset()
 ) -> None:
-    """Record each sitting this run excluded (D2) and drop a recorded sitting
-    the store now holds. Untouched when neither happened, so a build without
-    exclusions writes no file."""
+    """Record each sitting this run excluded (D2) and drop a sitting the run
+    took back with --include-document-number or the store now holds. Untouched
+    when none of that happened, so a build without exclusions writes no file."""
     entries = {entry["document_number"]: entry for entry in load_coverage_exclusions(output_dir)}
     before = dict(entries)
+    for number in included:
+        entries.pop(number, None)
     for entry in stored:
         protocol = (entry.get("report") or {}).get("protocol") or {}
         entries.pop(normalized_document_number(protocol.get("dokumentnummer")), None)
@@ -11502,7 +11504,18 @@ def parse_args() -> argparse.Namespace:
             "Keep this sitting out of the build (repeatable), whatever the parser says: it is not fetched, "
             "reported or stored. Add a number only after a review of its source: the sitting is recorded in "
             "OUTPUT_DIR/data/coverage-exclusions.json and counted as nicht erfasst (ausgeschlossen). "
+            "Every later run, online or offline, keeps a recorded sitting out without the flag. "
             "Any source refusal of an unlisted sitting still stops the build before the store is replaced."
+        ),
+    )
+    parser.add_argument(
+        "--include-document-number",
+        action="append",
+        default=[],
+        metavar="DOCUMENT_NUMBER",
+        help=(
+            "Take this sitting off the exclusion record (repeatable): the run treats it like any other sitting, "
+            "and it leaves OUTPUT_DIR/data/coverage-exclusions.json. Needs an online run."
         ),
     )
     parser.add_argument(
@@ -11682,6 +11695,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
+    if args.include_document_number and (args.offline or args.fetch_xml):
+        parser.error("--include-document-number takes a sitting back into an online build; it cannot be combined with --offline or --fetch-xml")
+    both = {normalized_document_number(n) for n in args.include_document_number} & {
+        normalized_document_number(n) for n in args.exclude_document_number
+    }
+    if both:
+        parser.error(f"--exclude-document-number and --include-document-number both name {', '.join(sorted(both))}")
     if args.fetch_xml and (args.offline or args.repersist or args.backfill_incomplete):
         parser.error(
             "--fetch-xml downloads the missing XML files and exits; run --offline --repersist as a second command"
@@ -12171,11 +12191,19 @@ def main() -> int:
         protocol_wahlperiode = args.protocol_wahlperiode if args.protocol_wahlperiode > 0 else None
         # The whole catalog, whatever narrows the acquisition below.
         protocols = fetch_protocols(client, 0, [], None)
+        # D2: the exclusion list is the record plus this run's flag, minus what the
+        # run takes back. A listed sitting is skipped before acquisition, whatever
+        # the parser would say: no fetch, no report, no store row.
+        included = {normalized_document_number(n) for n in getattr(args, "include_document_number", [])}
+        listed = {
+            normalized_document_number(entry.get("document_number")) for entry in load_coverage_exclusions(output_dir)
+        } | {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
+        listed -= included
         if getattr(args, "backfill_incomplete", False):
             stored_entries = load_existing_detail_entries(output_dir, protocols)
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
                 stored_entries,
-                protocols,
+                [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
                 votes=args.vote_scan_pages != 0,
                 scan_pages=args.vote_scan_pages,
                 wahlperiode=protocol_wahlperiode,
@@ -12218,9 +12246,6 @@ def main() -> int:
             args.dossier_document_number,
         )
         detail_protocols = protocols_for_detail_pages(detail_protocols, None)
-        # D2: a listed sitting is skipped before acquisition, whatever the parser
-        # would say: no fetch, no report, no store row.
-        listed = {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
         excluded_protocols = [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) in listed]
         for protocol in excluded_protocols:
             protocol["dossier_failure_reasons"] = ["excluded"]
@@ -12278,7 +12303,9 @@ def main() -> int:
                     vorgang_cache=vorgang_cache,
                 ),
             )
-            update_coverage_exclusions(output_dir, excluded_protocols, [*existing_entries, *generated_entries])
+            update_coverage_exclusions(
+                output_dir, excluded_protocols, [*existing_entries, *generated_entries], included=included
+            )
             # Step 3: persist everything into a freshly rebuilt SQLite store,
             # then read it back for the MP pages. The dossier pages are written
             # a second time afterwards because mp_lookup only exists now, and it
