@@ -376,6 +376,10 @@ def fetch_protocols(
 CATALOG_FULL_FETCH_DAYS = 7
 
 
+class CatalogCountMismatch(Exception):
+    """A filtered catalog list that does not add up to DIP's own count."""
+
+
 def _catalog_list(client: dip.ApiClient, params: dict[str, Any]) -> list[dict[str, Any]]:
     """Every protocol of one filtered catalog list, checked against DIP's count."""
     params = dict(params)
@@ -392,7 +396,7 @@ def _catalog_list(client: dip.ApiClient, params: dict[str, Any]) -> list[dict[st
         previous_cursor = cursor
         params["cursor"] = cursor
     if num_found is None or len({str(p.get("id")) for p in protocols}) != num_found:
-        raise dip.DipError(f"DIP listed {len(protocols)} protocols for {params}, not {num_found}")
+        raise CatalogCountMismatch(f"DIP listed {len(protocols)} protocols for {params}, not {num_found}")
     return protocols
 
 
@@ -415,14 +419,17 @@ def fetch_catalog(
     the XML URL the others have; Wahlperioden 1-17 list none at all. The
     merge is used only when it adds up to DIP's total count, so a new
     Wahlperiode or a gap in the cache falls back to the full fetch, as does a
-    missing, unreadable or old cache."""
+    missing, unreadable or old cache. A file from before ``full_fetched_at``
+    counts from ``fetched_at``: every write then followed a full fetch. A DIP
+    failure is raised, not answered with the 48 requests of a full fetch. The
+    merge comes back in DIP's order, newest first, like a full fetch."""
     now = now or datetime.now(timezone.utc)
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     full = lambda: (fetch_protocols(client, 0, [], None), stamp)  # noqa: E731
     try:
         payload = json.loads((output_dir / "data" / facts.CATALOG_FILENAME).read_text(encoding="utf-8"))
         cached = [p for p in payload["protocols"] if isinstance(p, dict)] if payload.get("authoritative") is True else []
-        full_fetched_at = str(payload.get("full_fetched_at") or "")
+        full_fetched_at = str(payload.get("full_fetched_at") or payload.get("fetched_at") or "")
         fetched = datetime.strptime(full_fetched_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return full()
@@ -440,13 +447,13 @@ def fetch_catalog(
         wp for wp, protocols in by_wp.items()
         if wp < newest and len({bool(protocol_xml_url(p)) for p in protocols}) == 1
     }
+    total = dip.page_count(client.get_json("/plenarprotokoll", {"f.zuordnung": "BT"}))
+    merged = [*without_wp, *(p for wp in sorted(frozen) for p in by_wp[wp])]
     try:
-        total = dip.page_count(client.get_json("/plenarprotokoll", {"f.zuordnung": "BT"}))
-        merged = [*without_wp, *(p for wp in sorted(frozen) for p in by_wp[wp])]
         for wahlperiode in sorted(set(by_wp) - frozen):
             merged.extend(_catalog_list(client, {"f.zuordnung": "BT", "f.wahlperiode": wahlperiode}))
-    except dip.DipError as exc:
-        print(f"warning: [catalog] the cached catalog could not be completed ({exc}); fetching it whole.", file=sys.stderr)
+    except CatalogCountMismatch as exc:
+        print(f"[catalog] {exc}; fetching the whole catalog.", file=sys.stderr)
         return full()
     if total is None or len({str(p.get("id")) for p in merged}) != total:
         print(f"[catalog] cached and fresh lists hold {len(merged)} protocols, DIP {total}; fetching the whole catalog.",
@@ -454,7 +461,7 @@ def fetch_catalog(
         return full()
     print(f"[catalog] {len(merged)} protocols: Wahlperiode {', '.join(map(str, sorted(frozen)))} from the cache "
           f"(full fetch {full_fetched_at}), the rest fresh.", file=sys.stderr)
-    return merged, full_fetched_at
+    return sorted(merged, key=protocol_sort_key, reverse=True), full_fetched_at
 
 
 # Which sittings of the catalog this run acquires. --document-number and

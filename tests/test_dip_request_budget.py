@@ -73,7 +73,7 @@ class NumFoundStopTests(unittest.TestCase):
 
 def protocol(number: str, *, xml: bool = True) -> dict:
     wp, _, n = number.partition("/")
-    return {"id": f"{wp}{int(n):04d}", "dokumentnummer": number,
+    return {"id": f"{wp}{int(n):04d}", "dokumentnummer": number, "datum": f"{2000 + int(wp)}-01-{int(n):02d}",
             "fundstelle": {"xml_url": f"https://dserver.bundestag.de/btp/{wp}/{wp}{int(n):03d}.xml" if xml else ""}}
 
 
@@ -112,6 +112,7 @@ class CatalogReuseTests(unittest.TestCase):
         full = mock.Mock(return_value=[protocol("21/3"), *self.cached])
         with mock.patch.object(build, "fetch_protocols", full):
             protocols, full_fetched_at = build.fetch_catalog(client, self.output_dir, now=self.NOW)
+        self.order = [p["dokumentnummer"] for p in protocols]
         return sorted(p["dokumentnummer"] for p in protocols), full_fetched_at, full
 
     # Value: protects=a run pays for the current Wahlperiode and one count, not 48 catalog pages;
@@ -122,9 +123,33 @@ class CatalogReuseTests(unittest.TestCase):
         client = self.client(6, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")]})
         numbers, full_fetched_at, full = self.fetch(client)
         self.assertEqual(numbers, ["19/1", "20/1", "20/2", "21/1", "21/2", "21/3"])
+        # In DIP's order, newest first, like a full fetch: the list is written to the
+        # catalog file every offline run reads.
+        self.assertEqual(self.order, ["21/3", "21/2", "21/1", "20/2", "20/1", "19/1"])
         self.assertEqual(full_fetched_at, "2026-10-20T00:00:00Z")
         full.assert_not_called()
         self.assertEqual(client.get_json.call_count, 2)
+
+    # Value: protects=a catalog file written before full_fetched_at existed counts from its
+    # fetched_at, which until then was always a full fetch; fails_when=such a file forces a
+    # 48-request fetch; seam=fetch_catalog.
+    def test_a_file_without_full_fetched_at_counts_from_fetched_at(self) -> None:
+        payload = {"authoritative": True, "fetched_at": "2026-10-20T00:00:00Z", "protocols": self.cached}
+        (self.output_dir / "data" / build.facts.CATALOG_FILENAME).write_text(build.json.dumps(payload), encoding="utf-8")
+        _, full_fetched_at, full = self.fetch(self.client(6, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")]}))
+        full.assert_not_called()
+        self.assertEqual(full_fetched_at, "2026-10-20T00:00:00Z")
+
+    # Value: protects=a DIP that does not answer the count is not sent the 48 requests of a
+    # full fetch; fails_when=a timeout falls back to the full fetch; seam=fetch_catalog.
+    def test_a_dip_failure_is_raised_not_answered_with_a_full_fetch(self) -> None:
+        self.write_cache(self.cached)
+        client = mock.Mock()
+        client.get_json.side_effect = dip.DipError("timed out")
+        full = mock.Mock()
+        with mock.patch.object(build, "fetch_protocols", full), self.assertRaises(dip.DipError):
+            build.fetch_catalog(client, self.output_dir, now=self.NOW)
+        full.assert_not_called()
 
     # Value: protects=the merged catalog is only used when it adds up to DIP's total, so a new
     # Wahlperiode or a gap in the cache forces the full fetch; seam=fetch_catalog.
