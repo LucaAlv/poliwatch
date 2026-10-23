@@ -29,6 +29,17 @@ The previous handoff, [a3-pilot-rerun-handoff.md](a3-pilot-rerun-handoff.md), is
   - This is the third failure of this shape. The working hypothesis is that DIP stops answering after roughly 40–60 requests in a window of unknown length. That is not established.
   - dserver answered normally at 18:43.
 
+## Progress (2026-10-22, late evening)
+
+- **Step 1 done:** "Owner decisions (round 3)" in the round-2 record. 18/62 and 18/90 stay excluded, the D2 naming is confirmed, the key is renamed to `coverage.excluded` (abd3ddf), and there is no push.
+- **Step 2 done:**
+  - The nine markers, plus three Lammert markers, were read and committed in 66b45a8. 18/96 and 18/109 are silent misses. Both rule proposals are open, and the owner said "neither yet".
+  - The D2 limit is fixed: offline runs and `--fetch-xml` honour `data/coverage-exclusions.json` (517ecee).
+- **Step 3.3 done:** `DIP_REQUEST_LOG` (874fa3f). `run-pilot.sh` exports it to `~/agent-runs/a3/pilot-requests.log`.
+- **Suite:** 1444 tests, OK (2 skipped).
+- **Disk:** 8.4 GB free at 23:16 UTC.
+- **Next:** step 3.4, which starts the pilot directly. Do it only on the owner's go. DIP's last request was 2026-10-22 18:40 UTC.
+
 ## Your task, in order
 
 One step at a time. Code changes are test-first (the tdd skill), committed with their result in the message. Pre-release: change in place, and report old and new values for any count that moves.

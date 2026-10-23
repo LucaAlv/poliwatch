@@ -258,3 +258,5 @@ The list, for `--exclude-document-number`:
    - **Check before confirming:** the key exists only on this branch (not on `origin/main`), so no published export carries it. The `[summary]` and D2 code paths only put listed sittings in it; an unlisted source rejection still stops the run.
    - README.md still described the old D2 behaviour ("Quelle abgelehnt", "with its diagnostic", "a listed sitting the parser accepts again is acquired"). It is corrected with the rename.
 3. **Push:** not yet.
+4. **Inside presidium markers** (a3-pilot.md, "Presidium markers inside a `<rede>`"): proposals (a) and (b) stay proposals. Nothing is built, and 18/96 and 18/109 stay counted with the known miss.
+5. **Pilot start:** on the owner's go, the next day. DIP is not probed meanwhile.
