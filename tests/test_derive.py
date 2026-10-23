@@ -343,7 +343,7 @@ class VoteMemberIdentityTests(unittest.TestCase):
             ("https://evil.example/abgeordnete/x", False),
             # A browser reads these as another host or user: no profile (B4 ship run 3 review).
             ("https://evil.example\\@www.bundestag.de/abgeordnete/x", False),
-            ("https://u:p@www.bundestag.de/abgeordnete/x", False),
+            ("https://user@www.bundestag.de/abgeordnete/x", False),
             ("https://www.bundestag.de:443/abgeordnete/x", False),
             ("https://www.bundestag.de:99999/abgeordnete/x", False),
             ("https://www.bundestag.de/abgeordnete/x\ty", False),
