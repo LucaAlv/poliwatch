@@ -59,10 +59,15 @@ class DatenPageTests(unittest.TestCase):
         self.assertNotIn('class="sample-table"', self.html)
         self.assertNotIn("data-table-search", self.html)
 
-    def test_all_five_recipe_titles_present(self) -> None:
+    def test_every_recipe_title_present(self) -> None:
         for recipe in b.RECIPES:
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn(recipe["title"], self.html)
+
+    def test_eyebrow_and_lede_count_the_recipes(self) -> None:
+        word = {5: "fünf", 6: "sechs", 7: "sieben", 8: "acht"}[len(b.RECIPES)]
+        self.assertIn(f'<span class="eyebrow">{word.capitalize()} Abfragen</span>', self.html)
+        self.assertIn(f"Diese {word} SQL-Abfragen", self.html)
 
     def test_sha256_is_present_full_length(self) -> None:
         self.assertIsNotNone(re.search(r"[0-9a-f]{64}", self.html))

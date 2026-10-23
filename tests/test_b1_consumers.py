@@ -56,7 +56,7 @@ class SittingVoteConsumerTests(unittest.TestCase):
                                        'absent': 200}}
                 self.assertEqual(build._fraction_position(fraction, inverted=True), expected)
 
-    def test_archive_keeps_sitting_vote_and_links_to_sitting_section(self):
+    def test_archive_keeps_sitting_vote_and_links_to_its_panel(self):
         vote = {
             "id": 9012,
             "date": "2026-04-24",
@@ -78,7 +78,8 @@ class SittingVoteConsumerTests(unittest.TestCase):
         ])
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertTrue(row["href"].endswith("#top-1"))
+        # D9: the row lands on the vote's own panel, not its TOP.
+        self.assertTrue(row["href"].endswith("#vote-9012"))
         self.assertEqual(row["fraction_positions"]["SPD"], "gegen den Antrag")
         self.assertEqual(row["fraction_positions"]["FDP"], "geteilt")
         self.assertEqual(derive.vote_outcome(row["vote"]), "rejected")
@@ -88,14 +89,14 @@ class SittingVoteConsumerTests(unittest.TestCase):
         self.assertIn("positions[name] === 'für den Antrag'", script)
         self.assertNotIn("positions[name] === 'gegen den Antrag'", script)
 
-    def test_unmatched_vote_archives_with_sitting_anchor(self):
+    def test_unmatched_vote_archives_with_its_panel_anchor(self):
         vote = {"id": 9013, "date": "2026-04-24", "title": "Unzugeordnete Abstimmung"}
         rows = build.collect_votes_archive([
             {"report": {"agenda_items": [], "sitting_votes": [vote]},
              "page_path": "protocols/plenarprotokoll-21-1.html"}
         ])
         self.assertEqual(len(rows), 1)
-        self.assertTrue(rows[0]["href"].endswith("#sitting-votes"))
+        self.assertTrue(rows[0]["href"].endswith("#vote-9013"))
         self.assertEqual(rows[0]["document_links"], {})
 
     def _sitting_only_store(self):

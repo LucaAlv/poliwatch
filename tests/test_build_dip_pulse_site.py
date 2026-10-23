@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import itertools
 import json
 import os
 import re
@@ -323,21 +324,6 @@ class CollectAbgeordneteTests(unittest.TestCase):
         vote = report["agenda_items"][0]["votes"][0]
         self.assertNotIn("xlsx_url", vote)
         self.assertEqual(vote["total"], {"yes": 1, "no": 0})
-
-    def test_carry_forward_matches_id_less_legacy_votes_by_title_and_date(self) -> None:
-        # pulse_html.vote_key falls back to "title|date" when a vote has no id
-        # (legacy records predating the roll-call id field); carry-forward must
-        # still find the match through that composite key.
-        previous = {"agenda_items": [{"votes": [{
-            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0},
-            "xlsx_url": "https://www.bundestag.de/resource/blob/1/x_xls.xlsx",
-        }]}]}
-        report = {"agenda_items": [{"votes": [{
-            "title": "Legacy", "date": "2026-06-11", "total": {"yes": 1, "no": 0}, "xlsx_url": None,
-        }]}]}
-        build_dip_pulse_site.carry_forward_vote_provenance(report, previous)
-        vote = report["agenda_items"][0]["votes"][0]
-        self.assertEqual(vote["xlsx_url"], "https://www.bundestag.de/resource/blob/1/x_xls.xlsx")
 
     def test_carry_forward_keeps_an_xlsx_link_across_a_cosmetic_title_repunctuation(self) -> None:
         previous = {"agenda_items": [{"votes": [{
@@ -2062,10 +2048,10 @@ class WeekRadarDataTests(unittest.TestCase):
         entry = self._entry("2026-06-10", "21/82", [
             dict(self._item(1, [("SPD", 100)]), votes=[vote]),
             dict(self._item(2, [("SPD", 100)]), votes=[vote, {"id": "v2", "title": "Zweite", "date": "2026-06-10"}]),
-            dict(self._item(3, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-10"}),
+            dict(self._item(3, [("SPD", 100)]), votes=[{"id": "v3", "title": "Dritte", "date": "2026-06-10"}]),
         ])
         stats = pulse_html.week_stats((2026, 24), [entry])
-        self.assertEqual(stats["vote_count"], 3)  # v1 once, v2, legacy
+        self.assertEqual(stats["vote_count"], 3)  # v1 once, v2, v3
         self.assertEqual(stats["vote_top_count"], 3)
         self.assertEqual(stats["vote_sittings"], [("21/82", Path("plenarprotokoll-21-82.html"), 1, 3)])
 
@@ -2267,7 +2253,7 @@ class WeekTopicRowsTests(unittest.TestCase):
         older = self._entry("2026-05-20", "21/70", [self._item(1, [("SPD", 100)], [self._pos("B", "Gesetz B", "Gesetzgebung", "1. Beratung")])])
         weeks = pulse_html.group_entries_by_week([older])
         index = pulse_html.vorgang_occurrences(weeks, (2026, 24))
-        item = dict(self._item(3, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]), vote={"title": "Legacy"})
+        item = dict(self._item(3, [("SPD", 100)] * 2, [self._pos("B", "Gesetz B", "Gesetzgebung", "2. Beratung")]), votes=[{"id": "v1", "title": "Namentlich"}])
         undated = self._entry("", "21/99", [item])
         row = pulse_html.topic_row(item, undated, total=10, occurrences=index, dossier_href="protocols/x.html")
         # No week of its own: the sitting cannot be placed in time, so no trace
@@ -2322,12 +2308,12 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
             dict(self._item(4, [("SPD", 100)]), votes=[shared]),
         ])
         thu = self._entry("2026-06-11", "21/83", [
-            dict(self._item(1, [("SPD", 100)]), vote={"title": "Legacy", "date": "2026-06-11"}),
+            dict(self._item(1, [("SPD", 100)]), votes=[{"id": "v-thu", "title": "Donnerstag", "date": "2026-06-11"}]),
             dict(self._item(2, [("SPD", 100)]), votes=[shared]),
         ])
         fri = self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])
         stats = pulse_html.week_stats((2026, 24), [wed, thu, fri])
-        self.assertEqual(stats["vote_count"], 3)  # v-shared, v-wed, Legacy|2026-06-11
+        self.assertEqual(stats["vote_count"], 3)  # v-shared, v-wed, v-thu
         self.assertEqual(stats["vote_top_count"], 4)
         self.assertEqual(
             stats["vote_sittings"],
@@ -2341,9 +2327,154 @@ class WeekStatsVoteSittingTests(unittest.TestCase):
         unnumbered["page_path"] = Path("plenarprotokoll-21-99.html")
         stats = pulse_html.week_stats((2026, 24), [unnumbered])
         self.assertEqual(stats["vote_sittings"], [("plenarprotokoll-21-99", Path("plenarprotokoll-21-99.html"), 2, 1)])
-        self.assertEqual(pulse_html.vote_key({"title": "Legacy", "date": "2026-06-11"}), "Legacy|2026-06-11")
-        self.assertEqual(pulse_html.vote_key({}), "|")
         self.assertEqual(pulse_html.vote_key({"id": 42, "title": "x"}), "42")
+
+
+class LegacyVoteShapeTests(unittest.TestCase):
+    """derive.require_vote_shape on report load: a stale report fails loudly, never drops votes."""
+
+    def test_a_singular_vote_or_an_id_less_vote_is_refused_on_every_load(self) -> None:
+        shapes = {
+            "singular": {"index": 1, "vote": {"id": "v1", "title": "Alt"}},
+            "no id": {"index": 1, "votes": [{"title": "Ohne Id", "date": "2026-06-10"}]},
+            "blank id": {"index": 1, "votes": [{"id": "  ", "title": "Leere Id", "date": "2026-06-10"}]},
+        }
+        for label, item in shapes.items():
+            for strict in (False, True):
+                with self.subTest(shape=label, strict=strict), tempfile.TemporaryDirectory() as tmp:
+                    data = Path(tmp) / "data"
+                    data.mkdir()
+                    report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                    (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                    with self.assertRaisesRegex(build_dip_pulse_site.CachedReportError, "plenarprotokoll-21-82.json"):
+                        build_dip_pulse_site.load_existing_detail_entries(
+                            Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
+                        )
+
+    # Value: protects=a stale report outside the build's catalog, or one whose "vote"/"votes" value is null or empty, loads without stopping the build; fails_when=the check runs before the catalog filter or tests key presence, so one unused file stops every build; why_new=B4 ship review (2026-10-22); seam=none
+    def test_an_out_of_catalog_stale_report_and_an_empty_vote_value_do_not_stop_a_load(self) -> None:
+        reports = {
+            "21-81": {"protocol": {"dokumentnummer": "21/81"}, "agenda_items": [{"index": 1, "vote": {"id": "v1"}}]},
+            "21-82": {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [
+                {"index": 1, "vote": None, "votes": None}, {"index": 2, "vote": {}, "votes": []},
+            ], "sitting_votes": None},
+        }
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                for stem, report in reports.items():
+                    (data / f"plenarprotokoll-{stem}.json").write_text(json.dumps(report), encoding="utf-8")
+                entries = build_dip_pulse_site.load_existing_detail_entries(
+                    Path(tmp), [{"dokumentnummer": "21/82"}], strict=strict
+                )
+                self.assertEqual([entry["report"]["protocol"]["dokumentnummer"] for entry in entries], ["21/82"])
+
+    # Value: protects=the standalone renderer refuses a stale vote shape instead of rendering a sitting without its votes; fails_when=render_html reads a singular "vote" as no votes; why_new=B4 ship review (2026-10-22); seam=none
+    def test_the_standalone_renderer_refuses_a_stale_vote_shape(self) -> None:
+        for reason, votes in (
+            ('singular "vote"', {"vote": {"id": "v1"}}),
+            ("not a list", {"votes": {}}),
+            ("has no id", {"votes": [{"id": " "}]}),
+        ):
+            with self.subTest(votes=votes), self.assertRaisesRegex(ValueError, reason):
+                pulse_html.render_html({"protocol": {}, "agenda_items": [{"index": 1, **votes}]})
+
+    # Value: protects=a build stopped by a stale cached report ends with an ERROR line naming the file and a fix that works (move it out, then update online), not a traceback; fails_when=a lenient call site lets CachedReportError escape main, or the message points back to the online update that just failed; why_new=the load refusal was tested, its call sites in main were not; seam=none; no_claim=the online entry point (same handler, needs a DIP client)
+    def test_a_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
+        shapes = {
+            "a roll-call vote has no id": {"index": 1, "votes": [{"id": " "}]},
+            'has a singular "vote"': {"index": 1, "vote": {"id": "v1"}},
+            "roll-call votes are not a list": {"index": 1, "votes": 5},
+        }
+        for (reason, item), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
+            with self.subTest(reason=reason, mode=mode), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                args = SimpleNamespace(
+                    output_dir=Path(tmp), database_path=None, offline=mode == "offline", no_persist=True,
+                    week=None, today=None, fetch_xml=mode == "fetch_xml",
+                )
+                with (
+                    mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                    mock.patch.object(build_dip_pulse_site, "load_cached_protocols", return_value=[{"dokumentnummer": "21/82"}]),
+                    mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(build_dip_pulse_site.main(), 1)
+                render_site.assert_not_called()
+                self.assertIn("ERROR [cached input]: ", stderr.getvalue())
+                self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
+                self.assertIn(reason, stderr.getvalue())
+                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+                self.assertIn("--document-number", stderr.getvalue())
+
+    # Value: protects=the two online load sites of main (the --backfill-incomplete scan and the cached-dossier merge) end a build on a stale cached report with the same ERROR line, fix and exit 1 as the offline sites, before any dossier is fetched; fails_when=either site loses its CachedReportError handler so the build dies with a traceback, or the handler returns before the message names the file; why_new=the offline test above reaches only the --offline and --fetch-xml sites; seam=none; no_claim=the DIP client and catalog fetch (patched out)
+    def test_an_online_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
+        item = {"index": 1, "vote": {"id": "v1"}}
+        for backfill in (True, False):
+            with self.subTest(backfill_incomplete=backfill), tempfile.TemporaryDirectory() as tmp:
+                data = Path(tmp) / "data"
+                data.mkdir()
+                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
+                protocols = [{"dokumentnummer": "21/82"}]
+                args = SimpleNamespace(
+                    output_dir=Path(tmp), database_path=None, offline=False, no_persist=True,
+                    week=None, today=None, api_key="test-key", no_abgeordnetenwatch=True, sleep=0,
+                    protocol_wahlperiode=0, backfill_incomplete=backfill, document_number=None, limit=None,
+                    detail_limit=None, dossier_document_number=[],
+                )
+                with (
+                    mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
+                    mock.patch.object(build_dip_pulse_site.dip, "ApiClient"),
+                    mock.patch.object(build_dip_pulse_site, "fetch_protocols", return_value=protocols),
+                    mock.patch.object(build_dip_pulse_site, "select_acquisition_protocols", return_value=protocols),
+                    mock.patch.object(build_dip_pulse_site, "protocols_for_detail_pages", return_value=protocols),
+                    mock.patch.object(
+                        build_dip_pulse_site, "add_explicit_dossier_protocols", return_value=(protocols, protocols)
+                    ),
+                    mock.patch.object(build_dip_pulse_site, "render_site") as render_site,
+                    mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(build_dip_pulse_site.main(), 1)
+                render_site.assert_not_called()
+                self.assertIn("ERROR [cached input]: ", stderr.getvalue())
+                self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
+                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+
+
+class VoteContextPageWiringTests(unittest.TestCase):
+    # Value: protects=the Vorgang cache the build holds reaches the written dossier page, so "Worum es geht" shows the DIP abstract persist stores for the same vote; fails_when=write_report_files or rebuild_cached_detail_pages stops passing vorgang_cache on, so every live vote panel says "Vorgang nicht abgerufen" while the store reads resolved; why_new=the panel and persist tests call the renderer with a cache directly, no test went through the page writers; seam=none; no_claim=the online fetch that fills the cache (fixture cache)
+    def test_the_page_writers_hand_the_vorgang_cache_to_the_vote_panel(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "Rentenpaket", "document_numbers": ["21/100"],
+                "detail_url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1"}
+        report = {
+            "protocol": {"dokumentnummer": "21/82", "wahlperiode": 21, "datum": "2026-06-10", "titel": "Sitzung"},
+            "agenda_items": [{"index": 1, "votes": [vote], "api": {}}],
+        }
+        cache = {
+            "version": 1,
+            "vorgaenge": {"vg-1": {"titel": "Rentengesetz", "abstract": "Der Vorgang sichert die Rente."}},
+            "dokumentnummern": {"21/100": ["vg-1"]},
+        }
+        writers = {
+            "write_report_files": lambda out: build_dip_pulse_site.write_report_files(report, out, vorgang_cache=cache),
+            "rebuild_cached_detail_pages": lambda out: build_dip_pulse_site.rebuild_cached_detail_pages(
+                out, [], cached_entries=[{"report": report}], vorgang_cache=cache
+            ),
+        }
+        for name, write in writers.items():
+            with self.subTest(writer=name), tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "data").mkdir()
+                (Path(tmp) / "protocols").mkdir()
+                write(Path(tmp))
+                page = next(Path(tmp).rglob("plenarprotokoll-21-82.html")).read_text(encoding="utf-8")
+                self.assertIn("Der Vorgang sichert die Rente.", page)
+                self.assertIn("Rentengesetz · DIP", page)
+                self.assertNotIn("Vorgang nicht abgerufen", page)
 
 
 class VotesArchiveTests(unittest.TestCase):
@@ -2374,12 +2505,15 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([entry])
         self.assertEqual(len(rows), 1)
 
-    def test_collect_skips_an_id_less_vote_like_the_store_does(self) -> None:
-        # persist_votes drops a vote without an id; the archive must agree so
-        # its row count stays equal to SELECT count(*) FROM votes.
-        legacy = {"date": "2026-06-10", "title": "Ohne Id", "total": {"yes": 1, "no": 0}}
-        entry = self._entry("2026-06-10", "21/82", [self._item(1, [legacy])])
-        self.assertEqual(build_dip_pulse_site.collect_votes_archive([entry]), [])
+    # Value: protects=the archive fits a 375px phone: the Abweichler sentence wraps, the row column may shrink, a long compound title breaks; fails_when=the badge is nowrap again or the column is plain 1fr (measured: 492px, then 407px, then 394px wide at 375px); why_new=no test checked the badge's wrapping; seam=none; no_claim=layout itself (string-level CSS check; the browser measurement was manual)
+    def test_the_abweichler_badge_can_wrap(self) -> None:
+        css = build_dip_pulse_site.votes_archive_styles()
+        rule = re.search(r"\.archive-abweichler \{[^}]*\}", css)
+        self.assertIsNotNone(rule)
+        self.assertNotIn("nowrap", rule.group(0))
+        # The phone column may shrink below its content, and a long compound title breaks.
+        self.assertIn(".archive-row { grid-template-columns:minmax(0,1fr); gap:4px; }", css)
+        self.assertRegex(css, r"\.archive-row-body h3 \{[^}]*overflow-wrap:break-word")
 
     def test_render_index_shows_a_live_count_line_instead_of_a_metric_tile(self) -> None:
         vote = {"id": "v1", "date": "2026-06-10", "title": "T", "total": {"yes": 1, "no": 0}}
@@ -2494,12 +2628,89 @@ class VotesArchiveTests(unittest.TestCase):
         rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
         self.assertEqual(rows[0]["procedure_type"], "–")
 
-    def test_collect_handles_the_legacy_singular_vote_key(self) -> None:
-        vote = {"id": "v-legacy", "date": "2026-06-10", "title": "Legacy"}
-        item = {"index": 1, "vote": vote, "xml_drucksachen": [], "api": {}}
-        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [item])])
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["vote"]["id"], "v-legacy")
+    # Value: protects=the archive column reads the sitting-wide map the committee line reads (D4); fails_when=the lookup stays per TOP; why_new=new fallback; seam=none
+    def test_procedure_type_falls_back_to_a_drucksache_linked_under_another_top(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        other = {
+            "index": 2,
+            "votes": [],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Beschlussempfehlung und Bericht"}]},
+        }
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [self._item(1, [vote]), other])])
+        self.assertEqual(rows[0]["procedure_type"], "Beschlussempfehlung und Bericht")
+
+    def test_procedure_type_of_a_sitting_vote_comes_from_the_sitting_map(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/6561"]}
+        entry = self._entry(
+            "2026-06-10",
+            "21/82",
+            [{"index": 1, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Antrag"}]}}],
+        )
+        entry["report"]["sitting_votes"] = [vote]
+        rows = build_dip_pulse_site.collect_votes_archive([entry])
+        self.assertEqual(rows[0]["procedure_type"], "Antrag")
+
+    def test_procedure_type_of_the_own_top_wins_over_the_sitting_map(self) -> None:
+        vote = {"id": "v1", "date": "2026-06-10", "title": "T", "document_numbers": ["21/1", "21/6561"]}
+        own = {
+            "index": 1,
+            "votes": [vote],
+            "xml_drucksachen": [],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "drucksachetyp": "Gesetzentwurf"}]},
+        }
+        other = {"index": 2, "votes": [], "api": {"linked_drucksachen": [{"dokumentnummer": "21/1", "drucksachetyp": "Antrag"}]}}
+        rows = build_dip_pulse_site.collect_votes_archive([self._entry("2026-06-10", "21/82", [other, own])])
+        self.assertEqual(rows[0]["procedure_type"], "Gesetzentwurf")
+
+    # Value: protects=the archive badge never reads a partial roll call as a count; fails_when=a gap counts as zero or the badge ignores completeness; why_new=badge is new (plan Slice 1); seam=none
+    def test_the_abweichler_badge_shows_only_complete_counts(self) -> None:
+        members = [
+            {"name": "A", "faction": "SPD", "vote": "yes"},
+            {"name": "B", "faction": "SPD", "vote": "yes"},
+            {"name": "C", "faction": "SPD", "vote": "no"},
+        ]
+        fractions = [{"name": "SPD", "counts": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}]
+        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members}
+        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2]}
+        unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": [
+            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
+        # no_members: the fractions have counts but bundestag.de listed no Einzelstimmen.
+        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": []}
+        # Value: protects=a vote whose member rows name a group with no fraction row gets no archive count, not the count of the groups that can be checked; fails_when=the unlisted group drops out and the badge reads 1; why_new=only derive and the panel saw the unlisted group; seam=none; no_claim=none
+        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "members": members + [
+            {"name": "D", "faction": "AfD", "vote": "yes"}, {"name": "E", "faction": "AfD", "vote": "no"}]}
+        rows = build_dip_pulse_site.collect_votes_archive(
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted])])]
+        )
+        by_id = {row["vote"]["id"]: row for row in rows}
+        self.assertEqual(
+            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5")), (1, None, 0, None, None)
+        )
+        markup = build_dip_pulse_site.render_votes_archive_index(rows)
+        self.assertIn('data-abweichler="1"', markup)
+        self.assertIn('data-abweichler="0"', markup)
+        self.assertEqual(markup.count("data-abweichler="), 2)
+        self.assertEqual(markup.count('<span class="archive-abweichler">'), 1)
+        self.assertIn(
+            '<span class="archive-abweichler">1 stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe</span>', markup
+        )
+
+    # Value: protects=every archive link lands on exactly one panel of its dossier page (D9); fails_when=render and archive disagree on the anchor or a duplicated vote gets two ids; why_new=no vote anchor before B4; seam=none
+    def test_every_archive_link_lands_on_exactly_one_panel(self) -> None:
+        report = json.loads((_support.FIXTURES / "report.json").read_text(encoding="utf-8"))
+        voted = next(item for item in report["agenda_items"] if item.get("votes"))
+        # The same vote under a second TOP renders twice; its anchor must not.
+        other = next(item for item in report["agenda_items"] if item is not voted)
+        other["votes"] = list(voted["votes"])
+        report["sitting_votes"] = [{**voted["votes"][0], "id": 99, "title": "Ohne TOP"}]
+        rows = build_dip_pulse_site.collect_votes_archive([{"report": report, "page_path": Path("plenarprotokoll-x.html")}])
+        page = pulse_html.render_html(report)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            fragment = row["href"].split("#", 1)[1]
+            self.assertEqual(page.count(f'id="{fragment}"'), 1, fragment)
+        self.assertEqual(page.count('class="vote-panel" id="vote-'), 2)
 
     def test_collect_ignores_entries_with_no_report(self) -> None:
         rows = build_dip_pulse_site.collect_votes_archive([{"page_path": Path("x.html")}, {"report": None}])
@@ -2647,7 +2858,7 @@ class VotesArchiveTests(unittest.TestCase):
         self.assertIn('>Angenommen <span class="vote-result-note">(berechnet)</span></span>', markup)
         self.assertIn('href="https://dserver.bundestag.de/btd/21/065/2106561.pdf"', markup)
         # votes/index.html sits one level down, so the dossier link climbs out.
-        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#top-3">T</a>', markup)
+        self.assertIn('<a href="../protocols/plenarprotokoll-21-82.html#vote-v1">T</a>', markup)
 
     def test_render_index_carries_the_site_foundation_and_a_working_hidden_rule(self) -> None:
         markup = build_dip_pulse_site.render_votes_archive_index([])
@@ -2687,6 +2898,13 @@ class VotesArchiveTests(unittest.TestCase):
             for column in ("politikfeld", "rank", "source"):
                 self.assertEqual(build_dip_pulse_site.column_source(table, column), "derived", (table, column))
         self.assertEqual(build_dip_pulse_site.column_source("proceedings", "sachgebiet"), "dip")
+
+    # Value: protects=the Daten dictionary labels B4's vote context by origin: the vote→Vorgang selection and its state are derived, the sanitised abstract stays DIP text; fails_when=vote_proceedings or votes.context_state fall to the table defaults (dip, bundestag.de), so a derived selection is captioned as source data; why_new=schema 6 adds them; seam=none
+    def test_vote_context_columns_are_labelled_by_origin(self) -> None:
+        for column in ("vote_id", "proceeding_id", "rank"):
+            self.assertEqual(build_dip_pulse_site.column_source("vote_proceedings", column), "derived", column)
+        self.assertEqual(build_dip_pulse_site.column_source("votes", "context_state"), "derived")
+        self.assertEqual(build_dip_pulse_site.column_source("proceedings", "abstract"), "dip")
 
     def test_month_label_out_of_range_month_is_unknown_not_wrapped(self) -> None:
         self.assertEqual(build_dip_pulse_site._month_label("2026-00-10"), "Unbekanntes Datum")

@@ -293,9 +293,9 @@ VORGANG_BATCH = 100
 
 
 def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
-    """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` is
-    not used by the Politikfelder; the later topic pages read it. A Sachgebiet that
-    is not a list of labels raises DipError."""
+    """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` and
+    ``titel`` are not used by the Politikfelder; a vote's "Worum es geht" reads them.
+    A Sachgebiet that is not a list of labels raises DipError."""
     sachgebiet = document.get("sachgebiet")
     if sachgebiet is None:
         sachgebiet = []
@@ -311,6 +311,7 @@ def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
     return {
         "sachgebiet": list(sachgebiet),
         "deskriptor_sachbegriffe": descriptors,
+        "titel": document.get("titel"),
         "abstract": document.get("abstract"),
         "vorgangstyp": document.get("vorgangstyp"),
         "aktualisiert": document.get("aktualisiert"),
@@ -1843,7 +1844,8 @@ def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
         profile_url = None
         if profile_match:
             href = unescape(profile_match.group(1))
-            profile_url = href if href.startswith("http") else f"{BT_BASE_URL}{href}"
+            # An MP without a biography links back to the Abstimmung: no profile.
+            profile_url = derive.person_profile_url(href if href.startswith("http") else f"{BT_BASE_URL}{href}")
         vote_key = {
             "ja": "yes",
             "nein": "no",

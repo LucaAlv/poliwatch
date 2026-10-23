@@ -618,14 +618,14 @@ class ReplayAndGuardTests(unittest.TestCase):
         self.assertEqual(r, before)
 
     def test_missing_and_stale_provenance_refuse_facts_and_export_before_writes(self):
+        self.assertEqual(sk.VERSION, 5)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'store.sqlite'
             parsed = dip.parse_protocol_xml(source('a1-written-18-100.xml'))
             r = report(parsed)
             conn = store.connect(path)
             store.persist_report(conn, r)
-            self.assertEqual(sk.VERSION, 5)
-            self.assertEqual(store.SCHEMA_VERSION, 5)
+            self.assertEqual(store.SCHEMA_VERSION, 6)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()
