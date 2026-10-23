@@ -182,8 +182,12 @@ def _read_logged(req: urllib.request.Request, timeout: float, source: str, targe
             stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
             fields = [stamp, source, target, f"attempt {attempt + 1}", outcome, f"{time.monotonic() - started:.2f}s"]
             line = _APIKEY_RE.sub("apikey=…", "\t".join(" ".join(f.split()) for f in fields))
-            with open(log_path, "a", encoding="utf-8") as log:
-                log.write(line + "\n")
+            # A log that cannot be written must not turn an answer into a retried failure.
+            try:
+                with open(log_path, "a", encoding="utf-8") as log:
+                    log.write(line + "\n")
+            except OSError as exc:
+                print(f"warning: {REQUEST_LOG_ENV} {log_path} is not writable: {exc}", file=sys.stderr)
 
 
 @dataclass(frozen=True)

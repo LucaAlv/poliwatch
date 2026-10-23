@@ -36,7 +36,9 @@ The previous handoff, [a3-pilot-rerun-handoff.md](a3-pilot-rerun-handoff.md), is
   - The nine markers, plus three Lammert markers, were read and committed in 66b45a8. 18/96 and 18/109 are silent misses. Both rule proposals are open, and the owner said "neither yet".
   - The D2 limit is fixed: offline runs and `--fetch-xml` honour `data/coverage-exclusions.json` (517ecee).
 - **Step 3.3 done:** `DIP_REQUEST_LOG` (874fa3f). `run-pilot.sh` exports it to `~/agent-runs/a3/pilot-requests.log`.
-- **Suite:** 1444 tests, OK (2 skipped).
+- **Suite:** 1445 tests, OK (2 skipped).
+- **Not logged:** abgeordnetenwatch requests (own client). DIP (`/person` included), dserver and bundestag.de pages are logged.
+- **Open owner question:** an online run without the flag still carries a recorded sitting's cached report into the store and drops it from the record. Offline runs leave it out. The pilot is unaffected, because it passes the flag and the clone holds no WP 18/19 report.
 - **Disk:** 8.4 GB free at 23:16 UTC.
 - **Next:** step 3.4, which starts the pilot directly. Do it only on the owner's go. DIP's last request was 2026-10-22 18:40 UTC.
 

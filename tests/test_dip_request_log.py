@@ -83,6 +83,20 @@ class DipRequestLogTests(unittest.TestCase):
         self.assertNotIn("apikey", self.log.read_text(encoding="utf-8"))
         self.assertNotIn(KEY, stderr)
 
+    # Value: protects=a log that cannot be written never changes a request; fails_when=the
+    # write's OSError replaces the answer, get_json reads it as a network error and retries,
+    # spending DIP budget on a fake outage; seam=ApiClient.get_json with urlopen stubbed.
+    def test_an_unwritable_log_leaves_the_answer_alone(self) -> None:
+        self.log = self.log.parent / "missing" / "requests.log"
+        opener = mock.Mock(return_value=Response(json.dumps({"ok": 1})))
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, {"DIP_REQUEST_LOG": str(self.log)}), mock.patch.object(
+            dip.urllib.request, "urlopen", opener
+        ), mock.patch.object(dip.time, "sleep"), mock.patch("sys.stderr", stderr):
+            self.assertEqual(dip.ApiClient(api_key=KEY, retries=1).get_json("/x"), {"ok": 1})
+        self.assertEqual(opener.call_count, 1)
+        self.assertIn("DIP_REQUEST_LOG", stderr.getvalue())
+
     def test_without_the_variable_nothing_is_written(self) -> None:
         self.get_json([Response("{}")], log=False)
         self.assertFalse(self.log.exists())

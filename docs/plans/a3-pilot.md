@@ -147,7 +147,7 @@ What it shows:
 
 ## Known limit of the exclusion list (D2)
 
-Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatever the parser says, so an unmapped role in it no longer ends the run. Since the commit after abd3ddf, offline runs and `--fetch-xml` also leave out every sitting `data/coverage-exclusions.json` lists, so a report cached before its sitting was listed stays out of the store.
+Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatever the parser says, so an unmapped role in it no longer ends the run. Since 517ecee, offline runs and `--fetch-xml` also leave out every sitting `data/coverage-exclusions.json` lists, so a report cached before its sitting was listed stays out of the store.
 
 ## What is open before Phase 3
 
@@ -208,8 +208,9 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - **18/109 Bulmahn, second marker of her own Rede:** after Ulla Schmidt's "Sie müssen zum Schluss kommen", Bulmahn finishes her Rede ("Ich plädiere deshalb ausdrücklich dafür, dieser Mission zuzustimmen…"). The Rede is counted (ADR 0004 rule), but **its closing text is dropped.** 18/109 is counted.
   - **18/113 Pau, inside Castellucci's Rede:** her own Zwischenfrage. 18/113 is on the list.
 - **Presiding signal** (`presiding.py`, the last chair `<name>` line before the marker):
-  - In 10 of the 12, the marker's own person is the one presiding. In 18/96, 18/109 and 18/113 someone else presides.
-  - **The exception is 18/60:** Lammert presides, and Singhammer's marker is chair text. That is a chair handover with no printed `<name>` line.
+  - **Own person presiding (8):** 18/41, 18/74, 18/79, 18/82, 18/85, 18/89, 18/91 and 18/100. All are chair text.
+  - **Someone else presiding (4):** 18/96, 18/109 and 18/113, which are own contributions, and 18/60.
+  - **The signal sorts 11 of 12 correctly.** The miss is 18/60: Lammert presides, and Singhammer's marker is chair text. That is a chair handover with no printed `<name>` line.
 
 ### Rule proposals (owner decision, nothing built)
 
