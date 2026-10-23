@@ -173,16 +173,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### Test the independently loaded historical parser and classifier
-
-**What:** Add a regression test for the documented rule-4 comparison using an independently loaded historical parser and historical classifier pair.
-
-**Why:** PR #87 review finding (`tests/test_audit_offline_turns_cli.py:59–65`): the test baseline calls the current parser and shares its classifier, so it cannot catch regressions in loading the separate historical pair. Incorrect historical counts could pass unnoticed.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Acquire ceremony addresses omitted from sampled plenary XML
 
 **What:** If ceremony addresses are to be ingested, acquire an explicit ceremony source and define its sitting association. The inspected 2016 and 2021 memorial speeches precede their plenary sittings and are absent from the plenary XML; do not synthesize a guest unit or treat all role-less speakers as guests.
@@ -1115,6 +1105,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Test the independently loaded historical parser and classifier
+
+**Completed:** v0.21.1.0 (2026-10-23). A focused CLI regression loads tiny independent parser/classifier stand-ins for the documented rule-4 comparison, without copying historical modules or delegating parsing to the current parser. It checks historical count deltas, rule version and file hashes while current counts stay unchanged across two XML files. Mutation checks detect both historical-to-current and current-to-historical classifier sharing. All four audit CLI tests and the full Python suite pass (1,487 tests, one skipped). No production change was needed.
 
 ### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
 
