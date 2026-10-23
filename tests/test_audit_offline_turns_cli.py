@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from textwrap import dedent
 import unittest
 from unittest.mock import Mock
 from types import SimpleNamespace
@@ -15,6 +16,69 @@ import validate_dip_protocol as dip
 
 
 class OfflineAuditCliTests(unittest.TestCase):
+    # Value: protects=independently loaded historical parser/classifier pairs; fails_when=either parser shares the other's classifier; why_new=the changed-baseline wrapper calls the current parser; seam=none
+    def test_cli_keeps_historical_classifier_separate_from_current(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            xml_dir = root / "xml"
+            xml_dir.mkdir()
+            xml = ('<dbtplenarprotokoll><sitzungsverlauf><tagesordnungspunkt top-id="1">'
+                   '<rede id="R"><p klasse="redner"><redner id="A"><name>'
+                   '<vorname>Anna</vorname><nachname>Test</nachname><fraktion>SPD</fraktion>'
+                   '</name></redner></p><p>Eine Rede.</p></rede>'
+                   '</tagesordnungspunkt></sitzungsverlauf></dbtplenarprotokoll>')
+            # A second file detects a baseline classifier leaking into later current audits.
+            for name in ("first", "second"):
+                (xml_dir / f"{name}.xml").write_text(xml, encoding="utf-8")
+            parser = root / "historical_parser.py"
+            classifier = root / "historical_speech_kinds.py"
+            # Small stand-ins retain the historical module-global import and classifier call.
+            parser.write_text(dedent("""\
+                import speech_kinds
+                import xml.etree.ElementTree as ET
+
+                def parse_protocol_xml(xml):
+                    top = ET.fromstring(xml).find('./sitzungsverlauf/tagesordnungspunkt')
+                    labels = speech_kinds.classify_reden(top, frozenset())
+                    units = [{'rede_id': rede.get('id'), 'kind': label.kind}
+                             for rede, label in zip(top.findall('rede'), labels)]
+                    return {'agenda_items': [{
+                        'speeches': [u for u in units if u['kind'] is None],
+                        'contributions': [u for u in units if u['kind'] is not None]}]}
+
+                def speech_segments(rede):
+                    return '', []
+                """), encoding="utf-8")
+            classifier.write_text(dedent("""\
+                from types import SimpleNamespace
+
+                VERSION = 4
+
+                def classify_reden(top, formats, continuation=False):
+                    return [SimpleNamespace(kind='legacy_probe', parent_rede_id=None)
+                            for rede in top.findall('rede')]
+                """), encoding="utf-8")
+            output = root / "report.json"
+            subprocess.run(
+                [sys.executable, str(_support.SCRIPTS / "audit_offline_turns.py"), str(xml_dir),
+                 "--baseline-parser", str(parser), "--baseline-speech-kinds", str(classifier),
+                 "--output", str(output)],
+                cwd=_support.ROOT, capture_output=True, text=True, check=True)
+            report = json.loads(output.read_text(encoding="utf-8"))
+
+            self.assertEqual(report["rule_version"], dip.speech_kinds.VERSION)
+            self.assertEqual(report["baseline_rule_version"], 4)
+            self.assertEqual(report["baseline_parser_sha256"], hashlib.sha256(parser.read_bytes()).hexdigest())
+            self.assertEqual(report["baseline_speech_kinds_sha256"], hashlib.sha256(classifier.read_bytes()).hexdigest())
+            self.assertEqual(report["accepted"], 2)
+            self.assertEqual(report["baseline_accepted"], 2)
+            self.assertEqual(report["counts"], {"rede": 2})
+            self.assertEqual(report["count_changes"], {"legacy_probe": -2, "rede": 2})
+            self.assertEqual(set(report["sittings"]), {"first", "second"})
+            for sitting in report["sittings"].values():
+                self.assertEqual(sitting["counts"], {"rede": 1})
+                self.assertEqual(sitting["count_changes"], {"legacy_probe": -1, "rede": 1})
+
     # Value: protects=historical baselines require both classifier files; fails_when=an incomplete baseline pair writes an audit; why_new=valid CLI modes do not exercise argparse rejection; seam=none
     def test_unpaired_baseline_flags_reject_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:

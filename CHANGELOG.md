@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.1.0] - 2026-10-23
+
+### Added
+
+- Regression coverage for offline audit comparisons ensures an independently loaded historical parser uses its own classifier and leaves current counts unchanged across multiple XML files.
+
 ## [0.21.0.0] - 2026-10-23
 
 ### Added
