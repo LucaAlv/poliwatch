@@ -2,21 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.21.0.0] - 2026-10-23
+
+### Added
+
+- Each roll-call vote on a dossier says what it was about: a "Worum es geht" block with DIP's description of the Vorgang the vote decides, linked to DIP by its title, with a short teaser and the full text behind "Ganze Beschreibung". A vote's Vorgang comes from its own Drucksachen, narrowed to its TOP's Vorgänge. On the reference cache 217 of 217 votes have their Vorgang, and 153 have a DIP description; the others say "Keine Beschreibung in DIP", "Kein einzelner DIP-Vorgang ermittelt" or "Vorgang nicht abgerufen".
+- Each vote cites the committee recommendation it was taken on: "Beschlussempfehlung des Haushaltsausschusses (Drucksache …)", found among the vote's Drucksachen across the whole sitting, or "Ausschuss nicht ermittelt". 190 of 217 reference votes cite one.
+- Under each Fraktion or Gruppe of a vote, the panel names who voted against its majority (Ja against a Nein-Mehrheit or Nein against a Ja-Mehrheit), the first ten inline and the rest behind "alle N anzeigen", linked to their Personenseite. "Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe" is said only when every group's Einzelstimmen are complete; a group whose Einzelstimmen do not add up to its tally says so instead of naming no one. The reference votes have 632 such Stimmen.
+- The votes archive shows how many voted against their group's majority on each vote (only when that count is complete), and each archive entry links straight to its vote panel (`…#vote-<id>`, 217 of 217 resolve).
+- The Daten export has a `vote_proceedings` table (the Vorgänge a vote is about, with rank), `proceedings.abstract` (DIP's description as plain text) and `votes.context_state` (resolved, none or not_fetched), labelled as derived or source data, and a sixth recipe, `r6-ausschuss`, counting votes by the committee whose Beschlussempfehlung they cite.
 
 ### Changed
 
-- The "Worum es geht" block names each Vorgang by its DIP title. On the reference cache no context Vorgang had a title before (0 of 234; every label read "<Vorgangstyp> · DIP-Vorgang <id>"); after one online refetch all 234 have one, and DIP returned no empty title. The Vorgangstyp fallback and the refetch of records without a title are gone; a Vorgang with no record yet reads "DIP-Vorgang <id>".
-- The same refetch asked DIP again for the 86 context Vorgänge with an empty abstract: none had gained one, so 153 of 217 votes have a DIP abstract before and after.
+- Store schema 6 and Daten export format 7 with 28 CSVs. A store built by an earlier version is refused with the instruction to run `--offline --repersist`.
+- A vote's procedure type is read from the Drucksachen of the whole sitting, not only its own TOP, so the archive rows showing "–" fall from 5 to 0.
+- An online build also asks DIP again for vote Vorgänge whose description is empty (86 on the reference cache; none had gained one).
+- Persist and the standalone renderer refuse a stale vote shape (a TOP's singular `"vote"`, non-list votes, a vote without an id) instead of treating the sitting as voteless; a stale report outside the build's catalog no longer stops the build, and a null or empty `"vote"` passes.
 
 ### Fixed
 
-- A vote's context is `resolved` only when every one of its Drucksache numbers is in the Vorgang cache, so an offline replay with a cache that lost one number stops instead of dropping a `vote_proceedings` row. The replay guard protects a context stored as `none` as well as `resolved`. On the reference store all 217 votes stay `resolved` (0 `none`).
-- A vote with no single Vorgang (`none`, which includes Drucksachen naming a bundle of Vorgänge DIP does describe) reads "Kein einzelner DIP-Vorgang ermittelt" instead of "Keine Beschreibung in DIP", and a `not_fetched` vote whose known Vorgänge all have a record adds "Vorgang nicht abgerufen" after them. 0 of 217 reference votes are in either state, so no page changes.
-- A vote member's abgeordnetenwatch URL passes the same check as the bundestag.de link before it becomes an identity key or `mps.profile_url`, and both must be https, abgeordnetenwatch on `/profile/`. On the reference cache all 154,001 accepted links are https bundestag.de biographies and no Einzelstimmen row carries an abgeordnetenwatch URL, so nothing moves.
-- Persist and the standalone renderer refuse a stale vote shape (a TOP's singular `"vote"`, non-list votes, a vote without an id) instead of treating the sitting as voteless; a stale report outside the build's catalog no longer stops the build, and a null or empty `"vote"` passes.
-- A member listed twice in an Einzelstimmen list counts once for the Abweichler, so a duplicate row can no longer stand in for a missing member. "Twice" means the same identity key persist binds the vote member on (a trusted abgeordnetenwatch id, else the profile URL, else name and Zusammenschluss), across the whole vote, not the same name within a group; merges the identity registry makes later are not seen. On the reference store 0 of 1,281 group results move (632 Abweichler before and after).
 - An Einzelstimmen card that links back to the Abstimmung (bundestag.de does this for an MP without a biography; 77 rows in 14 votes) is no profile URL any more: it no longer serves as an identity that folded every such MP of a vote into one, is not stored as the MP's profile (14 → 0 mps), and the name is no longer linked to the vote page. The registry kept the 63 occurrences it had already folded on their records, so the reference store was rebuilt without its earlier registry: `vote_members` 154,015 → 154,078, persons 4,265 → 4,298 (47 records, one per affected MP, replace the 14 folded ones; 41 stale `xml:` records from an older identity rule fold into their MPs' current records with no speech or contribution changing person; 10 bindings to speeches and contributions that no longer exist are gone). Abweichler are unchanged (632).
+- Einzelstimmen whose biography link fails the profile check (a backslash, user info, a port or whitespace in the URL, or anything other than an https bundestag.de biography or abgeordnetenwatch profile) are no longer linked or used as an identity. No reference link is affected.
+- In dark mode, the "Einzelstimmen (N Abgeordnete)" control under each vote is readable (it was dark blue on the dark panel, about 2.2:1; now 8.2:1).
 
 ## [0.20.7.0] - 2026-10-23
 
