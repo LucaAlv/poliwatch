@@ -408,8 +408,10 @@ def fetch_catalog(
     """The whole DIP catalog and when it was last fetched in full.
 
     A cached catalog fully fetched in the last CATALOG_FULL_FETCH_DAYS supplies
-    every Wahlperiode before the newest in which each sitting has an XML URL
-    (a closed Wahlperiode does not change); the rest is fetched fresh. The
+    every Wahlperiode before the newest (a closed Wahlperiode does not change),
+    and the entries without one (the Sonderdrucke, "SDr 1981"). Fetched fresh
+    are the newest Wahlperiode and a closed one in which some sittings still lack
+    the XML URL the others have; Wahlperioden 1-17 list none at all. The
     merge is used only when it adds up to DIP's total count, so a new
     Wahlperiode or a gap in the cache falls back to the full fetch, as does a
     missing, unreadable or old cache."""
@@ -426,16 +428,20 @@ def fetch_catalog(
     if not cached or now - fetched > timedelta(days=CATALOG_FULL_FETCH_DAYS):
         return full()
     by_wp: dict[int, list[dict[str, Any]]] = {}
+    without_wp: list[dict[str, Any]] = []
     for protocol in cached:
         wahlperiode = wahlperiode_of(protocol)
-        if wahlperiode is None:
-            return full()
-        by_wp.setdefault(wahlperiode, []).append(protocol)
+        (by_wp.setdefault(wahlperiode, []) if wahlperiode is not None else without_wp).append(protocol)
+    if not by_wp:
+        return full()
     newest = max(by_wp)
-    frozen = {wp for wp, protocols in by_wp.items() if wp < newest and all(protocol_xml_url(p) for p in protocols)}
+    frozen = {
+        wp for wp, protocols in by_wp.items()
+        if wp < newest and len({bool(protocol_xml_url(p)) for p in protocols}) == 1
+    }
     try:
         total = dip.page_count(client.get_json("/plenarprotokoll", {"f.zuordnung": "BT"}))
-        merged = [p for wp in sorted(frozen) for p in by_wp[wp]]
+        merged = [*without_wp, *(p for wp in sorted(frozen) for p in by_wp[wp])]
         for wahlperiode in sorted(set(by_wp) - frozen):
             merged.extend(_catalog_list(client, {"f.zuordnung": "BT", "f.wahlperiode": wahlperiode}))
     except dip.DipError as exc:

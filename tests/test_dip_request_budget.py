@@ -160,6 +160,20 @@ class CatalogReuseTests(unittest.TestCase):
         self.assertEqual(client.get_json.call_count, 3)
         self.assertEqual(numbers, ["19/1", "20/1", "20/2", "21/1", "21/2", "21/3"])
 
+    # Value: protects=the real catalog's shape still reuses the cache: Wahlperioden 1-17 list no
+    # XML for any sitting, and Sonderdrucke ("SDr 1981") carry no Wahlperiode; fails_when=either
+    # forces a full fetch or a fresh fetch every run (found on the 4,677-entry catalog);
+    # seam=fetch_catalog.
+    def test_wahlperioden_without_any_xml_and_sonderdrucke_come_from_the_cache(self) -> None:
+        self.cached += [protocol("17/1", xml=False), protocol("17/2", xml=False),
+                        {"id": "sdr81", "dokumentnummer": "SDr 1981", "fundstelle": {}}]
+        self.write_cache(self.cached)
+        client = self.client(9, {21: [protocol("21/3"), protocol("21/2"), protocol("21/1")]})
+        numbers, _, full = self.fetch(client)
+        full.assert_not_called()
+        self.assertEqual(client.get_json.call_count, 2)
+        self.assertEqual(len(numbers), 9)
+
     # Value: protects=the age counts from the last full fetch, not the last merge, so a run every
     # day still refetches the whole catalog weekly; seam=render_site's catalog file.
     def test_a_merged_catalog_keeps_its_full_fetch_time(self) -> None:
