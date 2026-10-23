@@ -1885,6 +1885,9 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn("KW 21/2026", markup)
         self.assertIn("Redeanteil der Fraktionen", markup)
         self.assertIn("Debattenprofil", markup)
+        self.assertIn("Wieder auf der Tagesordnung", markup)
+        self.assertIn("Kein Vorgang dieser Sitzungswoche", markup)
+        self.assertNotIn("Verfahren, die", markup)
 
     def test_placeholder_is_gone(self) -> None:
         markup = self._render(
@@ -1926,6 +1929,33 @@ class SittingWeekComparisonTests(unittest.TestCase):
 
     # -- Debattenprofil glossary ------------------------------------------
 
+    def test_debattenprofil_counts_each_top_once_per_type_in_both_weeks(self) -> None:
+        positions = [
+            {"vorgang_id": "p1", "vorgangstyp": "Petition"},
+            {"vorgang_id": "p2", "vorgangstyp": "Petition"},
+            {"vorgang_id": "a1", "vorgangstyp": "Antrag"},
+            {},
+            {"vorgangstyp": None},
+            {"vorgangstyp": ""},
+        ]
+        entries = [
+            self._entry("2026-06-12", "21/84", [
+                self._item(1, [("SPD", 100)], positions),
+                self._item(2, [("SPD", 100)], positions[:2]),
+                self._item(3, [("SPD", 100)]),
+            ]),
+            self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)], positions)]),
+        ]
+
+        with mock.patch.object(pulse_html, "render_type_mix", wraps=pulse_html.render_type_mix) as type_mix:
+            markup = self._render(entries)
+
+        type_mix.assert_called_once_with(
+            Counter({"Petition": 2, "Antrag": 1}),
+            Counter({"Petition": 1, "Antrag": 1}),
+        )
+        self.assertIn("3 von 3 Vorgängen dieser Woche", markup)
+
     def test_type_mix_links_known_types_to_the_glossary(self) -> None:
         # Known vorgangstyp labels become links carrying the one-line explanation
         # as data-tip (the hover bubble); unknown labels stay plain spans.
@@ -1953,6 +1983,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('href="sources.html#vorgangstyp-antrag"', markup)
         self.assertIn('href="sources.html#vorgangstyp-gesetzgebung"', markup)
         self.assertIn("a.week-label[data-tip]::after", markup)
+        self.assertIn("jeder Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp", markup)
 
     def test_glossary_entries_are_complete_and_anchor_safe(self) -> None:
         slugs = [entry["slug"] for entry in pulse_html.VORGANGSTYP_GLOSSARY.values()]
@@ -1981,6 +2012,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
 
         self.assertIn('id="vorgangstypen"', markup)
         self.assertIn("Vorgangstypen im Debattenprofil", markup)
+        self.assertIn("je Kalenderwoche jeden Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp", markup)
         for kind, entry in pulse_html.VORGANGSTYP_GLOSSARY.items():
             self.assertIn(f'<li id="vorgangstyp-{entry["slug"]}"><strong>{pulse_html.esc(kind)}</strong>', markup)
         self.assertIn(".method-list li:target", markup)

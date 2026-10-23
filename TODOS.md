@@ -326,18 +326,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
-
-**What:** `week_stats` (`scripts/render_dip_pulse_html.py`, `vorgangstyp_counts`) adds 1 per Vorgangsposition. Count each Tagesordnungspunkt once for each distinct Vorgangstyp among its positions instead, and compare against the Wochenvergleich week the same way. On the real store, TOP 7 of Sitzung 21/50 bundles 26 Petition positions with 1 Rede and currently adds 26 to "Petition". 70 TOPs carry 6 or more positions. Change the card note ("Vorgangspositionen nach Art") and the sources.html glossary intro ("zählt die Vorgangspositionen der Sitzungswoche") to say Tagesordnungspunkte and Kalenderwoche. Rename the card heading "Verfahren, die zurückkehren" to "Wieder auf der Tagesordnung" and drop "Verfahren" from its notes. The `returning_vorgaenge` rule itself already matches the glossary. Done when a bundled TOP adds at most 1 per Vorgangstyp and no Puls text says "Verfahren" for a Vorgang.
-
-**Why:** CONTEXT.md (Vorgangstyp, mitberatener Vorgang, Debattenprofil, wiederkehrender Vorgang, 2026-09-26).
-
-**Context:** Only the Puls card and its week view read `vorgangstyp_counts`; facts.py and the Daten page do not (checked 2026-09-26).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Combined Antrag titles render as one four-line bold block on puls.html
 
 **What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
@@ -1127,6 +1115,20 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
+
+**What:** `week_stats` (`scripts/render_dip_pulse_html.py`, `vorgangstyp_counts`) adds 1 per Vorgangsposition. Count each Tagesordnungspunkt once for each distinct Vorgangstyp among its positions instead, and compare against the Wochenvergleich week the same way. On the real store, TOP 7 of Sitzung 21/50 bundles 26 Petition positions with 1 Rede and currently adds 26 to "Petition". 70 TOPs carry 6 or more positions. Change the card note ("Vorgangspositionen nach Art") and the sources.html glossary intro ("zählt die Vorgangspositionen der Sitzungswoche") to say Tagesordnungspunkte and Kalenderwoche. Rename the card heading "Verfahren, die zurückkehren" to "Wieder auf der Tagesordnung" and drop "Verfahren" from its notes. The `returning_vorgaenge` rule itself already matches the glossary. Done when a bundled TOP adds at most 1 per Vorgangstyp and no Puls text says "Verfahren" for a Vorgang.
+
+**Why:** CONTEXT.md (Vorgangstyp, mitberatener Vorgang, Debattenprofil, wiederkehrender Vorgang, 2026-09-26).
+
+**Context:** Only the Puls card and its week view read `vorgangstyp_counts`; facts.py and the Daten page do not (checked 2026-09-26).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** 2026-10-23. `week_stats` counts each Tagesordnungspunkt once per distinct Vorgangstyp for both weeks. The card and glossary explain TOP counts per Kalenderwoche; the returning card is headed "Wieder auf der Tagesordnung" and its notes use Vorgang/Vorgänge. A regression test covers repeated and mixed types, separate TOPs and the comparison week; all 28 week-comparison tests pass, and the full Python suite passes (1,374 tests, one skipped).
 
 ### Document `--protocol-wahlperiode` in the README
 
