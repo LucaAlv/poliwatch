@@ -312,7 +312,8 @@ def main(argv: list[str] | None = None) -> int:
     if not api_key:
         print("error: set DIP_API_KEY.", file=sys.stderr)
         return 1
-    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=dip.DipBreaker())
+    breaker = dip.DipBreaker()
+    client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=breaker)
     try:
         if args.drucksachen:
             result = prefetch_drucksachen(client, args.output_dir, args.wahlperiode, max_chunks=args.max_chunks)
@@ -322,10 +323,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.persons:
             persons = prefetch_persons(client, args.output_dir, args.wahlperiode)
             print(f"[bulk] persons {json.dumps(persons.__dict__, ensure_ascii=False)}")
-    except dip.DipUnavailable as exc:
-        print(f"[bulk] stopped: {exc}", file=sys.stderr)
-        return 3
     except dip.DipError as exc:
+        # The request that finds DIP silent raises a plain DipError; the breaker
+        # counts it, and only the requests after it raise DipUnavailable.
+        if isinstance(exc, dip.DipUnavailable) or breaker.consecutive:
+            print(f"[bulk] stopped, DIP did not answer: {exc}", file=sys.stderr)
+            return 3
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0

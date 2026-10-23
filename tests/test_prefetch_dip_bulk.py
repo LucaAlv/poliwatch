@@ -215,5 +215,24 @@ class PersonsTests(PrefetchTestCase):
         self.assertEqual(alive(dip_cache.PERSON_MAX_AGE_DAYS + 1), [])
 
 
+class ExitCodeTests(PrefetchTestCase):
+    """bulk_drip.py rests on exit 3 and stops for a human on 1, so a silent DIP must be 3."""
+
+    def main(self, read_logged) -> int:
+        with mock.patch.object(dip, "_read_logged", side_effect=read_logged), \
+                mock.patch.object(dip, "load_local_env"), mock.patch.object(dip.time, "sleep"), \
+                mock.patch.dict("os.environ", {"DIP_API_KEY": "k"}), mock.patch("sys.stderr"), mock.patch("sys.stdout"):
+            return prefetch.main(["--output-dir", str(self.output_dir), "--wahlperiode", "19", "--drucksachen"])
+
+    # Value: protects=the request that finds DIP silent (a plain DipError, before the breaker
+    # opens) ends the run as "DIP stopped", while a count that does not add up stops for a
+    # human; fails_when=a timeout exits 1 and the runner gives up instead of resting;
+    # seam=prefetch_dip_bulk.main with the HTTP read stubbed.
+    def test_a_silent_dip_exits_3_and_a_bad_count_exits_1(self) -> None:
+        self.assertEqual(self.main(TimeoutError("timed out")), 3)
+        page = json.dumps({"numFound": 5, "documents": [{"id": "1", "dokumentart": "Drucksache"}]}).encode()
+        self.assertEqual(self.main(lambda *a: page), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
