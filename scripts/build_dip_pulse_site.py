@@ -351,10 +351,9 @@ def fetch_protocols(
     while fetch_all or len(protocols) < limit:
         page = client.get_json("/plenarprotokoll", params)
         protocols.extend(page.get("documents") or [])
-        if isinstance(page.get("numFound"), int) and not isinstance(page.get("numFound"), bool):
-            num_found = page["numFound"]
+        num_found = dip.page_count(page) if dip.page_count(page) is not None else num_found
         cursor = page.get("cursor")
-        if not cursor or cursor == previous_cursor:
+        if not cursor or cursor == previous_cursor or (fetch_all and dip.holds_all(protocols, num_found)):
             break
         previous_cursor = cursor
         params["cursor"] = cursor

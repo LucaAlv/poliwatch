@@ -190,6 +190,23 @@ def _read_logged(req: urllib.request.Request, timeout: float, source: str, targe
                 print(f"warning: {REQUEST_LOG_ENV} {log_path} is not writable: {exc}", file=sys.stderr)
 
 
+def page_count(page: dict[str, Any]) -> int | None:
+    """DIP's ``numFound`` for a cursor-paged list, or None when the page carries no
+    usable count."""
+    count = page.get("numFound")
+    return count if isinstance(count, int) and not isinstance(count, bool) else None
+
+
+def holds_all(documents: list[dict[str, Any]], count: int | None) -> bool:
+    """True once ``documents`` hold ``count`` distinct ids: the next cursor page
+    would only confirm the end (half of a sitting's Vorgang requests, 2026-10-23).
+    A repeated document across pages does not count twice, and without a count
+    or an id the cursor alone ends the list."""
+    if count is None or any(not d.get("id") for d in documents):
+        return False
+    return len({str(d["id"]) for d in documents}) >= count
+
+
 @dataclass(frozen=True)
 class ApiClient:
     api_key: str
@@ -264,7 +281,7 @@ class ApiClient:
             batch = page.get("documents") or []
             documents.extend(batch)
             cursor = page.get("cursor")
-            if not batch or not cursor or cursor == previous_cursor:
+            if not batch or not cursor or cursor == previous_cursor or holds_all(documents, page_count(page)):
                 break
             previous_cursor = cursor
             params["cursor"] = cursor
