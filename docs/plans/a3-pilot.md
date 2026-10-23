@@ -267,3 +267,21 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   4. Reuse the cached catalog in a backfill, or fetch it by Wahlperiode, instead of 48 pages per run.
   5. A personal DIP API key, if the shared public key is what is limited. Ask the Bundestag's DIP team; that is the owner's call.
 - **The Phase 1 measurements are still not taken.** The identity check needs pilot data too.
+
+### DIP request reductions 1–4, built 2026-10-23
+
+| Commit | Change | Saving |
+|---|---|---|
+| e0632e3 | Stop paging once the distinct ids reach `numFound` | the end-of-list page of every list: 23 of 19/238's 46 Vorgang requests |
+| 33ab996, fa56e27 | Closed Wahlperioden and Sonderdrucke from the cached catalog. Full fetch after 7 days, on a missing cache, or when the merge doesn't add up to DIP's total | **48 → 2** per run (replay on the 4,677-entry reference catalog, same protocols) |
+| c7c5d3c | A Vorgang's Drucksachen cached per Vorgang across sittings, and across runs for closed Wahlperioden. `/person` cached across runs for 30 days. Both saved after every sitting | repeats cost nothing; a restarted run does not pay twice |
+
+- **Estimate for a WP 18/19 backfill.** It is not measured against DIP, and its inputs are proxies:
+  - **Vorgang repetition**, from the 290 cached WP 20/21 reports: 3,548 Vorgang references, 2,842 distinct, so about 20% are repeats. 19/238 needed 23 Vorgänge, which means about 18 new ones per sitting.
+  - **Person lookups:** 1,061 distinct persons over 290 sittings, about 4 new per sitting.
+  - **Per sitting:** about 2 (positions, Aktivitäten) + 18 (Vorgänge, one page each) + 4 (persons) ≈ **26 DIP requests**. Before these changes it was about 60, plus repeat persons.
+  - **For ~400 sittings:** about **10,000 DIP requests**, against about 24,000 before.
+- **Not enough on its own.** At the ~100 answered requests per window seen so far, that is still on the order of 100 windows. Phase 3 depends on a higher DIP allowance (the owner is asking for a personal key) or on a window pacer.
+- **Proposed, not built:**
+  - a run-level stop after N consecutive DIP failures. The 2026-10-23 run kept sending 60 s timeouts after DIP had stopped;
+  - a per-window DIP cap like `XmlPacer`, once the window and the recovery are known.
