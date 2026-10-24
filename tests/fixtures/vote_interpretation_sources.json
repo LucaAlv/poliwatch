@@ -1,0 +1,65 @@
+[
+  {
+    "fixture": "vote_interpretation_protocol.xml",
+    "url": "https://dserver.bundestag.de/btp/20/20157.xml",
+    "source_sha256": "bd2da99dc734d611767f12fdd9b7fc2f6603454d44e341dfde20662136ab0237",
+    "retrieved": "2026-10-23",
+    "votes": ["906"],
+    "document_numbers": ["20/9143", "20/10433"],
+    "editing": "TOP 7 chair paragraphs verbatim; the speech in TOP 7, the annex and the table of contents are written for the test."
+  },
+  {
+    "fixture": "vote_interpretation_protocol.xml",
+    "url": "https://dserver.bundestag.de/btp/20/20066.xml",
+    "source_sha256": "e346fc53cf43846ae447c7c885d54f198d79ec522c8fd2922fdf78743bb19e4d",
+    "retrieved": "2026-10-23",
+    "votes": ["809", "810", "811"],
+    "document_numbers": ["20/3873", "20/4226", "20/4360", "20/3943", "20/4053"],
+    "editing": "Three chair paragraphs of the Abstimmung on Beschlussempfehlung 20/4360 verbatim, as TOP 10."
+  },
+  {
+    "fixture": "vote_interpretation_protocol.xml",
+    "url": "https://dserver.bundestag.de/btp/20/20194.xml",
+    "source_sha256": "2051a4adc2b13f47f351ec47322a49d128f2c80da2e6d1b850760e957e520adb",
+    "retrieved": "2026-10-23",
+    "votes": ["926"],
+    "document_numbers": ["20/11752", "20/13044"],
+    "editing": "The chair paragraph opening the Abstimmung on Gesetzentwurf 20/11752 verbatim, as TOP 12."
+  },
+  {
+    "fixture": "vote_interpretation_protocol.xml",
+    "url": "https://dserver.bundestag.de/btp/21/21083.xml",
+    "source_sha256": "dad8b9c0bc6e1e5cc3824f6399311560a2d0934d3f29a7042bc4d7db98398803",
+    "retrieved": "2026-10-23",
+    "votes": ["1005"],
+    "document_numbers": ["21/2234", "21/5130"],
+    "editing": "The chair's announcement and the opening of the Abstimmung on Beschlussempfehlung 21/5130 verbatim, as TOP 8; the paragraphs between them omitted."
+  },
+  {
+    "fixture": "vote_interpretation_votes.json",
+    "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=<vote>",
+    "source_sha256": null,
+    "retrieved": "2026-10-23",
+    "votes": ["809", "810", "811", "906", "926", "996", "1005"],
+    "document_numbers": null,
+    "editing": "Roll-call listing fields of each vote as the reference store's cached reports hold them; fractions and members emptied, except for 906, which keeps the FDP and Gruppe BSW rows and those groups' members (name, faction, vote)."
+  },
+  {
+    "fixture": "roll_call_detail_996.html",
+    "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=996",
+    "source_sha256": null,
+    "retrieved": "2026-10-23",
+    "votes": ["996"],
+    "document_numbers": ["21/4466", "21/4792"],
+    "editing": "Heading and Beschluss section only."
+  },
+  {
+    "fixture": "roll_call_detail_869.html",
+    "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=869",
+    "source_sha256": null,
+    "retrieved": "2026-10-23",
+    "votes": ["869"],
+    "document_numbers": ["20/7226", "20/7623"],
+    "editing": "Heading and Beschluss section only."
+  }
+]

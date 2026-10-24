@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Excerpts for the vote-interpretation tests. The chair paragraphs are verbatim from the
+     Plenarprotokoll XML of bundestag.de as cached in the reference store on 2026-10-23:
+     20/157 (2024-03-14, vote 906), 20/66 (2022-11-10, votes 809-811), 20/194 (vote 926) and
+     21/83 (2026-06-11, vote 1005). Four sittings are combined into one document so one parse
+     covers the cases; only the speech and the annex are written for the test. Sources and
+     hashes: vote_interpretation_sources.json. -->
+<dbtplenarprotokoll wahlperiode="20" sitzung-nr="157" sitzung-datum="14.03.2024">
+  <vorspann><inhaltsverzeichnis><ivz-block><ivz-eintrag><ivz-eintrag-inhalt>Beschlussempfehlung und Bericht des Auswärtigen Ausschusses zu dem Antrag der Fraktion der CDU/CSU: Taurus <a>Drucksachen 20/9143, 20/10433, lehne den Antrag ab</a></ivz-eintrag-inhalt></ivz-eintrag></ivz-block></inhaltsverzeichnis></vorspann>
+  <sitzungsverlauf>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 7">
+      <p klasse="T_NaS">Beschlussempfehlung und Bericht des Auswärtigen Ausschusses</p>
+      <p klasse="T_Drs">Drucksachen <a href="https://dserver.bundestag.de/btd/20/091/2009143.pdf">20/9143</a>, <a href="https://dserver.bundestag.de/btd/20/104/2010433.pdf">20/10433</a></p>
+      <rede id="ID20157100">
+        <p klasse="redner"><redner id="1"><name><vorname>Test</vorname><nachname>Redner</nachname></name></redner></p>
+        <p klasse="J_1">Aus all diesen Gründen stimme ich der Beschlussempfehlung (Drucksache 20/10433) des Auswärtigen Ausschusses zu und lehne den Antrag der CDU/CSU-Fraktion (Drucksache 20/9143) ab.</p>
+      </rede>
+      <name>Vizepräsidentin Yvonne Magwas:</name>
+      <p klasse="J_1">Damit schließe ich die Aussprache.</p>
+      <p klasse="J">Wir kommen zur Beschlussempfehlung des Auswärtigen Ausschusses zum Antrag der Unionsfraktion mit dem Titel „Unterstützung für die Ukraine konsequent fortsetzen – Lieferung des Taurus-Marschflugkörpers beschließen“.</p>
+      <p klasse="J">Der Ausschuss empfiehlt in seiner Beschlussempfehlung auf der Drucksache 20/10433, den Antrag der Unionsfraktion auf der Drucksache 20/9143 abzulehnen.</p>
+      <p klasse="J"><a id="w1" />Die Fraktion der Union hat namentliche Abstimmung beantragt. Sie haben zur Stimmabgabe nun 20 Minuten Zeit. Die Schriftführerinnen und Schriftführer haben bereits die Urnen besetzt. – Damit eröffne ich die namentliche Abstimmung über die Beschlussempfehlung auf der Drucksache 20/10433. Die Abstimmungsurnen werden um 12.10 Uhr geschlossen. Ich gebe Ihnen vorher das Ende der Abstimmung noch einmal bekannt.<sup>2</sup><fussnote><p>Ergebnis Seite 20107 D</p></fussnote> </p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 10">
+      <name>Präsidentin Bärbel Bas:</name>
+      <p klasse="J">Der Ausschuss für Arbeit und Soziales empfiehlt unter Buchstabe a seiner Beschlussempfehlung auf Drucksache 20/4360, den Gesetzentwurf der Bundesregierung auf den Drucksachen 20/3873 und 20/4226 in der Ausschussfassung anzunehmen. Die Fraktion der CDU/CSU hat beantragt, über den Gesetzentwurf in der Ausschussfassung getrennt abzustimmen, und zwar zum einen über die Artikel 5 Nummer 1f, Nummer 5, Nummer 15, Nummer 17, Nummer 18 – das sind die §§ 28a und 134 des Zwölften Buches Sozialgesetzbuch, Fortschreibung der Regelbedarfsstufen – und zum anderen über den Gesetzentwurf im Übrigen.</p>
+      <p klasse="J">Wir setzen nun die Abstimmung zur Beschlussempfehlung des Ausschusses für Arbeit und Soziales auf Drucksache 20/4360 fort. Unter Buchstabe b empfiehlt der Ausschuss die Ablehnung des Antrages der Fraktion der AfD auf Drucksache 20/3943 mit dem Titel „Aktivierende Grundsicherung statt bedingungslosem Grundeinkommen – Einführung von Bürgerarbeit“. Wer stimmt für die Beschlussempfehlung? – Das sind die Fraktionen Die Linke, SPD, Bündnis 90/Die Grünen, FDP, CDU/CSU. Wer stimmt dagegen? – Das ist die AfD-Fraktion. Enthaltungen? – Kann ich nicht erkennen. Dann ist die Beschlussempfehlung so angenommen.</p>
+      <p klasse="J">Wir setzen nun die Abstimmung zu der Beschlussempfehlung des Ausschusses für Arbeit und Soziales auf Drucksache 20/4360 fort. Der Ausschuss empfiehlt unter Buchstabe d seiner Beschlussempfehlung die Ablehnung des Antrags der Fraktion Die Linke auf Drucksache 20/4053 mit dem Titel „Regelsätze spürbar erhöhen – 200 Euro mehr gegen Inflation und Armut“.</p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 8">
+      <name>Vizepräsidentin Josephine Ortleb:</name>
+      <p klasse="J">Wir kommen zu Zusatzpunkt 3. Abstimmung über die Beschlussempfehlung des Ausschusses für Forschung, Technologie, Raumfahrt und Technikfolgenabschätzung zu dem Antrag der Fraktion Bündnis 90/Die Grünen mit dem Titel „Bildung bezahlbar machen – BAföG-Reform jetzt“. Der Ausschuss empfiehlt in seiner Beschlussempfehlung auf Drucksache 21/5130, den Antrag der Fraktion Bündnis 90/Die Grünen auf Drucksache 21/2234 abzulehnen.</p>
+      <p klasse="J">Ich eröffne die namentliche Abstimmung über die Beschlussempfehlung auf Drucksache 21/5130. Die Abstimmungsurnen werden um 12:50 Uhr geschlossen. Das bevorstehende Ende der namentlichen Abstimmung wird Ihnen rechtzeitig bekannt gegeben.<sup>2</sup><fussnote><p>Ergebnis Seite 9974 D</p></fussnote> </p>
+    </tagesordnungspunkt>
+    <tagesordnungspunkt top-id="Tagesordnungspunkt 12">
+      <p klasse="J">Wir kommen zur Abstimmung über den Gesetzentwurf der Fraktion der CDU/CSU zur Aufhebung des Gesetzes über die unternehmerischen Sorgfaltspflichten zur Vermeidung von Menschenrechtsverletzungen in Lieferketten. Der Ausschuss für Arbeit und Soziales empfiehlt in seiner Beschlussempfehlung auf Drucksache 20/13044, den Gesetzentwurf der Fraktion der CDU/CSU auf Drucksache 20/11752 abzulehnen. Die Fraktion der CDU/CSU hat namentliche Abstimmung verlangt.</p>
+    </tagesordnungspunkt>
+  </sitzungsverlauf>
+  <anlagen>
+    <anlage><p klasse="J">Aus all diesen Gründen stimme ich der Beschlussempfehlung (Drucksache 20/10433) des Auswärtigen Ausschusses zu und lehne den Antrag der CDU/CSU-Fraktion (Drucksache 20/9143) ab. Der Ausschuss empfiehlt, den Antrag auf Drucksache 20/9143 anzunehmen.</p></anlage>
+  </anlagen>
+</dbtplenarprotokoll>

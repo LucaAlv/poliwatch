@@ -1414,7 +1414,9 @@ def reparse_cached_xml(
 ) -> int:
     """Re-read Reden and Beiträge of every cached report from its cached XML,
     where the XML exists, keeping the abgeordnetenwatch profiles its speakers
-    carry or that ``profiles_from`` (default: ``entries``) holds for them.
+    carry or that ``profiles_from`` (default: ``entries``) holds for them, and
+    interpret the report's votes again (what each was about and its outcome),
+    with the chair's announcements from that XML where it exists.
     Returns how many reports it re-parsed."""
     # The XML knows nothing of abgeordnetenwatch: the profiles resolved online must
     # survive the re-parse, also for a Person who only asks a Frage in a sitting.
@@ -1431,16 +1433,21 @@ def reparse_cached_xml(
         document_number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
         path = xml_cache_path(output_dir, document_number)
         if not document_number or not path.exists():
+            # No XML to read the chair's announcements from: the votes are still
+            # re-read from what the report holds, keeping what the XML once gave.
+            dip.interpret_report_votes(report, None)
             continue
         profiles = {item.get("index"): speaker_profiles(item) for item in [report, *(report.get("agenda_items") or [])]}
         try:
-            dip.reparse_report_xml(report, dip.parse_protocol_xml(path.read_text(encoding="utf-8")))
+            parsed = dip.parse_protocol_xml(path.read_text(encoding="utf-8"))
+            dip.reparse_report_xml(report, parsed)
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
                 f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again"
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
+        dip.interpret_report_votes(report, parsed["vote_recommendations"])
         reparsed += 1
     return reparsed
 
