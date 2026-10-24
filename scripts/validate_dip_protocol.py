@@ -1738,12 +1738,13 @@ def interpret_sitting_votes(
             occurrences.setdefault(str(vote["id"]), []).append(vote)
     representatives = []
     for copies in occurrences.values():
-        representative = dict(copies[0])
+        first = next((copy for copy in copies if _abstimmungsgegenstand(copy) is not None), copies[0])
+        representative = dict(first)
         representative["document_numbers"] = list(dict.fromkeys(
             number for copy in copies for number in copy.get("document_numbers") or []
         ))
         for field in ("title", "description", "vote_heading"):
-            representative[field] = "\n".join(dict.fromkeys(str(copy.get(field) or "") for copy in copies)).strip()
+            representative[field] = "\n".join(dict.fromkeys(str(copy.get(field) or "") for copy in [first, *copies])).strip()
         representative["total"] = next((copy["total"] for copy in copies if copy.get("total")), {})
         representatives.append(representative)
     for copies, representative in zip(occurrences.values(), representatives):

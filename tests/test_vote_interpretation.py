@@ -313,7 +313,7 @@ class CopiesAndReplayTests(unittest.TestCase):
             ("direct Vorlage", {"description": "Antrag der Fraktion X"}, None),
         ):
             with self.subTest(label=label):
-                first = vote("906", document_numbers=[], description="")
+                first = vote("906", document_numbers=[], description="Eine namentliche Abstimmung")
                 later = vote("906", **later_fields)
                 before_counts = copy.deepcopy([first["total"], later["total"]])
                 interpret([first, later], recommendations())
