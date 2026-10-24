@@ -318,3 +318,10 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
      - About 15 pages per month at the WP average of ~1,540 positions, so roughly 30–60 requests.
   2. WP 19 persons, `--persons`: size unknown, roughly 10–30 pages. Its `differing` output is the step-4 comparison against the cache, which still equals the reference for those 12 persons.
   3. Stop, and run `compare_bulk.py`. The rest of WP 19, then WP 18, follow only if both comparisons match.
+- **First window, 2026-10-24 09:23–09:25 UTC: both checks match.**
+  - **The runner's first rest never ended.** `time.sleep` on macOS does not count the Mac's own sleep. Both runners now wait on the wall clock in one-minute steps, and the bulk runner runs under `caffeinate -i`.
+  - **Requests:** 46, all answered. 36 went to the three chunks (1,591 + 829 + 1,093 positions, 100 per page) and 10 to the WP 19 persons (973 records).
+  - **Drucksachen:** 22 of the 23 reference Vorgänge are identical, same entries in the same order. The 23rd, 281379, is absent from the bulk list, as expected: it has no Drucksache, so the build fetches it one at a time.
+    - None of the 2,724 bulk Vorgänge repeats a `(dokumentnummer, url)`. So far, order changes only the list order, never a value.
+  - **Persons:** all 12 reference persons are in the bulk list, equal in every field apart from `aktualisiert`, including `person_roles`.
+  - **Next, started 09:25 UTC:** the rest of WP 19, then WP 18 Drucksachen and persons, in 6 h windows. The drip stays stopped until these are done.
