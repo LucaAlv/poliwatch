@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.0.0] - 2026-10-24
+
+### Fixed
+
+- Vote panels now explain when a Ja supports a recommendation to reject an Antrag, using the chair's announcement and its Drucksachen. All 14 previously missed reference votes show the inversion legend; direct votes on a Vorlage remain uninverted.
+- Existing caches recover vote interpretation with `--offline --repersist`, keeping every copy of a vote consistent across dossiers, the archive and data exports. Vote 1005 now shows `Antrag: Abgelehnt (berechnet)` instead of a missing result, and sitting-level votes survive online acquisition.
+- Official outcomes remain attributable when the read-out tally differs from the final tally by up to three votes per side, only within a uniquely identified document block. The reference-page comparison recovers 43 additional official outcomes without changing an existing one; vote 996 shows the official Antrag rejection at 439/135 without double inversion. Ambiguous matches stay unresolved.
+
 ## [0.21.1.0] - 2026-10-23
 
 ### Added
