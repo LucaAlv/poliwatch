@@ -10,8 +10,9 @@ one Vorgang at a time is about 7,000 Vorgang requests; these lists are about 1,1
   is checked against its own ``numFound`` and staged under ``data/dip-bulk/wp<N>/``
   once whole, so a run DIP stops resumes at the first chunk not staged. Chunks go
   newest first. Only when every chunk is staged and they add up to the Wahlperiode's
-  total are the positions grouped per Vorgang, in the order the one-at-a-time query
-  gives (date, then position id), and merged into the Vorgang cache.
+  total are the positions grouped per Vorgang, oldest chunk first and in DIP's
+  listing order within a chunk, the order the one-at-a-time query gives, and merged
+  into the Vorgang cache.
 - Persons: ``/person?f.wahlperiode=N`` into the person cache, fetched now, so they
   expire like a single lookup (PERSON_MAX_AGE_DAYS); re-run before a backfill session.
 
@@ -178,17 +179,19 @@ def _staged_position(position: dict[str, Any]) -> dict[str, Any]:
     return {"id": position.get("id"), "datum": position.get("datum"), "compact": dip.compact_drucksache_position(position)}
 
 
-def _order_key(staged: dict[str, Any]) -> tuple[str, int, str]:
-    pid = str(staged.get("id") or "")
-    return (str(staged.get("datum") or ""), int(pid) if pid.isdigit() else -1, pid)
-
-
 def group_by_vorgang(staged: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Staged positions as the one-at-a-time query gives a Vorgang's Drucksachen:
-    compact entries, one per position id, by date, then position id."""
-    by_id = {str(p["id"]): p for p in staged if p.get("id") is not None}
+    """Staged positions, oldest chunk first, as the one-at-a-time query gives a
+    Vorgang's Drucksachen: compact entries, one per position id, in DIP's listing
+    order. That order is DIP's own, neither date nor position id: it reproduced
+    1,599 of 1,609 one-at-a-time sequences (date, then id: 1,405), the 10 others
+    four WP 20 budget Vorgänge whose positions cross chunks out of date order
+    (a3-pilot.md, 2026-10-25)."""
+    seen: set[str] = set()
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for item in sorted(by_id.values(), key=_order_key):
+    for item in staged:
+        if item.get("id") is None or str(item["id"]) in seen:
+            continue
+        seen.add(str(item["id"]))
         vorgang_id = item["compact"].get("vorgang_id")
         if vorgang_id:
             grouped.setdefault(str(vorgang_id), []).append(item["compact"])
@@ -196,9 +199,11 @@ def group_by_vorgang(staged: list[dict[str, Any]]) -> dict[str, list[dict[str, A
 
 
 def staged_positions(output_dir: Path, wahlperiode: int) -> list[dict[str, Any]]:
-    """Every staged position of a Wahlperiode, whatever chunks are staged so far."""
+    """Every staged position of a Wahlperiode, whatever chunks are staged so far,
+    oldest chunk first, each in DIP's listing order."""
     positions: list[dict[str, Any]] = []
-    for path in sorted(staging_dir(output_dir, wahlperiode).glob("drucksachen-*.json")):
+    for path in sorted(staging_dir(output_dir, wahlperiode).glob("drucksachen-*.json"),
+                       key=lambda path: path.name.replace("drucksachen-open_", "drucksachen-0000_")):
         positions.extend((_read_chunk(path) or {}).get("positions") or [])
     return positions
 
@@ -254,7 +259,7 @@ def prefetch_drucksachen(
     if result.chunks_staged < len(chunks):
         return result
     result.total = dip.page_count(client.get_json("/vorgangsposition", base))
-    positions = [p for s in staged if s for p in s["positions"]]
+    positions = [p for s in reversed(staged) if s for p in s["positions"]]  # oldest chunk first
     counted = sum(int(s.get("numFound") or 0) for s in staged if s)
     distinct = len({str(p.get("id")) for p in positions})
     result.positions = distinct

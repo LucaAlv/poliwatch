@@ -78,27 +78,30 @@ class PrefetchTestCase(unittest.TestCase):
 
 class DrucksachenTests(PrefetchTestCase):
     # Value: protects=a bulk-filled Vorgang holds what the one-at-a-time query gives, in its
-    # order (date, then position id; 19/238's 23 Vorgänge), across month chunks; fails_when=
-    # positions are grouped per chunk, unordered, or cached under the wrong Wahlperiode;
-    # seam=prefetch_drucksachen with DIP stubbed, read back through DipCache.load.
-    def test_positions_are_grouped_per_vorgang_in_date_then_id_order(self) -> None:
+    # order: DIP lists a Vorgang's positions in the order of its bulk list, which is neither
+    # date nor position id (18/200 on 2026-10-19; 1,599 of 1,609 one-at-a-time sequences),
+    # so chunks go oldest first and each keeps DIP's listing order; fails_when=positions are
+    # re-sorted, chunks are taken newest first or the open first chunk last, or entries are
+    # cached under the wrong Wahlperiode; seam=prefetch_drucksachen, read back via DipCache.load.
+    def test_positions_keep_dips_listing_order_oldest_chunk_first(self) -> None:
         fake = FakeDip([
             position("30", "v1", "2017-12-01", "19/300"),
             position("10", "v1", "2017-10-30", "19/100"),
-            position("9", "v2", "2017-11-15", "19/90"),
+            position("5", "v1", "2017-01-05", "19/50"),
             position("12", "v1", "2017-11-15", "19/120"),
+            position("9", "v2", "2017-11-15", "19/90"),
             position("11", "v1", "2017-11-15", "19/110"),
             position("13", "v1", "2017-11-01", "19/130"),
-            position("100", "v1", "2017-11-15", "19/1000"),
         ])
         result = self.drucksachen(fake)
         self.assertTrue(result.complete)
         entries = self.cache().vorgang_drucksachen
         self.assertEqual(entries["v1"]["wahlperiode"], 19)
-        self.assertEqual([d["vorgangsposition_id"] for d in entries["v1"]["drucksachen"]], ["10", "13", "11", "12", "100", "30"])
+        self.assertEqual([d["vorgangsposition_id"] for d in entries["v1"]["drucksachen"]], ["10", "5", "12", "11", "13", "30"])
         self.assertEqual(entries["v1"]["drucksachen"][0],
                          dip.compact_drucksache_position(position("10", "v1", "2017-10-30", "19/100")))
         self.assertEqual([d["dokumentnummer"] for d in entries["v2"]["drucksachen"]], ["19/90"])
+        self.assertEqual([p["id"] for p in prefetch.staged_positions(self.output_dir, 19)], ["10", "5", "12", "9", "11", "13", "30"])
 
     # Value: protects=a run capped by --max-chunks stages what it fetched and neither asks for
     # the total nor merges; fails_when=a partial download reaches the cache; seam=prefetch_drucksachen.
