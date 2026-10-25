@@ -407,3 +407,15 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - Phase 3;
   - the network/IP question (when the switch happened, and whether the runners may log the public IP);
   - pushing the branch.
+- **Re-run of the 19 bulk-backed pilot sittings on the fixed order, 2026-10-25 21:09–21:21 UTC.** These are the 18 plus 19/238; owner go 2026-10-25.
+  - **Run:** exit 0, 714 s, peak RSS 2.66 GB.
+  - **DIP:** 100 requests, all answered, and no `/person/{id}`.
+    - 20 positions lists and 36 activity pages, about 3 per sitting.
+    - 41 `/vorgang` from the Politikfelder step and 3 catalog requests.
+    - All-in, about 5.3 per sitting.
+  - **Against the reports before the re-run** (`~/agent-runs/a3/rerun-before/`, checker `tools/compare_rerun.py`):
+    - 8 TOPs in 5 sittings changed link order only.
+    - Positions, activity counts, votes and people are unchanged everywhere except 19/238.
+    - 19/238's people are now complete: 84/84 records, where its first cycle had 72 of 84 failed lookups. Its warning is gone.
+  - **Against one-at-a-time answers:** the Drucksache links of 18/150, 18/154, 18/200 and 18/217 (2026-10-19) and of 19/238 (2026-10-23) are now **identical in ids and order**.
+  - **XML:** an online acquisition always fetches it, and only writes `data/xml/` afterwards. So the census copy `~/agent-runs/a3/wp18-19-xml/` saves no dserver request in Phase 3.
