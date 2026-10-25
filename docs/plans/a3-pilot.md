@@ -360,3 +360,21 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - **Overlaps per neighbour:** 216–232, about 0.4–0.8 % of a Wahlperiode's Vorgänge, consistent with the 217 between WP 18 and WP 19.
   - **Still not covered:** a Vorgang that spans three Wahlperioden, and a WP 19 Vorgang that runs into WP 21. Both are rarer still.
 - **Next:** the drip restarts on the 18 remaining pilot sittings, with a 6 h wait, under `caffeinate -i`, to measure the new requests per sitting.
+- **Pilot finished, 2026-10-25 19:05–19:20 UTC: all 18 remaining sittings acquired in one cycle, 902 s.**
+  - **DIP cost:** 145 requests, all answered, with zero `/person/{id}` lookups.
+  - **Per sitting:** 2–6 requests, about 4 on average: 1 positions list, 1–3 activity pages, and 0–2 Vorgänge the bulk lacks. Before option B it was about 26, and about 60 before reductions 1–4.
+  - **Per run:** 71 `/vorgang` lookups (43 by `f.id`, 28 by `f.dokumentnummer`) and 4 catalog requests. These happen once per build, after the sittings.
+  - **No sitting excluded or failed. 2.5 GB peak RSS.**
+- **Checked against one-at-a-time answers.** 18/150, 18/154, 18/200 and 18/217 were acquired one at a time on 2026-10-19.
+  - **People:** the old 18/150 and 18/154 had lost 10 and 16 person lookups to DIP timeouts. The new ones have all of them: 42/42 and 66/66.
+  - **Drucksachen:** 18/200's TOP 1 and TOP 2 held the same entries in a different order. DIP's per-Vorgang order is not date, then position id: 153898 comes before 153790, and 159206 before 159203, each pair on the same day.
+- **DIP's order, found offline.**
+  - **Test set:** every one-at-a-time sequence in the pilot store, 1,609 Vorgänge with 2+ Drucksachen, mostly WP 20/21. They were compared against the staged positions.
+  - **Keys from the fields:** date, then id, reproduces 1,405. The best (position date, BR before BT, numeric number) reproduces 1,511.
+  - **DIP's bulk listing order** (oldest chunk first, DIP's order within a chunk) reproduces **1,599**, including all 100 sequences that fall in one chunk and all 32 WP 18/19 ones.
+  - **The 10 misses** are 4 WP 20 budget Vorgänge (Beschlussempfehlungen 20/8601 ff.), whose one-at-a-time order is not by date at all, so they cross chunks out of order.
+- **Fix (ba52438): grouping keeps the listing order.** The pilot cache was re-merged from staging. 2 DIP requests re-checked the WP totals, and the old cache was kept in `bulk-reference/vorgang-cache-date-id-order-20261025.json`.
+  - **Result:** 598 of 77,993 entries changed order, and none changed content.
+  - **Checks:** the 22 reference Vorgänge are identical, and so are all 40 one-at-a-time WP 18/19 Vorgänge in the older reports, ids and order.
+  - **What order changes downstream:** the display order of linked Drucksachen, and the first-seen order of `derive` document numbers. No value moved in any compared case.
+  - **The 18 bulk-backed pilot reports** were built before this fix, so up to 598 Vorgänge in them may show the old order. A re-run of those sittings costs about 70 DIP requests.
