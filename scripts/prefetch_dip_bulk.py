@@ -128,11 +128,12 @@ def newest_wahlperiode(output_dir: Path) -> int | None:
     return max(filter(None, map(_wahlperiode_of, _catalog_protocols(output_dir))), default=None)
 
 
-def sitting_span(output_dir: Path, wahlperiode: int) -> tuple[date, date]:
-    """First and last sitting date of a closed Wahlperiode, from the cached catalog."""
+def sitting_span(output_dir: Path, wahlperiode: int, *, allow_current: bool = False) -> tuple[date, date]:
+    """First and last sitting date of a closed Wahlperiode, from the cached catalog;
+    with ``allow_current``, also of the catalog's newest (its newest chunk is open)."""
     protocols = _catalog_protocols(output_dir)
     newest = max(filter(None, map(_wahlperiode_of, protocols)), default=None)
-    if newest is None or wahlperiode >= newest:
+    if newest is None or wahlperiode > newest or (wahlperiode == newest and not allow_current):
         raise PrefetchError(f"Wahlperiode {wahlperiode} is not closed (newest in the catalog: {newest})")
     dates = sorted(
         date.fromisoformat(str(p["datum"])[:10]) for p in protocols if _wahlperiode_of(p) == wahlperiode and p.get("datum")
@@ -217,9 +218,10 @@ def prefetch_drucksachen(
     after the chunks before it are staged. ``overlap_only`` downloads a neighbouring
     Wahlperiode only to find the Vorgänge it shares with the cached ones, which are
     dropped; its own are not cached, since they may run on into a Wahlperiode not
-    downloaded (WP 20 into the open WP 21, WP 17 back into WP 16)."""
+    downloaded (WP 17 back into WP 16) or are still extended (the current one, which
+    only ``overlap_only`` serves)."""
     now = now or datetime.now(timezone.utc)
-    chunks = month_chunks(*sitting_span(output_dir, wahlperiode))
+    chunks = month_chunks(*sitting_span(output_dir, wahlperiode, allow_current=overlap_only))
     base = {"f.wahlperiode": wahlperiode, "f.dokumentart": "Drucksache"}
     # A dated chunk must be smaller than the whole Wahlperiode: one that is not
     # had its date filter ignored, and paging it would spend several windows.

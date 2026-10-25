@@ -155,7 +155,8 @@ class DrucksachenTests(PrefetchTestCase):
         self.assertEqual(self.cache().vorgang_drucksachen, {})
 
     # Value: protects=the current Wahlperiode, which DIP still extends, keeps the
-    # one-at-a-time path; fails_when=it is bulk-cached; seam=prefetch_drucksachen.
+    # one-at-a-time path unless it is only overlap evidence; fails_when=it is bulk-cached;
+    # seam=prefetch_drucksachen.
     def test_the_current_wahlperiode_is_refused_before_any_request(self) -> None:
         fake = FakeDip([])
         with self.assertRaises(prefetch.PrefetchError):
@@ -221,6 +222,44 @@ class DrucksachenTests(PrefetchTestCase):
         self.assertEqual((result.vorgaenge_in_two_wahlperioden, result.vorgaenge_written), (["v9"], 0))
         self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v1"])
 
+
+    # Value: protects=the current Wahlperiode (WP 21) can be downloaded as overlap evidence,
+    # so a closed Wahlperiode's Vorgang that runs on into it is dropped from the cache, and
+    # none of the current one's own Vorgänge, which DIP still extends, is cached; its newest
+    # chunk is open, so positions after the last sitting count; fails_when=the current
+    # Wahlperiode is refused for overlap_only, caches its own Vorgänge, or misses a position
+    # dated after its last sitting; seam=prefetch_drucksachen(overlap_only=True) for the
+    # catalog's newest Wahlperiode after a full WP 19.
+    def test_the_current_wahlperiode_as_overlap_only_drops_shared_vorgaenge(self) -> None:
+        fake = FakeDip([position("1", "v1", "2017-10-24", "19/1"), position("2", "v2", "2017-11-02", "19/2"),
+                        position("3", "v7", "2021-10-26", "20/1", wp=20), position("4", "v2", "2022-03-01", "20/2", wp=20)])
+        self.drucksachen(fake, wahlperiode=19)
+        with mock.patch("sys.stderr"):
+            result = prefetch.prefetch_drucksachen(fake, self.output_dir, 20, now=NOW, overlap_only=True)
+        self.assertTrue(result.complete)
+        self.assertEqual((result.vorgaenge_in_two_wahlperioden, result.vorgaenge_written), (["v2"], 0))
+        self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v1"])
+
+    # Value: protects=the Phase 3 order (owner decision 2026-10-25): the current Wahlperiode's
+    # overlap list is staged first, and a closed Wahlperiode merged after it leaves out the
+    # Vorgänge the two share; fails_when=the later merge ignores the current Wahlperiode's
+    # staged list; seam=prefetch_drucksachen for WP 20 (overlap_only), then WP 19.
+    def test_a_closed_wahlperiode_merged_after_the_current_overlap_leaves_shared_vorgaenge_out(self) -> None:
+        fake = FakeDip([position("1", "v1", "2017-10-24", "19/1"), position("2", "v2", "2017-11-02", "19/2"),
+                        position("4", "v2", "2022-03-01", "20/2", wp=20)])
+        with mock.patch("sys.stderr"):
+            prefetch.prefetch_drucksachen(fake, self.output_dir, 20, now=NOW, overlap_only=True)
+        result = self.drucksachen(fake, wahlperiode=19)
+        self.assertEqual((result.vorgaenge_in_two_wahlperioden, result.vorgaenge_written), (["v2"], 1))
+        self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v1"])
+
+    # Value: protects=a Wahlperiode the catalog does not list yet is refused even as overlap
+    # evidence, before any request; fails_when=overlap_only lifts every bound; seam=prefetch_drucksachen.
+    def test_a_wahlperiode_after_the_newest_is_refused_even_as_overlap_only(self) -> None:
+        fake = FakeDip([])
+        with self.assertRaises(prefetch.PrefetchError), mock.patch("sys.stderr"):
+            prefetch.prefetch_drucksachen(fake, self.output_dir, 21, now=NOW, overlap_only=True)
+        self.assertEqual(fake.requests, [])
 
 class PersonsTests(PrefetchTestCase):
     # Value: protects=bulk persons enter the person cache as fetched now (so they expire like
