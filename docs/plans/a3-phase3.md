@@ -161,3 +161,38 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
     - These were cached without their WP 21 positions, the residual a3-pilot.md left open ("a WP 19 Vorgang that runs into WP 21"). They now take the one-at-a-time query.
     - Any of the 19 pilot reports that used one of them may differ in its Drucksache links. The step 5 comparison will show that.
   - The 218 shared with WP 20 are left out at the WP 20 merge (step 3.4, before the WP 20 backfill).
+
+## Step 4: the backfill. Purposes and cost, written before sending
+
+**Runner:** `~/agent-runs/a3/phase3/backfill_drip.py N`, adapted from `drip.py`, run under `nohup caffeinate -i`.
+- It runs `build_dip_pulse_site.py --output-dir ~/agent-runs/a3/full --backfill-incomplete --protocol-wahlperiode N --sleep 2`.
+- **When DIP goes silent,** it rests 6 h on the wall clock and runs the same command again.
+  - Silent means one of two things: the run's last DIP request went unanswered and the run printed a `[summary]` with only `source_unavailable`/`excluded`; or every DIP request of the run went unanswered and there was no traceback.
+  - The second case covers a re-run that is still blocked, where the catalog request fails before any summary.
+- **It stops for a human on:**
+  - any other summary reason;
+  - a crash;
+  - the disk watchdog (below 1.5 GB);
+  - a network error in the request log (DNS, unreachable).
+- It logs peak RSS (`/usr/bin/time -l`) and the DIP requests per cycle.
+
+**4.1, catalog refresh:** `build_dip_pulse_site.py --output-dir full --sleep 2 --detail-limit -1`.
+- It is online, refreshes the catalog and acquires no sitting, since the backfills acquire everything.
+- **DIP cost:**
+  - the catalog, a few requests, as on 2026-10-25 (3–4);
+  - the Politikfelder `refresh_vorgang_cache`, which re-asks every cached Vorgang with no Sachgebiet that a stored report names. The cache holds 4,086 with an empty Sachgebiet out of 7,511, so up to ~41 batches of 100.
+  - That ~41 recurs once per online run, so once per backfill cycle, not per sitting.
+- **Other sources:** roll-call list pages at www.bundestag.de, if votes run.
+
+**4.2, WP 18 backfill:**
+- The expected scope is 194 sittings to acquire: 245 in the catalog, 51 excluded.
+- The run-1 `[backfill]` lines are checked against that before the run is left alone. A different number stops it.
+- **DIP:** about 3 per sitting plus the Politikfelder step, so ~600–800 in all.
+- **dserver:** 194 XML, paced by `XmlPacer`. It stopped answering after ~150 on 2026-10-20. A `SourceSlowError` stops the runner for a human, and where it hit is recorded.
+
+**After each WP:**
+- read the `[summary]`;
+- read the `politikfelder: fetched … failed` line and the build's Politikfelder `not_fetched` summary;
+- record seconds per sitting, RSS and DIP requests.
+
+**Known cost:** the WP 21 refresh and the WP 20 merge (step 3.4) also drop shared Vorgänge that the WP 18/19 backfills just cached one at a time. That costs requests, not correctness.
