@@ -527,7 +527,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### A tally-less neighboring decision with no document number of its own can still steal the official badge
 
-**What:** `scrape_official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
+**What:** `official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
 
 **Why:** Found by the /ship red-team review (2026-09-27), same family as the Beschlussempfehlung-inversion badge caveat already shipped in 85411a4 ("acceptable only while the site is not public"). Latent: every real "Beschluss" narration checked so far — the project's own fixture and every live bundestag.de page fetched during this and the prior review round — attaches a document number to every decision it mentions, including tally-less ones, so this specific shape has not been observed on real data. A cheap fix was explored and rejected: requiring a document-number match whenever the lookahead line starts with a proposition keyword (Gesetzentwurf/Beschlussempfehlung/Entschließungsantrag/...) also rejects the fixture's own legitimate "Gesetzentwurf angenommen" case, which has the identical shape.
 
@@ -541,7 +541,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
 
-**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `scrape_official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
 
 **Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
 
@@ -786,28 +786,11 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. That item shipped, but the inversion it detects is incomplete and never reaches the page: see "Vote reading misses half the inverted votes and never stores it". Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. The remaining interpretation and replay defects are fixed in v0.22.0.0: see the completed "Vote reading misses half the inverted votes and never stores it" item. Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
 **Depends on:** Vote reading misses half the inverted votes and never stores it; deterministic validators (only for the deferred AI fallback in 1)
-
-### Vote reading misses half the inverted votes and never stores it
-
-**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
-1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
-2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
-3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
-
-Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
-
-**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
-
-**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
 
 ### Mitberatende Ausschüsse on the vote panel
 
@@ -1105,6 +1088,33 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Vote reading misses half the inverted votes and never stores it
+
+**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
+1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
+2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
+3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
+
+Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
+
+**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
+
+**Result (2026-10-24, [plan](docs/plans/fix-vote-interpretation.md)):** Measured on a disposable copy of the reference site (217 votes).
+- **Inversions:** `inverted` was NULL on all 217 stored votes; after the replay 40 are `true` and 177 NULL (none `false`, which the field never holds). All 14 missed IDs are inverted from the chair's announcement in the cached XML (`inversion_source = bundestag-protocol`), and so are four votes the title never flagged (843, 869, 907, 990); 37 protocol inversions in all, plus 1001, 1002 and 983 with title-based evidence. No inversion is lost. Adjacent chair paragraphs are read together; where the combined announcement is not uniquely attributable, the existing unambiguous title fallback remains. Each protocol excerpt names the Antrag of the vote and asks to reject it.
+- **Results:** `result_source` NULL on 217 → `derived` 208 and NULL 9 (special-majority votes); `result_scope` NULL on 217 → `proposition` 217; final counts 85496/48366 unchanged. Online builds already stored these fields; only the cached reports of earlier builds lacked them, and `--offline --repersist` now interprets every vote again. A second replay changes nothing. Vote 1005 now renders the legend and `Antrag: Abgelehnt (berechnet)` instead of `Kein Ergebnis verfügbar`.
+- **Official results:** the Beschluss block is found by its Drucksachen, with a tolerance of 3 per side only inside such a block, and the outcome may sit in the next paragraph when it names the block's document. Official results 140 → 183 of 217 by the live-page corpus check (43 gained, none changed; 34 stay unresolved, for example 1002, whose page prints several blocks with the same final tally). Vote 996, freshly acquired online (`--document-number 21/67`, including 629 member records): `rejected`, official, scope `application`, inverted, 439/135, and the result survives two replays, with no store replacement on the second.
+- **Review fixes:** an announcement now proves an inversion only for a vote on the recommendation (the listing opens with the Beschlussempfehlung, or the chair names its Drucksache among the vote's); a report replayed without its XML keeps its protocol inversion also where its title would invert on its own (the source no longer flips to `bundestag-roll-call`); `build_report` sets the top-level `report["sitting_votes"]` that derive and the store read, so an online build no longer drops the votes no TOP claims (the reference reports hold none, so no figure moves). Adjacent chair passages retain recommendation context, later duplicate copies supply their evidence to every copy, and a foreign current roll-call announcement cannot earn an official result from matching counts. Final revalidation: 290 reports rebuilt; all 217 votes agree across JSON, SQLite, downloadable SQLite and CSV; raw member/fraction counts unchanged. Chrome DevTools confirms 906, 996, 1005 and the direct-vote control. The full suite passes (1,521 unit tests, one skipped, plus browser integration).
+
+**Remaining limits:** Official results missing from a cached report require an online refresh; even then 34 source-page matches remain unresolved. Optional `majorityType`, vote times and the Fundstelle anchor remain open and are outside this completed correctness repair.
+
+**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+**Completed:** v0.22.0.0 (2026-10-24).
 
 ### Test the independently loaded historical parser and classifier
 
