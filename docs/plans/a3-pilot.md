@@ -325,3 +325,21 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
     - None of the 2,724 bulk Vorgänge repeats a `(dokumentnummer, url)`. So far, order changes only the list order, never a value.
   - **Persons:** all 12 reference persons are in the bulk list, equal in every field apart from `aktualisiert`, including `person_roles`.
   - **Next, started 09:25 UTC:** the rest of WP 19, then WP 18 Drucksachen and persons, in 6 h windows. The drip stays stopped until these are done.
+- **Bulk complete, 2026-10-25 11:28 UTC.**
+  - **Counts:** both Wahlperioden check out. The chunk counts, the distinct ids and DIP's total agree for each: WP 19 has 73,849, WP 18 has 40,865.
+  - **Written:** 51,103 + 27,515 Vorgänge. The 22 Vorgänge already cached match the bulk answers. None differ.
+  - **Persons:** 973 for WP 19 and 871 for WP 18, with no differing field. The person cache now holds 1,273.
+  - **Vorgang cache:** 78,424 entries, 50 MB. Staging takes another 54 MB.
+  - **Requests:** 1,279 DIP requests in total, against an estimate of ~1,150 for the Drucksachen alone; the persons took 19.
+- **217 Vorgänge appear in both WP 18 and WP 19.** They are dropped, so they take the one-at-a-time query.
+  - **What they are:** Entlastung der Bundesregierung, Bundesrat Verordnungen and Empfehlungen, Unterrichtungen.
+  - **Positions:** 499 on the WP 18 side and 344 on the WP 19 side. The WP 19 side runs up to 2021-03-30 and is 199 BR and 145 BT.
+  - **The same must happen at WP 17→18 and WP 19→20, and those are not detected.**
+    - A WP 18 Vorgang that began in WP 17, or a WP 19 one that runs on into WP 20, is now cached without its other-WP positions. The one-at-a-time query has no Wahlperiode filter and would list them.
+    - At the 18↔19 rate (~0.8 % of a WP's Vorgänge), that is on the order of 200 WP 18 and 400 WP 19 Vorgänge.
+    - So the cache is not yet safe for the "no figure moves" rule. The drip stays stopped until the owner decides.
+- **DIP was far more generous than before:**
+  - **First window:** 129 answered within 5 minutes (46 in the first window's stages, 83 in the next run), then timeouts at 09:28.
+  - **After the rest:** 698 answered across one run (15:48–22:35 UTC, a single connection reset), then 452 in 17 minutes on 10-25, with no DIP block.
+  - **The one-hour gaps inside the 10-24 run** have no request logged. The Mac most likely slept despite `caffeinate -i`.
+  - **The 23:20 "stop" was not DIP.** It was a DNS failure ("nodename nor servname"), so the network was down. The runner took it for DIP and rested 6 h.
