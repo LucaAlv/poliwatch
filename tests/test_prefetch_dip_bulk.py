@@ -203,6 +203,21 @@ class DrucksachenTests(PrefetchTestCase):
         self.assertEqual(len(fake.requests), 2)  # the Wahlperiode's total, then the chunk's first page
         self.assertEqual(prefetch.staged_positions(self.output_dir, 19), [])
 
+    # Value: protects=a neighbouring Wahlperiode downloaded only as evidence (WP 17, or WP 20,
+    # whose Vorgänge run on into the open WP 21) drops the Vorgänge it shares from the cache
+    # and caches none of its own; fails_when=its possibly incomplete Vorgänge are cached, or
+    # the shared ones stay; seam=prefetch_drucksachen(overlap_only=True) after a full WP 18.
+    def test_an_overlap_only_wahlperiode_drops_shared_vorgaenge_and_caches_nothing(self) -> None:
+        self.write_catalog(catalog(("17/1", "2009-10-27"), ("18/1", "2014-01-10"), ("20/1", "2021-10-26")))
+        fake = FakeDip([position("1", "v1", "2014-01-10", "18/1", wp=18), position("2", "v9", "2014-01-11", "18/2", wp=18),
+                        position("3", "v9", "2009-11-01", "17/1", wp=17), position("4", "v5", "2009-11-02", "17/2", wp=17)])
+        self.drucksachen(fake, wahlperiode=18)
+        with mock.patch("sys.stderr"):
+            result = prefetch.prefetch_drucksachen(fake, self.output_dir, 17, now=NOW, overlap_only=True)
+        self.assertTrue(result.complete)
+        self.assertEqual((result.vorgaenge_in_two_wahlperioden, result.vorgaenge_written), (["v9"], 0))
+        self.assertEqual(sorted(self.cache().vorgang_drucksachen), ["v1"])
+
 
 class PersonsTests(PrefetchTestCase):
     # Value: protects=bulk persons enter the person cache as fetched now (so they expire like

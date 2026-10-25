@@ -204,11 +204,15 @@ def staged_positions(output_dir: Path, wahlperiode: int) -> list[dict[str, Any]]
 
 
 def prefetch_drucksachen(
-    client: Any, output_dir: Path, wahlperiode: int, *, now: datetime | None = None, max_chunks: int = 0
+    client: Any, output_dir: Path, wahlperiode: int, *, now: datetime | None = None, max_chunks: int = 0,
+    overlap_only: bool = False,
 ) -> DrucksachenResult:
     """Stage the chunks not yet staged (at most ``max_chunks`` this run, 0 for all),
     then, once all are, merge them into the Vorgang cache. A DIP failure is raised
-    after the chunks before it are staged."""
+    after the chunks before it are staged. ``overlap_only`` downloads a neighbouring
+    Wahlperiode only to find the Vorgänge it shares with the cached ones, which are
+    dropped; its own are not cached, since they may run on into a Wahlperiode not
+    downloaded (WP 20 into the open WP 21, WP 17 back into WP 16)."""
     now = now or datetime.now(timezone.utc)
     chunks = month_chunks(*sitting_span(output_dir, wahlperiode))
     base = {"f.wahlperiode": wahlperiode, "f.dokumentart": "Drucksache"}
@@ -259,13 +263,14 @@ def prefetch_drucksachen(
             f"Wahlperiode {wahlperiode}: the chunks count {counted} positions ({distinct} distinct), DIP lists "
             f"{result.total}; nothing is merged"
         )
-    _merge_vorgaenge(output_dir, wahlperiode, group_by_vorgang(positions), result, now)
+    _merge_vorgaenge(output_dir, wahlperiode, group_by_vorgang(positions), result, now, overlap_only)
     result.complete = True
     return result
 
 
 def _merge_vorgaenge(
-    output_dir: Path, wahlperiode: int, grouped: dict[str, list[dict[str, Any]]], result: DrucksachenResult, now: datetime
+    output_dir: Path, wahlperiode: int, grouped: dict[str, list[dict[str, Any]]], result: DrucksachenResult, now: datetime,
+    overlap_only: bool = False,
 ) -> None:
     dip.write_text_atomic(staging_dir(output_dir, wahlperiode) / "vorgaenge.json",
                           json.dumps(sorted(grouped), ensure_ascii=False) + "\n")
@@ -281,6 +286,8 @@ def _merge_vorgaenge(
         if vorgang_id in elsewhere:
             result.vorgaenge_in_two_wahlperioden.append(vorgang_id)
             cache.vorgang_drucksachen.pop(vorgang_id, None)
+            continue
+        if overlap_only:
             continue
         existing = cache.vorgang_drucksachen.get(vorgang_id)
         if existing is not None:
@@ -325,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--drucksachen", action="store_true", help="stage and merge the Drucksache positions")
     parser.add_argument("--persons", action="store_true", help="refresh the persons of the Wahlperiode")
     parser.add_argument("--max-chunks", type=int, default=0, help="stage at most this many chunks (0: all)")
+    parser.add_argument("--overlap-only", action="store_true",
+                        help="cache nothing of this WP; only drop the Vorgänge it shares with other downloaded WPs")
     parser.add_argument("--sleep", type=float, default=SLEEP_SECONDS)
     args = parser.parse_args(argv)
     if not (args.drucksachen or args.persons):
@@ -338,7 +347,8 @@ def main(argv: list[str] | None = None) -> int:
     client = dip.ApiClient(api_key=api_key, sleep_seconds=args.sleep, breaker=breaker)
     try:
         if args.drucksachen:
-            result = prefetch_drucksachen(client, args.output_dir, args.wahlperiode, max_chunks=args.max_chunks)
+            result = prefetch_drucksachen(client, args.output_dir, args.wahlperiode, max_chunks=args.max_chunks,
+                                          overlap_only=args.overlap_only)
             print(f"[bulk] drucksachen {json.dumps(result.__dict__, ensure_ascii=False)}")
             if not result.complete:
                 return 2

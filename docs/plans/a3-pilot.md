@@ -343,3 +343,7 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - **After the rest:** 698 answered across one run (15:48–22:35 UTC, a single connection reset), then 452 in 17 minutes on 10-25, with no DIP block.
   - **The one-hour gaps inside the 10-24 run** have no request logged. The Mac most likely slept despite `caffeinate -i`.
   - **The 23:20 "stop" was not DIP.** It was a DNS failure ("nodename nor servname"), so the network was down. The runner took it for DIP and rested 6 h.
+- **Owner decision 2026-10-25:** bulk WP 17 and WP 20 too, to find the 17↔18 and 19↔20 overlaps.
+  - Both run with `--overlap-only`: they cache nothing of their own and only drop the shared Vorgänge from the cache. Their own Vorgänge may run on into a Wahlperiode not downloaded, WP 16 or the open WP 21.
+  - **Purpose and cost, written before sending:** one count request each, then the month chunks. WP 20 has 42 chunks, WP 17 has 48; sizes are unknown, so roughly 400–800 requests each.
+  - WP 20 runs first, since 19→20 touches the larger set of pilot Vorgänge. The drip stays stopped until both are done.
