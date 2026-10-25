@@ -330,7 +330,7 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - **Written:** 51,103 + 27,515 Vorgänge. The 22 Vorgänge already cached match the bulk answers. None differ.
   - **Persons:** 973 for WP 19 and 871 for WP 18, with no differing field. The person cache now holds 1,273.
   - **Vorgang cache:** 78,424 entries, 50 MB. Staging takes another 54 MB.
-  - **Requests:** 1,279 DIP requests in total, against an estimate of ~1,150 for the Drucksachen alone; the persons took 19.
+  - **Requests:** 1,233 answered DIP requests (1,214 for the Drucksachen, against an estimate of ~1,150; 19 for the persons), plus 7 failed attempts.
 - **217 Vorgänge appear in both WP 18 and WP 19.** They are dropped, so they take the one-at-a-time query.
   - **What they are:** Entlastung der Bundesregierung, Bundesrat Verordnungen and Empfehlungen, Unterrichtungen.
   - **Positions:** 499 on the WP 18 side and 344 on the WP 19 side. The WP 19 side runs up to 2021-03-30 and is 199 BR and 145 BT.
