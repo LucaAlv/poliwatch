@@ -26,7 +26,7 @@
 #      the integrity checks (schema and writes live in ``persist_dip_pulse_store``).
 #   5. Read the store back to assemble the MP ("Abgeordnete") data
 #      -> ``collect_abgeordnete``.
-#   6. Export a distribution copy of the store, its CSVs and five executed SQL
+#   6. Export a distribution copy of the store, its CSVs and the executed SQL
 #      recipes for the Daten page -> ``export_distribution_data``, writing
 #      ``data/exports/datenstand.json`` and ``data/exports/g-<hash>/``.
 #   7. Render every remaining page of the site -> ``render_site``.
@@ -141,16 +141,17 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "mps": "Personen, die in Reden, DIP-Personendaten oder namentlichen Abstimmungen auftauchen.",
     "protocols": "Plenarprotokolle mit Dokumentnummer, Datum und offiziellen XML/PDF-Links.",
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
-    "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten verbunden werden.",
+    "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
     "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
-    "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite.",
+    "votes": "Namentliche Abstimmungen mit Summen und Bundestag-Detailseite; context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
     "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
@@ -163,7 +164,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "datenstand": "Herkunft dieser Verteilkopie: Tag, Exportformat, Lizenz, Schema- und Quell-Prüfsumme. Nur in der Verteilkopie.",
     "fact_metrics": "Registrierte Kennzahlen der Rubrik Fakt der Woche mit SQL, Richtung, Aggregation und Mindesthistorie.",
     "facts": "Wöchentliche Beobachtung je Kennzahl mit Wert, Perzentil, Baseline und Veröffentlichungsstatus.",
-    "fact_sources": "Belege je Fakt: Rede, Abstimmung, Sitzung oder Drucksache, aus denen der Wert stammt.",
+    "fact_sources": "Belege je Fakt: Reden, Tagesordnungspunkte, Abstimmungen, Sitzungen oder Drucksachen, aus denen der Wert stammt.",
 }
 
 ENRICHMENT_IDS = frozenset({"votes", "aw-profiles", "mp-roster"})
@@ -259,7 +260,7 @@ def build_dossiers_with_progress(
     for index, protocol in enumerate(protocols, start=1):
         existing_report = load_existing(protocol)
         action = "Refreshing cached dossier" if existing_report is not None else "Downloading new dossier"
-        label = f"BT-PlPr {protocol_label(protocol)}"
+        label = f"BT-PlPr. {protocol_label(protocol)}"
         protocol_date = str(protocol.get("datum") or "").strip()
         if protocol_date:
             label = f"{label} from {protocol_date}"
@@ -922,12 +923,6 @@ def _vote_member_name_parts(name: Any) -> tuple[str | None, str | None]:
     return None, " ".join(tokens[start:])
 
 
-# Agenda items carry either a list of roll-call votes ("votes") or a single
-# legacy "vote" dict. Normalise both shapes into a list.
-def _iter_report_votes(item: dict[str, Any]) -> list[dict[str, Any]]:
-    return item.get("votes") or ([] if not item.get("vote") else [item["vote"]])
-
-
 # Every list of an agenda item that holds speakers: Reden and Beiträge.
 SPEAKER_LISTS = ("xml_speakers", "xml_speakers_first", "xml_contributions")
 
@@ -1130,6 +1125,15 @@ class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read."""
 
 
+# What a build prints when a cached report stops it before any dossier is
+# fetched, so the online update that would re-fetch the sitting cannot run
+# either. A plain update re-fetches only the newest sittings, hence the flag.
+CACHED_REPORT_FIX = (
+    "Fix: move that report out of data/, then re-fetch its sitting with an online update "
+    "and --document-number <its number>"
+)
+
+
 # Collect cached dossiers from data/ for the given protocols (every online build
 # keeps them all, and the offline render reads them). Reports whose sitting is
 # not part of this build's catalog are ignored, and unreadable files are skipped
@@ -1179,6 +1183,12 @@ def load_existing_detail_entries(
             raise CachedReportError(f"{report_path} has no document number; restore source identity before replay")
         if not document_number or document_number not in protocol_numbers:
             continue
+        # Raised even on a lenient load, which would otherwise drop the whole
+        # sitting with a warning; a report outside the catalog is never read.
+        try:
+            derive.require_vote_shape(report)
+        except ValueError as exc:
+            raise CachedReportError(f"{report_path}: {exc}") from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1801,7 +1811,14 @@ def refresh_vorgang_cache(
     build warns and goes on. Returns the fetch counts.
     """
     reports = [entry["report"] for entry in entries]
-    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0}
+    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0}
+
+    def shape_error(exc: dip.DipShapeError) -> None:
+        stats["shape_errors"] += 1
+
+    def warn_shape(exc: dip.DipShapeError) -> None:
+        shape_error(exc)
+        print(f"warning: Vorgang validation: {exc}", file=sys.stderr)
 
     def save() -> None:
         try:
@@ -1817,8 +1834,12 @@ def refresh_vorgang_cache(
             batch = ids[start : start + dip.VORGANG_BATCH]
             time.sleep(NUMBER_LOOKUP_PAUSE)
             try:
-                cache["vorgaenge"].update(dip.fetch_vorgaenge(client, batch, page_pause=NUMBER_LOOKUP_PAUSE))
-                stats["vorgaenge"] += len(batch)
+                records = dip.fetch_vorgaenge(
+                    client, batch, page_pause=NUMBER_LOOKUP_PAUSE, on_shape_error=shape_error
+                )
+                cache["vorgaenge"].update(records)
+                stats["vorgaenge"] += len(records)
+                stats["vorgaenge_failed"] += len(set(batch) - records.keys())
                 failures = 0
             except dip.DipError as exc:
                 stats["vorgaenge_failed"] += len(batch)
@@ -1837,9 +1858,13 @@ def refresh_vorgang_cache(
         try:
             for position, number in enumerate(numbers):
                 time.sleep(NUMBER_LOOKUP_PAUSE)
+                complete = True
                 try:
                     documents = dip.resolve_dokumentnummer(client, number, page_pause=NUMBER_LOOKUP_PAUSE)
-                    records = {str(d["id"]): dip.vorgang_cache_record(d) for d in documents if d.get("id")}
+                except dip.DipShapeError as exc:
+                    warn_shape(exc)
+                    documents = exc.documents
+                    complete = False
                 except dip.DipError as exc:
                     stats["nummern_failed"] += 1
                     failures += 1
@@ -1849,10 +1874,26 @@ def refresh_vorgang_cache(
                         return
                     continue
                 failures = 0
-                stats["nummern"] += 1
-                cache["dokumentnummern"][number] = list(records)
-                cache["vorgaenge"].update(records)
-                if stats["nummern"] % CACHE_SAVE_EVERY == 0:
+                ids: list[str] = []
+                for document in documents:
+                    try:
+                        record_id = dip.vorgang_id(document)
+                    except dip.DipShapeError as exc:
+                        warn_shape(exc)
+                        complete = False
+                        continue
+                    if record_id not in ids:
+                        ids.append(record_id)
+                    try:
+                        cache["vorgaenge"][record_id] = dip.vorgang_cache_record(document)
+                    except dip.DipShapeError as exc:
+                        warn_shape(exc)
+                if complete:
+                    stats["nummern"] += 1
+                    cache["dokumentnummern"][number] = ids
+                else:
+                    stats["nummern_failed"] += 1
+                if (position + 1) % CACHE_SAVE_EVERY == 0:
                     save()
         finally:
             save()
@@ -1868,7 +1909,8 @@ def refresh_vorgang_cache(
         resolve_numbers(numbers)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
-        f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left as not_fetched)",
+        f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left retryable; "
+        f"{stats['shape_errors']} validation errors)",
         file=sys.stderr,
     )
     return stats
@@ -1915,51 +1957,75 @@ def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> Non
 def require_vorgang_cache_for_tags(
     database_path: Path, vorgang_cache: dict[str, Any] | None, output_dir: Path, entries: list[dict[str, Any]]
 ) -> None:
-    """Refuse a re-persist that would strip the store's Politikfelder: one that
-    would leave more TOPs or votes ``not_fetched`` than the current store has.
-    That happens when the Vorgang cache is missing, emptied or only partly
-    refilled; the Daten export would then publish the loss. A store without the
-    Politikfeld tables (an upgrade from before schema 5) or without tags taken
-    from the cache has nothing to lose, and tags that need no cache (an
-    Einzelplan heading) never count against it."""
+    """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
+    vote whose context (``votes.context_state``) was known, resolved or none, would
+    become not_fetched.
+    Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
     try:
         conn = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
         try:
-            stored = sum(
-                conn.execute(f"SELECT COUNT(DISTINCT {key}) FROM {table} WHERE source = 'not_fetched'").fetchone()[0]
+            tables = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE name IN ('agenda_item_politikfelder', 'vote_politikfelder')"
+            )}
+            if not tables:
+                version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+                if type(version) is int and 0 < version < 5:
+                    return
+            if len(tables) != 2:
+                raise DatabaseRebuildError(
+                    f"Cannot check Politikfelder in {database_path}: incomplete store, tag tables are missing. "
+                    "Fix: restore a complete store before replay"
+                )
+            known_tops, known_votes = (
+                {row[0] for row in conn.execute(f"SELECT DISTINCT {key} FROM {table} WHERE source != 'not_fetched'")}
                 for table, key in (("agenda_item_politikfelder", "agenda_item_id"), ("vote_politikfelder", "vote_id"))
             )
-            # Only Sachgebiet and Drucksache tags come from the cache; a vote's "top" tags
-            # follow its TOP's, which may be an Einzelplan heading's.
-            from_cache = conn.execute(
-                "SELECT COUNT(*) FROM agenda_item_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
-            ).fetchone()[0] + conn.execute(
-                "SELECT COUNT(*) FROM vote_politikfelder WHERE source IN ('sachgebiet', 'drucksache')"
-            ).fetchone()[0]
+            # A schema-5 store has no context yet, so there is nothing to lose.
+            vote_columns = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
+            known_contexts = (
+                dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
+                if "context_state" in vote_columns else {}
+            )
         finally:
             conn.close()
-    except sqlite3.Error:
-        return  # no Politikfeld tables yet: nothing to strip
-    if not from_cache:
-        return
+    except sqlite3.Error as exc:
+        raise DatabaseRebuildError(
+            f"The store {database_path.resolve()} cannot be read for the Politikfelder check: {exc}. "
+            "Fix: restore read access, release any database lock, or restore a healthy store before replay"
+        ) from exc
     cache = vorgang_cache or politikfelder.empty_cache()
-    missing_tops = 0
-    missing_votes: set[str] = set()
-    for entry in entries:
+    missing_tops: set[str] = set()
+    vote_sources: dict[str, str] = {}
+    context_states: dict[str, str] = {}
+    for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
-        missing_tops += sum(source == "not_fetched" for _tags, source in item_tags)
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
+        for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
+            if source == "not_fetched":
+                missing_tops.add(pulse_store.stable_key("agenda", protocol_id, source_index(item.get("index"))))
         for _item, vote in derive.iter_report_votes(report):
-            if vote.get("id") is not None and vote_tags[politikfelder.vote_key(vote)][1] == "not_fetched":
-                missing_votes.add(str(vote["id"]))
-    would_miss = missing_tops + len(missing_votes)
-    if would_miss > stored:
+            vote_id = pulse_store.clean(vote.get("id"))
+            if vote_id:
+                # Match persistence's final overwrite for normalized duplicate IDs.
+                vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
+                context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
+    regressed_tops = missing_tops & known_tops
+    regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
+    regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
+    regressed_none = sum(1 for key in regressed_contexts if known_contexts[key] == "none")
+    if regressed_tops or regressed_votes or regressed_contexts:
         raise DatabaseRebuildError(
             f"with the Vorgang cache {politikfelder.cache_path(output_dir)} as it is, a re-persist would leave "
-            f"{would_miss} TOPs and votes not_fetched where the store has {stored}, so it would strip their "
-            "Politikfelder. Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+            f"{len(regressed_tops)} previously known TOPs and {len(regressed_votes)} previously known votes "
+            f"not_fetched and {len(regressed_contexts)} previously known vote contexts not_fetched "
+            f"({len(regressed_contexts) - regressed_none} resolved, {regressed_none} none) "
+            f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
+            f"context examples: {sorted(regressed_contexts)[:3]}). "
+            "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
 
@@ -2223,11 +2289,8 @@ def reuse_existing_dossier_enrichments(
         # unambiguously (equal top_id when both have one): an index match alone
         # can be another TOP. Nothing is merged into a TOP that has votes.
         top_ids = {str(item.get("top_id") or ""), str(previous.get("top_id") or "")} - {""}
-        if votes and not _iter_report_votes(item) and _iter_report_votes(previous) and len(top_ids) <= 1:
-            if previous.get("votes"):
-                item["votes"] = copy.deepcopy(previous["votes"])
-            elif previous.get("vote"):
-                item["vote"] = copy.deepcopy(previous["vote"])
+        if votes and not derive.item_votes(item) and derive.item_votes(previous) and len(top_ids) <= 1:
+            item["votes"] = copy.deepcopy(previous["votes"])
         if not profiles:
             continue
 
@@ -2620,8 +2683,8 @@ def write_report_and_page(
 #
 # database.html used to be a browser-side explorer of 12 sample rows per
 # table. It is now a download page: a distribution copy of the SQLite store
-# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), 23
-# CSV.gz files, and five SQL "recipes" executed at build time so a visitor can
+# (with speeches.paragraphs_json dropped, a duplicate of speeches.text), its
+# CSV.gz files, and the SQL "recipes" executed at build time so a visitor can
 # copy the SQL, run it against the file they just downloaded, and get the same
 # rows. Everything the page shows - sizes, checksums, the Datenstand band, the
 # recipe rows, the schema cards - is read from one manifest (datenstand.json)
@@ -2704,8 +2767,9 @@ def iter_tables(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 # column comes from the DIP XML/API extraction. A short list of overrides marks
 # the columns that come from elsewhere, so "primary sources only" is checkable
 # per column instead of asserted for the whole page.
-_COLUMN_SOURCE_ABGEORDNETENWATCH = {("mps", "aw_politician_id"), ("mps", "profile_url")}
-_COLUMN_SOURCE_DIP_ROSTER = {
+_COLUMN_SOURCE_ABGEORDNETENWATCH = {
+    ("mps", "aw_politician_id"),
+    ("mps", "profile_url"),
     ("mps", "birth_year"),
     ("mps", "gender"),
     ("mps", "profession"),
@@ -2719,10 +2783,15 @@ _TABLE_SOURCE_BUNDESTAG = {"votes", "vote_fractions", "vote_members", "vote_docu
 #
 # The Politikfeld tables are derived by scripts/politikfelder.py from DIP's
 # Sachgebiet labels (proceedings.sachgebiet, which is raw DIP data and so stays
-# "dip"); no model writes them.
+# "dip"); no model writes them. vote_proceedings is the same module's choice of
+# the Vorgänge a vote is about; proceedings.abstract is DIP's text with the HTML
+# stripped, so it stays "dip".
 _TABLE_SOURCE_DERIVED = (
     set(registry.REGISTRY_TABLES)
-    | {"mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder"}
+    | {
+        "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
+        "vote_proceedings",
+    }
     | set(facts.FACTS_TABLES)
 )
 
@@ -2736,6 +2805,8 @@ _COLUMN_SOURCE_DERIVED = {
     ("votes", "inverted"),
     ("votes", "inversion_source"),
     ("votes", "inversion_excerpt"),
+    # Whether vote_proceedings found the vote's Vorgang (politikfelder.CONTEXT_STATES).
+    ("votes", "context_state"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -2752,14 +2823,12 @@ def column_source(table: str, column: str) -> str:
         return "derived"
     if (table, column) in _COLUMN_SOURCE_ABGEORDNETENWATCH:
         return "abgeordnetenwatch"
-    if (table, column) in _COLUMN_SOURCE_DIP_ROSTER:
-        return "dip"
     if table in _TABLE_SOURCE_BUNDESTAG:
         return "bundestag.de"
     return "dip"
 
 
-EXPORT_FORMAT = 6
+EXPORT_FORMAT = 8
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -2798,7 +2867,7 @@ _VOTE_PROTOCOL_SQL = (
 )
 
 
-# The five recipes executed at build time against the distribution copy and
+# The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
 # addendum: R1/R3 join mp_canonical and group by the canonical id, so their
 # counts equal the pooled counts on the MP profile pages).
@@ -2957,8 +3026,48 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "depends_on": None,
         "caveat": "Je Wahlperiode gezählt, die jüngste zuerst.",
     },
+    {
+        # The same Beschlussempfehlung urheber the vote panels cite
+        # (derive.vote_committees), joined by the vote's Drucksache numbers.
+        "id": "r6-ausschuss",
+        "title": "Aus welchen Ausschüssen kommen die Beschlussempfehlungen namentlicher Abstimmungen?",
+        "sql": (
+            "SELECT " + _wahlperiode_sql("p") + " AS wahlperiode, u.value AS beschlussempfehlung_urheber,\n"
+            "       COUNT(DISTINCT vd.vote_id) AS abstimmungen\n"
+            "FROM vote_documents vd\n"
+            "JOIN votes v ON v.id = vd.vote_id\n"
+            "JOIN protocols p ON p.id = " + _VOTE_PROTOCOL_SQL + "\n"
+            "JOIN documents d ON d.id = vd.document_id\n"
+            "JOIN json_each(d.origin_json) u\n"
+            "WHERE d.document_type LIKE 'Beschlussempfehlung%'\n"
+            "  AND d.herausgeber = 'BT'\n"
+            "GROUP BY wahlperiode, u.value\n"
+            "ORDER BY wahlperiode DESC, abstimmungen DESC, beschlussempfehlung_urheber\n"
+            "LIMIT 5;"
+        ),
+        "columns": (
+            {"name": "wahlperiode", "align": "num"},
+            {"name": "beschlussempfehlung_urheber", "align": "text"},
+            {"name": "abstimmungen", "align": "num"},
+        ),
+        "depends_on": "votes",
+        "caveat": (
+            "Zählt die Abstimmungen, unter deren Drucksachen eine Beschlussempfehlung dieses Ausschusses ist "
+            "(Urheber laut DIP). Das zitiert das Dokument und sagt nicht, dass der Ausschuss federführend war: "
+            "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz. "
+            "Je Wahlperiode gezählt, die jüngste zuerst."
+        ),
+    },
 )
 RECIPES_BY_ID = {recipe["id"]: recipe for recipe in RECIPES}
+
+_NUMBER_WORDS = ("null", "eine", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf")
+
+
+def _recipe_count_word() -> str:
+    """``len(RECIPES)`` as the German word the Daten page and landing text use."""
+    count = len(RECIPES)
+    return _NUMBER_WORDS[count] if count < len(_NUMBER_WORDS) else str(count)
 
 
 class DataExportUnavailable(RuntimeError):
@@ -3834,6 +3943,9 @@ def render_daten_recipes(
                         cells.append(f'<td class="num">{text_value}</td>')
                         continue
                     text_value = str(value)
+                    if column["name"] == "erste_drucksache":
+                        # r5 selects protocols.document_number despite this export column's name.
+                        text_value = f"BT-PlPr. {text_value}"
                     title_attr = ""
                     if column.get("truncate"):
                         truncated, full = _truncate(text_value, column["truncate"])
@@ -3877,7 +3989,7 @@ def render_daten_recipes(
 
 # Rendered without JS as hidden ("no dead button shows without JS") and
 # revealed once this script has wired up a click handler for it. One script
-# tag for all five recipe buttons, next to the markup it controls rather than
+# tag for all recipe buttons, next to the markup it controls rather than
 # folded into page_scripts (shared by every page, most of which have none).
 def recipe_copy_runtime_script() -> str:
     return """
@@ -3928,14 +4040,24 @@ def recipe_copy_runtime_script() -> str:
             selectFallback();
             return;
           }
-          const selectionAtClick = String(window.getSelection() || "");
+          const selection = window.getSelection();
+          const selectionAtClick = Array.from({ length: selection ? selection.rangeCount : 0 }, (_, i) => {
+            const range = selection.getRangeAt(i);
+            return [range.startContainer, range.startOffset, range.endContainer, range.endOffset];
+          });
           navigator.clipboard.writeText(code.textContent).then(
             () => {
               if (copy === latestCopy) flash("Kopiert");
             },
             () => {
               if (copy !== latestCopy) return;
-              const untouched = String(window.getSelection() || "") === selectionAtClick;
+              const current = window.getSelection();
+              const untouched = (current ? current.rangeCount : 0) === selectionAtClick.length &&
+                selectionAtClick.every(([startContainer, startOffset, endContainer, endOffset], i) => {
+                  const range = current.getRangeAt(i);
+                  return range.startContainer === startContainer && range.startOffset === startOffset &&
+                    range.endContainer === endContainer && range.endOffset === endOffset;
+                });
               if (untouched) selectFallback();
               else flash("Nicht kopiert");
             },
@@ -4251,9 +4373,9 @@ def render_database_page(
         {datenstand_html}
       </section>
       <section class="rule-section">
-        <span class="eyebrow">Fünf Abfragen</span>
+        <span class="eyebrow">{_recipe_count_word().capitalize()} Abfragen</span>
         <h2>Rezepte</h2>
-        <p class="lede">Diese fünf SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
+        <p class="lede">Diese {_recipe_count_word()} SQL-Abfragen laufen bei jedem Build gegen die Verteilkopie; ihre Ergebniszeilen stehen rechts daneben. Wer die Datei herunterlädt und die SQL <a href="#loslegen">lokal aus</a>führt, bekommt dieselben Zeilen.</p>
         <div class="recipes">{recipes_html}</div>
       </section>
       <section class="rule-section loslegen" id="loslegen">
@@ -4403,7 +4525,7 @@ def render_landing_page(
     areas = [
         ("Sitzungen", "overview.html", "Sitzungsprotokolle und verfügbare Auswertungen im Archiv."),
         ("Abstimmungen", "votes/index.html", "Namentliche Abstimmungen, Ergebnisse und einzelne Stimmen."),
-        ("Gesetzesvorhaben", "bills/index.html", "Debatten, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
+        ("Gesetzesvorhaben", "bills/index.html", "Beratungen im Plenum, Drucksachen und Verfahrensschritte zu einem Vorhaben."),
         ("Abgeordnete", "abgeordnete/index.html", "Reden und erfasste Abstimmungen einzelner Abgeordneter."),
         ("Fakten", "fakt/index.html", "Auswertungen zu Wochen und Monaten mit ihren Belegen."),
     ]
@@ -4414,7 +4536,7 @@ def render_landing_page(
     data = ""
     if database_page_href:
         meta = f'<p class="home-meta">{esc(data_stand)}</p>' if data_stand else ""
-        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und fünf geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen und Abstimmungen.</p>{meta}</li>'
+        data = f'<li><h3><a href="{esc(database_page_href)}">Daten</a></h3><p>Downloads, Datenstand und {_recipe_count_word()} geprüfte SQL-Abfragen zu Personen, Reden, Vorgängen, Abstimmungen und Ausschüssen.</p>{meta}</li>'
 
     return f"""<!doctype html>
 <html lang="de">
@@ -4558,12 +4680,29 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _vote_procedure_type(vote: dict[str, Any], item: dict[str, Any]) -> str:
+def _vote_procedure_type(
+    vote: dict[str, Any], item: dict[str, Any] | None, sitting_documents: dict[str, Any]
+) -> str:
+    """The DIP type of the first of the vote's Drucksachen its TOP links; else of the
+    first the sitting links under any TOP (``derive.report_drucksachen``, the map the
+    committee line reads, D4), which also serves a vote under no TOP; else "–"."""
     numbers = {str(number) for number in vote.get("document_numbers") or []}
-    for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+    for doc in ((item or {}).get("api") or {}).get("linked_drucksachen") or []:
         if str(doc.get("dokumentnummer")) in numbers and doc.get("drucksachetyp"):
             return str(doc["drucksachetyp"])
+    for raw in vote.get("document_numbers") or []:
+        doc = sitting_documents.get(derive.canonical_document_number(raw))
+        if doc and doc.get("drucksachetyp"):
+            return str(doc["drucksachetyp"])
     return "–"
+
+
+def _abweichler_count(vote: dict[str, Any]) -> int | None:
+    """The vote's Abweichler, or None unless every group's member rows are complete."""
+    groups = derive.vote_abweichler(vote)
+    if not groups or any(group["state"] != "complete" for group in groups.values()):
+        return None
+    return sum(len(group["members"]) for group in groups.values())
 
 
 def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str | None:
@@ -4610,11 +4749,9 @@ def collect_votes_archive(
         report = entry.get("report") or {}
         page_path = entry.get("page_path")
         _, vote_politikfelder = politikfelder.report_politikfelder(report, cache)
+        sitting_documents = derive.report_drucksachen(report)
+        page_href = f"../protocols/{pulse_html.esc(Path(page_path).name)}" if page_path else None
         for item, vote in derive.iter_report_votes(report):
-            # persist_vote skips a vote without an id, so the archive does
-            # too: the row count must equal SELECT count(*) FROM votes.
-            if not vote.get("id"):
-                continue
             key = pulse_html.vote_key(vote)
             if key in rows:
                 continue
@@ -4627,14 +4764,12 @@ def collect_votes_archive(
                 "vote": vote,
                 "politikfelder": politikfelder.shown(vote_politikfelder[politikfelder.vote_key(vote)]),
                 "document_links": votes_feature.document_source_links(item) if item else {},
+                "document_chambers": votes_feature.document_source_chambers(item) if item else {},
                 "fraction_positions": fraction_positions,
-                "procedure_type": _vote_procedure_type(vote, item) if item else "–",
-                "href": (
-                    (f"../protocols/{pulse_html.esc(Path(page_path).name)}#top-{pulse_html.esc(source_index(item.get('index')))}"
-                     if item else f"../protocols/{pulse_html.esc(Path(page_path).name)}#sitting-votes")
-                    if page_path
-                    else None
-                ),
+                "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
+                "abweichler": _abweichler_count(vote),
+                # The vote's own panel (D9).
+                "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
             }
     return sorted(
         rows.values(),
@@ -4685,17 +4820,27 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
             items.append(f'<h2 class="archive-month" data-month="{pulse_html.esc(month)}">{pulse_html.esc(month)}</h2>')
             current_month = month
         badge_html = votes_feature.render_result_badge(vote)
-        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"])
+        docs_html = votes_feature.render_document_links(vote.get("document_numbers") or [], row["document_links"], row.get("document_chambers"))
         title = vote.get("title") or vote.get("topic") or "Ohne Titel"
         title_html = f'<a href="{row["href"]}">{pulse_html.esc(title)}</a>' if row["href"] else pulse_html.esc(title)
         positions_json = json.dumps(row["fraction_positions"], ensure_ascii=False)
+        # Counted only where every group's Einzelstimmen are complete, so a
+        # missing badge never stands for zero (plan Slice 1).
+        abweichler = row.get("abweichler")
+        abweichler_attr = f' data-abweichler="{pulse_html.esc(abweichler)}"' if abweichler is not None else ""
+        abweichler_html = (
+            f' · <span class="archive-abweichler">{pulse_html.esc(pulse_html.format_count(abweichler, "stimmt", "stimmen"))}'
+            " anders als die Mehrheit der eigenen Fraktion oder Gruppe</span>"
+            if abweichler
+            else ""
+        )
         items.append(
-            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"'
+            f'<article class="archive-row" data-row data-month="{pulse_html.esc(month)}"{abweichler_attr}'
             f' data-fraktion-positions=\'{pulse_html.esc(positions_json)}\''
             f' data-politikfelder=\'{pulse_html.esc(json.dumps(row["politikfelder"], ensure_ascii=False))}\'>'
             f'<time>{pulse_html.esc(vote.get("date"))}</time>'
             f'<div class="archive-row-body"><h3>{title_html}{badge_html}</h3>'
-            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}</p>'
+            f'<p>{pulse_html.esc(row["procedure_type"])}{" · Drucksachen " + docs_html if docs_html else ""}{abweichler_html}</p>'
             f'{pulse_html.render_politikfeld_tags(row["politikfelder"])}</div>'
             "</article>"
         )
@@ -4754,6 +4899,9 @@ def votes_archive_styles() -> str:
     }
     .chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .chip:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    @media (pointer:coarse) {
+      .chip { min-height:44px; }
+    }
     :root[data-theme="dark"] .chip { color:var(--ink); }
     :root[data-theme="dark"] .chip.is-active { background:var(--surface-2); color:var(--blue); }
     .archive-list { margin-top:20px; display:grid; gap:10px; }
@@ -4769,12 +4917,14 @@ def votes_archive_styles() -> str:
     }
     .archive-row[hidden], .archive-month[hidden] { display:none; }
     .archive-row time { color:var(--muted); font-size:13px; }
-    .archive-row-body h3 { margin:0 0 4px; font-size:15px; }
+    .archive-row-body h3 { margin:0 0 4px; font-size:15px; overflow-wrap:break-word; }
     .archive-row-body p { margin:0; font-size:13px; color:var(--muted); }
     .archive-empty { margin-top:16px; color:var(--muted); }
+    .archive-abweichler { color:var(--ink); font-weight:650; }
 """ + pulse_html.VOTE_RESULT_BADGE_CSS + pulse_html.DOC_LINK_CSS + pulse_html.POLITIKFELD_CHIP_CSS + """
     @media (max-width: 640px) {
-      .archive-row { grid-template-columns:1fr; gap:4px; }
+      /* minmax(0, ...): a long title or chip wraps instead of widening the page. */
+      .archive-row { grid-template-columns:minmax(0,1fr); gap:4px; }
     }
 """
 
@@ -5011,7 +5161,7 @@ def render_week_comparison_section(
             )
         returning_html = f'<ul class="week-list">{"".join(rows)}</ul>'
         returning_note = (
-            f"{len(returning)} von {len(current['vorgang_ids'])} Verfahren dieser Woche "
+            f"{len(returning)} von {len(current['vorgang_ids'])} Vorgängen dieser Woche "
             "standen schon in einer früheren Sitzungswoche auf der Tagesordnung."
         )
         if len(shown) < len(returning):
@@ -5019,7 +5169,7 @@ def render_week_comparison_section(
     else:
         returning_html = ""
         returning_note = (
-            "Kein Verfahren dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
+            "Kein Vorgang dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
             "der erzeugten Auswertungen."
         )
 
@@ -5078,10 +5228,10 @@ def render_week_comparison_section(
         <article class="week-card">
           <h3>Debattenprofil</h3>
           {pulse_html.render_type_mix(current["vorgangstyp_counts"], previous["vorgangstyp_counts"])}
-          <p class="week-note">Vorgangspositionen nach Art, Ver&auml;nderung gegen&uuml;ber {pulse_html.esc(previous["label"])}. <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Was die Typen bedeuten</a></p>
+          <p class="week-note">Je Kalenderwoche zählt jeder Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp; Veränderung gegenüber {pulse_html.esc(previous["label"])}. <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Was die Typen bedeuten</a></p>
         </article>
         <article class="week-card">
-          <h3>Verfahren, die zur&uuml;ckkehren</h3>
+          <h3>Wieder auf der Tagesordnung</h3>
           {returning_html}
           <p class="week-note">{pulse_html.esc(returning_note)}</p>
         </article>{votes_card}
@@ -6034,6 +6184,7 @@ def render_front_page(
     }}
     @media (pointer:coarse) {{
       .page-actions a, .week-chips a, .session-links a, .feature-link {{ min-height:44px; }}
+      .radar-filter .chip {{ min-height:44px; }}
       .radar-open a {{ display:inline-block; min-height:44px; padding:12px 0; }}
     }}
     @media (prefers-reduced-motion: reduce) {{
@@ -6378,7 +6529,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                             "date": first_value(doc.get("datum"), protocol.get("datum")),
                             "kind": first_value(doc.get("drucksachetyp"), "Drucksache"),
                             "title": first_value(doc.get("titel"), position.get("titel")),
-                            "source": first_value(doc.get("dokumentnummer")),
+                            "source": _document_citation(doc) if doc.get("dokumentnummer") else "",
                             "url": doc.get("url"),
                         }
                     )
@@ -6387,7 +6538,7 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                         "date": protocol.get("datum"),
                         "kind": first_value(position.get("vorgangsposition"), "Plenarberatung"),
                         "title": first_value(position.get("titel"), item.get("heading")),
-                        "source": f"BT-PlPr {protocol.get('dokumentnummer')} · {item.get('top_id')}",
+                        "source": f"BT-PlPr. {protocol.get('dokumentnummer')} · {item.get('top_id')}",
                         "url": ref["href"],
                     }
                 )
@@ -6650,6 +6801,7 @@ def render_bill_script() -> str:
           year.value = '';
           state.page = 1;
           apply('push');
+          search.focus();
         }));
         prev.addEventListener('click', guarded(() => { state.page -= 1; apply('push', true); }));
         next.addEventListener('click', guarded(() => { state.page += 1; apply('push', true); }));
@@ -7045,7 +7197,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
         event = pulse_html.render_parliamentary_term(str(bill.get("latest_step") or "Erfasster Vorgang"), tip_id=f"result-{index}-event")
         counts = " · ".join((
             pulse_html.format_count(len(bill.get("documents") or []), "Dokument", "Dokumente"),
-            pulse_html.format_count(len(bill.get("protocol_refs") or []), "Debatte", "Debatten"),
+            pulse_html.format_count(len(bill.get("protocol_refs") or []), "Beratung im Plenum", "Beratungen im Plenum"),
             pulse_html.format_count(len(bill.get("votes") or []), "namentliche Abstimmung", "namentliche Abstimmungen"),
         ))
         rows.append(f"""
@@ -7062,7 +7214,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
     if rows:
         year_options = "".join(f'<option value="{year}">{year}</option>' for year in sorted(years, reverse=True))
         controls = f"""
-      <div class="bill-controls" aria-label="Gesetzesvorhaben finden">
+      <div class="bill-controls" role="search" aria-label="Gesetzesvorhaben finden">
         <div class="bill-control"><label for="bill-search">Gesetzesvorhaben suchen</label>
           <input id="bill-search" type="search" data-bill-search aria-describedby="bill-search-hint" disabled>
           <small id="bill-search-hint">Titel oder Drucksachennummer</small></div>
@@ -7125,9 +7277,19 @@ def _bill_event_href(value: Any) -> str:
 
 
 def _is_bundesrat_document(doc: dict[str, Any]) -> bool:
-    """DIP marks Bundesrat papers by a "(B)" number suffix and the /brd/ path."""
+    return pulse_html.document_chamber(doc) == "BR"
+
+
+def _document_citation(doc: dict[str, Any]) -> str:
     number = str(doc.get("dokumentnummer") or "").strip()
-    return number.endswith("(B)") or "/brd/" in str(doc.get("url") or "")
+    kind = str(doc.get("drucksachetyp") or doc.get("dokumentart") or "")
+    protocol = "plenarprotokoll" in kind.lower() or bool(re.match(r"PlPr\.?\s", number, re.I))
+    if protocol:
+        number = re.sub(r"^PlPr\.?\s+", "", number, flags=re.I)
+    chamber = pulse_html.document_chamber(doc)
+    if chamber:
+        return f"{chamber}-{'PlPr.' if protocol else 'Drs.'} {number}"
+    return f"{'Plenarprotokoll' if protocol else 'Drucksache'} {number} (Kammer nicht erfasst)"
 
 
 # PAGE: bills/bill-<slug>.html. DOM order stays readable without scripts.
@@ -7170,7 +7332,7 @@ def render_bill_detail(
         # Bundesrat papers ("557/25(B)", served under /brd/) are not Bundestag
         # Drucksachen; the glossary's Drucksache tooltip would misattribute them.
         if _is_bundesrat_document(doc):
-            document_label_html = "Bundesrat-Drucksache"
+            document_label_html = "Bundesrat-Plenarprotokoll" if "plenarprotokoll" in kind.lower() else "Bundesrat-Drucksache"
         else:
             document_label = "Plenarprotokoll" if "plenarprotokoll" in kind.lower() else (
                 "Drucksache" if kind in {"Gesetzentwurf", "Beschlussempfehlung", "Beschlussempfehlung und Bericht", "Bericht", "Unterrichtung", "Stellungnahme"} else "Dokument"
@@ -7204,7 +7366,7 @@ def render_bill_detail(
         speech_refs = speaker.get("speeches") or []
         for index, ref in enumerate(speech_refs, start=1):
             date = pulse_html.format_date(ref.get("protocol_date")) or "Datum nicht erfasst"
-            source = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+            source = f'BT-PlPr. {ref.get("protocol_number") or "ohne Nummer"}'
             page = pulse_html.source_page_text(ref.get("source_page"))
             action = 'Rede lesen' if len(speech_refs) == 1 else f'Rede {index}'
             label = f'{action} · {date} · {source}' + (f' · S. {page}' if page else '')
@@ -7223,7 +7385,7 @@ def render_bill_detail(
 
     debates = []
     for index, ref in enumerate(bill.get("protocol_refs") or []):
-        label = f'Sitzung {ref.get("protocol_number") or "ohne Nummer"}'
+        label = f'BT-PlPr. {ref.get("protocol_number") or "ohne Nummer"}'
         if ref.get("href"):
             label = f'<a href="{pulse_html.esc(_bill_event_href(ref["href"]))}">{pulse_html.esc(label)}</a>'
         else:
@@ -7253,7 +7415,7 @@ def render_bill_detail(
     latest = next((event for event in bill.get("events") or [] if event.get("date") == bill.get("latest_date") and event.get("kind") == bill.get("latest_step")), {})
     source_link = f' · <a href="{pulse_html.esc(_bill_event_href(latest["url"]))}">Quelle öffnen</a>' if latest.get("url") else ""
     authors = pulse_html.esc(", ".join(bill.get("introduced_by") or []) or "nicht erfasst")
-    sections = (("verlauf", "Verlauf"), ("debatten", "Debatten"), ("redner", "Rednerinnen und Redner"),
+    sections = (("verlauf", "Verlauf"), ("plenarstellen", "Beratungen im Plenum"), ("redner", "Rednerinnen und Redner"),
                 ("abstimmungen", "Abstimmungen"), ("dokumente", "Dokumente"), ("quellen", "Quellen und Daten"))
     anchors = "".join(f'<a href="#{id}">{label}</a>' for id, label in sections)
     return f"""<!doctype html>
@@ -7278,10 +7440,10 @@ def render_bill_detail(
       <div class="bill-reading-lead"><section class="panel" id="verlauf"><h2>Verlauf</h2>
         {''.join(timeline) if timeline else '<p>Keine Verlaufseinträge in den erfassten Daten.</p>'}
       </section></div>
-      <aside class="bill-support" aria-label="Debatten und Beteiligte">
-        <section class="panel" id="debatten"><h2>Debatten</h2>
-          <p>Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.</p>
-          {'<ul class="bill-debates">' + ''.join(debates) + '</ul>' if debates else '<p>Keine Debatten in den erfassten Daten verknüpft.</p>'}
+      <aside class="bill-support" aria-label="Beratungen im Plenum und Beteiligte">
+        <section class="panel" id="plenarstellen"><h2>Beratungen im Plenum</h2>
+          <p>Jeder Eintrag verknüpft einen {term("Tagesordnungspunkt", tip_id="plenarstellen-top")} einer Sitzung, an dem dieses Vorhaben behandelt wurde – auch ohne erfasste Rede. Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.</p>
+          {'<ul class="bill-debates">' + ''.join(debates) + '</ul>' if debates else '<p>Keine Beratungen im Plenum in den erfassten Daten verknüpft.</p>'}
         </section>
         <section class="panel" id="redner"><h2>Rednerinnen und Redner</h2>
           <p>Erfasste Personen: {len(speakers)}. Nach Zahl der erfassten Reden.</p>
@@ -8016,7 +8178,7 @@ def render_contributions_panel(mp: dict[str, Any]) -> str:
     )
     links = "".join(
         f'<li><a href="../protocols/plenarprotokoll-{slugify_document_number(c["document_number"])}.html#contribution-{pulse_html.esc(c["id"])}">'
-        f'{pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
+        f'BT-PlPr. {pulse_html.esc(c["document_number"])} · {pulse_html.esc(speech_kinds.KIND_LABELS[c["kind"]][0])}</a></li>'
         for c in mp.get("contribution_links") or []
     )
     return (
@@ -8073,7 +8235,7 @@ def render_abgeordnete_detail(
         snippet = pulse_html.esc((speech.get("snippet") or "").strip())
         speeches.append(
             '<li class="speech-row">'
-            f'<span class="meta"><a href="{pulse_html.esc(href)}">BT-PlPr {pulse_html.esc(speech.get("document_number"))}</a><br>{pulse_html.esc(speech.get("date") or "")} · {pulse_html.esc(page)}</span>'
+            f'<span class="meta"><a href="{pulse_html.esc(href)}">BT-PlPr. {pulse_html.esc(speech.get("document_number"))}</a><br>{pulse_html.esc(speech.get("date") or "")} · {pulse_html.esc(page)}</span>'
             f'<span><strong>{heading}</strong>{("<br>" + snippet) if snippet else ""}</span>'
             "</li>"
         )
@@ -8559,6 +8721,18 @@ def _renderable_fact(conn: sqlite3.Connection, fact_row: dict[str, Any]) -> dict
         return None
     row = dict(fact_row)
     row["citation"] = citation
+    # Resolve issuer/type from the receipt's exact document id, never its number.
+    row["receipts"] = []
+    for receipt in fact_row.get("receipts") or []:
+        receipt = dict(receipt)
+        if receipt["entity_kind"] == "document":
+            document = conn.execute(
+                "SELECT herausgeber, document_type FROM documents WHERE id = ?",
+                (receipt.get("source_entity_id"),),
+            ).fetchone()
+            if document:
+                receipt.update(herausgeber=document["herausgeber"], dokumentart=document["document_type"])
+        row["receipts"].append(receipt)
     return row
 
 
@@ -8576,7 +8750,8 @@ def _fact_status_text(row: dict[str, Any] | None, *, with_note: bool = True) -> 
         return (f"unvollständig erfasst: {note}" if note else "unvollständig erfasst"), None, False
     if row.get("publishable"):
         return f"Platz {row['rank']}", row["metric_id"], True
-    return facts.WITHHELD_CLAUSES.get(row.get("withheld"), "kein Fakt"), None, False
+    text = facts.comparison_clause(row) if row.get("withheld") in facts.WITHHELD_CLAUSES else "kein Fakt"
+    return text, None, False
 
 
 def _series_value_text(metric: dict[str, Any], row: dict[str, Any]) -> str:
@@ -8639,7 +8814,10 @@ def _render_fact_sources(
         document_number = receipt.get("document_number")
         if receipt["entity_kind"] == "document":
             url = pulse_html.safe_href(receipt.get("official_url"))
-            label = f"Drucksache {document_number}"
+            label = _document_citation({
+                "dokumentnummer": document_number, "url": receipt.get("official_url"),
+                "herausgeber": receipt.get("herausgeber"), "dokumentart": receipt.get("dokumentart"),
+            })
             items.append(
                 f'<li><a href="{pulse_html.esc(url)}">{pulse_html.esc(label)}</a></li>'
                 if url else f"<li>{pulse_html.esc(label)}</li>"
@@ -8648,7 +8826,7 @@ def _render_fact_sources(
         href = resolve_entity_link(
             "document", document_number, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs
         )
-        protocol_text = f"Plenarprotokoll {document_number}"
+        protocol_text = f"BT-PlPr. {document_number}"
         bits = [
             f'<a href="../{pulse_html.esc(href)}">{pulse_html.esc(protocol_text)}</a>' if href else pulse_html.esc(protocol_text)
         ]
@@ -8678,7 +8856,7 @@ def _render_fact_sources(
         items.append(f"<li>{' · '.join(bits)}</li>")
     if not items:
         return ""
-    return f'<div class="sources"><span class="eyebrow">Quellen</span><ul>{"".join(items)}</ul></div>'
+    return f'<div class="sources"><span class="eyebrow">Belege</span><ul>{"".join(items)}</ul></div>'
 
 
 def _render_fact_section(
@@ -8814,7 +8992,7 @@ def render_facts_week(
     features = features or publication_selection()
     sample = period_rows[0]
     period_kind = sample["period_kind"]
-    plural, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
+    _, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
     if period_kind == "month":
         period_text = facts.month_display(period_key)
     else:
@@ -8873,7 +9051,7 @@ def render_facts_week(
     </header>
     {content}
     <footer>
-      Spätere {pulse_html.esc(plural)} ändern diese Karten nicht; nur eine Korrektur an den Rohdaten kann es.
+      Diese Karten werden bei jedem Neubau neu erzeugt; Datenkorrekturen und Änderungen an Regeln oder Formulierungen können sie verändern.
       <a href="methodik.html">Methodik</a>
     </footer>
   </div>
@@ -8976,11 +9154,11 @@ def render_facts_methodik(features: Selection | None = None, coverage: str | Non
       <ul class="method-list">{monthly_items}</ul>
     </section>
     <section>
-      <h2>Was sich nicht ändert</h2>
-      <p>Spätere Sitzungswochen ändern frühere Karten nicht, und spätere Monate ändern ihre
-      Monatskarten ebenso wenig. Nur eine Korrektur an den zugrunde liegenden Daten kann eine
-      veröffentlichte Karte im Nachhinein verändern; das Build-Log verzeichnet jede solche
-      Änderung.</p>
+      <h2>Was sich bei einem Neubau ändern kann</h2>
+      <p>Wochen- und Monatskarten werden bei jedem Neubau der Website neu erzeugt.
+      Korrekturen an den Daten und Änderungen an den Regeln (etwa Schwellen oder Mindestwerten)
+      können frühere Karten verändern; auch geänderte Formulierungen erscheinen auf ihnen.
+      Lässt sich ein Beleg nicht mehr auflösen, entfällt die zugehörige Karte.</p>
     </section>
     <footer><a href="index.html">Zurück zum Archiv</a> · <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
@@ -9185,7 +9363,7 @@ def render_overview(
             <article class="session-card">
               <div class="session-main">
                 <div>
-                  <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
+                  <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))}</span>
                   <h2><a href="protocols/{pulse_html.esc(entry['page_path'].name)}">{pulse_html.esc(protocol.get('titel'))}</a></h2>
                   <p>{pulse_html.esc(protocol.get('datum'))} · verteilt am {pulse_html.esc(protocol.get('verteildatum'))}</p>
                 </div>
@@ -9566,7 +9744,7 @@ def build_catalog_rows(
             f"""
             <article class="catalog-row" data-row data-search="{pulse_html.esc(search_terms)}" data-wp="{pulse_html.esc(period)}" data-dossier="{has_dossier}" data-docnumber="{pulse_html.esc(document_number)}" data-date="{pulse_html.esc(protocol.get('datum') or '')}" data-sortnum="{catalog_sortnum(protocol)}">
               <div>
-                <span class="eyebrow">BT-PlPr {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
+                <span class="eyebrow">BT-PlPr. {pulse_html.esc(protocol.get('dokumentnummer'))} · WP {pulse_html.esc(protocol.get('wahlperiode'))}</span>
                 <h3>{pulse_html.esc(protocol.get('titel'))}</h3>
                 <p>{pulse_html.esc(protocol.get('datum'))} · aktualisiert {pulse_html.esc(protocol.get('aktualisiert'))}</p>
               </div>
@@ -10414,7 +10592,7 @@ def render_sources_page(
         <ul class="method-list">
           <li><strong>Tagesordnungspunkte</strong><span>Aus der Tagesordnungspunkt-Struktur des Plenarprotokoll-XML gelesen. Die parlamentarische Gliederung bildet die Themen-Grenze.</span></li>
           <li><strong>Was als Rede zählt</strong><span>Eine Rede ist ein Redebeitrag zu einem Tagesordnungspunkt. Kurzinterventionen, Erwiderungen sowie die Fragen und Antworten der Befragung der Bundesregierung und der Fragestunde zählen nicht als Reden, sondern als eigene Beiträge (Tabelle „contributions“ der Daten); die Eingangsberichte einer Befragung sind Reden. Für Zeichenzahlen zählt nur der Text der Rede.</span></li>
-          <li><strong>Aufmerksamkeitsranking</strong><span>Mechanisch aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen pro Tagesordnungspunkt berechnet; Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
+          <li><strong>Meiste Reden</strong><span>Tagesordnungspunkte nach Anzahl der extrahierten Reden sortiert. Die Balken zeigen Redeanteil und Textanteil an der gesamten Sitzung. Beiträge, die keine Reden sind, gehen nicht ein.</span></li>
           <li><strong>Redner und Fraktionen</strong><span>Aus den Redner-Knoten im XML-Protokoll gelesen. Regierungsrollen werden angezeigt, wenn das XML eine Rolle statt einer Fraktion liefert.</span></li>
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
@@ -10427,7 +10605,7 @@ def render_sources_page(
       </section>
       <section class="panel" id="{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">
         <h2>Vorgangstypen im Debattenprofil</h2>
-        <p>Jede Vorgangsposition einer Sitzung gehört zu einem Vorgang im DIP, und jeder Vorgang hat dort einen Typ. Das Debattenprofil auf der Puls-Seite zählt die Vorgangspositionen der Sitzungswoche nach diesem Typ. Die Bezeichnungen folgen der DIP-Klassifikation; die Erläuterungen fassen zusammen, was jeweils dahintersteht.</p>
+        <p>Jede Vorgangsposition einer Sitzung gehört zu einem Vorgang im DIP, und jeder Vorgang hat dort einen Typ. Das Debattenprofil auf der Puls-Seite zählt je Kalenderwoche jeden Tagesordnungspunkt einmal pro vorkommendem Vorgangstyp: Wiederholte Vorgangspositionen desselben Typs zählen einmal, mehrere verschiedene Typen desselben Tagesordnungspunkts jeweils einmal. Die Bezeichnungen folgen der DIP-Klassifikation; die Erläuterungen fassen zusammen, was jeweils dahintersteht.</p>
         <ul class="method-list glossary">
           {vorgangstyp_items}
         </ul>
@@ -12036,7 +12214,11 @@ def main() -> int:
 
     if getattr(args, "fetch_xml", False):
         output_dir = args.output_dir
-        entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
+        try:
+            entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, load_cached_protocols(output_dir)))
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         fetched, failed = fetch_missing_xml(output_dir, entries, pacer=dip.XmlPacer())
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
         if not failed:
@@ -12099,7 +12281,11 @@ def main() -> int:
     database_path = args.database_path or output_dir / "data" / "bundestag-pulse.sqlite"
     # The Vorgang cache the Politikfelder are derived from, loaded once per
     # build; an online build fills it before it persists.
-    vorgang_cache = politikfelder.load_cache(output_dir)
+    try:
+        vorgang_cache = politikfelder.load_cache(output_dir)
+    except politikfelder.CacheLoadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     # Explicit replay upgrades an old schema. Store consumers, including
     # no-persist rendering, require current persisted rules; an online rebuild
@@ -12157,7 +12343,8 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    "Fix: repair or delete that cached report (an online update re-fetches it), then re-run. "
+                    "Fix: repair that cached report, or move it out of data/ and re-fetch its sitting with an online update "
+                    "and --document-number <its number>, then re-run. "
                     "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
@@ -12201,7 +12388,11 @@ def main() -> int:
         # protocol back to 1949; only dossiers can be rendered). Check it before
         # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
-            cached_entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols))
+            try:
+                cached_entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols))
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
@@ -12324,7 +12515,11 @@ def main() -> int:
         } | {normalized_document_number(n) for n in getattr(args, "exclude_document_number", [])}
         listed -= included
         if getattr(args, "backfill_incomplete", False):
-            stored_entries = load_existing_detail_entries(output_dir, protocols)
+            try:
+                stored_entries = load_existing_detail_entries(output_dir, protocols)
+            except CachedReportError as exc:
+                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                return 1
             acquisition_scope, waiting, vote_only, structural = incomplete_sitting_protocols(
                 stored_entries,
                 [p for p in protocols if normalized_document_number(p.get("dokumentnummer")) not in listed],
@@ -12377,10 +12572,14 @@ def main() -> int:
         # What this run acquires is one scope; what the store keeps is another.
         # Every cached dossier of the catalog stays, whatever the acquisition
         # was narrowed to, and only the acquired sittings are refreshed.
-        existing_entries = [
-            entry for entry in load_existing_detail_entries(output_dir, protocols)
-            if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
-        ]
+        try:
+            existing_entries = [
+                entry for entry in load_existing_detail_entries(output_dir, protocols)
+                if normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) not in listed
+            ]
+        except CachedReportError as exc:
+            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
         # archive) now, before any dossier is written.

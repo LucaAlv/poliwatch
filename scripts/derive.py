@@ -14,6 +14,7 @@ Each function follows the CONTEXT.md entry of the same term.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -346,16 +347,93 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
     return value if isinstance(value, int) and kind == TRUSTED_AW_MATCH else None
 
 
-def vote_identity(vote: Mapping[str, Any]) -> Any:
-    """A vote's identity within a sitting: its id, or (title, date) for a legacy record."""
-    return str(vote.get("id")) if vote.get("id") is not None else (vote.get("title"), vote.get("date"))
+def member_profile_url(member: Mapping[str, Any]) -> str | None:
+    """A roll-call member's profile URL: the abgeordnetenwatch profile, else the
+    member's own link; either only when it names a person (``person_profile_url``)."""
+    aw_url = person_profile_url((member.get("abgeordnetenwatch") or {}).get("url"))
+    return aw_url or person_profile_url(member.get("profile_url"))
+
+
+_UNSAFE_URL_CHARS = re.compile(r"[\\\s\x00-\x1f\x7f]")
+
+
+def person_profile_url(url: Any) -> str | None:
+    """``url`` when it is a page about one person: an MdB biography on
+    https on bundestag.de (``/abgeordnete/…``) or abgeordnetenwatch (``/profile/…``); else None.
+    bundestag.de links an MP without a biography back to the Abstimmung itself
+    (77 rows on the reference cache); that page names nobody. A URL a browser
+    could read as another host (a backslash, user info, a port, whitespace or a
+    control character) is none."""
+    if not url or _UNSAFE_URL_CHARS.search(str(url)):
+        return None
+    try:
+        parts = urlsplit(str(url))
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None:
+        return None
+    if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
+        return str(url)
+    if host in {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"} and parts.path.startswith("/profile/"):
+        return str(url)
+    return None
+
+
+def vote_member_identity(member: Mapping[str, Any]) -> str:
+    """The identity key persist hands ``upsert_mp`` for a roll-call member, built
+    as ``persist_dip_pulse_store.mp_identity`` builds it from what a vote row
+    carries: a trusted abgeordnetenwatch id, else the profile URL, else name and
+    Zusammenschluss. Merges the identity registry makes later are not seen here."""
+    aw_id = trusted_aw_id(member.get("abgeordnetenwatch"))
+    if aw_id:
+        return f"aw:{aw_id}"
+    profile_url = member_profile_url(member)
+    if profile_url:
+        return f"profile:{profile_url}"
+    name = _clean(member.get("name")) or "Unbekannt"
+    return f"name-party:{name}|{zusammenschluss(member.get('faction')) or 'Unbekannt'}"
+
+
+def item_votes(item: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The roll-call votes listed under one TOP."""
+    return item.get("votes") or []
+
+
+def require_vote_shape(report: Mapping[str, Any]) -> None:
+    """Raise ValueError for a report whose votes a reader would lose: a TOP's
+    singular ``"vote"`` (a shape from before ``"votes"``), a ``votes`` or
+    ``sitting_votes`` value that is not a list (``{}`` and ``""`` included), or a vote
+    without an id. An absent or null value, an empty list, or an empty ``"vote"`` is
+    no vote. None of these occurs in the current cache (0 of 246 votes); report
+    loading, persist and the standalone renderer all refuse them, so a stale report
+    fails loudly instead of persisting as a sitting without votes."""
+    items = report.get("agenda_items") or []
+    for item in items:
+        if item.get("vote"):
+            raise ValueError(f'TOP {item.get("index")} has a singular "vote" (a shape from before "votes")')
+    for votes in [*(item.get("votes") for item in items), report.get("sitting_votes")]:
+        if votes is None:
+            continue
+        if not isinstance(votes, list):
+            raise ValueError("roll-call votes are not a list")
+        for vote in votes:
+            if not isinstance(vote, dict) or not _clean(vote.get("id")):
+                raise ValueError("a roll-call vote has no id")
+
+
+def vote_identity(vote: Mapping[str, Any]) -> str:
+    """A vote's identity within a sitting: its id. The scraper always sets one,
+    and ``require_vote_shape`` refuses a vote without it."""
+    return str(vote["id"])
 
 
 def iter_report_votes(report: Mapping[str, Any]):
     """Yield (TOP or None, vote), once per vote identity across a sitting."""
     seen = set()
     for item in report.get("agenda_items") or []:
-        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+        for vote in item_votes(item):
             key = vote_identity(vote)
             if key not in seen:
                 seen.add(key)
@@ -475,6 +553,110 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     for number in DOCUMENT_NUMBER_RE.findall(str(item.get("heading") or "")):
         add(number)
     return numbers
+
+
+#: Groups whose MdBs have no Zusammenschluss, so none of them can make an Abweichung.
+NO_ZUSAMMENSCHLUSS = frozenset({"fraktionslos", "Unbekannt"})
+
+
+def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """The Abweichler of one namentliche Abstimmung, per Zusammenschluss.
+
+    The Mehrheitsvotum comes from the group's reported fraction counts, never
+    from its member list; a member is an Abweichler on Ja against a Nein
+    Mehrheitsvotum or Nein against a Ja one. Inversion changes what Ja means,
+    not who voted unlike their group, so it plays no part here.
+
+        no member rows, though counts say some ► no_members (nobody named)
+        member Stimmen ≠ fraction counts ──────► partial  (nobody named)
+        counts match ─► Mehrheitsvotum Ja/Nein? ─no─► complete, no members
+                                               └yes─► complete, members with
+                                                      the opposite Ja/Nein
+
+    fraktionslos and an unknown affiliation are no Zusammenschluss and get no
+    entry. Where other groups have fraction rows, a Zusammenschluss with member
+    rows but none has no counts to check them against: partial, marked
+    ``unlisted``. A vote with no fraction row at all has no groups. Members come back
+    alphabetical, as the Einzelstimmen list them.
+
+    A member listed twice (the same identity key the store binds on,
+    ``vote_member_identity``) counts once, with the last row's Stimme and
+    Zusammenschluss, as vote_members keeps one row per vote and MP; a duplicate
+    standing in for a missing member then fails the count. Merges the identity
+    registry makes later are not seen here.
+    """
+    latest = {vote_member_identity(member): member for member in vote.get("members") or []}
+    members_by_group: dict[str, list[Mapping[str, Any]]] = {}
+    for member in latest.values():
+        members_by_group.setdefault(zusammenschluss(member.get("faction")) or "Unbekannt", []).append(member)
+    result: dict[str, dict[str, Any]] = {}
+    for fraction in merge_fractions(vote.get("fractions")):
+        name = fraction["name"]
+        if name in NO_ZUSAMMENSCHLUSS:
+            continue
+        members = members_by_group.get(name) or []
+        stimmen = Counter(str(member.get("vote") or "") for member in members)
+        if not members and stimmen != Counter(fraction["counts"]):
+            result[name] = {"members": [], "state": "no_members"}
+            continue
+        if stimmen != Counter(fraction["counts"]):
+            result[name] = {"members": [], "state": "partial"}
+            continue
+        leading = majority_vote(fraction["counts"])
+        abweichler = [
+            member for member in members
+            if leading in {"yes", "no"} and member.get("vote") in {"yes", "no"} and member.get("vote") != leading
+        ]
+        result[name] = {"members": sorted(abweichler, key=lambda member: str(member.get("name") or "")), "state": "complete"}
+    for name in (members_by_group.keys() - result.keys() - NO_ZUSAMMENSCHLUSS) if result else ():
+        result[name] = {"members": [], "state": "partial", "unlisted": True}
+    return result
+
+
+def report_drucksachen(report: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Bundestag Drucksache number -> its DIP record, from every TOP of a sitting.
+
+    A vote's Drucksachen are often linked under another TOP of the same
+    sitting than the one the vote sits under (5 of 217 Beschlussempfehlungen
+    on the reference store), so a vote is matched against the whole sitting.
+    First-seen wins; Bundesrat papers, which share the number shape, are left out.
+    """
+    documents: dict[str, Mapping[str, Any]] = {}
+    for item in report.get("agenda_items") or []:
+        for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
+            if document_issuer(doc.get("herausgeber"), doc.get("url")) != "BT":
+                continue
+            number = canonical_document_number(doc.get("dokumentnummer"))
+            if number:
+                documents.setdefault(number, doc)
+    return documents
+
+
+def vote_committees(vote: Mapping[str, Any], report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The Beschlussempfehlungen among a vote's Drucksachen, with their urheber.
+
+    One entry per matched Drucksache, in the vote's order: its number, DIP
+    type, the committees DIP names as its urheber, and its URL. This cites a
+    document and claims no role: a vote on an Entschließungsantrag lists the
+    law's Beschlussempfehlung too. A Beschlussempfehlung without an urheber
+    names no committee and is left out, as the store's join leaves it out.
+    """
+    documents = report_drucksachen(report)
+    committees: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in vote.get("document_numbers") or []:
+        number = canonical_document_number(raw)
+        doc = documents.get(number)
+        if not doc or number in seen or not str(doc.get("drucksachetyp") or "").startswith("Beschlussempfehlung"):
+            continue
+        urheber = list(dict.fromkeys(_clean(name) for name in doc.get("urheber") or [] if _clean(name)))
+        if not urheber:
+            continue
+        seen.add(number)
+        committees.append(
+            {"number": number, "drucksachetyp": str(doc.get("drucksachetyp")), "urheber": urheber, "url": doc.get("url")}
+        )
+    return committees
 
 
 def vote_outcome(vote: Mapping[str, Any]) -> str | None:

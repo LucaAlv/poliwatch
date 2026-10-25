@@ -16,7 +16,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Abstimmungen for the daily view: what was decided, by topic, with dissenters". Item 2 (the topic filter on `votes/index.html`) is covered by B3.
+4. "Vote reading misses half the inverted votes and never stores it" (P1, found 2026-10-20), then the rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". B4 did the DIP abstract, the Abweichler and the committee; the deterministic fallbacks for votes without an abstract are open, the AI sentence is deferred. Item 2 (the topic filter) came with B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -49,6 +49,22 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P3
 **Depends on:** None
 
+### Store loses roll-call member rows in 22 groups of 11 votes
+
+**What:** In 22 of 1,498 stored `vote_fractions` groups, across 11 votes, the stored `vote_members` rows do not add up to the fraction counts (21 if nicht abgegeben is ignored). Most are short by exactly one member: Grüne, FDP and AfD on 2022-05-19/20 (votes 773–777), SPD on 2023-05-26 (853, 854) and 2023-06-15 (855–857). On 2024-02-02 (912) the fraktionslos group stores 5 Ja against 40 and AfD one nicht abgegeben short. The report JSON matches 1,498/1,498, so rows are lost or re-attributed at persist. Vote ids: 773, 774, 775, 776, 777, 853, 854, 855, 856, 857, 912 (measured on the reference store 2026-10-20).
+
+**Why:** Every store-side Abweichler figure (`r3-abweichler`, Fakten `meiste-abweichler`) and the Daten `vote_members` CSV inherit it, so the citable dataset is missing Stimmen. The vote panel is not affected: it reads the report.
+
+**Pros:** Fixes a silent loss in the export; B4's Abweichler parity then holds per group on the store too.
+
+**Cons:** Touches identity and stable ids (A.2 territory), possibly a stable-id format change.
+
+**Context:** Found in the B4 eng review (O4, D16). Start from the 11 vote ids. Suspects: namesake collisions of `stable_ids.vote_member_occurrence_id` (built from name and Zusammenschluss), though B.2 measured 0 D3 collisions, and the party attribution of former Linke/BSW MdBs (the fraktionslos group of 912).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** none
+
 ### Parse the "Entschuldigte Abgeordnete" appendix of each Plenarprotokoll
 
 **What:** Every Plenarprotokoll XML has an `<anlage>` headed "Entschuldigte Abgeordnete" (confirmed in 21/84) listing the MdBs excused for that Sitzung. Parse it into a per-Sitzung, per-MdB table and show "entschuldigt" next to a Stimme "nicht abgegeben" where it applies.
@@ -78,18 +94,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** M
 **Priority:** P3
 **Depends on:** None (A1 works without it)
-
-### Document `--protocol-wahlperiode` in the README
-
-**Completed:** 2026-10-20 (A3, branch `worktree-a3-plan`). The flag now scopes `--limit` and `--backfill-incomplete` and defaults to 0 (every Wahlperiode), so the WP 21 trap is gone; the README flag table and the backfill section describe it.
-
-**What:** Add `--protocol-wahlperiode` to the README's update/backfill section. Say plainly that when `--limit N > 0` is set, the catalog fetch is limited to WP 21 unless `--protocol-wahlperiode 0` is passed.
-
-**Why:** The flag's help text says so (`scripts/build_dip_pulse_site.py:9235`, applied in `fetch_protocols` at :309), but the README never mentions it (`grep -c wahlperiode README.md` = 0). Someone doing a bounded backfill of WP 20 by following the README gets WP 21 only, with no warning. Originally noted as Task 2 of `docs/audit-remediation-plan.md` (2026-08-18) and never moved here.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Line-by-line audit of the ingestion modules
 
@@ -153,17 +157,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### Recipe copy: compare the selection by range, not by text
-
-**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
-
-**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Validate final merged A1/A2 before the A3 backfill
 
 **Completed:** 2026-10-19 (A3 Phase 0). `scripts/validate_store_gate.py` on a clone of the reference store with `main` v0.20.0.0: replay, integrity, fresh vs. half-then-full grouping, unchanged replay, links, export and publication all pass; every moved figure is explained in [the gate record](docs/plans/a3-gate-validation.md).
@@ -183,16 +176,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Why:** A repersist of that cache refuses to run, so the A.2 reference replay had to leave the sitting out (284 reports, `docs/a2-validation.md`).
 
-**Priority:** P2
-**Depends on:** None
-
-### Test the independently loaded historical parser and classifier
-
-**What:** Add a regression test for the documented rule-4 comparison using an independently loaded historical parser and historical classifier pair.
-
-**Why:** PR #87 review finding (`tests/test_audit_offline_turns_cli.py:59–65`): the test baseline calls the current parser and shares its classifier, so it cannot catch regressions in loading the separate historical pair. Incorrect historical counts could pass unnoticed.
-
-**Effort:** S
 **Priority:** P2
 **Depends on:** None
 
@@ -311,17 +294,6 @@ About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3
 **Priority:** P3
 **Depends on:** A3 (v1 coverage)
 
-### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
-
-**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
-
-**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-
 ### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
 
 **What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
@@ -374,7 +346,7 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 ### LLM five-word topic label per Tagesordnungspunkt
 
-**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier Aufmerksamkeitsrang row title, replacing the deterministic boilerplate-stripped fallback now used there.
+**What:** Generate a short neutral topic label (about five words) per TOP once, cached alongside the KI-Zusammenfassung, and use it as the radar row's headline — and as the dossier "Meiste Reden" row title, replacing the deterministic boilerplate-stripped fallback now used there.
 
 **Why:** The DIP Vorgang title is up to 200 characters and, for Antrag-only groups, the lead title is one Fraktion's slogan chosen by DIP ordering. A generated neutral label reads in five seconds and sidesteps the lead-title problem; the Vorgang title stays as the deterministic fallback.
 
@@ -406,18 +378,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 
 **Effort:** M
 **Priority:** P3
-**Depends on:** None
-
-### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
-
-**What:** `week_stats` (`scripts/render_dip_pulse_html.py`, `vorgangstyp_counts`) adds 1 per Vorgangsposition. Count each Tagesordnungspunkt once for each distinct Vorgangstyp among its positions instead, and compare against the Wochenvergleich week the same way. On the real store, TOP 7 of Sitzung 21/50 bundles 26 Petition positions with 1 Rede and currently adds 26 to "Petition". 70 TOPs carry 6 or more positions. Change the card note ("Vorgangspositionen nach Art") and the sources.html glossary intro ("zählt die Vorgangspositionen der Sitzungswoche") to say Tagesordnungspunkte and Kalenderwoche. Rename the card heading "Verfahren, die zurückkehren" to "Wieder auf der Tagesordnung" and drop "Verfahren" from its notes. The `returning_vorgaenge` rule itself already matches the glossary. Done when a bundled TOP adds at most 1 per Vorgangstyp and no Puls text says "Verfahren" for a Vorgang.
-
-**Why:** CONTEXT.md (Vorgangstyp, mitberatener Vorgang, Debattenprofil, wiederkehrender Vorgang, 2026-09-26).
-
-**Context:** Only the Puls card and its week view read `vorgangstyp_counts`; facts.py and the Daten page do not (checked 2026-09-26).
-
-**Effort:** S
-**Priority:** P2
 **Depends on:** None
 
 ### Combined Antrag titles render as one four-line bold block on puls.html
@@ -478,16 +438,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
 
-### Fakt der Woche, copy fixes from the glossary review
-
-**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
-
-**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None; (3) interacts with the publication ledger item
-
 ### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
 
 **What:** `meistdiskutierter-vorgang` (`scripts/facts.py`) credits every speech of a Tagesordnungspunkt to its lead Vorgang (`LEAD_PROCEEDING_CTE`: first Gesetzgebung by `proceeding_positions.id`, else lowest id). Decide how the metric handles a Tagesordnungspunkt that deals with several Vorgänge: skip bundled TOPs, count per Tagesordnungspunkt instead, or count only TOPs whose Vorgang set is a single Vorgang. Done when no Vorgang can win on Reden given under a TOP it merely shares.
@@ -526,37 +476,13 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Keep keyboard focus on reset, and reopen a speech on a repeated link click
+### Bill overview polish: same-day step ties, diacritic-insensitive search
 
-**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
-
-**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
-
-**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-### Stop calling a Plenarstelle a "Debatte" on the bill pages
-
-**What:** The bill detail section "Debatten" and the overview count "N Debatten" (`render_bill_detail`, `render_bills_index` in `scripts/build_dip_pulse_site.py`) count Plenarstellen, i.e. `protocol_refs`. Relabel them (for example "Beratungen im Plenum" or "Plenarstellen", with a glossary tooltip) or count only Plenarstellen with at least one Rede as Debatten. Update the section anchor `#debatten`, the harness section-order assertion and the CHANGELOG wording of the next release.
-
-**Why:** CONTEXT.md lists "Debatte" under Avoid for Plenarstelle and Tagesordnungspunkt, because a Tagesordnungspunkt can pass without any Rede; a count of "3 Debatten" can include sittings where nobody spoke. The v0.18.0.0 docs audit blocked on this; the owner kept the glossary rule and shipped with the conflict named.
-
-**Context:** `xml_speech_count` on each ref (`protocol_refs[].speech_count`) already says whether anyone spoke. Decide label vs count semantics before editing.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-### Bill overview polish: controls role, same-day step ties, diacritic-insensitive search
-
-**What:** (1) Give `<div class="bill-controls" aria-label=…>` a `role="search"` (or `group`) so the label is announced. (2) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (3) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
+**What:** (1) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (2) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
 
 **Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
 
-**Context:** (2) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
+**Context:** (1) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
 
 **Effort:** S
 **Priority:** P3
@@ -808,26 +734,6 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 **Priority:** P2
 **Depends on:** Lawyer answer on the address (ADR 0003, question 1)
 
-### Tag the abgeordnetenwatch MP columns with their real source
-
-**What:** Move `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` from `_COLUMN_SOURCE_DIP_ROSTER` to `_COLUMN_SOURCE_ABGEORDNETENWATCH` (`scripts/build_dip_pulse_site.py`), with a test that pins the tags. Afterwards, delete the "Known gap" paragraph in `docs/data-license.md`.
-
-**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-### Cite protocols as „BT-PlPr." per DIP no. 4c
-
-**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
-
-**Why:** DIP no. 4c prescribes the abbreviations exactly.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Settle the roll-call source for redistribution
 
 **What:**
@@ -944,28 +850,108 @@ Done when the chart and the recipe give the same numbers on the same release, an
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
-1. A short description of what the vote decided. DIP's Vorgang record has an `abstract` field (checked on the API 2026-09-30), but the build neither fetches the Vorgang record nor keeps it: no match in `scripts/` or the cached report JSON. Fetch and store it, and use it where it exists. Otherwise write a labelled AI sentence under the validators item.
+1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). 64 of 217 votes on the reference store have none (measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153); those panels say "Keine Beschreibung in DIP". **Still open** for them: the two deterministic layers below. The labelled AI sentence under the validators item is deferred (decided 2026-10-20).
+   - **Lead sentence from facts we already hold**, in the pattern of the bundestag.de Textarchiv: date, what was voted on (Gesetzentwurf / Beschlussempfehlung zu Antrag X), result with tally, committee.
+   - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free.
+   - **Link the bundestag.de "Debatte" text, never copy it.** It is editorial content of the Internetredaktion, private use only under their Impressum (215 of 217 votes have one). The vote page's `showItContainer_<articleId>_…` gives the article id exactly. One article covers up to 9 votes and its section headings can name the wrong Antrag (vote 1005), so match a vote to its section by Drucksache number. Consider adding these texts to the ADR 0003 consent e-mail (question 5).
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
-3. The named Abweichler per Fraktion on the vote panel. The data exists (recipe `r3-abweichler`).
-4. The responsible committee, from the Beschlussempfehlung.
+3. ~~The named Abweichler per Fraktion on the vote panel.~~ Done in B4 (`derive.vote_abweichler`; 632 Abweichler in 95 of 217 votes; archive rows carry the count where every group's Einzelstimmen are complete).
+4. ~~The responsible committee, from the Beschlussempfehlung.~~ Done in B4: "Beschlussempfehlung des <Ausschuss> (Drucksache …)" on 190 of 217 panels, recipe `r6-ausschuss`. Mitberatende committees are the follow-up "Mitberatende Ausschüsse on the vote panel".
 
 Done when a vote on the archive can be found by topic and its panel answers "what was decided, who voted how, who broke ranks, where is the source" without leaving the page.
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong.
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. That item shipped, but the inversion it detects is incomplete and never reaches the page: see "Vote reading misses half the inverted votes and never stores it". Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Inverted-vote reading; Politikfeld tags (for 2); deterministic validators (only for the AI fallback in 1)
+**Depends on:** Vote reading misses half the inverted votes and never stores it; deterministic validators (only for the deferred AI fallback in 1)
+
+### Vote reading misses half the inverted votes and never stores it
+
+**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
+1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
+2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
+3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
+
+Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
+
+**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
+
+**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Mitberatende Ausschüsse on the vote panel
+
+**What:** Keep `ueberweisung` (`ausschuss`, `federfuehrung`) from the 1. Beratung positions, which `compact_position` (`scripts/validate_dip_protocol.py`) drops today, and show "mitberatend: …" next to the Beschlussempfehlung line of the vote panel.
+
+**Why:** abgeordnetenwatch lists the committees involved. B4 cites only the committee that issued the Beschlussempfehlung (D14).
+
+**Pros:** Completes the "committees involved" picture; the data is already in the cached raw positions (1,650 `federfuehrung: true` entries).
+
+**Cons:** `ueberweisung` sits on the 1. Beratung, not on the vote's TOP, so it needs a Vorgang-level join, and one more stored table.
+
+**Context:** `api.raw.positions` in the cached reports; B4's `vote_proceedings` gives the vote→Vorgang link (D17).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** B4
+
+### B4 review findings: lower-priority edges
+
+**What:** Edges the B4 `/ship` adversarial passes found (2026-10-22, Codex and a Claude subagent) and left open; the four that could lose stored data or stop a build were fixed on the B4 branch the same day:
+1. No per-vote cap on "Worum es geht" blocks.
+2. `abstract_text` output can differ across Python patch levels (it feeds the content-hashed export).
+3. CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles).
+4. The teaser can cut after "(Abs.".
+5. `derive.vote_identity` uses the raw id while persist cleans it.
+6. One member/count mismatch hides a whole group's Abweichler.
+7. ~~`derive.vote_abweichler` dedupes member rows by name~~ Done 2026-10-22 (B4 Codex P2 F3): it dedupes on `derive.vote_member_identity`, the key persist hands `upsert_mp`, vote-wide. The 63 occurrences the old Abstimmung-page "profile URL" folded were unfolded by rebuilding the reference store's registry from scratch (2026-10-22, `vote_members` 154,078). Left: merges `registry.bind` makes later are not seen by derive.
+8. `derive.member_profile_url` links an abgeordnetenwatch profile whatever its match kind, so a name-guessed aw match can put an external profile beside a named Abweichler (0 cached Einzelstimmen rows carry an aw URL; B4 ship run 2 adversarial review, 2026-10-22).
+9. An online Vorgang refetch replaces the cached record whole (`cache["vorgaenge"].update(records)` in `build_dip_pulse_site.py`), so an answer without `titel` or `abstract` drops ones the cache had; the replay guard sees only `not_fetched` transitions.
+10. `derive.vote_identity` turns an id of None into `"None"` when `fetch_targets` reads a fresh report before `require_vote_shape`; `features.votes.dip_vorgang_url` puts a non-digit Vorgang id into the DIP path unchecked.
+
+Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude subagent) and deferred by the owner; none occurs on the reference data:
+11. A Fraktion missing from both the fraction rows and the Einzelstimmen leaves the other groups "complete", so the panel can say "Niemand stimmt anders …" and the archive show 0 while `vote.total` shows the missing Stimmen. Require the groups' totals to equal the vote total before any vote-wide claim (`build_dip_pulse_site.py` `_abweichler_count`, `features/votes.py` `_abweichler_summary_html`). 217 of 217 reference votes have matching totals.
+12. Pages and the Fakt `meiste-abweichler` / recipe `r3-abweichler` count Abweichler differently on an incomplete vote: `derive.vote_abweichler` withholds a group whose Einzelstimmen do not match its tally and excludes `Unbekannt`, the SQL (`facts.py`, the r3 recipe) does neither. Decide whether the SQL takes the page's completeness rule. 0 partial groups on the reference data.
+13. `derive.report_drucksachen` keeps the first TOP's copy of a Drucksache while persist keeps the fullest, so an empty `urheber` first can make the panel say "Ausschuss nicht ermittelt" while `r6-ausschuss` counts the committee. D15 shows 0 of 217 differ.
+14. `derive.person_profile_url` accepts a `..` segment (`/abgeordnete/../apps/na/x` resolves to the Abstimmung page it exists to exclude).
+15. The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.
+16. html.parser is quadratic on runs like `'<a "'`: 10,000 characters take about 0.9 s per call, paid per persist and per vote panel. Computing the plain text once at cache-write time removes it.
+17. Vote ids are not limited to anchor-safe characters, so an id with spaces makes an invalid `id="vote- 7 "` and an archive link that does not scroll (reference ids are numeric).
+18. `.vote-context-block:has(…)` hides the teaser with no fallback (a browser without `:has()` shows it twice), and `ul.vote-abweichler-list { display:inline }` drops the list semantics in Safari/VoiceOver.
+
+**Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export. 11 is the one item that can make a public statement false.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Stale cached-report error lines: polish
+
+**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290):
+1. The `--backfill-incomplete` stop reuses `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`; give that call site "move it out and re-run `--backfill-incomplete`", and fill in the report's number instead of `<its number>`.
+2. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
+3. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
+4. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
+
+**Why:** These lines are the only guide out of a stopped build; each should name a command that works.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Politikfelder: findings deferred from the B3 review
 
 **What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
 1. A missing lead Vorgang or number makes the tags come from the survivors with the wrong lead, and the source says `sachgebiet` or `drucksache`, not that something was missing. Record a partial flag, or count partial results in the build summary.
 2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
-3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Put a cache digest into `datenstand`, or render from the store.
-4. The cache sits in the published `data/` directory and holds DIP `abstract` text. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so move the cache out or drop `abstract` until a feature reads it.
+3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Since B4 the same holds for the vote panels' DIP abstracts and their Vorgang selection (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). Put a cache digest into `datenstand`, or render from the store; one fix covers all three.
+4. The cache sits in the published `data/` directory and holds DIP `abstract` and `titel` text, which the vote panels now show (B4), so dropping it is no longer an option. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so, hosting must exclude `data/dip-vorgang-cache.json` or the cache moves out of `data/`.
 5. The inline filter scripts on `votes/index.html` and the week radar are checked only by a headless-Chromium probe run by hand (2026-10-09), not by the suite. Add a browser test when the suite has one.
 6. A Vorgang DIP does not return, or a number it resolves to nothing, is stored as "fetched, nothing known" and counted as fetched, so an offline repersist stores `untagged`, not `not_fetched`, until the next online build. Empty Sachgebiet records (4,086 of 7,511 cached Vorgänge, most pulled in by numbers with a huge fan-out) and empty lookups are asked again on every online build, about 40 batches and a pause each; bound that with `aktualisiert` or a fetched-at date.
 7. A Sachgebiet label the mapping does not know is skipped at tag time, so tagging can fall through to a weaker source; the build summary names the label afterwards. Consider a `not_fetched`-like source for an unmapped label.
@@ -984,21 +970,6 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Priority:** P3
 **Depends on:** B3
 
-### Politikfelder: harden the Vorgang fetch and the repersist guard
-
-**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
-1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
-2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
-3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
-4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
-5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
-6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
-
-**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** B3
 
 ### Fill the remaining untagged Tagesordnungspunkte
 
@@ -1210,6 +1181,148 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Test the independently loaded historical parser and classifier
+
+**Completed:** v0.21.1.0 (2026-10-23). A focused CLI regression loads tiny independent parser/classifier stand-ins for the documented rule-4 comparison, without copying historical modules or delegating parsing to the current parser. It checks historical count deltas, rule version and file hashes while current counts stay unchanged across two XML files. Mutation checks detect both historical-to-current and current-to-historical classifier sharing. All four audit CLI tests and the full Python suite pass (1,487 tests, one skipped). No production change was needed.
+
+### Debattenprofil counts Tagesordnungspunkte, and "Wieder auf der Tagesordnung" replaces "Verfahren, die zurückkehren"
+
+**What:** `week_stats` (`scripts/render_dip_pulse_html.py`, `vorgangstyp_counts`) adds 1 per Vorgangsposition. Count each Tagesordnungspunkt once for each distinct Vorgangstyp among its positions instead, and compare against the Wochenvergleich week the same way. On the real store, TOP 7 of Sitzung 21/50 bundles 26 Petition positions with 1 Rede and currently adds 26 to "Petition". 70 TOPs carry 6 or more positions. Change the card note ("Vorgangspositionen nach Art") and the sources.html glossary intro ("zählt die Vorgangspositionen der Sitzungswoche") to say Tagesordnungspunkte and Kalenderwoche. Rename the card heading "Verfahren, die zurückkehren" to "Wieder auf der Tagesordnung" and drop "Verfahren" from its notes. The `returning_vorgaenge` rule itself already matches the glossary. Done when a bundled TOP adds at most 1 per Vorgangstyp and no Puls text says "Verfahren" for a Vorgang.
+
+**Why:** CONTEXT.md (Vorgangstyp, mitberatener Vorgang, Debattenprofil, wiederkehrender Vorgang, 2026-09-26).
+
+**Context:** Only the Puls card and its week view read `vorgangstyp_counts`; facts.py and the Daten page do not (checked 2026-09-26).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** 2026-10-23. `week_stats` counts each Tagesordnungspunkt once per distinct Vorgangstyp for both weeks. The card and glossary explain TOP counts per Kalenderwoche; the returning card is headed "Wieder auf der Tagesordnung" and its notes use Vorgang/Vorgänge. A regression test covers repeated and mixed types, separate TOPs and the comparison week; all 28 week-comparison tests pass, and the full Python suite passes (1,374 tests, one skipped).
+
+### Document `--protocol-wahlperiode` in the README
+
+**Completed:** v0.20.6.2 (2026-10-22). README's update section now documents the default `21`, filtering only with positive `--limit`, older-Wahlperiode and all-Wahlperioden examples, the separate `--detail-limit`, and explicit/backfill selection. The former TODO's catalog-filter claim was stale: online builds always fetch the whole catalog; the Wahlperiode filter applies only to acquisition. Verified against `parse_args()`, `main()`, `select_acquisition_protocols()` and offline parser/selection checks of the examples.
+
+**Superseded on the A3 branch (merged 2026-10-25):** the flag now defaults to `0` (every Wahlperiode) and also scopes `--backfill-incomplete`; the README flag table and the paragraph under it describe that.
+
+### Fakt der Woche, copy fixes from the glossary review
+
+**What:** Three copy corrections. (1) `_render_fact_sources` (`scripts/build_dip_pulse_site.py`) heads a Fakt's citation list "Quellen"; rename it "Belege", matching the Daten export's "Belege je Fakt", whose description should also name Tagesordnungspunkte. (2) The withheld reason for a monthly Kennzahl reads "diese Woche nicht messbar"; make it period-aware. (3) The footer "Spätere Sitzungswochen ändern frühere Karten nicht; nur eine Korrektur an den Rohdaten kann es" understates what changes a Karte: every build re-renders them, so a rule change (threshold, Mindestwert, wording) changes them too, and a Karte whose Beleg no longer resolves disappears. Say so, or make Karten immutable via the publication ledger.
+
+**Why:** CONTEXT.md (Beleg, zurückgehalten, Karte, 2026-09-25). "Quellen" is the site-wide name of sources.html, so the same word names two things on one page.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None; (3) interacts with the publication ledger item
+
+**Completed:** v0.20.7.0 (2026-10-23). Fact citation lists now say "Belege"; the Daten description also names Tagesordnungspunkte. Shared comparison copy uses the existing period kind for "diese Woche" and "diesen Monat", including archive/page status text. Methodik and weekly/monthly page footers explain that rebuilds regenerate cards and data/rule/wording changes can alter them; Methodik also notes that an unresolvable Beleg removes a card. Validation: 153 fact tests and the full Python 3.13 suite (1,373 tests; one skipped) passed, along with script compilation and diff checks. The publication ledger remains a separate open item.
+
+### Add an accessible role to bill search controls
+
+**What:** Give `.bill-controls` `role="search"`, retaining `aria-label="Gesetzesvorhaben finden"`, so the bill overview exposes a named search landmark. Empty publications omit the controls.
+
+**Why:** Accessibility finding from the v0.18.0.0 adversarial review. See [implementation plan](docs/plans/bill-search-accessible-role.md).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.1 (2026-10-22). Added the named search landmark and nonempty/empty markup assertions. Validation passed: 29 bill tests, the full suite (1,371 tests; 1 skipped), and desktop/mobile browser checks.
+
+### Cite protocols as „BT-PlPr." per DIP no. 4c
+
+**What:** Change the „BT-PlPr" source labels (e.g. the bill-event `source` built in `scripts/build_dip_pulse_site.py`) to „BT-PlPr." plus number, and check the other citation strings against DIP no. 4c („BT-Drs.").
+
+**Why:** DIP no. 4c prescribes the abbreviations exactly.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.6.0 (2026-10-22). Protocol labels now use `BT-PlPr.`; document citations preserve issuer and type, including BR and protocol documents. Fact receipts resolve the issuer by document ID. See the [implementation and citation audit](docs/plans/protocol-citation-labels.md#implementation-and-citation-audit-2026-10-22).
+
+### Tag the abgeordnetenwatch MP columns with their real source
+
+**Completed:** v0.20.5.1 (2026-10-22). `birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` now carry the `abgeordnetenwatch` source tag. The export test pins all seven abgeordnetenwatch MP columns, export format 6 invalidates cached manifests, and the "Known gap" paragraph in `docs/data-license.md` is removed.
+
+**Why:** The roster build fills all five from the abgeordnetenwatch resolver (`profile_resolver.resolve` / `fetch_bio`), but the manifest claims `dip`. The per-column licence in `docs/data-license.md` depends on these tags: the columns are CC0, not DIP-terms data. The MP-page footer already credits abgeordnetenwatch.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Stop calling a Plenarstelle a "Debatte" on the bill pages
+
+**What:** The bill detail section "Debatten" and the overview count "N Debatten" (`render_bill_detail`, `render_bills_index` in `scripts/build_dip_pulse_site.py`) count Plenarstellen, i.e. `protocol_refs`. Relabel them (for example "Beratungen im Plenum" or "Plenarstellen", with a glossary tooltip) or count only Plenarstellen with at least one Rede as Debatten. Update the section anchor `#debatten`, the harness section-order assertion and the CHANGELOG wording of the next release.
+
+**Why:** CONTEXT.md lists "Debatte" under Avoid for Plenarstelle and Tagesordnungspunkt, because a Tagesordnungspunkt can pass without any Rede; a count of "3 Debatten" can include sittings where nobody spoke. The v0.18.0.0 docs audit blocked on this; the owner kept the glossary rule and shipped with the conflict named.
+
+**Context:** `xml_speech_count` on each ref (`protocol_refs[].speech_count`) already says whether anyone spoke. Decide label vs count semantics before editing.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** v0.20.5.0 (2026-10-22). Implemented [the relabeling plan](docs/plans/relabel-bill-debatten.md): overview counts, detail heading/navigation, accessible label, empty state and discovery copy now use "Beratungen im Plenum"; the section anchor is `#plenarstellen`. Every protocol reference still counts and remains linked, including zero or missing speech counts. The explanation reuses the Tagesordnungspunkt glossary. Design documentation and the next-release changelog are aligned. Validation: 28 bill tests passed; the full Python 3.13 suite ran 1,365 tests with one skipped; desktop/mobile browser checks passed. Collection, persisted data and count calculations are unchanged.
+
+### Rename the "Aufmerksamkeitsrang" sidebar and fix its description
+
+**What:** The dossier sidebar is headed "Aufmerksamkeitsrang" (`scripts/render_dip_pulse_html.py`), and sources.html calls it "Aufmerksamkeitsranking … aus extrahierter Redenanzahl und extrahierten Redetext-Zeichen" (`scripts/build_dip_pulse_site.py`), but it sorts by number of Reden only. Rename the heading and the back link (e.g. "Meiste Reden"), keep the `#aufmerksamkeitsrang` anchor or redirect it, and make the sources.html entry say it ranks by Reden while the second bar shows Textanteil.
+
+**Why:** CONTEXT.md (Rangfolge nach Reden, 2026-09-25): the number of Reden mostly follows the debate length agreed in advance, so "Aufmerksamkeit" claims more than the ranking measures.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.20.4.0 (2026-10-21). The heading and back links now say "Meiste Reden"; the sources entry explains sorting by Reden and the bars’ Redeanteil and Textanteil within the Sitzung. The existing `#aufmerksamkeitsrang` anchor is preserved. Heading, link, empty-state and sources-copy assertions cover the wording; local desktop/mobile rendering and the back link were checked. Python 3.13: 1,364 tests ran, one skipped.
+
+### Recipe copy: compare the selection by range, not by text
+
+**What:** `recipe_copy_runtime_script` (`build_dip_pulse_site.py`) now guards both the success and rejection handlers with `copy !== latestCopy` (fixed in b6e1f8a), but the rejection's "did the reader select something else" check still compares the selection's text. Selecting *identical* text in another recipe passes that comparison, so a late rejection still replaces that selection with its own SQL. Compare the selection's range endpoints instead of its text. Done when a rejection that settles after the reader selected matching text elsewhere leaves that selection alone.
+
+**Why:** Final-round Codex review of v0.6.6.0 (2026-09-26), reproduced with controlled promise settlement. Deferred per the ship's review-round limit; the common cases (rejection with nothing in between, newer click, different selection) are fixed and verified live.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** 2026-10-21. Copy rejection now compares every range's saved endpoint nodes and offsets, preserving equal text selected elsewhere. The emitted-runtime regression failed before the fix; all 16 new recipe scenarios and existing browser checks pass. Python 3.13: 1,363 tests ran, one skipped. See [implementation receipt](docs/plans/recipe-copy-selection-race.md#implementation-receipt-2026-10-21).
+
+### Keep keyboard focus on reset, and reopen a speech on a repeated link click
+
+**What:** Two small interaction gaps on the bill pages. (1) „Suche und Filter zurücksetzen“ hides itself while it has focus (`apply()` sets `reset.hidden`), so keyboard focus falls to `<body>`; move focus to the search field or the result summary in the reset handler, as prev/next already do with the summary. (2) Clicking the same speech link a second time after closing that speech card in the dossier leaves it closed, because the fragment is unchanged and `hashchange` never fires (`speech_hash_runtime_script` in `scripts/render_dip_pulse_html.py`); also handle the link click itself.
+
+**Why:** Both were found in the v0.18.0.0 adversarial review after the fix-cycle limit was reached. (1) is an accessibility regression for keyboard and screen-reader users; (2) makes a speech link look broken.
+
+**Context:** `render_bill_script` in `scripts/build_dip_pulse_site.py`. Extend `tests/bills_browser_check.js` with a reset-focus assertion; the speech-hash case needs a small dossier fixture (the harness has none yet).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+**Completed:** v0.20.2.0 (2026-10-20). Reset focuses search; repeated speech links reopen their card. Automated desktop/mobile Chrome checks cover reset state, link guards and actual Enter-key activation.
+
+
+### Politikfelder: harden the Vorgang fetch and the repersist guard
+
+**Completed:** v0.20.1.0 (2026-10-20). Implemented `docs/plans/politikfelder-hardening.md`, including its adversarial additions: partial-response salvage without negative-caching incomplete membership, separate validation/outage accounting, identity-based replay protection and explicit store-read refusal, cache version/read-error preservation, unique corruption backups, complete atomic-save fallback, and 44px coarse-pointer chips. ID fetches also preserve unrelated cached records. Python 3.13: 1,363 tests ran with one skipped; demo publication checks and Chrome DevTools mobile/desktop fixture checks passed. No live cache/store changes or DIP requests.
+
+**What:** Findings of the second adversarial round of the v0.20.0.0 ship review (2026-10-19), in code that ship added, deferred because its three fix cycles were used:
+1. One malformed DIP record fails its whole batch: `validate_dip_protocol.vorgang_cache_record` raises DipError for a Sachgebiet that is not a list of labels, inside `fetch_vorgaenge`'s batch loop, so 99 good Vorgänge are not cached and the batch counts toward the outage breaker. A DIP-wide shape change would trip the breaker and leave every new TOP `not_fetched` in a build that still publishes. Validate per record, keep the good ones, and count shape errors apart from outages.
+2. `build_dip_pulse_site.require_vorgang_cache_for_tags` returns on any `sqlite3.Error`, so a locked or corrupt store passes the guard; only "no such table" should pass, anything else should refuse.
+3. The same guard compares totals of `not_fetched` rows, not identities, so a cache that recovers some `not_fetched` items while losing others passes (the real store has 0 `not_fetched`, so this needs a store that is already degraded). Compare per TOP and vote id. A vote id that persist cleans to nothing ("" or blanks) also counts in the derivation but not in the store.
+4. A falsy malformed value (`sachgebiet: false`, `""`, `{}`; a list answer whose `documents` is `{}`) is defaulted to empty before the shape check and cached as "fetched, nothing known" (`vorgang_cache_record`, `ApiClient.list_all`); see deferred item 6.
+5. `politikfelder.load_cache` ignores the cache's `version` and writes it back as 1; drops a record whose Sachgebiet is `null` without a word (normalise to `[]`); a second corruption overwrites the first `.corrupt` copy; and `save_cache` has no fallback when the final rename itself fails after private staging.
+6. On touch screens the Politikfeld and Fraktion filter chips on the week radar and the votes archive are 30px tall (`.radar-filter .chip`, `.chip` in `votes_archive_styles`), below the 44px that v0.19.1.0 gives every other control on `puls.html` under `@media (pointer:coarse)`.
+
+**Why:** None is reachable on the reference data (7,511 cached Vorgänge, all well formed; 0 `not_fetched`; the guard passes the real store and refused every 1–50% random cache deletion tried), but 1, 2 and 6 would hurt the first time DIP or a deployment does something unusual.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** B3
+
 
 ### A.2 test follow-ups
 

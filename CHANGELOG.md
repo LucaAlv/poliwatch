@@ -2,6 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.1.0] - 2026-10-23
+
+### Added
+
+- Regression coverage for offline audit comparisons ensures an independently loaded historical parser uses its own classifier and leaves current counts unchanged across multiple XML files.
+
+## [0.21.0.0] - 2026-10-23
+
+### Added
+
+- Each roll-call vote on a dossier says what it was about: a "Worum es geht" block with DIP's description of the Vorgang the vote decides, linked to DIP by its title, with a short teaser and the full text behind "Ganze Beschreibung". A vote's Vorgang comes from its own Drucksachen, narrowed to its TOP's Vorgänge. On the reference cache 217 of 217 votes have their Vorgang, and 153 have a DIP description; the others say "Keine Beschreibung in DIP", "Kein einzelner DIP-Vorgang ermittelt" or "Vorgang nicht abgerufen".
+- Each vote cites the committee recommendation it was taken on: "Beschlussempfehlung des Haushaltsausschusses (Drucksache …)", found among the vote's Drucksachen across the whole sitting, or "Ausschuss nicht ermittelt". 190 of 217 reference votes cite one.
+- Under each Fraktion or Gruppe of a vote, the panel names who voted against its majority (Ja against a Nein-Mehrheit or Nein against a Ja-Mehrheit), the first ten inline and the rest behind "alle N anzeigen", linked to their Personenseite. "Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe" is said only when every group's Einzelstimmen are complete; a group whose Einzelstimmen do not add up to its tally says so instead of naming no one. The reference votes have 632 such Stimmen.
+- The votes archive shows how many voted against their group's majority on each vote (only when that count is complete), and each archive entry links straight to its vote panel (`…#vote-<id>`, 217 of 217 resolve).
+- The Daten export has a `vote_proceedings` table (the Vorgänge a vote is about, with rank), `proceedings.abstract` (DIP's description as plain text) and `votes.context_state` (resolved, none or not_fetched), labelled as derived or source data, and a sixth recipe, `r6-ausschuss`, counting votes by the committee whose Beschlussempfehlung they cite.
+
+### Changed
+
+- Store schema 6 and Daten export format 7 with 28 CSVs. A store built by an earlier version is refused with the instruction to run `--offline --repersist`.
+- A vote's procedure type is read from the Drucksachen of the whole sitting, not only its own TOP, so the archive rows showing "–" fall from 5 to 0.
+- An online build also asks DIP again for vote Vorgänge whose description is empty (86 on the reference cache; none had gained one).
+- Persist and the standalone renderer refuse a stale vote shape (a TOP's singular `"vote"`, non-list votes, a vote without an id) instead of treating the sitting as voteless; a stale report outside the build's catalog no longer stops the build, and a null or empty `"vote"` passes.
+
+### Fixed
+
+- An Einzelstimmen card that links back to the Abstimmung (bundestag.de does this for an MP without a biography; 77 rows in 14 votes) is no profile URL any more: it no longer serves as an identity that folded every such MP of a vote into one, is not stored as the MP's profile (14 → 0 mps), and the name is no longer linked to the vote page. The registry kept the 63 occurrences it had already folded on their records, so the reference store was rebuilt without its earlier registry: `vote_members` 154,015 → 154,078, persons 4,265 → 4,298 (47 records, one per affected MP, replace the 14 folded ones; 41 stale `xml:` records from an older identity rule fold into their MPs' current records with no speech or contribution changing person; 10 bindings to speeches and contributions that no longer exist are gone). Abweichler are unchanged (632).
+- Einzelstimmen whose biography link fails the profile check (a backslash, user info, a port or whitespace in the URL, or anything other than an https bundestag.de biography or abgeordnetenwatch profile) are no longer linked or used as an identity. No reference link is affected.
+- In dark mode, the "Einzelstimmen (N Abgeordnete)" control under each vote is readable (it was dark blue on the dark panel, about 2.2:1; now 8.2:1).
+
+## [0.20.8.0] - 2026-10-23
+
+### Fixed
+
+- The Debattenprofil now counts each agenda item once per procedure type in both compared calendar weeks, so bundled petitions no longer inflate the profile. The card and glossary explain the counting rule.
+- Returning procedures now appear under “Wieder auf der Tagesordnung”, with notes consistently calling them Vorgänge.
+
+## [0.20.7.0] - 2026-10-23
+
+### Fixed
+
+- Fact citations now say “Belege”, and the data export description includes agenda items among the evidence types.
+- Monthly facts without an observation now say “diesen Monat nicht messbar”.
+- Fact pages and Methodik now explain that rebuilding can change earlier cards after data, rule or wording changes, and that cards disappear when their evidence no longer resolves.
+
+## [0.20.6.2] - 2026-10-22
+
+### Changed
+
+- The refresh guide now explains how `--protocol-wahlperiode` works with acquisition limits, with examples for the current period, older periods and all periods.
+
+## [0.20.6.1] - 2026-10-22
+
+### Fixed
+
+- Assistive technology can now identify the bill overview's search and filter controls as a search landmark named “Gesetzesvorhaben finden”. Empty publications continue to omit the controls.
+
+## [0.20.6.0] - 2026-10-22
+
+### Fixed
+
+- Protocol citations now consistently use `BT-PlPr.` with their document number. Bill timelines and fact sources identify Bundestag and Bundesrat documents by chamber and type while preserving their source links.
+
+## [0.20.5.1] - 2026-10-22
+
+### Fixed
+
+- Data exports now correctly identify abgeordnetenwatch as the source of MP birth year, gender, profession, constituency and state. Export format 6 refreshes cached provenance labels without changing row IDs or the store schema.
+
+## [0.20.5.0] - 2026-10-22
+
+### Changed
+
+- Bill pages now label linked plenary records as ‘Beratungen im Plenum’, including records without speeches; counts are unchanged and the section anchor is now #plenarstellen.
+
+## [0.20.4.0] - 2026-10-21
+
+### Changed
+
+- The dossier sidebar now says "Meiste Reden". Its methodology explains that topics are ranked by speech count and the bars show speech and text shares within the sitting. Existing links to the ranking still work.
+
+## [0.20.3.0] - 2026-10-21
+
+### Fixed
+
+- A failed SQL recipe copy preserves text selected elsewhere, including identical text in another recipe, instead of replacing the reader's selection.
+
+## [0.20.2.0] - 2026-10-20
+
+### Fixed
+
+- Resetting the Gesetzesvorhaben filters returns keyboard focus to the search field, clears the query, year and page, and keeps the selected sort order.
+- Following the same speech link again reopens a closed speech card, including when activated with Enter. Modified clicks, downloads and links targeting another browsing context keep their native behavior.
+
+## [0.20.1.0] - 2026-10-20
+
+### Fixed
+
+- DIP refreshes retain valid Vorgänge when another record is malformed, leave incomplete lookups retryable, and distinguish validation errors from outages. ID lookups cannot overwrite unrelated cached Vorgänge.
+- Offline replay refuses any previously fetched TOP or vote becoming `not_fetched`, even when another identity recovers. Unreadable, locked, corrupt or incomplete stores stop replay without replacing the database.
+- Builds preserve unsupported or unreadable Vorgang caches and explain how to recover. Corruption backups have unique names, and atomic cache writes retry beside the cache when private staging fails, including during the final rename.
+- Politikfeld and Fraktion filter buttons on the week radar and votes archive have 44px touch targets; desktop sizing stays unchanged.
+
 ## [0.20.0.0] - 2026-10-19
 
 ### Added

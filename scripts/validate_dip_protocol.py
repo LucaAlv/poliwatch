@@ -84,6 +84,13 @@ class SourceSlowError(RuntimeError):
     """
 
 
+class DipShapeError(DipError):
+    def __init__(self, message: str, documents: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.documents = documents or []
+        self.incomplete_membership = True
+
+
 class SummaryError(RuntimeError):
     pass
 
@@ -317,23 +324,26 @@ class ApiClient:
         params = dict(params or {})
         documents: list[dict[str, Any]] = []
         previous_cursor = None
+        malformed_rows = False
         while True:
             if previous_cursor is not None and page_pause:
                 time.sleep(page_pause)
             page = self.get_json(path, params)
             if (
                 not isinstance(page, dict)
-                or not isinstance(page.get("documents") or [], list)
-                or not all(isinstance(d, dict) for d in page.get("documents") or [])
+                or not isinstance(page.get("documents"), list)
             ):
-                raise DipError(f"DIP API returned an unexpected body for {path}: {str(page)[:200]}")
-            batch = page.get("documents") or []
-            documents.extend(batch)
+                raise DipShapeError(f"DIP API returned an unexpected body for {path}: {str(page)[:200]}", documents)
+            batch = page["documents"]
+            malformed_rows |= any(not isinstance(d, dict) for d in batch)
+            documents.extend(d for d in batch if isinstance(d, dict))
             cursor = page.get("cursor")
             if not batch or not cursor or cursor == previous_cursor or holds_all(documents, page_count(page)):
                 break
             previous_cursor = cursor
             params["cursor"] = cursor
+        if malformed_rows:
+            raise DipShapeError(f"DIP API returned non-object documents for {path}", documents)
         return documents
 
 
@@ -395,13 +405,15 @@ VORGANG_BATCH = 100
 
 
 def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
-    """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` is
-    not used by the Politikfelder; the later topic pages read it. A Sachgebiet that
-    is not a list of labels raises DipError."""
-    sachgebiet = document.get("sachgebiet") or []
+    """What the Vorgang cache keeps of a DIP ``/vorgang`` record. ``abstract`` and
+    ``titel`` are not used by the Politikfelder; a vote's "Worum es geht" reads them.
+    A Sachgebiet that is not a list of labels raises DipError."""
+    sachgebiet = document.get("sachgebiet")
+    if sachgebiet is None:
+        sachgebiet = []
     if not isinstance(sachgebiet, list) or not all(isinstance(label, str) for label in sachgebiet):
         # A string would be cached as single letters, and stay: refuse it like a failed call.
-        raise DipError(f"DIP Vorgang {document.get('id')} has an unexpected sachgebiet: {str(sachgebiet)[:100]}")
+        raise DipShapeError(f"DIP Vorgang {document.get('id')} has an unexpected sachgebiet: {str(sachgebiet)[:100]}")
     deskriptor = document.get("deskriptor") or []
     descriptors = [
         str(d.get("name"))
@@ -411,23 +423,60 @@ def vorgang_cache_record(document: dict[str, Any]) -> dict[str, Any]:
     return {
         "sachgebiet": list(sachgebiet),
         "deskriptor_sachbegriffe": descriptors,
+        "titel": document.get("titel"),
         "abstract": document.get("abstract"),
         "vorgangstyp": document.get("vorgangstyp"),
         "aktualisiert": document.get("aktualisiert"),
     }
 
 
-def fetch_vorgaenge(client: ApiClient, ids: list[str], *, page_pause: float = 0.0) -> dict[str, dict[str, Any]]:
+def vorgang_id(document: dict[str, Any]) -> str:
+    value = document.get("id")
+    if type(value) not in (str, int) or not str(value).strip():
+        raise DipShapeError(f"DIP Vorgang has an unusable id: {value!r}")
+    return str(value).strip()
+
+
+def fetch_vorgaenge(
+    client: ApiClient, ids: list[str], *, page_pause: float = 0.0,
+    on_shape_error: Callable[[DipShapeError], None] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Cache records of the Vorgänge ``ids``, batched. An id DIP does not return
-    gets an empty record (fetched, nothing known). A failed batch raises DipError
-    before any of its ids is recorded."""
+    gets an empty record only when response membership is complete. Malformed
+    records are warned about and left retryable; outages raise DipError."""
+    def warn(exc: DipShapeError) -> None:
+        print(f"warning: Vorgang validation: {exc}", file=sys.stderr)
+        if on_shape_error is not None:
+            on_shape_error(exc)
+
     records: dict[str, dict[str, Any]] = {}
     for start in range(0, len(ids), VORGANG_BATCH):
         batch = [str(i) for i in ids[start : start + VORGANG_BATCH]]
-        found = {str(d.get("id")): d for d in client.list_all("/vorgang", {"f.id": batch}, page_pause=page_pause)}
-        for vorgang_id in batch:
-            document = found.get(vorgang_id)
-            records[vorgang_id] = vorgang_cache_record(document) if document else vorgang_cache_record({})
+        complete = True
+        try:
+            documents = client.list_all("/vorgang", {"f.id": batch}, page_pause=page_pause)
+        except DipShapeError as exc:
+            warn(exc)
+            documents = exc.documents
+            complete = False
+        found: set[str] = set()
+        for document in documents:
+            try:
+                record_id = vorgang_id(document)
+            except DipShapeError as exc:
+                warn(exc)
+                complete = False
+                continue
+            if record_id not in batch:
+                continue
+            found.add(record_id)
+            try:
+                records[record_id] = vorgang_cache_record(document)
+            except DipShapeError as exc:
+                warn(exc)
+        if complete:
+            for record_id in set(batch) - found:
+                records[record_id] = vorgang_cache_record({})
     return records
 
 
@@ -2192,7 +2241,8 @@ def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
         profile_url = None
         if profile_match:
             href = unescape(profile_match.group(1))
-            profile_url = href if href.startswith("http") else f"{BT_BASE_URL}{href}"
+            # An MP without a biography links back to the Abstimmung: no profile.
+            profile_url = derive.person_profile_url(href if href.startswith("http") else f"{BT_BASE_URL}{href}")
         vote_key = {
             "ja": "yes",
             "nein": "no",

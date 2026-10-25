@@ -248,6 +248,14 @@ _Avoid_: Enthaltung as a vote against the group, "Abweichung" for a fraktionslos
 An MdB who makes an Abweichung in a namentliche Abstimmung. In public text this is said as "stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe".
 _Avoid_: Dissident, Rebell; Fraktionslinie in public text
 
+**Vorgangsbeschreibung**:
+The "Worum es geht" block of a namentliche Abstimmung: DIP's abstract of each Vorgang the Abstimmung is about, as the Bundestag and Bundesrat wrote it, with its title and a link to DIP. It describes the Vorhaben and never the result, which only the Abstimmung's own badge states. Where DIP has no abstract it says so; where the Vorgang was not fetched it says that instead, never the same, also after the known Vorgänge when one is missing. Where no single Vorgang was found (context_state none, which includes Drucksachen that name a bundle of Vorgänge) it says "Kein einzelner DIP-Vorgang ermittelt", never that DIP has no description.
+_Avoid_: Zusammenfassung (this site writes none here), reading it as what the Abstimmung decided, filling a missing abstract with a guess
+
+**Beschlussempfehlung (zitiert)**:
+The committee line of a namentliche Abstimmung: "Beschlussempfehlung des <Ausschuss> (Drucksache …)" for each Beschlussempfehlung among the Abstimmung's Drucksachen, naming its Urheber as DIP records them. It cites the document; it does not claim that this Ausschuss was federführend for the Abstimmungsgegenstand, since an Abstimmung on an Entschließungsantrag often lists the Beschlussempfehlung on the Gesetz.
+_Avoid_: federführender Ausschuss, "der Ausschuss empfahl" for this Abstimmung, guessing a genitive the name does not allow (then "Urheber: …")
+
 ### Counting speeches per Zusammenschluss
 
 **Zählung nach Sprechrolle**:
@@ -305,6 +313,10 @@ _Avoid_: "complete" alone — the word also names unrelated things elsewhere in 
 **Presentation state**:
 The public-facing state shown for a Publication domain — ready, domain_empty, partial, unavailable or omitted — derived from its Acquisition state and record count, never set directly.
 _Avoid_: acquisition state (Presentation state is what the public sees; Acquisition state is the pipeline's own record of what happened)
+
+**context_state**:
+The export column (`votes.context_state`) that says how sure the Vorgänge in `vote_proceedings` are for one namentliche Abstimmung: resolved (its Drucksachen name Vorgänge and every one is in the Vorgang cache), none (the cache knows every Drucksache and none names a Vorgang narrowly) or not_fetched (at least one Vorgang or Drucksache is not in the cache; rows that are known are still listed). It describes the cache, not DIP: not_fetched never means DIP has nothing.
+_Avoid_: reading none and not_fetched as the same, treating no `vote_proceedings` row as "no Vorgang"
 
 **Completeness basis**:
 The per-Sitzung signal a metric's period must be complete for: votes (that Sitzung's votes Acquisition state, stamped with when it was acquired) or speeches (that Sitzung's Plenarprotokoll XML was parsed, including agenda-item times, not only its Reden). Declared per metric.
@@ -365,7 +377,7 @@ A fixed caution some Kennzahlen must carry wherever their Fakt is shown, such as
 _Avoid_: footnote, disclaimer
 
 **Karte**:
-The shareable image of exactly one Fakt, naming its subject and its Perzentil against its Vergleichsbasis; its Belege are on the Fakt's page, not on the Karte. Later periods never change a Karte; a correction to the data or a change to the rule can.
+The shareable image of exactly one Fakt, naming its subject and its Perzentil against its Vergleichsbasis; its Belege are on the Fakt's page, not on the Karte. Each site rebuild generates Karten again, so data corrections and changes to rules or wording can change them; a Karte disappears if its Beleg no longer resolves.
 _Avoid_: card in public text, one Karte per period
 
 **Beleg**:
@@ -375,4 +387,4 @@ _Avoid_: Quelle (names this site's data sources), receipt in public text
 
 ## Stable release identities (A.2)
 
-Build-store schema 5 / export format 5 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.
+Build-store schema 6 / export format 7 persists source-derived text keys and a durable person registry. Facts, recipes and person pages consume stored person assignments. Merges resting on a shared Personenkennung and reviewed corrections are durable; name-based guesses are recomputed on every reconcile. Old stores upgrade only through explicit `--offline --repersist` using complete cached reports; registry history survives independently of roster preservation. The key/correction/backup contract is in `docs/stable-ids.md`; reference validation is in `docs/a2-validation.md`.

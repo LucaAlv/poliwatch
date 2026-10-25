@@ -23,7 +23,7 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping, NamedTuple, get_args
 
 import derive
 import person_registry as registry
@@ -217,11 +217,23 @@ def empty_cache() -> dict[str, Any]:
     return {"version": 1, "vorgaenge": {}, "dokumentnummern": {}}
 
 
+class CacheLoadError(RuntimeError):
+    pass
+
+
 def load_cache(output_dir: Path | str) -> dict[str, Any]:
-    """The Vorgang cache of a site directory; empty when absent or unreadable."""
+    """Load v1 data, preserving corrupt content; refuse incompatible or unreadable files."""
     path = cache_path(output_dir)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise TypeError("cache must be an object")
+        version = data.get("version", 1)
+        if type(version) is not int or version != 1:
+            raise CacheLoadError(
+                f"Unsupported Vorgang cache version {version!r} at {path}. "
+                "Fix: use compatible code or restore a version 1 cache; the file is untouched"
+            )
         vorgaenge = data["vorgaenge"]
         dokumentnummern = data["dokumentnummern"]
         if not isinstance(vorgaenge, dict) or not isinstance(dokumentnummern, dict):
@@ -232,20 +244,28 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
             file=sys.stderr,
         )
         return empty_cache()
-    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
-        # Keep a file with bad content for inspection, out of the published tree (the next
-        # online build would overwrite it); a file that could not be read at all may be
-        # fine and stays where it is.
+    except OSError as exc:
+        raise CacheLoadError(
+            f"Cannot read Vorgang cache {path}: {exc}. "
+            "Fix: restore read access or restore the cache; the file is untouched"
+        ) from exc
+    except (ValueError, KeyError, TypeError, RecursionError) as exc:
         note = "left in place"
-        if not isinstance(exc, OSError):
-            for kept in (registry.private_dir(path) / (path.name + ".corrupt"), path.with_name(path.name + ".corrupt")):
-                try:
-                    kept.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    path.replace(kept)
-                    note = f"moved to {kept}"
-                    break
-                except OSError:
-                    continue
+        for directory in (registry.private_dir(path), path.parent):
+            kept = None
+            try:
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
+                    kept = Path(handle.name)
+                path.replace(kept)
+                note = f"moved to {kept}"
+                break
+            except OSError:
+                if kept is not None:
+                    try:
+                        kept.unlink(missing_ok=True)
+                    except OSError:
+                        pass
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -254,11 +274,12 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         return empty_cache()
     # A record or number list of the wrong shape is dropped, not trusted: it counts as a cache miss.
     vorgaenge = {
-        str(k): v
+        str(k): {**v, "sachgebiet": [] if v.get("sachgebiet") is None else v["sachgebiet"]}
         for k, v in vorgaenge.items()
         if isinstance(v, dict)
-        and isinstance(v.get("sachgebiet", []), list)
-        and all(isinstance(label, str) for label in v.get("sachgebiet", []))
+        and (v.get("sachgebiet") is None or (
+            isinstance(v["sachgebiet"], list) and all(isinstance(label, str) for label in v["sachgebiet"])
+        ))
     }
     # Keys in the canonical form the lookups use ("21/06561" is "21/6561"); a cache
     # written before numbers were canonicalised keeps its answers, and two spellings
@@ -310,28 +331,30 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
                 pass  # another build's save took it first
     text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     for staging in candidates:
+        temporary = None
         try:
-            handle = tempfile.NamedTemporaryFile(
+            with tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
-            )
-            break
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+                try:
+                    temporary.chmod(0o644)  # the published cache is world-readable
+                except OSError:
+                    pass
+            temporary.replace(path)
+            return
         except OSError:
             if staging == candidates[-1]:
                 raise
-    with handle:
-        temporary = Path(handle.name)
-        try:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            try:
-                temporary.chmod(0o644)  # NamedTemporaryFile creates 0600; the site files are world-readable
-            except OSError:
-                pass  # a filesystem that rejects chmod keeps the default mode
-            temporary.replace(path)
-        except BaseException:
-            temporary.unlink(missing_ok=True)
-            raise
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def fields_for_sachgebiete(sachgebiete: Iterable[Any]) -> list[str]:
@@ -564,7 +587,79 @@ def tags_for_vote(
     return [UNTAGGED], "not_fetched" if missing else "untagged"
 
 
+#: What ``vote_vorgang_ids`` says of a vote's context (``votes.context_state``):
+#: ``resolved``, the vote's narrow numbers name Vorgänge and every one has a cached
+#: record, and the cache knows all of its numbers; ``not_fetched``, at least one
+#: Vorgang or Drucksache is not in the cache (offline build, failed fetch): a named
+#: Vorgang has no record, or one of the vote's numbers is missing, whether or not the
+#: others name a Vorgang; rows that are known are still listed;
+#: ``none``, the cache knows every number and none names a Vorgang narrowly.
+ContextState = Literal["resolved", "none", "not_fetched"]
+CONTEXT_STATES: tuple[str, ...] = get_args(ContextState)
+
+
+class VoteContext(NamedTuple):
+    """``vote_vorgang_ids``'s answer: the Vorgänge, best first, and its state."""
+
+    vorgang_ids: list[str]
+    state: ContextState
+
+
+def vote_vorgang_ids(
+    vote: Mapping[str, Any],
+    cache: Mapping[str, Any],
+    *,
+    wahlperiode: str = "",
+    linked_vorgang_ids: Iterable[str] = (),
+) -> VoteContext:
+    """The Vorgänge a vote is about, for its prose context, and the state of that
+    answer (one of CONTEXT_STATES).
+
+    Only the narrow tier of the vote's Drucksache numbers counts, narrowed to the
+    Vorgänge of the TOPs the vote sits under when the two meet. The wide tier, which
+    ``tags_for_vote`` may still fall back to, is never used: a Beschlussempfehlung
+    bundle would show the abstracts of Vorgänge the vote is not about. Where a vote's
+    tags come from the narrow tier, both pick the same Vorgänge. A Vorgang id can be
+    resolved while its own record is not in the cache yet, or while another of the
+    vote's numbers is not; the ids are kept and the state is ``not_fetched`` (D7), so
+    a cache that lost one number fails the replay guard."""
+    (narrow, _wide), missing = _vorgaenge_of_numbers(
+        vote_document_numbers(vote, wahlperiode), cache, narrow_first=True
+    )
+    linked = {str(i) for i in linked_vorgang_ids}
+    ids = [i for i in narrow if i in linked] if linked & set(narrow) else narrow
+    if ids:
+        records = cache.get("vorgaenge") or {}
+        complete = not missing and all(i in records for i in ids)
+        return VoteContext(ids, "resolved" if complete else "not_fetched")
+    return VoteContext([], "not_fetched" if missing else "none")
+
+
 vote_key = derive.vote_identity
+
+
+def vote_linked_vorgang_ids(report: Mapping[str, Any]) -> dict[str, list[str]]:
+    """The Vorgang ids of every TOP a vote sits under, keyed by ``vote_key``: the
+    union over all of them, so a vote cited under two TOPs gets one answer."""
+    linked_ids: dict[str, list[str]] = {}
+    for item in report.get("agenda_items") or []:
+        for vote in derive.item_votes(item):
+            linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
+    return linked_ids
+
+
+def report_vote_vorgaenge(report: Mapping[str, Any], cache: Mapping[str, Any]) -> dict[str, VoteContext]:
+    """``vote_vorgang_ids`` of every vote of one sitting report, keyed by ``vote_key``.
+    Persist and render both read it, with the same cache, so a vote's
+    ``vote_proceedings`` rows and its panels name the same Vorgänge."""
+    wahlperiode = derive.report_wahlperiode(report)
+    linked_ids = vote_linked_vorgang_ids(report)
+    return {
+        vote_key(vote): vote_vorgang_ids(
+            vote, cache, wahlperiode=wahlperiode, linked_vorgang_ids=linked_ids.get(vote_key(vote), ())
+        )
+        for _item, vote in derive.iter_report_votes(report)
+    }
 
 
 def report_politikfelder(
@@ -577,13 +672,12 @@ def report_politikfelder(
     wahlperiode = derive.report_wahlperiode(report)
     item_tags: list[Tagging] = []
     linked: dict[Any, list[Tagging]] = {}
-    linked_ids: dict[Any, list[str]] = {}
+    linked_ids = vote_linked_vorgang_ids(report)
     for item in report.get("agenda_items") or []:
         tagging = tags_for_agenda_item(item, cache, wahlperiode=wahlperiode)
         item_tags.append(tagging)
-        for vote in item.get("votes") or ([item["vote"]] if item.get("vote") else []):
+        for vote in derive.item_votes(item):
             linked.setdefault(vote_key(vote), []).append(tagging)
-            linked_ids.setdefault(vote_key(vote), []).extend(agenda_item_vorgang_ids(item))
     vote_tags: dict[Any, Tagging] = {}
     for _item, vote in derive.iter_report_votes(report):
         key = vote_key(vote)
@@ -598,9 +692,12 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
 
     Returns (Vorgang ids, Drucksache numbers). Ids: every id the TOPs name that
     is missing from the cache, plus cached ones still without a Sachgebiet (DIP
-    may have filled it since). Numbers: those of every vote, and of every TOP
-    without Vorgänge of its own (``reads_cited_numbers``), that the cache has not
-    resolved, plus the Vorgänge already resolved numbers name.
+    may have filled it since), plus the Vorgänge a vote's context reads
+    (``report_vote_vorgaenge``) whose record has an empty abstract.
+
+    Numbers: those of every vote, and of every TOP without Vorgänge of its own
+    (``reads_cited_numbers``), that the cache has not resolved, plus the Vorgänge
+    already resolved numbers name.
     """
     records = cache.get("vorgaenge") or {}
     resolved = cache.get("dokumentnummern") or {}
@@ -634,4 +731,11 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], cache: Mapping[str, Any]
                 want_number(number)
                 for vorgang_id in resolved.get(str(number)) or ():
                     want_id(str(vorgang_id))
+        # DIP often adds an abstract after the Sachgebiet (D11): ask again for the
+        # Vorgänge a vote's context shows while theirs is empty.
+        for context in report_vote_vorgaenge(report, cache).values():
+            for vorgang_id in context.vorgang_ids:
+                record = records.get(vorgang_id)
+                if record is not None and not record.get("abstract") and vorgang_id not in ids:
+                    ids.append(vorgang_id)
     return ids, numbers

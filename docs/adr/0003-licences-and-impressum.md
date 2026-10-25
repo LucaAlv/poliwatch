@@ -122,7 +122,7 @@ The operator is one person with limited time, the audience is mostly not develop
 
 Tracked in `TODOS.md`:
 - **Implementation:** footer link, `impressum.html`, `datenschutz.html`, `LICENSE` (MIT), `LICENSE-DATA.md` from `docs/data-license.md`, the `--data-license` string, and the `lizenz` item on `sources.html`.
-- **Provenance fix.** `_COLUMN_SOURCE_DIP_ROSTER` (`scripts/build_dip_pulse_site.py`) tags five columns `dip`. They are filled from abgeordnetenwatch (same file, the roster-enrichment block around `profile_resolver.resolve`), so they must be tagged `abgeordnetenwatch`. The D1 table relies on this fix.
+- **Provenance fix (completed 2026-10-22).** Export format 6 tags `mps.birth_year`, `gender`, `profession`, `wahlkreis` and `bundesland` as `abgeordnetenwatch`, matching the roster enrichment and the D1 table.
 - **Citation format:** protocol citations must read „BT-PlPr." with the period.
 - **Roll-call coverage:** check whether non-voters („nicht abgegeben") are also listed in the protocol, or only in the XLSX.
 - **Governance:** `SECURITY.md`, `security.txt`, the conduct rules, the issue forms and the e-mail scope, per D5.

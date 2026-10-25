@@ -126,6 +126,22 @@ class DossierLayoutTests(unittest.TestCase):
         markup = pulse_html.render_html(self.report)
         self.assertIn(".vote-result-accepted { background:#0f766e; }", markup)
         self.assertIn(".vote-result-rejected { background:#b91c1c; }", markup)
+        self.assertIn(".vote-no-result { margin-left:8px;", markup)
+
+    def test_every_pill_colour_class_has_a_background_rule(self) -> None:
+        # .vote-pill sets white text and no background, so a colour class
+        # without a rule renders an invisible pill (the "geteilt" tie did).
+        markup = pulse_html.render_html(self.report)
+        for key in ("yes", "no", "abstain", "absent", "split"):
+            self.assertRegex(markup, rf"\.vote-{key} \{{ background:#[0-9a-f]{{6}}; \}}")
+
+    def test_dark_mode_keeps_vote_gap_lines_muted(self) -> None:
+        # The dark theme forces every <p> to --ink; these muted vote lines must
+        # be listed in the later --muted override or they lose their dimming.
+        markup = pulse_html.render_html(self.report)
+        muted_block = re.search(r':root\[data-theme="dark"\] :is\(\s*\.muted,.*?\)\s*\{', markup, re.S).group(0)
+        for selector in (".vote-context-head", ".vote-context-gap", ".vote-abweichler-none"):
+            self.assertIn(selector, muted_block)
 
     def test_footer_links_to_the_daten_page_between_abgeordnete_and_quellen(self) -> None:
         # Same relative-path depth as its neighbours (dossiers live one level
@@ -181,7 +197,7 @@ class ParliamentaryGlossaryTests(unittest.TestCase):
 
 
 class AttentionRankingTests(unittest.TestCase):
-    """The Aufmerksamkeitsrang aside on the dossier page.
+    """The Meiste Reden aside on the dossier page.
 
     The aside is sticky on desktop and stacks above the TOP list at or below
     1120px. These tests pin the two shapes that fix the "tail of the ranking
@@ -270,7 +286,7 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertRegex(aside, r'<aside[^>]*id="aufmerksamkeitsrang"')
         rows = self._assert_rows_resolve(markup, aside, 7)
         self.assertEqual(rows, ["2", "6", "4", "7", "3", "1", "5"], "rows must be sorted by speech count, descending")
-        self.assertNotIn("<h2>Aufmerksamkeitsrang <span", aside, "no count badge; the header tile already carries the number")
+        self.assertNotIn("<h2>Meiste Reden <span", aside, "no count badge; the header tile already carries the number")
 
     def test_row_titles_show_topic_and_keep_full_heading_in_tooltip(self) -> None:
         topic = (
@@ -336,6 +352,7 @@ class AttentionRankingTests(unittest.TestCase):
     def test_empty_states_replace_the_list_but_keep_the_anchor(self) -> None:
         none = self._aside(self._render([]))
         self.assertRegex(none, r'<aside[^>]*id="aufmerksamkeitsrang"')
+        self.assertIn("<h2>Meiste Reden</h2>", none)
         self.assertIn('<p class="ranking-empty">Keine Tagesordnungspunkte im XML-Protokoll gefunden.</p>', none)
         self.assertNotIn('class="attention-row"', none)
         self.assertNotIn('<button class="attention-toggle"', none)
@@ -403,6 +420,20 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertIn("color:var(--blue);", self._css_block(self._page_css(markup), ".attention-toggle"))
         self.assertRegex(markup, r':root\[data-theme="dark"\] :is\([^)]*\.ranking-empty')
 
+    def test_vote_panel_takes_the_dark_surface(self) -> None:
+        # Its light #f7fbfa fill stayed under dark-mode ink, so the fraction
+        # names, committee line and Abweichler notes were light on light.
+        markup = self._render([self._item(1, 1)])
+        self.assertRegex(markup, r':root\[data-theme="dark"\] :is\([^)]*\.vote-panel[,\s][^)]*\)\s*\{\s*background:var\(--panel\)')
+        # The heading's light-theme #0f5f59 would read at about 2.3:1 on that surface.
+        self.assertIn(':root[data-theme="dark"] .vote-panel .vote-head h3 { color:var(--teal); }', markup)
+
+    # Value: protects=Abweichler names ("Nachname, Vorname") are separated by semicolons, not commas; fails_when=the list separator rule is dropped or turned back into a comma; why_new=lane B split the names (c1da05b); seam=none
+    def test_abweichler_names_are_separated_by_semicolons(self) -> None:
+        # Names read "Nachname, Vorname"; a comma between them hides where one ends.
+        css = self._page_css(self._render([self._item(1, 1)]))
+        self.assertIn('.vote-abweichler-list li + li::before { content:"; "; }', css)
+
     def test_runtime_is_guarded_on_pages_without_a_toggle(self) -> None:
         # The script ships on every dossier, including the empty states that
         # render no #attention-list and no toggle; it must return before it
@@ -427,7 +458,7 @@ class AttentionRankingTests(unittest.TestCase):
 
         self.assertRegex(
             aside,
-            r'<div class="ranking-head">\s*<h2>Aufmerksamkeitsrang</h2>\s*'
+            r'<div class="ranking-head">\s*<h2>Meiste Reden</h2>\s*'
             r'<div class="legend"><span><i></i>Reden</span><span><i></i>Redetext</span></div>\s*</div>',
         )
         self.assertRegex(
@@ -451,7 +482,7 @@ class AttentionRankingTests(unittest.TestCase):
         self.assertRegex(
             head,
             r'<span class="eyebrow">TOP 1 · [^<]+</span>\s*'
-            r'<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Aufmerksamkeitsrang</a>\s*'
+            r'<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Meiste Reden</a>\s*'
             r"<h2>Beratung des Antrags 1</h2>",
         )
         self.assertEqual(f"#{aside_id}", re.search(r'class="back-to-rank" href="([^"]+)"', head).group(1))

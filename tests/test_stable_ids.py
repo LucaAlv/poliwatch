@@ -242,6 +242,8 @@ class StableIDsTests(unittest.TestCase):
         r=report();(data/'plenarprotokoll-21-1.json').write_text(json.dumps(r))
         with sqlite3.connect(db) as conn:
             conn.executescript('CREATE TABLE parties(id INTEGER PRIMARY KEY,name TEXT); CREATE TABLE mps(id INTEGER PRIMARY KEY,display_name TEXT); CREATE TABLE protocols(id TEXT PRIMARY KEY,document_number TEXT);')
+            conn.execute('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT)')
+            conn.execute("INSERT INTO schema_migrations VALUES (1, 'legacy fixture')")
             conn.execute("INSERT INTO protocols VALUES ('s1','21/1')")
         before=db.read_bytes();cmd=[sys.executable,str(_support.ROOT/'scripts/build_dip_pulse_site.py'),'--offline','--output-dir',str(site)]
         plain=subprocess.run(cmd,capture_output=True,text=True);self.assertEqual(plain.returncode,1);self.assertIn(store.UPGRADE_INSTRUCTION,plain.stderr);self.assertEqual(db.read_bytes(),before)

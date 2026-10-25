@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,10 +59,15 @@ class DatenPageTests(unittest.TestCase):
         self.assertNotIn('class="sample-table"', self.html)
         self.assertNotIn("data-table-search", self.html)
 
-    def test_all_five_recipe_titles_present(self) -> None:
+    def test_every_recipe_title_present(self) -> None:
         for recipe in b.RECIPES:
             with self.subTest(recipe=recipe["id"]):
                 self.assertIn(recipe["title"], self.html)
+
+    def test_eyebrow_and_lede_count_the_recipes(self) -> None:
+        word = {5: "fünf", 6: "sechs", 7: "sieben", 8: "acht"}[len(b.RECIPES)]
+        self.assertIn(f'<span class="eyebrow">{word.capitalize()} Abfragen</span>', self.html)
+        self.assertIn(f"Diese {word} SQL-Abfragen", self.html)
 
     def test_sha256_is_present_full_length(self) -> None:
         self.assertIsNotNone(re.search(r"[0-9a-f]{64}", self.html))
@@ -210,12 +217,13 @@ class DatenPageTests(unittest.TestCase):
         self.assertLess(script.index("let latestCopy = 0;"), script.index("buttons.forEach("))
         click = script[script.index('button.addEventListener("click"'):script.index("button.hidden = false;")]
         self.assertLess(click.index("const copy = ++latestCopy;"), click.index("if (!clipboardAvailable)"))
-        self.assertIn('const selectionAtClick = String(window.getSelection() || "");', click)
+        self.assertIn("const selectionAtClick = Array.from(", click)
+        self.assertIn("return [range.startContainer, range.startOffset, range.endContainer, range.endOffset];", click)
         rejected = click[click.index('flash("Kopiert");'):]
         self.assertIn("if (copy !== latestCopy) return;", rejected)
-        self.assertIn(
-            'const untouched = String(window.getSelection() || "") === selectionAtClick;', rejected
-        )
+        self.assertIn("(current ? current.rangeCount : 0) === selectionAtClick.length", rejected)
+        self.assertIn("selectionAtClick.every(", rejected)
+        self.assertNotIn("String(window.getSelection()", script)
         self.assertLess(rejected.index("if (copy !== latestCopy) return;"), rejected.index("const untouched ="))
         self.assertLess(rejected.index("const untouched ="), rejected.index("if (untouched) selectFallback();"))
         self.assertLess(rejected.index("if (untouched) selectFallback();"), rejected.index('else flash("Nicht kopiert");'))
@@ -302,5 +310,18 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             self.assertNotIn("Datenbank erkunden", index_content)
 
 
+def write_browser_fixture(output: Path) -> None:
+    block = '<div class="recipe-sql"><pre><code>SELECT 1; SELECT 1;</code></pre><button type="button" class="recipe-copy" hidden>Kopieren</button></div>'
+    output.write_text(
+        '<!doctype html><meta charset="utf-8">' + block * 2 + b.recipe_copy_runtime_script(),
+        encoding="utf-8",
+    )
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if "--browser-fixture" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--browser-fixture", type=Path, required=True)
+        write_browser_fixture(parser.parse_args().browser_fixture)
+    else:
+        unittest.main()

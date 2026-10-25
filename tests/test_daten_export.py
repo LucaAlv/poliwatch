@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import csv
 import gzip
 import hashlib
 import io
@@ -293,16 +294,17 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_seven_csvs_named_and_headered(self) -> None:
+    def test_all_twenty_eight_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 27)
+        self.assertEqual(len(csv_files), 28)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
+            "vote_proceedings-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -321,6 +323,34 @@ class ExportDistributionDataTests(unittest.TestCase):
         for name in facts.FACTS_TABLES:
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
+
+    # Value: protects=format 7 carries a vote's context to the download: proceedings.abstract, the vote_proceedings junction and votes.context_state round-trip, with captions on the Daten page; fails_when=a new column or table is dropped from the export, or the page falls back to the generic caption; why_new=B4 adds them (D7); seam=none
+    def test_vote_context_round_trips_in_format_7_with_captions(self) -> None:
+        conn = pulse_store.connect(self.db_path)
+        try:
+            conn.execute("UPDATE proceedings SET abstract = ? WHERE id = 'vg-1'", ("Erster Absatz\n\nZweiter",))
+            conn.execute("UPDATE votes SET context_state = CASE id WHEN 'v1' THEN 'resolved' ELSE 'not_fetched' END")
+            conn.execute("INSERT INTO vote_proceedings(vote_id, proceeding_id, rank) VALUES ('v1', 'vg-1', 1)")
+            conn.commit()
+        finally:
+            conn.close()
+        manifest = self.export()
+        self.assertEqual(manifest["export_format"], b.EXPORT_FORMAT)
+        gen_dir = self.exports_dir / manifest["generation"]
+
+        def read(table):
+            with gzip.open(gen_dir / f"{table}-local.csv.gz", "rt", encoding="utf-8", newline="") as handle:
+                return list(csv.DictReader(handle))
+
+        self.assertEqual([(r["vote_id"], r["proceeding_id"], r["rank"]) for r in read("vote_proceedings")], [("v1", "vg-1", "1")])
+        self.assertEqual({r["id"]: r["context_state"] for r in read("votes")}, {"v1": "resolved", "v2": "not_fetched"})
+        self.assertEqual({r["id"]: r["abstract"] for r in read("proceedings")}["vg-1"], "Erster Absatz\n\nZweiter")
+        _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
+        for name in ("vote_proceedings", "proceedings", "votes"):
+            with self.subTest(table=name):
+                self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
+        self.assertIn("context_state", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
+        self.assertIn("abstract", b.DATABASE_TABLE_DESCRIPTIONS["proceedings"])
 
     def test_dash_leading_text_is_exported_verbatim(self) -> None:
         manifest = self.export()
@@ -342,8 +372,10 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_tables_carry_column_provenance_and_fk_targets(self) -> None:
         manifest = self.export()
         mps_table = next(t for t in manifest["tables"] if t["name"] == "mps")
-        aw_column = next(c for c in mps_table["columns"] if c["name"] == "aw_politician_id")
-        self.assertEqual(aw_column["source"], "abgeordnetenwatch")
+        mp_columns = {c["name"]: c for c in mps_table["columns"]}
+        for name in ("aw_politician_id", "profile_url", "birth_year", "gender", "profession", "wahlkreis", "bundesland"):
+            with self.subTest(column=name):
+                self.assertEqual(mp_columns[name]["source"], "abgeordnetenwatch")
         speeches_table = next(t for t in manifest["tables"] if t["name"] == "speeches")
         mp_id_column = next(c for c in speeches_table["columns"] if c["name"] == "mp_id")
         self.assertEqual(mp_id_column["fk"], "mps.id")
@@ -696,7 +728,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
             "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
-            "vote_members": ["vote_id", "mp_id"], "vote_politikfelder": ["vote_id", "politikfeld"], "votes": ["id"],
+            "vote_members": ["vote_id", "mp_id"], "vote_politikfelder": ["vote_id", "politikfeld"],
+            "vote_proceedings": ["vote_id", "proceeding_id"], "votes": ["id"],
         })
 
     def _export_acting_after_copy(self, act):

@@ -2370,7 +2370,7 @@ def card_title(row: Mapping[str, Any]) -> str:
 #: The archive's reason line per withheld reason. T6 owns the page copy; this
 #: is the one sentence the replay's sample cards and the week page share.
 WITHHELD_CLAUSES = {
-    WITHHELD_NO_OBSERVATION: "diese Woche nicht messbar",
+    WITHHELD_NO_OBSERVATION: "{period} nicht messbar",
     WITHHELD_NOT_COMPARABLE: "noch nicht vergleichbar",
     WITHHELD_BELOW_MIN_VALUE: "zu wenige, um daraus einen Fakt zu machen",
     WITHHELD_NO_TOPIC: "Thema der Debatte nicht bestimmbar",
@@ -2381,7 +2381,9 @@ WITHHELD_CLAUSES = {
 def comparison_clause(row: Mapping[str, Any]) -> str:
     reason = row["withheld"] if "withheld" in row else withheld_reason(row)
     if reason is not None:
-        return WITHHELD_CLAUSES[reason]
+        return WITHHELD_CLAUSES[reason].format(
+            period="diesen Monat" if row.get("period_kind") == "month" else "diese Woche"
+        )
     pct = format_percentile(float(row["percentile"]))
     comparative, population = POPULATION_PHRASES[row["metric_id"]]
     label = row.get("baseline_label") or ""

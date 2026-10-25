@@ -102,11 +102,12 @@ def write_browser_fixture(directory: Path) -> None:
         ],
         "events": [
             {"date": "2026-06-01", "kind": "Erste Beratung", "title": "Einbringung des Gesetzentwurfs", "source": "DIP-Vorgang", "url": "https://dip.bundestag.de/vorgang/100"},
-            {"date": "2026-06-01", "kind": "Ausschussüberweisung", "title": "Überweisung an den federführenden Ausschuss", "source": "Plenarprotokoll", "url": "https://www.bundestag.de/protokolle/21/1"},
+            {"date": "2026-06-01", "kind": "Ausschussüberweisung", "title": "Überweisung an den federführenden Ausschuss", "source": "BT-PlPr. 21/1 · TOP 4", "url": "https://www.bundestag.de/protokolle/21/1"},
         ],
         "documents": [
             {"dokumentnummer": "21/500", "drucksachetyp": "Gesetzentwurf", "urheber": ["Bundesregierung"], "url": "https://dip.bundestag.de/drucksache/21/500"},
             {"dokumentnummer": "PlPr 21/1", "drucksachetyp": "Plenarprotokoll", "urheber": ["Deutscher Bundestag"], "url": "https://dip.bundestag.de/plenarprotokoll/21/1"},
+            {"dokumentnummer": "557/25(B)", "herausgeber": "BR", "drucksachetyp": "Stellungnahme", "url": "https://dserver.bundestag.de/brd/2025/0557-25B.pdf"},
         ],
         "votes": [
             {"title": "Namentliche Abstimmung zum Gesetzesvorhaben", "date": "2026-06-01", "detail_url": "https://www.bundestag.de/abstimmung?id=100"},
@@ -123,6 +124,19 @@ def write_browser_fixture(directory: Path) -> None:
         ]
     (directory / "detail.html").write_text(build.render_bill_detail(detail_bill, {}), encoding="utf-8")
     (directory / "empty.html").write_text(build.render_bills_index([]), encoding="utf-8")
+    report = entry([], [], number="21/1")["report"]
+    report["agenda_items"][0].update(
+        index=4, top_id="TOP 4", xml_speech_count=2,
+        xml_drucksachen=[{"dokumentnummer": "557/25", "url": "https://dserver.bundestag.de/brd/2025/0557-25.pdf"}],
+        xml_speakers=[
+            {"rede_id": f"ID{i}", "speaker": {"display_name": f"Person {i}", "fraktion": "SPD"},
+             "text": f"Rede {i}", "char_count": 6}
+            for i in range(2)
+        ],
+    )
+    protocols = directory.parent / "protocols"
+    protocols.mkdir(exist_ok=True)
+    (protocols / "plenarprotokoll-21-1.html").write_text(html.render_html(report), encoding="utf-8")
 
 
 class _Markup(HTMLParser):
@@ -155,6 +169,35 @@ class PredicateTests(unittest.TestCase):
 
 
 class CollectTests(unittest.TestCase):
+    def test_document_citations_keep_chamber_and_protocol_type(self) -> None:
+        cases = [
+            ({"herausgeber": "BT", "dokumentnummer": "21/100"}, "BT-Drs. 21/100"),
+            ({"herausgeber": "BR", "dokumentnummer": "21/100"}, "BR-Drs. 21/100"),
+            ({"dokumentnummer": "557/25(B)"}, "BR-Drs. 557/25(B)"),
+            ({"dokumentnummer": "300/25", "url": "https://dserver.bundestag.de/brd/2025/0300-25.pdf"}, "BR-Drs. 300/25"),
+            ({"dokumentnummer": "21/100", "url": "https://dserver.bundestag.de/btd/21/001/2100100.pdf"}, "BT-Drs. 21/100"),
+            ({"herausgeber": "BT", "dokumentnummer": "PlPr 21/1", "drucksachetyp": "Plenarprotokoll"}, "BT-PlPr. 21/1"),
+            ({"herausgeber": "BR", "dokumentnummer": "1050", "drucksachetyp": "Plenarprotokoll"}, "BR-PlPr. 1050"),
+            ({"herausgeber": "BT", "dokumentnummer": "557/25(B)", "url": "https://dserver.bundestag.de/brd/2025/0557-25.pdf"}, "BT-Drs. 557/25(B)"),
+            ({"dokumentnummer": "21/100"}, "Drucksache 21/100 (Kammer nicht erfasst)"),
+            ({"dokumentnummer": "21/100", "url": "https://dip.bundestag.de/x?next=/brd/"}, "Drucksache 21/100 (Kammer nicht erfasst)"),
+        ]
+        for doc, expected in cases:
+            with self.subTest(expected=expected):
+                doc = dict(doc, vorgang_id="100")
+                source_position = dict(GESETZ, source={"dokumentnummer": doc["dokumentnummer"]})
+                original = copy.deepcopy(doc)
+                bill = build.collect_bill_pages([entry([source_position], [doc])])[0]
+                event = next(event for event in bill["events"] if event["source"] == expected)
+                markup = build.render_bill_detail(bill)
+                self.assertIn(html.esc(expected), markup)
+                if doc.get("url"):
+                    self.assertIn(f'href="{html.esc(doc["url"])}">{html.esc(expected)}</a>', markup)
+                self.assertEqual(doc, original)
+                self.assertEqual(bill["documents"][0]["dokumentnummer"], original["dokumentnummer"])
+                self.assertIn('href="../protocols/plenarprotokoll-21-5.html#top-1">BT-PlPr. 21/5', markup)
+                self.assertEqual(event["url"], doc.get("url"))
+
     def test_speech_links_match_dossier_anchors_and_count_each_speech_once_per_bill(self) -> None:
         other_bill = position("101", "Gesetzgebung", "Anderes Gesetz", "21/101")
         current = entry([GESETZ, dict(GESETZ, id="another-position"), other_bill], DOCS)
@@ -190,6 +233,7 @@ class CollectTests(unittest.TestCase):
         single = build.collect_bill_pages([older])[0]
         single_markup = build.render_bill_detail(single)
         self.assertIn("Rede lesen", single_markup)
+        self.assertIn("BT-PlPr. 21/4", single_markup)
         self.assertNotIn('class="bill-speaker-speeches"', single_markup)
         single["speakers"][0]["speeches"][0]["href"] = "javascript:alert(1)"
         with self.assertRaises(build.publication.PublicationStateError):
@@ -375,6 +419,10 @@ class PageTests(unittest.TestCase):
         markup = build.render_bills_index(browser_fixture_bills())
         nodes = parsed(markup)
         attrs = [attrs for _, attrs in nodes]
+        controls = [a for a in attrs if "bill-controls" in (a.get("class") or "").split()]
+        self.assertEqual(len(controls), 1)
+        self.assertEqual(controls[0].get("role"), "search")
+        self.assertEqual(controls[0].get("aria-label"), "Gesetzesvorhaben finden")
         rows = [a for a in attrs if "data-bill-row" in a]
         self.assertEqual(len(rows), 41)
         self.assertTrue(all("hidden" not in row for row in rows), "server-rendered rows must remain visible before enhancement")
@@ -398,6 +446,7 @@ class PageTests(unittest.TestCase):
         markup = build.render_bills_index([])
         nodes = parsed(markup)
         attrs = [attrs for _, attrs in nodes]
+        self.assertFalse(any("bill-controls" in (a.get("class") or "").split() for a in attrs))
         self.assertFalse(any(any(k in a for k in ("data-bill-search", "data-bill-year", "data-bill-sort", "data-bill-reset", "data-bill-prev", "data-bill-next")) for a in attrs))
         self.assertTrue(any(a.get("href") == "../overview.html" for a in attrs))
         self.assertIn("Noch keine Gesetzesvorhaben verfügbar", " ".join(_MarkupText(markup).text))
@@ -416,7 +465,7 @@ class PageTests(unittest.TestCase):
         markup = build.render_bill_detail(bill, {})
         nodes = parsed(markup)
         ids = [a.get("id") for _, a in nodes if a.get("id")]
-        expected = ["verlauf", "debatten", "redner", "abstimmungen", "dokumente", "quellen"]
+        expected = ["verlauf", "plenarstellen", "redner", "abstimmungen", "dokumente", "quellen"]
         positions = [ids.index(anchor) for anchor in expected]
         self.assertEqual(positions, sorted(positions))
         # Native details keeps the remaining names available without a script.
@@ -429,6 +478,32 @@ class PageTests(unittest.TestCase):
         self.assertIn("Dokumente", text)
         self.assertIn("Urheber der verknüpften Dokumente", text)
         self.assertFalse(any("data-follow-id" in a for _, a in nodes))
+
+    def test_plenary_labels_count_and_link_every_reference_including_without_speeches(self) -> None:
+        refs = [
+            {"protocol_number": "21/1", "href": "../protocols/plenarprotokoll-21-1.html#top-1", "speech_count": 0},
+            {"protocol_number": "21/2", "href": "../protocols/plenarprotokoll-21-2.html#top-2", "speech_count": 3},
+            {"protocol_number": "21/3", "href": "../protocols/plenarprotokoll-21-3.html#top-3"},
+        ]
+        for count, label in ((0, "Beratungen im Plenum"), (1, "Beratung im Plenum"), (3, "Beratungen im Plenum")):
+            with self.subTest(count=count):
+                bill = browser_fixture_bills()[0]
+                bill["protocol_refs"] = refs[:count]
+                overview = build.render_bills_index([bill])
+                self.assertIn(f"{count} {label}", " ".join(_MarkupText(overview).text))
+                detail = build.render_bill_detail(bill, {})
+                self.assertIn('<a href="#plenarstellen">Beratungen im Plenum</a>', detail)
+                self.assertIn('id="plenarstellen"><h2>Beratungen im Plenum</h2>', detail)
+                self.assertIn('aria-label="Beratungen im Plenum und Beteiligte"', detail)
+                section = detail.split('id="plenarstellen"')[1].split('id="redner"')[0]
+                self.assertEqual(section.count("<li>"), count)
+                for ref in refs[:count]:
+                    self.assertIn(f'<a href="{ref["href"]}">BT-PlPr. {ref["protocol_number"]}</a>', section)
+                text = " ".join(_MarkupText(section).text)
+                self.assertIn("einer Sitzung, an dem dieses Vorhaben behandelt wurde – auch ohne erfasste Rede.", text)
+                self.assertIn("Ein gemeinsamer Tagesordnungspunkt kann mehrere Vorhaben betreffen.", text)
+                self.assertNotIn('id="debatten"', detail)
+                self.assertNotIn('href="#debatten"', detail)
 
     # Value: protects=every glossary link on bill pages lands on an id the sources page really renders; fails_when=a slug/prefix/alias drifts from the sources-page anchor; why_new=only the href string of single terms was asserted, never the target; seam=none; no_claim=tooltip JS and in-browser :target scrolling (static HTML only)
     def test_every_glossary_link_on_bill_pages_resolves_to_a_sources_page_anchor(self) -> None:
@@ -528,7 +603,7 @@ class PageTests(unittest.TestCase):
         self.assertIn('datetime="2026-06-01"', dates[0])
         self.assertIn('datetime="2025-12-01"', dates[1])
         self.assertEqual(dates[2], "Datum nicht erfasst")
-        timeline = markup.split('id="verlauf"')[1].split('id="debatten"')[0]
+        timeline = markup.split('id="verlauf"')[1].split('id="plenarstellen"')[0]
         self.assertNotIn(f"<p>{title}</p>", timeline, "an event title equal to the bill title is not repeated")
         self.assertIn("Überweisung &lt;b&gt;an&lt;/b&gt; den Ausschuss", timeline)
         self.assertIn("Quelle nicht verknüpft", timeline)
@@ -539,7 +614,7 @@ class PageTests(unittest.TestCase):
         self.assertIn(">Drucksache</a>", documents)
         self.assertIn("Dokument 21/501", documents)
         # A TOP id reads "Tagesordnungspunkt N" once; Zusatzpunkte and Einzelplaene keep their own label.
-        debates = markup.split('id="debatten"')[1].split('id="redner"')[0]
+        debates = markup.split('id="plenarstellen"')[1].split('id="redner"')[0]
         visible = re.sub(r'<span class="bill-tooltip".*?</span>', "", debates)
         labels = [" ".join("".join(_MarkupText(row).text).split()) for row in re.findall(r"<li>(.*?)</li>", visible, flags=re.S)]
         self.assertEqual([label.split(" · ", 1)[1] for label in labels], [
@@ -599,7 +674,7 @@ class PageTests(unittest.TestCase):
         text = " ".join(_MarkupText(markup).text)
         for message in (
             "Unbenanntes Gesetzesvorhaben", "Datum nicht erfasst", "Erfasster Vorgang",
-            "Keine Verlaufseinträge in den erfassten Daten.", "Keine Debatten in den erfassten Daten verknüpft.",
+            "Keine Verlaufseinträge in den erfassten Daten.", "Keine Beratungen im Plenum in den erfassten Daten verknüpft.",
             "Keine Reden in den erfassten Daten zugeordnet.", "Keine namentliche Abstimmung in den erfassten Daten verknüpft.",
             "Keine Dokumente in den erfassten Daten verknüpft.", "Urheber der verknüpften Dokumente: nicht erfasst.",
             "DIP-Vorgang: nicht erfasst.",
@@ -613,7 +688,7 @@ class PageTests(unittest.TestCase):
             votes=[{"title": None, "date": None}],
         )
         body = build.render_bill_detail(partial, {}).split("</style>")[1]
-        self.assertIn("<strong>Sitzung ohne Nummer</strong>", body)
+        self.assertIn("<strong>BT-PlPr. ohne Nummer</strong>", body)
         self.assertIn("nicht erfasst</p>", body)
         self.assertIn("<strong>Namentliche Abstimmung</strong><p>Datum nicht erfasst</p>", body)
         self.assertNotIn("<a href=\"None", body)
@@ -653,7 +728,7 @@ class PageTests(unittest.TestCase):
         labels = re.findall(r'<div class="bill-speech-links">(.*?)</div>', page, flags=re.S)[0]
         self.assertEqual(
             re.findall(r">([^<]+)</a>", labels),
-            ["Rede 1 · 15.01.2026 · Sitzung 21/5 · S. 7B", "Rede 2 · 15.01.2026 · Sitzung 21/5"],
+            ["Rede 1 · 15.01.2026 · BT-PlPr. 21/5 · S. 7B", "Rede 2 · 15.01.2026 · BT-PlPr. 21/5"],
         )
 
 

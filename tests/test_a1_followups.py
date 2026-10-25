@@ -630,7 +630,7 @@ class ReplayAndGuardTests(unittest.TestCase):
             conn = store.connect(path)
             store.persist_report(conn, r)
             self.assertEqual(sk.VERSION, 6)
-            self.assertEqual(store.SCHEMA_VERSION, 5)
+            self.assertEqual(store.SCHEMA_VERSION, 6)
             store.require_current_speech_rules(conn)
             for version in [None, 4]:
                 conn.execute('UPDATE speech_rule_inputs SET version=?', (version,)); conn.commit()

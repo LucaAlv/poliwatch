@@ -17,6 +17,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 import derive
 import politikfelder
@@ -58,7 +59,7 @@ VOTE_LABELS = {
     "absent": "nicht abgegeben",
 }
 
-# Aufmerksamkeitsrang sidebar on the dossier page. On desktop the aside is
+# Meiste Reden sidebar on the dossier page. On desktop the aside is
 # sticky and its rows scroll inside it; at or below the 1120px breakpoint the
 # aside sits above the TOP list, so only the first rows are shown and a toggle
 # reveals the rest (3 rows on phones, where the page header alone is ~330px).
@@ -539,9 +540,13 @@ VOTE_RESULT_BADGE_CSS = """
     .vote-result-derived.vote-result-accepted { color:#0f766e; }
     .vote-result-derived.vote-result-rejected { color:#b91c1c; }
     .vote-result-note { margin-left:4px; font-weight:500; }
-    /* Only the archive row turns dark; the dossier .vote-panel stays light. */
-    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-accepted { color:#5eead4; }
-    :root[data-theme="dark"] .archive-row .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+    /* No result: plain muted text, spaced off the title like the pill. */
+    .vote-no-result { margin-left:8px; color:var(--muted); font-size:12px; font-weight:500; vertical-align:middle; }
+    /* The archive row and the dossier .vote-panel both turn dark, so the outlined pill lightens in both. */
+    :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-accepted { color:#5eead4; }
+    :root[data-theme="dark"] :is(.archive-row, .vote-panel) .vote-result-derived.vote-result-rejected { color:#fca5a5; }
+    /* .member-votes summary is a fixed light-mode blue, about 2.2:1 on the dark panel. */
+    :root[data-theme="dark"] .member-votes summary { color:var(--blue); }
 """
 
 
@@ -782,12 +787,14 @@ def global_header_styles() -> str:
       .filter, .sample-table, details, .top-card, .radar,
       aside, .session-llm-summary, .llm-summary, .source-strip,
       .api-overview, .api-json, .speech-card, .table-nav a,
-      .week-compare, .week-metric
+      .week-compare, .week-metric, .vote-panel
     ) {
       background:var(--panel) !important;
       border-color:var(--line) !important;
       color:var(--ink) !important;
     }
+    /* The vote panel turns dark, so its heading leaves the light theme's dark teal. */
+    :root[data-theme="dark"] .vote-panel .vote-head h3 { color:var(--teal); }
     :root[data-theme="dark"] :is(
       .badge, .summary-count, .session-summary-sources a,
       .session-summary-sources span, .radar-receipts a, .radar-receipts span,
@@ -815,7 +822,8 @@ def global_header_styles() -> str:
       .session-summary-note, .ranking-empty,
       .week-card h3, .week-label, .week-note, .week-sub,
       .week-metric span, .week-metric-foot em, .week-trace em,
-      .radar-siblings, .radar-trace, .radar-legend, .radar-share small
+      .radar-siblings, .radar-trace, .radar-legend, .radar-share small,
+      .vote-context-head, .vote-context-gap, .vote-abweichler-none
     ) {
       color:var(--muted) !important;
     }
@@ -894,7 +902,7 @@ def theme_bootstrap_script() -> str:
 
 
 def attention_runtime_script() -> str:
-    """Behaviour for the dossier's Aufmerksamkeitsrang aside.
+    """Behaviour for the dossier's Meiste Reden aside.
 
     Emitted only by render_html (page_scripts is shared by every page), and
     emitted directly after the aside rather than at the end of the body: the
@@ -1216,6 +1224,17 @@ def speech_hash_runtime_script() -> str:
       }
       revealSpeech();
       addEventListener('hashchange', revealSpeech);
+      addEventListener('click', event => {
+        if (event.defaultPrevented || event.button !== 0 ||
+            event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+        if (!link || link.hasAttribute('download')) return;
+        const target = link.target || document.querySelector('base[target]')?.target || '_self';
+        if (target.toLowerCase() !== '_self') return;
+        let url;
+        try { url = new URL(link.href); } catch { return; }
+        if (url.href === location.href) revealSpeech();
+      });
     })();
     </script>"""
 
@@ -1510,14 +1529,18 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
             if stats["speech_count"] and sum(stats["party_counts"].values()) < stats["speech_count"]:
                 speakers_incomplete += 1
                 sitting_speakers_complete = False
-            votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+            votes = derive.item_votes(item)
             if votes:
                 vote_top_count += 1
                 if first_vote_index is None:
                     first_vote_index = source_index(item.get("index"))
+            item_types: set[str] = set()
             for position in ((item.get("api") or {}).get("positions") or []):
                 if position.get("vorgangstyp"):
-                    vorgangstyp_counts[str(position["vorgangstyp"])] += 1
+                    kind = str(position["vorgangstyp"])
+                    if kind not in item_types:
+                        vorgangstyp_counts[kind] += 1
+                        item_types.add(kind)
                 if position.get("vorgang_id"):
                     vorgang_ids.add(str(position["vorgang_id"]))
         for _, vote in derive.iter_report_votes(report):
@@ -1558,15 +1581,13 @@ def week_stats(week: tuple[int, int], entries: list[dict[str, Any]]) -> dict[str
 
 
 def vote_key(vote: dict[str, Any]) -> str:
-    """Identity of a roll-call vote: its id, or (title, date) for legacy records.
+    """Identity of a roll-call vote (``derive.vote_identity``).
 
     Shared with the votes archive (build_dip_pulse_site.collect_votes_archive):
     a vote can attach to two agenda items, so both dedupe on this key rather
     than on attachment.
     """
-    if vote.get("id"):
-        return str(vote["id"])
-    return f"{vote.get('title') or ''}|{vote.get('date') or ''}"
+    return derive.vote_identity(vote)
 
 
 WEEK_METRICS = (
@@ -2130,7 +2151,7 @@ def topic_row(
     summary = item.get("llm_summary") or {}
     if not (summary.get("text") and summary.get("source_chunks")):
         summary = None
-    votes = item.get("votes") or ([item["vote"]] if item.get("vote") else [])
+    votes = derive.item_votes(item)
     tagging = politikfelder.tags_for_agenda_item(
         item,
         vorgang_cache or politikfelder.empty_cache(),
@@ -2344,13 +2365,13 @@ def render_type_mix(
     limit: int = 6,
     glossary_href: str = "sources.html",
 ) -> str:
-    """Which kinds of business the week was made of, against the week before.
+    """TOP counts per distinct Vorgangstyp, against the week before.
 
     Known vorgangstyp labels link to their glossary entry on ``glossary_href``
     and carry the one-line explanation as ``data-tip`` for the hover bubble.
     """
     if not sum(current.values()):
-        return '<p class="week-note">Keine Vorgangspositionen zugeordnet.</p>'
+        return '<p class="week-note">Keine Vorgangstypen zugeordnet.</p>'
     peak = max(current.values())
     rows = []
     for kind, count in current.most_common(limit):
@@ -2399,11 +2420,32 @@ def render_vote_pills(counts: dict[str, Any]) -> str:
     )
 
 
+def document_chamber(doc: dict[str, Any]) -> str:
+    """Presentation needs evidence; stable_ids.document_issuer defaults to BT."""
+    issuer = str(doc.get("herausgeber") or "").strip().upper()
+    if issuer in {"BT", "BR"}:
+        return issuer
+    try:
+        url = urlparse(str(doc.get("url") or ""))
+    except ValueError:
+        url = urlparse("")
+    if url.hostname == "dserver.bundestag.de":
+        if url.path.startswith("/brd/"):
+            return "BR"
+        if url.path.startswith(("/btd/", "/btp/")):
+            return "BT"
+    if str(doc.get("dokumentnummer") or "").strip().endswith("(B)"):
+        return "BR"
+    return ""
+
+
 def render_source_links(item: dict[str, Any]) -> str:
     links = []
     for doc in item.get("xml_drucksachen") or []:
         url = doc.get("url")
         number = doc.get("dokumentnummer")
+        if document_chamber(doc) == "BR":
+            number = f"BR-Drs. {number}"
         href = None
         if url:
             # The XML's Drucksache references are extracted from running text,
@@ -2925,6 +2967,7 @@ def render_html(
     database_page_href: str | None = None,
     vorgang_cache: dict[str, Any] | None = None,
 ) -> str:
+    derive.require_vote_shape(report)
     features = publication_selection()
     from features.loader import load as load_components
 
@@ -2949,7 +2992,15 @@ def render_html(
     if "agenda_items" in report:
         report = {**report, "agenda_items": items}
     # Tags are derived here, never read from or written into the report.
-    item_politikfelder, _ = politikfelder.report_politikfelder(report, vorgang_cache or politikfelder.empty_cache())
+    cache = vorgang_cache or politikfelder.empty_cache()
+    item_politikfelder, _ = politikfelder.report_politikfelder(report, cache)
+    # The Vorgänge each vote is about, once per page, as persist stores them.
+    votes_component_ctx = {
+        "mp_lookup": mp_lookup,
+        "mp_prefix": "../abgeordnete/",
+        "vorgang_cache": cache,
+        "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
+    }
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
@@ -3013,7 +3064,7 @@ def render_html(
     )
 
     back_to_rank = (
-        '<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Aufmerksamkeitsrang</a>' if has_ranking else ""
+        '<a class="back-to-rank" href="#aufmerksamkeitsrang">↑ Meiste Reden</a>' if has_ranking else ""
     )
 
     top_sections = []
@@ -3028,7 +3079,7 @@ def render_html(
             for party, count in stats["party_counts"].most_common()
         ]
         vote_sections = (
-            "".join(components["votes"].dossier_sections(report, {"item": item, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"}))
+            "".join(components["votes"].dossier_sections(report, {**votes_component_ctx, "item": item}))
             if "votes" in components
             else ""
         )
@@ -3111,7 +3162,7 @@ def render_html(
     sitting_vote_section = ""
     if sitting_votes and "votes" in components:
         vote_sections = "".join(
-            components["votes"].dossier_sections(report, {"item": {"votes": sitting_votes}, "mp_lookup": mp_lookup, "mp_prefix": "../abgeordnete/"})
+            components["votes"].dossier_sections(report, {**votes_component_ctx, "item": {"votes": sitting_votes}})
         )
         sitting_vote_section = (
             '<section class="top-card sitting-votes" id="sitting-votes">'
@@ -3381,7 +3432,7 @@ def render_html(
       --aside-gap:14px;
     }}
     /*
-      Aufmerksamkeitsrang aside — CSS layer order:
+      Meiste Reden aside — CSS layer order:
         base                              sticky, capped to the viewport, only .attention-list scrolls
         @media (max-width:1120px), (max-height:480px), print
                                           aside static (above <main> when narrow); cap removed, fade off
@@ -3659,6 +3710,8 @@ def render_html(
     .vote-no {{ background:#b91c1c; }}
     .vote-abstain {{ background:#b06b00; }}
     .vote-absent {{ background:#7a8699; }}
+    /* A tie ("geteilt"): neutral, and darker than the absent grey, which means "nicht abgegeben". */
+    .vote-split {{ background:#4b5563; }}
     .vote-pill {{
       display:inline-flex;
       align-items:center;
@@ -3689,6 +3742,51 @@ def render_html(
       font-size:13px;
     }}
     .vote-fraction-row strong {{ overflow-wrap:anywhere; }}
+    .vote-fraction-group {{ min-width:0; }}
+    .vote-abweichler {{ margin:4px 0 0 18px; font-size:12px; line-height:1.45; }}
+    .vote-abweichler-label {{ display:block; color:var(--muted); font-weight:650; }}
+    .vote-abweichler-list {{ display:inline; margin:0; padding:0; list-style:none; }}
+    .vote-abweichler-list li {{ display:inline; }}
+    .vote-abweichler-list li + li::before {{ content:"; "; }}
+    .vote-abweichler-more {{ display:inline; }}
+    .vote-abweichler-more summary {{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      margin-left:6px;
+      cursor:pointer;
+      color:var(--blue, #174ea6);
+      font-weight:650;
+    }}
+    .vote-abweichler-more[open] summary {{ display:flex; margin-left:0; }}
+    .vote-abweichler-gap {{ margin:4px 0 0 18px; font-size:12px; }}
+    .vote-context {{
+      margin:12px 0 0;
+      padding:10px 0 0;
+      border-top:1px solid var(--line);
+      font-size:14px;
+      line-height:1.5;
+    }}
+    .vote-context p {{ margin:0; max-width:72ch; }}
+    .vote-context-head {{ color:var(--muted); font-size:12px; }}
+    .vote-context-head strong {{ color:var(--ink); }}
+    .vote-context-block {{ margin-top:8px; }}
+    .vote-context-block + .vote-context-block {{ padding-top:8px; border-top:1px dashed var(--line); }}
+    .vote-context-label {{ font-size:13px; font-weight:650; overflow-wrap:anywhere; }}
+    .vote-context-teaser, .vote-context-more p {{ margin-top:4px !important; }}
+    .vote-context-gap {{ margin-top:4px !important; color:var(--muted); font-size:13px; }}
+    .vote-context-block:has(.vote-context-more[open]) .vote-context-teaser {{ display:none; }}
+    .vote-context-more summary {{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      cursor:pointer;
+      color:var(--blue, #174ea6);
+      font-size:13px;
+      font-weight:650;
+    }}
+    .vote-committee, .vote-abweichler-none {{ margin:10px 0 0; font-size:13px; }}
+    .vote-abweichler-none {{ color:var(--muted); }}
     .member-votes {{
       margin-top:14px;
       border-top:1px solid #dce7e3;
@@ -4056,7 +4154,7 @@ def render_html(
     <div class="layout">
       <aside id="aufmerksamkeitsrang"{aside_attrs}>
         <div class="ranking-head">
-          <h2>Aufmerksamkeitsrang</h2>
+          <h2>Meiste Reden</h2>
           {ranking_legend}
         </div>
         {ranking_note}

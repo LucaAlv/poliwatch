@@ -393,6 +393,15 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
         self.assertEqual(members[0]["faction"], "SPD")
         self.assertTrue(members[0]["profile_url"].endswith("/abgeordnete/ada-lovelace"))
 
+    # Value: protects=a member card that links back to the Abstimmung (an MP without a biography) gets no profile URL; fails_when=any first <a href> is taken as the profile and later folds distinct MPs into one identity; why_new=77 such rows on the reference cache (2026-10-22); seam=none
+    def test_a_link_back_to_the_abstimmung_is_no_profile(self) -> None:
+        card = (
+            '<div class="col-xs-4 col-sm-3 col-md-2 bt-slide">'
+            '<a href="/parlament/plenum/abstimmung/abstimmung?id=853"><h3>Ada Ohnebio</h3></a>'
+            '<p class="bt-person-fraktion">SPD</p><p class="bt-person-abstimmung bt-abstimmung-ja">Ja</p></div>'
+        )
+        self.assertIsNone(dip.parse_member_votes(card)[0]["profile_url"])
+
 
 if __name__ == "__main__":
     unittest.main()
