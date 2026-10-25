@@ -1778,8 +1778,9 @@ def interpret_sitting_votes(
 def interpret_report_votes(report: dict[str, Any], recommendations: list[dict[str, Any]] | None) -> None:
     """``interpret_sitting_votes`` on a stored report: its TOP votes and every
     other copy of a vote it holds (sitting-level votes, the matched list in
-    ``api_records``)."""
+    ``api_records``). Restore sitting-level votes older reports kept only there."""
     records = report.get("api_records") or {}
+    report.setdefault("sitting_votes", records.get("sitting_votes") or [])
     others = [*(report.get("sitting_votes") or []), *(records.get("sitting_votes") or []),
               *(records.get("matched_roll_call_votes") or [])]
     interpret_sitting_votes(report.get("agenda_items") or [], others, recommendations)

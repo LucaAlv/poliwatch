@@ -495,7 +495,7 @@ class RepairedReportsTests(unittest.TestCase):
                 top(3, "Tagesordnungspunkt 8", [legacy("1005")]),
                 top(4, "Tagesordnungspunkt 12", [legacy("811"), legacy("926")]),  # 811 under a second TOP too
             ],
-            "sitting_votes": [recorded],
+            "api_records": {"sitting_votes": [recorded]},
         }
 
     def setUp(self) -> None:
@@ -534,7 +534,7 @@ class RepairedReportsTests(unittest.TestCase):
             found.setdefault(saved["id"], []).append(saved)
         return found
 
-    def test_the_repaired_reports_the_store_the_export_and_the_panels_agree(self) -> None:
+    def test_a_legacy_report_the_store_the_export_and_the_panels_agree(self) -> None:
         self.assertFalse(self.database.exists())
         entries, _ = self.repersist()
         saved = self.saved_votes()
