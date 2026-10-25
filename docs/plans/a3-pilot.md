@@ -347,3 +347,7 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - Both run with `--overlap-only`: they cache nothing of their own and only drop the shared Vorgänge from the cache. Their own Vorgänge may run on into a Wahlperiode not downloaded, WP 16 or the open WP 21.
   - **Purpose and cost, written before sending:** one count request each, then the month chunks. WP 20 has 42 chunks, WP 17 has 48; sizes are unknown, so roughly 400–800 requests each.
   - WP 20 runs first, since 19→20 touches the larger set of pilot Vorgänge. The drip stays stopped until both are done.
+- **Hypothesis from the owner, 2026-10-25: the network changed.** The owner moved to another WiFi network on 2026-10-24, after 1½ weeks on the previous one.
+  - That fits a DIP limit per IP address rather than per key. Either the old public IP was shared with other DIP users, or it was under a long penalty from earlier bursts.
+  - Then a personal key may not raise the limit, and the ~110-window backfill estimate does not hold on the new network.
+  - **Not established:** the request log does not record the network. Whether the 2026-10-24 09:28 UTC block came before the move is still open.
