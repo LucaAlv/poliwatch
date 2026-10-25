@@ -351,3 +351,12 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - That fits a DIP limit per IP address rather than per key. Either the old public IP was shared with other DIP users, or it was under a long penalty from earlier bursts.
   - Then a personal key may not raise the limit, and the ~110-window backfill estimate does not hold on the new network.
   - **Not established:** the request log does not record the network. Whether the 2026-10-24 09:28 UTC block came before the move is still open.
+- **WP 20 and WP 17 overlap runs, 2026-10-25 18:21–19:04 UTC.**
+  - **Requests:** 1,024 answered and 1 dropped connection, with no DIP block.
+  - **Counts:** WP 20 has 48,822 positions and WP 17 has 48,729. Each matches DIP's total.
+  - **Shared Vorgänge:** 216 with WP 20 and 232 with WP 17, all dropped.
+  - **The Vorgang cache now holds 77,977** (WP 19: 50,909 → 50,693; WP 18: 27,515 → 27,284).
+    - That is 447 dropped. WP 17 reported 232 against 231 removed from WP 18, so one WP 17 Vorgang was already gone, most likely one of the 217 that also spans WP 19.
+  - **Overlaps per neighbour:** 216–232, about 0.4–0.8 % of a Wahlperiode's Vorgänge, consistent with the 217 between WP 18 and WP 19.
+  - **Still not covered:** a Vorgang that spans three Wahlperioden, and a WP 19 Vorgang that runs into WP 21. Both are rarer still.
+- **Next:** the drip restarts on the 18 remaining pilot sittings, with a 6 h wait, under `caffeinate -i`, to measure the new requests per sitting.
