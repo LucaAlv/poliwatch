@@ -363,8 +363,13 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
 - **Pilot finished, 2026-10-25 19:05–19:20 UTC: all 18 remaining sittings acquired in one cycle, 902 s.**
   - **DIP cost:** 145 requests, all answered, with zero `/person/{id}` lookups.
   - **Per sitting:** 2–6 requests, about 4 on average: 1 positions list, 1–3 activity pages, and 0–2 Vorgänge the bulk lacks. Before option B it was about 26, and about 60 before reductions 1–4.
-  - **Per run:** 71 `/vorgang` lookups (43 by `f.id`, 28 by `f.dokumentnummer`) and 4 catalog requests. These happen once per build, after the sittings.
-  - **No sitting excluded or failed. 2.5 GB peak RSS.**
+  - **The Politikfelder step:** 71 `/vorgang` requests (43 by `f.id`, 28 by `f.dokumentnummer`), all sent after the last sitting (19:10–19:13 UTC), by `refresh_vorgang_cache`.
+    - Part of this grows with the sittings. Vorgang records come 100 ids per request, and each Drucksache number with no known Vorgang costs its own lookup.
+    - Part does not: cached Vorgänge with no Sachgebiet yet are asked again on every run.
+    - **All-in, at most about 8 DIP requests per sitting** (145 / 18). For ~400 WP 18/19 sittings that is about **3,200 requests at most**, against ~10,000 before option B.
+  - **The catalog:** 4 requests.
+  - **None of the 18 target sittings failed.** The summary's 84 "not acquired" are the D2 exclusion list, by design.
+  - **Peak RSS was 2.5 GB**, against 1.45 GB on 2026-10-23. The 78k-entry Vorgang cache (50 MB) is likely the cause, and it is re-serialized after every sitting. Watch both for a ~400-sitting run.
 - **Checked against one-at-a-time answers.** 18/150, 18/154, 18/200 and 18/217 were acquired one at a time on 2026-10-19.
   - **People:** the old 18/150 and 18/154 had lost 10 and 16 person lookups to DIP timeouts. The new ones have all of them: 42/42 and 66/66.
   - **Drucksachen:** 18/200's TOP 1 and TOP 2 held the same entries in a different order. DIP's per-Vorgang order is not date, then position id: 153898 comes before 153790, and 159206 before 159203, each pair on the same day.
@@ -378,3 +383,27 @@ Superseded. Since 27a93d5 a listed sitting is skipped before acquisition, whatev
   - **Checks:** the 22 reference Vorgänge are identical, and so are all 40 one-at-a-time WP 18/19 Vorgänge in the older reports, ids and order.
   - **What order changes downstream:** the display order of linked Drucksachen, and the first-seen order of `derive` document numbers. No value moved in any compared case.
   - **The 18 bulk-backed pilot reports** were built before this fix, so up to 598 Vorgänge in them may show the old order. A re-run of those sittings costs about 70 DIP requests.
+- **Bulk requests per Wahlperiode** (`bulk-requests.log`, answered and failed attempts):
+
+| WP | Drucksachen | Persons |
+|---|---:|---:|
+| 17 (overlap only) | 514 | – |
+| 18 | 437 | 9 |
+| 19 | 786 | 10 |
+| 20 (overlap only) | 511 | – |
+
+- **Order reaches one value.** `politikfelder._vorgaenge_of_numbers` breaks ties by first-seen document number, and `derive.item_document_numbers` lists the linked Drucksachen in their stored order. So on the Drucksache fallback path, a different order can change which Politikfeld leads an agenda item.
+  - The listing order reproduces DIP for every WP 18/19 Vorgang tested (32 sequences, 40 report Vorgänge).
+  - **Residual risk:** budget-shaped Vorgänge like the 4 WP 20 misses surely exist in WP 18/19 too, and these small samples would not catch them.
+- **Phase 3 must reuse the bulk, not download it again.**
+  - Copy into Phase 3's output dir from `~/agent-runs/a3/pilot/data/`:
+    - `dip-vorgang-drucksachen-cache.json`;
+    - `dip-person-cache.json`;
+    - `dip-bulk/wp17` … `wp20`. Their `vorgaenge.json` and the staged chunks are what a re-merge and the overlap drops read.
+  - A fresh download would repeat about 2,250 requests.
+  - **The bulk persons expire 30 days after their fetch,** around 2026-11-23/24. Re-run `--persons` for WP 18 and 19 at the start of each backfill session (owner decision 2026-10-23).
+- **Open for the owner:**
+  - re-run the 18 bulk-backed pilot sittings (~70 DIP requests), so their reports carry the fixed order;
+  - Phase 3;
+  - the network/IP question (when the switch happened, and whether the runners may log the public IP);
+  - pushing the branch.
