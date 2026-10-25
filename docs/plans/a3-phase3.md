@@ -196,3 +196,18 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 - record seconds per sitting, RSS and DIP requests.
 
 **Known cost:** the WP 21 refresh and the WP 20 merge (step 3.4) also drop shared Vorgänge that the WP 18/19 backfills just cached one at a time. That costs requests, not correctness.
+
+### 4.1 result, 2026-10-25 22:38–22:55 UTC
+
+- **Run:** exit 0, 1,012 s, peak RSS 1.53 GB.
+- **DIP:** 89 requests, all answered.
+  - 47 `/plenarprotokoll`: a full catalog fetch, since the base catalog was past its full-fetch age.
+  - 42 `/vorgang` from the Politikfelder step: 4,142 Vorgänge, none failed.
+- **Catalog:** WP 18 245, WP 19 239, WP 20 214, WP 21 103, as the handoff expected.
+- **Facts:** 710 → 716 rows, in 154 periods (was 153). The refreshed catalog adds a period; the Fakten count is unchanged at 187.
+- **`[summary]`:** 84 of 84 not acquired, all `excluded` (the D2 list).
+
+### 4.2 WP 18, started 2026-10-25 ~22:57 UTC
+
+- Runner PID 94401.
+- **Scope check passed:** `[backfill] selected per Wahlperiode: WP 18: 194`.
