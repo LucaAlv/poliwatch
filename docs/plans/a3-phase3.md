@@ -94,7 +94,7 @@ Handoff: [a3-phase3-handoff.md](a3-phase3-handoff.md). Plan: [a3-coverage.md](a3
 - **Suite:** 1,624 tests OK.
 - **Staleness:** a staged WP 21 chunk is never re-asked. A later WP 21 overlap run therefore reuses the old open newest chunk. To refresh it, delete `dip-bulk/wp21/` first.
 
-## `full` repersisted and gated on the merged code, 2026-10-25 22:50–23:20 UTC (no DIP)
+## `full` repersisted and gated on the merged code, 2026-10-25 21:50–22:20 UTC (no DIP)
 
 - **Command:** `validate_store_gate.py ~/agent-runs/a3/full`. Its first check is the `--offline --repersist`.
   - Receipt: `~/agent-runs/a3/phase3/gate-receipt.json`. Logs: `phase3/gate-run.log` and `phase3/gate-scratch/*.log`.
@@ -141,3 +141,23 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
    - Then the WP 20 merge: all 44 chunks are staged, so it costs 1 total request.
    - It writes the WP 20 Vorgänge minus the 19↔20 and 20↔21 overlaps.
    - Doing step 3 now and refreshing it then keeps the handoff's residual window (a WP 20 Vorgang gaining a WP 21 position after the WP 21 bulk) at hours, and still protects WP 18/19 now.
+
+### Step 3 result, 2026-10-25 22:23–22:35 UTC
+
+- **Requests:** 309 DIP requests, all answered, with no failure (`phase3-requests.log`).
+- **Persons:** no differing field in any Wahlperiode. The person cache went from 1,273 to 1,943.
+
+  | WP | persons |
+  |---|---:|
+  | 18 | 871 |
+  | 19 | 973 |
+  | 20 | 1,036 |
+  | 21 | 832 |
+
+- **WP 21 `--overlap-only`:**
+  - 20 month chunks, 25,950 positions, equal to DIP's total.
+  - **244 Vorgänge are shared with an earlier Wahlperiode:** 1 with WP 18, 25 with WP 19, 218 with WP 20, and none with WP 17.
+  - **Vorgang cache: 77,993 → 77,967.** 26 WP 18/19 Vorgänge that run on into WP 21 were dropped (25 WP 19, 1 WP 18).
+    - These were cached without their WP 21 positions, the residual a3-pilot.md left open ("a WP 19 Vorgang that runs into WP 21"). They now take the one-at-a-time query.
+    - Any of the 19 pilot reports that used one of them may differ in its Drucksache links. The step 5 comparison will show that.
+  - The 218 shared with WP 20 are left out at the WP 20 merge (step 3.4, before the WP 20 backfill).
