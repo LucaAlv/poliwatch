@@ -162,6 +162,28 @@ class PublicationStateContractTests(unittest.TestCase):
                 any("retired-feature-state" in finding for finding in publication.validate_public_output(root))
             )
 
+    def test_local_path_rule_ignores_url_segments_in_quoted_speech(self) -> None:
+        # 19/41: a Fragestunde question quotes www.sr.de/sr/home/nachrichten/...
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for text in (
+                "<p>( www.sr.de/sr/home/nachrichten/politik_wirtschaft/rag_grubenwasser102.html )?</p>",
+                '<a href="https://example.test/Users/list">x</a>',
+            ):
+                with self.subTest(text=text):
+                    (root / "index.html").write_text(text, encoding="utf-8")
+                    self.assertEqual(publication.validate_public_output(root), [])
+            for text in (
+                "<p>/home/runner/work/poliwatch</p>",
+                '<a href="file:///Users/example/site">x</a>',
+                '<code>"/Users/example"</code>',
+                r"<p>C:\\Users\\example</p>",
+            ):
+                with self.subTest(text=text):
+                    (root / "index.html").write_text(text, encoding="utf-8")
+                    findings = publication.validate_public_output(root)
+                    self.assertTrue(any("local-path" in finding for finding in findings))
+
 
 class VoteStateCopyTests(unittest.TestCase):
     def test_empty_vote_copy_reflects_pipeline_truth(self) -> None:

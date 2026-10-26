@@ -270,3 +270,17 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
   - `~/agent-runs/right-counts-a1` (4.5 GB) and `~/agent-runs/b3-review-replay` (1.5 GB), old runs from other work;
   - `~/agent-runs/a3/wp18-19-xml` (0.4 GB), the census XML copy, which saves no request in Phase 3 (a3-pilot.md).
 - **Free afterwards: 9.2 GB.** `pilot` and `baseline` are kept for step 5 and Phase 4.
+
+### 4.3 WP 19, 2026-10-26: crash, restart, build refused
+
+- **Laptop crash ~15:34 UTC** at sitting 174 of 206 (19/49). The caches written at that moment are valid JSON. The run-1 log is kept as `backfill-wp19-run-0-crashed.log`.
+- **Restart 17:01 UTC (owner go):** scope 33. The 173 finished sitting reports were reused, not fetched again.
+  - New line: `leaving 10 sitting(s) a rescan ... cannot fix`: acquired sittings with roll-call votes no TOP claims. For Phase 4's spot checks, like the 23 in WP 18.
+- **All 206 of 206 acquired**, but the run exited 1 at 17:25 UTC before persist/publish:
+  - `publication_state` refused `protocols/plenarprotokoll-19-41.html` for `local-path`. It was a false positive: a Fragestunde question quotes `www.sr.de/sr/home/nachrichten/...`.
+  - **Fix:** the rule no longer matches `/home/` or `/Users/` directly after a word character, dot or hyphen. A test covers the 19/41 text and real paths. The full suite passes (1,625 tests), and the real WP 18/19 output now scans clean.
+- **DIP: 193 requests, 188 answered.** The last 5 `/vorgang` batches (17:12 UTC, Politikfelder step) got HTTP 400 with an **"Enodia Verification"** bot-check page, the first in any log. That came after ~1,200 requests in ~24 h.
+  - Politikfelder: 6,600 Vorgänge fetched, 932 failed and left retryable.
+  - The runner counts any 4xx as answered, so it missed this. It now stops for a human when the run output contains "Enodia Verification".
+- **Peak RSS 5.91 GB** (WP 18: 2.91 GB). The final build now carries WP 18 and 19.
+- **Next:** re-run WP 19 when the owner says so (not overnight: the Mac will be closed). It should select 0 sittings, then persist, render and export, at the cost of the Politikfelder `/vorgang` batches.
