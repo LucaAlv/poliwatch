@@ -211,3 +211,54 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 
 - Runner PID 94401.
 - **Scope check passed:** `[backfill] selected per Wahlperiode: WP 18: 194`.
+- **Handoff gap closed:** GitHub issue #94 "Fraktion identity per Wahlperiode" exists (open, 2026-10-20), so none is opened.
+- **First hour, 22:55–23:59 UTC:** 50 of 194 sittings acquired.
+  - DIP: 179 requests (~3.6 per sitting), all answered.
+  - Also answered: 50 dserver XML and 155 roll-call pages.
+  - Then `XmlPacer` paused 60 min after 50 XML, as designed.
+- **The Mac slept 2026-10-26 ~00:14–08:01 UTC, on battery.** `caffeinate -i` does not hold a battery-powered Mac awake.
+  - `XmlPacer` waits with `time.sleep`, which counts awake time only, so the pause simply resumed after the wake.
+  - Nothing was lost, and only wall time was spent.
+  - **For the remaining runs:** keep the Mac on AC power. `caffeinate -i` holds only on AC; `-s` would also need AC.
+- **The session's wait shell was reaped** for low system memory while idle. The runner (nohup) was not affected.
+
+### 4.2 WP 18 result, 2026-10-25 22:55 to 2026-10-26 11:47 UTC
+
+- **Run:** one cycle, exit 0.
+- **Acquired 194 of 194.**
+  - `[summary]`: 84 of 278 not acquired, all `excluded` (the D2 list).
+  - None `source_unavailable` or quarantined.
+- **DIP: 1,001 requests, all answered, with no silence.**
+  - 346 `/vorgangsposition`, 318 `/aktivitaet` and 3 `/plenarprotokoll`: about 3.4 per sitting.
+  - 334 `/vorgang` from the Politikfelder step: 5,747 Vorgänge and 276 Drucksache numbers, 0 failed.
+  - All-in: about 5.2 per sitting.
+- **Other sources:**
+  - 195 dserver XML, including one connection reset on 18/146, retried and parsed;
+  - 149 roll-call pages, 149 name lists and 74 roll-call list pages at www.bundestag.de.
+- **XmlPacer** paused 60 min after each 50 XML, three times, and dserver never blocked.
+- **Time:** 46,314 s wall clock, but most of it was not work.
+  - The Mac slept ~7.8 h on battery, and there were 3 h of pacer pauses.
+  - Active request time was 3,301 s, about 17 s per sitting.
+  - The final persist, render and export took ~13 min (last request 11:34, end 11:47).
+- **Peak RSS: 2.91 GB,** against 2.66 GB in the pilot and 2.57 GB for the gate.
+- **Politikfelder:**
+  - TOPs: 3,120 by Sachgebiet, 1,190 untagged, 222 by Einzelplan, 199 by Drucksache, 2 `einzelplan_unknown`.
+  - Abstimmungen: 343 by Drucksache, 1 untagged.
+  - None `not_fetched`.
+- **Store after WP 18:**
+
+  | WP | protocols | votes |
+  |---|---:|---:|
+  | 18 | 194 | 127 |
+  | 20 | 201 | 165 |
+  | 21 | 89 | 52 |
+
+  - Every vote has an agenda-item link.
+  - Facts: 1,908 rows, 278 Fakten in 150 of 412 periods.
+- **Warnings (35):**
+  - 10 merged Redner ids;
+  - 1 XML retry;
+  - 23 roll-call votes that matched no TOP by document number, 10 of them with no document numbers at all (Bundeswehr mandates and others). They are recorded for Phase 4's spot checks.
+- **Disk:** `full` grew ~1.1 GB (2.5 → 3.6 GB), but free disk fell 12 → 7.2 GB.
+  - The cause is macOS swap: 17.6 of 18.4 GB in use. Other applications are under memory pressure; nothing is running in `full`.
+  - The disk watchdog (1.5 GB) would stop WP 19 safely, but swap can grow faster than a run.
