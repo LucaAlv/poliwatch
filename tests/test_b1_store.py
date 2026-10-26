@@ -48,6 +48,26 @@ class SittingVotePersistenceTests(unittest.TestCase):
         )
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0], 1)
 
+    def test_debate_url_is_nullable_and_legacy_duplicates_do_not_erase_it(self):
+        vote = self.report["agenda_items"][0]["votes"][0]
+        vote["debate_url"] = "https://www.bundestag.de/dokumente/textarchiv/2024/kw11-debatte-123456"
+        self.report["agenda_items"][1]["votes"] = [dict(vote)]
+        pulse_store.persist_report(self.conn, self.report)
+        self.assertEqual(
+            self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0],
+            vote["debate_url"],
+        )
+
+        sparse = dict(vote)
+        sparse.pop("debate_url")
+        pulse_store.persist_vote(self.conn, sparse, None, self.report["protocol"]["id"], "later")
+        self.assertEqual(
+            self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0],
+            vote["debate_url"],
+        )
+        pulse_store.persist_vote(self.conn, {**vote, "debate_url": None}, None, self.report["protocol"]["id"], "later")
+        self.assertIsNone(self.conn.execute("SELECT debate_url FROM votes WHERE id = ?", (vote["id"],)).fetchone()[0])
+
     def test_removed_sitting_vote_is_pruned_when_report_is_replaced(self):
         vote = self.report["agenda_items"][0]["votes"][0]
         self.report["agenda_items"][0]["votes"] = []
@@ -94,8 +114,14 @@ class SittingVotePersistenceTests(unittest.TestCase):
                 "inversion_excerpt",
                 "result_scope",
                 "procedure_type",
+                "debate_url",
             }.issubset(columns)
         )
+
+    def test_schema_guard_requires_debate_url(self):
+        self.conn.execute("CREATE TABLE votes (id TEXT PRIMARY KEY, xlsx_url TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "--offline --repersist"):
+            pulse_store.require_current_schema(self.conn)
 
     def test_initialize_does_not_upgrade_legacy_vote_schema(self):
         # Recreate the relevant portion of schema v1, which had no sitting
@@ -125,7 +151,8 @@ class SittingVotePersistenceTests(unittest.TestCase):
             """
         )
 
-        pulse_store.initialize(self.conn)
+        with self.assertRaisesRegex(RuntimeError, "--offline --repersist"):
+            pulse_store.initialize(self.conn)
 
         row = self.conn.execute("SELECT * FROM votes WHERE id = 'legacy-vote'").fetchone()
         self.assertEqual(row["title"], "Preserved title")

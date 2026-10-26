@@ -227,7 +227,6 @@ SPRECHROLLE_RULES: tuple[tuple[str, str], ...] = (
 )
 _COMPILED_RULES = tuple((re.compile(pattern), side) for pattern, side in SPRECHROLLE_RULES)
 
-
 class SprechrolleError(Exception):
     """Speaker roles no rule maps; the message is the finished ``ERROR [sprechrolle]`` line."""
 
@@ -595,6 +594,52 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     for name in (members_by_group.keys() - result.keys() - NO_ZUSAMMENSCHLUSS) if result else ():
         result[name] = {"members": [], "state": "partial", "unlisted": True}
     return result
+
+
+_VOTE_SUBJECT_RECOMMENDATION = re.compile(r"^\W*(?:Beschreibung:\s*)?(?:(?:Zweite|Dritte|Erste)\s+)?Beschlussempfehlung", re.I)
+_VOTE_SUBJECT_TEMPLATE = re.compile(
+    r"^\W*(?:Beschreibung:\s*)?(?:Gesetzentwurf|Gesetzesentwurf|Entwurf|Antrag|Änderungsantrag|Entschließungsantrag|Geschäftsordnungsantrag|Artikel|Teile)\b",
+    re.I,
+)
+
+
+def abstimmungsgegenstand(vote: Mapping[str, Any]) -> str | None:
+    """The listed subject class, preserving the acquisition rule and precedence."""
+    for field in ("description", "vote_heading", "title"):
+        text = str(vote.get(field) or "")
+        if _VOTE_SUBJECT_RECOMMENDATION.search(text):
+            return "beschlussempfehlung"
+        if _VOTE_SUBJECT_TEMPLATE.search(text):
+            return "vorlage"
+    return None
+
+
+def vote_subject(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
+    """Stored wording for this ballot, without assigning a neighboring Vorlage."""
+    labels = list(dict.fromkeys(_clean(vote.get(field)) for field in ("description", "vote_heading", "title") if _clean(vote.get(field))))
+    qualified = [label for label in labels if re.search(r"\b(?:Buchstabe|Artikel|Teile|Geschäftsordnungsantrag)\b|\bhier\s*:", label, re.I)]
+    if qualified:
+        # A title fallback must not erase a procedural subject or a split ballot's scope.
+        return " · ".join(dict.fromkeys([labels[0], *qualified]))
+    numbers = {canonical_document_number(n) for n in vote.get("document_numbers") or []}
+    if (len(numbers) > 1 or abstimmungsgegenstand(vote) == "beschlussempfehlung") and _clean(vote.get("title")):
+        return _clean(vote.get("title"))
+    docs = report_drucksachen(report)
+    if len(numbers) == 1 and abstimmungsgegenstand(vote) != "beschlussempfehlung":
+        number = next(iter(numbers))
+        doc = docs.get(number) or {}
+        kind, title = doc.get("drucksachetyp"), _clean(doc.get("titel"))
+        variants = {
+            (_clean(other.get("drucksachetyp")), _clean(other.get("titel")))
+            for item in report.get("agenda_items") or []
+            for other in (item.get("api") or {}).get("linked_drucksachen") or []
+            if canonical_document_number(other.get("dokumentnummer")) == number
+            and document_issuer(other.get("herausgeber"), other.get("url")) == "BT"
+        }
+        if (kind in {"Gesetzentwurf", "Antrag", "Änderungsantrag", "Entschließungsantrag"}
+                and title and len(variants) == 1):
+            return f"{kind}: {title}"
+    return labels[0].removeprefix("Beschreibung:").strip() if labels else "Gegenstand nicht überliefert"
 
 
 def report_drucksachen(report: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:

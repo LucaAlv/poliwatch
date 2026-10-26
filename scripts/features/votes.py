@@ -216,6 +216,46 @@ def render_committee_line(
     return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
 
 
+def render_vote_lead(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
+    """Short factual introduction from stored vote facts; never recomputes an outcome."""
+    subject = derive.vote_subject(vote, report)
+    kind = derive.abstimmungsgegenstand(vote)
+    date = html.format_date(vote.get("date"))
+    counts = vote.get("total") or {}
+    count_parts = []
+    for key, label in (("yes", "Ja"), ("no", "Nein"), ("abstain", "Enthaltungen")):
+        value = counts.get(key)
+        count_parts.append(f"{html.format_int(value)} {label}" if isinstance(value, int) and not isinstance(value, bool) else f"{label}: nicht überliefert")
+    tally = ", ".join(count_parts)
+    when = f"Am {date} fand im Bundestag" if date else "Im Bundestag fand"
+    sentence = f"{when} die namentliche Abstimmung „{subject}“ statt ({tally})."
+    outcome = derive.vote_outcome(vote)
+    if outcome:
+        label = RESULT_BADGE_LABELS[outcome].lower()
+        if vote.get("inverted"):
+            result = f"Die Empfehlung lautete, den Antrag abzulehnen; der Antrag wurde {label}"
+        elif vote.get("result_scope") == "application":
+            result = f"Der Antrag wurde {label}"
+        elif kind == "beschlussempfehlung":
+            result = f"Die Beschlussempfehlung wurde {label}"
+        elif kind == "vorlage":
+            result = f"Die Vorlage wurde {label}"
+        else:
+            result = f"Das verzeichnete Ergebnis lautet: {label}"
+        if vote.get("result_source") != "official":
+            result += " (aus den Stimmenzahlen berechnet)"
+        else:
+            result += " (laut Beschluss auf bundestag.de)"
+    else:
+        if vote.get("inverted"):
+            sentence += " Die Empfehlung lautete, den Antrag abzulehnen."
+        result = ("Ergebnis nicht verfügbar: Zweidrittelmehrheit der Mitglieder erforderlich (Art. 79 Abs. 2 GG); kein amtliches Ergebnis gefunden"
+                  if vote.get("procedure_type") == "constitutional_amendment"
+                  else "Ergebnis nicht verfügbar: Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
+                  if vote.get("procedure_type") else "Ergebnis nicht verfügbar")
+    return f'<p class="vote-lead">{html.esc(sentence + " " + result + ".")}</p>'
+
+
 CONTEXT_HEADING = "Worum es geht"
 CONTEXT_SOURCE = "Quelle: Deutscher Bundestag/Bundesrat – DIP"
 CONTEXT_NONE = "Keine Beschreibung in DIP"
@@ -436,6 +476,11 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
         xlsx_text = (
             f' · <a href="{html.esc(xlsx_href)}">Abstimmungsliste (XLSX)</a>' if xlsx_href else ""
         )
+        debate_href = html.publication.vote_debate_url(vote.get("debate_url"))
+        debate_text = (
+            f'<p class="vote-debate"><a href="{html.esc(debate_href)}">Bericht und Debatte beim Bundestag</a></p>'
+            if debate_href else ""
+        )
         detail_url = html.source_url(vote.get("detail_url"), "bundestag-roll-call")
         result_badge = render_result_badge(vote)
         explanation = ""
@@ -448,7 +493,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{vote_context_html}{committee_line}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
+            f'{render_vote_lead(vote, panel.report)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
             f'{_abweichler_summary_html(abweichler, no_members)}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
