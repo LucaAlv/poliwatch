@@ -4756,7 +4756,6 @@ def render_week_comparison_section(
               <div class="week-metric">
                 <span>{pulse_html.esc(label)}</span>
                 <strong>{week_figure(current_stats[key])}</strong>
-                <div class="week-metric-foot">{pulse_html.render_delta(None)}</div>
               </div>"""
                 )
             cards = f"""
@@ -4768,7 +4767,7 @@ def render_week_comparison_section(
         </article>
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>
-          {pulse_html.render_share_shift(current_stats["party_counts"], None)}
+          {pulse_html.render_share_shift(current_stats["party_counts"], None, show_deltas=False)}
           <p class="week-note">Anteil an allen Reden der Woche.{_speakers_note(current_stats)}</p>
         </article>{votes_card}
       </div>"""
@@ -5806,6 +5805,9 @@ def render_front_page(
       align-items:center;
       gap:9px;
     }}
+    .week-list-current-only .week-row {{
+      grid-template-columns:minmax(96px,1.1fr) minmax(0,2fr) auto;
+    }}
     .week-label {{
       color:var(--muted);
       font-size:12px;
@@ -5929,10 +5931,12 @@ def render_front_page(
       .feature-state {{ justify-self:start; white-space:normal; }}
       .week-metrics {{ grid-template-columns:1fr 1fr; }}
       .week-row {{ grid-template-columns:minmax(80px,1fr) minmax(0,1.6fr) auto auto; }}
+      .week-list-current-only .week-row {{ grid-template-columns:minmax(80px,1fr) minmax(0,1.6fr) auto; }}
     }}
     @media (max-width: 460px) {{
       .week-metrics {{ grid-template-columns:1fr; }}
       .week-row {{ grid-template-columns:minmax(0,1fr) auto auto; }}
+      .week-list-current-only .week-row {{ grid-template-columns:minmax(0,1fr) auto; }}
       .week-row .week-bar {{ grid-column:1 / -1; order:3; }}
     }}
     @media print {{

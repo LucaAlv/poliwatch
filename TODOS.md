@@ -326,16 +326,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Week comparison with no basis still draws every n/a slot
-
-**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
-
-**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Staleness of the "Aktueller Puls" week is only gray meta text
 
 **What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
@@ -1088,6 +1078,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Week comparison with no basis still draws every n/a slot
+
+**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
+
+**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.22.1.0 (2026-10-26). Implemented [the empty-week comparison plan](docs/plans/empty-week-comparisons.md): missing-week panels retain current totals and fraction shares without metric footers, delta chips or an unused delta column. Partial comparisons and zero-prior values keep their unavailable deltas. Focused tests pass (219); the full Python 3.13 suite passes (1,523 tests, two skipped). Chrome DevTools checks at 1440px, 700px and 375px and a printed PDF confirm the current-only layout.
 
 ### Vote reading misses half the inverted votes and never stores it
 

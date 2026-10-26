@@ -1751,6 +1751,18 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('<span class="week-delta flat">n/a</span>', text_metric)
         self.assertNotIn("KW 21/2026:", text_metric)
 
+    def test_zero_prior_metric_keeps_its_unavailable_delta(self) -> None:
+        entries = [
+            self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])]),
+            self._entry("2026-05-20", "21/79", []),
+        ]
+        band = re.search(r'<section class="week-compare".*?</section>', self._render(entries), re.S).group()
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        self.assertIn('<span class="week-delta flat">n/a</span>', metrics)
+        self.assertIn('<span class="week-delta flat">n/a</span>', shares)
+        self.assertNotIn('week-list-current-only', shares)
+
     def test_matched_redeanteil_recomputes_shares_from_selected_sittings(self) -> None:
         current = pulse_html.week_stats(
             (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])]
@@ -1769,6 +1781,22 @@ class SittingWeekComparisonTests(unittest.TestCase):
             comparison["compared_previous"]["party_counts"],
         )
         self.assertIn("+50,0&nbsp;pp", markup)
+
+    def test_share_shift_can_hide_deltas_without_changing_current_rows(self) -> None:
+        current = Counter({"SPD": 3, "AfD": 1})
+        previous = Counter({"SPD": 1, "AfD": 1})
+        compared = pulse_html.render_share_shift(current, previous)
+        current_only = pulse_html.render_share_shift(current, previous, show_deltas=False)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', compared), re.findall(r'<span class="week-label">(.*?)</span>', current_only))
+        self.assertEqual(re.findall(r'width:([0-9.]+)%', compared), re.findall(r'width:([0-9.]+)%', current_only))
+        self.assertEqual(re.findall(r'<strong>(.*?)</strong>', compared), re.findall(r'<strong>(.*?)</strong>', current_only))
+        self.assertIn('<ul class="week-list">', compared)
+        self.assertIn('<ul class="week-list week-list-current-only">', current_only)
+        self.assertNotIn('class="week-delta', current_only)
+        self.assertIn('class="week-delta', compared)
+        empty = '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
+        self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1})), empty)
+        self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1}), show_deltas=False), empty)
 
     def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
         truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
@@ -1908,12 +1936,26 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn("Noch keine Vergleichswoche", markup)
         self.assertNotIn("KW 17/2023", markup)
         self.assertNotIn("2023-04-27", markup)
+        band = re.search(r'<section class="week-compare".*?</section>', markup, re.S).group()
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
 
     def test_single_week_has_no_comparison(self) -> None:
         markup = self._render(
             [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
         )
         self.assertIn("Noch keine Vergleichswoche", markup)
+        band = re.search(r'<section class="week-compare".*?</section>', markup, re.S).group()
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
+        self.assertRegex(metrics, r'<span>Reden</span>\s*<strong>1</strong>')
+        self.assertRegex(metrics, r'<span>Tagesordnungspunkte</span>\s*<strong>1</strong>')
+        self.assertRegex(metrics, r'<span>Redetext \(Zeichen\)</span>\s*<strong>100</strong>')
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        self.assertIn('<ul class="week-list week-list-current-only">', shares)
+        self.assertIn('width:100.00%', shares)
+        self.assertIn('<strong>100,0%</strong>', shares)
 
     def test_running_week_shows_no_delta_without_shared_weekday(self) -> None:
         entries = [
@@ -4052,12 +4094,16 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertIn("<h3>Redeanteil der Fraktionen</h3>", band)
         self.assertEqual(re.findall(r"<span>(Reden|Tagesordnungspunkte|Redetext \(Zeichen\))</span>", band), ["Reden", "Tagesordnungspunkte"])
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
-        self.assertEqual(metrics.count('<span class="week-delta flat">n/a</span>'), 2)
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
+        self.assertIn("<strong>5</strong>", metrics)
+        self.assertIn("<strong>2</strong>", metrics)
         self.assertNotIn("<em>", metrics)
         self.assertNotIn("week-spark", band)
         self.assertNotIn("Debattenprofil", band)
         self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
         self.assertIn('<li class="week-row">', band)
+        self.assertEqual(band.count("<strong>50,0%</strong>"), 2)
 
     def test_weekday_comparison_shows_deltas_and_subset_note(self) -> None:
         entries = self._week()
@@ -4194,5 +4240,28 @@ class AgendaItemReuseKeyTests(unittest.TestCase):
         self.assertEqual(build_dip_pulse_site.agenda_item_reuse_keys({"top_id": "TOP 1", "index": " 03 "}), ["top:TOP 1", "index:3"])
 
 
+def write_week_comparison_browser_fixture(output: Path) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    current = [SittingWeekComparisonTests._entry(
+        "2026-06-12", "21/84", [SittingWeekComparisonTests._item(1, [("SPD", 100), ("AfD", 100)])]
+    )]
+    comparison = current + [
+        SittingWeekComparisonTests._entry(
+            "2026-05-22", "21/81", [SittingWeekComparisonTests._item(1, [("SPD", 100), ("SPD", 100)])]
+        ),
+    ]
+    with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
+        for name, entries in (("current-only", current), ("comparison", comparison)):
+            markup = build_dip_pulse_site.render_front_page(
+                entries, features=default_selection(), today=date(2026, 6, 16)
+            )
+            (output / f"{name}.html").write_text(markup, encoding="utf-8")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if "--browser-fixture" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--browser-fixture", type=Path, required=True)
+        write_week_comparison_browser_fixture(parser.parse_args().browser_fixture)
+    else:
+        unittest.main()

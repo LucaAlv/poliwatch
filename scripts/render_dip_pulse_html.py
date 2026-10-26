@@ -2329,8 +2329,10 @@ def render_sparkline(points: list[dict[str, Any]]) -> str:
     return f'<div class="week-spark">{"".join(bars)}</div>'
 
 
-def render_share_shift(current: Counter[str], previous: Counter[str] | None, limit: int = 8) -> str:
-    """Per-fraction share of the week's speeches, with the shift in percentage points."""
+def render_share_shift(
+    current: Counter[str], previous: Counter[str] | None, limit: int = 8, *, show_deltas: bool = True
+) -> str:
+    """Per-fraction share of the week's speeches, optionally with the shift in percentage points."""
     total_now = sum(current.values())
     if not total_now:
         return '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
@@ -2348,10 +2350,11 @@ def render_share_shift(current: Counter[str], previous: Counter[str] | None, lim
               <span class="week-label">{esc(party)}</span>
               <span class="week-bar"><span style="width:{share:.2f}%;background:{color}"></span></span>
               <strong>{format_percent(share)}</strong>
-              {render_delta(shift, "pp")}
+              {render_delta(shift, "pp") if show_deltas else ""}
             </li>"""
         )
-    return f'<ul class="week-list">{"".join(rows)}</ul>'
+    list_class = "week-list" if show_deltas else "week-list week-list-current-only"
+    return f'<ul class="{list_class}">{"".join(rows)}</ul>'
 
 
 def render_type_mix(
