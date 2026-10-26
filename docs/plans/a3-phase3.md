@@ -262,3 +262,11 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 - **Disk:** `full` grew ~1.1 GB (2.5 → 3.6 GB), but free disk fell 12 → 7.2 GB.
   - The cause is macOS swap: 17.6 of 18.4 GB in use. Other applications are under memory pressure; nothing is running in `full`.
   - The disk watchdog (1.5 GB) would stop WP 19 safely, but swap can grow faster than a run.
+
+### Disk, 2026-10-26 ~14:30 UTC
+
+- **Free disk fell to 3.7 GB during WP 19.** The cause was outside `full`, which grew only 0.4 GB in that time, with swap steady at ~17 GB.
+- **Deleted, owner go:**
+  - `~/agent-runs/right-counts-a1` (4.5 GB) and `~/agent-runs/b3-review-replay` (1.5 GB), old runs from other work;
+  - `~/agent-runs/a3/wp18-19-xml` (0.4 GB), the census XML copy, which saves no request in Phase 3 (a3-pilot.md).
+- **Free afterwards: 9.2 GB.** `pilot` and `baseline` are kept for step 5 and Phase 4.
