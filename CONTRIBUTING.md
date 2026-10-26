@@ -10,9 +10,10 @@ python3 -m unittest discover -s tests
 
 Runs the fixture-based test suite without network access. See [First-time setup (§2)](README.md#2-first-time-setup).
 
-The bill browser checks require Node 22 or newer and Chrome or Chromium; CI uses
+The browser checks require Node 22 or newer and Chrome or Chromium; CI uses
 Node 24. They generate local fixtures and run in a temporary headless browser
-profile, including a real Enter key activation of a repeated speech link:
+profile, checking repeated speech-link keyboard activation, recipe copy, and
+responsive week-comparison layouts:
 
 ```bash
 node tests/run_bills_browser_check.mjs python3.13

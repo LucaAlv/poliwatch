@@ -245,13 +245,14 @@ Page anatomy, top to bottom (wireframe: docs/designs/puls-wochenradar-sketch.png
    Wochenpuls card with metric cells built directly from `week_stats` (not from
    `comparison["metrics"]`, since `week_comparison(current, None)` returns `None`, render
    ~1226), skipping `total_chars` unless `current["chars_complete"]` exactly as
-   `week_comparison` does (render ~1233), with `render_delta(None)` ("n/a") and no sparkline (`week_sparkline_points` is
+   `week_comparison` does (render ~1233), without metric footers or a sparkline (`week_sparkline_points` is
    not gap-limited, render ~1341, and would leak a gap-guarded week, test 1366); the
-   Redeanteil card via `render_share_shift(current, None)` (handled at ~1404); the votes
+   Redeanteil card via `render_share_shift(current, None, show_deltas=False)`, with no
+   delta chips or reserved delta column at any breakpoint; the votes
    card; and the existing note. So a single-week archive still shows the Fraktion split
    and the week totals. When the sitting counts differ, the Wochenpuls metrics and
    Redeanteil compare all sittings on weekdays present in both weeks. If there is no
-   shared weekday, the cards show the week totals without comparison deltas. The header
+   shared weekday, the cards show the week totals with per-row `n/a` delta chips. The header
    sentence always shows raw totals.
 5. **Footer** unchanged.
 

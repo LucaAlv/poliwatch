@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.1.0] - 2026-10-26
+
+### Fixed
+
+- Weeks without an eligible comparison week retain their current totals and fraction shares without repeated `n/a` markers or an empty delta column. Comparisons with no shared sitting weekdays retain their per-row unavailable deltas.
+
 ## [0.22.0.0] - 2026-10-24
 
 ### Fixed

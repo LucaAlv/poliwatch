@@ -21,6 +21,7 @@
     "tests/_votes_fixture.py": ["tests/test_features_votes.py", "tests/test_derive.py", "tests/test_mehrheitsvotum.py", "tests/test_b1_interpretation.py", "tests/test_publication_state.py"],
     "tests/bills_browser_check.js": ["tests/test_bills.py"],
     "tests/recipe_copy_browser_check.js": ["tests/test_daten_page.py"],
+    "tests/week_comparison_browser_check.js": ["tests/test_build_dip_pulse_site.py"],
     "tests/run_bills_browser_check.mjs": ["tests/test_bills.py"],
     "tests/run_pregate.py": ["tests/test_bills.py"]
   }
