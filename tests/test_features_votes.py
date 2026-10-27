@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 import _support  # noqa: F401
 import politikfelder
+from _support import FIXTURES
 from _votes_fixture import fractions_of, vote_summary
 from features.votes import (
     CONTEXT_NO_VORGANG,
@@ -631,4 +633,153 @@ class VotePanelAnchorTests(unittest.TestCase):
         vote = _vote(id=7)
         report = {"agenda_items": [], "sitting_votes": [vote]}
         self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
+
+
+class VoteLeadTests(unittest.TestCase):
+    def test_lead_names_raw_counts_and_marks_derived_result(self) -> None:
+        vote = _vote(date="2024-03-14", result_raw="accepted", result_source="derived",
+                     description='Antrag "X" <img>', total={"yes": 10, "no": 5, "abstain": 0})
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("Am 14.03.2024 fand im Bundestag", markup)
+        self.assertIn("10 Ja, 5 Nein, 0 Enthaltungen", markup)
+        self.assertIn("aus den Stimmenzahlen berechnet", markup)
+        self.assertIn("&lt;img&gt;", markup)
+        self.assertIn("&quot;X&quot;", markup)
+        self.assertNotIn("<img>", markup)
+
+    def test_missing_count_is_not_rendered_as_zero(self) -> None:
+        vote = _vote(total={"yes": 0, "no": 5})
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("0 Ja, 5 Nein, Enthaltungen: nicht überliefert", markup)
+
+    def test_fixture_votes_811_906_996_and_1005_keep_their_recorded_subject_and_counts(self) -> None:
+        votes = json.loads((FIXTURES / "vote_interpretation_votes.json").read_text(encoding="utf-8"))
+        for vote_id, expected in (("811", "Regelsätze spürbar erhöhen - 200 Euro mehr gegen Inflation und Armut"),
+                                  ("906", "Taurus-Marschflugkörpers"), ("996", "Einbürgerungspolitik"),
+                                  ("1005", "BAföG-Reform")):
+            with self.subTest(vote=vote_id):
+                markup = vote_summary({"votes": [{**votes[vote_id], "result_raw": "accepted", "result_source": "official"}]})
+                self.assertIn(expected, markup)
+                self.assertIn("Ja", markup)
+                self.assertIn("Nein", markup)
+                self.assertIn("Enthaltungen", markup)
+
+    def test_vote_921_lead_preserves_procedural_motion_despite_matching_bill(self) -> None:
+        # https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=921
+        description = (
+            "Geschäftsordnungsantrag der Fraktion der CDU/CSU gemäß § 80 Abs. 2 Satz 1 und 2 "
+            "i.V.m. § 20 Abs. 2 Satz 3 der Geschäftsordnung über den sofortigen Eintritt in die zweite Beratung "
+            "Entwurf eines Lieferkettensorgfaltspflichtenaufhebungsgesetzes (Drucksache 20/11752)"
+        )
+        vote = _vote(id="921", description=description, document_numbers=["20/11752"],
+                     title="Antrag zum Eintritt in die zweite Beratung zur Aufhebung des Lieferkettengesetzes",
+                     result_raw="rejected", result_source="official")
+        item = {"votes": [vote], "api": {"linked_drucksachen": [{
+            "dokumentnummer": "20/11752", "drucksachetyp": "Gesetzentwurf", "herausgeber": "BT",
+            "titel": "Lieferkettensorgfaltspflichtenaufhebungsgesetz",
+        }]}}
+        markup = vote_summary(item)
+        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn("wurde abgelehnt", markup)
+
+    def test_vote_889_lead_preserves_hier_scope_before_generic_title(self) -> None:
+        # https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=889
+        description = (
+            "Gesetzentwurf der Bundesregierung Entwurf eines Gesetzes zur Änderung des Erneuerbare-Energien-Gesetzes "
+            "und weiterer energiewirtschaftlicher Vorschriften zur Steigerung des Ausbaus photovoltaischer Energieerzeugung "
+            "hier: Entwurf eines Gesetzes zur Änderung des Erneuerbare-Energien-Gesetzes zur Vermeidung kurzfristig "
+            "auftretender wirtschaftlicher Härten für den Ausbau der eneuerbaren Energien (Drucksachen 20/8657 und 20/9781)"
+        )
+        vote = _vote(id="889", description=description, document_numbers=["20/8657", "20/9781"],
+                     title="Erneuerbare-Energien-Gesetz (GesEntw BReg)", result_raw="accepted", result_source="official")
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn("Die Vorlage wurde angenommen", markup)
+
+    def test_confirmed_rejecting_recommendation_names_application_outcome(self) -> None:
+        vote = _vote(description="Beschlussempfehlung zum Antrag", result_raw="accepted",
+                     result_source="official", result_scope="proposition", inverted=True)
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("Empfehlung lautete, den Antrag abzulehnen", markup)
+        self.assertIn("Antrag wurde abgelehnt", markup)
+
+    def test_other_recommendation_does_not_infer_antrag_outcome_from_counts(self) -> None:
+        vote = _vote(description="Beschlussempfehlung zum Antrag", result_raw="accepted",
+                     result_source="official", result_scope="proposition", inverted=None)
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("Beschlussempfehlung wurde angenommen", markup)
+        self.assertNotIn("Antrag wurde", markup)
+
+    def test_application_scope_is_not_inverted_again_even_for_unknown_subject(self) -> None:
+        vote = _vote(description="Abstimmung über den Antrag", result_raw="rejected",
+                     result_source="official", result_scope="application", inverted=True)
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("Antrag wurde abgelehnt", markup)
+
+    def test_rejecting_recommendation_outcomes_respect_both_result_scopes(self) -> None:
+        for scope, raw, expected in (("proposition", "accepted", "abgelehnt"),
+                                     ("application", "rejected", "abgelehnt")):
+            with self.subTest(scope=scope):
+                vote = _vote(description="Beschlussempfehlung zum Antrag", result_raw=raw,
+                             result_source="official", result_scope=scope, inverted=True)
+                markup = vote_summary({"votes": [vote]})
+                self.assertIn("Empfehlung lautete, den Antrag abzulehnen", markup)
+                self.assertIn(f"Antrag wurde {expected}", markup)
+
+    def test_direct_proposal_acceptance_and_rejection_use_the_recorded_outcome(self) -> None:
+        for result_raw, expected in (("accepted", "angenommen"), ("rejected", "abgelehnt")):
+            with self.subTest(result=result_raw):
+                vote = _vote(description="Gesetzentwurf der Bundesregierung", result_raw=result_raw,
+                             result_source="official")
+                markup = vote_summary({"votes": [vote]})
+                self.assertIn(f"Vorlage wurde {expected}", markup)
+
+    def test_derived_result_unknown_result_and_special_majority_are_explicit(self) -> None:
+        derived = vote_summary({"votes": [_vote(description="Antrag X", result_raw="accepted", result_source="derived")]})
+        self.assertIn("aus den Stimmenzahlen berechnet", derived)
+        unknown = vote_summary({"votes": [_vote(description="Antrag X", total={"yes": 20, "no": 0, "abstain": 0})]})
+        self.assertIn("Ergebnis nicht verfügbar", unknown)
+        self.assertNotIn("angenommen", unknown)
+        special = vote_summary({"votes": [_vote(procedure_type="constitutional_amendment", total={"yes": 900, "no": 1, "abstain": 0})]})
+        self.assertIn("Zweidrittelmehrheit der Mitglieder erforderlich", special)
+        self.assertNotIn("angenommen", special)
+
+    def test_missing_date_is_omitted_and_subject_text_is_escaped(self) -> None:
+        vote = _vote(date="invalid", description="Antrag <script>alert(1)</script>", result_raw="accepted")
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("Im Bundestag fand", markup)
+        self.assertIn("aus den Stimmenzahlen berechnet", markup)
+        self.assertNotIn("Am —", markup)
+        self.assertIn("&lt;script&gt;", markup)
+        self.assertNotIn("<script>", markup)
+
+    def test_committee_is_immediately_after_lead_and_context_is_retained_once(self) -> None:
+        vote = _vote(description="Beschlussempfehlung zum Antrag", document_numbers=["20/100"])
+        document = {"dokumentnummer": "20/100", "drucksachetyp": "Beschlussempfehlung",
+                    "urheber": ["Haushaltsausschuss"], "url": "https://dserver.bundestag.de/btd/20/100/2010000.pdf"}
+        item = {"votes": [vote], "api": {"linked_drucksachen": [document],
+                                           "positions": [{"vorgang_id": "2", "vorgangstyp": "Antrag"}]}}
+        report = {"agenda_items": [item]}
+        cache = {"vorgaenge": {"2": {"titel": "Kontext", "abstract": "Eine Beschreibung."}}}
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        markup = vote_summary(item, report=report, vote_contexts=contexts, vorgang_cache=cache)
+        self.assertLess(markup.index('class="vote-lead"'), markup.index('class="vote-committee"'))
+        self.assertLess(markup.index('class="vote-committee"'), markup.index('class="vote-context"'))
+        self.assertEqual(markup.count('class="vote-lead"'), 1)
+        self.assertEqual(markup.count('class="vote-committee"'), 1)
+
+    def test_report_link_is_optional_safe_and_present_even_with_dip_abstract(self) -> None:
+        vote = _vote(debate_url="https://www.bundestag.de/dokumente/textarchiv/1181880")
+        item = {"votes": [vote], "api": {"positions": [{"vorgang_id": "2", "vorgangstyp": "Antrag"}]}}
+        report = {"agenda_items": [item]}
+        cache = {"version": 1, "dokumentnummern": {"21/6561": ["2"]},
+                 "vorgaenge": {"2": {"titel": "Kontext", "abstract": "Eine Beschreibung."}}}
+        contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        markup = vote_summary(item, report=report, vote_contexts=contexts, vorgang_cache=cache)
+        self.assertIn('>Bericht und Debatte beim Bundestag</a>', markup)
+        self.assertIn("Eine Beschreibung.", markup)
+        unsafe = vote_summary({"votes": [_vote(debate_url="https://evil.example/dokumente/textarchiv/1181880")]})
+        malformed = vote_summary({"votes": [_vote(debate_url="https://www.bundestag.de/dokumente/textarchiv/1181880#debatte")]})
+        self.assertNotIn("Bericht und Debatte beim Bundestag", unsafe)
+        self.assertNotIn("Bericht und Debatte beim Bundestag", malformed)
 

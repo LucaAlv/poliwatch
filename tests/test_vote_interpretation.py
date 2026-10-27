@@ -227,7 +227,7 @@ class ChairAnnouncementTests(unittest.TestCase):
             ("Teile des Gesetzentwurfs der Bundesregierung", "vorlage"),
         ):
             with self.subTest(description):
-                self.assertEqual(dip._abstimmungsgegenstand({"description": description}), expected)
+                self.assertEqual(derive.abstimmungsgegenstand({"description": description}), expected)
 
     def test_a_bundled_announcement_is_attributed_by_its_documents(self) -> None:
         # 809-811 share Drucksache 20/4360; the announcement names the Antrag 20/4053 of 811 only.
@@ -302,6 +302,23 @@ class ChairAnnouncementTests(unittest.TestCase):
 
 
 class CopiesAndReplayTests(unittest.TestCase):
+    def test_debate_links_are_shared_and_conflicts_fail_closed_in_any_order(self) -> None:
+        url = "https://www.bundestag.de/dokumente/textarchiv/992936"
+        for other, expected in (({}, url), ({"debate_url": None}, None),
+                                ({"debate_url": "https://www.bundestag.de/dokumente/textarchiv/1181880"}, None)):
+            for reverse in (False, True):
+                copies = [vote("906", debate_url=url), vote("906", **other)]
+                if reverse:
+                    copies.reverse()
+                report = {"agenda_items": [{"votes": copies}], "sitting_votes": [vote("906")],
+                          "api_records": {"matched_roll_call_votes": [vote("906")]}}
+                dip.interpret_report_votes(report, recommendations())
+                all_copies = [*copies, *report["sitting_votes"], *report["api_records"]["matched_roll_call_votes"]]
+                self.assertTrue(all(copy_["debate_url"] == expected for copy_ in all_copies))
+                saved = json.loads(json.dumps(report))
+                dip.interpret_report_votes(report, recommendations())
+                self.assertEqual(report, saved)
+
     # Value: protects=one evidence-based interpretation for every duplicate vote;
     # fails_when=a sparse first copy hides later document evidence or conflicting text;
     # why_new=existing duplicates differed only in official-result fields; seam=none;
@@ -412,6 +429,7 @@ class OnlineAndReplayAgreeTests(unittest.TestCase):
         einbuergerung = {key: value for key, value in vote("996", date="2024-03-14").items() if key not in ("fractions", "members")}
         self.candidates = [taurus, amendment, einbuergerung]
         self.page_996 = (FIXTURES / "roll_call_detail_996.html").read_text(encoding="utf-8")
+        self.page_996 += (FIXTURES / "vote_debate_1005.html").read_text(encoding="utf-8")
 
     @staticmethod
     def document(vorgang: str, number: str, kind: str, position: str) -> dict:
@@ -450,6 +468,7 @@ class OnlineAndReplayAgreeTests(unittest.TestCase):
         # Every online copy of a vote holds the same interpretation, the matched list's too.
         for vote_ in copies(online):
             self.assertEqual({key: vote_.get(key) for key in INTERPRETATION_KEYS}, online_values[vote_["id"]], vote_["id"])
+            self.assertEqual(vote_["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880" if vote_["id"] == "996" else None)
         self.assertTrue(online_values["906"]["inverted"])
         self.assertEqual(online_values["9001"]["procedure_type"], "constitutional_amendment")
         # 996: the page's own Antrag outcome, scoped to the Antrag, not inverted a second time.
@@ -466,9 +485,10 @@ class OnlineAndReplayAgreeTests(unittest.TestCase):
         dip.interpret_report_votes(saved, parsed["vote_recommendations"])
         for vote_ in copies(saved):
             self.assertEqual({key: vote_.get(key) for key in INTERPRETATION_KEYS}, online_values[vote_["id"]], vote_["id"])
+            self.assertEqual(vote_["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880" if vote_["id"] == "996" else None)
 
 
-FIELDS = ("inverted", "inversion_source", "inversion_excerpt", "result_raw", "result_source", "result_scope")
+FIELDS = ("inverted", "inversion_source", "inversion_excerpt", "result_raw", "result_source", "result_scope", "debate_url")
 
 
 class RepairedReportsTests(unittest.TestCase):
@@ -598,6 +618,14 @@ class RepairedReportsTests(unittest.TestCase):
                 self.assertEqual(exported[vote_id][field], "" if row[field] is None else str(row[field]), (vote_id, field))
         # The dossier panels show the legend and the Antrag's outcome in every occurrence of an inverted vote only...
         page = (self.output_dir / "protocols" / "plenarprotokoll-20-157.html").read_text(encoding="utf-8")
+        leads = re.findall(r'<p class="vote-lead">(.*?)</p>', page)
+        for vote_id in ("906", "996", "1005"):
+            counts = by_id[vote_id]["total"]
+            lead = next(text for text in leads if f'{counts["yes"]} Ja, {counts["no"]} Nein' in text)
+            self.assertIn("der Antrag wurde abgelehnt", lead, vote_id)
+            self.assertIn("Empfehlung lautete, den Antrag abzulehnen", lead, vote_id)
+            self.assertIn("Enthaltungen", lead, vote_id)
+            self.assertEqual("aus den Stimmenzahlen berechnet" in lead, vote_id != "996", vote_id)
         inverted_occurrences = sum(len(copies) for vote_id, copies in saved.items() if by_id[vote_id]["inverted"])
         self.assertEqual(page.count(LEGEND), inverted_occurrences)
         self.assertEqual(page.count("Antrag: Abgelehnt"), inverted_occurrences)
@@ -626,6 +654,31 @@ class RepairedReportsTests(unittest.TestCase):
         _, rebuilt = self.repersist()
         self.assertFalse(rebuilt.replaced)
         self.assertEqual({"saved": self.saved_votes(), "stored": self.stored_votes(), "report": self.report_path.read_bytes()}, first)
+
+    def test_debate_url_replays_through_json_store_distribution_and_panels(self) -> None:
+        report = self.legacy_report()
+        url = "https://www.bundestag.de/dokumente/textarchiv/992936"
+        report["agenda_items"][1]["votes"][0]["debate_url"] = url  # 811's second copy is sparse.
+        report["api_records"]["sitting_votes"][0]["debate_url"] = url
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        self.test_a_legacy_report_the_store_the_export_and_the_panels_agree()
+        self.assertEqual(self.stored_votes()["811"]["debate_url"], url)
+        self.assertEqual(self.stored_votes()["996"]["debate_url"], url)
+        self.assertTrue(all(copy_["debate_url"] == url for copy_ in self.saved_votes()["811"]))
+        page = (self.output_dir / "protocols/plenarprotokoll-20-157.html").read_text()
+        self.assertEqual(page.count("Bericht und Debatte beim Bundestag"), 3)
+        self.assertEqual(page.count('class="vote-lead"'), sum(len(copies) for copies in self.saved_votes().values()))
+        self.test_a_second_repair_changes_nothing()
+
+    def test_a_fresh_absence_clears_cached_links_before_persistence(self) -> None:
+        report = self.legacy_report()
+        report["agenda_items"][0]["votes"][0]["debate_url"] = "https://www.bundestag.de/dokumente/textarchiv/992936"
+        fresh = copy.deepcopy(report)
+        fresh["agenda_items"][0]["votes"][0]["debate_url"] = None
+        build.carry_forward_vote_provenance(fresh, report)
+        self.report_path.write_text(json.dumps(fresh), encoding="utf-8")
+        self.repersist()
+        self.assertIsNone(self.stored_votes()["906"]["debate_url"])
 
     def test_a_report_without_cached_xml_keeps_what_the_announcement_gave_it(self) -> None:
         self.repersist()

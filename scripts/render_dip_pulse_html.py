@@ -3784,6 +3784,8 @@ def render_html(
       font-weight:650;
     }}
     .vote-committee, .vote-abweichler-none {{ margin:10px 0 0; font-size:13px; }}
+    .vote-lead {{ margin:12px 0 0; max-width:85ch; line-height:1.6; overflow-wrap:anywhere; }}
+    .vote-debate {{ margin:10px 0 0; font-size:13px; }}
     .vote-abweichler-none {{ color:var(--muted); }}
     .member-votes {{
       margin-top:14px;

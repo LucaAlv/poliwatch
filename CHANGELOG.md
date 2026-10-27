@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0.0] - 2026-10-26
+
+### Added
+
+- Each roll-call vote panel now introduces the recorded subject, date, outcome and raw vote counts, followed by its committee citation where available. Calculated and unavailable outcomes remain clearly labelled.
+- Vote panels link to the associated Bundestag report where one can be identified. The optional source link is also included in SQLite and CSV downloads; existing cached reports need an online vote refresh to acquire it.
+
 ## [0.22.1.0] - 2026-10-26
 
 ### Fixed

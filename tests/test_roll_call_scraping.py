@@ -20,6 +20,48 @@ from _votes_fixture import vote_summary  # noqa: E402
 
 
 class RollCallScrapingTests(unittest.TestCase):
+    def test_associated_debate_targets_from_bounded_live_fixtures(self) -> None:
+        fixtures = REPO_ROOT / "tests" / "fixtures"
+        for vote_id, article_id in (("906", "992936"), ("1005", "1181880"), ("994", None)):
+            with self.subTest(vote_id=vote_id):
+                page = (fixtures / f"vote_debate_{vote_id}.html").read_text()
+                expected = f"https://www.bundestag.de/dokumente/textarchiv/{article_id}" if article_id else None
+                self.assertEqual(dip.parse_vote_debate_url(page, dip.roll_call_vote_url(vote_id)), expected)
+
+    def test_debate_association_is_bounded_unique_and_safe(self) -> None:
+        page = (REPO_ROOT / "tests/fixtures/vote_debate_1005.html").read_text()
+        source = dip.roll_call_vote_url("1005")
+        expected = "https://www.bundestag.de/dokumente/textarchiv/1181880"
+        unrelated = '<div id="showItContainer_999_7654043"></div><a href="/dokumente/textarchiv/999">Other</a>'
+        self.assertEqual(dip.parse_vote_debate_url(unrelated + page + unrelated, source), expected)
+        repeated = page.replace('</div>', '<div id="showItContainer_1181880_7654043"></div></div>', 1)
+        self.assertEqual(dip.parse_vote_debate_url(repeated, source), expected)
+        conflicting = page.replace('</div>', '<div id="showItContainer_999_7654043"></div></div>', 1)
+        self.assertIsNone(dip.parse_vote_debate_url(conflicting, source))
+        self.assertIsNone(dip.parse_vote_debate_url(page.replace('tab_debatte_7654043', 'tab_debatte_0'), source))
+        canonical = "/dokumente/textarchiv/2026/kw24-de-familien-kinder-1181880"
+        for href in (canonical, "https://evil.example" + canonical, "http://www.bundestag.de" + canonical,
+                     "/dokumente/textarchiv/2026/unrelated-999", "javascript:alert(1)", "https://[broken"):
+            with self.subTest(href=href):
+                linked = page.replace('</div>', f'<a href="{href}">Bericht</a></div>', 1)
+                self.assertEqual(dip.parse_vote_debate_url(linked, source),
+                                 "https://www.bundestag.de" + canonical if href == canonical else expected)
+        for unsafe in ("https://evil.example/dokumente/textarchiv/1181880", "javascript:alert(1)",
+                       expected + "?redirect=evil", expected + "#debatte", "https://[broken", None):
+            self.assertIsNone(dip.publication.vote_debate_url(unsafe))
+
+    def test_detail_fetch_sets_nullable_debate_without_changing_the_ballot(self) -> None:
+        page = (REPO_ROOT / "tests/fixtures/vote_debate_1005.html").read_text()
+        vote = {"id": "1005", "total": {"yes": 442, "no": 141, "abstain": 0}}
+        with patch.object(dip, "fetch_html", side_effect=[page, ""]), patch.object(dip, "namenslisten_entries", return_value=[]):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+        self.assertEqual(enriched["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880")
+        self.assertEqual(enriched["total"], vote["total"])
+        with patch.object(dip, "fetch_html", return_value=""), patch.object(dip, "namenslisten_entries", return_value=[]):
+            refreshed = dip.fetch_roll_call_vote_detail(enriched)
+        self.assertIn("debate_url", refreshed)
+        self.assertIsNone(refreshed["debate_url"])
+
     def test_default_roll_call_list_url_matches_previous_path(self) -> None:
         self.assertEqual(
             dip.roll_call_list_url(None, 0, 10),
