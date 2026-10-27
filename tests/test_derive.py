@@ -400,7 +400,8 @@ class VoteSubjectTests(unittest.TestCase):
             linked("20/100", "Antrag", ["Fraktion"], titel="Erster Titel"),
             linked("20/101", "Gesetzentwurf", ["Bundesregierung"], titel="Zweiter Titel"),
         ]}}]}
-        vote = {"description": "Vorlagen im Paket", "document_numbers": ["20/100", "20/101"]}
+        vote = {"description": "Vorlagen im Paket", "title": "Allgemeiner Titel",
+                "document_numbers": ["20/100", "20/101"]}
         self.assertEqual(derive.vote_subject(vote, report), "Vorlagen im Paket")
 
     def test_conflicting_metadata_for_the_same_document_does_not_supply_a_title(self) -> None:
@@ -415,8 +416,16 @@ class VoteSubjectTests(unittest.TestCase):
         report = {"agenda_items": [{"api": {"linked_drucksachen": [
             linked("20/100", "Antrag", ["Fraktion"], titel="Underlying title"),
         ]}}]}
-        vote = {"description": "Beschlussempfehlung des Ausschusses zu einem Antrag", "document_numbers": ["20/100"]}
+        vote = {"description": "Beschlussempfehlung des Ausschusses zu einem Antrag",
+                "title": "Allgemeiner Titel", "document_numbers": ["20/100"]}
         self.assertEqual(derive.vote_subject(vote, report), vote["description"])
+
+    def test_vote_811_preserves_the_motion_description_and_falls_back_when_missing(self) -> None:
+        vote = json.loads((FIXTURES / "vote_interpretation_votes.json").read_text(encoding="utf-8"))["811"]
+        self.assertEqual(derive.vote_subject(vote, {}), vote["description"])
+        for description in (None, "", "   "):
+            with self.subTest(description=description):
+                self.assertEqual(derive.vote_subject({**vote, "description": description}, {}), vote["title"])
 
     def test_bookstabe_or_artikel_in_heading_prevents_title_shortening(self) -> None:
         report = {"agenda_items": [{"api": {"linked_drucksachen": [

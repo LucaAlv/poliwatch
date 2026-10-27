@@ -652,9 +652,10 @@ class VoteLeadTests(unittest.TestCase):
         markup = vote_summary({"votes": [vote]})
         self.assertIn("0 Ja, 5 Nein, Enthaltungen: nicht überliefert", markup)
 
-    def test_fixture_votes_906_996_and_1005_keep_their_recorded_subject_and_counts(self) -> None:
+    def test_fixture_votes_811_906_996_and_1005_keep_their_recorded_subject_and_counts(self) -> None:
         votes = json.loads((FIXTURES / "vote_interpretation_votes.json").read_text(encoding="utf-8"))
-        for vote_id, expected in (("906", "Taurus-Marschflugkörpers"), ("996", "Einbürgerungspolitik"),
+        for vote_id, expected in (("811", "Regelsätze spürbar erhöhen - 200 Euro mehr gegen Inflation und Armut"),
+                                  ("906", "Taurus-Marschflugkörpers"), ("996", "Einbürgerungspolitik"),
                                   ("1005", "BAföG-Reform")):
             with self.subTest(vote=vote_id):
                 markup = vote_summary({"votes": [{**votes[vote_id], "result_raw": "accepted", "result_source": "official"}]})

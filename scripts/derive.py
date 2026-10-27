@@ -622,8 +622,6 @@ def vote_subject(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
         # A title fallback must not erase a procedural subject or a split ballot's scope.
         return " · ".join(dict.fromkeys([labels[0], *qualified]))
     numbers = {canonical_document_number(n) for n in vote.get("document_numbers") or []}
-    if (len(numbers) > 1 or abstimmungsgegenstand(vote) == "beschlussempfehlung") and _clean(vote.get("title")):
-        return _clean(vote.get("title"))
     docs = report_drucksachen(report)
     if len(numbers) == 1 and abstimmungsgegenstand(vote) != "beschlussempfehlung":
         number = next(iter(numbers))
