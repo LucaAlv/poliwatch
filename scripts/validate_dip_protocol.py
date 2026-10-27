@@ -30,6 +30,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
 
@@ -1413,13 +1414,6 @@ _RECOMMENDATION_DOCUMENT_RE = re.compile(
     r"Beschlussempfehlung(?:(?!Antr|Gesetzentwurf|Entwurf|Ablehnung|Annahme|empfiehl|Drucksache).){0,120}?"
     r"\bauf\s+(?:der\s+|den\s+)?Drucksachen?\s+((?:[0-9]{1,2}/[0-9]{1,6}(?:\s*\(neu\))?(?:,|\s+und)?\s*)+)"
 )
-# The roll-call description opens with its Abstimmungsgegenstand.
-_DESCRIPTION_PREFIX = r"^\W*(?:Beschreibung:\s*)?"
-_DESCRIPTION_RECOMMENDATION_RE = re.compile(rf"{_DESCRIPTION_PREFIX}(?:(?:Zweite|Dritte|Erste)\s+)?Beschlussempfehlung", re.I)
-_DESCRIPTION_VORLAGE_RE = re.compile(
-    rf"{_DESCRIPTION_PREFIX}(?:Gesetzentwurf|Gesetzesentwurf|Entwurf|Antrag|Änderungsantrag|Entschließungsantrag|Geschäftsordnungsantrag|Artikel|Teile)\b",
-    re.I,
-)
 # What the chair's announcements say about one vote's recommendation; "none"
 # when no announcement is attributable to it.
 ProtocolDirection = Literal["reject", "accept", "conflict", "none"]
@@ -1530,18 +1524,6 @@ def parse_vote_recommendations(root: ET.Element) -> list[dict[str, Any]]:
     return records
 
 
-def _abstimmungsgegenstand(vote: dict[str, Any]) -> Literal["beschlussempfehlung", "vorlage"] | None:
-    """What the roll-call listing names as the Abstimmungsgegenstand: the
-    Beschlussempfehlung or a Vorlage."""
-    for field in ("description", "vote_heading", "title"):
-        text = str(vote.get(field) or "")
-        if _DESCRIPTION_RECOMMENDATION_RE.search(text):
-            return "beschlussempfehlung"
-        if _DESCRIPTION_VORLAGE_RE.search(text):
-            return "vorlage"
-    return None
-
-
 def protocol_recommendation_evidence(
     vote: dict[str, Any], records: list[dict[str, Any]], sitting_votes: list[dict[str, Any]]
 ) -> tuple[ProtocolDirection, dict[str, Any] | None]:
@@ -1571,12 +1553,12 @@ def protocol_recommendation_evidence(
     # attributed to none of them, unless the listings' Abstimmungsgegenstand separates them.
     own_id = str(vote.get("id"))
     rivals = [other for other in sitting_votes if str(other.get("id")) != own_id and any(fits(r, other) for r in matching)]
-    if any(_abstimmungsgegenstand(other) != "vorlage" for other in rivals):
+    if any(derive.abstimmungsgegenstand(other) != "vorlage" for other in rivals):
         return "conflict", None
     # The Antrag's number alone fits a vote on the Antrag itself just as well: the
     # listing must open with the Beschlussempfehlung, or the chair must name a
     # Beschlussempfehlung Drucksache that is among the vote's.
-    if _abstimmungsgegenstand(vote) != "beschlussempfehlung" and not any(record["recommendation_numbers"] for record in matching):
+    if derive.abstimmungsgegenstand(vote) != "beschlussempfehlung" and not any(record["recommendation_numbers"] for record in matching):
         return "conflict", None
     directions = {record["direction"] for record in matching}
     if directions != {"reject"} and directions != {"accept"}:
@@ -1636,7 +1618,7 @@ def recommendation_inversion(
     # A roll-call listing that opens with the Vorlage itself ("Gesetzentwurf der
     # ...", "Antrag der ...") is a vote on it: Ja is for the Vorlage even where a
     # title says "ablehnen".
-    if _abstimmungsgegenstand(vote) == "vorlage":
+    if derive.abstimmungsgegenstand(vote) == "vorlage":
         return None, None, None
     text_state, text_source, text_excerpt = _text_recommendation_inversion(vote, documents)
     if direction == "reject" and record is not None:
@@ -1738,7 +1720,7 @@ def interpret_sitting_votes(
             occurrences.setdefault(str(vote["id"]), []).append(vote)
     representatives = []
     for copies in occurrences.values():
-        first = next((copy for copy in copies if _abstimmungsgegenstand(copy) is not None), copies[0])
+        first = next((copy for copy in copies if derive.abstimmungsgegenstand(copy) is not None), copies[0])
         representative = dict(first)
         representative["document_numbers"] = list(dict.fromkeys(
             number for copy in copies for number in copy.get("document_numbers") or []
@@ -1748,6 +1730,13 @@ def interpret_sitting_votes(
         representative["total"] = next((copy["total"] for copy in copies if copy.get("total")), {})
         representatives.append(representative)
     for copies, representative in zip(occurrences.values(), representatives):
+        # An absent legacy key contributes no evidence; explicit null is a fresh
+        # refusal. Conflicting copies lose the link rather than picking an order.
+        debate_urls = {publication.vote_debate_url(copy.get("debate_url")) for copy in copies if "debate_url" in copy}
+        if debate_urls:
+            debate_url = next(iter(debate_urls)) if len(debate_urls) == 1 else None
+            for copy in copies:
+                copy["debate_url"] = debate_url
         numbers = set(representative["document_numbers"])
         vote_documents = [doc for doc in documents if doc.get("dokumentnummer") in numbers]
         context = [f"{title} {vorgang_type}" for title, vorgang_type, linked_numbers in context_items if numbers & linked_numbers]
@@ -1761,7 +1750,7 @@ def interpret_sitting_votes(
             kept = next((c.get("inversion_excerpt") for c in copies
                          if c.get("inverted") is True and c.get("inversion_source") == "bundestag-protocol"), None)
             evidence = ("reject", {"excerpt": kept}) if kept is not None else None
-        subjects = {_abstimmungsgegenstand(copy) for copy in copies} - {None}
+        subjects = {derive.abstimmungsgegenstand(copy) for copy in copies} - {None}
         if len(subjects) > 1:
             evidence = ("conflict", None)
         if official is not None:
@@ -2298,11 +2287,75 @@ def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
     return members
 
 
+class _VoteDebateParser(HTMLParser):
+    """Only associations and links inside the vote's own Debatte panel."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[tuple[str, bool]] = []
+        self.video_ids: set[str] = set()
+        self.associations: set[tuple[str, str]] = set()
+        self.links: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        element_id = attributes.get("id") or ""
+        tab = re.fullmatch(r"tab_debatte_([0-9]+)", element_id)
+        if (tag == "a" and tab and attributes.get("role") == "tab"
+                and attributes.get("href") == "#debatte" and attributes.get("aria-controls") == "debatte"):
+            self.video_ids.add(tab[1])
+        inside = bool(self.stack and self.stack[-1][1]) or (
+            element_id == "debatte" and attributes.get("role") == "tabpanel"
+        )
+        if inside:
+            association = re.fullmatch(r"showItContainer_([0-9]+)_([0-9]+)", element_id)
+            if association:
+                self.associations.add((association[1], association[2]))
+            if tag == "a" and attributes.get("href"):
+                self.links.add(attributes["href"])
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append((tag, inside))
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+
+def parse_vote_debate_url(html_text: str, detail_url: str) -> str | None:
+    parser = _VoteDebateParser()
+    parser.feed(html_text)
+    article_ids = {article for article, _ in parser.associations}
+    if len(article_ids) != 1 or not parser.associations or any(
+        video not in parser.video_ids for _, video in parser.associations
+    ):
+        return None
+    article_id = next(iter(article_ids))
+    explicit = set()
+    for href in parser.links:
+        try:
+            url = publication.vote_debate_url(urllib.parse.urljoin(detail_url, href), article_id)
+        except ValueError:
+            continue
+        if url:
+            explicit.add(url)
+    if len(explicit) == 1:
+        return next(iter(explicit))
+    # The ID route redirects to the canonical article (verified on 906 and 1005).
+    return publication.vote_debate_url(f"{BT_BASE_URL}/dokumente/textarchiv/{article_id}", article_id)
+
+
 def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     vote_id = str(vote["id"])
     detail_html = fetch_html(roll_call_vote_url(vote_id))
     member_html = fetch_html(f"{BT_BASE_URL}/apps/na/namensliste.form?id={urllib.parse.quote(vote_id)}&ajax=true")
     enriched_vote = dict(vote)
+    enriched_vote["debate_url"] = parse_vote_debate_url(detail_html, roll_call_vote_url(vote_id))
     heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", detail_html, re.S | re.I)
     if heading:
         enriched_vote["vote_heading"] = strip_tags(heading.group(1))

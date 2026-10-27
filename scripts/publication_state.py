@@ -319,6 +319,24 @@ def validate_external_url(url: str, source: str) -> str:
     return url
 
 
+def vote_debate_url(value: Any, article_id: str | None = None) -> str | None:
+    """A scraped Textarchiv target, checked again before publishing a link."""
+    if not isinstance(value, str) or re.search(r"[\s\\]", value):
+        return None
+    try:
+        validate_external_url(value, "bundestag-roll-call")
+        parts = urlsplit(value)
+        match = re.fullmatch(r"/dokumente/textarchiv/(?:([0-9]+)|[0-9]{4}/[a-zA-Z0-9_-]+-([0-9]+))", parts.path)
+        if (parts.hostname not in {"www.bundestag.de", "bundestag.de"}
+                or parts.port not in (None, 443) or parts.query or parts.fragment or not match):
+            return None
+        if article_id is not None and article_id not in match.groups():
+            return None
+    except (PublicationStateError, ValueError):
+        return None
+    return value
+
+
 def validate_relative_output_path(value: str) -> str:
     decoded = unquote(str(value))
     if not decoded or "\\" in decoded or re.search(r"[\x00-\x1f\x7f]", decoded):

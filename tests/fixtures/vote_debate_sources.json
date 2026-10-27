@@ -1,0 +1,24 @@
+{
+  "retrieved_at": "2026-10-25",
+  "method": "HTTPS GET; association tags only, no editorial body",
+  "id_route_checks": {
+    "992936": "https://www.bundestag.de/dokumente/textarchiv/2024/kw11-de-ukraine-992936",
+    "1181880": "https://www.bundestag.de/dokumente/textarchiv/2026/kw24-de-familien-kinder-1181880"
+  },
+  "tab_check": "1005#debatte leaves #debatte display:none; not a supported fallback",
+  "pages": {
+    "906": {
+      "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=906",
+      "association_tags": 3
+    },
+    "1005": {
+      "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=1005",
+      "association_tags": 3
+    },
+    "994": {
+      "url": "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=994",
+      "association_tags": 0
+    }
+  },
+  "retrieved_timezone": "UTC"
+}
