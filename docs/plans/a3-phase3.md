@@ -284,3 +284,29 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
   - The runner counts any 4xx as answered, so it missed this. It now stops for a human when the run output contains "Enodia Verification".
 - **Peak RSS 5.91 GB** (WP 18: 2.91 GB). The final build now carries WP 18 and 19.
 - **Next:** re-run WP 19 when the owner says so (not overnight: the Mac will be closed). It should select 0 sittings, then persist, render and export, at the cost of the Politikfelder `/vorgang` batches.
+
+### 4.3 WP 19 result, re-run 2026-10-27 07:22–08:14 UTC (owner go)
+
+- **Run:** one cycle, exit 0, 3,081 s. The publication check passed with the fixed guard.
+  - Scope 0: all 206 WP 19 sittings were on disk from 2026-10-26. `[summary]`: 84 of 84 not acquired, all `excluded` (the D2 list).
+  - The backfill leaves 13 sittings it cannot fix by rescanning (was 10 before the 33-sitting restart): roll-call votes no TOP claims. They go to Phase 4's spot checks.
+- **DIP: 839 requests, all answered, with no Enodia page.**
+  - 3 `/plenarprotokoll`, 53 `/vorgang` id batches (5,220 Vorgänge), and **783 one-at-a-time `/vorgang?f.dokumentnummer=` lookups** for 775 Drucksache numbers.
+  - The Drucksache lookups are the cost to plan for. WP 18's run made 276 of them; WP 20 and 21 will add theirs.
+- **Peak RSS 7.21 GB** (WP 18 run 2.91 GB, refused WP 19 run 5.91 GB). Memory grows with the store; watch it for WP 20.
+- **Politikfelder:** 0 failed, none `not_fetched`.
+  - TOPs: 4,660 by Sachgebiet, 1,655 untagged, 353 by Einzelplan, 241 by Drucksache, 2 `einzelplan_unknown`.
+  - Abstimmungen: 515 by Drucksache, 5 by TOP, 3 untagged.
+- **Store after WP 19:**
+
+  | WP | protocols | votes |
+  |---|---:|---:|
+  | 18 | 194 | 127 |
+  | 19 | 206 | 179 |
+  | 20 | 201 | 165 |
+  | 21 | 89 | 52 |
+
+  - Every vote has an agenda-item link.
+  - Facts: 1,908 rows in 412 periods; 437 Fakten (was 278 after WP 18).
+- **Warnings (12):** 10 merged Redner ids, 1 sitting/kind classification summary, 1 incomplete-weeks note.
+- **Disk:** `full` is 5.2 GB; 38 GB free.
