@@ -332,3 +332,29 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 - **Peak RSS 5.58 GB,** but the final build never ran.
 - 16 roll-call votes matched no TOP (Bundeswehr mandates, Impfpflicht motions, budget items and others). They go to Phase 4's spot checks.
 - **Owner decision needed:** exclude 20/11 and finish WP 20, or fix the handover case in the parser first.
+
+### 4.4 WP 20 result, re-run 2026-10-28 06:01–06:21 UTC (owner go: exclude 20/11)
+
+- **Run:** one cycle, exit 0, 1,182 s, with `--exclude-document-number 20/11` (passed through by `backfill_drip.py`). 20/11 is now in `coverage-exclusions.json`, recorded 2026-10-28T06:03:54Z.
+- **Scope 10** (20/1–20/10), all acquired. The 203 from the first run were reused. `[summary]`: 85 of 95 not acquired, all `excluded` (the D2 list plus 20/11).
+- 9 sittings were left alone because their roll-call votes match no TOP; they are Phase 4 spot checks.
+- **DIP: 104 requests, all answered, with no Enodia page.** That is 18 `/vorgangsposition`, 10 `/aktivitaet`, 3 `/plenarprotokoll`, 53 `/vorgang` id batches (5,282 Vorgänge) and only 20 Drucksache lookups (WP 19's re-run: 783).
+- **Other sources:** 10 dserver XML; 4 roll-call pages, 4 name lists and 29 list pages.
+- **Peak RSS 7.32 GB** (WP 19 re-run 7.21 GB).
+- **Politikfelder:** 0 failed.
+  - TOPs: 4,694 by Sachgebiet, 1,685 untagged, 353 by Einzelplan, 242 by Drucksache, 2 `einzelplan_unknown`.
+  - Abstimmungen: 518 by Drucksache, 8 by TOP, 3 untagged.
+- **Store after WP 20:**
+
+  | WP | protocols | votes |
+  |---|---:|---:|
+  | 18 | 194 | 127 |
+  | 19 | 206 | 179 |
+  | 20 | 213 | 171 |
+  | 21 | 89 | 52 |
+
+  - WP 20 went from 201 to 213 protocols and from 165 to 171 votes. Every vote has an agenda-item link.
+  - 502 Fakten (437 after WP 19); 529 votes in the Abstimmungen archive.
+- **Warnings (12):** 10 merged Redner ids (source-errors C2), 1 classification summary, 1 incomplete-weeks note.
+- **Disk:** `full` is 5.3 GB; 37 GB free.
+- **WP 20 in total:** 1,056 DIP requests over both runs, plus ~17 for the merge.
