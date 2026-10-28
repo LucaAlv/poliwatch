@@ -327,7 +327,7 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
   - Bas: "Jetzt erteile ich Ihnen das Wort für Ihre Rede."
   - Hilse's own speech follows as ID201101000.
   - The validator is right not to count "Das freut mich sehr." as a Zwischenfrage: no question, no announcement. It is a chair exchange with the next speaker, misfiled in the source.
-- **DIP:** 967 requests, all answered (394 `/aktivitaet`, 570 `/vorgangsposition`, 3 `/plenarprotokoll`). No Enodia page.
+- **DIP:** 952 requests in the backfill, all answered, with no Enodia page (967 with step 3 item 4: 394 `/aktivitaet`, 570 `/vorgangsposition`, 3 `/plenarprotokoll`).
 - **Other sources:** 204 dserver XML; 183 roll-call pages, 183 name lists and 28 list pages at www.bundestag.de.
 - **Peak RSS 5.58 GB,** but the final build never ran.
 - 16 roll-call votes matched no TOP (Bundeswehr mandates, Impfpflicht motions, budget items and others). They go to Phase 4's spot checks.
