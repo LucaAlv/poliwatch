@@ -110,6 +110,29 @@ class ExtractionTests(unittest.TestCase):
             antrag_text.Forderung("Der Bundestag fordert die Bundesregierung daher auf, das Gesetz zurückzunehmen.", ()),
         )
 
+    # Value: protects=layout is undone without changing, dropping or cutting words: a wrapped line that starts with "Begründung", "1. Januar" or "–" stays in its demand, a line naming another Drucksache is kept, a hyphen after a digit stays without a space, a soft hyphen at a line end joins the word, a section heading on its own line ends the passage, and a passage cut mid-sentence is no quote; fails_when=the end, item, layout-line or hyphen rules go back to matching any line start; why_new=code review of B4 extractive (2026-10-28); seam=none
+    def test_wrapped_lines_keep_every_word(self) -> None:
+        def passage(*lines: str, end: str = "Berlin, den 9. Januar 2024") -> antrag_text.Forderung | None:
+            return antrag_text.extract_forderung("\n".join(("Drucksache 20/123", OPENING, *lines, end)))
+
+        self.assertEqual(
+            passage("1. jede Ablehnung mit einer", "Begründung zu versehen;", "2. bis zum", "1. Januar 2026 zu berichten;",
+                    "3. die Mittel – soweit möglich", "– aufzustocken und den Gesetzentwurf auf", "Drucksache 20/1234",
+                    "zurückzuziehen;", "4. die CO2-", "Bepreisung und das 49-", "Euro-Ticket zu erhalten und die Sätze an\u00ad",
+                    "zuheben."),
+            antrag_text.Forderung(OPENING, (
+                "1. jede Ablehnung mit einer Begründung zu versehen;",
+                "2. bis zum 1. Januar 2026 zu berichten;",
+                "3. die Mittel – soweit möglich – aufzustocken und den Gesetzentwurf auf Drucksache 20/1234 zurückzuziehen;",
+                "4. die CO2-Bepreisung und das 49-Euro-Ticket zu erhalten und die Sätze anzuheben.",
+            )),
+        )
+        self.assertEqual(
+            passage("1. das Gesetz zu ändern;", "2. dem Bundestag zu berichten.", "III.", "Der Deutsche Bundestag bittet den Bundesrat."),
+            antrag_text.Forderung(OPENING, ("1. das Gesetz zu ändern;", "2. dem Bundestag zu berichten.")),
+        )
+        self.assertIsNone(passage("1. das Gesetz zu ändern;", "2. dem Bundestag bis zum", end="Begründung"))
+
     # Value: protects=the teaser never cuts a demand and always shows the first; fails_when=a long first demand is cut or dropped; why_new=R5; seam=none
     def test_the_teaser_keeps_whole_demands(self) -> None:
         long_demand = "1. " + "sehr " * 100 + "lange Forderung;"
@@ -158,6 +181,12 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(antrag_text.fetch_targets([report()], cache()), ([], []))
         self.assertEqual(antrag_text.fetch_targets([report()], cache(abstract="Kurz.", nummern={})), ([], []))
 
+    # Value: protects=a number DIP had no record for, or whose Antrag was not yet linked to a Vorgang, is asked again like an unresolved number of the Vorgang cache; fails_when=a first empty answer is cached for good, so the vote never gets its quote; why_new=code review of B4 extractive (2026-10-28); seam=none
+    def test_an_empty_or_unlinked_answer_is_asked_again(self) -> None:
+        for name, records in (("no record", []), ("not linked", [drucksache(vorgang_ids=())])):
+            with self.subTest(name):
+                self.assertEqual(antrag_text.fetch_targets([report()], cache(nummern={"20/123": records}, texte={})), (["20/123"], []))
+
 
 class CacheFileTests(unittest.TestCase):
     # Value: protects=the cache round-trips and an unchanged save is byte-identical (A3's unchanged-replay gate, R2), and the Vorgang cache file never carries the texts; fails_when=gzip writes a timestamp or the texts leak into dip-vorgang-cache.json; why_new=antrag_text is new; seam=none
@@ -181,6 +210,29 @@ class CacheFileTests(unittest.TestCase):
             antrag_text.cache_path(tmp).write_bytes(b"not gzip")
             with mock.patch("sys.stderr"):
                 self.assertEqual(antrag_text.load_cache(tmp), antrag_text.empty_cache())
+
+    # Value: protects=a damaged deflate stream or a deeply nested file reads as empty and is moved aside, so a later save cannot overwrite it, while an unsupported version or a read error stops the build with the file untouched (as the Vorgang cache does); fails_when=zlib.error or RecursionError escapes, or a newer cache is read as empty and overwritten by the next online build; why_new=code review of B4 extractive (2026-10-28); seam=none
+    def test_damaged_and_unsupported_files(self) -> None:
+        import gzip
+
+        good = gzip.compress(json.dumps({"version": 1, "nummern": {}, "texte": {"x": {"text": "a" * 5000}}}).encode(), mtime=0)
+        damaged = bytes(good[:15]) + bytes(b ^ 0xFF for b in good[15:40]) + bytes(good[40:])
+        for name, data in (("deflate", damaged), ("nested", gzip.compress(b"[" * 100_000 + b"]" * 100_000, mtime=0))):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                path = antrag_text.cache_path(tmp)
+                path.parent.mkdir(parents=True)
+                path.write_bytes(data)
+                with mock.patch("sys.stderr"):
+                    self.assertEqual(antrag_text.load_cache(tmp), antrag_text.empty_cache())
+                self.assertFalse(path.exists())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = antrag_text.cache_path(tmp)
+            path.parent.mkdir(parents=True)
+            newer = gzip.compress(json.dumps({"version": 2, "nummern": {}, "texte": {}}).encode(), mtime=0)
+            path.write_bytes(newer)
+            with self.assertRaisesRegex(politikfelder.CacheLoadError, "Unsupported Drucksache text cache version 2"):
+                antrag_text.load_cache(tmp)
+            self.assertEqual(path.read_bytes(), newer)
 
 
 class FakeClient:
@@ -208,11 +260,33 @@ class RefreshTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(build, "NUMBER_LOOKUP_PAUSE", 0):
             build.refresh_drucksache_texts(client, [report()], vorgang_cache, Path(tmp), stats)
             self.assertEqual(client.calls, ["/drucksache", "/drucksache-text"])
-            self.assertEqual(stats, {"drucksachen": 1, "texte": 1, "texte_failed": 0})
+            self.assertEqual(stats, {"drucksachen": 1, "drucksachen_failed": 0, "texte": 1, "texte_failed": 0})
             self.assertEqual(antrag_text.load_cache(tmp)["texte"], {"D1": {"text": ANTRAG}})
             self.assertEqual(answer(vorgang_cache).state, "extracted")
+            saved = antrag_text.cache_path(tmp).stat().st_mtime_ns
             build.refresh_drucksache_texts(client, [report()], vorgang_cache, Path(tmp), stats)
             self.assertEqual(len(client.calls), 2)
+            self.assertEqual(antrag_text.cache_path(tmp).stat().st_mtime_ns, saved)  # nothing fetched, nothing written
+
+    # Value: protects=when the Drucksache-number pass of the Vorgang fetch shows the API down, stage 3 asks DIP nothing; fails_when=resolve_numbers' breaker is not passed on, so a blocked API gets more calls; why_new=code review of B4 extractive (2026-10-28); seam=dip client faked
+    def test_an_outage_on_the_number_pass_skips_stage_three(self) -> None:
+        class Down:
+            def __init__(self):
+                self.calls = []
+
+            def list_all(self, path, params, *, page_pause=0.0):
+                self.calls.append(path)
+                if path == "/vorgang" and "f.dokumentnummer" in params:
+                    raise build.dip.DipError("blocked")
+                return []
+
+        rep = report()
+        rep["agenda_items"][0]["votes"][0]["document_numbers"] = ["20/123", "20/124"]
+        client = Down()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(build, "NUMBER_LOOKUP_PAUSE", 0), \
+                mock.patch.object(build, "VORGANG_FETCH_MAX_FAILURES", 1), mock.patch("sys.stderr"):
+            build.refresh_vorgang_cache(client, [{"report": rep}], cache(nummern={}, texte={}), Path(tmp))
+        self.assertEqual([c for c in client.calls if c.startswith("/drucksache")], [])
 
 
 class PersistTests(unittest.TestCase):
@@ -294,6 +368,18 @@ class PanelTests(unittest.TestCase):
         self.assertIn("Ja = Antrag ablehnen", markup)
         figure = markup[markup.index('<figure class="vote-context-quote">'):markup.index("</figure>")]
         self.assertNotIn("ablehnen", figure)
+
+    # Value: protects=the "not fetched" note is per Vorgang block: a block whose own Antrag text is missing says so even when another block of the vote is quoted, and a block with only a read text and no passage does not; fails_when=the note reads the vote-wide state again; why_new=code review of B4 extractive (2026-10-28); seam=none
+    def test_the_text_note_belongs_to_its_block(self) -> None:
+        from features import votes as votes_feature
+
+        result = answer(cache())
+        missing = result.by_vorgang["vorgang-1"][0]._replace(vorgang_id="vorgang-2", state="not_fetched", forderung=None)
+        read = missing._replace(vorgang_id="vorgang-3", state="no_passage")
+        passages = antrag_text.VotePassages({**result.by_vorgang, "vorgang-2": [missing], "vorgang-3": [read]}, "extracted")
+        self.assertIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages, "vorgang-2"))
+        self.assertNotIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages, "vorgang-3"))
+        self.assertIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages._replace(metadata_missing=True), "vorgang-3"))
 
     # Value: protects=without a quote the gap stays honest: "no description" when DIP has none, plus a note when the text is only not fetched; fails_when=a cache miss reads as a final gap; why_new=antrag_text is new; seam=none
     def test_gaps(self) -> None:

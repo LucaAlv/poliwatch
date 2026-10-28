@@ -20,10 +20,12 @@ This module does no network I/O. Its file access is ``load_cache`` and ``save_ca
 
 from __future__ import annotations
 
+import functools
 import gzip
 import json
 import re
 import sys
+import zlib
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, NamedTuple, get_args
 
@@ -33,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 1
+EXTRACTOR_VERSION = 2
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_KEY = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -86,26 +88,52 @@ class Passage(NamedTuple):
 
 
 class VotePassages(NamedTuple):
-    """``vote_passages``'s answer: the passages per context Vorgang, and its state."""
+    """``vote_passages``'s answer: the passages per context Vorgang, and its state.
+    ``metadata_missing``: one of the vote's Drucksache numbers has no metadata in
+    the cache, so any Vorgang block without a quote may still be missing one."""
 
     by_vorgang: dict[str, list[Passage]]
     state: PassageState
+    metadata_missing: bool = False
 
 
 # --- extraction -------------------------------------------------------------
 
 # Running heads and page numbers of a Drucksache's PDF layer: "Deutscher Bundestag –
 # 21. Wahlperiode – 3 – Drucksache 21/2234", "Drucksache 21/2234 – 2 – Deutscher …",
-# a bare "– 3 –", and the advance copy's "Vorabfassung – wird durch die lektorierte
-# Fassung ersetzt." banner.
+# a bare "Deutscher Bundestag – 21. Wahlperiode", a bare "– 3 –", and the advance
+# copy's "Vorabfassung – wird durch die lektorierte Fassung ersetzt." banner. A bare
+# "Drucksache 21/2234" is a running head only when it names the Drucksache's own
+# number (``_layout_lines``): a line naming another one is content.
+_HEAD = r"(?:Deutscher\s+Bundestag\s*[–-]\s*\d{1,2}\.\s*Wahlperiode|Drucksache\s+\d{1,2}/\d{1,6})"
 _LAYOUT_LINE = re.compile(
     r"^\s*(?:"
-    r"(?:Deutscher\s+Bundestag\s*[–-]\s*\d{1,2}\.\s*Wahlperiode|Drucksache\s+\d{1,2}/\d{1,6})"
-    r"(?:\s*[–-]\s*\d{1,4}\s*[–-]\s*(?:Deutscher\s+Bundestag\s*[–-]\s*\d{1,2}\.\s*Wahlperiode|Drucksache\s+\d{1,2}/\d{1,6}))?"
+    r"Deutscher\s+Bundestag\s*[–-]\s*\d{1,2}\.\s*Wahlperiode"
+    r"|" + _HEAD + r"\s*[–-]\s*\d{1,4}\s*[–-]\s*" + _HEAD +
     r"|[–-]\s*\d{1,4}\s*[–-]"
     r"|Vorabfassung\s*[–-]\s*wird\s+durch\s+die\s+lektorierte\s+Fassung\s+ersetzt\.?"
     r")\s*$"
 )
+_NUMBER = re.compile(r"Drucksache\s+(\d{1,2})/(\d{1,6})")
+_BARE_NUMBER_LINE = re.compile(r"^\s*Drucksache\s+(\d{1,2})/(\d{1,6})\s*$")
+
+
+def _layout_lines(text: str) -> list[str]:
+    """The lines of ``text`` without its running heads and page numbers. The
+    Drucksache's own number is the first one it names (its first-page header)."""
+    own = _NUMBER.search(text)
+    own_number = (int(own.group(1)), int(own.group(2))) if own else None
+    kept = []
+    for line in text.split("\n"):
+        if _LAYOUT_LINE.match(line):
+            continue
+        bare = _BARE_NUMBER_LINE.match(line)
+        if bare and (int(bare.group(1)), int(bare.group(2))) == own_number:
+            continue
+        kept.append(line)
+    return kept
+
+
 def _breakable(word: str) -> str:
     """A pattern for ``word`` that a line-end break hyphen may split anywhere."""
     return "(?:-[ \t]*\n[ \t]*)?".join(re.escape(char) for char in word)
@@ -123,58 +151,121 @@ _ANCHOR = re.compile(
     + _words("Bundestag", "fordert", "die", "Bundesregierung")
     + r"[ \t\n]+(?:(?:daher|deshalb|darüber[ \t\n]+hinaus|insbesondere|ferner)[ \t\n]+)?auf\b)"
 )
-# Where the operative part ends: the date line, the Begründung, or the next section.
-_END = re.compile(r"\n[ \t]*(?:Berlin,[ \t]+den\b|Begründung\b|(?:III|IV|V|VI)\.[ \t]+\S)")
+# Where the operative part may end: the date line, the Begründung, or the next
+# section ("III. Der Bundestag …" or "III." on its own line). A candidate counts
+# only after a finished clause (``_end_of``), so a wrapped line that happens to
+# begin with "Begründung" or "V." does not cut a demand short.
+_END = re.compile(
+    r"\n[ \t]*(?:Berlin,[ \t]+den\b|Begründung\b|(?:II|III|IV|V|VI|VII|VIII|IX|X)\.(?=[ \t]|\n|$))"
+)
 # A list item at the start of a line: "1.", "12.", "a)", "aa)", "–", "-", "•".
-_ITEM = re.compile(r"^(?:\d{1,2}\.|[a-z]{1,2}\)|[–•-])[ \t]+\S")
+_ITEM = re.compile(r"^(?:(\d{1,2})\.|([a-z]{1,2})\)|[–•-])[ \t]+\S")
 # A word a line-end hyphen leaves standing ("Bundes- und Landesrecht").
 _KEEPS_HYPHEN = frozenset({"und", "oder", "bzw.", "sowie", "bis", "als", "noch", "wie"})
+# What may close a clause, and what may stand after its full stop.
+_CLAUSE_ENDS = (".", ";", ":", "!", "?")
+_CLOSERS = "\"'“”»«)]"
+
+
+def _ends_clause(text: str, ends: tuple[str, ...] = _CLAUSE_ENDS) -> bool:
+    return text.rstrip().rstrip(_CLOSERS).endswith(ends)
+
+
+def _end_of(text: str, start: int) -> int:
+    """Where the operative part that starts at ``start`` ends: the first end marker
+    after a finished clause, else the end of the text."""
+    for match in _END.finditer(text, start):
+        if _ends_clause(text[max(start, match.start() - 200): match.start()]):
+            return match.start()
+    return len(text)
+
+
+def _successor(label: str) -> str:
+    """The list label after ``label``: "b" after "a", "bb" after "aa"."""
+    return chr(ord(label[0]) + 1) * len(label)
 
 
 def _join(previous: str, line: str) -> str:
     """``line`` appended to the wrapped paragraph ``previous``. A line-end hyphen
-    before a lower-case word is a break hyphen and goes, unless the word is one a
-    truncated compound stands before; before a capital it stays (E-Mobilität)."""
-    if previous.endswith("-") and len(previous) > 1 and previous[-2].isalpha():
+    after a letter and before a lower-case word is a break hyphen and goes, unless
+    the word is one a truncated compound stands before ("Bundes- und"); a number is
+    never hyphenated, so after a digit, and before a capital or a digit, the hyphen
+    is part of the word and the lines join without a space (E-Mobilität,
+    CO2-neutral, 49-Euro-Ticket)."""
+    if previous.endswith("-") and len(previous) > 1 and previous[-2].isalnum():
         word = line.split(None, 1)[0] if line.split() else ""
-        if word[:1].islower() and word not in _KEEPS_HYPHEN:
-            return previous[:-1] + line
-        if word[:1].isupper():
+        if word[:1].islower():
+            if word in _KEEPS_HYPHEN:
+                return f"{previous} {line}"
+            return previous[:-1] + line if previous[-2].isalpha() else previous + line
+        if word[:1].isupper() or word[:1].isdigit():
             return previous + line
     return f"{previous} {line}"
 
 
-def extract_forderung(text: Any) -> Forderung | None:
-    """The operative part of an Antrag, or None when it cannot be found with
-    confidence (no anchor, a passage outside the bounds, a text too long).
-
-    Only layout is undone: running heads and page numbers are dropped, wrapped
-    lines joined, break hyphens removed. Every word stays as the Drucksache prints
-    it, in its order."""
-    if not isinstance(text, str) or not text or len(text) > MAX_TEXT_CHARS:
-        return None
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("­", "").replace(" ", " ")
-    text = "\n".join(line for line in text.split("\n") if not _LAYOUT_LINE.match(line))
-    anchor = _ANCHOR.search(text)
-    if anchor is None:
-        return None
-    end = _END.search(text, anchor.end())
-    body = text[anchor.start(1): end.start() if end else len(text)]
+def _paragraphs(body: str) -> list[str]:
+    """The wrapped lines of ``body`` joined into its opening and its list items. A
+    numbered or lettered line starts an item only in sequence ("2." after "1.", "b)"
+    after "a)"), and a dash or bullet only after a finished clause, so a wrapped
+    "1. Januar" or "– soweit möglich" stays inside its demand."""
     paragraphs: list[str] = []
+    last_number: int | None = None
+    last_letter: str | None = None
     for raw in body.split("\n"):
         line = " ".join(raw.split())
         if not line:
             continue
-        if not paragraphs or _ITEM.match(line):
+        item = _ITEM.match(line) if paragraphs else None
+        starts = False
+        if item and item.group(1):
+            number = int(item.group(1))
+            starts = number == (last_number + 1 if last_number is not None else 1)
+            if starts:
+                last_number, last_letter = number, None
+        elif item and item.group(2):
+            letter = item.group(2)
+            starts = letter == (_successor(last_letter) if last_letter else "a" * len(letter))
+            if starts:
+                last_letter = letter
+        elif item:
+            starts = _ends_clause(paragraphs[-1], (*_CLAUSE_ENDS, ","))
+        if not paragraphs or starts:
             paragraphs.append(line)
         else:
             paragraphs[-1] = _join(paragraphs[-1], line)
-    opening, demands = paragraphs[0], tuple(paragraphs[1:])
-    forderung = Forderung(opening, demands)
+    return paragraphs
+
+
+def extract_forderung(text: Any) -> Forderung | None:
+    """The operative part of an Antrag, or None when it cannot be found with
+    confidence (no anchor, a passage outside the bounds or not ending in a full
+    clause, a text too long).
+
+    Only layout is undone: running heads and page numbers are dropped, wrapped
+    lines joined, break hyphens removed. Every word stays as the Drucksache prints
+    it, in its order. Memoised: persist, render and the replay guard ask for the
+    same texts."""
+    if not isinstance(text, str) or not text or len(text) > MAX_TEXT_CHARS:
+        return None
+    return _extract(text)
+
+
+@functools.lru_cache(maxsize=4096)
+def _extract(text: str) -> Forderung | None:
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    text = "\n".join(_layout_lines(text))
+    # A soft hyphen marks where a word may break: at a line end the word goes on.
+    text = re.sub("\u00ad[ \t]*\n[ \t]*", "", text).replace("\u00ad", "")
+    anchor = _ANCHOR.search(text)
+    if anchor is None:
+        return None
+    paragraphs = _paragraphs(text[anchor.start(1): _end_of(text, anchor.end())])
+    forderung = Forderung(paragraphs[0], tuple(paragraphs[1:]))
     size = len(forderung.text())
     if not MIN_PASSAGE_CHARS <= size <= MAX_PASSAGE_CHARS:
         return None
-    if not demands and not opening.endswith((".", ";")):
+    # A passage that stops mid-sentence was cut by a misread end, not quoted whole.
+    if not _ends_clause(paragraphs[-1], (".", ";")):
         return None
     return forderung
 
@@ -311,7 +402,7 @@ def vote_passages(
         state = "no_passage"
     else:
         state = "not_applicable"
-    return VotePassages(by_vorgang, state)
+    return VotePassages(by_vorgang, state, missing)
 
 
 def report_vote_passages(
@@ -333,16 +424,28 @@ def report_vote_passages(
     }
 
 
+def _wants_metadata(nummern: Mapping[str, Any], number: str) -> bool:
+    """Whether a number's metadata is still to be asked for: it is not cached, DIP
+    returned no Bundestag record for it, or its Antrag is not yet linked to a
+    Vorgang. Like an unresolved number of the Vorgang cache, the last two are
+    asked again by every online build, since DIP may fill them in later."""
+    if number not in nummern:
+        return True
+    record = _number_record(nummern[number])
+    return record is None or (record.get("drucksachetyp") in PASSAGE_TYPES and not record.get("vorgang_ids"))
+
+
 def fetch_targets(reports: Iterable[Mapping[str, Any]], vorgang_cache: Mapping[str, Any]) -> tuple[list[str], list[str]]:
-    """What an online build still has to fetch: (Drucksache numbers without
-    metadata, Drucksache ids without text). Only votes with a Vorgang to quote for
-    ask; numbers come first, since only their metadata says which ids are Anträge,
-    so the build calls this again after fetching them."""
+    """What an online build still has to fetch: (Drucksache numbers whose metadata
+    is missing or may since have changed, ``_wants_metadata``; Drucksache ids
+    without text). Only votes with a Vorgang to quote for ask; numbers come first,
+    since only their metadata says which ids are Anträge, so the build calls this
+    again after fetching them."""
     cache = _drucksachen(vorgang_cache)
     nummern = cache.get("nummern") or {}
     texte = cache.get("texte") or {}
-    numbers: list[str] = []
-    ids: list[str] = []
+    numbers: dict[str, None] = {}
+    ids: dict[str, None] = {}
     for report in reports:
         wahlperiode = derive.report_wahlperiode(report)
         contexts = politikfelder.report_vote_vorgaenge(report, vorgang_cache)
@@ -351,14 +454,14 @@ def fetch_targets(reports: Iterable[Mapping[str, Any]], vorgang_cache: Mapping[s
             if not _abstractless_vorgaenge(context, vorgang_cache):
                 continue
             for number in politikfelder.vote_document_numbers(vote, wahlperiode):
-                if number not in nummern and number not in numbers:
-                    numbers.append(number)
+                if _wants_metadata(nummern, number):
+                    numbers.setdefault(number)
             passages = vote_passages(vote, context, vorgang_cache, wahlperiode=wahlperiode)
             for group in passages.by_vorgang.values():
                 for passage in group:
-                    if passage.drucksache_id not in texte and passage.drucksache_id not in ids:
-                        ids.append(passage.drucksache_id)
-    return numbers, ids
+                    if passage.drucksache_id not in texte:
+                        ids.setdefault(passage.drucksache_id)
+    return list(numbers), list(ids)
 
 
 # --- the cache file ---------------------------------------------------------
@@ -369,22 +472,38 @@ def cache_path(output_dir: Path | str) -> Path:
 
 
 def load_cache(output_dir: Path | str) -> dict[str, Any]:
-    """The Drucksache cache; empty when there is none yet. An unreadable or
-    wrongly shaped file is left in place, warned about, and read as empty, so
-    passages fall back to ``not_fetched`` (and the replay guard refuses to lose
-    known ones) until an online build refills it."""
+    """The Drucksache cache; empty when there is none yet. As with the Vorgang
+    cache (``politikfelder.load_cache``), an unsupported version or a read error
+    raises ``politikfelder.CacheLoadError`` with the file untouched, so no online
+    build overwrites it; corrupt content (bad gzip, JSON or shape) is moved aside
+    and read as empty, so passages fall back to ``not_fetched`` (and the replay
+    guard refuses to lose known ones) until an online build refills it."""
     path = cache_path(output_dir)
     try:
-        data = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
-        if not isinstance(data, dict) or data.get("version") != 1:
-            raise ValueError(f"unsupported cache version {data.get('version') if isinstance(data, dict) else None!r}")
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return empty_cache()
+    except OSError as exc:
+        raise politikfelder.CacheLoadError(
+            f"Cannot read Drucksache text cache {path}: {exc}. "
+            "Fix: restore read access or restore the cache; the file is untouched"
+        ) from exc
+    try:
+        data = json.loads(gzip.decompress(raw).decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("cache must be an object")
+        version = data.get("version")
+        if type(version) is not int or version != 1:
+            raise politikfelder.CacheLoadError(
+                f"Unsupported Drucksache text cache version {version!r} at {path}. "
+                "Fix: use compatible code or restore a version 1 cache; the file is untouched"
+            )
         nummern, texte = data.get("nummern"), data.get("texte")
         if not isinstance(nummern, dict) or not isinstance(texte, dict):
             raise ValueError("nummern and texte must be objects")
-    except FileNotFoundError:
-        return empty_cache()
-    except (OSError, ValueError, EOFError, gzip.BadGzipFile) as exc:
-        print(f"warning: unreadable {path}: {exc}; Antrag passages fall back to not_fetched.", file=sys.stderr)
+    except (ValueError, EOFError, OSError, zlib.error, RecursionError) as exc:  # OSError: gzip.BadGzipFile
+        note = politikfelder.preserve_corrupt(path)
+        print(f"warning: unreadable {path}: {exc} ({note}); Antrag passages fall back to not_fetched.", file=sys.stderr)
         return empty_cache()
     return {
         "version": 1,

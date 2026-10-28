@@ -200,22 +200,7 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
             "Fix: restore read access or restore the cache; the file is untouched"
         ) from exc
     except (ValueError, KeyError, TypeError, RecursionError) as exc:
-        note = "left in place"
-        for directory in (registry.private_dir(path), path.parent):
-            kept = None
-            try:
-                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
-                    kept = Path(handle.name)
-                path.replace(kept)
-                note = f"moved to {kept}"
-                break
-            except OSError:
-                if kept is not None:
-                    try:
-                        kept.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+        note = preserve_corrupt(path)
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -241,6 +226,27 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
         merged = canonical.setdefault(derive.canonical_document_number(key) or str(key), [])
         merged.extend(str(i) for i in ids if str(i) not in merged)
     return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": canonical}
+
+
+def preserve_corrupt(path: Path) -> str:
+    """Move a corrupt cache file out of the way to a uniquely named ``.corrupt``
+    file, preferably in the private directory, so a later save cannot overwrite
+    what it held. Returns a note for the warning."""
+    for directory in (registry.private_dir(path), path.parent):
+        kept = None
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
+                kept = Path(handle.name)
+            path.replace(kept)
+            return f"moved to {kept}"
+        except OSError:
+            if kept is not None:
+                try:
+                    kept.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    return "left in place"
 
 
 #: Age after which a temporary cache file in the private directory counts as a

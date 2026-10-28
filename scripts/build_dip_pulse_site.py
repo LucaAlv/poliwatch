@@ -1558,7 +1558,7 @@ def refresh_vorgang_cache(
     """
     reports = [entry["report"] for entry in entries]
     stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0,
-             "drucksachen": 0, "texte": 0, "texte_failed": 0}
+             "drucksachen": 0, "drucksachen_failed": 0, "texte": 0, "texte_failed": 0}
 
     def shape_error(exc: dip.DipShapeError) -> None:
         stats["shape_errors"] += 1
@@ -1597,10 +1597,11 @@ def refresh_vorgang_cache(
                     return True
         return False
 
-    def resolve_numbers(numbers: list[str]) -> None:
+    def resolve_numbers(numbers: list[str]) -> bool:
         """Resolve numbers one call each, saving the cache every CACHE_SAVE_EVERY
         lookups so an interrupted first fill keeps its progress; stops after
-        VORGANG_FETCH_MAX_FAILURES failures in a row."""
+        VORGANG_FETCH_MAX_FAILURES failures in a row and then returns True (the API
+        looks down)."""
         failures = 0
         try:
             for position, number in enumerate(numbers):
@@ -1618,7 +1619,7 @@ def refresh_vorgang_cache(
                     print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
                     if failures >= VORGANG_FETCH_MAX_FAILURES:
                         stats["nummern_failed"] += len(numbers) - position - 1
-                        return
+                        return True
                     continue
                 failures = 0
                 ids: list[str] = []
@@ -1644,6 +1645,7 @@ def refresh_vorgang_cache(
                     save()
         finally:
             save()
+        return False
 
     ids, numbers = politikfelder.fetch_targets(reports, cache)
     try:
@@ -1652,8 +1654,8 @@ def refresh_vorgang_cache(
         save()
 
     # A lookup returns its Vorgang records inline, so no further id pass is needed.
-    if not down:
-        resolve_numbers(numbers)
+    # Either pass showing the API down skips the later ones.
+    if not down and not resolve_numbers(numbers):
         refresh_drucksache_texts(client, reports, cache, output_dir, stats)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
@@ -1663,7 +1665,7 @@ def refresh_vorgang_cache(
     )
     print(
         f"antrag_text: fetched metadata of {stats['drucksachen']} Drucksache numbers and {stats['texte']} Antrag texts "
-        f"({stats['texte_failed']} failed, left retryable)",
+        f"({stats['drucksachen_failed']} numbers and {stats['texte_failed']} texts failed, left retryable)",
         file=sys.stderr,
     )
     return stats
@@ -1676,11 +1678,13 @@ def refresh_drucksache_texts(
     abstract quotes (``antrag_text``). First the DIP metadata of the votes'
     Drucksache numbers, which says which are Anträge of the vote's Vorgang, then
     the texts of only those. Only cache misses are fetched; a failed batch is left
-    a miss and the stage stops after VORGANG_FETCH_MAX_FAILURES in a row."""
+    a miss and the stage stops after VORGANG_FETCH_MAX_FAILURES in a row. The
+    cache file is written only when something was fetched."""
     # Read from disk if the caller's cache came without it, so a save never drops entries.
     if antrag_text.CACHE_KEY not in cache:
         cache[antrag_text.CACHE_KEY] = antrag_text.load_cache(output_dir)
     texts_cache = cache[antrag_text.CACHE_KEY]
+    changed = False
 
     def save() -> None:
         try:
@@ -1688,7 +1692,7 @@ def refresh_drucksache_texts(
         except OSError as exc:
             print(f"warning: could not save the Drucksache text cache: {exc}", file=sys.stderr)
 
-    def run(items: list[str], batch: int, fetch: Callable[[list[str]], int]) -> bool:
+    def run(items: list[str], batch: int, fetch: Callable[[list[str]], int], failed: str) -> bool:
         failures = 0
         for start in range(0, len(items), batch):
             time.sleep(NUMBER_LOOKUP_PAUSE)
@@ -1697,38 +1701,45 @@ def refresh_drucksache_texts(
                 fetch(part)
                 failures = 0
             except dip.DipError as exc:
-                stats["texte_failed"] += len(part)
+                stats[failed] = stats.get(failed, 0) + len(part)
                 failures += 1
                 print(f"warning: Drucksache fetch failed for {len(part)} entries: {exc}", file=sys.stderr)
                 if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    stats[failed] += len(items) - start - len(part)  # never tried
                     return True
         return False
 
     def fetch_numbers(part: list[str]) -> int:
+        nonlocal changed
         found = dip.fetch_drucksache_metadata(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
         for number, documents in found.items():
-            texts_cache["nummern"][number] = [
-                record for record in map(antrag_text.drucksache_record, documents) if record is not None
-            ]
+            records = [record for record in map(antrag_text.drucksache_record, documents) if record is not None]
+            # An answer asked again (antrag_text._wants_metadata) is often the same.
+            changed = changed or texts_cache["nummern"].get(number) != records
+            texts_cache["nummern"][number] = records
         stats["drucksachen"] += len(found)
+        stats["drucksachen_failed"] = stats.get("drucksachen_failed", 0) + len(part) - len(found)
         return len(found)
 
     def fetch_texts(part: list[str]) -> int:
+        nonlocal changed
         found = dip.fetch_drucksache_texts(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
         for drucksache_id, text in found.items():
             texts_cache["texte"][drucksache_id] = {"text": text}
         stats["texte"] += len(found)
         stats["texte_failed"] += len(part) - len(found)
+        changed = changed or bool(found)  # only misses are asked, so anything found is new
         return len(found)
 
     try:
         numbers, _ids = antrag_text.fetch_targets(reports, cache)
-        if run(numbers, dip.DRUCKSACHE_BATCH, fetch_numbers):
+        if run(numbers, dip.DRUCKSACHE_BATCH, fetch_numbers, "drucksachen_failed"):
             return
         _numbers, ids = antrag_text.fetch_targets(reports, cache)
-        run(ids, dip.DRUCKSACHE_TEXT_BATCH, fetch_texts)
+        run(ids, dip.DRUCKSACHE_TEXT_BATCH, fetch_texts, "texte_failed")
     finally:
-        save()
+        if changed:
+            save()
 
 
 def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:

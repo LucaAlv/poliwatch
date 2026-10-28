@@ -314,13 +314,14 @@ def render_passage(passage: antrag_text.Passage) -> str:
 def _abstractless_body(passages: antrag_text.VotePassages | None, vorgang_id: str) -> str:
     """The body of a Vorgang block without an abstract: the quoted Anträge where
     there are any, else "Keine Beschreibung in DIP", with a note when an Antrag
-    text that could fill it is not in the cache."""
+    text that could fill this block is not in the cache: one of its own Anträge,
+    or the metadata of a vote's number, which could name one."""
     group = (passages.by_vorgang.get(vorgang_id) if passages else None) or []
     quotes = "".join(render_passage(p) for p in group if p.state == "extracted")
     if quotes:
         return quotes
     body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NONE)}</p>'
-    if passages and passages.state == "not_fetched":
+    if passages and (passages.metadata_missing or any(p.state == "not_fetched" for p in group)):
         body += f'<p class="vote-context-gap">{html.esc(CONTEXT_TEXT_NOT_FETCHED)}</p>'
     return body
 
