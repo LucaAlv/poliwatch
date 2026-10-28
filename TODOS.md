@@ -402,13 +402,13 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: same-day step ties, diacritic-insensitive search
+### Bill overview polish: same-day step ties
 
-**What:** (1) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (2) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
+**What:** On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills).
 
-**Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
+**Why:** v0.18.0.0 adversarial review finding, deferred at the fix-cycle limit. Low severity.
 
-**Context:** (1) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
+**Context:** Changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree. The bundled search work is tracked separately below.
 
 **Effort:** S
 **Priority:** P3
@@ -1078,6 +1078,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Bill overview: accent-insensitive search
+
+**Completed:** v0.23.1.0 (2026-10-28). Both build-time `data-search` and the query fold accents and ß, so „fur“ finds „für“ and „strasse“ finds „Straße“. Original titles and query spelling remain visible and survive URL/history restoration. See the [implementation plan and validation](docs/plans/bill-search-accent-insensitive.md). Same-day step ranking remains open above.
 
 ### Week comparison with no basis still draws every n/a slot
 
