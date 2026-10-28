@@ -310,3 +310,25 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
   - Facts: 1,908 rows in 412 periods; 437 Fakten (was 278 after WP 18).
 - **Warnings (12):** 10 merged Redner ids, 1 sitting/kind classification summary, 1 incomplete-weeks note.
 - **Disk:** `full` is 5.2 GB; 38 GB free.
+
+### Step 3 item 4 result, 2026-10-27 19:17–19:18 UTC
+
+- The open newest WP 21 chunk was deleted and fetched again: 1,249 positions. All 20 chunks add up to DIP's total of 26,081, and 247 Vorgänge span two Wahlperioden.
+- WP 20 was merged from its 42 staged chunks (total 48,822). It wrote 36,529 Vorgänge and left out 437 that span two Wahlperioden; 0 differ from the cache.
+- About 17 DIP requests, all answered.
+
+### 4.4 WP 20, 2026-10-27 19:18 to 2026-10-28 00:11 UTC: stopped on a source refusal
+
+- **Scope 214,** the whole WP 20 catalog. The base store lacked 20/1–20/13.
+- 203 sittings were acquired, newest first, down to 20/12. Then **20/11 was refused:** `Tagesordnungspunkt 2: unresolved nested contribution at ID201100900 marker 2`. The run exits on a refusal (D4) before persist, so the store is unchanged and the 203 reports are on disk. 20/1–20/10 have not been tried.
+- **Diagnostic (XML fetched once by hand):** speech ID201100900 is Matthias Miersch (SPD). After his "Vielen Dank.", the XML keeps the chair's handover to the next speaker inside the same `rede`:
+  - Präsidentin Bas: "Nächster Redner: für die AfD-Fraktion Karsten Hilse.", then a remark to Hilse about "kreative Umbaumaßnahmen";
+  - Karsten Hilse (AfD): "Das freut mich sehr.";
+  - Bas: "Jetzt erteile ich Ihnen das Wort für Ihre Rede."
+  - Hilse's own speech follows as ID201101000.
+  - The validator is right not to count "Das freut mich sehr." as a Zwischenfrage: no question, no announcement. It is a chair exchange with the next speaker, misfiled in the source.
+- **DIP:** 967 requests, all answered (394 `/aktivitaet`, 570 `/vorgangsposition`, 3 `/plenarprotokoll`). No Enodia page.
+- **Other sources:** 204 dserver XML; 183 roll-call pages, 183 name lists and 28 list pages at www.bundestag.de.
+- **Peak RSS 5.58 GB,** but the final build never ran.
+- 16 roll-call votes matched no TOP (Bundeswehr mandates, Impfpflicht motions, budget items and others). They go to Phase 4's spot checks.
+- **Owner decision needed:** exclude 20/11 and finish WP 20, or fix the handover case in the parser first.
