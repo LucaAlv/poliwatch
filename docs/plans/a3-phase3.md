@@ -384,3 +384,48 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
   - 529 Fakten; 556 votes in the Abstimmungen archive.
 - **Warnings (18):** 10 merged Redner ids (source-errors C2), 6 roll-call votes that matched no TOP, 1 classification summary, 1 incomplete-weeks note.
 - **Disk:** `full` is 5.4 GB; 30 GB free.
+
+### 4.6 Roster enrich and Vorgang cache fill, 2026-10-28 10:29–10:46 UTC
+
+- **Run:** `roster.sh`: an online build with `--detail-limit -1 --enrich mp-roster`. Exit 0, 1,026 s, peak RSS 5.26 GB.
+- **DIP: 101 requests, all answered.** 39 `/person`, 3 `/plenarprotokoll`, 59 `/vorgang` id batches.
+- **Roster:** 1,712 MdBs among 3,724 DIP persons for WP 18–21. 0 abgeordnetenwatch-enriched, since `aw-profiles` was not asked for.
+- **Abgeordnete:** 740 listed, 2,005 profile pages.
+- **Vorgang cache fill:** the build's Politikfelder step fetched 5,831 Vorgänge, 0 failed, and needed 0 Drucksache lookups. Every backfill build had already filled the cache, so nothing was left to fill.
+- `[summary]`: 85 of 85 not acquired, all `excluded`.
+
+## Step 5: report
+
+### The 19 pilot sittings against `full`
+
+- **Drucksache links:** identical in all 19 sittings (`compare_rerun.py`, run over the pilot's WP 18/19 reports).
+- **Votes:** in 5 sittings the votes differ (18/154, 18/200, 18/244, 19/200, 19/238). It is the same votes with the same counts. The only difference is `members[].profile_url`, which is set in the pilot and empty in `full`, for every member.
+
+### Finding 1: WP 18/19 roll-call members lose their bundestag.de profile link
+
+- **Cause:** `derive.person_profile_url`, from v0.21.0.0 (#107, merged into this branch at ea049a9 after the pilot ran). It accepts a bundestag.de link only when the path starts with `/abgeordnete/`.
+  - WP 18 roll-call pages link members as `/redirect/<id>?subview=na`.
+  - WP 19 links them as `/webarchiv/abgeordnete/biografien19/...`.
+  - Both are dropped as "names nobody". The filter was meant only for the link back to the Abstimmung.
+- **Size, per-sitting reports in `full`:**
+
+  | WP | vote members | without `profile_url` |
+  |---|---:|---:|
+  | 18 | 81,310 | 81,310 |
+  | 19 | 129,016 | 129,016 |
+  | 20 | 133,098 | 81 |
+  | 21 | 61,735 | 0 |
+
+- **Effect:** these members get no profile link, and no `profile:` identity key, so they fall back to name and party. Every `vote_members` row still has an `mp_id`, but WP 18/19 identities rest on name+party alone.
+- **Fix:** widen the filter to the archived and redirect forms (test-first). Then re-derive offline from the cached reports, if they still carry the raw link, or re-fetch. Old/new figures go in Phase 4.
+
+### Finding 2: WP 20 roll-call members are split across two profile URLs (already in `baseline`)
+
+- **What:** 1,558 distinct `mp_id`s vote in WP 20, about twice the seats. `baseline` already has 1,555, so Phase 3 did not cause it.
+- **Cause:** bundestag.de now links WP 20 members both as `/abgeordnete/biografien/…-858154` and as `/abgeordnete/biografien20/…-858154`. The person number is the same, and a fraktionslos phase adds a third name+party key. For example, Uwe Witt, Janine Wissler, Kathrin Vogler and Alexander Ulrich each have 3 `mps` rows.
+- **Fix:** key a bundestag.de profile by its trailing person number, not by the whole URL. This is Phase 4 / identity work; see the memory note "Abgeordnete identity merge gaps".
+
+### Phase 3 totals
+
+- **Store:** WP 18 194/127, WP 19 206/179, WP 20 213/171, WP 21 103/79 (protocols/votes). 85 sittings are excluded: the D2 list plus 20/11. Every vote has an agenda-item link.
+- **DIP requests, catalog refresh to roster:** about 5,500, all answered except the 5 Enodia answers of 2026-10-26.
