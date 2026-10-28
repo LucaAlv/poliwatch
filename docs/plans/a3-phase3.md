@@ -428,4 +428,4 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 ### Phase 3 totals
 
 - **Store:** WP 18 194/127, WP 19 206/179, WP 20 213/171, WP 21 103/79 (protocols/votes). 85 sittings are excluded: the D2 list plus 20/11. Every vote has an agenda-item link.
-- **DIP requests, catalog refresh to roster:** about 5,500, all answered except the 5 Enodia answers of 2026-10-26.
+- **DIP requests, catalog refresh to roster:** 6,015 in the request log from 2026-10-25 22:30 UTC on, all answered except the 5 Enodia answers of 2026-10-26.
