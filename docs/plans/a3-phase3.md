@@ -358,3 +358,29 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 - **Warnings (12):** 10 merged Redner ids (source-errors C2), 1 classification summary, 1 incomplete-weeks note.
 - **Disk:** `full` is 5.3 GB; 37 GB free.
 - **WP 20 in total:** 1,056 DIP requests over both runs, plus ~17 for the merge.
+
+### 4.5 WP 21 result, 2026-10-28 06:57–10:28 UTC
+
+- **Run:** one cycle, exit 0, 12,643 s.
+  - Scope 103, the whole WP 21 catalog, including the 89 already stored, which are re-acquired vote-complete as a3-coverage.md expects.
+  - `[summary]`: 85 of 188 not acquired, all `excluded`.
+- **DIP: 1,844 requests, all answered, with no Enodia page.**
+  - 107 `/vorgangsposition?f.plenarprotokoll`, 215 `/aktivitaet` and 3 `/plenarprotokoll`.
+  - **1,251 one-at-a-time `/vorgangsposition?f.vorgang`, about 12 per sitting.** WP 21 is the open Wahlperiode, so its own Vorgänge are not bulk-cached (`--overlap-only` caches none). This is the largest cost of the four Wahlperioden.
+  - Politikfelder: 57 `/vorgang` id batches (5,648 Vorgänge) and 211 Drucksache lookups, 0 failed.
+- **Other sources:** 103 dserver XML; 85 roll-call pages, 85 name lists and 10 list pages.
+- **Peak RSS 7.86 GB.**
+- **Politikfelder:** TOPs: 4,817 by Sachgebiet, 1,708 untagged, 354 by Einzelplan, 250 by Drucksache, 2 `einzelplan_unknown`. Abstimmungen: 545 by Drucksache, 8 by TOP, 3 untagged.
+- **Store after WP 21:**
+
+  | WP | protocols | votes |
+  |---|---:|---:|
+  | 18 | 194 | 127 |
+  | 19 | 206 | 179 |
+  | 20 | 213 | 171 |
+  | 21 | 103 | 79 |
+
+  - WP 21 went from 89 to 103 protocols and from 52 to 79 votes. Every vote has an agenda-item link.
+  - 529 Fakten; 556 votes in the Abstimmungen archive.
+- **Warnings (18):** 10 merged Redner ids (source-errors C2), 6 roll-call votes that matched no TOP, 1 classification summary, 1 incomplete-weeks note.
+- **Disk:** `full` is 5.4 GB; 30 GB free.
