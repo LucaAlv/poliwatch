@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 2
+EXTRACTOR_VERSION = 3
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_KEY = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -158,8 +158,8 @@ _ANCHOR = re.compile(
 _END = re.compile(
     r"\n[ \t]*(?:Berlin,[ \t]+den\b|Begründung\b|(?:II|III|IV|V|VI|VII|VIII|IX|X)\.(?=[ \t]|\n|$))"
 )
-# A list item at the start of a line: "1.", "12.", "a)", "aa)", "–", "-", "•".
-_ITEM = re.compile(r"^(?:(\d{1,2})\.|([a-z]{1,2})\)|[–•-])[ \t]+\S")
+# A list item at the start of a line: "1.", "12.", "a)", "aa)", "a.", "–", "-", "•".
+_ITEM = re.compile(r"^(?:(\d{1,2})\.|([a-z]{1,2})[.)]|[–•-])[ \t]+\S")
 # A word a line-end hyphen leaves standing ("Bundes- und Landesrecht").
 _KEEPS_HYPHEN = frozenset({"und", "oder", "bzw.", "sowie", "bis", "als", "noch", "wie"})
 # What may close a clause, and what may stand after its full stop.
@@ -203,18 +203,47 @@ def _join(previous: str, line: str) -> str:
     return f"{previous} {line}"
 
 
-def _paragraphs(body: str) -> list[str]:
-    """The wrapped lines of ``body`` joined into its opening and its list items. A
-    numbered or lettered line starts an item only in sequence ("2." after "1.", "b)"
-    after "a)"), and a dash or bullet only after a finished clause, so a wrapped
-    "1. Januar" or "– soweit möglich" stays inside its demand."""
-    paragraphs: list[str] = []
-    last_number: int | None = None
-    last_letter: str | None = None
+# A list marker alone on its line: the PDF's text layer put the item text in
+# another block. Its text is the next line; a next line that is a marker or opens
+# with one ("2." "3.", "2." "e. …") means the text layer lost the order of the
+# list (21/5780, 19/7398), and nothing can be quoted from it.
+_BARE_MARKER = re.compile(r"^(?:\d{1,2}\.|[a-z]{1,2}[.)]|[–•-])$")
+
+
+def _lines(body: str) -> list[str] | None:
+    """The non-empty lines of ``body``, a bare list marker joined to the line after
+    it; None when a bare marker is followed by another or ends the body."""
+    lines: list[str] = []
+    pending: str | None = None
     for raw in body.split("\n"):
         line = " ".join(raw.split())
         if not line:
             continue
+        if _BARE_MARKER.match(line):
+            if pending is not None:
+                return None
+            pending = line
+            continue
+        if pending is not None and _ITEM.match(line):
+            return None
+        lines.append(f"{pending} {line}" if pending is not None else line)
+        pending = None
+    return None if pending is not None else lines
+
+
+def _paragraphs(body: str) -> list[str] | None:
+    """The wrapped lines of ``body`` joined into its opening and its list items. A
+    numbered or lettered line starts an item only in sequence ("2." after "1.", "b)"
+    after "a)"), and a dash or bullet only after a finished clause, so a wrapped
+    "1. Januar" or "– soweit möglich" stays inside its demand. None when the text
+    layer scrambled the list (``_lines``)."""
+    lines = _lines(body)
+    if lines is None:
+        return None
+    paragraphs: list[str] = []
+    last_number: int | None = None
+    last_letter: str | None = None
+    for line in lines:
         item = _ITEM.match(line) if paragraphs else None
         starts = False
         if item and item.group(1):
@@ -260,6 +289,8 @@ def _extract(text: str) -> Forderung | None:
     if anchor is None:
         return None
     paragraphs = _paragraphs(text[anchor.start(1): _end_of(text, anchor.end())])
+    if not paragraphs:
+        return None
     forderung = Forderung(paragraphs[0], tuple(paragraphs[1:]))
     size = len(forderung.text())
     if not MIN_PASSAGE_CHARS <= size <= MAX_PASSAGE_CHARS:

@@ -90,6 +90,42 @@ def answer(vorgang_cache):
     return antrag_text.report_vote_passages(rep, vorgang_cache)[politikfelder.vote_key(rep["agenda_items"][0]["votes"][0])]
 
 
+def real_text(name: str) -> str:
+    """A real Drucksache's pdftotext output (provenance: a1-source-manifest.json)."""
+    return (FIXTURES / "antrag-text" / name).read_text(encoding="utf-8").replace("\f", "\n")
+
+
+class RealDrucksacheTests(unittest.TestCase):
+    """Real Anträge, as pdftotext reads their PDFs (the DIP text was not reachable
+    when these were added): a clean list is quoted whole and in order; a text layer
+    that lost the order of the list gives no quote rather than a reordered one."""
+
+    # Value: protects=a real Antrag's operative part is quoted with its 14 demands in order and the Begründung left out; fails_when=a real running head, break hyphen or item boundary is misread; why_new=first real-text check (2026-10-28); seam=none
+    def test_21_2234_is_quoted_whole(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("drucksache-2102234.txt"))
+        self.assertTrue(forderung.opening.startswith("Der Deutsche Bundestag fordert die Bundesregierung auf, umgehend einen Gesetzentwurf"))
+        self.assertEqual([d.split(".", 1)[0] for d in forderung.demands], [str(n) for n in range(1, 15)])
+        self.assertTrue(forderung.demands[-1].endswith("anrechnungsfrei gestellt."))
+        self.assertNotIn("Begründung", forderung.text())
+
+    # Value: protects=a text layer that detached list markers from their items ("2." "3." alone, or "2." glued to sub-item "e.") gives no quote instead of a reordered one; fails_when=bare markers are joined to whatever line follows; why_new=found on real texts 2026-10-28 (21/5780, 19/7398, 20/13902); seam=none
+    def test_a_scrambled_list_gives_no_quote(self) -> None:
+        for name in ("drucksache-2105780.txt", "drucksache-1907398.txt", "drucksache-2013902.txt"):
+            with self.subTest(name):
+                self.assertIsNone(antrag_text.extract_forderung(real_text(name)))
+
+    # Value: protects=the same Anträge read in layout order are quoted with every item in order, lettered "a." sub-items included; fails_when=layout-mode running heads or "a." items are misread; why_new=found on real texts 2026-10-28; seam=none
+    def test_the_layout_text_of_the_same_antraege_is_quoted_in_order(self) -> None:
+        kindergeld = antrag_text.extract_forderung(real_text("drucksache-2105780.layout.txt"))
+        self.assertEqual([d.split(".", 1)[0] for d in kindergeld.demands], [str(n) for n in range(1, 11)])
+        self.assertIn("BAföG-beziehenden Studienanfänger*innen", kindergeld.demands[3])
+        buerokratie = antrag_text.extract_forderung(real_text("drucksache-1907398.layout.txt"))
+        self.assertEqual(
+            [d.split(" ", 1)[0] for d in buerokratie.demands],
+            ["1.", "a.", "b.", "c.", "d.", "e.", "f.", "2.", "a.", "b.", "c.", "d."],
+        )
+
+
 class ExtractionTests(unittest.TestCase):
     # Value: protects=the quote is the Antrag's operative part word for word, with only layout undone; fails_when=a running head or page number lands inside a demand, a break hyphen stays, a truncated compound loses its hyphen, section I or the Begründung is quoted; why_new=antrag_text is new; seam=none
     def test_the_operative_part_is_quoted_with_layout_undone(self) -> None:
@@ -359,7 +395,7 @@ class PanelTests(unittest.TestCase):
         demands = "\n".join(f"{n}. die Forderung Nummer {n} mit einigem Text, der sie lang genug macht, umzusetzen;" for n in range(1, 11))
         text = f"{OPENING}\n{demands}\nBerlin, den 9. Januar 2024"
         markup = self.panel(cache(texte={"D1": {"text": text}}))
-        self.assertIn("<summary>Weitere 7 Forderungen</summary>", markup)
+        self.assertIn("<summary>Ganzen Forderungsteil zeigen</summary>", markup)
 
     # Value: protects=a vote on the recommendation to reject still quotes the Antrag as its sponsor's demand, with the inversion note outside the quote; fails_when=the quote is dropped or framed as the Bundestag's decision; why_new=antrag_text is new; seam=none
     def test_an_inverted_vote_keeps_the_attribution(self) -> None:

@@ -279,8 +279,10 @@ def _vorgang_label(vorgang_id: str, record: Mapping[str, Any] | None) -> str:
     return f"{titel} · DIP" if titel else f"DIP-Vorgang {vorgang_id}"
 
 
-def _forderungen_label(count: int) -> str:
-    return "Weitere Forderung" if count == 1 else f"Weitere {count} Forderungen"
+#: The fold under a quoted Antrag. It names no count: a folded paragraph can be a
+#: numbered demand, a lettered sub-item or a bullet (19/7398 has 2 numbered demands
+#: and 10 sub-items), so a count of "Forderungen" would misstate the Antrag.
+QUOTE_MORE = "Ganzen Forderungsteil zeigen"
 
 
 def render_passage(passage: antrag_text.Passage) -> str:
@@ -301,7 +303,7 @@ def render_passage(passage: antrag_text.Passage) -> str:
     shown, rest = antrag_text.forderung_teaser(passage.forderung)
     quote = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in shown)
     more = (
-        f'<details class="vote-context-quote-more"><summary>{html.esc(_forderungen_label(len(rest)))}</summary>'
+        f'<details class="vote-context-quote-more"><summary>{html.esc(QUOTE_MORE)}</summary>'
         f'<blockquote>{"".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in rest)}</blockquote></details>'
         if rest else ""
     )

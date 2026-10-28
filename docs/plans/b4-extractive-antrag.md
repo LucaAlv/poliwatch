@@ -184,7 +184,7 @@ What exists:
 - `validate_dip_protocol.fetch_drucksache_metadata` (batches of 50 numbers on `/drucksache`, Bundestag records only, filtered client-side because `f.zuordnung` is unverified) and `fetch_drucksache_texts` (batches of 10 ids on `/drucksache-text`).
 - `build_dip_pulse_site.refresh_drucksache_texts`, stage 3 of `refresh_vorgang_cache`, paced by `NUMBER_LOOKUP_PAUSE`; the replay guard refuses losing a known passage.
 - Schema 8 (`documents.forderung`, `forderung_state`, `forderung_version`; `vote_passages`; `votes.passage_state`), export format 9, captions, column sources (derived). A stale `forderung_version` is refused with the speech-rule check.
-- Panel: the quote with caption "Aus dem Antrag „…“ (Urheber, Drucksache N):", the Drucksache PDF link, first whole demands inline, the rest under "Weitere N Forderungen"; "Antragstext nicht abgerufen" for a cache miss. Checked in Chromium on a demo page, light at 1100 px and dark at 390 px, no horizontal overflow.
+- Panel: the quote with caption "Aus dem Antrag „…“ (Urheber, Drucksache N):", the Drucksache PDF link, first whole demands inline, the rest under "Ganzen Forderungsteil zeigen"; "Antragstext nicht abgerufen" for a cache miss. Checked in Chromium on a demo page, light at 1100 px and dark at 390 px, no horizontal overflow.
 
 Deviation from R4: the block head keeps "Quelle: Deutscher Bundestag/Bundesrat – DIP", which stays true (the text comes through DIP), and each quote adds its Drucksache in its caption; that keeps the abstract blocks unchanged.
 
@@ -193,3 +193,7 @@ Known limit: a Drucksache DIP returns with an empty text is cached as read and n
 Unverified API assumptions, for step 0: a repeated `f.dokumentnummer` on `/drucksache` returns a union whose records each carry their `dokumentnummer`; `/drucksache-text` accepts a repeated `f.id`; records carry `vorgangsbezug` and `urheber[].titel`.
 
 Next, on the owner's machine: run step 0 (measure, hand-check against the PDFs, replace the synthetic fixtures with trimmed real texts, adjust the rule and bump `EXTRACTOR_VERSION` if it changes), then step 5 on a reference-store copy, then `/gstack-plan-eng-review` or `/gstack-review` before shipping.
+
+## Step 0, first real-text run (2026-10-28)
+
+Partial: PDFs only, no DIP text and no reference store. [Research note](../research/b4-antrag-extraction.md). On 7 real Anträge and 44 other Drucksachen: no false positives; the reading-order text layer scrambled 3 of 7 lists, which the extractor wrongly accepted for 2 of them before this run and now refuses; the layout rendering quoted 6 of 7 correctly. `EXTRACTOR_VERSION` 3. D3 (DIP text vs PDF) now depends on what DIP's text body looks like, which still needs a DIP key.

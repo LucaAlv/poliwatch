@@ -22,5 +22,47 @@
     "url": "https://dserver.bundestag.de/btp/19/19013.xml",
     "source_sha256": "e7bb3f7675bcb8990067bc569588b53abd496eb07e481e9df33e797f991cb36b",
     "editing": "First complete speaker marker for Klaus-Dieter Fritsche, redner 999990013; explicit structured and printed government role retained."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2102234.txt",
+    "url": "https://dserver.bundestag.de/btd/21/022/2102234.pdf",
+    "source_sha256": "0ff58702fe719cd8c9242a64753ac6f370d0fbd0302c450e619f8ce31476904b",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2104466.txt",
+    "url": "https://dserver.bundestag.de/btd/21/044/2104466.pdf",
+    "source_sha256": "e52e482e355adc478e4514414e4da46d22305adeb0d2069eb36ad82a09add79c",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2105780.txt",
+    "url": "https://dserver.bundestag.de/btd/21/057/2105780.pdf",
+    "source_sha256": "bba265e3e067b66b66a3d33dafaf5d9a48700eda6f3076f0560a6b3d9d87dce4",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2105780.layout.txt",
+    "url": "https://dserver.bundestag.de/btd/21/057/2105780.pdf",
+    "source_sha256": "bba265e3e067b66b66a3d33dafaf5d9a48700eda6f3076f0560a6b3d9d87dce4",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, -layout) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-1907398.txt",
+    "url": "https://dserver.bundestag.de/btd/19/073/1907398.pdf",
+    "source_sha256": "3bb5f82d712f0c5891e21f7ad2fbba176da9fc1077f09139ed1f17a57d11d283",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, reading order) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-1907398.layout.txt",
+    "url": "https://dserver.bundestag.de/btd/19/073/1907398.pdf",
+    "source_sha256": "3bb5f82d712f0c5891e21f7ad2fbba176da9fc1077f09139ed1f17a57d11d283",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, -layout) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2013902.txt",
+    "url": "https://dserver.bundestag.de/btd/20/139/2013902.pdf",
+    "source_sha256": "04b80c666b312046949c76e4a93da4a7ca104048805fe1dbd330ed9ef0c8e78a",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, reading order) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
   }
 ]
