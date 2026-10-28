@@ -23,6 +23,7 @@ import derive
 import dip_text
 import person_registry as registry
 import politikfelder
+import antrag_text
 import publication_state as publication
 from stable_ids import (
     canonical_dip_person_id, contribution_occurrence_id, document_id, document_issuer,
@@ -31,7 +32,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -48,6 +49,10 @@ def require_current_schema(conn):
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     votes = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
     if votes and "debate_url" not in votes:
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    if votes and "passage_state" not in votes:
+        # Schema 7: initialize() would add vote_passages empty and leave every
+        # votes.passage_state NULL.
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -76,6 +81,15 @@ def require_current_speech_rules(conn: sqlite3.Connection) -> None:
     if invalid:
         raise RuntimeError(f"Missing/stale persisted speech rules (required {speech_kinds.VERSION}). "
                            "Run --offline --repersist with the complete cached XML/reports before facts, export or rendering.")
+    # The Antrag passages are a persisted input too: a store persisted by another
+    # extractor holds passages the pages would no longer quote.
+    stale = conn.execute(
+        "SELECT document_number FROM documents WHERE forderung_state IS NOT NULL "
+        "AND forderung_version IS NOT ? LIMIT 1", (antrag_text.EXTRACTOR_VERSION,)
+    ).fetchone() if "forderung_version" in {row[1] for row in conn.execute("PRAGMA table_info(documents)")} else None
+    if stale:
+        raise RuntimeError(f"Stale persisted Antrag passages (extractor {antrag_text.EXTRACTOR_VERSION} required, "
+                           f"e.g. Drucksache {stale[0]}). Run --offline --repersist before facts, export or rendering.")
 
 
 
@@ -238,6 +252,9 @@ def initialize(conn: sqlite3.Connection) -> None:
           date TEXT,
           title TEXT,
           origin_json TEXT NOT NULL DEFAULT '[]',
+          forderung TEXT,
+          forderung_state TEXT CHECK (forderung_state IN (%(document_states)s)),
+          forderung_version INTEGER,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(herausgeber, document_number)
@@ -327,6 +344,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           xlsx_url TEXT,
           debate_url TEXT,
           context_state TEXT CHECK (context_state IN (%(context_states)s)),
+          passage_state TEXT CHECK (passage_state IN (%(passage_states)s)),
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -358,6 +376,14 @@ def initialize(conn: sqlite3.Connection) -> None:
           proceeding_id TEXT NOT NULL REFERENCES proceedings(id) ON DELETE CASCADE,
           rank INTEGER NOT NULL,
           PRIMARY KEY (vote_id, proceeding_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS vote_passages (
+          vote_id TEXT NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          proceeding_id TEXT NOT NULL REFERENCES proceedings(id) ON DELETE CASCADE,
+          rank INTEGER NOT NULL,
+          PRIMARY KEY (vote_id, document_id)
         );
 
         CREATE TABLE IF NOT EXISTS vote_documents (
@@ -402,6 +428,8 @@ def initialize(conn: sqlite3.Connection) -> None:
             "labels": _sql_list(politikfelder.ALLOWED_LABELS),
             "sources": _sql_list(politikfelder.SOURCES),
             "context_states": _sql_list(politikfelder.CONTEXT_STATES),
+            "document_states": _sql_list(antrag_text.DOCUMENT_STATES),
+            "passage_states": _sql_list(antrag_text.PASSAGE_STATES),
         }
     )
     _migrate_mps_columns(conn)
@@ -1504,6 +1532,42 @@ def persist_vote_context(
         conn.execute("UPDATE votes SET context_state = ? WHERE id = ?", (context.state, vote_id))
 
 
+def persist_vote_passages(
+    conn: sqlite3.Connection,
+    report: dict[str, Any],
+    vorgang_cache: dict[str, Any] | None,
+    now: str,
+) -> None:
+    """Write the Anträge each vote's "Worum es geht" quotes (``vote_passages``),
+    their passage on the document row (``documents.forderung``) and the state of
+    the answer (``votes.passage_state``), from the same ``report_vote_passages``
+    the vote panel reads. A document's passage depends on the cache alone, so
+    every vote that quotes it writes the same value."""
+    cache = vorgang_cache or politikfelder.empty_cache()
+    passages = antrag_text.report_vote_passages(report, cache)
+    for _item, vote in derive.iter_report_votes(report):
+        vote_id = _vote_id(vote)
+        answer = passages[politikfelder.vote_key(vote)]
+        conn.execute("DELETE FROM vote_passages WHERE vote_id = ?", (vote_id,))
+        rank = 0
+        for group in answer.by_vorgang.values():
+            for passage in group:
+                document_id = upsert_document(conn, now=now, document_number=passage.number, herausgeber="BT")
+                if document_id is None:
+                    continue
+                conn.execute(
+                    "UPDATE documents SET forderung = ?, forderung_state = ?, forderung_version = ? WHERE id = ?",
+                    (passage.forderung.text() if passage.forderung else None, passage.state,
+                     antrag_text.EXTRACTOR_VERSION, document_id),
+                )
+                rank += 1
+                conn.execute(
+                    "INSERT OR IGNORE INTO vote_passages(vote_id, document_id, proceeding_id, rank) VALUES (?, ?, ?, ?)",
+                    (vote_id, document_id, passage.vorgang_id, rank),
+                )
+        conn.execute("UPDATE votes SET passage_state = ? WHERE id = ?", (answer.state, vote_id))
+
+
 def persist_report(
     conn: sqlite3.Connection, report: dict[str, Any], vorgang_cache: dict[str, Any] | None = None
 ) -> None:
@@ -1560,6 +1624,7 @@ def persist_report(
                 )
         persist_politikfelder(conn, report, agenda_ids, vorgang_cache)
         persist_vote_context(conn, report, vorgang_cache, now)
+        persist_vote_passages(conn, report, vorgang_cache, now)
 
 
 def main() -> int:

@@ -1,6 +1,6 @@
 # B4 follow-up: extractive "Worum es geht" from the Antrag itself
 
-Planning only, 2026-10-28. Scope: the open bullet "Extractive fallback from the Antrag itself" of [Abstimmungen for the daily view](../../TODOS.md#abstimmungen-for-the-daily-view-what-was-decided-by-topic-with-dissenters). Base: `main` at `71ade83` (v0.23.0.0, #111). Coordinated with A3 ([a3-coverage.md](https://github.com/LucaAlv/poliwatch/blob/worktree-a3-plan/docs/plans/a3-coverage.md) on `worktree-a3-plan`), see "A3 coordination".
+Planned and implemented (steps 1–4) 2026-10-28; step 0 and step 5 open, see "Implementation status". Scope: the open bullet "Extractive fallback from the Antrag itself" of [Abstimmungen for the daily view](../../TODOS.md#abstimmungen-for-the-daily-view-what-was-decided-by-topic-with-dissenters). Base: `main` at `71ade83` (v0.23.0.0, #111). Coordinated with A3 ([a3-coverage.md](https://github.com/LucaAlv/poliwatch/blob/worktree-a3-plan/docs/plans/a3-coverage.md) on `worktree-a3-plan`), see "A3 coordination".
 
 ## Problem
 
@@ -174,3 +174,22 @@ The gstack `/plan-eng-review` skill is not installed in the cloud session that w
 Checked and fine as planned: no report field is needed (`document_numbers` and `linked_drucksachen` with `drucksachetyp`, `urheber`, `url` are already in every cached report, `validate_dip_protocol.compact_drucksache_position`), so A3's reports need no re-acquisition; the persist/render shared-derivation pattern matches `report_vote_vorgaenge`; the facts engine reads none of the new fields; all inserted text goes through `html.esc`.
 
 Open for step 0, not decidable from code: whether `drucksache-text` returns usable text for WP 18 (D3); how DIP lists a reprinted Drucksache ("Neudruck", same number) and which record to quote; whether `vorgangsbezug` is filled on every Antrag record (if not, the bundle exclusion falls back to the Vorgang's own `/drucksache?f.vorgang=` list).
+
+## Implementation status (2026-10-28)
+
+Steps 1–4 are implemented on `claude/charming-lovelace-4a229o`, taking the recommendation for D1–D6. The session had no network and no DIP key, so **step 0 did not run**: the extraction rule is the starting hypothesis above, tested only on synthetic texts written in the DIP layout (`tests/test_antrag_text.py`, marked as synthetic). Nothing has been measured on real Drucksachen, and no reference-store figure (153 of 217 panels with a description) has moved yet.
+
+What exists:
+- `scripts/antrag_text.py`: `extract_forderung`, `forderung_teaser`, `vote_passages` / `report_vote_passages` (shared by persist, render and the replay guard), `fetch_targets`, the cache (`data/dip-drucksache-text-cache.json.gz`, gzip `mtime=0`), `EXTRACTOR_VERSION = 1`.
+- `validate_dip_protocol.fetch_drucksache_metadata` (batches of 50 numbers on `/drucksache`, Bundestag records only, filtered client-side because `f.zuordnung` is unverified) and `fetch_drucksache_texts` (batches of 10 ids on `/drucksache-text`).
+- `build_dip_pulse_site.refresh_drucksache_texts`, stage 3 of `refresh_vorgang_cache`, paced by `NUMBER_LOOKUP_PAUSE`; the replay guard refuses losing a known passage.
+- Schema 8 (`documents.forderung`, `forderung_state`, `forderung_version`; `vote_passages`; `votes.passage_state`), export format 9, captions, column sources (derived). A stale `forderung_version` is refused with the speech-rule check.
+- Panel: the quote with caption "Aus dem Antrag „…“ (Urheber, Drucksache N):", the Drucksache PDF link, first whole demands inline, the rest under "Weitere N Forderungen"; "Antragstext nicht abgerufen" for a cache miss. Checked in Chromium on a demo page, light at 1100 px and dark at 390 px, no horizontal overflow.
+
+Deviation from R4: the block head keeps "Quelle: Deutscher Bundestag/Bundesrat – DIP", which stays true (the text comes through DIP), and each quote adds its Drucksache in its caption; that keeps the abstract blocks unchanged.
+
+Known limit: a Drucksache DIP returns with an empty text is cached as read and not asked again; step 0 counts how often that happens.
+
+Unverified API assumptions, for step 0: a repeated `f.dokumentnummer` on `/drucksache` returns a union whose records each carry their `dokumentnummer`; `/drucksache-text` accepts a repeated `f.id`; records carry `vorgangsbezug` and `urheber[].titel`.
+
+Next, on the owner's machine: run step 0 (measure, hand-check against the PDFs, replace the synthetic fixtures with trimmed real texts, adjust the rule and bump `EXTRACTOR_VERSION` if it changes), then step 5 on a reference-store copy, then `/gstack-plan-eng-review` or `/gstack-review` before shipping.

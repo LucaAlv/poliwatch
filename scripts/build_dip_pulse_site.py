@@ -111,6 +111,7 @@ import speech_kinds
 import publication_state as publication
 import facts
 import politikfelder
+import antrag_text
 import person_registry as registry
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
@@ -142,14 +143,15 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
     "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
-    "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
+    "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden; forderung ist bei Anträgen, die eine namentliche Abstimmung ohne DIP-Zusammenfassung betreffen, der wörtliche Forderungsteil aus dem DIP-Volltext der Drucksache (nur Layout bereinigt), forderung_state sagt, ob er gefunden wurde (extracted), fehlt (no_passage) oder der Text nicht abgerufen ist (not_fetched), forderung_version ist die Version der Extraktionsregel.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
-    "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings).",
+    "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "vote_passages": "Anträge, deren Forderungsteil (documents.forderung) eine namentliche Abstimmung zitiert, mit dem DIP-Vorgang ohne Zusammenfassung, für den er steht, und Rang; abgeleitet aus den Drucksachen der Abstimmung.",
     "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
     "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
@@ -1555,7 +1557,8 @@ def refresh_vorgang_cache(
     build warns and goes on. Returns the fetch counts.
     """
     reports = [entry["report"] for entry in entries]
-    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0}
+    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0,
+             "drucksachen": 0, "texte": 0, "texte_failed": 0}
 
     def shape_error(exc: dip.DipShapeError) -> None:
         stats["shape_errors"] += 1
@@ -1651,13 +1654,81 @@ def refresh_vorgang_cache(
     # A lookup returns its Vorgang records inline, so no further id pass is needed.
     if not down:
         resolve_numbers(numbers)
+        refresh_drucksache_texts(client, reports, cache, output_dir, stats)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
         f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left retryable; "
         f"{stats['shape_errors']} validation errors)",
         file=sys.stderr,
     )
+    print(
+        f"antrag_text: fetched metadata of {stats['drucksachen']} Drucksache numbers and {stats['texte']} Antrag texts "
+        f"({stats['texte_failed']} failed, left retryable)",
+        file=sys.stderr,
+    )
     return stats
+
+
+def refresh_drucksache_texts(
+    client: Any, reports: list[dict[str, Any]], cache: dict[str, Any], output_dir: Path, stats: dict[str, int]
+) -> None:
+    """Stage 3 of ``refresh_vorgang_cache``: the Antrag texts a vote without a DIP
+    abstract quotes (``antrag_text``). First the DIP metadata of the votes'
+    Drucksache numbers, which says which are Anträge of the vote's Vorgang, then
+    the texts of only those. Only cache misses are fetched; a failed batch is left
+    a miss and the stage stops after VORGANG_FETCH_MAX_FAILURES in a row."""
+    # Read from disk if the caller's cache came without it, so a save never drops entries.
+    if antrag_text.CACHE_KEY not in cache:
+        cache[antrag_text.CACHE_KEY] = antrag_text.load_cache(output_dir)
+    texts_cache = cache[antrag_text.CACHE_KEY]
+
+    def save() -> None:
+        try:
+            antrag_text.save_cache(output_dir, texts_cache)
+        except OSError as exc:
+            print(f"warning: could not save the Drucksache text cache: {exc}", file=sys.stderr)
+
+    def run(items: list[str], batch: int, fetch: Callable[[list[str]], int]) -> bool:
+        failures = 0
+        for start in range(0, len(items), batch):
+            time.sleep(NUMBER_LOOKUP_PAUSE)
+            part = items[start : start + batch]
+            try:
+                fetch(part)
+                failures = 0
+            except dip.DipError as exc:
+                stats["texte_failed"] += len(part)
+                failures += 1
+                print(f"warning: Drucksache fetch failed for {len(part)} entries: {exc}", file=sys.stderr)
+                if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    return True
+        return False
+
+    def fetch_numbers(part: list[str]) -> int:
+        found = dip.fetch_drucksache_metadata(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
+        for number, documents in found.items():
+            texts_cache["nummern"][number] = [
+                record for record in map(antrag_text.drucksache_record, documents) if record is not None
+            ]
+        stats["drucksachen"] += len(found)
+        return len(found)
+
+    def fetch_texts(part: list[str]) -> int:
+        found = dip.fetch_drucksache_texts(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
+        for drucksache_id, text in found.items():
+            texts_cache["texte"][drucksache_id] = {"text": text}
+        stats["texte"] += len(found)
+        stats["texte_failed"] += len(part) - len(found)
+        return len(found)
+
+    try:
+        numbers, _ids = antrag_text.fetch_targets(reports, cache)
+        if run(numbers, dip.DRUCKSACHE_BATCH, fetch_numbers):
+            return
+        _numbers, ids = antrag_text.fetch_targets(reports, cache)
+        run(ids, dip.DRUCKSACHE_TEXT_BATCH, fetch_texts)
+    finally:
+        save()
 
 
 def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
@@ -1703,7 +1774,8 @@ def require_vorgang_cache_for_tags(
 ) -> None:
     """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
     vote whose context (``votes.context_state``) was known, resolved or none, would
-    become not_fetched.
+    become not_fetched, or a vote whose Antrag passage (``votes.passage_state``) was
+    known, extracted or no_passage, would (a lost Drucksache text cache).
     Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
@@ -1732,6 +1804,10 @@ def require_vorgang_cache_for_tags(
                 dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
                 if "context_state" in vote_columns else {}
             )
+            known_passages = (
+                dict(conn.execute("SELECT id, passage_state FROM votes WHERE passage_state IN ('extracted', 'no_passage')"))
+                if "passage_state" in vote_columns else {}
+            )
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -1743,10 +1819,12 @@ def require_vorgang_cache_for_tags(
     missing_tops: set[str] = set()
     vote_sources: dict[str, str] = {}
     context_states: dict[str, str] = {}
+    passage_states: dict[str, str] = {}
     for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
         contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        passages = antrag_text.report_vote_passages(report, cache, contexts)
         protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
         for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
             if source == "not_fetched":
@@ -1757,6 +1835,7 @@ def require_vorgang_cache_for_tags(
                 # Match persistence's final overwrite for normalized duplicate IDs.
                 vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
                 context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
+                passage_states[vote_id] = passages[politikfelder.vote_key(vote)].state
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
     regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
@@ -1769,6 +1848,15 @@ def require_vorgang_cache_for_tags(
             f"({len(regressed_contexts) - regressed_none} resolved, {regressed_none} none) "
             f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
             f"context examples: {sorted(regressed_contexts)[:3]}). "
+            "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+        )
+    # extracted → not_applicable is DIP writing an abstract later, not a loss.
+    regressed_passages = {key for key, state in passage_states.items() if state == "not_fetched"} & known_passages.keys()
+    if regressed_passages:
+        raise DatabaseRebuildError(
+            f"with the Drucksache text cache {antrag_text.cache_path(output_dir)} as it is, a re-persist would leave "
+            f"{len(regressed_passages)} votes with a known Antrag passage not_fetched "
+            f"(examples: {sorted(regressed_passages)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
@@ -2520,7 +2608,7 @@ _TABLE_SOURCE_DERIVED = (
     set(registry.REGISTRY_TABLES)
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
-        "vote_proceedings",
+        "vote_proceedings", "vote_passages",
     }
     | set(facts.FACTS_TABLES)
 )
@@ -2537,6 +2625,11 @@ _COLUMN_SOURCE_DERIVED = {
     ("votes", "inversion_excerpt"),
     # Whether vote_proceedings found the vote's Vorgang (politikfelder.CONTEXT_STATES).
     ("votes", "context_state"),
+    # The Antrag passage and its state (antrag_text), extracted from the DIP text.
+    ("votes", "passage_state"),
+    ("documents", "forderung"),
+    ("documents", "forderung_state"),
+    ("documents", "forderung_version"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -2558,7 +2651,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 8
+EXPORT_FORMAT = 9
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -11851,6 +11944,8 @@ def main() -> int:
     # build; an online build fills it before it persists.
     try:
         vorgang_cache = politikfelder.load_cache(output_dir)
+        # The Antrag texts a vote's "Worum es geht" quotes ride along in memory.
+        vorgang_cache[antrag_text.CACHE_KEY] = antrag_text.load_cache(output_dir)
     except politikfelder.CacheLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

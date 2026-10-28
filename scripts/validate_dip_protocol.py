@@ -377,6 +377,68 @@ def resolve_dokumentnummer(client: ApiClient, number: str, *, page_pause: float 
     return client.list_all("/vorgang", {"f.dokumentnummer": number}, page_pause=page_pause)
 
 
+#: Drucksache numbers per ``/drucksache?f.dokumentnummer=`` request. Each record
+#: names its own number, so, unlike ``/vorgang``, a batch can be split by number.
+DRUCKSACHE_BATCH = 50
+#: Drucksache ids per ``/drucksache-text`` request: a text can run to 60,000
+#: characters, so a batch stays one modest page.
+DRUCKSACHE_TEXT_BATCH = 10
+
+
+def fetch_drucksache_metadata(
+    client: ApiClient, numbers: list[str], *, page_pause: float = 0.0
+) -> dict[str, list[dict[str, Any]]]:
+    """The raw DIP ``/drucksache`` records of each number, Bundestag ones only.
+    A number DIP returned nothing for maps to [] when its batch was complete; a
+    batch DIP answered with a malformed page records only the numbers it did
+    return, so the rest stay cache misses."""
+    result: dict[str, list[dict[str, Any]]] = {}
+    for start in range(0, len(numbers), DRUCKSACHE_BATCH):
+        batch = [str(n) for n in numbers[start : start + DRUCKSACHE_BATCH]]
+        complete = True
+        try:
+            documents = client.list_all("/drucksache", {"f.dokumentnummer": batch}, page_pause=page_pause)
+        except DipShapeError as exc:
+            print(f"warning: Drucksache validation: {exc}", file=sys.stderr)
+            documents, complete = exc.documents, False
+        found: dict[str, list[dict[str, Any]]] = {}
+        for document in documents:
+            number = derive.canonical_document_number(document.get("dokumentnummer"))
+            if number in batch and document.get("herausgeber") in (None, "BT"):
+                found.setdefault(number, []).append(document)
+        result.update(found)
+        if complete:
+            for number in batch:
+                result.setdefault(number, [])
+    return result
+
+
+def fetch_drucksache_texts(client: ApiClient, ids: list[str], *, page_pause: float = 0.0) -> dict[str, str]:
+    """The full DIP text of each Drucksache id. An id DIP has no text for yet is
+    left out (asked again by the next online build); a ``text`` that is not a
+    string is refused like a failed call."""
+    texts: dict[str, str] = {}
+    for start in range(0, len(ids), DRUCKSACHE_TEXT_BATCH):
+        batch = [str(i) for i in ids[start : start + DRUCKSACHE_TEXT_BATCH]]
+        if start:
+            time.sleep(page_pause)
+        try:
+            documents = client.list_all("/drucksache-text", {"f.id": batch}, page_pause=page_pause)
+        except DipShapeError as exc:
+            print(f"warning: Drucksache text validation: {exc}", file=sys.stderr)
+            documents = exc.documents
+        for document in documents:
+            record_id = str(document.get("id") or "").strip()
+            text = document.get("text")
+            if record_id not in batch:
+                continue
+            if text is not None and not isinstance(text, str):
+                print(f"warning: DIP Drucksache {record_id} has an unexpected text: {str(text)[:100]}", file=sys.stderr)
+                continue
+            texts[record_id] = text or ""
+    return texts
+
+
 def fetch_text(url: str) -> str:
     return _fetch_page(url, "application/xml,text/xml,*/*", "XML")
 

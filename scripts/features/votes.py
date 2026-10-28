@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+import antrag_text
 import derive
 import dip_text
 import politikfelder
@@ -128,13 +129,15 @@ class VotePanelContext:
     vote's Drucksachen up across all its TOPs (``derive.vote_committees``), and
     a vote's anchor goes where ``derive.iter_report_votes`` first meets it.
     ``vote_contexts`` is ``politikfelder.report_vote_vorgaenge`` of the report,
-    read with ``vorgang_cache``, the same answer persist stores."""
+    read with ``vorgang_cache``, the same answer persist stores; ``vote_passages``
+    is ``antrag_text.report_vote_passages`` of it, likewise."""
 
     report: Mapping[str, Any]
     vote_contexts: Mapping[str, politikfelder.VoteContext]
     vorgang_cache: Mapping[str, Any]
     mp_lookup: dict[str, str] | None
     mp_prefix: str
+    vote_passages: Mapping[str, antrag_text.VotePassages] = field(default_factory=dict)
 
 
 def member_name_html(vote: dict[str, Any], member: dict[str, Any], panel: VotePanelContext) -> str:
@@ -261,6 +264,7 @@ CONTEXT_SOURCE = "Quelle: Deutscher Bundestag/Bundesrat – DIP"
 CONTEXT_NONE = "Keine Beschreibung in DIP"
 CONTEXT_NO_VORGANG = "Kein einzelner DIP-Vorgang ermittelt"
 CONTEXT_NOT_FETCHED = "Vorgang nicht abgerufen"
+CONTEXT_TEXT_NOT_FETCHED = "Antragstext nicht abgerufen"
 
 
 def dip_vorgang_url(vorgang_id: str) -> str:
@@ -275,14 +279,66 @@ def _vorgang_label(vorgang_id: str, record: Mapping[str, Any] | None) -> str:
     return f"{titel} · DIP" if titel else f"DIP-Vorgang {vorgang_id}"
 
 
-def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextState, cache: Mapping[str, Any] | None) -> str:
+def _forderungen_label(count: int) -> str:
+    return "Weitere Forderung" if count == 1 else f"Weitere {count} Forderungen"
+
+
+def render_passage(passage: antrag_text.Passage) -> str:
+    """One Antrag's demands, quoted verbatim (``antrag_text``): who demanded it, in
+    which Drucksache, linked to its PDF, then the opening clause and the first
+    whole demands, the rest folded. The quote names its author, so a rejected
+    Antrag's demand never reads as the Bundestag's position; the result stays in
+    the lead and the badge."""
+    assert passage.forderung is not None
+    number = html.esc(passage.number)
+    try:
+        number = f'<a href="{html.esc(html.source_url(passage.pdf_url, "bundestag-dip"))}">{number}</a>'
+    except (html.publication.PublicationStateError, ValueError):
+        pass
+    titel = f" „{html.esc(passage.titel)}“" if passage.titel else ""
+    authors = html.esc(dip_text.join_with_und(list(passage.urheber))) + ", " if passage.urheber else ""
+    caption = f"Aus dem {html.esc(passage.drucksachetyp)}{titel} ({authors}Drucksache {number}):"
+    shown, rest = antrag_text.forderung_teaser(passage.forderung)
+    quote = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in shown)
+    more = (
+        f'<details class="vote-context-quote-more"><summary>{html.esc(_forderungen_label(len(rest)))}</summary>'
+        f'<blockquote>{"".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in rest)}</blockquote></details>'
+        if rest else ""
+    )
+    return (
+        f'<figure class="vote-context-quote"><figcaption>{caption}</figcaption>'
+        f"<blockquote>{quote}</blockquote>{more}</figure>"
+    )
+
+
+def _abstractless_body(passages: antrag_text.VotePassages | None, vorgang_id: str) -> str:
+    """The body of a Vorgang block without an abstract: the quoted Anträge where
+    there are any, else "Keine Beschreibung in DIP", with a note when an Antrag
+    text that could fill it is not in the cache."""
+    group = (passages.by_vorgang.get(vorgang_id) if passages else None) or []
+    quotes = "".join(render_passage(p) for p in group if p.state == "extracted")
+    if quotes:
+        return quotes
+    body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NONE)}</p>'
+    if passages and passages.state == "not_fetched":
+        body += f'<p class="vote-context-gap">{html.esc(CONTEXT_TEXT_NOT_FETCHED)}</p>'
+    return body
+
+
+def render_vote_context(
+    vorgang_ids: list[str],
+    state: politikfelder.ContextState,
+    cache: Mapping[str, Any] | None,
+    passages: antrag_text.VotePassages | None = None,
+) -> str:
     """The "Worum es geht" block: one DIP abstract per Vorgang the vote is about
     (``politikfelder.vote_vorgang_ids``). It describes the Vorhaben, not the vote's
     result, which stays in the badge. "Keine Beschreibung in DIP" only where DIP was
     asked and has none; "Vorgang nicht abgerufen" where the cache lacks the answer,
     also after the known blocks of a partial ``not_fetched`` answer; "Kein einzelner
     DIP-Vorgang ermittelt" for ``none``, which also covers Drucksachen that name a
-    bundle of Vorgänge DIP does describe."""
+    bundle of Vorgänge DIP does describe. A Vorgang without an abstract quotes its
+    Antrag instead where ``passages`` has one (``render_passage``)."""
     records = (cache or {}).get("vorgaenge") or {}
     blocks = []
     if not vorgang_ids:
@@ -299,7 +355,7 @@ def render_vote_context(vorgang_ids: list[str], state: politikfelder.ContextStat
         if record is None:
             body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NOT_FETCHED)}</p>'
         elif not text:
-            body = f'<p class="vote-context-gap">{html.esc(CONTEXT_NONE)}</p>'
+            body = _abstractless_body(passages, vorgang_id)
         else:
             teaser, more = dip_text.abstract_teaser(text)
             body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
@@ -450,7 +506,9 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
     document_chambers = document_source_chambers(item)
     for vote in votes:
         context = panel.vote_contexts[derive.vote_identity(vote)]
-        vote_context_html = render_vote_context(context.vorgang_ids, context.state, panel.vorgang_cache)
+        vote_context_html = render_vote_context(
+            context.vorgang_ids, context.state, panel.vorgang_cache, panel.vote_passages.get(derive.vote_identity(vote))
+        )
         abweichler = derive.vote_abweichler(vote)
         # One gap note for the vote when no group has member rows, else one
         # under each group that is short.
@@ -510,6 +568,7 @@ class VotesComponent(BaseComponent):
             report=report,
             vote_contexts=ctx["vote_contexts"],
             vorgang_cache=ctx["vorgang_cache"],
+            vote_passages=ctx.get("vote_passages") or {},
             mp_lookup=ctx.get("mp_lookup"),
             mp_prefix=ctx.get("mp_prefix", "../abgeordnete/"),
         )

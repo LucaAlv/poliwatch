@@ -253,7 +253,16 @@ def cache_path(output_dir: Path | str) -> Path:
 
 
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
-    """Write the cache atomically. The temporary file is staged in the private
+    """Write the cache atomically (``write_atomic``). Only the Vorgang cache's own
+    keys are written: the Drucksache texts that ride along in memory
+    (``antrag_text.CACHE_KEY``) have their own file."""
+    own = {key: cache[key] for key in ("version", "vorgaenge", "dokumentnummern") if key in cache}
+    text = json.dumps(own, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
+    write_atomic(cache_path(output_dir), text.encode("utf-8"))
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically. The temporary file is staged in the private
     directory beside the published tree (``person_registry.private_dir``), so a
     killed build leaves nothing half-written in ``data/``. Only when that
     directory cannot be made or written (a read-only parent of OUTPUT, a directory
@@ -261,7 +270,6 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     atomic, is it staged next to the cache. A temporary file a killed save left in
     either place is removed once it is older than STALE_TEMP_SECONDS (a younger one
     may be a running build's)."""
-    path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     candidates = [path.parent]
     try:
@@ -279,19 +287,18 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
                     stale.unlink(missing_ok=True)
             except OSError:
                 pass  # another build's save took it first
-    text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     for staging in candidates:
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
+                "wb", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
             ) as handle:
                 temporary = Path(handle.name)
-                handle.write(text)
+                handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
                 try:
-                    temporary.chmod(0o644)  # the published cache is world-readable
+                    temporary.chmod(0o644)  # the published caches are world-readable
                 except OSError:
                     pass
             temporary.replace(path)

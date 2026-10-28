@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import derive
 import politikfelder
+import antrag_text
 from stable_ids import contribution_occurrence_id, source_index, speech_occurrence_id, speech_rede_id
 import person_registry as registry
 import publication_state as publication
@@ -2999,6 +3000,9 @@ def render_html(
         "vorgang_cache": cache,
         "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
     }
+    votes_component_ctx["vote_passages"] = antrag_text.report_vote_passages(
+        report, cache, votes_component_ctx["vote_contexts"]
+    )
     stats_by_index = {item["index"]: item_stats(item, protocol) for item in items}
     total_speeches = sum(stats["speech_count"] for stats in stats_by_index.values())
     total_chars = sum(stats["total_chars"] for stats in stats_by_index.values())
@@ -3774,7 +3778,12 @@ def render_html(
     .vote-context-teaser, .vote-context-more p {{ margin-top:4px !important; }}
     .vote-context-gap {{ margin-top:4px !important; color:var(--muted); font-size:13px; }}
     .vote-context-block:has(.vote-context-more[open]) .vote-context-teaser {{ display:none; }}
-    .vote-context-more summary {{
+    .vote-context-quote {{ margin:4px 0 0; }}
+    .vote-context-quote figcaption {{ color:var(--muted); font-size:13px; overflow-wrap:anywhere; }}
+    .vote-context-quote blockquote {{ margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); }}
+    .vote-context-quote blockquote p + p {{ margin-top:4px; }}
+    .vote-context-quote + .vote-context-quote {{ margin-top:8px; }}
+    .vote-context-more summary, .vote-context-quote-more summary {{
       display:inline-flex;
       align-items:center;
       min-height:24px;
