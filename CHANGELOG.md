@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.1.0] - 2026-10-28
+
+### Fixed
+
+- Bill search now ignores accents and treats ß as ss, so “fur” finds “für” and “strasse” finds “Straße”. Titles and query spelling remain unchanged, including when restoring searches through browser history.
+
 ## [0.23.0.0] - 2026-10-26
 
 ### Added
