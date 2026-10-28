@@ -2,7 +2,7 @@
 
 **Current status (2026-10-09): implemented and locally validated.** The design and engineering review sections below preserve their pre-implementation findings. The implementation evidence near the end supersedes their open proof requirements. Changes remain uncommitted and undeployed.
 
-Status: design- and engineering-reviewed implementation plan, 2026-10-08. Nine design decisions remain approved; seven required test gaps are mapped to implementation. No UI implementation or application test run yet.
+Status: design- and engineering-reviewed implementation plan, 2026-10-08. Nine design decisions remain approved; seven required test gaps are mapped to implementation. This records the pre-implementation review; implementation and validation evidence follows below.
 
 ## Goal and direction
 
@@ -34,7 +34,7 @@ Place a compact control area immediately before the results:
 
 | Control | Initial behaviour |
 | --- | --- |
-| Suche | Label “Gesetzesvorhaben suchen”; hint “Titel oder Drucksachennummer”. Search titles and every associated document number, not only the primary document. Trim whitespace, ignore case and combine entered words. |
+| Suche | Label “Gesetzesvorhaben suchen”; hint “Titel oder Drucksachennummer”. Search titles and every associated document number, not only the primary document. Trim whitespace and require every entered word to match. Fold case, accents and ß (lowercase, ß → ss, NFD, remove Unicode marks) in metadata and query, so “fur” finds “für” and “strasse” finds “Straße”. Preserve original titles and query spelling in the field, URL and criteria. |
 | Zeitraum | “Jahr der letzten erfassten Aktivität”; “Alle Jahre” plus years present in the data. Explicitly describe that this filters the latest observed activity, not when the law was introduced. Missing dates remain visible under “Alle Jahre”. |
 | Sortierung | “Zuletzt erfasst” by default, plus “Älteste zuerst” and “Titel A–Z”, with German title ordering and deterministic ties. |
 | Feedback | Result count, active criteria and a reset control. Distinguish “no matching results” from an empty publication. Announce changes without moving focus. |

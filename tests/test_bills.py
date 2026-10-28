@@ -9,7 +9,6 @@ import argparse
 import json
 import sys
 import tempfile
-import unicodedata
 import unittest
 from pathlib import Path
 from html.parser import HTMLParser
@@ -78,6 +77,7 @@ def browser_fixture_bills() -> list[dict]:
         row["documents"].append({"dokumentnummer": "21/COHORT"})
     rows[1]["title"] = "Änderung des Gesetzes"
     rows[2]["title"] = "Änderung des Gesetzes"  # decomposed umlaut: German collation tie
+    rows[3]["title"] = "Gesetz 03 für Straße Café ẞ"
     rows[40]["latest_date"] = None
     rows[40]["documents"] = [{"dokumentnummer": "22/777"}]
     return rows
@@ -272,13 +272,21 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(len(bill["raw"]["agenda_items"]), 2)
         self.assertEqual(len(bill["protocol_refs"]), 2)
 
-    # Value: protects=search text is NFC, so a title stored with a decomposed umlaut is found by a typed composed query; fails_when=the build stops normalising data-search; why_new=search metadata tests used composed text only; seam=none; no_claim=the query-side normalisation in the browser script (bills_browser_check.js)
-    def test_search_metadata_is_nfc(self) -> None:
-        bills = browser_fixture_bills()[:3]
+    def test_search_metadata_folds_accents_and_sharp_s(self) -> None:
+        bills = browser_fixture_bills()[:4]
         markup = build.render_bills_index(bills)
-        searches = re.findall(r'data-search="([^"]*)"', markup)
-        self.assertTrue(all(value == unicodedata.normalize("NFC", value) for value in searches))
-        self.assertEqual(sum("änderung des gesetzes" in value for value in searches), 2)
+        parser = _Markup()
+        parser.feed(markup)
+        rows = [attrs for _, attrs in parser.nodes if "data-bill-row" in attrs]
+        self.assertEqual([row["data-search"] for row in rows], [
+            "gesetzesvorhaben 00 21/500 21/9876 21/cohort",
+            "anderung des gesetzes 21/501 21/cohort",
+            "anderung des gesetzes 21/502 21/cohort",
+            "gesetz 03 fur strasse cafe ss 21/503 21/cohort",
+        ])
+        for row, bill in zip(rows, bills):
+            self.assertEqual(row["data-title"], bill["title"])
+            self.assertIn(bill["title"], parser.text)
 
     # Value: protects=a bill page's speaker occurrence key equals the key the store bound, also for a speech with no rede_id; fails_when=the collector hashes the missing rede_id instead of the synthetic <protocol>:<item>:<sequence> id the store uses; why_new=no test collected bill pages from a speech without a rede_id; seam=none
     def test_a_speaker_without_a_rede_id_gets_the_synthetic_occurrence_key(self) -> None:

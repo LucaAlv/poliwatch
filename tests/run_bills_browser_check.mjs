@@ -119,6 +119,13 @@ async function main() {
       const loaded = ws.waitEvent('Page.loadEventFired'); await ws.call('Page.navigate', { url: origin + file }); await loaded;
       const expression = `(${check})()`;
       let result = await ws.evaluate(expression);
+      if (name === 'overview') {
+        const initialQuery = 'FU\u0308R';
+        const loadedInitial = ws.waitEvent('Page.loadEventFired');
+        await ws.call('Page.navigate', { url: origin + '/site/index.html?q=' + encodeURIComponent(initialQuery) }); await loadedInitial;
+        const initialResult = await ws.evaluate(`(${check})({ initial: true })`);
+        console.log(`PASS ${label} overview initial folded query/history: ${JSON.stringify(initialResult)}`);
+      }
       if (name === 'protocol') {
         if (result.keyboardEnter !== 'pending on focused Repeat speech link') throw new Error(`${label} protocol missed keyboard setup: ${JSON.stringify(result)}`);
         await ws.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

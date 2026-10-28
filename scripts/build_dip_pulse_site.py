@@ -6429,8 +6429,8 @@ def render_bill_script() -> str:
           state.q = search.value.trim();
           state.year = year.value;
           state.sort = sort.value;
-          // Build-time search text is NFC; a pasted decomposed umlaut must still match.
-          const terms = state.q.normalize('NFC').toLocaleLowerCase('de').split(/\s+/).filter(Boolean);
+          // Fold accents and ß exactly as in the build-time search metadata.
+          const terms = state.q.toLowerCase().replace(/ß/g, 'ss').normalize('NFD').replace(/\p{M}/gu, '').split(/\s+/).filter(Boolean);
           const matches = records.filter(record =>
             terms.every(term => record.search.includes(term)) &&
             (!state.year || record.date.startsWith(state.year + '-'))
@@ -6871,7 +6871,8 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
         if parsed_date:
             years.add(parsed_date.year)
         title = str(bill.get("title") or "Unbenanntes Gesetzesvorhaben")
-        search = unicodedata.normalize("NFC", " ".join([title, *(str(doc.get("dokumentnummer") or "") for doc in bill.get("documents") or [])])).lower()
+        search = " ".join([title, *(str(doc.get("dokumentnummer") or "") for doc in bill.get("documents") or [])]).lower().replace("ß", "ss")
+        search = "".join(ch for ch in unicodedata.normalize("NFD", search) if not unicodedata.category(ch).startswith("M"))
         date_label = pulse_html.format_date(date_iso) or "Datum nicht erfasst"
         date_html = f'<time datetime="{date_iso}">{date_label}</time>' if date_iso else date_label
         event = pulse_html.render_parliamentary_term(str(bill.get("latest_step") or "Erfasster Vorgang"), tip_id=f"result-{index}-event")
