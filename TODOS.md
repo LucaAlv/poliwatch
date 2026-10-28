@@ -237,6 +237,15 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P2
 **Depends on:** an owner yes per rule, then a test-first build and a new-rule unit review, as in round 2.
 
+### 20/11: the chair's handover exchange with the next speaker, filed inside the previous `<rede>`
+
+**What:** In 20/11 TOP 2 the XML keeps, inside Miersch's `<rede id="ID201100900">` after his "Vielen Dank.", the chair's "Nächster Redner: … Karsten Hilse", a remark to Hilse, Hilse's "Das freut mich sehr." and "Jetzt erteile ich Ihnen das Wort für Ihre Rede." The validator refuses the sitting (`unresolved nested contribution at ID201100900 marker 2`), rightly: Hilse's line is no Zwischenfrage. A rule would treat a nested exchange between the chair and the speaker of the next `<rede>`, after a floor grant to that speaker, as Sitzungsleitung, not a nested contribution. Then 20/11 leaves the exclusion list, with old/new figures. The source error is E1 in [docs/source-errors.md](docs/source-errors.md).
+
+**Why:** 20/11 (2022-01-13; TOP 2 is a climate and energy debate with Minister Habeck) is excluded since 2026-10-28 ([a3-phase3.md](docs/plans/a3-phase3.md), 4.4).
+
+**Priority:** P2
+**Depends on:** an owner yes on the rule, then test-first, and a check that no WP 18–21 sitting moves except 20/11.
+
 ### Check that the identity merge joins the MdBs WP 18/19 prints with an initial
 
 **What:** WP 18/19 XML prints seven MdBs with a middle initial inside `<nachname>`: W. Birkwald, G. Lämmel, G. Wöhrl, S. Neu, M. Huber, E. Fischer, A. Lamers. R4 strips the initial only for the chair's recipient match; the stored `last_name` keeps it (decision 4). After the pilot re-run, check whether the identity merge (name+party pass) joins each of them across WP 18/19 and WP 20/21, and fix `last_name` or the merge if it does not.
