@@ -2013,7 +2013,15 @@ class CardTests(StoreCase):
         ns = {"svg": "http://www.w3.org/2000/svg"}
         footer = root.find(".//svg:text[@class='footer']", ns)
         self.assertIn("Monate", "".join(footer.itertext()))
-        self.assertNotIn("Sitzungswochen", "".join(footer.itertext()))
+        self.assertNotIn("Wochen", "".join(footer.itertext()))
+
+    # Value: protects=the card footer, one unwrapped 26px SVG line, stays inside the card at the longest wording the baseline can produce; fails_when=the period noun or label format grows past the width the 24px caveat wraps at, scaled to 26px; why_new="Wochen mit Sitzung" replaced the shorter "Sitzungswochen"; seam=none; no_claim=real glyph metrics
+    def test_the_longest_weekly_footer_fits_one_card_line(self) -> None:
+        row = {"period_kind": "week", "baseline_count": 9999, "baseline_from": "2017-W43", "baseline_to": "2026-W53"}
+        footer = facts.baseline_comparison_line(row)
+        self.assertEqual(footer, "Vergleich: 9.999 Wochen mit Sitzung (2017-W43 bis 2026-W53)")
+        # The caveat wraps at 76 characters of 24px text; the footer is 26px.
+        self.assertLessEqual(len(footer), 76 * 24 // 26)
 
 
 class ReplayTests(StoreCase):

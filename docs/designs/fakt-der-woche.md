@@ -255,7 +255,7 @@ store carries it (needed for R1/R3 parity and for B's MP metrics).
 - Whether the card sentence is templated per metric in Python (deterministic) or drafted by the
   LLM step with the validators the summaries use. Proposal for A: templated; every card is
   reproducible byte-for-byte.
-- German copy for the baseline line ("verglichen mit 41 Sitzungswochen seit Beginn der 21.
+- German copy for the baseline line ("verglichen mit 41 Wochen mit Sitzung seit Beginn der 21.
   Wahlperiode" vs "… seit Januar 2022").
 - Whether `facts` rows for weeks before the engine existed are computed on first build (they
   are, under history-before-week they are reproducible) and whether the archive shows them.

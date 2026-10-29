@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.2.0] - 2026-10-29
+
+### Changed
+
+- puls.html flags a week older than four ISO weeks with „Nicht aktuell: letzte Woche mit Sitzung vor N Wochen“ right after the heading, instead of only in the muted facts line; shorter gaps still lead the facts line with the age.
+- The site calls its reporting period „Woche mit Sitzung“ (or „Woche“), not „Sitzungswoche“, which names the Bundestag's planned calendar. This covers the Wochenvergleich, the Fakt der Woche cards and footer („Vergleich: N Wochen mit Sitzung“), and the Fakten Methodik.
+
 ## [0.23.1.0] - 2026-10-28
 
 ### Fixed
