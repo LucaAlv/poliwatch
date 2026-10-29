@@ -930,11 +930,10 @@ def persist_agenda_documents(
     agenda_item_id: str,
     now: str,
 ) -> None:
-    for doc in item.get("xml_drucksachen") or []:
-        if doc.get("url") and not derive.is_bundestag_xml_url(doc["url"]):
-            # A number read off a news-site URL in an old cached report: keyed by
-            # number alone, such a fragment would join the real Drucksache of that number.
-            continue
+    # derive.xml_drucksachen drops numbers read off a news-site URL in an old
+    # cached report: keyed by number alone, such a fragment would join the real
+    # Drucksache of that number.
+    for doc in derive.xml_drucksachen(item):
         document_id = upsert_document(
             conn,
             now=now,

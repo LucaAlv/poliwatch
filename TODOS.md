@@ -181,16 +181,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** None
 
-### A Drucksache reference can be a URL fragment
-
-**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
-
-**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### v1 coverage: every Sitzung from WP 18 to the present
 
 **What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Measured on 2026-09-30 against the reference copy (`~/agent-runs/poliwatch/.context/dip-pulse-site/`), counting only Bundestag entries in the cached catalog:
@@ -1037,6 +1027,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### A Drucksache reference can be a URL fragment
+
+**Completed:** v0.23.6.0 (2026-10-29). The parser part was already fixed: `extract_drucksachen` skips an anchor off the Bundestag host (`tests/test_validate_dip_protocol.py`), and today's parser finds no 88/739016 in the live `btp/20/20206.xml`. What remained were reports cached before that check: persist and the Politikfelder skipped such a reference, but the dossier still showed it as a muted Drucksache and the vote panel's link map took its URL. `derive.xml_drucksachen(item)` is now the one rule (no link, or a link on the XML host) and every reader uses it: persist, `item_document_numbers`, `render_source_links`, `render_top_documents` (a TOP whose only reference is a fragment gets no empty "Drucksachen" section) and `features/votes.py`. Store figures do not move, since persist already skipped these; only dossier HTML of such stale reports changes.
+
+**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
+
+**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Validate remote-manifest recipes before showing their SQL
 

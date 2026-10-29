@@ -67,7 +67,7 @@ def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
         url = doc.get("url")
         if number and url:
             links.setdefault(str(number), (url, "bundestag-dip"))
-    for doc in item.get("xml_drucksachen") or []:
+    for doc in derive.xml_drucksachen(item):
         number = doc.get("dokumentnummer")
         url = doc.get("url")
         if number and url:
@@ -77,7 +77,7 @@ def document_source_links(item: dict[str, Any]) -> dict[str, tuple[str, str]]:
 
 def document_source_chambers(item: dict[str, Any]) -> dict[str, str]:
     links = document_source_links(item)
-    documents = [*(item.get("xml_drucksachen") or []), *((item.get("api") or {}).get("linked_drucksachen") or [])]
+    documents = [*derive.xml_drucksachen(item), *((item.get("api") or {}).get("linked_drucksachen") or [])]
     chambers = {}
     for doc in documents:
         number = str(doc.get("dokumentnummer") or "")

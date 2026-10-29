@@ -739,16 +739,20 @@ class CitationLabelTests(unittest.TestCase):
         self.assertIn("S. 7B", markup)
         self.assertIn("&lt;TOP&gt;", markup)
 
-    def test_xml_pills_qualify_bundesrat_and_preserve_unsafe_fallback(self) -> None:
+    def test_xml_pills_qualify_bundesrat_and_drop_a_reference_off_the_xml_host(self) -> None:
         docs = [
             {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/001/2100001.pdf"},
             {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/brd/2021/0001-21.pdf"},
             {"dokumentnummer": "<21/2>", "herausgeber": "BR", "url": "javascript:alert(1)"},
+            {"dokumentnummer": "<21/3>", "herausgeber": "BR"},
         ]
         markup = build_dip_pulse_site.pulse_html.render_source_links({"xml_drucksachen": docs})
         self.assertIn('>21/1</a>', markup)
         self.assertIn('>BR-Drs. 21/1</a>', markup)
-        self.assertIn('<span class="doc-link muted">BR-Drs. &lt;21/2&gt;</span>', markup)
+        # A link off the XML host is no Drucksache (persist skips it too); one
+        # without a link stays a muted, escaped pill.
+        self.assertNotIn("21/2", markup)
+        self.assertIn('<span class="doc-link muted">BR-Drs. &lt;21/3&gt;</span>', markup)
         self.assertNotIn("javascript:", markup)
         self.assertEqual(build_dip_pulse_site.pulse_html.document_chamber({"url": "https://[invalid"}), "")
 

@@ -2439,17 +2439,15 @@ def document_chamber(doc: dict[str, Any]) -> str:
 
 def render_source_links(item: dict[str, Any]) -> str:
     links = []
-    for doc in item.get("xml_drucksachen") or []:
+    for doc in derive.xml_drucksachen(item):
         url = doc.get("url")
         number = doc.get("dokumentnummer")
         if document_chamber(doc) == "BR":
             number = f"BR-Drs. {number}"
         href = None
         if url:
-            # The XML's Drucksache references are extracted from running text,
-            # so one can carry any URL (20/206 quotes a syriahr.com article).
-            # A foreign or unsafe host loses its link like every other dossier
-            # link does; it must not abort the whole build.
+            # Only Bundestag-host links are left; the allowlist check stays the
+            # one every dossier link passes, and a refusal must not abort the build.
             try:
                 href = source_url(url, "bundestag-xml")
             except publication.PublicationStateError:
@@ -2464,7 +2462,7 @@ def render_source_links(item: dict[str, Any]) -> str:
 
 
 def render_top_documents(item: dict[str, Any]) -> str:
-    if not item.get("xml_drucksachen"):
+    if not derive.xml_drucksachen(item):
         return ""
     return (
         '<section class="top-documents">'
