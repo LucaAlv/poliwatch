@@ -1815,9 +1815,14 @@ def require_vorgang_cache_for_tags(
                 dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
                 if "context_state" in vote_columns else {}
             )
+            # Per vote and Drucksache: a vote quoting two Anträge can lose one text
+            # while the other keeps the vote's state at extracted.
             known_passages = (
-                dict(conn.execute("SELECT id, passage_state FROM votes WHERE passage_state IN ('extracted', 'no_passage')"))
-                if "passage_state" in vote_columns else {}
+                {tuple(row) for row in conn.execute(
+                    "SELECT vp.vote_id, d.document_number FROM vote_passages vp JOIN documents d ON d.id = vp.document_id "
+                    "WHERE d.forderung_state IN ('extracted', 'no_passage')"
+                )}
+                if "passage_state" in vote_columns else set()
             )
         finally:
             conn.close()
@@ -1830,7 +1835,7 @@ def require_vorgang_cache_for_tags(
     missing_tops: set[str] = set()
     vote_sources: dict[str, str] = {}
     context_states: dict[str, str] = {}
-    passage_states: dict[str, str] = {}
+    passage_answers: dict[str, antrag_text.VotePassages] = {}
     for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
@@ -1846,7 +1851,7 @@ def require_vorgang_cache_for_tags(
                 # Match persistence's final overwrite for normalized duplicate IDs.
                 vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
                 context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
-                passage_states[vote_id] = passages[politikfelder.vote_key(vote)].state
+                passage_answers[vote_id] = passages[politikfelder.vote_key(vote)]
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
     regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
@@ -1861,12 +1866,21 @@ def require_vorgang_cache_for_tags(
             f"context examples: {sorted(regressed_contexts)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
-    # extracted → not_applicable is DIP writing an abstract later, not a loss.
-    regressed_passages = {key for key, state in passage_states.items() if state == "not_fetched"} & known_passages.keys()
+    # A known passage is lost when its text left the cache, or when it is gone
+    # because the cache lost its number's metadata. A vote that now has an abstract
+    # (not_applicable) is DIP writing one later, not a loss.
+    regressed_passages = set()
+    for vote_id, number in known_passages:
+        answer = passage_answers.get(vote_id)
+        if answer is None or answer.state == "not_applicable":
+            continue
+        states = {p.number: p.state for group in answer.by_vorgang.values() for p in group}
+        if states.get(number) == "not_fetched" or (number not in states and answer.metadata_missing):
+            regressed_passages.add((vote_id, number))
     if regressed_passages:
         raise DatabaseRebuildError(
             f"with the Drucksache text cache {antrag_text.cache_path(output_dir)} as it is, a re-persist would leave "
-            f"{len(regressed_passages)} votes with a known Antrag passage not_fetched "
+            f"{len(regressed_passages)} known Antrag passages of votes not_fetched "
             f"(examples: {sorted(regressed_passages)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )

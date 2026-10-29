@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 5
+EXTRACTOR_VERSION = 6
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_KEY = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -193,19 +193,47 @@ def _successor(label: str) -> str:
     return chr(ord(label[0]) + 1) * len(label)
 
 
-def _join(previous: str, line: str) -> str:
-    """``line`` appended to the wrapped paragraph ``previous``. A line-end hyphen
-    after a letter and before a lower-case word is a break hyphen and goes, unless
-    the word is one a truncated compound stands before ("Bundes- und"); a number is
-    never hyphenated, so after a digit, and before a capital or a digit, the hyphen
-    is part of the word and the lines join without a space (E-Mobilität,
-    CO2-neutral, 49-Euro-Ticket)."""
+class _Uncertain(Exception):
+    """A line-end hyphen that may be the word's own: the passage is not quoted."""
+
+
+_WORD = re.compile(r"[\wÄÖÜäöüß-]+")
+
+
+def _lexicon(text: str) -> frozenset[str]:
+    """The words ``text`` prints whole on one line, and the parts of its hyphenated
+    compounds: the evidence for how a word a line end splits is spelled
+    ("NATO-geführten", or "BAföG" from "BAföG-Reform")."""
+    words = _WORD.findall(re.sub(r"\S*-[ \t]*\n", " ", text))
+    return frozenset(words) | frozenset(part for word in words for part in word.split("-") if part)
+
+
+def _join(previous: str, line: str, lexicon: frozenset[str] = frozenset()) -> str:
+    """``line`` appended to the wrapped paragraph ``previous``.
+
+    A line-end hyphen before a lower-case word is a break hyphen and goes, unless
+    the word is one a truncated compound stands before ("Bundes- und"), or the text
+    prints the hyphenated word whole elsewhere. After a capital the hyphen is as
+    often the word's own ("NATO-geführten") as a break ("BA-föG", 21/8385): the
+    text's own spelling decides, and without one the passage is not quoted
+    (``_Uncertain``). A number is never hyphenated, so after a digit, and before a
+    capital or a digit, the hyphen is part of the word and the lines join without a
+    space (E-Mobilität, CO2-neutral, 49-Euro-Ticket)."""
     if previous.endswith("-") and len(previous) > 1 and previous[-2].isalnum():
         word = line.split(None, 1)[0] if line.split() else ""
         if word[:1].islower():
             if word in _KEEPS_HYPHEN:
                 return f"{previous} {line}"
-            return previous[:-1] + line if previous[-2].isalpha() else previous + line
+            if previous[-2].isdigit():
+                return previous + line
+            left = _WORD.findall(previous)[-1].rstrip("-")
+            right = _WORD.findall(word)[0] if _WORD.findall(word) else word
+            head = right.split("-", 1)[0]
+            if f"{left}-{right}" in lexicon or f"{left}-{head}" in lexicon:
+                return previous + line
+            if previous[-2].isupper() and f"{left}{right}" not in lexicon and f"{left}{head}" not in lexicon:
+                raise _Uncertain(f"{left}-{right}")
+            return previous[:-1] + line
         if word[:1].isupper() or word[:1].isdigit():
             return previous + line
     return f"{previous} {line}"
@@ -239,7 +267,7 @@ def _lines(body: str) -> list[str] | None:
     return None if pending is not None else lines
 
 
-def _paragraphs(body: str) -> list[str] | None:
+def _paragraphs(body: str, lexicon: frozenset[str] = frozenset()) -> list[str] | None:
     """The wrapped lines of ``body`` joined into its opening and its list items. A
     numbered or lettered line starts an item only in sequence ("2." after "1.", "b)"
     after "a)"), and a dash or bullet only after a finished clause, so a wrapped
@@ -269,7 +297,7 @@ def _paragraphs(body: str) -> list[str] | None:
         if not paragraphs or starts:
             paragraphs.append(line)
         else:
-            paragraphs[-1] = _join(paragraphs[-1], line)
+            paragraphs[-1] = _join(paragraphs[-1], line, lexicon)
     return paragraphs
 
 
@@ -321,7 +349,10 @@ def _extract(text: str) -> Forderung | None:
     body = text[anchor.start(1): _end_of(text, anchor.end())]
     if _FOOTNOTE.search(body):
         return None
-    paragraphs = _paragraphs(body)
+    try:
+        paragraphs = _paragraphs(body, _lexicon(text))
+    except _Uncertain:
+        return None
     if not paragraphs:
         return None
     forderung = Forderung(paragraphs[0], tuple(paragraphs[1:]))

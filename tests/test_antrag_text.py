@@ -199,6 +199,19 @@ class ExtractionTests(unittest.TestCase):
         self.assertIsNone(passage("1. das Gesetz zu ändern;", "2. dem Bundestag bis zum", end="Begründung"))
 
     # Value: protects=the teaser never cuts a demand and always shows the first; fails_when=a long first demand is cut or dropped; why_new=R5; seam=none
+    def _with_wrapped(self, wrapped: str, elsewhere: str = "") -> str | None:
+        text = f"{elsewhere}\n{OPENING}\n1. die {wrapped}-Regeln umzusetzen;\n2. weiter zu berichten.\nBerlin, den 1. Januar 2024"
+        forderung = antrag_text.extract_forderung(text)
+        return forderung.demands[0] if forderung else None
+
+    # Value: protects=a hard hyphen a line end splits is kept where the text prints the word whole elsewhere, a break hyphen goes, and after a capital without evidence the passage is not quoted; fails_when=every lower-case continuation drops the hyphen ("EUweite"); why_new=Greptile P1 on PR #113, cases from DIP text ("NATO-geführten", "BA-föG"); seam=none
+    def test_a_line_end_hyphen_follows_the_texts_own_spelling(self) -> None:
+        self.assertEqual(self._with_wrapped("EU-\nweiten", "Für EU-weiten Schutz."), "1. die EU-weiten-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("BA-\nföG", "Das BAföG-Gesetz."), "1. die BAföG-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Know-\nhow", "Das Know-how fehlt."), "1. die Know-how-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Bundesre-\ngierungs"), "1. die Bundesregierungs-Regeln umzusetzen;")
+        self.assertIsNone(self._with_wrapped("EU-\nweiten"))
+
     def test_the_teaser_keeps_whole_demands(self) -> None:
         long_demand = "1. " + "sehr " * 100 + "lange Forderung;"
         shown, rest = antrag_text.forderung_teaser(antrag_text.Forderung(OPENING, (long_demand, "2. kurz.")))
@@ -355,13 +368,13 @@ class RefreshTests(unittest.TestCase):
 
 
 class PersistTests(unittest.TestCase):
-    def persisted(self, vorgang_cache):
+    def persisted(self, vorgang_cache, rep=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "data" / "store.sqlite"
         conn = pulse_store.connect(path)
         self.addCleanup(conn.close)
-        pulse_store.persist_report(conn, report(), vorgang_cache)
+        pulse_store.persist_report(conn, rep or report(), vorgang_cache)
         return conn, path
 
     # Value: protects=the passage, its state and the vote→document choice reach the store; fails_when=persist skips vote_passages or the document columns; why_new=schema 8; seam=none
@@ -385,9 +398,28 @@ class PersistTests(unittest.TestCase):
         conn, path = self.persisted(cache())
         conn.commit()
         entries = [{"report": report()}]
-        with self.assertRaisesRegex(build.DatabaseRebuildError, "Antrag passage not_fetched"):
+        with self.assertRaisesRegex(build.DatabaseRebuildError, "known Antrag passages of votes not_fetched"):
             build.require_vorgang_cache_for_tags(path, cache(nummern={}, texte={}), path.parent.parent, entries)
         build.require_vorgang_cache_for_tags(path, cache(abstract="Kurz."), path.parent.parent, entries)
+
+    # Value: protects=a vote quoting two Anträge cannot lose one of them on replay while the other keeps the vote extracted; fails_when=the guard compares the vote-level state only; why_new=Greptile P1 on PR #113; seam=none
+    def test_the_replay_guard_checks_each_quoted_antrag(self) -> None:
+        rep = report()
+        rep["agenda_items"][0]["votes"][0]["document_numbers"] = ["20/123", "20/124"]
+        two = cache(
+            nummern={"20/123": [drucksache()], "20/124": [drucksache(number="20/124", drucksache_id="D2")]},
+            texte={"D1": {"text": ANTRAG}, "D2": {"text": ANTRAG}},
+        )
+        two["dokumentnummern"]["20/124"] = ["vorgang-1"]
+        conn, path = self.persisted(two, rep)
+        conn.commit()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_passages").fetchone()[0], 2)
+        one_lost = copy.deepcopy(two)
+        del one_lost[antrag_text.CACHE_KEY]["texte"]["D2"]
+        self.assertEqual(antrag_text.report_vote_passages(rep, one_lost)["12345"].state, "extracted")
+        with self.assertRaisesRegex(build.DatabaseRebuildError, r"1 known Antrag passages.*'20/124'"):
+            build.require_vorgang_cache_for_tags(path, one_lost, path.parent.parent, [{"report": rep}])
+        build.require_vorgang_cache_for_tags(path, two, path.parent.parent, [{"report": rep}])
 
     # Value: protects=a schema 7 store (no votes.passage_state) is refused with the repersist instruction; fails_when=the guard goes and initialize stamps 8 over NULL states; why_new=schema 8; seam=none
     def test_a_schema_7_store_is_refused(self) -> None:

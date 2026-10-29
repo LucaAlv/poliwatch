@@ -89,3 +89,7 @@ Excluding 18/12638, which has nothing to quote: 32 of 36 (89 %). That is just un
 **Still open:** the reference store's votes without an abstract (the population that matters; this sample is Anträge in general, not abstract-less ones), WP 18/19 Anträge from the middle of those periods, and whether the inverted form is common enough there to support.
 
 Regression fixtures from DIP's text: `tests/fixtures/antrag-text/dip-*.txt` (21/5780, 21/8568, 21/8385, 18/12797), provenance in `a1-source-manifest.json`.
+
+## Follow-up: line-end hyphens (2026-10-29, Greptile P1 on PR #113)
+
+A hyphen at a line end before a lower-case word was always taken as a break hyphen, so a hard one ("EU-" / "weite") was dropped. In the 39 DIP texts there are 66 such line ends, most in the Begründung or URLs; after a capital both kinds occur ("NATO-geführten" is hard, "BA-föG" in 21/8385 a break). The rule now follows the text's own spelling elsewhere in the document: the hyphenated word printed whole keeps the hyphen, the joined word printed whole (also as part of a compound, "BAföG-Reform") drops it; after a capital with no evidence either way the passage is not quoted. `EXTRACTOR_VERSION` 6. The 39-text results are unchanged (32 of 37).
