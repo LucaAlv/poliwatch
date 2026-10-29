@@ -268,3 +268,62 @@ Largest `erste-reden` moves (old → new):
     - dark-mode card and profile overflow (P3).
 - **source-errors.md:** E2 (19/2, empty person id) and E3 (18/104, no `<redner>` element), both verified with quotes.
 - **CONTEXT.md:** unchanged, since no term changed.
+
+## Identity rule C: member numbers, conflicting only within one Wahlperiode (owner decision 2026-10-29)
+
+The owner chose option C from the step 6 report.
+
+- **Rule:** committed in 415a8a6, with tests.
+  - Pass 3 now compares bundestag.de voter links (`/biografien/`, `/biografien20/`, `/redirect/<n>`) by their member number.
+  - Two voters conflict only when they hold different numbers in one Wahlperiode of their roll calls. The Wahlperiode comes from `protocols.document_number`.
+  - WP 19 web-archive links are no evidence: 449 of the 731 pilot members are linked under two numbers.
+  - Other links compare as before.
+- **Premises measured beforehand (offline):**
+  - WP 20/21, 2,148 voter links: no number spans two Wahlperioden, and no member has two numbers in one.
+  - WP 18 `/redirect/N`, 642 pilot members: no member has two numbers, and no number appears in WP 19.
+- **CONTEXT.md:** the Namensabgleich entry names the rule ("two biography numbers in one Wahlperiode"). `docs/stable-ids.md` follows.
+
+### Measurement: fresh `--persist-only` stores, old code against new (2026-10-29 22:12–23:59 UTC, no requests)
+
+Fresh stores were used, so the carried-forward registry (Step 1, finding 2) is kept out of the comparison. Every pair shares all of its bindings, so joins and splits are traced occurrence by occurrence. Raw output: [a3-rule-c-diff.txt](a3-rule-c-diff.txt).
+
+| Store | Code | Persons | Voter-only persons | Persons with a DIP roster record |
+|---|---|---:|---:|---:|
+| `full` | old rule | 4,165 | 2,306 | 1,561 |
+| `full` | rule C | **1,942** | **83** | 1,561 |
+| pilot | old rule | 4,066 | 2,507 | 1,345 |
+| pilot | old rule + link patch | 4,645 | 3,086 | 1,345 |
+| pilot | rule C | 1,830 | — | — |
+| pilot | rule C + link patch | 1,872 | 313 | 1,345 |
+
+- **Why so many persons move (4,165 → 1,942 on `full`).**
+  - Under the old rule, a name+party bucket holding an MdB's WP 20 and WP 21 voter records (two numbers) was ambiguous. So none of its voters attached, not even the WP 18/19 name+party voters.
+  - On `full`, 722 persons of rule C each absorb several old persons, 2,947 old persons in all. Examples: Lauterbach, Mihalic and Hofreiter each go from 6 records in 6 persons to 1 person.
+  - The 2,306 voter-only persons were mostly real MdBs whose votes sat on a separate page from their speeches and biography.
+- **Why the new count is more correct, and what guards against wrong joins.**
+  - The number of persons holding a DIP roster record stays at 1,561, so no two roster MdBs were merged.
+  - No person holds two DIP ids or two trusted abgeordnetenwatch ids, before or after.
+  - No name+party bucket on `full` holds two different DIP ids. So the WP 18–21 roster has no same-name, same-party MdB pair that the looser rule could merge.
+  - The remaining risk is a namesake who has no roster or speaker record of their own. They would join the one anchor of their name and party. The roster covers every MdB of WP 18–21, so this is limited to voters the roster misses.
+- **Splits on `full`: 2 old persons.** Both are party switchers: Melis Sekmen (Greens → CDU/CSU) and Jan Wenzel Schmidt (AfD → fraktionslos).
+  - Neither is whole before or after: Sekmen 4 → 3 persons, Schmidt 5 → 3.
+  - Larger groups now reach pass 3's all-or-none check for switchers (TODOS, A.2 follow-ups (6)).
+- **Voter records per Wahlperiode** are unchanged by the rule (711 / 761 / 1,558 / 639). The rule changes grouping, not keys.
+- **Run cost:** fresh persist of `full` 857–887 s, max RSS 2.8–3.2 GB; pilot 284–345 s.
+
+### The voter-link patch (not applied)
+
+`full`'s reports were written after #107 dropped the WP 18/19 links, so the patch changes nothing on `full` until the WP 18/19 roll-call lists are fetched again.
+
+- **Hybrid measurement:** a `full` clone with the pilot's 5 linked reports (18/154, 18/200, 18/244, 19/200, 19/238), rule C plus the patch, against `full` with rule C.
+  - Persons 1,942 → 1,956 (+14): 16 persons split, 2 join (Fabritius and Weiler: their WP 18 title variants become one record).
+  - WP 18 voter records go 711 → 1,350, because those 5 reports key WP 18 members by `/redirect/N` while every other WP 18 report still keys them by name+party.
+  - Every split is such a pair without a speaker or roster anchor: Lammert, Bulmahn, Erler, von der Leyen, Warken (WP 18), and others. Pass 3 never joins two voters to each other.
+- **What a full refetch would change:** a store with every WP 18 roll call fetched again would key each WP 18 member by one redirect record, so the hybrid's mixed state, and most of its splits, would not exist. Its result can only be measured after that refetch.
+- **Cost:** about 306 roll-call lists (WP 18 127, WP 19 179) from bundestag.de.
+- **Gain:**
+  - WP 18/19 voter pages link to the archived biography;
+  - WP 18 title variants become one voter record;
+  - WP 19 is otherwise unchanged (archive links key nothing).
+
+`full` itself was not repersisted with rule C. Phase 4 does not write it, so the rule reaches the store on its next build.
