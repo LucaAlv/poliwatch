@@ -943,7 +943,12 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("ERROR [repersist]:", err)
         self.assertIn("plenarprotokoll-21-99.json", err)
-        self.assertIn("Fix:", err)
+        # An unreadable file names no sitting, so the fix keeps the placeholder.
+        self.assertIn(
+            "The previous store is untouched. Fix: move that report out of data/, then re-fetch its sitting with an "
+            "online update and --document-number <its number>, or repair the report in place; then re-run.",
+            err,
+        )
         self.assertIn("Docs: README.md#re-persist-the-cached-reports", err)
         self.assertEqual(before, sha(self.database))
 

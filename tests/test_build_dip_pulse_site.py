@@ -2481,16 +2481,19 @@ class LegacyVoteShapeTests(unittest.TestCase):
 
     # Value: protects=a build stopped by a stale cached report ends with an ERROR line naming the file and a fix that works (move it out, then update online), not a traceback; fails_when=a lenient call site lets CachedReportError escape main, or the message points back to the online update that just failed; why_new=the load refusal was tested, its call sites in main were not; seam=none; no_claim=the online entry point (same handler, needs a DIP client)
     def test_a_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
+        # Each refusal names where the bad vote sits: the TOP, or sitting_votes.
         shapes = {
-            "a roll-call vote has no id": {"index": 1, "votes": [{"id": " "}]},
-            'has a singular "vote"': {"index": 1, "vote": {"id": "v1"}},
-            "roll-call votes are not a list": {"index": 1, "votes": 5},
+            "TOP 1: a roll-call vote has no id": {"agenda_items": [{"index": 1, "votes": [{"id": " "}]}]},
+            'TOP 1 has a singular "vote"': {"agenda_items": [{"index": 1, "vote": {"id": "v1"}}]},
+            "TOP 1: roll-call votes are not a list": {"agenda_items": [{"index": 1, "votes": 5}]},
+            "sitting_votes: roll-call votes are not a list": {"agenda_items": [], "sitting_votes": {}},
+            "sitting_votes: a roll-call vote has no id": {"agenda_items": [], "sitting_votes": [{"id": ""}]},
         }
-        for (reason, item), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
+        for (reason, shape), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
             with self.subTest(reason=reason, mode=mode), tempfile.TemporaryDirectory() as tmp:
                 data = Path(tmp) / "data"
                 data.mkdir()
-                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                report = {"protocol": {"dokumentnummer": "21/82"}, **shape}
                 (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
                 args = SimpleNamespace(
                     output_dir=Path(tmp), database_path=None, offline=mode == "offline", no_persist=True,
@@ -2507,8 +2510,11 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
                 self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
                 self.assertIn(reason, stderr.getvalue())
-                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
-                self.assertIn("--document-number", stderr.getvalue())
+                self.assertIn(
+                    "Fix: move that report out of data/, then re-fetch its sitting with an online update "
+                    "and --document-number 21/82",
+                    stderr.getvalue(),
+                )
 
     # Value: protects=the two online load sites of main (the --backfill-incomplete scan and the cached-dossier merge) end a build on a stale cached report with the same ERROR line, fix and exit 1 as the offline sites, before any dossier is fetched; fails_when=either site loses its CachedReportError handler so the build dies with a traceback, or the handler returns before the message names the file; why_new=the offline test above reaches only the --offline and --fetch-xml sites; seam=none; no_claim=the DIP client and catalog fetch (patched out)
     def test_an_online_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
@@ -2543,6 +2549,21 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
                 self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
                 self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+                if not backfill:
+                    self.assertIn("--document-number 21/82", stderr.getvalue())
+
+    # Value: protects=the printed fix names every refused sitting's number and falls back to a placeholder only when none is known; fails_when=cached_report_fix drops a number or prints "--document-number" for an unnumbered report; why_new=TODOS "Stale cached-report error lines: polish"; seam=none
+    def test_the_cached_report_fix_names_each_known_number(self) -> None:
+        fix = build_dip_pulse_site.cached_report_fix
+        error = build_dip_pulse_site.CachedReportError
+        self.assertEqual(fix(error("x")), build_dip_pulse_site.CACHED_REPORT_FIX)
+        self.assertIn("<its number>", fix(error("x", [None, ""])))
+        self.assertTrue(fix(error("x", ["21/82"])).endswith("--document-number 21/82"))
+        self.assertIn(
+            "move those reports out of data/, then re-fetch their sittings with an online update and "
+            "--document-number 21/82 --document-number 21/83",
+            fix(error("x", ["21/82", "21/83"])),
+        )
 
 
 class VoteContextPageWiringTests(unittest.TestCase):

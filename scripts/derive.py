@@ -396,14 +396,16 @@ def require_vote_shape(report: Mapping[str, Any]) -> None:
     for item in items:
         if item.get("vote"):
             raise ValueError(f'TOP {item.get("index")} has a singular "vote" (a shape from before "votes")')
-    for votes in [*(item.get("votes") for item in items), report.get("sitting_votes")]:
+    # Each message names the holder, so the reader knows where in the file to look.
+    holders = [*((f'TOP {item.get("index")}', item.get("votes")) for item in items), ("sitting_votes", report.get("sitting_votes"))]
+    for holder, votes in holders:
         if votes is None:
             continue
         if not isinstance(votes, list):
-            raise ValueError("roll-call votes are not a list")
+            raise ValueError(f"{holder}: roll-call votes are not a list")
         for vote in votes:
             if not isinstance(vote, dict) or not _clean(vote.get("id")):
-                raise ValueError("a roll-call vote has no id")
+                raise ValueError(f"{holder}: a roll-call vote has no id")
 
 
 def vote_identity(vote: Mapping[str, Any]) -> str:

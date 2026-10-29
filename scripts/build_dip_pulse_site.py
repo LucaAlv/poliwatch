@@ -860,7 +860,13 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
 
 
 class CachedReportError(Exception):
-    """A cached dossier report that a strict load could not read."""
+    """A cached dossier report that a strict load could not read. ``numbers``
+    names the sittings of the refused reports where they are known, so the
+    printed fix can name the command that re-fetches them."""
+
+    def __init__(self, message: str, numbers: list[str] | tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.numbers = [number for number in numbers if number]
 
 
 # What a build prints when a cached report stops it before any dossier is
@@ -870,6 +876,16 @@ CACHED_REPORT_FIX = (
     "Fix: move that report out of data/, then re-fetch its sitting with an online update "
     "and --document-number <its number>"
 )
+
+
+def cached_report_fix(exc: CachedReportError) -> str:
+    """CACHED_REPORT_FIX with the refused reports' own numbers filled in."""
+    if not exc.numbers:
+        return CACHED_REPORT_FIX
+    flags = " ".join(f"--document-number {number}" for number in exc.numbers)
+    if len(exc.numbers) == 1:
+        return f"Fix: move that report out of data/, then re-fetch its sitting with an online update and {flags}"
+    return f"Fix: move those reports out of data/, then re-fetch their sittings with an online update and {flags}"
 
 
 # Collect cached dossiers from data/ for the given protocols (every online build
@@ -926,7 +942,7 @@ def load_existing_detail_entries(
         try:
             derive.require_vote_shape(report)
         except ValueError as exc:
-            raise CachedReportError(f"{report_path}: {exc}") from exc
+            raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1386,13 +1402,16 @@ def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
     """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
-        numbers = ", ".join(
-            sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
+        numbers = sorted(
+            normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?" for entry in stale
         )
+        # The plain online update only re-fetches the newest sittings, so a
+        # report deleted here is re-fetched by number (the printed Fix).
         raise CachedReportError(
             f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
-            f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
-            "fetched (no xml_url) must be deleted from data/"
+            f"them from ({', '.join(numbers)}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
+            "fetched (no xml_url) must be moved out of data/ and its sitting re-fetched by number",
+            [number for number in numbers if number != "?"],
         )
 
 
@@ -1443,7 +1462,8 @@ def reparse_cached_xml(
             dip.reparse_report_xml(report, parsed)
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
-                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again"
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again",
+                [document_number],
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
@@ -1507,7 +1527,8 @@ def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
             for kind in kinds:
                 speech_kinds.validate_kind(kind)
         except ValueError as exc:
-            raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
+            number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
+            raise CachedReportError(f"{_entry_label(entry)}: {exc}", [number]) from exc
 
 
 def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -11887,7 +11908,7 @@ def main() -> int:
         try:
             entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
         fetched, failed = fetch_missing_xml(output_dir, entries)
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
@@ -12013,8 +12034,7 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    "Fix: repair that cached report, or move it out of data/ and re-fetch its sitting with an online update "
-                    "and --document-number <its number>, then re-run. "
+                    f"{cached_report_fix(exc)}, or repair the report in place; then re-run. "
                     "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
@@ -12061,7 +12081,7 @@ def main() -> int:
             try:
                 cached_entries = load_existing_detail_entries(output_dir, protocols)
             except CachedReportError as exc:
-                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
                 return 1
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
@@ -12070,7 +12090,7 @@ def main() -> int:
         try:
             validate_cached_kinds(cached_entries)
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}", file=sys.stderr)
+            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
         if not getattr(args, "repersist", False):
             write_classification_diagnostics(output_dir, cached_entries)
@@ -12214,7 +12234,7 @@ def main() -> int:
         try:
             existing_entries = load_existing_detail_entries(output_dir, protocols)
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the

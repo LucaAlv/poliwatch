@@ -769,17 +769,14 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 
 ### Stale cached-report error lines: polish
 
-**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290):
-1. The `--backfill-incomplete` stop reuses `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`; give that call site "move it out and re-run `--backfill-incomplete`", and fill in the report's number instead of `<its number>`.
-2. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
-3. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
-4. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
+**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): every other refusal prints the report's own number (`cached_report_fix`, `--document-number 21/82`, one flag per sitting when several are named), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
+1. The `--backfill-incomplete` stop still prints `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`. Give that call site "move it out of data/ and re-run `--backfill-incomplete`" through `cached_report_fix`. Do it on or after `worktree-a3-plan`, which rewrites that block of `main()` and adds `--exclude-document-number` (which may be the better remedy).
 
 **Why:** These lines are the only guide out of a stopped build; each should name a command that works.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
 
 ### Politikfelder: findings deferred from the B3 review
 
