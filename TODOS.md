@@ -384,17 +384,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: same-day step ties
-
-**What:** On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills).
-
-**Why:** v0.18.0.0 adversarial review finding, deferred at the fix-cycle limit. Low severity.
-
-**Context:** Changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree. The bundled search work is tracked separately below.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ## Abgeordnete
 
@@ -1061,6 +1050,22 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ## Completed
 
+### Bill overview polish: same-day step ties
+
+**Completed:** v0.23.5.0 (2026-10-29). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss); a kind not listed ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat the Beratung, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
+
+Measured on the reference cache (`.context/dip-pulse-site`, main vs the branch, 2026-10-29): 8 of 562 bills change `latest_step`:
+- „Beschluss“ → „Abstimmung über Vermittlungsvorschlag“: 5
+- „Geschäftsordnungsantrag zur Beratung“ → „2. Beratung“: 1
+- „2. Beratung“ → „3. Beratung“: 1
+- „Unterrichtung“ → „2. Beratung“: 1
+
+„Gesetzesbeschluss“ stays the latest step of 47 bills before and after. No bill moves to a procedurally earlier step. Kinds in the cache not in the table, ranked by origin: „2. Beratung und Schlussabstimmung“, „Abstimmung über Vermittlungsvorschlag“, „Zurückverweisung an die Ausschüsse in 2./3. Beratung“, „Geschäftsordnungsantrag zur Beratung“ (Vorgangspositionen, 30), and „Beschluss“, „Berichtigung“, „Empfehlungen“ (30 or 10 by origin).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ### Combined Antrag titles render as one four-line bold block on puls.html
 
 **Completed:** v0.23.3.0 (2026-10-29). The cause was the demo fixture, not the renderer: `scripts/extract_demo_fixture.py` copied the joint „a) … b) …“ agenda heading into both Anträge's DIP titles, so `topic_identity` saw one title, the row lost `equal_weight` and the heading became its bold `.radar-title`. The extractor now carries each Antrag's own title (`TITLES`, checked against the Drucksachen 21/6354 = a) and 21/4833 = b) on dserver and against the heading), the fixture's four `titel` fields follow, and the demo row lists both titles like a real build. Real data never had the block: each Vorgang has its own title, and the heading fallback is cut at 120 characters. Splitting titles on „a)“/„b)“ was rejected, since real titles cite „§ 3 Abs. 1 a)“.
@@ -1103,7 +1108,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Bill overview: accent-insensitive search
 
-**Completed:** v0.23.1.0 (2026-10-28). Both build-time `data-search` and the query fold accents and ß, so „fur“ finds „für“ and „strasse“ finds „Straße“. Original titles and query spelling remain visible and survive URL/history restoration. See the [implementation plan and validation](docs/plans/bill-search-accent-insensitive.md). Same-day step ranking remains open above.
+**Completed:** v0.23.1.0 (2026-10-28). Both build-time `data-search` and the query fold accents and ß, so „fur“ finds „für“ and „strasse“ finds „Straße“. Original titles and query spelling remain visible and survive URL/history restoration. See the [implementation plan and validation](docs/plans/bill-search-accent-insensitive.md). Same-day step ranking followed in v0.23.5.0 (see its entry above).
 
 ### Week comparison with no basis still draws every n/a slot
 

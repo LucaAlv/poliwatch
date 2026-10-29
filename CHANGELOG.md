@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.5.0] - 2026-10-29
+
+### Fixed
+
+- A bill's „Zuletzt erfasst“ step on a day with several events is now the procedurally latest one: the sitting's Beratung over a Drucksache filed that day (a same-day „Gesetzentwurf“ no longer beats „1. Beratung“), the Beratung over a same-day Entschließungsantrag or roll-call vote, and the Gesetzesbeschluss over the 2. Beratung. On the reference cache 8 of 562 bills change: 5 from „Beschluss“ to „Abstimmung über Vermittlungsvorschlag“, 1 from „Geschäftsordnungsantrag zur Beratung“ to „2. Beratung“, 1 from „2. Beratung“ to „3. Beratung“ and 1 from „Unterrichtung“ to „2. Beratung“. The 47 bills whose latest step is „Gesetzesbeschluss“ keep it.
+
 ## [0.23.4.0] - 2026-10-29
 
 ### Changed
