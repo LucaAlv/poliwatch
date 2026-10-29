@@ -3890,6 +3890,7 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
       <div><span class="eyebrow">Zeilen</span><strong>{pulse_html.format_int(manifest['total_rows'])}</strong><p class="tile-sub">{pulse_html.format_int(len(manifest['tables']))} Tabellen &middot; {pulse_html.format_int(manifest['relationships'])} Beziehungen</p></div>
       <div><span class="eyebrow">Namentliche Abstimmungen</span><strong>{pulse_html.format_int(votes['count'])}</strong><p class="tile-sub">{pulse_html.format_int(votes['members'])} Einzelstimmen</p></div>
     </section>
+    <p class="scope-line">Umfang (v1): jede Sitzung ab der {V1_FIRST_WAHLPERIODE}. Wahlperiode, f&uuml;r die der DIP-Katalog ein XML-Protokoll f&uuml;hrt. Fr&uuml;here Wahlperioden haben kein strukturiertes XML.</p>
     <p class="coverage-line">{coverage_line}</p>
     <p class="bausteine-line">{bausteine_line}</p>
     <p class="provenance-line">{provenance_line}</p>
@@ -4242,7 +4243,7 @@ def _daten_page_styles() -> str:
     .summary-band div { border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:13px 14px; }
     .summary-band strong { display:block; margin-top:4px; font-size:26px; font-variant-numeric:tabular-nums; }
     .tile-sub { font-size:12px; margin-top:2px; }
-    .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
+    .scope-line, .coverage-line, .bausteine-line, .provenance-line { font-size:14px; }
     .table-nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
     .table-nav a {
       display:inline-flex;

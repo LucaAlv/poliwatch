@@ -34,6 +34,21 @@ A list of places where an official source file says something wrong or files con
 - **What it should be:** the exchange belongs before Hilse's `<rede>`, or at its start. It is not part of Miersch's speech.
 - **Effect on poliwatch:** the validator refuses the sitting, because Hilse's line would otherwise count as an interjected question in Miersch's speech. 20/11 is excluded since 2026-10-28 (`docs/plans/a3-phase3.md`, 4.4).
 
+### E2. 19/2: a minister's speech with an empty person id
+
+- **Status:** verified 2026-10-29.
+- **Source:** `https://dserver.bundestag.de/btp/19/19002.xml`, `<rede id="ID19205800">`: `<redner id=""><name><vorname>Peter</vorname><nachname>Altmaier</nachname><rolle><rolle_lang>Bundesminister der Finanzen</rolle_lang>…`.
+- **What is wrong:** the `id` attribute is empty, here and in the table-of-contents entry for the same speech. Altmaier was an MdB with an id of his own. Across the 716 WP 18–21 files this is the only speech with an empty id. 19/6 has 18 empty ids for Dr. Ole Schröder (Parl. Staatssekretär), but only in its table of contents.
+- **Effect on poliwatch:** the speech is stored with Sprechrolle `bundesregierung` but no person, so its 6,180 characters count as unattributed. It is the only unattributed speech in WP 18–21 (a3-phase4.md, step 3).
+
+### E3. 18/104: a speech with no `<redner>` element
+
+- **Status:** verified 2026-10-29.
+- **Source:** `https://dserver.bundestag.de/btp/18/18104.xml`, `<rede id="ID1810402200">`. It opens with a bare `<name>Christian Kühn ( Tübingen) (BÜNDNIS 90/DIE GRÜNEN) : </name>` instead of `<p klasse="redner"><redner id="…">…</redner></p>`.
+- **What is wrong:** the speaker's person id and Fraktion are not marked up. Their only trace is a free-text name, which also carries a stray space ("( Tübingen)").
+- **Scale:** across the 716 WP 18–21 files, three `<rede>` elements have no `<redner>`. The other two (18/46 `ID1804617400`, 18/76 `ID1807611000`) are Anlage texts that begin with `<p klasse="N_Anlage">`.
+- **Effect on poliwatch:** the speech has no Fraktion, so Redeanteil for WP 18 lists one Rede under "(ohne Zuordnung)". It is the only such Rede in WP 18–21 (a3-phase4.md, step 3).
+
 ## Candidates
 
 ### C1. Whole speeches and replies filed inside the previous speaker's `<rede>` (WP 18/19)

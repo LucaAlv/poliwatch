@@ -179,6 +179,15 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertIn("1 nicht erfasst (ausgeschlossen): 18/84", html)
         self.assertNotIn("ausgeschlossen", b.render_daten_datenstand(self.export(force=True)))
 
+    # Value (A3): protects=the Daten page states the v1 scope beside the measured
+    # range, so a reader can tell a gap inside the scope from history outside it;
+    # fails_when=the line is dropped or names another first Wahlperiode;
+    # seam=render_daten_datenstand.
+    def test_datenstand_states_the_v1_scope(self) -> None:
+        html = b.render_daten_datenstand(self.export(force=True))
+        self.assertIn(f"ab der {b.V1_FIRST_WAHLPERIODE}. Wahlperiode", html)
+        self.assertIn('class="scope-line"', html)
+
     def test_recipe_sql_error_fails_the_export_naming_the_recipe(self) -> None:
         broken = tuple(
             {**recipe, "sql": "SELECT * FROM speeches_does_not_exist LIMIT 5;"}

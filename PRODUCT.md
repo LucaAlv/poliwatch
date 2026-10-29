@@ -77,7 +77,7 @@ Comparable sites:
 
 ## Evidence on Hand
 
-- Real official data. `scripts/preview_dip_pulse_site.sh demo` builds offline from a committed extract of Plenarprotokoll 21/84, TOP 32 a/b (16 Reden, Drucksachen 21/6354 and 21/4833). The largest local store holds 285 Sitzungen of WP 20 and 21 (2022-01-27 to 2026-06-12). WP 18 and 19 are not acquired yet.
+- Real official data. `scripts/preview_dip_pulse_site.sh demo` builds offline from a committed extract of Plenarprotokoll 21/84, TOP 32 a/b (16 Reden, Drucksachen 21/6354 and 21/4833). The largest local store (A3, 2026-10-29) holds 716 Sitzungen of WP 18–21, 18/4 to 21/103 (2013-12-17 to 2026-10-16): every Sitzung the DIP catalog lists for WP 18–21 except 85 on the reviewed exclusion list (WP 18: 51, WP 19: 33, 20/11). It has 556 namentliche Abstimmungen, and 0 sittings are missing on a fresh catalog.
 - Design plans and sketches in `docs/designs/` (`fixed-public-experience.md` with its wireframe PNG, `puls-wochenradar.md` with a sketch, `daten-page.md`, `fakt-der-woche.md`, `gesetzesvorhaben.md`).
 - There are no users, testimonials, press, usage metrics or partners yet, because the product is pre-release. Do not invent any.
 

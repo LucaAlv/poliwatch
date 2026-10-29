@@ -9,6 +9,8 @@ There is no package manager, no framework, and no build toolchain. Two things ha
 
 `.context/` is gitignored: it is build output and cache, never source.
 
+**Covered range (v1):** every Sitzung of Wahlperiode 18 to 21 that the DIP catalog lists with Plenarprotokoll XML, from 18/1 (2013-10-22) on. As measured on 2026-10-29 that is 716 Sitzungen: 194 of 245 in WP 18, 206 of 239 in WP 19, 213 of 214 in WP 20, 103 of 103 in WP 21. The 85 not covered are on the reviewed exclusion list (`data/coverage-exclusions.json`), because their XML files nest turns the parser does not yet take apart (WP 18/19) or misfile a chair exchange (20/11; `docs/source-errors.md` E1). Wahlperioden 1–17 have no structured XML in the catalog and come after v1 (PRODUCT.md).
+
 ## Daten nutzen (für Forschende und Datenjournalisten)
 
 Jede Auswertung dieser Website beruht auf denselben Rohdaten, die als SQLite-Datei und als CSV veröffentlicht werden. Auf der lokalen Vorschau (`database.html`, Nav-Punkt "Daten") stehen: eine gzippte SQLite-Verteilkopie, 28 CSV.gz-Dateien, ein sha256 pro Datei, ein Datenstand-Band mit Abdeckung, und die bei jedem Build ausgeführten SQL-"Rezepte" mit Kopieren-Button und ihren Ergebniszeilen daneben.

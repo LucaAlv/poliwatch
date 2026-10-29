@@ -9,7 +9,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **A. Get the counts right and the coverage in, in this order**
 1. What counts as a Rede: #68 (Kurzinterventionen) and #70 (Befragung and Fragestunde) are done (PR 1, branch `a1-what-counts-as-rede`, see Completed). A1 follow-ups are implemented in v0.15.0.0 (see Completed): nested Zwischenfragen, written submissions as their own kind, and source-backed historical classification. Final merged A1/A2 validation remains required before A3; ceremony addresses absent from sampled plenary XML remain a separate acquisition gap.
 2. "Stable ids for every row a release publishes" (done: A.2, see its Completed note).
-3. "v1 coverage: every Sitzung from WP 18 to the present". Running it after 1 and 2 means the backfill is counted once, with ids that last.
+3. Done 2026-10-29 (see Completed): "v1 coverage: every Sitzung from WP 18 to the present". 716 Sitzungen of WP 18–21, 0 missing on a fresh catalog, 85 on the reviewed exclusion list.
 4. "Split the dataset from the site: the site builds from a release alone". Start slice by slice alongside 1–3. The votes archive is the first slice.
 
 **B. Abstimmungen (daily view), independent of A**
@@ -29,11 +29,21 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **D. Before anything goes public**
 - Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
 - The release: "Write the release script", "Codebook (`DATA.md`) and recipe result CSVs in the release", "Public data changelog per release", "A DOI per release and a citation file".
-- Hosting: "Site hosting plan for the 2.5 GB generated site". WP 18 and 19 make it larger.
+- Hosting: "Site hosting plan for the 2.5 GB generated site". After A3 the site is 5.4 GB, 1.35 GB without `data/` (2026-10-29).
 
 **Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B/C, and the Puls and copy fixes, which stay at their own priorities. WP 1–17, which have no structured XML in the DIP catalog, come after v1.
 
 ## Daten
+
+### Unmatched roll-call votes never reach the report (`sitting_votes`)
+
+**What:** `enrich_with_api` returns the fetched roll-call votes that match no TOP as `sitting_votes`. But the report dict built at the end of `build_report` (`scripts/validate_dip_protocol.py`, near line 3520) does not copy that key; only `api_records.sitting_votes` keeps the votes. Persist (`derive.py`) and render ("TOP nicht zugeordnet") read the top-level key, so these votes are never stored or shown. Copy the key, then replay the cache offline with `--repersist`. No request is needed, because the cached reports hold the full vote details. Done when the 63 votes appear in the store and in their dossiers under "TOP nicht zugeordnet", with an old/new report.
+
+**Why:** A3 Phase 4 (2026-10-29): 63 votes in 41 sittings are fetched and then dropped. Examples: 261 EUFOR RCA, 510 MINUSMA, 1008 Jahresemissionsgesamtmengen-Verordnung. The Completed item "Match roll-call votes to a TOP when Drucksache numbers fail" (v0.10.0.0) promised this section; it has never shown a vote.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
 
 ### Take namentliche Abstimmungen from the official XLSX instead of the chart markup
 
@@ -108,6 +118,12 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 ### Site hosting plan for the 2.5 GB generated site
 
 **What:** Make the HTML deployable under a capped static host (e.g. GitHub Pages' 1 GB limit). Measured 2026-09-19: 2.5 GB total; `data/` 1.4 GB (`plenarprotokoll-*.json` 607 MB, `bills.json` 386 MB, `exports/` 91 MB); `protocols/` 584 MB for 285 dossiers. **Without `data/` the site is still 1.11 GB**, so a deploy profile that only excludes `data/` does not fit; the dossiers have to shrink too. Pieces: (a) extend `--data-base-url`-style externalisation to the `data/plenarprotokoll-*.json` links on `puls.html`/dossiers and to `bills.json` (the base-URL pattern exists for the two export files); (b) shrink dossiers — see "Move the hidden dev-view API dump" below: ~952 KB of hidden markup per dossier × 285 ≈ 270 MB, so rendering it into a separate on-demand file roughly halves `protocols/`; (c) or pick a host without the cap.
+
+**Measured after A3 (2026-10-29, `~/agent-runs/a3/full`, 716 Sitzungen):**
+- 5.4 GB total; `data/` 4.1 GB (store 848 MB, XML 578 MB, `exports/` 426 MB).
+- **Without `data/` the site is 1.35 GB** in 6,750 HTML files: `bills/` 664 MB, `protocols/` 519 MB, `abgeordnete/` 139 MB.
+- Before A3 (`baseline`, 290 Sitzungen): 2.3 GB total and 616 MB without `data/`.
+- The rendered pages have more than doubled, and the cap problem is now about the pages, not only `data/`.
 
 **Why:** The Daten page and `--data-base-url` make the *data* shippable to a public audience; the *site* itself cannot go to a capped host today. Both outside voices in the `/autoplan` review flagged this; the user's go/no-go framing ("ship to a larger audience in a few weeks") depends on the site being public, not only the download.
 
@@ -264,32 +280,19 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** none.
 
-### v1 coverage: every Sitzung from WP 18 to the present
-
-**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Re-measured on 2026-10-19 against the post-v0.20 replay of the reference store (`~/agent-runs/b3-review-replay/site`, a replay of `.context/dip-pulse-site`; catalog from 2026-10-06), counting only Bundestag entries:
-
-| WP | In the catalog | In the store | Missing |
-|---|---|---|---|
-| 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
-| 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
-| 20 | 214 | 201 (from 20/14, 2022-01-27) | 13 |
-| 21 | 97 with XML | 89 (to 2026-09-11) | 8, plus every Sitzung after the catalog snapshot |
-
-About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3-coverage.md). Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
-
-**Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
-
-**Context:**
-- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
-- Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
-- WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
-- Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
-
-**Effort:** M (mostly running time and checking)
-**Priority:** P1
-**Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
-
 ## Protokoll-Dossier
+
+### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"
+
+**What:**
+- The card shows `validation_summary.xml_drucksache_count`. It is 0 on every WP 18/19 dossier and on 118 of 213 WP 20 dossiers, because the older XML does not tag Drucksachen. 19/29 shows 0 while its TOPs link 37 documents through DIP. Count the documents the page actually lists, or label the card as XML-only.
+- DIP has no `verteildatum` for any WP 18 sitting, and the header then ends in "verteilt am". Omit the phrase when the date is missing.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
 
 ### Split or filter overview.html by Wahlperiode
 
@@ -499,6 +502,19 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Abgeordnete
 
+### Bundesrat members are ingested as MdBs (`_has_mdb_funktion` matches "MdBR")
+
+**What:** `_has_mdb_funktion` (`scripts/build_dip_pulse_site.py`) tests `"mdb" in value.lower()`, so DIP's `MdBR` and `Stellv. MdBR` count as MdB. Match the role exactly (`MdB`), and report roster rows, Abgeordnete list rows and pages old/new.
+
+**Why:** A3 Phase 4 (2026-10-29), `~/agent-runs/a3/full`:
+- 352 of the 1,712 roster persons are Bundesrat members (`MdBR` 158, `Stellv. MdBR` 194).
+- The Abgeordnete index lists them as MdBs: 201 of the 972 former-MdB rows, and at least 84 of the 740 current-MdB rows (e.g. "Albert Füracker, Stellv. MdBR …, Bayern").
+- It first shows with A3, because the pre-A3 base stored no roster.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
 ### Group MP pages by Wahlperiode and write abgeordnete.json without indent
 
 **What:** Group or page the speech and vote rows on each MP page by Wahlperiode, and write `data/abgeordnete.json` without `indent=2`.
@@ -544,6 +560,18 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Depends on:** None
 
 ## Design
+
+### Dark mode and overflow defects found in the A3 spot checks
+
+**What:**
+- `overview.html`: the "Neueste API-Sitzung" card (`.latest`) hard-codes `background:white` (`scripts/build_dip_pulse_site.py`, three copies of the rule), so its light text is nearly invisible in dark mode.
+- Profile pages: single-word vote titles ("Asylverfahrensbeschleunigungsgesetz") push the vote column 24 px past a 1280 px viewport. Add `overflow-wrap:anywhere` or hyphenation.
+
+**Why:** A3 Phase 4 spot checks (2026-10-29). Both predate A3; WP 18 titles make the overflow common.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### DESIGN.md, tokens and a typeface decision via /design-consultation
 
@@ -1190,6 +1218,51 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### v1 coverage: every Sitzung from WP 18 to the present
+
+**What:** Acquire a Dossier for every Sitzung the catalog lists for WP 18, 19, 20 and 21, and keep the store current. Re-measured on 2026-10-19 against the post-v0.20 replay of the reference store (`~/agent-runs/b3-review-replay/site`, a replay of `.context/dip-pulse-site`; catalog from 2026-10-06), counting only Bundestag entries:
+
+| WP | In the catalog | In the store | Missing |
+|---|---|---|---|
+| 18 | 245 (2013-10-22 to 2017-09-05) | 0 | all 245 |
+| 19 | 239 (2017-10-24 to 2021-09-07) | 0 | all 239 |
+| 20 | 214 | 201 (from 20/14, 2022-01-27) | 13 |
+| 21 | 97 with XML | 89 (to 2026-09-11) | 8, plus every Sitzung after the catalog snapshot |
+
+About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3-coverage.md). Done when the numbers above read 0 missing on a fresh authoritative catalog, and the README, PRODUCT.md and the Daten page state the covered range.
+
+**Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
+
+**Context:**
+- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
+- Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
+- WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
+- Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
+
+**Effort:** M (mostly running time and checking)
+**Priority:** P1
+**Depends on:** The Rede-counting items (#68, #70, Zwischenfragen and Gastansprachen) should land first, so the backfill does not have to be recounted.
+
+**Completed:** 2026-10-29 (A3 Phases 0–4, branch `worktree-a3-plan`; [Phase 4 record](docs/plans/a3-phase4.md)). Measured on a fresh DIP catalog (2026-10-29) against `~/agent-runs/a3/full`:
+
+| WP | In the catalog | In the store | Excluded (reviewed) | Missing |
+|---|---:|---:|---:|---:|
+| 18 | 245 | 194 | 51 | 0 |
+| 19 | 239 | 206 | 33 | 0 |
+| 20 | 214 | 213 | 1 (20/11) | 0 |
+| 21 | 103 | 103 | 0 | 0 |
+
+- **Store:** 716 Sitzungen, 18/4 to 21/103 (2013-12-17 to 2026-10-16).
+  - 556 namentliche Abstimmungen (WP 18–21: 127, 179, 171, 79); 382,441 Einzelstimmen.
+  - 54,718 Reden and 42,465 other Beiträge; 529 publishable Fakten.
+  - Baseline before A3: 290 Sitzungen, 217 Abstimmungen, 26,267 Reden.
+- **Still open:**
+  - 41 stored sittings have roll-call votes that matched no TOP; those votes are dropped (see "Unmatched roll-call votes never reach the report").
+  - 21/103 waits for the roll-call list (`source_stale`); the next backfill after 2026-10-30 retakes it.
+- **Excluded sittings:** the 85 come back through "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns" and "20/11: the chair's handover exchange".
+- **Covered range stated** in README, PRODUCT.md and the Daten page (scope line).
+- **DIP cost:** about 6,000 requests in Phase 3, 3 in Phase 4.
 
 ### Test the independently loaded historical parser and classifier
 
