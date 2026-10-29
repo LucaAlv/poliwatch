@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.5.0] - 2026-10-29
+
+### Changed
+
+- The Methodik page and the Plenarprotokoll overview call a Sitzung's page a „Dossier“ („Jedes Dossier verlinkt den Zwischenbericht als JSON“, „Erzeugte Dossiers“) instead of „Sitzungsseite“ and „Sitzungsdossiers“.
+
 ## [0.23.1.0] - 2026-10-28
 
 ### Fixed

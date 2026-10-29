@@ -23,7 +23,7 @@ import persist_dip_pulse_store as pulse_store
 import person_registry
 import render_dip_pulse_html as pulse_html
 import speech_kinds
-from features import EnrichmentSelection, all_selection, default_selection
+from features import COMPONENTS, EnrichmentSelection, all_selection, default_selection
 
 
 
@@ -2048,6 +2048,21 @@ class SittingWeekComparisonTests(unittest.TestCase):
             markup,
         )
         self.assertNotIn("Aufmerksamkeitsranking", markup)
+
+    # Value: protects=the pages that describe Dossiers call them "Dossier", not a name on CONTEXT.md's avoid list; fails_when=Sitzungsseite, Sitzungsdossier or Protokoll-Dossier returns to the Methodik or the overview, or the component list labels them otherwise; why_new=both pages and the component list used avoided names; seam=none; no_claim=pages that render no Dossier description
+    def test_dossier_pages_say_dossier_not_an_avoided_name(self) -> None:
+        sources = build_dip_pulse_site.render_sources_page([], features=default_selection())
+        overview = build_dip_pulse_site.render_overview(
+            [{"id": "5799", "dokumentnummer": "21/84", "datum": "2026-06-12", "titel": "Plenarprotokoll 21/84"}],
+            [],
+            features=default_selection(),
+        )
+        self.assertIn("Jedes Dossier verlinkt den Zwischenbericht als JSON", sources)
+        self.assertIn("<h2>Erzeugte Dossiers</h2>", overview)
+        for markup in (sources, overview):
+            for avoided in ("Sitzungsseite", "Sitzungsdossier", "Protokoll-Dossier"):
+                self.assertNotIn(avoided, markup)
+        self.assertEqual(next(c for c in COMPONENTS if c.id == "dossiers").label, "Dossiers")
 
     def test_sources_page_has_a_glossary_entry_per_vorgangstyp(self) -> None:
         markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
