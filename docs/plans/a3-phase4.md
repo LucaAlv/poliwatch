@@ -32,7 +32,13 @@ The replayed store (`gate-full`) and the fresh store (`gate-scratch/fresh`) were
    - The person is Jan Krampe (formerly Jan Köstering), Die Linke, WP 21. Roll-call votes carry the Köstering URL from 2025-06-25 to 2026-07-10 and the Krampe URL from 2026-09-24 to 2026-10-15 (63 and 16 votes). Both URLs are `/biografien/` URLs of the same Wahlperiode.
    - `full` itself shows the same four persons. The split is in the store A3 built, not an artefact of the gate's replay.
    - The four records are `dip:8257` "Jan Krampe, MdB" (1 binding), `aw:178656` (41), profile `…/koestering_jan-1045564` (63) and profile `…/krampe_jan-1045564` (16).
-   - The two bundestag.de profile URLs carry the same member number 1045564 and differ only in the name slug. This is the same shape as the open identity finding (differing voter URLs count as different people). A rule that lets differing URLs conflict only within one Wahlperiode would still split him, because both URLs are from WP 21. Comparing by member number would join him.
+   - The two bundestag.de profile URLs carry the same member number 1045564 and differ only in the name slug.
+   - **Cause (corrected 2026-10-29, after the first report):** the URLs are not what splits him.
+     - Pass 3 buckets voters by name and party, so the Köstering and Krampe voters never meet in one bucket.
+     - DIP holds two person records for him: 8054 "Jan Köstering" (`aktualisiert` 2025-03-11) and 8257 "Jan Krampe" (2026-10-22, listing Köstering as an earlier name). Both are in `dip-person-cache.json`.
+     - The store carries `dip:8054` forward as a roster record.
+     - An in-memory rerun of `person_registry.match_rows` on `full`'s records joins all five records into one component under the current rule, once `dip:8054` is left out of the matching (stale). With `dip:8054` taking part, all five stay apart.
+     - Why a replay still lets `dip:8054` take part has not been traced. That belongs with finding 2, not with the voter-link decision.
    - In `baseline`, `aw:178656` and the Köstering profile were one person. So on this store, A3 newly separates his speeches (`aw:178656`) from his roll-call votes (profile). The fresh build has the more correct grouping.
    - The replayed store does not heal: the registry carries its earlier grouping forward.
 2. **295 persons hold only retired bindings.** The replayed store has 494 bindings that no fresh build produces.
@@ -58,6 +64,16 @@ The gate's own comparison excludes retired bindings, so finding 2 does not make 
   - Phase 0 measured 2.59 GB on 290 reports, so memory grows about linearly with the store. Size a runner for at least 8 GB.
 - `full` itself also has 295 orphan persons (4,463 persons).
 - Disk: 19 GB free at the end. The gate scratch (7.4 GB) and `gate-full` (5.4 GB) are kept for the owner's inspection.
+
+### Bundestag member numbers, measured for the identity decision (2026-10-29)
+
+On `full`'s 2,148 bundestag.de voter profile records (WP 20/21; the WP 18/19 links are dropped today), with each URL's Wahlperiode taken from the dates of its votes:
+
+- **No number is used in two Wahlperioden.** Every number votes in one WP only.
+- **No person has two numbers within one Wahlperiode.** There are 0 name slugs with two numbers inside one WP.
+- **A new Wahlperiode often brings a new number.** 390 name+party pairs have two numbers, a WP 20 one and a WP 21 one (Amthor 857086 / 1043428). Some numbers carry over: Akbulut's 857082 is in both his WP 19 archive link and his WP 20 link.
+- **A name change keeps the number.** 5 numbers have two slugs: Köstering/Krampe, Benkstein/Lenk, Cademartori (Dujisin), (Glogowski-)Merten, Santos Firnhaber/Santos-Wintz.
+- **The path does not give the Wahlperiode.** WP 20 votes link `/biografien/` (776 records) as well as `/biografien20/` (733). Only WP 21 votes are all `/biografien/` (639). Within WP 20 the same number appears under both paths (Warken 858188).
 
 ## Step 2: missing count. Purpose and cost, written before sending
 
