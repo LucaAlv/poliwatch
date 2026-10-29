@@ -12,8 +12,8 @@ Runs the fixture-based test suite without network access. See [First-time setup 
 
 The browser checks require Node 22 or newer and Chrome or Chromium; CI uses
 Node 24. They generate local fixtures and run in a temporary headless browser
-profile, checking repeated speech-link keyboard activation, recipe copy, and
-responsive week-comparison layouts:
+profile, checking repeated speech-link keyboard activation, recipe copy,
+responsive week-comparison layouts, and bill-search matching and URL/history:
 
 ```bash
 node tests/run_bills_browser_check.mjs python3.13
