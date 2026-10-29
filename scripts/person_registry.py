@@ -11,6 +11,7 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 import derive
 import abgeordnetenwatch as aw
 from stable_ids import stable_key
@@ -576,8 +577,42 @@ def mp_keys(row: dict[str, Any]) -> list[str]:
     return keys
 
 
+_BUNDESTAG_HOSTS = frozenset({"www.bundestag.de", "bundestag.de"})
+_BIOGRAPHY_NUMBER = re.compile(r"/abgeordnete/biografien\d*/[^/]+/[^/]*-(\d+)")
+_REDIRECT_NUMBER = re.compile(r"/redirect/(\d+)")
+# A profile bucket entry for a bundestag.de member number: "bt:<Wahlperiode>:<number>",
+# with "*" when the record's Wahlperiode is not known.
+_BT_PREFIX = "bt:"
+
+
+def bundestag_member_number(url: Any) -> str | None:
+    """The member number of a bundestag.de biography link (``…/biografien20/W/warken_nina-858188``)
+    or of WP 18's ``/redirect/<number>``; None for anything else, the WP 19 web
+    archive included: it links one MdB under two numbers (``517852-517852`` and
+    ``akbulut_goekay-857082``)."""
+    try:
+        parts = urlsplit(str(url or ""))
+    except ValueError:
+        return None
+    if parts.scheme != "https" or parts.hostname not in _BUNDESTAG_HOSTS:
+        return None
+    match = _BIOGRAPHY_NUMBER.fullmatch(parts.path) or _REDIRECT_NUMBER.fullmatch(parts.path)
+    return match.group(1) if match else None
+
+
+def _is_web_archive(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.hostname in _BUNDESTAG_HOSTS and parts.path.startswith("/webarchiv/")
+
+
 # The external ids a row carries, bucketed by kind. Two rows may only be merged
-# by name+party when their id buckets do not contradict each other.
+# by name+party when their id buckets do not contradict each other. A bundestag.de
+# link enters the profile bucket as its member number per Wahlperiode of the
+# record's roll calls, because bundestag.de gives an MdB a new number in a new
+# Wahlperiode; a web-archive link enters nothing.
 def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
     ids: dict[str, set[str]] = {"aw": set(), "dip": set(), "xml": set(), "profile": set()}
     if derive.trusted_aw_id({"id": row.get("aw_politician_id")}, row.get("aw_match")) is not None:
@@ -586,8 +621,43 @@ def _mp_external_ids(row: dict[str, Any]) -> dict[str, set[str]]:
         ids["dip"].add(str(row["dip_person_id"]))
     ids["xml"].update(_redner_ids(row))
     if row.get("profile_url"):
-        ids["profile"].add(str(row["profile_url"]))
+        url = str(row["profile_url"])
+        number = bundestag_member_number(url)
+        if number:
+            ids["profile"].update(f"{_BT_PREFIX}{wp}:{number}" for wp in (sorted(row.get("vote_wahlperioden") or ()) or ["*"]))
+        elif not _is_web_archive(url):
+            ids["profile"].add(url)
     return ids
+
+
+def _profiles_conflict(left: set[str], right: set[str]) -> bool:
+    """Two profile buckets contradict each other. Member numbers do only when both
+    sides hold numbers for one Wahlperiode and none of them is shared; a number
+    of unknown Wahlperiode is compared against every number of the other side.
+    Other links (abgeordnetenwatch profiles) compare as strings, and so does a
+    side holding only numbers against one holding only other links."""
+    def numbers(values: set[str]) -> dict[str, set[str]]:
+        by_wp: dict[str, set[str]] = {}
+        for value in values:
+            if value.startswith(_BT_PREFIX):
+                wp, number = value[len(_BT_PREFIX):].split(":", 1)
+                by_wp.setdefault(wp, set()).add(number)
+        return by_wp
+
+    left_numbers, right_numbers = numbers(left), numbers(right)
+    left_other = {value for value in left if not value.startswith(_BT_PREFIX)}
+    right_other = {value for value in right if not value.startswith(_BT_PREFIX)}
+    if left_other and right_other:
+        if not left_other & right_other:
+            return True
+    elif not (left_numbers and right_numbers):
+        return bool(left and right and not left & right)
+    if not (left_numbers and right_numbers):
+        return False
+    if "*" in left_numbers or "*" in right_numbers:
+        if not set().union(*left_numbers.values()) & set().union(*right_numbers.values()):
+            return True
+    return any(not left_numbers[wp] & right_numbers[wp] for wp in (left_numbers.keys() & right_numbers.keys()) - {"*"})
 
 
 # Union of the id buckets across all rows already merged into one person.
@@ -603,7 +673,10 @@ def _merge_external_ids(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
 # that is positive evidence of two different people, so no merge.
 def _external_ids_conflict(left: dict[str, set[str]], right: dict[str, set[str]]) -> bool:
     for kind in left:
-        if left[kind] and right[kind] and not (left[kind] & right[kind]):
+        if kind == "profile":
+            if _profiles_conflict(left[kind], right[kind]):
+                return True
+        elif left[kind] and right[kind] and not (left[kind] & right[kind]):
             return True
     return False
 
@@ -825,7 +898,8 @@ def match_rows(rows: list[dict[str, Any]], *, guesses: bool = True) -> tuple[dic
     # Attach it only to one unambiguous roster/speaker component of its name
     # and party. The anchor's profile may come from a different source, but
     # conflicting voter profiles make the bucket ambiguous even when those
-    # voters appear in different roll calls. Distinct records voting in the
+    # voters appear in different roll calls: two bundestag.de member numbers in
+    # one Wahlperiode, or two other links (``_profiles_conflict``). Distinct records voting in the
     # same roll call cannot be guessed to be one person either. Each bucket is
     # judged on its own, as for a record with a single name and party. A record
     # printed under several parties sits in several buckets: it joins only when
@@ -888,18 +962,33 @@ def _load_rows(conn: sqlite3.Connection, touched: set[str]) -> list[dict[str, An
     """Every record's evidence with its current person, its partition and whether
     it is live: this build touched it (``touched``). A record that is not live is
     stale evidence: it keeps its person but takes part in no match."""
-    vote_ids: dict[str, set[str]] = {}
-    for member in conn.execute("SELECT mp_id, vote_id FROM vote_members"):
-        vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
+    vote_ids, wahlperioden = _vote_evidence(conn)
     rows = []
     for record in conn.execute("SELECT * FROM person_records ORDER BY id"):
         evidence = json.loads(record["evidence_json"])
         evidence.setdefault("identities", [record["identity_key"]])
         live = record["id"] in touched
         evidence.update(id=record["id"], person_id=record["person_id"], partition=record["partition"], live=live,
-                        vote_ids=vote_ids.get(record["id"], set()))
+                        vote_ids=vote_ids.get(record["id"], set()),
+                        vote_wahlperioden=wahlperioden.get(record["id"], set()))
         rows.append(evidence)
     return rows
+
+
+def _vote_evidence(conn: sqlite3.Connection) -> tuple[dict[str, set[str]], dict[str, set[int]]]:
+    """Per record, the roll calls it voted in and their Wahlperioden (from the
+    protocol's Dokumentnummer; a vote without a protocol adds none)."""
+    vote_ids: dict[str, set[str]] = {}
+    wahlperioden: dict[str, set[int]] = {}
+    for member in conn.execute(
+        "SELECT vm.mp_id, vm.vote_id, p.document_number FROM vote_members vm"
+        " LEFT JOIN votes v ON v.id = vm.vote_id LEFT JOIN protocols p ON p.id = v.protocol_id"
+    ):
+        vote_ids.setdefault(member["mp_id"], set()).add(member["vote_id"])
+        prefix = str(member["document_number"] or "").split("/", 1)[0]
+        if prefix.isdigit():
+            wahlperioden.setdefault(member["mp_id"], set()).add(int(prefix))
+    return vote_ids, wahlperioden
 
 
 def _assign(conn: sqlite3.Connection, record: str, person: str) -> None:

@@ -317,6 +317,77 @@ class EvidenceDecisionTests(EvidenceHelpers, unittest.TestCase):
                 self.assertEqual(sorted(sorted(r["id"] for r in m) for m in components.values()),
                                  [["afd", "aw"], ["free-new"], ["free-old"]])
 
+    @staticmethod
+    def _member_number_rows(*voters):
+        """A speaker anchor and one roll-call record per (profile URL, Wahlperioden of its votes)."""
+        def row(rid, pairs, **kw):
+            return dict(id=rid, display_name=pairs[0][0], party=pairs[0][1], pairs=[list(p) for p in pairs], person_id=rid, live=True, **kw)
+        rows = [row("a", [("Ada Example", "SPD")], xml_redner_id="1")]
+        for index, (url, wahlperioden) in enumerate(voters):
+            extra = {"vote_wahlperioden": set(wahlperioden)} if wahlperioden is not None else {}
+            rows.append(row(f"v{index}", [("Example, Ada", "SPD")], vote_ids={f"vote-{index}"}, profile_url=url, **extra))
+        return rows
+
+    # Value: protects=bundestag.de gives one MdB a new member number per Wahlperiode, and links one number under /biografien/ and /biografien20/, so two roll-call records of one name+party conflict only when they hold different numbers in the same Wahlperiode; fails_when=voter profile URLs are compared as strings across Wahlperioden (the 423 persons the WP 18/19 links split in the A3 pilot) or within one; why_new=A3 Phase 4 owner decision C (2026-10-29), measured on full: no number in two Wahlperioden, none of 2,148 records with two numbers in one; seam=none
+    def test_bundestag_member_numbers_conflict_only_within_one_wahlperiode(self):
+        bio = "https://www.bundestag.de/abgeordnete/biografien/E/example_ada-{}?subview=na"
+        bio20 = "https://www.bundestag.de/abgeordnete/biografien20/E/example_ada-{}?subview=na"
+        cases = {
+            "a new number in the next Wahlperiode": ([(bio20.format(857000), {20}), (bio.format(1043000), {21})], 1),
+            "one number under both WP 20 paths": ([(bio.format(857000), {20}), (bio20.format(857000), {20})], 1),
+            "a WP 18 redirect and a WP 21 biography": ([("https://www.bundestag.de/redirect/258124?subview=na", {18}), (bio.format(1043380), {21})], 1),
+            "a name change keeps the number": ([(bio.format(1045564), {21}), (bio.format(1045564).replace("example_ada", "beispiel_ada"), {21})], 1),
+            "two numbers in one Wahlperiode": ([(bio.format(857000), {20}), (bio.format(857001), {20})], 3),
+            "two WP 18 redirects": ([("https://www.bundestag.de/redirect/258124?subview=na", {18}), ("https://www.bundestag.de/redirect/258125?subview=na", {18})], 3),
+            "no Wahlperiode known compares across all": ([(bio20.format(857000), None), (bio.format(1043000), None)], 3),
+        }
+        for label, (voters, expected) in cases.items():
+            for order in itertools.permutations(self._member_number_rows(*voters)):
+                with self.subTest(label, order=[r["id"] for r in order]):
+                    components, _ = registry.match_rows(list(order))
+                    self.assertEqual(len(components), expected)
+
+    # Value: protects=a WP 19 web-archive link is no identity evidence, because the archive links one MdB under two numbers in one Wahlperiode (517852-517852 and akbulut_goekay-857082; 449 of 731 pilot members); fails_when=archive numbers are compared and split WP 19 voters from their person; why_new=A3 Phase 4 owner decision C (2026-10-29); seam=none
+    def test_web_archive_links_are_no_profile_evidence(self):
+        archive = "https://www.bundestag.de/webarchiv/abgeordnete/biografien19/A/{}?subview=na"
+        rows = self._member_number_rows((archive.format("517852-517852"), {19}), (archive.format("akbulut_goekay-857082"), {19}))
+        components, _ = registry.match_rows(rows)
+        self.assertEqual(len(components), 1)
+
+    # Value: protects=the member number is read from every bundestag.de biography form and from nothing else; fails_when=a slug digit, an archive link, another host or a non-biography path yields a number; why_new=A3 Phase 4 owner decision C (2026-10-29); seam=none
+    def test_member_number_forms(self):
+        cases = {
+            "https://www.bundestag.de/abgeordnete/biografien/K/krampe_jan-1045564?subview=na": "1045564",
+            "https://www.bundestag.de/abgeordnete/biografien20/W/warken_nina-858188": "858188",
+            "https://www.bundestag.de/redirect/258124?subview=na": "258124",
+            "https://bundestag.de/redirect/258124": "258124",
+            "https://www.bundestag.de/webarchiv/abgeordnete/biografien19/A/akbulut_goekay-857082?subview=na": None,
+            "https://www.bundestag.de/redirect/parlament": None,
+            "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853": None,
+            "https://www.abgeordnetenwatch.de/profile/jan-koestering": None,
+            "https://evil.example/abgeordnete/biografien/K/x-1": None,
+        }
+        for url, expected in cases.items():
+            with self.subTest(url):
+                self.assertEqual(registry.bundestag_member_number(url), expected)
+
+    # Value: protects=the registry reads each record's Wahlperioden from the protocols of the roll calls it voted in; fails_when=vote_wahlperioden stays empty in a real build and the number rule silently falls back to comparing across all Wahlperioden; why_new=A3 Phase 4 owner decision C (2026-10-29); seam=none
+    def test_vote_evidence_reads_the_wahlperiode_of_each_roll_call(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
+            CREATE TABLE protocols (id TEXT PRIMARY KEY, document_number TEXT);
+            CREATE TABLE votes (id TEXT PRIMARY KEY, protocol_id TEXT);
+            CREATE TABLE vote_members (vote_id TEXT, mp_id TEXT);
+            INSERT INTO protocols VALUES ('p20', '20/63'), ('p21', '21/90');
+            INSERT INTO votes VALUES ('x', 'p20'), ('y', 'p21'), ('z', NULL);
+            INSERT INTO vote_members VALUES ('x', 'm1'), ('y', 'm1'), ('z', 'm2');
+        """)
+        vote_ids, wahlperioden = registry._vote_evidence(conn)
+        self.assertEqual(vote_ids, {"m1": {"x", "y"}, "m2": {"z"}})
+        self.assertEqual(wahlperioden, {"m1": {20, 21}})
+
     # Value: protects=a roll-call record whose name+party is ambiguous between several anchors in one of its buckets joins none, however unambiguous its other bucket is; fails_when=only buckets with exactly one anchor count as candidates; why_new=the pass-3 candidate collection ignored buckets it could not attach in; seam=none
     def test_an_ambiguous_bucket_vetoes_a_roll_call_record_with_several_parties(self):
         def row(rid, pairs, **kw):
