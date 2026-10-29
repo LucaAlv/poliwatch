@@ -314,6 +314,10 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
+## Fakten
+
+Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
+
 ### Fakt der Woche, rasterize and post one card
 
 **What:** Open a published Fakt der Woche card, rasterise it with `qlmanage` (or equivalent), and post it. The one A1 "done when" criterion that isn't code - split out on its own so it doesn't keep a fully-shipped engineering item sitting open.
@@ -1064,10 +1068,6 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
-
-## Fakten
-
-Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
 
 ### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
 
