@@ -73,7 +73,7 @@ def cache(abstract="", nummern=None, texte=None):
         "version": 1,
         "vorgaenge": {"vorgang-1": {"sachgebiet": ["Recht"], "titel": "Testgesetz", "abstract": abstract}},
         "dokumentnummern": {"20/123": ["vorgang-1"]},
-        antrag_text.CACHE_KEY: {
+        antrag_text.CACHE_NAMESPACE: {
             "version": 1,
             "nummern": {"20/123": [drucksache()]} if nummern is None else nummern,
             "texte": {"D1": {"text": ANTRAG}} if texte is None else texte,
@@ -129,6 +129,12 @@ class RealDrucksacheTests(unittest.TestCase):
 class DipTextTests(unittest.TestCase):
     """Real DIP ``drucksache-text`` bodies (2026-10-29), each kept for one trap the
     text layer sets; provenance in a1-source-manifest.json."""
+
+    def test_a_stranded_elision_hyphen_stays_with_its_word(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-2100224.txt"))
+        self.assertIn("Steuerzahler und -zahlerinnen", forderung.demands[5])
+        self.assertEqual(len(forderung.demands), 10)
+        self.assertEqual(antrag_text._join("ein Einschub -", "bleibt getrennt"), "ein Einschub - bleibt getrennt")
 
     # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
     def test_a_repeated_page_head_is_dropped(self) -> None:
@@ -270,7 +276,7 @@ class CacheFileTests(unittest.TestCase):
     # Value: protects=the cache round-trips and an unchanged save is byte-identical (A3's unchanged-replay gate, R2), and the Vorgang cache file never carries the texts; fails_when=gzip writes a timestamp or the texts leak into dip-vorgang-cache.json; why_new=antrag_text is new; seam=none
     def test_round_trip_and_stable_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            texts = cache()[antrag_text.CACHE_KEY]
+            texts = cache()[antrag_text.CACHE_NAMESPACE]
             antrag_text.save_cache(tmp, texts)
             first = antrag_text.cache_path(tmp).read_bytes()
             loaded = antrag_text.load_cache(tmp)
@@ -279,7 +285,7 @@ class CacheFileTests(unittest.TestCase):
             self.assertEqual(antrag_text.cache_path(tmp).read_bytes(), first)
             self.assertEqual(loaded["texte"], {"D1": {"text": ANTRAG}})
             politikfelder.save_cache(tmp, cache())
-            self.assertNotIn(antrag_text.CACHE_KEY, json.loads(politikfelder.cache_path(tmp).read_text()))
+            self.assertNotIn(antrag_text.CACHE_NAMESPACE, json.loads(politikfelder.cache_path(tmp).read_text()))
 
     # Value: protects=a corrupt file reads as empty with a warning, never a crash; fails_when=load raises; why_new=antrag_text is new; seam=none
     def test_a_corrupt_file_reads_as_empty(self) -> None:
@@ -415,7 +421,7 @@ class PersistTests(unittest.TestCase):
         conn.commit()
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM vote_passages").fetchone()[0], 2)
         one_lost = copy.deepcopy(two)
-        del one_lost[antrag_text.CACHE_KEY]["texte"]["D2"]
+        del one_lost[antrag_text.CACHE_NAMESPACE]["texte"]["D2"]
         self.assertEqual(antrag_text.report_vote_passages(rep, one_lost)["12345"].state, "extracted")
         with self.assertRaisesRegex(build.DatabaseRebuildError, r"1 known Antrag passages.*'20/124'"):
             build.require_vorgang_cache_for_tags(path, one_lost, path.parent.parent, [{"report": rep}])
@@ -477,6 +483,14 @@ class PanelTests(unittest.TestCase):
         self.assertIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages, "vorgang-2"))
         self.assertNotIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages, "vorgang-3"))
         self.assertIn("Antragstext nicht abgerufen", votes_feature._abstractless_body(passages._replace(metadata_missing=True), "vorgang-3"))
+        for partial in (
+            result._replace(metadata_missing=True),
+            result._replace(by_vorgang={"vorgang-1": [*result.by_vorgang["vorgang-1"], missing._replace(vorgang_id="vorgang-1")]}),
+        ):
+            body = votes_feature._abstractless_body(partial, "vorgang-1")
+            self.assertIn('class="vote-context-quote"', body)
+            self.assertIn("Antragstext nicht abgerufen", body)
+            self.assertNotIn("Keine Beschreibung in DIP", body)
 
     # Value: protects=without a quote the gap stays honest: "no description" when DIP has none, plus a note when the text is only not fetched; fails_when=a cache miss reads as a final gap; why_new=antrag_text is new; seam=none
     def test_gaps(self) -> None:

@@ -88,5 +88,11 @@
     "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/67431",
     "source_sha256": "39143c1dfd0a66cbc0a38e18c98c189dbeeae54a56dfde758a195e7beab26252",
     "editing": "Unedited `text` field of the DIP drucksache-text record 67431 (Drucksache 18/12797), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: adverb before the object."
+  },
+  {
+    "fixture": "antrag-text/dip-2100224.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/279507",
+    "source_sha256": "04eee67affcbfc889945396feb6ba9da12dfb0a328a7034e0c39f952acee079c",
+    "editing": "Unedited text field of DIP Drucksache 21/224, fetched 2026-10-29. Verified against https://dserver.bundestag.de/btd/21/002/2100224.pdf, page 3; a leading elision hyphen is stranded after und at a DIP line end."
   }
 ]

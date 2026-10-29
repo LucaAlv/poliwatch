@@ -1681,9 +1681,9 @@ def refresh_drucksache_texts(
     a miss and the stage stops after VORGANG_FETCH_MAX_FAILURES in a row. The
     cache file is written only when something was fetched."""
     # Read from disk if the caller's cache came without it, so a save never drops entries.
-    if antrag_text.CACHE_KEY not in cache:
-        cache[antrag_text.CACHE_KEY] = antrag_text.load_cache(output_dir)
-    texts_cache = cache[antrag_text.CACHE_KEY]
+    if antrag_text.CACHE_NAMESPACE not in cache:
+        cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
+    texts_cache = cache[antrag_text.CACHE_NAMESPACE]
     changed = False
 
     def save() -> None:
@@ -11996,7 +11996,7 @@ def main() -> int:
     try:
         vorgang_cache = politikfelder.load_cache(output_dir)
         # The Antrag texts a vote's "Worum es geht" quotes ride along in memory.
-        vorgang_cache[antrag_text.CACHE_KEY] = antrag_text.load_cache(output_dir)
+        vorgang_cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
     except politikfelder.CacheLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

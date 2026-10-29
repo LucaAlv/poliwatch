@@ -10,7 +10,7 @@ docs/plans/b4-extractive-antrag.md).
 Inputs are two parts of a separate cache (``data/dip-drucksache-text-cache.json.gz``,
 filled by the online build): ``nummern``, the DIP metadata of each Bundestag
 Drucksache number a vote names, and ``texte``, the full DIP text of the Anträge
-among them. In memory the cache rides in the Vorgang cache under ``CACHE_KEY``,
+among them. In memory the cache rides in the Vorgang cache under ``CACHE_NAMESPACE``,
 so it reaches persist and render wherever the Vorgang cache does. The passage is
 derived at persist and render time and never written into a report, so a change
 to ``extract_forderung`` reaches the store with ``--offline --repersist``.
@@ -35,9 +35,9 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 6
+EXTRACTOR_VERSION = 7
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
-CACHE_KEY = "drucksachen"
+CACHE_NAMESPACE = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
 #: The Drucksache types whose demands are quoted.
 PASSAGE_TYPES: tuple[str, ...] = ("Antrag", "Entschließungsantrag")
@@ -219,6 +219,9 @@ def _join(previous: str, line: str, lexicon: frozenset[str] = frozenset()) -> st
     (``_Uncertain``). A number is never hyphenated, so after a digit, and before a
     capital or a digit, the hyphen is part of the word and the lines join without a
     space (E-Mobilität, CO2-neutral, 49-Euro-Ticket)."""
+    # A leading elision hyphen can be stranded after a conjunction (21/224).
+    if previous.endswith(" und -") and line[:1].islower():
+        return previous + line
     if previous.endswith("-") and len(previous) > 1 and previous[-2].isalnum():
         word = line.split(None, 1)[0] if line.split() else ""
         if word[:1].islower():
@@ -418,7 +421,7 @@ def drucksache_record(document: Mapping[str, Any]) -> dict[str, Any] | None:
 
 
 def _drucksachen(vorgang_cache: Mapping[str, Any]) -> Mapping[str, Any]:
-    return vorgang_cache.get(CACHE_KEY) or empty_cache()
+    return vorgang_cache.get(CACHE_NAMESPACE) or empty_cache()
 
 
 def _abstractless_vorgaenge(context: politikfelder.VoteContext, vorgang_cache: Mapping[str, Any]) -> list[str]:

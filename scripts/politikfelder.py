@@ -261,7 +261,7 @@ def cache_path(output_dir: Path | str) -> Path:
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     """Write the cache atomically (``write_atomic``). Only the Vorgang cache's own
     keys are written: the Drucksache texts that ride along in memory
-    (``antrag_text.CACHE_KEY``) have their own file."""
+    (``antrag_text.CACHE_NAMESPACE``) have their own file."""
     own = {key: cache[key] for key in ("version", "vorgaenge", "dokumentnummern") if key in cache}
     text = json.dumps(own, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     write_atomic(cache_path(output_dir), text.encode("utf-8"))
