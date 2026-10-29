@@ -461,6 +461,8 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [A1 source and scratch validation](docs/plans/a1-validation.md), [A1/A2 coordination contract](docs/plans/a1-a2-contract.md), and [ADR 0002](docs/adr/0002-kurzinterventionen-are-not-reden.md) — source coverage, persistence/replay boundaries, and the Rede/Beitrag counting decision.
 - [Politikfelder fetch and replay hardening](docs/plans/politikfelder-hardening.md) — implementation scope and verification record.
 - [B4 vote lead and Bundestag report link](docs/plans/b4-vote-lead-and-article.md) — implementation scope; [source validation](docs/research/b4-vote-lead-validation.md) records the acquisition, replay, export, and browser checks.
+- [Quoted Antrag context fallback](docs/plans/b4-extractive-antrag.md) — implementation and open acceptance gate; its [research note](docs/research/b4-antrag-extraction.md) records coverage, quotation-fidelity findings, and reproduction details.
+- [Runtime architecture diagram](docs/bundestag-puls-architecture.html) — generated overview of the build, data, and served-site flow.
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.

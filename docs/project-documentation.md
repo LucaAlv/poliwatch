@@ -565,7 +565,7 @@ scripts/preview_dip_pulse_site.sh
 python3 scripts/build_dip_pulse_site.py --offline
 ```
 
-When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (7), including one without `votes.debate_url`, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
+When persistence is enabled and the store exists, an offline build opens it read-only and checks it with `require_current_schema` before reading MP data. The check never writes: it does not create tables, add columns or migrate. A store from before the current schema (8), including one without `votes.debate_url` or the quoted Antrag-passage fields, or one with an incomplete person registry, is refused. For an old schema the error names the `--offline --repersist` upgrade, which rebuilds the store from the cached reports ([docs/stable-ids.md](stable-ids.md)).
 
 A vote with no attributable official result uses a derived ordinary majority only when the procedure allows it. Grundgesetz amendments, Vertrauensfragen, constructive no-confidence votes and Kanzlerwahlen remain unknown without an official result because their threshold depends on membership totals. For a confirmed recommendation to reject an Antrag, `result_raw` still describes the voted recommendation; the separate nullable `inverted` field records the interpretation evidence, and the Antrag outcome reverses `result_raw` unless `result_scope = 'application'` says the official result already describes the Antrag. `result_raw`, `result_source`, `result_scope`, `inverted`, `inversion_source` and `inversion_excerpt` are exported with `votes`.
 
@@ -633,6 +633,7 @@ When persistence is enabled, the build stages a fresh `data/bundestag-pulse.sqli
 - `agenda_item_politikfelder` and `vote_politikfelder` (the 1 to 3 Politikfelder of each TOP and vote, or one `untagged` row, with `rank` and `source`; derived by `scripts/politikfelder.py` from the DIP Sachgebiet labels in `proceedings.sachgebiet`, never by a model; see "Politikfelder" in CONTEXT.md)
 - `vote_proceedings` (the DIP Vorgänge a vote is about, ranked: the Vorgänge its Drucksache numbers name narrowly, at most two per number, narrowed to its TOPs' Vorgänge where they meet; `votes.context_state` says `resolved`, `none` or `not_fetched`; derived by `politikfelder.vote_vorgang_ids`)
 - `vote_documents`
+- `vote_passages` (ranked candidate Antrag documents per vote; extraction state is stored on the document)
 - `vote_fractions`
 - `vote_members`
 - `fact_metrics`

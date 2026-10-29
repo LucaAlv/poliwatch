@@ -1,6 +1,6 @@
 # B4 follow-up: extractive "Worum es geht" from the Antrag itself
 
-Planned and implemented (steps 1–4) 2026-10-28; step 0 and step 5 open, see "Implementation status". Scope: the open bullet "Extractive fallback from the Antrag itself" of [Abstimmungen for the daily view](../../TODOS.md#abstimmungen-for-the-daily-view-what-was-decided-by-topic-with-dissenters). Base: `main` at `71ade83` (v0.23.0.0, #111). Coordinated with A3 ([a3-coverage.md](https://github.com/LucaAlv/poliwatch/blob/worktree-a3-plan/docs/plans/a3-coverage.md) on `worktree-a3-plan`), see "A3 coordination".
+Steps 1–4 implemented 2026-10-28; local measurement and reference validation executed 2026-10-29. The acceptance gate fails; follow-ups remain open, see "Local validation outcome". Scope: the open bullet "Extractive fallback from the Antrag itself" of [Abstimmungen for the daily view](../../TODOS.md#abstimmungen-for-the-daily-view-what-was-decided-by-topic-with-dissenters). Base: `main` at `71ade83` (v0.23.0.0, #111). Coordinated with A3 ([a3-coverage.md](https://github.com/LucaAlv/poliwatch/blob/worktree-a3-plan/docs/plans/a3-coverage.md) on `worktree-a3-plan`), see "A3 coordination".
 
 ## Problem
 
@@ -201,3 +201,12 @@ Partial: PDFs only, no DIP text and no reference store. [Research note](../resea
 ## Step 0, run 2 on DIP's text (2026-10-29)
 
 [Research note, run 2](../research/b4-antrag-extraction.md#run-2-dip-drucksache-text-2026-10-29). The API assumptions above hold. DIP's text keeps list order, so D3 is decided: DIP text stays the source. Three traps in it are now handled (repeated page head, advance-copy watermark, footnote inside the passage → no quote), and the anchor accepts "fordert daher die Bundesregierung auf". On 37 Fraktion and Gruppe Anträge: 32 quoted, none known to be wrong; 89 % of those that have a demands section, just under the 90 % gate. `EXTRACTOR_VERSION` 5. Open: the reference store's abstract-less votes, and the inverted anchor form (D5, 2 of 37).
+
+
+## Local validation outcome (2026-10-29)
+
+Step 0 and step 5 were executed locally on isolated reference copies; acceptance remains **open**, not waived. [Run 3 evidence and reproduction](../research/b4-antrag-extraction.md#run-3-local-reference-and-mid-period-validation-2026-10-29), [91-document audit](../research/b4-local-audit-2026-10-29.csv). The historical description count is confirmed: **153/217 → 196/217**, while all-candidate extraction is **50/71 (70.4%)**, or **50/68 (73.5%)** with a verified demands section. The 64 wholly abstract-less votes yield **43/60** eligible documents, or **43/59** demand-bearing documents. Reference quotes are correct after the small v7 elision-hyphen layout correction.
+
+The mid-period WP 18/19 sample has 20 candidates, 16 demand sections and 16 nominal extractions; **three quotations are incorrect** (`18/2742`, `18/3154`, `19/16794`). This both qualifies D3 (older source layers still lose structure) and prevents the zero-incorrect claim from extending beyond the reference corpus. No broader anchors or footnotes were implemented. Empty bodies: 0/91, so the conditional retry-on-update fix was not needed.
+
+Protected-field stable-ID comparisons use an offline replay control: old null interpretation fields are filled equally with and without fallback; tallies, tags, abstracts and links are unchanged by enrichment. Final export/browser/check evidence is recorded in the research note. `/review` ran with native adversarial review; optional Claude coverage was blocked by automatic approval review. The TODO remains open for a fidelity follow-up, then measured anchor coverage. No commit/push/merge/deploy is part of this handoff.
