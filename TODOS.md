@@ -478,16 +478,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** None
 
-### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
-
-**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
-
-**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Fraktionsblöcke: what each Fraktion argued, per Tagesordnungspunkt
 
 **What:** Under every debated TOP, a block per Fraktion in the fixed order CDU/CSU, AfD, SPD, Bündnis 90/Die Grünen, Die Linke, fraktionslos (plus Bundesregierung when a minister spoke), each with up to three arguments paraphrased in indirect speech, each argument tied to a verbatim protocol quote ≤125 characters with a page anchor; a Fraktion without a speech gets the explicit line "kein Redebeitrag im Protokoll", never an empty block. Done when the order is enforced in code, every quote passes the verbatim check from the validators item, and the block renders on a full-week offline rebuild.
@@ -1027,6 +1017,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
+
+**Completed:** v0.23.6.0 (2026-10-29). The fix suggested below ("at least 3 digits before the slash") would have rejected every real number ("21/6561"). Instead the vote pages' own pattern (`validate_dip_protocol._DOCUMENT_NUMBER_RE`, no longer an alias of `derive.DOCUMENT_NUMBER_RE`) needs a two-digit Wahlperiode: bundestag.de lists namentliche Abstimmungen from WP 17 and structured XML starts at WP 18. That covers every vote-page site with one rule: the outcome mismatch check, the block identification by documents, the trailing-outcome paragraph, the DIP title evidence, the chair's announcements, and `parse_roll_call_list_page`, where a "2/3" in a teaser would have joined the vote's `document_numbers` and reached `vote_documents`. `derive.DOCUMENT_NUMBER_RE` (headings of every Wahlperiode) is unchanged and still filtered by `plausible_document_number`. No stored vote moves until it is re-acquired: `official_result` is computed at fetch time and a repersist keeps it; no fixture or live page checked so far uses the shape.
+
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+
+**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### A Drucksache reference can be a URL fragment
 

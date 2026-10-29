@@ -353,6 +353,12 @@ class ValidateDipProtocolParserTests(unittest.TestCase):
             ],
         )
 
+    def test_a_fractional_majority_in_the_teaser_is_no_document_number(self) -> None:
+        html = (FIXTURES / "roll_call_list.html").read_text(encoding="utf-8").replace(
+            "20/123 und 20/456.", "20/123 und 20/456 mit der erforderlichen 2/3-Mehrheit (3/4 im Bundesrat)."
+        )
+        self.assertEqual(dip.parse_roll_call_list_page(html)[0]["document_numbers"], ["20/123", "20/456"])
+
     def test_parse_roll_call_list_page(self) -> None:
         entries = dip.parse_roll_call_list_page((FIXTURES / "roll_call_list.html").read_text(encoding="utf-8"))
 
