@@ -28,7 +28,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **D. Before anything goes public**
 - Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
-- The release: "Write the release script", "Codebook (`DATA.md`) and recipe result CSVs in the release", "Public data changelog per release", "A DOI per release and a citation file".
+- The release: "Write the release script", "Public data changelog per release", "A DOI per release and a citation file". Codebook/recipe-CSV generation is implemented (2026-10-29; see Completed); uploading the artifacts still belongs to the release script.
 - Hosting: "Site hosting plan for the 2.5 GB generated site". WP 18 and 19 make it larger.
 
 **Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B/C, and the Puls and copy fixes, which stay at their own priorities. WP 1–17, which have no structured XML in the DIP catalog, come after v1.
@@ -132,16 +132,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Effort:** S
 **Priority:** P2
 **Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
-
-### Codebook (`DATA.md`) and recipe result CSVs in the release
-
-**What:** A codebook (`DATA.md`) in every release: each table and column with its meaning, unit, source (DIP, Plenarprotokoll XML, bundestag.de, abgeordnetenwatch) and licence layer; the counting rules (what counts as a Rede, Sitzung mit Dossier, completeness) quoted from CONTEXT.md and the ADRs; coverage per Wahlperiode; known gaps; how to cite. Also per-recipe result CSVs. Most of the explanatory prose on the Daten page today belongs here, so that it is versioned with the data it describes.
-
-**Why:** A researcher needs the definitions of the release they cite, not of today's site (PRODUCT.md, 2026-09-30). Originally scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
-
-**Effort:** S–M
-**Priority:** P2 (raised 2026-09-30: part of a citable release)
-**Depends on:** None
 
 ### Validate remote-manifest recipes before showing their SQL
 
@@ -1078,6 +1068,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Codebook (`DATA.md`) and recipe result CSVs in the release
+
+**What:** A codebook (`DATA.md`) in every release: each table and column with its meaning, unit, source (DIP, Plenarprotokoll XML, bundestag.de, abgeordnetenwatch) and licence layer; the counting rules (what counts as a Rede, Sitzung mit Dossier, completeness) quoted from CONTEXT.md and the ADRs; coverage per Wahlperiode; known gaps; how to cite. Also per-recipe result CSVs. Most of the explanatory prose on the Daten page today belongs here, so that it is versioned with the data it describes.
+
+**Why:** A researcher needs the definitions of the release they cite, not of today's site (PRODUCT.md, 2026-09-30). Originally scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+
+**Effort:** S–M
+**Priority:** P2 (raised 2026-09-30: part of a citable release)
+**Depends on:** None
+
+**Completed:** 2026-10-29 (implementation; release upload remains separate). Export format 9 generates German `DATA.md` from an authored 29-table/238-column dictionary and methods/licence inputs, plus all six recipe result CSVs in SQL column order. The typed manifest inventories every asset with size/checksum and recipe references; the Daten page links the codebook and CSVs while preserving HTML column order; manifests of another export format are rejected. Input hashes invalidate stale generations, and staged failures preserve the previous publication. Full suite after the second review round: 1,572 tests, two skipped. Before that round: 347 focused export/page/pipeline tests, browser checks and offline demo checks passed. Fixture smoke verified 36 artifact links, sizes and checksums and replayed all six CSVs. See [implementation plan](docs/plans/d-codebook-recipe-csvs.md). Uploader, redistribution decisions, DOI/citation, changelog, hosting and acquisition work remain open.
 
 ### Week comparison with no basis still draws every n/a slot
 

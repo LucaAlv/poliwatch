@@ -6,6 +6,8 @@ The Daten page's download panel and manifest (`data/exports/datenstand.json`, fi
 
 This file is the long-form counterpart of that string. It is copied into a public release as `LICENSE-DATA.md` (`scripts/publish_dip_pulse_data.sh`, a separate PR), and that publish step refuses to run while the licence string is empty.
 
+Everything from „Short string“ on is also embedded unchanged, headings one level down, in each export's `DATA.md` (`_license_notice` in `scripts/build_dip_pulse_site.py`). This status note and the paragraphs above it are for maintainers and stay out of `DATA.md`; keep researcher-facing text below the first `##` heading.
+
 ## Short string
 
 > Quelldaten: Deutscher Bundestag/Bundesrat – DIP (Nutzungsbedingungen DIP) und Deutscher Bundestag (namentliche Abstimmungen); Profildaten: abgeordnetenwatch.de (CC0 1.0); eigene Auswertungen: CC BY 4.0 (Namensnennung: Bundestag-Puls, Luca Veh). Aufbereitet und verändert; Details in LICENSE-DATA.md.
