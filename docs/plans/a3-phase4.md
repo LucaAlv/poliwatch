@@ -29,9 +29,10 @@ Store counts are unchanged by the replay: 716 protocols, 54,718 speeches, 42,465
 The replayed store (`gate-full`) and the fresh store (`gate-scratch/fresh`) were compared binding by binding.
 
 1. **One person is split in the replayed store.** The fresh build joins four records into one person with 121 bindings, but the replayed store keeps them as four persons. This explains all of the 4,168 − 4,165 = 3 gap.
-   - The person is Jan Köstering (formerly Jan Krampe), Die Linke.
+   - The person is Jan Krampe (formerly Jan Köstering), Die Linke, WP 21. Roll-call votes carry the Köstering URL from 2025-06-25 to 2026-07-10 and the Krampe URL from 2026-09-24 to 2026-10-15 (63 and 16 votes). Both URLs are `/biografien/` URLs of the same Wahlperiode.
+   - `full` itself shows the same four persons. The split is in the store A3 built, not an artefact of the gate's replay.
    - The four records are `dip:8257` "Jan Krampe, MdB" (1 binding), `aw:178656` (41), profile `…/koestering_jan-1045564` (63) and profile `…/krampe_jan-1045564` (16).
-   - The two bundestag.de profile URLs carry the same member number 1045564 and differ only in the name slug. This is the same shape as the open identity finding (differing voter URLs count as different people).
+   - The two bundestag.de profile URLs carry the same member number 1045564 and differ only in the name slug. This is the same shape as the open identity finding (differing voter URLs count as different people). A rule that lets differing URLs conflict only within one Wahlperiode would still split him, because both URLs are from WP 21. Comparing by member number would join him.
    - In `baseline`, `aw:178656` and the Köstering profile were one person. So on this store, A3 newly separates his speeches (`aw:178656`) from his roll-call votes (profile). The fresh build has the more correct grouping.
    - The replayed store does not heal: the registry carries its earlier grouping forward.
 2. **295 persons hold only retired bindings.** The replayed store has 494 bindings that no fresh build produces.
@@ -51,7 +52,11 @@ The gate's own comparison excludes retired bindings, so finding 2 does not make 
   - half then full: 783 s;
   - unchanged replay: 974 s;
   - publication check: 212 s.
-- Largest RSS: 5.59 GB (`/usr/bin/time -l`). Phase 0 measured 2.59 GB on 290 reports, so memory grows about linearly with the store.
+- Memory:
+  - Largest single process: 5.59 GB maxrss (`/usr/bin/time -l` reports the largest child).
+  - During the first replay, the gate and its child together showed about 7 GB.
+  - Phase 0 measured 2.59 GB on 290 reports, so memory grows about linearly with the store. Size a runner for at least 8 GB.
+- `full` itself also has 295 orphan persons (4,463 persons).
 - Disk: 19 GB free at the end. The gate scratch (7.4 GB) and `gate-full` (5.4 GB) are kept for the owner's inspection.
 
 ## Step 2: missing count. Purpose and cost, written before sending
