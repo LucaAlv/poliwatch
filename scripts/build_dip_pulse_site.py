@@ -3581,12 +3581,14 @@ def render_daten_recipes(
 ) -> str:
     blocks = []
     for recipe_row in manifest["recipes"]:
-        recipe = RECIPES_BY_ID.get(recipe_row["id"], {})
-        columns = recipe.get("columns", ())
+        # validate_manifest (an override) or the export itself (this build's
+        # manifest) guarantees every id is a local recipe with the same SQL.
+        recipe = RECIPES_BY_ID[recipe_row["id"]]
+        columns = recipe["columns"]
         visible_columns = [column for column in columns if not column.get("hidden")]
         rows = recipe_row["rows"]
         if not rows:
-            body = f'<p class="recipe-empty">{pulse_html.esc(recipe_row["empty_reason"] or "keine Daten in diesem Build")}</p>'
+            body = f'<p class="recipe-empty">{pulse_html.esc(recipe_row.get("empty_reason") or "keine Daten in diesem Build")}</p>'
         else:
             header = "".join(f"<th scope=\"col\">{pulse_html.esc(column['name'])}</th>" for column in visible_columns)
             body_rows = []
@@ -3637,7 +3639,7 @@ def render_daten_recipes(
             body = f"""
               <div class="table-scroll">
                 <table>
-                  <caption class="visually-hidden">{pulse_html.esc(recipe_row['title'])}</caption>
+                  <caption class="visually-hidden">{pulse_html.esc(recipe['title'])}</caption>
                   <thead><tr>{header}</tr></thead>
                   <tbody>{''.join(body_rows)}</tbody>
                 </table>
@@ -3649,8 +3651,8 @@ def render_daten_recipes(
             f"""
             <section class="recipe" aria-labelledby="{title_id}">
               <div class="recipe-sql">
-                <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
-                <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+                <h3 id="{title_id}">{pulse_html.esc(recipe['title'])}</h3>
+                <pre><code>{pulse_html.esc(recipe['sql'])}</code></pre>
                 <button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>
               </div>
               <div class="recipe-result">
@@ -11288,6 +11290,36 @@ _MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
 )
 
 
+# The Daten page shows each recipe's SQL next to its rows and offers it for
+# copying, so an override must carry exactly this build's recipes: the rows
+# came from the manifest's SQL, and showing any other SQL beside them (local or
+# tampered, sqlite3 dot-commands included) would misstate where they came from.
+# Titles are display copy and come from RECIPES, like recipes_hash ignores them.
+def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
+    if not all(
+        isinstance(r, dict)
+        and isinstance(r.get("id"), str)
+        and isinstance(r.get("rows"), list)
+        and (r.get("empty_reason") is None or isinstance(r.get("empty_reason"), str))
+        for r in recipes
+    ):
+        return ["recipes[] entries need id, rows and empty_reason (text or null)"]
+    problems = []
+    for index, recipe in enumerate(recipes):
+        local = RECIPES_BY_ID.get(recipe["id"])
+        if local is None:
+            problems.append(f"recipes[{index}] id {recipe['id']!r} is not a recipe of this build")
+        elif recipe.get("sql") != local["sql"]:
+            problems.append(
+                f"recipes[{index}] ({recipe['id']}) SQL differs from this build's; export the data with this version of the code"
+            )
+    ids = [recipe["id"] for recipe in recipes]
+    expected = [recipe["id"] for recipe in RECIPES]
+    if not problems and ids != expected:
+        problems.append(f"recipes ids {ids} differ from this build's {expected}")
+    return problems
+
+
 def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         raise RuntimeError(f"error: --data-manifest {source} is not a JSON object")
@@ -11327,10 +11359,8 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
         isinstance(t, dict) and isinstance(t.get("name"), str) and isinstance(t.get("columns"), list) for t in manifest["tables"]
     ):
         problems.append("tables[] entries need name and columns")
-    if isinstance(manifest.get("recipes"), list) and not all(
-        isinstance(r, dict) and isinstance(r.get("id"), str) and isinstance(r.get("rows"), list) for r in manifest["recipes"]
-    ):
-        problems.append("recipes[] entries need id and rows")
+    if isinstance(manifest.get("recipes"), list):
+        problems.extend(_manifest_recipe_problems(manifest["recipes"]))
     if problems:
         raise RuntimeError(f"error: --data-manifest {source} is not a usable Daten manifest: " + "; ".join(problems))
     return manifest

@@ -758,6 +758,11 @@ class CitationLabelTests(unittest.TestCase):
         markup = build_dip_pulse_site.render_daten_recipes(manifest, mp_lookup={}, document_numbers={"21/84"}, bill_slugs=set())
         self.assertIn("<td>BT-PlPr. 21/84</td>", markup)
         self.assertEqual(row["erste_drucksache"], "21/84")
+        # Title and SQL are this build's, never the manifest's text.
+        local = build_dip_pulse_site.RECIPES_BY_ID["r5-vorgaenge-meiste-reden"]
+        self.assertIn(f">{local['title']}</h3>", markup)
+        self.assertNotIn("SELECT ...", markup)
+        self.assertNotIn(">Test</h3>", markup)
 
 
 class CurrentPulseOrderTests(unittest.TestCase):
