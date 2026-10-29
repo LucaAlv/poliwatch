@@ -395,7 +395,7 @@ Developer payloads are separate from presentation and enrichment. Use `--include
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
-`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Sitzungswoche vor 13 Wochen"), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Woche mit Sitzung: vor 3 Wochen", or past four weeks a "Nicht aktuell" flag after the heading), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
 
 | Input | Effect |
 |---|---|

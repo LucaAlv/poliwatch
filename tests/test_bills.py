@@ -9,7 +9,6 @@ import argparse
 import json
 import sys
 import tempfile
-import unicodedata
 import unittest
 from pathlib import Path
 from html.parser import HTMLParser
@@ -78,6 +77,7 @@ def browser_fixture_bills() -> list[dict]:
         row["documents"].append({"dokumentnummer": "21/COHORT"})
     rows[1]["title"] = "Änderung des Gesetzes"
     rows[2]["title"] = "Änderung des Gesetzes"  # decomposed umlaut: German collation tie
+    rows[3]["title"] = "Gesetz 03 für Straße Café ẞ"
     rows[40]["latest_date"] = None
     rows[40]["documents"] = [{"dokumentnummer": "22/777"}]
     return rows
@@ -239,6 +239,36 @@ class CollectTests(unittest.TestCase):
         with self.assertRaises(build.publication.PublicationStateError):
             build.render_bill_detail(single)
 
+    # Value: protects=on a date tie the procedurally latest step is the bill's latest step whatever the insertion order: the sitting's Beratung over a Drucksache filed that day, the final Beratung over a same-day vote or Entschließungsantrag, a Gesetzesbeschluss over the 2. Beratung, and an unlisted Vorgangsposition over a same-day Drucksache; fails_when=the tie-break falls back to insertion order (documents first), so a Gesetzentwurf or Entschließungsantrag dated on the sitting day is shown as the latest step; why_new=the existing tie test dates its draft before the sitting, so the TODO's case was never exercised; seam=none; no_claim=the real DIP vocabulary beyond these kinds (measured on the cache separately)
+    def test_same_day_ties_rank_by_procedural_step(self) -> None:
+        def latest(vorgangsposition: str, doc_type: str, votes: list[dict] | None = None) -> str:
+            pos = dict(GESETZ, vorgangsposition=vorgangsposition)
+            doc = {"vorgang_id": "100", "dokumentnummer": "21/100", "drucksachetyp": doc_type, "datum": "2026-01-15"}
+            first = entry([pos], [doc])
+            first["report"]["agenda_items"][0]["votes"] = votes or []
+            bill = build.collect_bill_pages([first])[0]
+            self.assertEqual(bill["latest_date"], "2026-01-15")
+            return bill["latest_step"]
+
+        self.assertEqual(latest("1. Beratung", "Gesetzentwurf"), "1. Beratung")
+        self.assertEqual(latest("2. Beratung", "Gesetzesbeschluss"), "Gesetzesbeschluss")
+        self.assertEqual(latest("2. Beratung", "Entschließungsantrag"), "2. Beratung")
+        self.assertEqual(latest("2. Beratung", "Beschlussempfehlung und Bericht"), "2. Beratung")
+        self.assertEqual(latest("Abschließende Beratungen ohne Aussprache", "Gesetzentwurf"), "Abschließende Beratungen ohne Aussprache")
+        self.assertEqual(latest("Beratung", "Neuer Drucksachetyp"), "Beratung")
+        vote = {"id": "v1", "date": "2026-01-15", "title": "Gesetz zur Sache", "document_numbers": ["21/100"]}
+        self.assertEqual(latest("3. Beratung", "Beschlussempfehlung und Bericht", [vote]), "3. Beratung")
+        # The order the timeline is published in, not only its head.
+        pos = dict(GESETZ, vorgangsposition="3. Beratung")
+        docs = [
+            {"vorgang_id": "100", "dokumentnummer": "21/100", "drucksachetyp": "Gesetzentwurf", "datum": "2026-01-15"},
+            {"vorgang_id": "100", "dokumentnummer": "PlPr 21/5", "drucksachetyp": "Plenarprotokoll", "datum": "2026-01-15"},
+        ]
+        first = entry([pos], docs)
+        first["report"]["agenda_items"][0]["votes"] = [vote]
+        kinds = [event["kind"] for event in build.collect_bill_pages([first])[0]["events"]]
+        self.assertEqual(kinds, ["3. Beratung", "Namentliche Abstimmung", "Gesetzentwurf", "Plenarprotokoll"])
+
     # Value: protects=a same-day Plenarprotokoll document never becomes the latest step, and the published order matches the overview script's default (newest first, then German title order with numbers in numeric order); fails_when=date ties keep insertion order or titles sort Z-A/codepoint-wise, so the list reshuffles when the script runs; why_new=no collect test had same-date events or same-date bills; seam=none; no_claim=Intl.Collator parity beyond accents, case and digit runs
     def test_same_day_ties_pick_the_step_and_order_titles_like_the_overview_script(self) -> None:
         protocol_doc = {"vorgang_id": "100", "dokumentnummer": "PlPr 21/5", "drucksachetyp": "Plenarprotokoll", "datum": "2026-01-15"}
@@ -272,13 +302,21 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(len(bill["raw"]["agenda_items"]), 2)
         self.assertEqual(len(bill["protocol_refs"]), 2)
 
-    # Value: protects=search text is NFC, so a title stored with a decomposed umlaut is found by a typed composed query; fails_when=the build stops normalising data-search; why_new=search metadata tests used composed text only; seam=none; no_claim=the query-side normalisation in the browser script (bills_browser_check.js)
-    def test_search_metadata_is_nfc(self) -> None:
-        bills = browser_fixture_bills()[:3]
+    def test_search_metadata_folds_accents_and_sharp_s(self) -> None:
+        bills = browser_fixture_bills()[:4]
         markup = build.render_bills_index(bills)
-        searches = re.findall(r'data-search="([^"]*)"', markup)
-        self.assertTrue(all(value == unicodedata.normalize("NFC", value) for value in searches))
-        self.assertEqual(sum("änderung des gesetzes" in value for value in searches), 2)
+        parser = _Markup()
+        parser.feed(markup)
+        rows = [attrs for _, attrs in parser.nodes if "data-bill-row" in attrs]
+        self.assertEqual([row["data-search"] for row in rows], [
+            "gesetzesvorhaben 00 21/500 21/9876 21/cohort",
+            "anderung des gesetzes 21/501 21/cohort",
+            "anderung des gesetzes 21/502 21/cohort",
+            "gesetz 03 fur strasse cafe ss 21/503 21/cohort",
+        ])
+        for row, bill in zip(rows, bills):
+            self.assertEqual(row["data-title"], bill["title"])
+            self.assertIn(bill["title"], parser.text)
 
     # Value: protects=a bill page's speaker occurrence key equals the key the store bound, also for a speech with no rede_id; fails_when=the collector hashes the missing rede_id instead of the synthetic <protocol>:<item>:<sequence> id the store uses; why_new=no test collected bill pages from a speech without a rede_id; seam=none
     def test_a_speaker_without_a_rede_id_gets_the_synthetic_occurrence_key(self) -> None:

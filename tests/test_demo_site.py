@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import socket
 import tempfile
 import time
@@ -38,6 +39,25 @@ class DemoSiteTests(unittest.TestCase):
             self.assertEqual(manifest["domains"]["votes"]["acquisition_state"], "complete")
             self.assertEqual(manifest["domains"]["votes"]["presentation_state"], "domain_empty")
             self.assertTrue(manifest["domains"]["votes"]["attempted"])
+
+    # Value: protects=the demo's grouped Antrag TOP lists each Antrag's own title at equal weight on puls.html, as a real build does; fails_when=the fixture or extractor copies the joint "a) … b) …" heading into both titles, which collapses them into one bold .radar-title block; why_new=the demo was the only place the four-line block appeared; seam=none; no_claim=wording of real DIP titles beyond these two Drucksachen
+    def test_demo_radar_lists_each_antrag_title_not_the_joint_heading(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "site"
+            demo.build_demo(output)
+            markup = (output / "puls.html").read_text(encoding="utf-8")
+        row = markup.split('<li class="radar-row"')[1].split("</li>\n")[0]
+        self.assertNotIn('class="radar-title"', row)
+        # The joint heading stays only in the label link's tooltip.
+        self.assertNotIn("b) Beratung", re.search(r'<ul class="radar-titles">(.*?)</ul>', row, re.S).group(1))
+        self.assertEqual(
+            re.findall(r'<li class="radar-group-title">(.*?)</li>', row),
+            [
+                "Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze",
+                "Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination "
+                "für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten",
+            ],
+        )
 
     def test_development_demo_is_marked_and_not_deployable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
