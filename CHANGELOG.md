@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.3.0] - 2026-10-29
+
+### Fixed
+
+- The demo build's grouped Antrag TOP on puls.html lists each Antrag's own title instead of one bold block of the joint „a) … b) …“ agenda heading. The demo fixture had copied that heading into both titles; real builds were not affected.
+- `scripts/extract_demo_fixture.py` runs again: it passed bytes to the protocol parser, which now takes text.
+
 ## [0.23.2.0] - 2026-10-29
 
 ### Changed

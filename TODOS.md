@@ -304,11 +304,11 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Combined Antrag titles render as one four-line bold block on puls.html
+### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
 
-**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+**What:** `tests/fixtures/demo-report-21-84.json` holds 16 speeches for TOP 32 of Sitzung 21/84, but `scripts/extract_demo_fixture.py` run on the official XML (dserver `btp/21/21084.xml`) now finds 14 and stops at its guard ("expected 16 TOP 32 speeches"). Find which two are no longer Reden (most likely Kurzinterventionen or Erwiderungen, #68), then regenerate the fixture from the XML and update the guard and `test_demo_site.py`'s "16 Reden". The extractor's crash on bytes input (`parse_protocol_xml` takes text) was fixed in v0.23.3.0.
 
-**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+**Why:** The demo and every test built on it show a count the current rules would not publish, and the fixture can only be edited by hand until it is regenerated.
 
 **Effort:** S
 **Priority:** P3
@@ -1054,6 +1054,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Combined Antrag titles render as one four-line bold block on puls.html
+
+**Completed:** v0.23.3.0 (2026-10-29). The cause was the demo fixture, not the renderer: `scripts/extract_demo_fixture.py` copied the joint „a) … b) …“ agenda heading into both Anträge's DIP titles, so `topic_identity` saw one title, the row lost `equal_weight` and the heading became its bold `.radar-title`. The extractor now carries each Antrag's own title (`TITLES`, checked against the Drucksachen 21/6354 = a) and 21/4833 = b) on dserver and against the heading), the fixture's four `titel` fields follow, and the demo row lists both titles like a real build. Real data never had the block: each Vorgang has its own title, and the heading fallback is cut at 120 characters. Splitting titles on „a)“/„b)“ was rejected, since real titles cite „§ 3 Abs. 1 a)“.
+
+**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+
+**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Staleness of the "Aktueller Puls" week is only gray meta text
 
