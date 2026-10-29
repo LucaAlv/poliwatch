@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.6.0] - 2026-10-29
+
+### Fixed
+
+- puls.html's Redeanteil card is headed „Redeanteil der Fraktionen und Gruppen“ and lists every row. It stopped at eight before, so in a WP 21 week (up to ten rows) the Bundesrat or fraktionslos row could drop and the bars summed to less than 100 %. fraktionslos, Bundesregierung, Bundesrat, weitere Sprechrolle and Unbekannt now follow the Fraktionen and Gruppen below a rule, and a cut-short week's note reads „Zuordnung für N von M Reden erfasst“.
+- A dossier cached before the parser checked link hosts no longer shows a number read off a quoted news URL as a Drucksache (88/739016 from a syriahr.com link in 20/206), and the vote panel no longer takes such a link. Every reader of the XML Drucksache references applies the rule persist already used, so no stored figure moves.
+- On bundestag.de vote pages a fractional majority such as „2/3-Mehrheit“ is no longer read as a Drucksache number: it neither refuses an official outcome as naming another document nor joins a vote's documents from the roll-call list. No stored vote changes until it is fetched again, since the official outcome is read at fetch time.
+- A `--data-manifest` override must carry exactly this build's recipes (same ids in order, identical SQL); the Daten page takes each recipe's title and SQL from the build, so a tampered manifest cannot show other text as SQL next to the copy button. An override exported by code with different recipe SQL is refused with the recipe named; re-export it. A recipe without `empty_reason` no longer crashes the build.
+- A build stopped by a stale cached report prints the command that re-fetches that very sitting (`--document-number 21/82`, one flag per named sitting), and a refused vote shape names its TOP or `sitting_votes`. README no longer says a plain online update re-fetches a deleted report.
+
 ## [0.23.5.0] - 2026-10-29
 
 ### Fixed
