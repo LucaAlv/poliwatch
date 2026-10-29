@@ -179,6 +179,7 @@ class DatenPageTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "files is not list"):
             b.validate_manifest(manifest, "dict files")
 
+    # Value: protects=a --data-manifest with a bad sqlite size, repeated recipe id or table CSV list that does not match the tables is refused before rendering links to absent files; fails_when=those inventory checks are dropped; why_new=extends the table of inventory faults, which omitted these branches; seam=none; no_claim=remote fetch
     def test_new_manifest_rejects_missing_mistyped_or_malformed_inventory(self) -> None:
         def codebook(manifest):
             return next(file for file in manifest["files"] if file["kind"] == "codebook")
@@ -206,6 +207,10 @@ class DatenPageTests(unittest.TestCase):
             ("sqlite must be first", "sqlite, first", lambda m: m["files"].reverse()),
             ("row count mismatch", "rows mismatch", lambda m: recipe_file(m).update(rows=999)),
             ("duplicate columns", "unique column", lambda m: m["recipes"][0].update(columns=["id", "id"])),
+            ("bad unpacked bytes", "unpacked_bytes must", lambda m: m["files"][0].update(unpacked_bytes=-1)),
+            ("duplicate recipe id", "duplicate recipe id", lambda m: m["recipes"][1].update(id=m["recipes"][0]["id"])),
+            ("extra table csv", "table_csv inventory", lambda m: m["files"].append({**next(f for f in m["files"] if f["kind"] == "table_csv"), "name": "nosuch-local.csv.gz"})),
+            ("table csv not gzipped", "table_csv inventory", lambda m: next(f for f in m["files"] if f["kind"] == "table_csv").update(name="speeches-local.csv")),
         ]
         for bad_name in ("../DATA.md", "sub/DATA.md", "sub\\DATA.md", ".", "..", "", "DATA.md?query", "DATA.md#fragment", "bad\x00.md"):
             cases.append((bad_name, "plain file name", lambda m, name=bad_name: codebook(m).update(name=name)))

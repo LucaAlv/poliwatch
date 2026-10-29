@@ -13,6 +13,7 @@
     "scripts/politikfelder.py": ["tests/test_politikfelder.py"],
     "scripts/validate_dip_protocol.py": ["tests/test_politikfelder.py"],
     "scripts/render_dip_pulse_html.py": ["tests/test_render_dip_pulse_html.py", "tests/test_bills.py"],
+    "scripts/data_dictionary.json": ["tests/test_daten_export.py", "tests/test_build_dip_pulse_site.py"],
     "tests/_daten_fixture.py": ["tests/test_daten_export.py"],
     "tests/fixtures/roll_call_detail_869.html": ["tests/test_roll_call_scraping.py"],
     "tests/fixtures/vote_debate_906.html": ["tests/test_roll_call_scraping.py"],

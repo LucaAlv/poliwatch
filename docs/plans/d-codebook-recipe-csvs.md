@@ -167,7 +167,7 @@ Dispositions: finding 1 accepted through D1/A (user reply “A” on 2026-10-28)
 
 ### Review continuation, 2026-10-28
 
-Session: `98480-1793227652-cd18d040`. Target/report remains this file. Retain the earlier D1/A approval as recorded in R1; no product implementation is authorized by this review. Continuous decision numbering resumes at D2.
+Review run `98480-1793227652-cd18d040`. Target/report remains this file. Retain the earlier D1/A approval as recorded in R1; no product implementation is authorized by this review. Continuous decision numbering resumes at D2.
 
 Startup repeated: interactive, collaborative, question tuning off, telemetry off. Update check failed, and no workflow lease was acquired; update status is unknown. Context recovery and branch decision search found no new binding architecture decision. Brain-cache reads failed with `EPERM` on their metadata writes; PRODUCT.md and the repository domain/licence/design documents supply context instead. Aside readiness returned `NEEDS_ASIDE: Darwin`. No new architecture, infrastructure or concurrency pattern is proposed, so no web research is needed or claimed. The design helper again returned the unrelated Wochenradar document; `docs/designs/daten-page.md` is the relevant existing design context. The cross-branch CEO plan was not imported. No extra prerequisite review is needed to resume the recorded review.
 
