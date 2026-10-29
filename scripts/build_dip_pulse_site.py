@@ -6038,6 +6038,35 @@ def unique_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list
     return result
 
 
+# Same-day order of a bill's timeline events, latest step highest. A Drucksache
+# dated on the sitting day is filed before the debate it belongs to, the sitting's
+# Plenarprotokoll only records the day, a roll-call vote happens inside its
+# Beratung, and the Gesetzesbeschluss follows the final Beratung. A kind not
+# listed ranks by where the event came from (BILL_EVENT_ORIGIN_RANK), so an
+# unfamiliar Vorgangsposition still outranks a Drucksache of the same day.
+BILL_STEP_RANK = {
+    "Plenarprotokoll": 0,
+    "Gesetzentwurf": 10,
+    "Antrag": 10,
+    "Unterrichtung": 10,
+    "Stellungnahme": 12,
+    "Entschließungsantrag": 14,
+    "Änderungsantrag": 14,
+    "Beschlussempfehlung": 16,
+    "Beschlussempfehlung und Bericht": 16,
+    "Bericht": 16,
+    "Namentliche Abstimmung": 25,
+    "Beratung": 30,
+    "Beratung und Ausschussüberweisung": 30,
+    "Plenarberatung": 30,
+    "1. Beratung": 30,
+    "2. Beratung": 32,
+    "3. Beratung": 34,
+    "Gesetzesbeschluss": 40,
+}
+BILL_EVENT_ORIGIN_RANK = {"document": 10, "vote": 25, "position": 30}
+
+
 # File name for a bill's detail page, e.g. "bill-315678.html".
 def bill_slug(bill: dict[str, Any]) -> str:
     identity = first_value(bill.get("vorgang_id"), bill.get("primary_document"), bill.get("title"), "bill")
@@ -6097,6 +6126,17 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
     seen_speeches: dict[str, set[str]] = {}
     seen_agenda_items: dict[str, set[tuple[Any, Any]]] = {}
+    # id(event) -> where it came from, for BILL_EVENT_ORIGIN_RANK; kept out of
+    # the event itself because bills.json publishes the whole record.
+    event_origin: dict[int, str] = {}
+
+    def add_event(bill: dict[str, Any], origin: str, event: dict[str, Any]) -> None:
+        bill["events"].append(event)
+        event_origin[id(event)] = origin
+
+    def step_rank(event: dict[str, Any]) -> int:
+        rank = BILL_STEP_RANK.get(str(event.get("kind") or ""))
+        return rank if rank is not None else BILL_EVENT_ORIGIN_RANK[event_origin[id(event)]]
 
     # Walk every dossier, every agenda item, every DIP position within it.
     for entry in detail_entries:
@@ -6204,7 +6244,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 # Timeline entries ("Verlauf" on the detail page): one per linked
                 # document, plus one for the plenary debate itself.
                 for doc in position_docs:
-                    bill["events"].append(
+                    add_event(
+                        bill,
+                        "document",
                         {
                             "date": first_value(doc.get("datum"), protocol.get("datum")),
                             "kind": first_value(doc.get("drucksachetyp"), "Drucksache"),
@@ -6213,7 +6255,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                             "url": doc.get("url"),
                         }
                     )
-                bill["events"].append(
+                add_event(
+                    bill,
+                    "position",
                     {
                         "date": protocol.get("datum"),
                         "kind": first_value(position.get("vorgangsposition"), "Plenarberatung"),
@@ -6233,7 +6277,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     if numbers and vote_numbers and not (numbers & vote_numbers):
                         continue
                     bill["votes"].append(vote)
-                    bill["events"].append(
+                    add_event(
+                        bill,
+                        "vote",
                         {
                             "date": first_value(vote.get("date"), protocol.get("datum")),
                             "kind": "Namentliche Abstimmung",
@@ -6305,9 +6351,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
         for speaker in bill["speakers"]:
             speaker["speeches"].sort(key=lambda ref: str(ref.get("protocol_date") or ""), reverse=True)
         bill["events"] = unique_records(bill["events"], ("date", "kind", "title", "source"))
-        # On a date tie the sitting's "Plenarprotokoll" document yields: it is the
-        # record of that day's step, not the step itself.
-        bill["events"].sort(key=lambda event: (str(event.get("date") or ""), event.get("kind") != "Plenarprotokoll"), reverse=True)
+        # On a date tie the procedurally later step leads (BILL_STEP_RANK); the
+        # stable sort keeps insertion order among equal ranks.
+        bill["events"].sort(key=lambda event: (str(event.get("date") or ""), step_rank(event)), reverse=True)
         latest = bill["events"][0] if bill["events"] else {}
         bill["latest_date"] = first_value(latest.get("date"), *(ref.get("protocol_date") for ref in bill["protocol_refs"]))
         bill["latest_step"] = first_value(latest.get("kind"), "Erfasst")

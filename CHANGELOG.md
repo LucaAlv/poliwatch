@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.4.0] - 2026-10-29
+
+### Fixed
+
+- A bill's „Zuletzt erfasst“ step on a day with several events is now the procedurally latest one: the sitting's Beratung over a Drucksache filed that day (a same-day „Gesetzentwurf“ no longer beats „1. Beratung“), the Beratung over a same-day Entschließungsantrag or roll-call vote, and the Gesetzesbeschluss over the 2. Beratung. **Measured shift on the reference cache: TODO (see TODOS.md "Bill overview polish: same-day step ties: measure the shift on the cache"): N of M bills change `latest_step`; per-kind lines here.**
+
 ## [0.23.1.0] - 2026-10-28
 
 ### Fixed

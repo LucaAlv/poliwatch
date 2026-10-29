@@ -402,17 +402,36 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: same-day step ties
+### Bill overview polish: same-day step ties: measure the shift on the cache
 
-**What:** On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills).
+**Implemented, not yet measured:** v0.23.4.0 (2026-10-29, branch `claude/bill-step-ties`). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss), and an unlisted kind ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat „1. Beratung“, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
 
-**Why:** v0.18.0.0 adversarial review finding, deferred at the fix-cycle limit. Low severity.
+**What is left:** CLAUDE.md asks for the old and new values, and the session that implemented it had no cache. On a machine with `.context/dip-pulse-site`, run from the repository root:
 
-**Context:** Changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree. The bundled search work is tracked separately below.
+```bash
+cat > /tmp/latest_steps.py <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, "scripts")
+import build_dip_pulse_site as b
+site = Path(sys.argv[1]).resolve()
+bills = b.collect_bill_pages(b.load_existing_detail_entries(site, b.load_cached_protocols(site)))
+print(json.dumps({bill["id"]: bill["latest_step"] for bill in bills}, ensure_ascii=False))
+PY
+git fetch origin main claude/bill-step-ties
+git worktree add /tmp/bills-main origin/main
+(cd /tmp/bills-main && python3 /tmp/latest_steps.py "$OLDPWD/.context/dip-pulse-site") > /tmp/steps-old.json
+git switch claude/bill-step-ties && python3 /tmp/latest_steps.py .context/dip-pulse-site > /tmp/steps-new.json
+python3 -c 'import json,collections as c;o=json.load(open("/tmp/steps-old.json"));n=json.load(open("/tmp/steps-new.json"));d=c.Counter((o[k],n[k]) for k in o if k in n and o[k]!=n[k]);print(len(o),"bills,",sum(d.values()),"changed");[print(f"{a} -> {b}: {x}") for (a,b),x in d.most_common()]'
+```
+
+Then: (1) put the totals and the per-kind lines in the CHANGELOG entry for 0.23.4.0 (it holds a placeholder) and the PR body; (2) check that the 18 bills whose latest step was „Gesetzesbeschluss“ still are, and that no shift goes from a later step to an earlier one; (3) list any `latest_step` kind that is not in `BILL_STEP_RANK` (`python3 -c` over /tmp/steps-new.json) and add it to the table if its origin rank is wrong for it. Then move this entry to Completed.
+
+**Why:** The change moves published `latest_step` values and the overview's date-tie order; the numbers say how many.
 
 **Effort:** S
-**Priority:** P3
-**Depends on:** None
+**Priority:** P2 (blocks merging `claude/bill-step-ties`)
+**Depends on:** the local cache
 
 ## Abgeordnete
 
