@@ -126,6 +126,35 @@ class RealDrucksacheTests(unittest.TestCase):
         )
 
 
+class DipTextTests(unittest.TestCase):
+    """Real DIP ``drucksache-text`` bodies (2026-10-29), each kept for one trap the
+    text layer sets; provenance in a1-source-manifest.json."""
+
+    # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
+    def test_a_repeated_page_head_is_dropped(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-2105780.txt"))
+        self.assertEqual(len(forderung.demands), 10)
+        self.assertTrue(forderung.demands[2].endswith("um tatsächlichen Wohnkosten Rechnung zu tragen;"))
+        self.assertNotIn("Wahlperiode", forderung.text())
+
+    # Value: protects=the letter-spaced advance-copy watermark DIP sets mid-sentence is removed and the sentence joins; fails_when=the watermark is quoted as part of a demand; why_new=found in DIP text of 21/8314, 21/8551, 21/8568; seam=none
+    def test_the_advance_copy_watermark_is_removed(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-2108568.txt"))
+        self.assertNotIn("orabfassung", forderung.text())
+        self.assertIn("zu schaffen, um gute Rahmenbedingungen", forderung.demands[5])
+
+    # Value: protects=a footnote that a page break put inside the operative part gives no quote; fails_when=the footnote text is quoted inside a demand; why_new=found in DIP text of 21/8385; seam=none
+    def test_a_footnote_inside_the_passage_gives_no_quote(self) -> None:
+        self.assertIn("3 Vgl. Bundestagsdrucksache 21/4996", real_text("dip-2108385.txt"))
+        self.assertIsNone(antrag_text.extract_forderung(real_text("dip-2108385.txt")))
+
+    # Value: protects=the adverb may stand before the object ("fordert daher die Bundesregierung auf"); fails_when=the anchor only allows it after; why_new=found in DIP text of 18/12797; seam=none
+    def test_the_adverb_before_the_object(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-1812797.txt"))
+        self.assertEqual(forderung.opening, "Der Deutsche Bundestag fordert daher die Bundesregierung auf,")
+        self.assertEqual([d.split(".", 1)[0] for d in forderung.demands], [str(n) for n in range(1, len(forderung.demands) + 1)])
+
+
 class ExtractionTests(unittest.TestCase):
     # Value: protects=the quote is the Antrag's operative part word for word, with only layout undone; fails_when=a running head or page number lands inside a demand, a break hyphen stays, a truncated compound loses its hyphen, section I or the Begründung is quoted; why_new=antrag_text is new; seam=none
     def test_the_operative_part_is_quoted_with_layout_undone(self) -> None:

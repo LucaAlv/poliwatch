@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 3
+EXTRACTOR_VERSION = 5
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_KEY = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -111,6 +111,10 @@ _LAYOUT_LINE = re.compile(
     r"Deutscher\s+Bundestag\s*[–-]\s*\d{1,2}\.\s*Wahlperiode"
     r"|" + _HEAD + r"\s*[–-]\s*\d{1,4}\s*[–-]\s*" + _HEAD +
     r"|[–-]\s*\d{1,4}\s*[–-]"
+    # DIP's text repeats the first-page head at a page break (21/5780):
+    # "Deutscher Bundestag Drucksache 21/5780", then "21. Wahlperiode 05.05.2026".
+    r"|Deutscher\s+Bundestag\s+Drucksache\s+\d{1,2}/\d{1,6}"
+    r"|\d{1,2}\.\s*Wahlperiode(?:\s+\d{2}\.\d{2}\.\d{4})?"
     r"|Vorabfassung\s*[–-]\s*wird\s+durch\s+die\s+lektorierte\s+Fassung\s+ersetzt\.?"
     r")\s*$"
 )
@@ -145,11 +149,15 @@ def _words(*words: str) -> str:
 
 # The operative part. "II." may precede it; older Anträge open the whole motion with
 # "Der Bundestag wolle beschließen:" and still say "fordert … auf" in section II.
+# The adverb can stand before or after the object: "fordert daher die
+# Bundesregierung auf" (18/12797), "fordert die Bundesregierung daher auf".
+_ADVERB = r"(?:(?:daher|deshalb|darüber[ \t\n]+hinaus|insbesondere|ferner)[ \t\n]+)?"
 _ANCHOR = re.compile(
     r"(?:^|\n)[ \t]*(?:[IVX]{1,4}\.[ \t]*)?("
     + _words("Der") + r"[ \t\n]+(?:" + _words("Deutsche") + r"[ \t\n]+)?"
-    + _words("Bundestag", "fordert", "die", "Bundesregierung")
-    + r"[ \t\n]+(?:(?:daher|deshalb|darüber[ \t\n]+hinaus|insbesondere|ferner)[ \t\n]+)?auf\b)"
+    + _words("Bundestag", "fordert") + r"[ \t\n]+" + _ADVERB
+    + _words("die", "Bundesregierung")
+    + r"[ \t\n]+" + _ADVERB + r"auf\b)"
 )
 # Where the operative part may end: the date line, the Begründung, or the next
 # section ("III. Der Bundestag …" or "III." on its own line). A candidate counts
@@ -280,15 +288,40 @@ def extract_forderung(text: Any) -> Forderung | None:
 
 
 @functools.lru_cache(maxsize=4096)
+def _spaced(phrase: str) -> str:
+    """A pattern for ``phrase`` with any whitespace, line breaks included, allowed
+    between its characters: a watermark's letters are set apart in the text layer."""
+    return r"\s*".join(r"\s+" if char == " " else re.escape(char) for char in phrase)
+
+
+# The advance copy's watermark. DIP's text sets it on every page, letter-spaced over
+# three lines ("V" / "orabfassung – w" / "ird durch die lektorierte Fassung
+# ersetzt."), anywhere, mid-sentence included (21/8314, 21/8551, 21/8568). It is
+# never content, so it goes wherever it stands.
+_WATERMARK = re.compile(_spaced("Vorabfassung") + r"\s*[–-]\s*" + _spaced("wird durch die lektorierte Fassung ersetzt") + r"\.?")
+# A footnote at a page foot: its number, then its text, which cites ("3 Vgl.
+# Bundestagsdrucksache 21/4996, S. 52 …", 21/8385). Inside the operative part it
+# splits a demand, often a word, and its reference digits stick to the words they
+# follow; neither can be undone with confidence, so such a passage is not quoted.
+_FOOTNOTE = re.compile(
+    r"^[ \t]*\d{1,3}[ \t]+(?:Vgl\.|vgl\.|Siehe|siehe|Ebd|ebd|Quelle|https?://|www\.|BT-Drs|Bundestagsdrucksache|Drucksache|Dazu|dazu)",
+    re.MULTILINE,
+)
+
+
 def _extract(text: str) -> Forderung | None:
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    text = _WATERMARK.sub("\n", text)
     text = "\n".join(_layout_lines(text))
     # A soft hyphen marks where a word may break: at a line end the word goes on.
     text = re.sub("\u00ad[ \t]*\n[ \t]*", "", text).replace("\u00ad", "")
     anchor = _ANCHOR.search(text)
     if anchor is None:
         return None
-    paragraphs = _paragraphs(text[anchor.start(1): _end_of(text, anchor.end())])
+    body = text[anchor.start(1): _end_of(text, anchor.end())]
+    if _FOOTNOTE.search(body):
+        return None
+    paragraphs = _paragraphs(body)
     if not paragraphs:
         return None
     forderung = Forderung(paragraphs[0], tuple(paragraphs[1:]))

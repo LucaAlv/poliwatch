@@ -64,5 +64,29 @@
     "url": "https://dserver.bundestag.de/btd/20/139/2013902.pdf",
     "source_sha256": "04b80c666b312046949c76e4a93da4a7ca104048805fe1dbd330ed9ef0c8e78a",
     "editing": "Unedited pdftotext 24.02.0 output (UTF-8, reading order) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/dip-2105780.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/287579",
+    "source_sha256": "d3705c5e23295d2f8c2b55d36c12501db6c6ca3c01777a95e85a8900e9ae7df2",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 287579 (Drucksache 21/5780), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: page head repeated mid-text."
+  },
+  {
+    "fixture": "antrag-text/dip-2108568.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/291631",
+    "source_sha256": "ea5a3a193ee94d37483ba4cca84ac68cd6d0dfe6c5812c0c4d27137feaea8f20",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 291631 (Drucksache 21/8568), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: advance-copy watermark mid-sentence."
+  },
+  {
+    "fixture": "antrag-text/dip-2108385.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/291403",
+    "source_sha256": "4559bc8390df79b84cb11a05ac60e07c00df08dd6575865cb0b06266ceec7dcf",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 291403 (Drucksache 21/8385), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: footnote inside the operative part."
+  },
+  {
+    "fixture": "antrag-text/dip-1812797.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/67431",
+    "source_sha256": "39143c1dfd0a66cbc0a38e18c98c189dbeeae54a56dfde758a195e7beab26252",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 67431 (Drucksache 18/12797), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: adverb before the object."
   }
 ]

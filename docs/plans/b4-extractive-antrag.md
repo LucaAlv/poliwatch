@@ -197,3 +197,7 @@ Next, on the owner's machine: run step 0 (measure, hand-check against the PDFs, 
 ## Step 0, first real-text run (2026-10-28)
 
 Partial: PDFs only, no DIP text and no reference store. [Research note](../research/b4-antrag-extraction.md). On 7 real Anträge and 44 other Drucksachen: no false positives; the reading-order text layer scrambled 3 of 7 lists, which the extractor wrongly accepted for 2 of them before this run and now refuses; the layout rendering quoted 6 of 7 correctly. `EXTRACTOR_VERSION` 3. D3 (DIP text vs PDF) now depends on what DIP's text body looks like, which still needs a DIP key.
+
+## Step 0, run 2 on DIP's text (2026-10-29)
+
+[Research note, run 2](../research/b4-antrag-extraction.md#run-2-dip-drucksache-text-2026-10-29). The API assumptions above hold. DIP's text keeps list order, so D3 is decided: DIP text stays the source. Three traps in it are now handled (repeated page head, advance-copy watermark, footnote inside the passage → no quote), and the anchor accepts "fordert daher die Bundesregierung auf". On 37 Fraktion and Gruppe Anträge: 32 quoted, none known to be wrong; 89 % of those that have a demands section, just under the 90 % gate. `EXTRACTOR_VERSION` 5. Open: the reference store's abstract-less votes, and the inverted anchor form (D5, 2 of 37).

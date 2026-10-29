@@ -1,6 +1,8 @@
 # B4 extractive fallback: first run on real Drucksachen
 
-Research note, 2026-10-28. Part of step 0 of [the plan](../plans/b4-extractive-antrag.md). Scope is limited: the cloud session could reach `dserver.bundestag.de` (the PDFs) but had no DIP API key, so **DIP's `drucksache-text` was not fetched**, and the reference store (which votes have no abstract) was not available. What was tested is `antrag_text.extract_forderung` on pdftotext output of real PDFs, used as a stand-in for DIP's text body.
+Research note, 2026-10-28/29. Part of step 0 of [the plan](../plans/b4-extractive-antrag.md). Run 1 (2026-10-28) used PDFs only. Run 2 (2026-10-29, below) used DIP's `drucksache-text` itself. The reference store (which votes have no abstract) was not available in either run.
+
+## Run 1: PDFs only (2026-10-28)
 
 ## Sample
 
@@ -53,3 +55,37 @@ The quality of the quote depends on the text layer more than on the extractor. A
 1. With a DIP key: fetch `drucksache-text` for the same 7 Anträge and compare with both renderings; that settles D3.
 2. On the reference store: the abstract-less votes' Anträge (about 64 votes), and about 20 WP 18/19 Anträge from A3's sittings, with a hand check of every quote.
 3. Count the inverted anchor ("fordert der Deutsche Bundestag die Bundesregierung … auf") before deciding whether to support it (D5).
+
+## Run 2: DIP `drucksache-text` (2026-10-29)
+
+**API assumptions checked**, through the project's own `ApiClient`, `fetch_drucksache_metadata` and `fetch_drucksache_texts`, 2 s apart, 10 requests in all: one `/drucksache` call with 7 repeated `f.dokumentnummer` returned all 7 records, each with its own `dokumentnummer`, `drucksachetyp`, `urheber[].titel`, `vorgangsbezug` and `fundstelle.pdf_url`; one `/drucksache-text` call with repeated `f.id` returned all 7 texts. The same held for a batch of 32.
+
+**Sample.** The 7 Anträge of run 1, plus 32 more: one DIP page of Anträge per WP 18–21 (`f.drucksachetyp=Antrag`, the newest 100 of each WP), every twelfth or so of each page. They cluster at the end of each Wahlperiode, so an older WP 18/19 layout may be under-represented. 37 of the 39 are by a Fraktion or Gruppe, 2 by the Bundesregierung (mandates, no demands section).
+
+**Method.** Each DIP passage was compared word for word with the passage extracted from the same Drucksache's PDF via `pdftotext -layout`; every difference was read against the PDF.
+
+**DIP's text keeps list order.** None of the scrambled lists of run 1 appear, and 18/9042 keeps "Gender-Budgeting". Where DIP and the PDF reading differ, DIP is right in every case read ("gewährleisten" and "Umweltschutzes", which the PDF reading splits). So D3 is settled: **DIP text stays the source**; no PDF path, no poppler dependency.
+
+**Three traps in DIP's text, found and handled** (`EXTRACTOR_VERSION` 3 → 5):
+
+| Trap | Where | Before | Now |
+|---|---|---|---|
+| The first-page head repeated at a page break: "Deutscher Bundestag Drucksache 21/5780" / "21. Wahlperiode 05.05.2026" | 21/5780 | quoted inside demand 3 | dropped as a running head |
+| The advance-copy watermark, letter-spaced over three lines: "V" / "orabfassung – w" / "ird durch die lektorierte Fassung ersetzt." | every page of 21/8314, 21/8551, 21/8568, 21/8821 | quoted mid-sentence inside demands | removed wherever it stands |
+| A page-foot footnote inside the operative part: "3 Vgl. Bundestagsdrucksache 21/4996, S. 52 …", splitting the word "beauf-sichtigt" | 21/8385, 21/8551 | quoted inside demand 1 (also from the PDF) | no quote |
+
+The footnote rule fails closed because a footnote cannot be removed with confidence: its reference digit sticks to the word it follows. No accepted passage in the sample has a bare-number line or a digit glued to a word end, so the rule cost no quote beyond the two.
+
+One anchor form was added: the adverb before the object, "fordert daher die Bundesregierung auf" (18/12797).
+
+**Result on DIP text, Fraktion and Gruppe Anträge: 32 of 37 quoted (86 %)**, none known to be wrong: each is word-identical to the PDF reading, or differs only where the PDF reading is at fault. The 5 without a quote:
+
+- 18/12638: no demands section ("… wird zustimmend zur Kenntnis genommen"). Correct.
+- 20/4666, 19/30983: the inverted form inside a longer sentence ("Um … zu erreichen, fordert der Deutsche Bundestag die Bundesregierung … auf"). Quoting from "fordert" would start mid-sentence; supporting it means quoting from the sentence start. Left for D5: 2 of 37 here.
+- 21/8385, 21/8551: footnote in the passage, as above.
+
+Excluding 18/12638, which has nothing to quote: 32 of 36 (89 %). That is just under the plan's 90 % gate, with zero known wrong quotes; the gate is not claimed.
+
+**Still open:** the reference store's votes without an abstract (the population that matters; this sample is Anträge in general, not abstract-less ones), WP 18/19 Anträge from the middle of those periods, and whether the inverted form is common enough there to support.
+
+Regression fixtures from DIP's text: `tests/fixtures/antrag-text/dip-*.txt` (21/5780, 21/8568, 21/8385, 18/12797), provenance in `a1-source-manifest.json`.
