@@ -24,10 +24,21 @@ DOCUMENT_NUMBER = "21/84"
 DOCUMENT_ID = "official-demo-21-84"
 PDF_URL = "https://dserver.bundestag.de/btp/21/21084.pdf"
 XML_URL = "https://dserver.bundestag.de/btp/21/21084.xml"
+#: Each Antrag's own title, as printed on its Drucksache (checked against the
+#: dserver PDFs). DIP gives every Vorgang its own title; copying the joint
+#: "a) … b) …" agenda heading into both made the demo radar show one bold
+#: block instead of the two titles a real build lists.
+TITLES = {
+    "21/6354": "Deutschland in die KI-Zukunft bringen – Für einen nationalen Aufbruch an die digitale Weltspitze",
+    "21/4833": (
+        "Technologische Souveränität durch deutsches Fachwissen sichern – Staatliche Koordination "
+        "für ein europäisches KI-Kooperationsprojekt nach Vorbild von Airbus starten"
+    ),
+}
 
 
 def extract_report(xml_path: Path) -> dict[str, Any]:
-    parsed = dip.parse_protocol_xml(xml_path.read_bytes())
+    parsed = dip.parse_protocol_xml(xml_path.read_text(encoding="utf-8"))
     matches = [
         item
         for item in parsed.get("agenda_items") or []
@@ -40,6 +51,10 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
     documents = source_item.get("drucksachen") or []
     if [document.get("dokumentnummer") for document in documents] != ["21/6354", "21/4833"]:
         raise ValueError("TOP 32 source documents changed; review the fixture before updating")
+    heading = " ".join(str(source_item.get("heading") or "").split())
+    for number, title in TITLES.items():
+        if title not in heading:
+            raise ValueError(f"title of {number} is not in the TOP 32 heading; review the fixture before updating")
     speeches = source_item.get("speeches") or []
     if len(speeches) != 16:
         raise ValueError(f"expected 16 TOP 32 speeches, found {len(speeches)}")
@@ -52,7 +67,7 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
                 "vorgang_id": f"fixture-procedure-{document['dokumentnummer'].replace('/', '-')}",
                 "vorgangsposition": "Beratung und Ausschussüberweisung",
                 "vorgangstyp": "Antrag",
-                "titel": source_item.get("heading"),
+                "titel": TITLES[document["dokumentnummer"]],
                 "dokumentart": "Drucksache",
                 "aktivitaet_anzahl": 0,
                 "source": {
@@ -79,7 +94,7 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
                     "url": document["url"],
                     "drucksachetyp": "Antrag",
                     "datum": "2026-06-12",
-                    "titel": source_item.get("heading"),
+                    "titel": TITLES[document["dokumentnummer"]],
                     "urheber": ["Fraktion der AfD"],
                     "vorgang_id": positions[index]["vorgang_id"],
                     "vorgangsposition_id": positions[index]["id"],
