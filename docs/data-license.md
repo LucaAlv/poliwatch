@@ -14,7 +14,7 @@ Everything from „Short string“ on is also embedded unchanged, headings one l
 
 ## Terms per layer
 
-The file combines sources with different terms. Each column's layer is its `source` tag in `data/exports/datenstand.json` (`tables[].columns[].source`).
+The file combines sources with different terms. Each column's licence is the layer `DATA.md` gives it (column „Lizenzschicht", authored in `scripts/data_dictionary.json`). The `source` tag in `data/exports/datenstand.json` (`tables[].columns[].source`) is the coarser origin class in the table below; the export fails when a column's layer does not fit its tag. Our own ids and timestamps on source tables are project metadata under CC BY 4.0 even where the tag names the source.
 
 | `source` tag | Contents | Terms and attribution |
 |---|---|---|

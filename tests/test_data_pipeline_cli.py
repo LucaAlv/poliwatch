@@ -115,11 +115,15 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
 
 
 class ResolveCommitTests(unittest.TestCase):
-    def test_returns_the_short_sha_on_success(self) -> None:
-        completed = SimpleNamespace(stdout="abc1234\n")
-        with mock.patch.object(b.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(b.resolve_commit(), "abc1234")
-        run.assert_called_once()
+    # Value: protects=the cited build revision is a 12-character commit id, marked -dirty when tracked files differ; fails_when=the length floats with --short or the dirty marker is dropped or set by untracked files; why_new=DATA.md and the cache key cite this value; seam=none; no_claim=real git output
+    def test_returns_a_fixed_length_sha_marked_dirty_for_tracked_changes(self) -> None:
+        for status, expected in (("", "abc1234def56"), (" M scripts/build_dip_pulse_site.py\n", "abc1234def56-dirty")):
+            with self.subTest(status=status):
+                outputs = [SimpleNamespace(stdout="abc1234def56\n"), SimpleNamespace(stdout=status)]
+                with mock.patch.object(b.subprocess, "run", side_effect=outputs) as run:
+                    self.assertEqual(b.resolve_commit(), expected)
+                self.assertEqual(run.call_args_list[0].args[0], ["git", "rev-parse", "--short=12", "HEAD"])
+                self.assertEqual(run.call_args_list[1].args[0], ["git", "status", "--porcelain", "--untracked-files=no"])
 
     def test_returns_none_when_git_is_unavailable_or_fails(self) -> None:
         for exc in (FileNotFoundError("no git"), b.subprocess.SubprocessError("boom")):

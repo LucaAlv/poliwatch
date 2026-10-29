@@ -1356,7 +1356,7 @@
           "meaning": "Eindeutig häufigstes Votum unter Ja, Nein und Enthaltung (relative Mehrheit); bei Gleichstand an der Spitze oder ohne abgegebene Stimmen NULL.",
           "unit": "Textcode yes, no, abstain oder NULL; Abwesenheiten bleiben bei der Mehrheitswahl außer Betracht.",
           "source": "Aus den vom Bericht gelieferten und zusammengeführten Gruppensummen berechnet; Gleichstand/keine Stimmen ergibt NULL.",
-          "license": "bundestag-abstimmungen"
+          "license": "eigene-auswertung"
         }
       }
     },

@@ -2558,6 +2558,23 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
+# The manifest source tags each licence layer of scripts/data_dictionary.json
+# may carry. The layer is the column's licence (DATA.md); the tag is the coarser
+# origin class. Our own ids and timestamps sit on source tables, so the
+# metadata layers accept those tables' tags.
+LICENSE_LAYER_SOURCES = {
+    "dip": {"dip"},
+    "dip-quellenangabe": {"dip"},
+    "bundestag-abstimmungen": {"bundestag.de"},
+    "abgeordnetenwatch": {"abgeordnetenwatch"},
+    "abgeordnetenwatch-mit-bundestag-fallback": {"abgeordnetenwatch"},
+    "eigene-auswertung": {"derived"},
+    "eigene-auswertung-uebernommene-quelldaten": {"derived", "dip"},
+    "eigene-metadaten": {"dip", "bundestag.de"},
+    "eigene-metadaten-zuordnung": {"derived", "dip"},
+}
+
+
 EXPORT_FORMAT = 9
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
@@ -2574,6 +2591,8 @@ COVERAGE_COUNT_TABLES = ("agenda_items", "speeches", "contributions", "votes", "
 TABLES_WITHOUT_CSV = frozenset({"schema_migrations"})
 BAUSTEINE_LABELS = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# A file name in a generation: no path, query or hidden-file syntax.
+EXPORT_FILE_NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
 # All exported primary keys identify stable source rows or issued registry keys.
@@ -3123,6 +3142,9 @@ def _load_data_dictionary(text: str, tables: list[dict[str, Any]]) -> dict[str, 
     licenses, dictionary = payload["licenses"], payload["tables"]
     for layer, notice in licenses.items():
         _authored_text(notice, f"licenses.{layer}")
+    unmapped = sorted(licenses.keys() - LICENSE_LAYER_SOURCES.keys())
+    if unmapped:
+        raise RuntimeError(f"export: data dictionary licence layers without allowed source tags: {', '.join(unmapped)}")
     # The facts tables exist only once the facts engine has run on the store.
     stale = sorted(dictionary.keys() - {table["name"] for table in tables} - set(facts.FACTS_TABLES))
     if stale:
@@ -3150,7 +3172,7 @@ def _load_data_dictionary(text: str, tables: list[dict[str, Any]]) -> dict[str, 
                 raise RuntimeError(f"export: data dictionary missing {where}.license")
             if not isinstance(layer, str) or layer not in licenses:
                 raise RuntimeError(f"export: data dictionary unknown licence layer {layer!r} for {where}")
-            columns[column["name"]] = {**prose, "license": licenses[layer]}
+            columns[column["name"]] = {**prose, "license": licenses[layer], "layer": layer}
         repeated = [text for text, count in Counter(meta["meaning"] for meta in columns.values()).items() if count > 1]
         if repeated:
             raise RuntimeError(f"export: data dictionary gives several {name} columns the same meaning: {repeated[0]!r}")
@@ -3198,6 +3220,19 @@ def _snapshot_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+# Each column's DATA.md licence layer must fit the source tag datenstand.json
+# ships for it, so the two files never give one column different terms.
+def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> None:
+    for table in manifest_tables:
+        for column in table["columns"]:
+            layer = dictionary[table["name"]]["columns"][column["name"]]["layer"]
+            if column["source"] not in LICENSE_LAYER_SOURCES[layer]:
+                raise RuntimeError(
+                    f"export: data dictionary licence layer {layer} for {table['name']}.{column['name']} "
+                    f"contradicts its manifest source tag {column['source']}"
+                )
+
+
 def _md_cell(value: Any) -> str:
     return str(value).replace("|", "\\|").replace("\n", "<br>")
 
@@ -3226,10 +3261,17 @@ def _export_revision(manifest: dict[str, Any]) -> str:
     return manifest.get("commit") or "unbekannt"
 
 
+# DATA.md names the latest stored sitting, not the build time: the build time
+# lives in datenstand.json, so equal inputs give equal DATA.md bytes.
+def _latest_sitting(manifest: dict[str, Any]) -> str:
+    dates = [row["date_to"] for row in manifest["coverage"]["wahlperioden"] if row["date_to"]]
+    return max(dates) if dates else "unbekannt"
+
+
 def _codebook_header(manifest: dict[str, Any]) -> list[str]:
     lines = [
         "# DATA — Datenwörterbuch dieses Exports", "",
-        f"Datenstand: {manifest['generated_at']}; {_export_label(manifest)}.",
+        f"Export: {_export_label(manifest)}; letzte gespeicherte Sitzung: {_latest_sitting(manifest)}. Erzeugungszeitpunkt: `generated_at` in `datenstand.json`.",
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (lokale Änderungen siehe Eingabehashes).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
@@ -3321,7 +3363,7 @@ def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -
             _license_notice(license_doc), "",
             "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
             "## Diesen Export zitieren", "",
-            f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, Datenstand {manifest['generated_at']}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
+            f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, letzte gespeicherte Sitzung {_latest_sitting(manifest)}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
             "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
 
 
@@ -3374,6 +3416,9 @@ def export_distribution_data(
             f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
             "upgrade Python or run the export on another machine"
         )
+    # The tag ends every file name of the generation.
+    if not EXPORT_FILE_NAME_RE.fullmatch(tag):
+        raise RuntimeError(f"export: tag {tag!r} cannot be part of a file name")
 
     source = facts.open_readonly(database_path)
     try:
@@ -3448,6 +3493,8 @@ def export_distribution_data(
                 codebook=codebook,
             )
 
+            # Publish only what the site's own validator accepts on the next run.
+            validate_manifest(manifest, "new export")
             manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             # A forced re-export of unchanged inputs names the published
@@ -3677,6 +3724,7 @@ def _run_export(
             }
             for table in tables_info
         ]
+        _check_license_layers(manifest_tables, dictionary)
 
         recipe_rows: list[dict[str, Any]] = []
         for recipe in recipes:
@@ -11739,7 +11787,7 @@ def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> 
         if not isinstance(entry, dict):
             continue
         name, kind = entry.get("name"), entry.get("kind")
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name):
+        if not isinstance(name, str) or not EXPORT_FILE_NAME_RE.fullmatch(name):
             problems.append(f"files[{index}].name is not a plain file name")
             continue
         if name in inventory:
@@ -12136,19 +12184,28 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     return base_url_raw, manifest_raw, license_text, issues_url
 
 
+# The cited build revision: a fixed-length commit id, marked -dirty when
+# tracked files differ from it, so an export never cites a commit that lacks
+# the code or text that produced it. Untracked files are not counted.
 def resolve_commit() -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
             cwd=Path(__file__).resolve().parent,
             capture_output=True,
             text=True,
             timeout=5,
             check=True,
-        )
+        ).stdout.strip()
+
+    try:
+        commit = git("rev-parse", "--short=12", "HEAD")
+        dirty = git("status", "--porcelain", "--untracked-files=no")
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout.strip() or None
+    if not commit:
+        return None
+    return f"{commit}-dirty" if dirty else commit
 
 
 # D1A/D3A: the Fakt der Woche engine sits between the finalised store and the

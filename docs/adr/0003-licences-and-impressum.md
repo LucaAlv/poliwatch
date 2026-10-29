@@ -38,6 +38,8 @@ DIP clause 5 and the duties to name the source and mark changes are conditions w
 | abgeordnetenwatch | `mps.aw_politician_id`, `profile_url`, `birth_year`, `gender`, `profession`, `wahlkreis`, `bundesland` | CC0 1.0 |
 | Our own work | everything tagged `derived` (`facts`, `fact_metrics`, `fact_sources`, `mp_canonical`, `datenstand`, `votes.inverted`/`inversion_source`/`inversion_excerpt`) | CC BY 4.0; DIP's source duty still applies to what they are computed from |
 
+**Amended 2026-10-29 (export format 9).** A column's layer is now the „Lizenzschicht" `DATA.md` gives it from `scripts/data_dictionary.json`; the manifest `source` tag is the coarser origin class, and the export fails when the two do not fit (`LICENSE_LAYER_SOURCES` in `scripts/build_dip_pulse_site.py`). This refines the table above: our own ids and timestamps on source tables are project metadata under CC BY 4.0, and computed columns such as `vote_fractions.leading_vote` are our own work although their table is a roll-call table.
+
 **Change marking (DIP 4b).** The notice lists what we changed:
 - text and structure are extracted from the protocol XML and the DIP API into tables;
 - each turn of the protocol is classified: `speeches` holds Reden only, and Kurzinterventionen, Erwiderungen and the Fragen and Antworten of a Befragung or Fragestunde are stored as Beiträge in `contributions` (ADR 0002); the classification is ours, made from the wording and structure of the XML;

@@ -32,6 +32,15 @@ def authored(field: str) -> Path:
 
 
 class ExportHelpersTests(unittest.TestCase):
+    # Value: protects=the export's authored codebook inputs point at committed files; fails_when=an input is renamed or moved without updating CODEBOOK_INPUT_FILES, which would fail every export run; why_new=other tests read the inputs through the mapping and never pin it; seam=none; no_claim=input content
+    def test_codebook_inputs_are_committed_files(self) -> None:
+        self.assertEqual(
+            b.CODEBOOK_INPUT_FILES,
+            {"dictionary": "scripts/data_dictionary.json", "methods": "docs/data-methods.md", "license": "docs/data-license.md"},
+        )
+        for field in b.CODEBOOK_INPUT_FILES:
+            self.assertTrue(authored(field).is_file(), field)
+
     def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
         self.assertIn("DIP-API", dictionary["proceedings"]["columns"]["title"]["source"])
@@ -296,6 +305,10 @@ class ExportDistributionDataTests(unittest.TestCase):
             "same meaning": lambda d: d["tables"]["speeches"]["columns"]["text"].update(meaning=d["tables"]["speeches"]["columns"]["id"]["meaning"]),
             "describes tables no export has: removed_table": lambda d: d["tables"].update(removed_table={"meaning": "Entfernte Tabelle.", "columns": {}}),
             "describes speeches columns the export lacks: paragraphs_json": lambda d: d["tables"]["speeches"]["columns"].update(paragraphs_json=d["tables"]["speeches"]["columns"]["text"]),
+            # DATA.md and datenstand.json must not give one column different terms.
+            "licence layer eigene-auswertung for speeches.text contradicts its manifest source tag dip": lambda d: d["tables"]["speeches"]["columns"]["text"].update(license="eigene-auswertung"),
+            "licence layer bundestag-abstimmungen for vote_fractions.leading_vote contradicts its manifest source tag derived": lambda d: d["tables"]["vote_fractions"]["columns"]["leading_vote"].update(license="bundestag-abstimmungen"),
+            "licence layers without allowed source tags: neue-schicht": lambda d: d["licenses"].update({"neue-schicht": "Neue Lizenzschicht ohne Zuordnung."}),
         }
         for message, change in cases.items():
             dictionary = json.loads(inputs.dictionary)
@@ -391,6 +404,48 @@ class ExportDistributionDataTests(unittest.TestCase):
                     self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
                     manifest = rebuilt
 
+    # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
+    def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:
+        manifest = self.export()
+        path = self.exports_dir / "datenstand.json"
+        cached = json.loads(path.read_text())
+        cached["files"] = [file for file in cached["files"] if file["kind"] != "codebook"]
+        path.write_text(json.dumps(cached))
+        rebuilt = self.export()
+        self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
+        self.assertEqual([file["name"] for file in rebuilt["files"] if file["kind"] == "codebook"], ["DATA.md"])
+
+    # Value: protects=an export the site's own validator would refuse is never published, and a tag that cannot be a file name fails before any work; fails_when=the pre-publish validate_manifest call or the tag check is removed; why_new=only cached and remote manifests were validated; seam=none; no_claim=every validator rule
+    def test_an_export_its_validator_rejects_is_not_published(self) -> None:
+        for tag in ("v1/2", "v 1", ".hidden", ""):
+            with self.subTest(tag=tag), self.assertRaisesRegex(RuntimeError, "cannot be part of a file name"):
+                self.export(tag=tag)
+        self.assertFalse(self.exports_dir.exists())
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        real = b.validate_manifest
+
+        def reject_new(manifest, source):
+            if source == "new export":
+                raise RuntimeError("export: rejected by validator")
+            return real(manifest, source)
+
+        with mock.patch.object(b, "validate_manifest", side_effect=reject_new), self.assertRaisesRegex(RuntimeError, "rejected by validator"):
+            self.export(force=True)
+        self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=equal inputs give equal DATA.md bytes, and DATA.md names the latest stored sitting instead of the build time; fails_when=generated_at or another clock value enters DATA.md; why_new=a forced rebuild was only checked for a new generated_at; seam=none; no_claim=the sqlite and CSV bytes
+    def test_forced_rebuild_gives_byte_identical_codebook(self) -> None:
+        first = self.export()
+        codebook = (self.exports_dir / first["generation"] / "DATA.md").read_bytes()
+        second = self.export(force=True)
+        self.assertNotEqual(first["generated_at"], second["generated_at"])
+        self.assertEqual((self.exports_dir / second["generation"] / "DATA.md").read_bytes(), codebook)
+        latest = max(row["date_to"] for row in first["coverage"]["wahlperioden"] if row["date_to"])
+        self.assertIn(f"letzte gespeicherte Sitzung: {latest}.", codebook.decode())
+        self.assertNotIn(first["generated_at"], codebook.decode())
+
     def test_new_writer_failures_preserve_published_assets_and_clean_staging(self) -> None:
         self.export()
         before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
@@ -410,6 +465,85 @@ class ExportDistributionDataTests(unittest.TestCase):
                         self.export(**kwargs)
                 self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
                 self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=a sitting whose protocol number names no Wahlperiode is counted under unbekannt, listed after the numbered WPs (numeric order), and no record is lost or double counted; fails_when=_protocol_wahlperiode stops catching FactsError, the sort turns textual, or unknown rows drop out; why_new=the fixture has only WP 20/21 and the empty store has no rows; seam=none; no_claim=wording of the cells
+    def test_snapshot_coverage_lists_unknown_wahlperiode_last_and_loses_no_record(self) -> None:
+        now = "2024-06-01T00:00:00+00:00"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE protocols SET document_number = 'Sondersitzung', date = '' WHERE id = '5802'")
+            conn.execute(
+                "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
+                "VALUES ('5700', '9/1', '1980-01-01', 'Alte Sitzung', '{}', ?, ?)", (now, now))
+            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version) VALUES ('5700', ?)", (pulse_store.speech_kinds.VERSION,))
+            conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
+            totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                      for table in ("agenda_items", "speeches", "contributions", "votes", "vote_members")}
+        manifest = self.export()
+        rows = manifest["coverage"]["wahlperioden"]
+        self.assertEqual([row["wp"] for row in rows], ["9", "20", "unbekannt"])
+        unknown = rows[-1]
+        self.assertEqual((unknown["sittings"], unknown["date_from"], unknown["date_to"], unknown["agenda_items"], unknown["votes"]), (1, None, None, 1, 1))
+        for table, total in totals.items():
+            with self.subTest(table=table):
+                self.assertEqual(sum(row[table] for row in rows), total)
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertRegex(codebook, r"(?m)^\| unbekannt \| 1 \| unbekannt \| unbekannt \| 1 \|")
+
+    # Value: protects=a broken authored input (unreadable, not UTF-8, bad JSON, wrong shape, licence doc without a "## " section) fails the export with a named RuntimeError and leaves the published generation untouched; fails_when=a raw OSError/UnicodeDecodeError/JSON error escapes or a half-written generation replaces the published one; why_new=only dictionary content errors were pinned, not file or shape errors; seam=none; no_claim=message wording beyond the cause
+    def test_unreadable_or_malformed_authored_inputs_fail_by_name_and_preserve_publication(self) -> None:
+        root = self.authored_copy()
+        with mock.patch.object(b, "REPO_ROOT", root):
+            self.export()
+            before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+            dictionary, methods, license_doc = (root / b.CODEBOOK_INPUT_FILES[field] for field in ("dictionary", "methods", "license"))
+            originals = {path: path.read_bytes() for path in (dictionary, methods, license_doc)}
+            cases = [
+                ("missing licence file", license_doc, None, "codebook input .*data-license.md"),
+                ("not UTF-8", methods, b"\xff\xfe\x00", "codebook input .*data-methods.md"),
+                ("invalid JSON", dictionary, b"{", "data dictionary is not valid JSON"),
+                ("no tables object", dictionary, b'{"licenses": {}}', 'needs "licenses" and "tables" objects'),
+                ("no licenses object", dictionary, b'{"tables": {}}', 'needs "licenses" and "tables" objects'),
+                ("licence doc without section", license_doc, b"# Titel\nnur Betreiberhinweise\n", 'has no "## " section'),
+            ]
+            for label, path, content, message in cases:
+                with self.subTest(label=label):
+                    try:
+                        if content is None:
+                            path.unlink()
+                        else:
+                            path.write_bytes(content)
+                        with self.assertRaisesRegex(RuntimeError, message):
+                            self.export()
+                    finally:
+                        path.write_bytes(originals[path])
+                    self.assertEqual({p.relative_to(self.exports_dir): p.read_bytes() for p in self.exports_dir.rglob("*") if p.is_file()}, before)
+                    self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=DATA.md tells readers per table how to resolve retired person ids (alias list, persons, one or several person columns, none); fails_when=_codebook_alias_line swaps or drops a branch so a join guidance is wrong for a table; why_new=only canonical_id and the "entfällt" case were asserted; seam=none; no_claim=German wording beyond the key phrases
+    def test_codebook_alias_guidance_is_specific_to_each_kind_of_table(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+
+        def section(table):
+            return re.search(rf"(?ms)^### `{table}`\n(.*?)(?=^##)", codebook).group(1)
+
+        self.assertIn("diese Tabelle ist die Aliasliste", section("person_aliases"))
+        self.assertIn("`id` ist die aktuelle Personenkennung", section("persons"))
+        self.assertIn("`person_id`, `home_person_id` verweisen auf `persons.id`", section("person_records"))
+        self.assertIn("`person_id` verweist auf `persons.id`", section("person_bindings"))
+        self.assertIn("entfällt, keine Spalte verweist auf `persons.id`", section("speeches"))
+        for table in ("person_aliases", "persons", "speeches"):
+            self.assertNotIn("früher ausgestellte Kennungen vor generationsübergreifenden Joins", section(table))
+
+    # Value: protects=a recipe whose SQL selects a column without an authored definition fails the export before publishing, so no undocumented CSV column ships; fails_when=the missing-definition check is removed or only checks declared columns; why_new=the fixture recipes are all fully defined; seam=none; no_claim=other recipe failure modes
+    def test_recipe_column_without_definition_fails_and_preserves_publication(self) -> None:
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        undocumented = ({**b.RECIPES[0], "sql": "SELECT '1' AS mp_id, 2 AS zusatz_b, 3 AS zusatz_a;"},) + b.RECIPES[1:]
+        with self.assertRaisesRegex(RuntimeError, "recipe r1-meiste-reden missing output definitions: zusatz_a, zusatz_b"):
+            self.export(recipes=undocumented)
+        self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
 
     def test_r1_pools_the_consolidated_mp_like_the_profile_page(self) -> None:
         manifest = self.export()
@@ -585,7 +719,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
-    # Value: protects=format 8 carries vote context and the Bundestag report source URL through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
+    # Value: protects=the export carries vote context and the Bundestag report source URL through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
     def test_vote_context_and_debate_url_round_trip_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
