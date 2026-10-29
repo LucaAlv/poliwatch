@@ -2,11 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.23.4.0] - 2026-10-29
+## [0.23.5.0] - 2026-10-29
 
 ### Fixed
 
 - A bill's „Zuletzt erfasst“ step on a day with several events is now the procedurally latest one: the sitting's Beratung over a Drucksache filed that day (a same-day „Gesetzentwurf“ no longer beats „1. Beratung“), the Beratung over a same-day Entschließungsantrag or roll-call vote, and the Gesetzesbeschluss over the 2. Beratung. **Measured shift on the reference cache: TODO (see TODOS.md "Bill overview polish: same-day step ties: measure the shift on the cache"): N of M bills change `latest_step`; per-kind lines here.**
+
+## [0.23.4.0] - 2026-10-29
+
+### Changed
+
+- The Methodik page and the Plenarprotokoll overview call a Sitzung's page a „Dossier“ („Jedes Dossier verlinkt den Zwischenbericht als JSON“, „Erzeugte Dossiers“) instead of „Sitzungsseite“ and „Sitzungsdossiers“.
+
+## [0.23.3.0] - 2026-10-29
+
+### Fixed
+
+- The demo build's grouped Antrag TOP on puls.html lists each Antrag's own title instead of one bold block of the joint „a) … b) …“ agenda heading. The demo fixture had copied that heading into both titles; real builds were not affected.
+- `scripts/extract_demo_fixture.py` runs again: it passed bytes to the protocol parser, which now takes text.
+
+## [0.23.2.0] - 2026-10-29
+
+### Changed
+
+- puls.html flags a week older than four ISO weeks with „Nicht aktuell: letzte Woche mit Sitzung vor N Wochen“ right after the heading, instead of only in the muted facts line; shorter gaps still lead the facts line with the age.
+- The site calls its reporting period „Woche mit Sitzung“ (or „Woche“), not „Sitzungswoche“, which names the Bundestag's planned calendar. This covers the Wochenvergleich, the Fakt der Woche cards and footer („Vergleich: N Wochen mit Sitzung“), and the Fakten Methodik.
 
 ## [0.23.1.0] - 2026-10-28
 

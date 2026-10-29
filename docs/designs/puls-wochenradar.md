@@ -68,10 +68,13 @@ receipts." Today the page answers "how much"; after this it answers "what".
    date; `--week YYYY-WW` pins the sitting week and fails before any file is written when
    the week has no cached dossier). Running iff Monday ≤ `today` ≤ Sunday of the week:
    h1 "… bisher verhandelt hat", facts line "Stand 09.09.2026: 1 Sitzung erfasst,
-   Sitzungswoche läuft". Past week within one ISO week: "Stand: 3 Sitzungen, letztes
-   Protokoll 21/84 verteilt am 15.06.2026 · Auswertung vom 15.09.2026". Older: eyebrow
-   "Letzte Sitzungswoche" and the line leads with the age, "Letzte Sitzungswoche vor 13
-   Wochen · …" (ISO-week difference). The clock label is always "Auswertung vom", never
+   Woche läuft". Past week within one ISO week: "Stand: 3 Sitzungen, letztes
+   Protokoll 21/84 verteilt am 15.06.2026 · Auswertung vom 15.09.2026". Older, up to
+   four ISO weeks (an ordinary sitting break): the eyebrow stays "Wochenübersicht" and
+   the line leads with the age, "Letzte Woche mit Sitzung: vor 3 Wochen · …" (ISO-week
+   difference). Older than that (`STALE_AFTER_WEEKS`): the age moves to a flag right
+   after the h1, outside it, "Nicht aktuell: letzte Woche mit Sitzung vor 13 Wochen",
+   and the facts line drops it. The clock label is always "Auswertung vom", never
    "Datenstand" (a stale cache rebuilt offline can hold one sitting of a week that is over;
    the data cannot tell, so the page never claims "abgeschlossen"). A `verteildatum`-based
    rule was checked and rejected: 6 of 95 cached weeks distribute their last protocol
@@ -174,7 +177,7 @@ Codex (gpt-6-astra, cold read of a structured summary, read-only against the rep
 Page anatomy, top to bottom (wireframe: docs/designs/puls-wochenradar-sketch.png):
 
 1. **Global header** unchanged.
-2. **Page header = the week's identity.** Eyebrow "Sitzungswoche · Aktueller Puls";
+2. **Page header = the week's identity.** Eyebrow "Wochenübersicht";
    h1 "Was der Bundestag in KW 24/2026 verhandelt hat" (running week: "… bisher
    verhandelt hat"); a chip per sitting linking to its dossier, the date wrapped as
    `<time datetime="2026-06-12">Fr 12.06.</time>` so the ISO date stays in the markup

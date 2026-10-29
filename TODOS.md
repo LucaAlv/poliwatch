@@ -230,31 +230,25 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 
 ## Protokoll-Dossier
 
-### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
+### Say when a count covers only Sitzungen mit Dossier
 
-**What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
+**Part 1 completed:** v0.23.4.0 (2026-10-29). Public copy says "Dossier": the Methodik's "Erzeugtes JSON" bullet ("Jedes Dossier verlinkt …", was "Sitzungsseite"), the overview heading "Erzeugte Dossiers" (was "Sitzungsdossiers"), and the internal component label "Dossiers" (was "Protokoll-Dossiers"). A test keeps the avoided names off both pages.
+
+**What is left:** wherever a published count spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". Audit on main at v0.23.1.0 (2026-10-29):
+- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden"), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
+- Not disclosed: the Abgeordnete list's "Reden" column (`render_abgeordnete_index`), the puls.html header and Wochenvergleich, the Fakten pages and Methodik, and the speech counts on the Gesetzesvorhaben pages.
 
 **Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
 
-**Effort:** S
+**Context:** Wait for `worktree-a3-plan` to merge: it rewrites `render_abgeordnete_index`, extends `coverage_line` in `render_daten_datenstand`, and adds Fakten coverage text (`facts.coverage_label`, `fill_caveat`). Reuse those rather than adding a second coverage phrase.
+
+**Effort:** S–M
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged
 
 ## Puls
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
-
-### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
-
-**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
-
-**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
-
-**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
 
@@ -316,23 +310,11 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Combined Antrag titles render as one four-line bold block on puls.html
+### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
 
-**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+**What:** `tests/fixtures/demo-report-21-84.json` holds 16 speeches for TOP 32 of Sitzung 21/84, but `scripts/extract_demo_fixture.py` run on the official XML (dserver `btp/21/21084.xml`) now finds 14 and stops at its guard ("expected 16 TOP 32 speeches"). Find which two are no longer Reden (most likely Kurzinterventionen or Erwiderungen, #68), then regenerate the fixture from the XML and update the guard and `test_demo_site.py`'s "16 Reden". The extractor's crash on bytes input (`parse_protocol_xml` takes text) was fixed in v0.23.3.0.
 
-**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Staleness of the "Aktueller Puls" week is only gray meta text
-
-**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
-
-**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
-
-**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
+**Why:** The demo and every test built on it show a count the current rules would not publish, and the fixture can only be edited by hand until it is regenerated.
 
 **Effort:** S
 **Priority:** P3
@@ -404,7 +386,7 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ### Bill overview polish: same-day step ties: measure the shift on the cache
 
-**Implemented, not yet measured:** v0.23.4.0 (2026-10-29, branch `claude/bill-step-ties`). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss), and an unlisted kind ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat „1. Beratung“, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
+**Implemented, not yet measured:** v0.23.5.0 (2026-10-29, branch `claude/bill-step-ties`). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss), and an unlisted kind ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat „1. Beratung“, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
 
 **What is left:** CLAUDE.md asks for the old and new values, and the session that implemented it had no cache. On a machine with `.context/dip-pulse-site`, run from the repository root:
 
@@ -425,7 +407,7 @@ git switch claude/bill-step-ties && python3 /tmp/latest_steps.py .context/dip-pu
 python3 -c 'import json,collections as c;o=json.load(open("/tmp/steps-old.json"));n=json.load(open("/tmp/steps-new.json"));d=c.Counter((o[k],n[k]) for k in o if k in n and o[k]!=n[k]);print(len(o),"bills,",sum(d.values()),"changed");[print(f"{a} -> {b}: {x}") for (a,b),x in d.most_common()]'
 ```
 
-Then: (1) put the totals and the per-kind lines in the CHANGELOG entry for 0.23.4.0 (it holds a placeholder) and the PR body; (2) check that the 18 bills whose latest step was „Gesetzesbeschluss“ still are, and that no shift goes from a later step to an earlier one; (3) list any `latest_step` kind that is not in `BILL_STEP_RANK` (`python3 -c` over /tmp/steps-new.json) and add it to the table if its origin rank is wrong for it. Then move this entry to Completed.
+Then: (1) put the totals and the per-kind lines in the CHANGELOG entry for 0.23.5.0 (it holds a placeholder) and the PR body; (2) check that the 18 bills whose latest step was „Gesetzesbeschluss“ still are, and that no shift goes from a later step to an earlier one; (3) list any `latest_step` kind that is not in `BILL_STEP_RANK` (`python3 -c` over /tmp/steps-new.json) and add it to the table if its origin rank is wrong for it. Then move this entry to Completed.
 
 **Why:** The change moves published `latest_step` values and the overview's date-tie order; the numbers say how many.
 
@@ -1097,6 +1079,46 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Combined Antrag titles render as one four-line bold block on puls.html
+
+**Completed:** v0.23.3.0 (2026-10-29). The cause was the demo fixture, not the renderer: `scripts/extract_demo_fixture.py` copied the joint „a) … b) …“ agenda heading into both Anträge's DIP titles, so `topic_identity` saw one title, the row lost `equal_weight` and the heading became its bold `.radar-title`. The extractor now carries each Antrag's own title (`TITLES`, checked against the Drucksachen 21/6354 = a) and 21/4833 = b) on dserver and against the heading), the fixture's four `titel` fields follow, and the demo row lists both titles like a real build. Real data never had the block: each Vorgang has its own title, and the heading fallback is cut at 120 characters. Splitting titles on „a)“/„b)“ was rejected, since real titles cite „§ 3 Abs. 1 a)“.
+
+**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+
+**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Staleness of the "Aktueller Puls" week is only gray meta text
+
+**Completed:** v0.23.2.0 (2026-10-29). Past `STALE_AFTER_WEEKS` (4 ISO weeks) puls.html shows „Nicht aktuell: letzte Woche mit Sitzung vor N Wochen“ right after the h1, outside it, and the facts line no longer repeats the age; up to four weeks the facts line still leads with it. The eyebrow stays „Wochenübersicht“; the docstring and `docs/designs/puls-wochenradar.md` no longer claim it changes. Still open: the homepage's weekly entry shows no age at all (`render_landing_page`), and „Nächste Sitzungswoche“ above.
+
+**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
+
+**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
+
+**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
+
+**Completed:** v0.23.2.0 (2026-10-29). Every reporting-period use in `scripts/` now says "Woche mit Sitzung" or "Woche", worded per line ("dieser Woche", "je Woche mit Sitzung", "Vergleich: N Wochen mit Sitzung"); the build log counts "Perioden (Wochen und Monate)", and the unused plural in `_PERIOD_NOUN` is gone (`_PERIOD_DEMONSTRATIVE`). A test keeps the longer card footer inside one card line. README and the design docs follow; the source XML fixtures keep the Bundestag's own wording.
+
+**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
+
+**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
+
+**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Bill overview: accent-insensitive search
 
