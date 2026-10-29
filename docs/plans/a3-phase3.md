@@ -401,29 +401,25 @@ Request log: `~/agent-runs/a3/phase3-requests.log`. Runs only after the gate has
 - **Drucksache links:** identical in all 19 sittings (`compare_rerun.py`, run over the pilot's WP 18/19 reports).
 - **Votes:** in 5 sittings the votes differ (18/154, 18/200, 18/244, 19/200, 19/238). It is the same votes with the same counts. The only difference is `members[].profile_url`, which is set in the pilot and empty in `full`, for every member.
 
-### Finding 1: WP 18/19 roll-call members lose their bundestag.de profile link
+### Finding: voters' bundestag.de links and the identity registry (open, owner decision)
 
-- **Cause:** `derive.person_profile_url`, from v0.21.0.0 (#107, merged into this branch at ea049a9 after the pilot ran). It accepts a bundestag.de link only when the path starts with `/abgeordnete/`.
-  - WP 18 roll-call pages link members as `/redirect/<id>?subview=na`.
-  - WP 19 links them as `/webarchiv/abgeordnete/biografien19/...`.
-  - Both are dropped as "names nobody". The filter was meant only for the link back to the Abstimmung.
-- **Size, per-sitting reports in `full`:**
+Revised 2026-10-29 after a measurement. The first version of this section proposed widening the link filter; that would have made the data worse.
 
-  | WP | vote members | without `profile_url` |
-  |---|---:|---:|
-  | 18 | 81,310 | 81,310 |
-  | 19 | 129,016 | 129,016 |
-  | 20 | 133,098 | 81 |
-  | 21 | 61,735 | 0 |
-
-- **Effect:** these members get no profile link, and no `profile:` identity key, so they fall back to name and party. Every `vote_members` row still has an `mp_id`, but WP 18/19 identities rest on name+party alone.
-- **Fix:** widen the filter to the archived and redirect forms (test-first). Then re-derive offline from the cached reports, if they still carry the raw link, or re-fetch. Old/new figures go in Phase 4.
-
-### Finding 2: WP 20 roll-call members are split across two profile URLs (already in `baseline`)
-
-- **What:** 1,558 distinct `mp_id`s vote in WP 20, about twice the seats. `baseline` already has 1,555, so Phase 3 did not cause it.
-- **Cause:** bundestag.de now links WP 20 members both as `/abgeordnete/biografien/…-858154` and as `/abgeordnete/biografien20/…-858154`. The person number is the same, and a fraktionslos phase adds a third name+party key. For example, Uwe Witt, Janine Wissler, Kathrin Vogler and Alexander Ulrich each have 3 `mps` rows.
-- **Fix:** key a bundestag.de profile by its trailing person number, not by the whole URL. This is Phase 4 / identity work; see the memory note "Abgeordnete identity merge gaps".
+- **What is missing:** in `full`, no WP 18/19 roll-call member has a bundestag.de link.
+  - The cause is `derive.person_profile_url` from v0.21.0.0 (#107, merged at ea049a9 after the pilot ran). It keeps only paths that start with `/abgeordnete/`, and drops the WP 18 `/redirect/<n>` links and the WP 19 `/webarchiv/abgeordnete/biografien19/…` links.
+  - One request (2026-10-28) confirmed that `/redirect/258124` lands on `/webarchiv/abgeordnete/biografien18/A/aken_jan-258124`, a biography.
+  - Scale, per-sitting reports in `full`: WP 18 81,310 of 81,310 members without a link; WP 19 129,016 of 129,016; WP 20 81 of 133,098; WP 21 0 of 61,735.
+- **Restoring the links alone makes the data worse.**
+  - A fix that accepted both forms (kept as [a3-voter-profile-links.patch](a3-voter-profile-links.patch), not applied) was measured offline. Two clones of `pilot` were repersisted, one with the old code and one with the patch.
+  - Result: **4,063 → 4,643 persons;** 423 persons the registry merged came apart. Jan van Aken and Johann Wadephul are among them: their WP 18 redirect record, WP 19 archive record and WP 21 record each became a separate person.
+  - **Cause:** the registry's pass 3 treats two voter records in one name+party bucket with different profile URLs as two people. But bundestag.de gives the same person a different URL in each Wahlperiode: van Aken is 258124 in WP 18 and 1043380 in WP 21, and WP 19 even links one MdB under two numbers (`517852-517852` and `akbulut_goekay-857082`).
+  - Today's `full` is the better configuration: its WP 18/19 voters carry no URL, so they attach.
+  - **Caveat:** `copy_previous` carried all 6,957 identity keys over, so this measured the links as registry evidence only, not fresh identity keying.
+- **WP 20 has the same defect within one Wahlperiode:** 1,558 voter `mp_id`s for about 736 seats. `baseline` already has 1,555. Members are linked as both `/biografien/…-858154` and `/biografien20/…-858154`, and a spell as fraktionslos adds a name+party key. Keying by the trailing person number fixes this within WP 20, not across Wahlperioden.
+- **Proposed fix, for the owner to decide:**
+  - First the registry rule: differing bundestag.de voter URLs conflict only within one Wahlperiode. Keep the anchor, same-roll-call and official-id checks.
+  - Then restore the links (the patch), and report persons, Abgeordnete pages and voter ids per Wahlperiode, old and new.
+  - **Timing:** this file's blocker note (above) says the `baseline` vs `full` comparison must not mix code changes with coverage. So run Phase 4's comparison on today's `full` first, then do this as its own test-first change with its own old/new report.
 
 ### Phase 3 totals
 
