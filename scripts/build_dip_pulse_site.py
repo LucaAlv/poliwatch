@@ -4336,7 +4336,7 @@ def render_votes_card(stats: dict[str, Any], newest_href: str) -> str:
         body = f'<p class="week-text">{pulse_html.esc(sentence)}</p><ul class="week-list">{"".join(rows)}</ul>'
     else:
         body = (
-            '<p class="week-text">Keine namentlichen Abstimmungen in dieser Sitzungswoche erfasst.</p>'
+            '<p class="week-text">Keine namentlichen Abstimmungen in dieser Woche erfasst.</p>'
             f'<a class="feature-link" href="{newest_href}">Sitzungsbelege pr&uuml;fen</a>'
         )
     return f"""
@@ -4738,7 +4738,7 @@ def render_week_comparison_section(
 
     if not comparison:
         note = (
-            "Für einen Wochenvergleich braucht es zwei Sitzungswochen, die höchstens "
+            "Für einen Wochenvergleich braucht es zwei Wochen mit Sitzung, die höchstens "
             f"{pulse_html.MAX_WEEK_GAP} Wochen auseinanderliegen. In den erzeugten Auswertungen "
             "ist bisher nur eine solche Woche vorhanden."
         )
@@ -4763,7 +4763,7 @@ def render_week_comparison_section(
         <article class="week-card">
           <h3>Wochenpuls</h3>
           <div class="week-metrics">{"".join(metric_cells)}</div>
-          <p class="week-note">Diese Sitzungswoche; ein Vergleichswert folgt mit der n&auml;chsten Sitzungswoche.</p>
+          <p class="week-note">Diese Woche; ein Vergleichswert folgt mit der n&auml;chsten Woche mit Sitzung.</p>
         </article>
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>
@@ -4837,14 +4837,14 @@ def render_week_comparison_section(
         returning_html = f'<ul class="week-list">{"".join(rows)}</ul>'
         returning_note = (
             f"{len(returning)} von {len(current['vorgang_ids'])} Vorgängen dieser Woche "
-            "standen schon in einer früheren Sitzungswoche auf der Tagesordnung."
+            "standen schon in einer früheren Woche mit Sitzung auf der Tagesordnung."
         )
         if len(shown) < len(returning):
             returning_note += f" Angezeigt sind die {len(shown)} zuletzt fortgesetzten."
     else:
         returning_html = ""
         returning_note = (
-            "Kein Vorgang dieser Sitzungswoche stand zuvor schon einmal auf der Tagesordnung "
+            "Kein Vorgang dieser Woche stand zuvor schon einmal auf der Tagesordnung "
             "der erzeugten Auswertungen."
         )
 
@@ -4865,17 +4865,17 @@ def render_week_comparison_section(
             "Anteil an allen Reden der verglichenen Sitzungstage, Ver&auml;nderung in Prozentpunkten "
             f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
         )
-        spark_note = "Verlauf aller Sitzungstage: Reden je Sitzungswoche"
+        spark_note = "Verlauf aller Sitzungstage: Reden je Woche mit Sitzung"
     elif basis is None:
         sittings_note += " Kein gemeinsamer Sitzungstag; kein Wochenpuls- oder Redeanteil-Vergleich."
         share_note = "Anteil an allen Reden dieser Woche; kein gemeinsamer Sitzungstag f&uuml;r einen Vergleich."
-        spark_note = "Reden je Sitzungswoche"
+        spark_note = "Reden je Woche mit Sitzung"
     else:
         share_note = (
             "Anteil an allen Reden der Woche, Ver&auml;nderung in Prozentpunkten "
             f"gegen&uuml;ber {pulse_html.esc(previous['label'])}."
         )
-        spark_note = "Reden je Sitzungswoche"
+        spark_note = "Reden je Woche mit Sitzung"
     share_note += _speakers_note(compared_current)
 
     return f"""
@@ -4893,7 +4893,7 @@ def render_week_comparison_section(
           <h3>Wochenpuls</h3>
           <div class="week-metrics">{"".join(metric_cells)}</div>
           {pulse_html.render_sparkline(points)}
-          <p class="week-note">{pulse_html.esc(spark_note)}, letzte {len(points)} Sitzungswochen bis {pulse_html.esc(current["label"])}.</p>
+          <p class="week-note">{pulse_html.esc(spark_note)}, letzte {pulse_html.format_count(len(points), "Woche mit Sitzung", "Wochen mit Sitzung")} bis {pulse_html.esc(current["label"])}.</p>
         </article>
         <article class="week-card">
           <h3>Redeanteil der Fraktionen</h3>
@@ -5101,6 +5101,11 @@ def render_pulse_shell(features: Selection, message: str) -> str:
 """
 
 
+#: Past this many ISO weeks the shown week is flagged beside the h1, not only in
+#: the facts line: a gap of up to four weeks is an ordinary sitting break.
+STALE_AFTER_WEEKS = 4
+
+
 def week_header_facts(
     stats: dict[str, Any],
     week_entries: list[dict[str, Any]],
@@ -5113,9 +5118,11 @@ def week_header_facts(
     tell whether a week is over (a stale cache rebuilt offline can hold one
     sitting of a finished week), so the build clock decides and the clock label
     is always "Auswertung vom". A past week within one ISO week of today reads
-    "Stand: ..."; anything older leads with its age and the eyebrow becomes
-    "Letzte Sitzungswoche". Returns {"eyebrow", "h1", "facts", "running",
-    "warning"}; `facts` is HTML with every date in a <time> element.
+    "Stand: ..."; anything older leads with its age ("Letzte Woche mit
+    Sitzung: vor N Wochen"), and past STALE_AFTER_WEEKS the age moves to a
+    "Nicht aktuell" flag after the h1 (`stale`, the age in weeks, else None). Returns
+    {"eyebrow", "h1", "facts", "running", "warning", "stale"}; `facts` is HTML
+    with every date in a <time> element.
     """
     label = pulse_html.week_label(week)
     monday = date.fromisocalendar(week[0], week[1], 1)
@@ -5123,7 +5130,7 @@ def week_header_facts(
     running = monday <= today <= sunday
     warning = None
     if today < monday:
-        warning = "warning: [puls] Auswertung liegt vor der Sitzungswoche"
+        warning = "warning: [puls] Auswertung liegt vor der ausgewählten Woche"
 
     counts = (
         f"{pulse_html.format_count(stats['speech_count'], 'Rede', 'Reden')} in "
@@ -5139,6 +5146,7 @@ def week_header_facts(
             "facts": f"{counts} · Stand {clock}: {sittings} erfasst, Woche l&auml;uft",
             "running": True,
             "warning": warning,
+            "stale": None,
         }
 
     # Newest protocol of the week: "verteilt am" from DIP's distribution date,
@@ -5162,13 +5170,25 @@ def week_header_facts(
             "facts": f"{counts} · Stand: {sittings}, {latest} · {clock}",
             "running": False,
             "warning": warning,
+            "stale": None,
+        }
+    if age > STALE_AFTER_WEEKS:
+        # The flag beside the h1 carries the age; the facts line does not repeat it.
+        return {
+            "eyebrow": "Wochenübersicht",
+            "h1": f"Was der Bundestag in {label} verhandelt hat",
+            "facts": f"{counts} · {sittings}, {latest} · {clock}",
+            "running": False,
+            "warning": warning,
+            "stale": age,
         }
     return {
         "eyebrow": "Wochenübersicht",
         "h1": f"Was der Bundestag in {label} verhandelt hat",
-        "facts": f"Letzte Sitzungswoche vor {age} Wochen · {counts} · {sittings}, {latest} · {clock}",
+        "facts": f"Letzte Woche mit Sitzung: vor {age} Wochen · {counts} · {sittings}, {latest} · {clock}",
         "running": False,
         "warning": warning,
+        "stale": None,
     }
 
 
@@ -5409,7 +5429,7 @@ def render_radar_section(
     if not total:
         # A week of Fragestunden only has no Reden but still has its questions and
         # answers: the Außerdem line lists them.
-        note = "In dieser Sitzungswoche wurden keine Reden extrahiert"
+        note = "In dieser Woche wurden keine Reden extrahiert"
         note += ", nur Fragen und Antworten aus Frageformaten." if radar["formats"] else "."
         body = f'<p class="week-note">{note}</p>' + render_radar_also(radar)
     else:
@@ -5522,6 +5542,11 @@ def render_front_page(
     print(log, file=sys.stderr)
 
     newest_href = pulse_html.esc(dossier_href(week_entries[-1]))
+    stale_flag = (
+        f'<p class="stale-flag">Nicht aktuell: letzte Woche mit Sitzung vor {header["stale"]} Wochen</p>'
+        if header["stale"]
+        else ""
+    )
     undated_note = ""
     if undated:
         undated_note = (
@@ -5606,6 +5631,7 @@ def render_front_page(
     }}
     .page-actions a {{ border-color:#bdd0ea; background:var(--blue-soft); color:var(--blue); }}
     .week-chips a {{ color:var(--ink); gap:.3em; }}
+    .stale-flag {{ display:inline-block; margin:10px 0 0; padding:3px 9px; border:1px solid var(--amber); border-radius:6px; background:var(--amber-soft); color:var(--amber); font-size:14px; font-weight:650; }}
     .week-facts {{ margin-top:12px; max-width:860px; font-size:15px; line-height:1.5; }}
     .eyebrow {{
       color:var(--muted);
@@ -5950,7 +5976,7 @@ def render_front_page(
     <header class="page-header">
       <div>
         <span class="eyebrow">{header["eyebrow"]}</span>
-        <h1>{header["h1"]}</h1>
+        <h1>{header["h1"]}</h1>{stale_flag}
         <nav class="week-chips" aria-label="Sitzungen dieser Woche">{render_sitting_chips(week_entries)}</nav>
         <p class="week-facts">{header["facts"]}</p>{undated_note}
       </div>
@@ -8032,14 +8058,13 @@ FACTS_METRIC_LABELS = {
     "meistdiskutierter-vorgang": "Meistdiskutierter Vorgang",
 }
 
-#: (plural noun, "this <period>" demonstrative phrase) per period_kind, for
-#: wording that must not assume every fact is a weekly one (T11). The
-#: demonstrative is its own phrase, not "diese/dieser" + noun, because German
-#: grammatical gender differs between "diese Sitzungswoche" (feminine) and
-#: "dieser Monat" (masculine).
-_PERIOD_NOUN = {
-    "week": ("Sitzungswochen", "Diese Sitzungswoche"),
-    "month": ("Monate", "Dieser Monat"),
+#: "this <period>" demonstrative phrase per period_kind, for wording that must
+#: not assume every fact is a weekly one (T11). It is its own phrase, not
+#: "diese/dieser" + noun, because German grammatical gender differs between
+#: "diese Woche" (feminine) and "dieser Monat" (masculine).
+_PERIOD_DEMONSTRATIVE = {
+    "week": "Diese Woche",
+    "month": "Dieser Monat",
 }
 
 
@@ -8593,7 +8618,7 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
     {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
     <header>
       <h1>Fakt der Woche</h1>
-      <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Sitzungswoche und je Monat
+      <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Woche mit Sitzung und je Monat
       - aus den Primärdaten dieser Seite, nicht redaktionell ausgewählt. <a href="methodik.html">Wie
       das funktioniert</a>.</p>
     </header>
@@ -8621,7 +8646,7 @@ def render_facts_week(
     features = features or publication_selection()
     sample = period_rows[0]
     period_kind = sample["period_kind"]
-    _, demonstrative = _PERIOD_NOUN.get(period_kind, _PERIOD_NOUN["week"])
+    demonstrative = _PERIOD_DEMONSTRATIVE.get(period_kind, _PERIOD_DEMONSTRATIVE["week"])
     if period_kind == "month":
         period_text = facts.month_display(period_key)
     else:
@@ -8700,7 +8725,7 @@ def _facts_methodik_metric_items(registry: tuple[dict[str, Any], ...], period_pl
             gates.append("Thema muss bestimmbar sein")
         caveat = f'<p class="caveat">{pulse_html.esc(metric["caveat"])}</p>' if metric.get("caveat") else ""
         direction_text = "größter" if metric["direction"] == "max" else "kleinster"
-        per_period = "je Sitzungswoche" if period_plural == "Wochen" else "je Monat"
+        per_period = "je Woche mit Sitzung" if period_plural == "Wochen" else "je Monat"
         items.append(
             f'<li id="metrik-{pulse_html.esc(metric["id"])}"><strong>{pulse_html.esc(metric["title"])}</strong>'
             f'<span>{pulse_html.esc(metric["unit"])} · {direction_text} Wert {per_period} · '
@@ -8730,7 +8755,7 @@ def render_facts_methodik(features: Selection | None = None) -> str:
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>Wie „Fakt der Woche“ berechnet wird</h1>
-      <p class="lead">Jede Sitzungswoche liefert für sechs Kennzahlen, jeder Monat für zwei weitere,
+      <p class="lead">Jede Woche mit Sitzung liefert für sechs Kennzahlen, jeder Monat für zwei weitere,
       höchstens einen Wert. Veröffentlicht wird eine Kennzahl nur, wenn sie ungewöhnlicher ist als
       {pulse_html.esc(floor_pct)} % der vergleichbaren Perioden seit Beginn der Erfassung - und, bei
       einigen Kennzahlen, eine zusätzliche absolute Schwelle erreicht.</p>
@@ -8738,7 +8763,7 @@ def render_facts_methodik(features: Selection | None = None) -> str:
     <section>
       <h2>Die Regel</h2>
       <ol class="method-list">
-        <li><strong>Beobachtung</strong><span>Je Periode (Sitzungswoche oder Monat) und Kennzahl
+        <li><strong>Beobachtung</strong><span>Je Periode (Woche mit Sitzung oder Monat) und Kennzahl
         der größte oder kleinste Wert unter den Kandidatenzeilen dieser Periode, ihre Anzahl - bei
         „Die meisten ersten Reden der Woche“ - oder, bei den beiden monatlichen Kennzahlen, die
         größte Summe über alle Kandidatenzeilen einer Abgeordneten oder eines Vorgangs im Monat.
@@ -8746,7 +8771,7 @@ def render_facts_methodik(features: Selection | None = None) -> str:
         <li><strong>Vergleichbarkeit</strong><span>Der Anteil der vorherigen Beobachtungen, den
         der Wert in der Richtung der Kennzahl schlägt (mehr beim Maximum, weniger beim Minimum).
         Verglichen wird zuerst mit der laufenden Wahlperiode, sobald sie genug frühere Perioden
-        zählt (mindestens {facts.MIN_HISTORY_WEEKS} Sitzungswochen bzw. mindestens
+        zählt (mindestens {facts.MIN_HISTORY_WEEKS} Wochen mit Sitzung bzw. mindestens
         {facts.MIN_HISTORY_MONTHS} Monate), sonst mit der gesamten Erfassung; darunter gilt die
         Periode als „noch nicht vergleichbar“.</span></li>
         <li><strong>Veröffentlichungsschwelle</strong><span>Ab {pulse_html.esc(floor_pct)} % wird
@@ -8771,7 +8796,7 @@ def render_facts_methodik(features: Selection | None = None) -> str:
     </section>
     <section>
       <h2>Die zwei monatlichen Kennzahlen</h2>
-      <p class="lead">Dieselbe Regel, mit Monaten statt Sitzungswochen als Perioden: die Beobachtung
+      <p class="lead">Dieselbe Regel, mit Monaten statt Wochen mit Sitzung als Perioden: die Beobachtung
       summiert dafür die Kandidatenzeilen einer Abgeordneten oder eines Vorgangs über alle Sitzungen
       des Monats, statt die einzelne größte Zeile zu nehmen.</p>
       <ul class="method-list">{monthly_items}</ul>
@@ -10780,7 +10805,7 @@ def render_site(
     )
     facts_output = components["facts"].write_pages(output_dir, component_context)
     print(
-        f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Sitzungswochen",
+        f"fakten: {facts_output['posted']} Fakten in {facts_output['periods']} Perioden (Wochen und Monate)",
         file=sys.stderr,
     )
     votes_output = components["votes"].write_pages(output_dir, component_context)
