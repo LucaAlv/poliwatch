@@ -4735,12 +4735,12 @@ def write_votes_archive_page(
 
 
 def _speakers_note(stats: dict[str, Any]) -> str:
-    """" Fraktionen für N von M Reden erfasst." when a week's speaker lists are cut short."""
+    """" Zuordnung für N von M Reden erfasst." when a week's speaker lists are cut short."""
     if stats.get("speakers_complete", True):
         return ""
     recorded = sum(stats["party_counts"].values())
     return (
-        f" Fraktionen f&uuml;r {pulse_html.format_int(recorded)} von "
+        f" Zuordnung f&uuml;r {pulse_html.format_int(recorded)} von "
         f"{pulse_html.format_count(stats['speech_count'], 'Rede', 'Reden')} erfasst."
     )
 
@@ -4789,7 +4789,7 @@ def render_week_comparison_section(
           <p class="week-note">Diese Woche; ein Vergleichswert folgt mit der n&auml;chsten Woche mit Sitzung.</p>
         </article>
         <article class="week-card">
-          <h3>Redeanteil der Fraktionen</h3>
+          <h3>Redeanteil der Fraktionen und Gruppen</h3>
           {pulse_html.render_share_shift(current_stats["party_counts"], None, show_deltas=False)}
           <p class="week-note">Anteil an allen Reden der Woche.{_speakers_note(current_stats)}</p>
         </article>{votes_card}
@@ -4919,7 +4919,7 @@ def render_week_comparison_section(
           <p class="week-note">{pulse_html.esc(spark_note)}, letzte {pulse_html.format_count(len(points), "Woche mit Sitzung", "Wochen mit Sitzung")} bis {pulse_html.esc(current["label"])}.</p>
         </article>
         <article class="week-card">
-          <h3>Redeanteil der Fraktionen</h3>
+          <h3>Redeanteil der Fraktionen und Gruppen</h3>
           {pulse_html.render_share_shift(compared_current["party_counts"], compared_previous["party_counts"] if basis else None)}
           <p class="week-note">{share_note}</p>
         </article>
@@ -5857,6 +5857,8 @@ def render_front_page(
     .week-list-current-only .week-row {{
       grid-template-columns:minmax(96px,1.1fr) minmax(0,2fr) auto;
     }}
+    /* Redeanteil: the rows outside the Zusammenschlüsse start below a rule. */
+    .week-row-split {{ border-top:1px solid var(--line); padding-top:8px; }}
     .week-label {{
       color:var(--muted);
       font-size:12px;

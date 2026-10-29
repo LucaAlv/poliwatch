@@ -228,17 +228,17 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
 
-### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
+### Textanteil for the r2 Daten recipe, the rest of the ADR 0001 UI half
 
-**What:** The data half is done: puls.html's Redeanteil shows Bundesregierung, Bundesrat and weitere Sprechrolle as their own rows in the denominator, no row is called "Regierung", and the Daten recipes r1/r2 follow the same rule. What is left is wording: head the puls.html card "Redeanteil der Fraktionen und Gruppen" (Gruppen are still headed as "Fraktionen"), and rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
+**What:** The data half is done, and so is puls.html (v0.23.6.0, 2026-10-29): the card is headed "Redeanteil der Fraktionen und Gruppen", lists every row (it cut at eight before, so a WP 21 week's Bundesrat or fraktionslos row could drop and the bars sum to less than 100 %), and sets fraktionslos, Bundesregierung, Bundesrat, weitere Sprechrolle and Unbekannt apart below a rule; its note says "Zuordnung für N von M Reden erfasst". What is left is the recipe: rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil ("Textanteil je Fraktion oder Gruppe") sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
 
 **Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25).
 
-**Context:** The three sides sit in the same list as the Zusammenschlüsse in `week_stats`; a card that wants them "outside the Zusammenschlüsse" needs a visual split as well as the heading.
+**Context:** `worktree-a3-plan` rewrites r2's SELECT, ORDER BY and caveat (per-Wahlperiode shares), exactly the lines this needs, so do it on or after that branch. A changed recipe SQL makes every earlier export's manifest invalid as an override (by design since v0.23.6.0).
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged (it rewrites r2)
 
 ### "Nächste Sitzungswoche" in the puls.html header
 
@@ -364,18 +364,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 
 ## Abgeordnete
-
-### The Bundestag XML gives one Redner-ID to two people (11005304)
-
-**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
-
-**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
-
-**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Store DIP `person_roles` so a Rede without a Zusammenschluss uses the Zugehörigkeit of its Wahlperiode
 
@@ -1014,6 +1002,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### The Bundestag XML gives one Redner-ID to two people (11005304)
+
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
+
+**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
+
+**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
 

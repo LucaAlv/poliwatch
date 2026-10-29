@@ -2329,24 +2329,34 @@ def render_sparkline(points: list[dict[str, Any]]) -> str:
     return f'<div class="week-spark">{"".join(bars)}</div>'
 
 
-def render_share_shift(
-    current: Counter[str], previous: Counter[str] | None, limit: int = 8, *, show_deltas: bool = True
-) -> str:
-    """Per-fraction share of the week's speeches, optionally with the shift in percentage points."""
+#: The Redeanteil rows outside the Zusammenschlüsse (CONTEXT.md, Redeanteil je
+#: Zusammenschluss), in the order the card lists them below the split.
+SHARE_ROWS_OUTSIDE = ("fraktionslos", *derive.SPRECHROLLE_LABELS.values(), "Unbekannt")
+
+
+def render_share_shift(current: Counter[str], previous: Counter[str] | None, *, show_deltas: bool = True) -> str:
+    """Redeanteil je Zusammenschluss of the week's Reden, optionally with the
+    shift in percentage points: the Zusammenschlüsse by count, then, below a
+    split, fraktionslos, the three Sprechrolle sides and Unbekannt. Every row with
+    Reden is shown, so the shares add up to 100 %."""
     total_now = sum(current.values())
     if not total_now:
         return '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
     total_before = sum(previous.values()) if previous else 0
+    groups = [party for party, _count in current.most_common() if party not in SHARE_ROWS_OUTSIDE]
+    outside = [party for party in SHARE_ROWS_OUTSIDE if current.get(party)]
     rows = []
-    for party, count in current.most_common(limit):
+    for party in [*groups, *outside]:
+        count = current[party]
         share = percent(count, total_now)
         shift = None
         if total_before:
             shift = share - percent(previous.get(party, 0), total_before)
         color = PARTY_COLORS.get(party, "#6b7280")
+        row_class = "week-row week-row-split" if groups and outside and party == outside[0] else "week-row"
         rows.append(
             f"""
-            <li class="week-row">
+            <li class="{row_class}">
               <span class="week-label">{esc(party)}</span>
               <span class="week-bar"><span style="width:{share:.2f}%;background:{color}"></span></span>
               <strong>{format_percent(share)}</strong>

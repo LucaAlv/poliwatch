@@ -1768,7 +1768,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         ]
         band = re.search(r'<section class="week-compare".*?</section>', self._render(entries), re.S).group()
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertIn('<span class="week-delta flat">n/a</span>', metrics)
         self.assertIn('<span class="week-delta flat">n/a</span>', shares)
         self.assertNotIn('week-list-current-only', shares)
@@ -1807,6 +1807,26 @@ class SittingWeekComparisonTests(unittest.TestCase):
         empty = '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
         self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1})), empty)
         self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1}), show_deltas=False), empty)
+
+    # Value: protects=the Redeanteil card shows every row of a WP 21 week (ten here) and sets fraktionslos, the three Sprechrolle sides and Unbekannt apart below the Zusammenschlüsse, so the bars add up to 100 %; fails_when=render_share_shift cuts rows at a limit again or mixes the sides into the ranking of the Zusammenschlüsse; why_new=TODOS "Redeanteil heading and Textanteil", the card had most_common(8); seam=none
+    def test_share_shift_shows_every_row_and_sets_the_sides_apart(self) -> None:
+        current = Counter({
+            "CDU/CSU": 30, "AfD": 25, "SPD": 20, "BÜNDNIS 90/DIE GRÜNEN": 10, "Die Linke": 6,
+            "Bundesregierung": 4, "Bundesrat": 1, "weitere Sprechrolle": 1, "fraktionslos": 2, "Unbekannt": 1,
+        })
+        markup = pulse_html.render_share_shift(current, None, show_deltas=False)
+        labels = re.findall(r'<span class="week-label">(.*?)</span>', markup)
+        self.assertEqual(
+            labels,
+            ["CDU/CSU", "AfD", "SPD", "BÜNDNIS 90/DIE GRÜNEN", "Die Linke",
+             "fraktionslos", "Bundesregierung", "Bundesrat", "weitere Sprechrolle", "Unbekannt"],
+        )
+        self.assertAlmostEqual(sum(float(width) for width in re.findall(r'width:([0-9.]+)%', markup)), 100.0, places=1)
+        self.assertEqual(markup.count("week-row-split"), 1)
+        self.assertRegex(markup, r'<li class="week-row week-row-split">\s*<span class="week-label">fraktionslos</span>')
+        # Only sides, or only Zusammenschlüsse: nothing to split.
+        self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"Bundesregierung": 1}), None))
+        self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"SPD": 1}), None))
 
     def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
         truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
@@ -1921,7 +1941,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('id="wochenvergleich"', markup)
         self.assertIn("KW 24/2026", markup)
         self.assertIn("KW 21/2026", markup)
-        self.assertIn("Redeanteil der Fraktionen", markup)
+        self.assertIn("Redeanteil der Fraktionen und Gruppen", markup)
         self.assertIn("Debattenprofil", markup)
         self.assertIn("Wieder auf der Tagesordnung", markup)
         self.assertIn("Kein Vorgang dieser Woche", markup)
@@ -1962,7 +1982,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertRegex(metrics, r'<span>Redetext \(Zeichen\)</span>\s*<strong>100</strong>')
         self.assertNotIn('class="week-delta', band)
         self.assertNotIn('class="week-metric-foot"', band)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertIn('<ul class="week-list week-list-current-only">', shares)
         self.assertIn('width:100.00%', shares)
         self.assertIn('<strong>100,0%</strong>', shares)
@@ -4155,7 +4175,7 @@ class WeekRadarPageTests(unittest.TestCase):
         band = self._section(self._render(entries), "week-compare")
         self.assertIn('<h2 id="wochenvergleich-h2">Noch keine Vergleichswoche</h2>', band)
         self.assertIn("<h3>Wochenpuls</h3>", band)
-        self.assertIn("<h3>Redeanteil der Fraktionen</h3>", band)
+        self.assertIn("<h3>Redeanteil der Fraktionen und Gruppen</h3>", band)
         self.assertEqual(re.findall(r"<span>(Reden|Tagesordnungspunkte|Redetext \(Zeichen\))</span>", band), ["Reden", "Tagesordnungspunkte"])
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
         self.assertNotIn('class="week-delta', band)
@@ -4165,7 +4185,7 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("<em>", metrics)
         self.assertNotIn("week-spark", band)
         self.assertNotIn("Debattenprofil", band)
-        self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
+        self.assertIn("Anteil an allen Reden der Woche. Zuordnung f&uuml;r 2 von 5 Reden erfasst.", band)
         self.assertIn('<li class="week-row">', band)
         self.assertEqual(band.count("<strong>50,0%</strong>"), 2)
 
@@ -4179,7 +4199,7 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("n/a", metrics)
         self.assertIn("Anteil an allen Reden der verglichenen Sitzungstage", band)
         self.assertNotIn("Tagesmischung", band)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertRegex(shares, r'<span class="week-delta (up|down|flat)">')
 
     def test_equal_sitting_counts_keep_the_delta_chips(self) -> None:
