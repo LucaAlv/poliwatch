@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.0.0] - 2026-10-29
+
+### Added
+
+- Vote panels can quote an Antrag's demands when DIP has no abstract, with sponsor attribution, a link to the original Drucksache and a fold for longer passages. Existing DIP descriptions take precedence.
+
+### Changed
+
+- Antrag texts are cached for offline extraction and included in schema 8 / export format 9 through document passages and vote associations. Rebuild older stores with `--offline --repersist`.
+- Local validation increases reference votes with descriptions from 153 to 196 of 217. Extraction remains below its acceptance threshold, and three historical WP 18/19 quotation fidelity defects remain documented.
+
+### Fixed
+
+- Quotes retain an elision hyphen stranded at a line break, such as `Steuerzahler und -zahlerinnen` in Drucksache 21/224. Extractor version 7 requires re-persisting existing passage data.
+- A context that already has a quotation still reports when another candidate's text or metadata has not been fetched.
+
 ## [0.23.4.0] - 2026-10-29
 
 ### Changed

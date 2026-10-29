@@ -767,22 +767,29 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 ### B4 extractive fallback: finish validation locally (open items from PR #113)
 
-**What:** The quoted-Antrag fallback ([plan](docs/plans/b4-extractive-antrag.md), [research note](docs/research/b4-antrag-extraction.md)) was built and checked in a cloud session against 39 real Anträge (DIP `drucksache-text` vs the PDF read with `pdftotext -layout`), but not against the reference store. On the owner's machine:
-1. **The votes that matter.** On a copy of the reference store (never the canonical `.context/dip-pulse-site`), run an online Vorgang fill so stage 3 fetches the Antrag texts, then hand-check every quote of the 64 votes without a DIP abstract against its PDF. Report panels with a description, old 153 of 217 → new N, and that interpretation fields, tallies, tags and abstracts are unchanged (plan step 5). Spot-check 906, 996, 1005, a `no_passage` and a `not_fetched` panel in Chrome, light and dark, desktop and mobile.
-2. **Mid-period WP 18/19 Anträge.** The cloud sample took the newest DIP page of each Wahlperiode, so it clusters at the end of each period. Check about 20 Anträge from the middle of WP 18 and 19, for example those of A3's pilot sittings.
-3. **The inverted anchor (D5).** "…, fordert der Deutsche Bundestag die Bundesregierung … auf" inside a longer sentence (20/4666, 19/30983; 2 of 37 in the cloud sample) gives no quote. Count it on items 1 and 2; support it only by quoting from the sentence start, never from "fordert".
-4. **Footnotes.** A page-foot footnote inside the operative part gives no quote (21/8385, 21/8551). Count how often it happens on item 1; strip footnotes only if a rule proves exact there, including the reference digits glued to words.
-5. **Empty DIP texts.** A Drucksache DIP returns with an empty `text` is cached as read and never asked again. Count them on item 1; if any, re-ask when DIP's `aktualisiert` changes.
-6. **Gate.** The plan's gate is ≥90 % of Antrag candidates quoted with 0 wrong passages; the cloud sample reached 89 % (32 of 36 with a demands section) with none known wrong. Decide on item 1's numbers.
-7. **Before merging:** `/gstack-review` (not installed in the cloud session) and the Node browser checks from CONTRIBUTING.md.
+**What:** Validate quoted-Antrag fallback coverage and fidelity, retaining measured failures as separate extractor follow-ups.
 
-**Why:** A verbatim quote that drops or adds a word is a factual error presented as a citation. The cloud runs found three such traps in DIP's own text (repeated page head, advance-copy watermark, footnotes) and two in PDF text layers; the population that matters, abstract-less votes on the reference store, has not been read yet.
+**Status: OPEN — validation executed 2026-10-29; acceptance gates fail.** [Plan](docs/plans/b4-extractive-antrag.md#local-validation-outcome-2026-10-29), [Run 3 evidence](docs/research/b4-antrag-extraction.md#run-3-local-reference-and-mid-period-validation-2026-10-29), [91-document audit](docs/research/b4-local-audit-2026-10-29.csv).
 
-**Context:** Branch `claude/charming-lovelace-4a229o`, PR #113; `EXTRACTOR_VERSION` 5. Design wrinkle left from the code review: the Drucksache cache rides in the in-memory Vorgang cache under `antrag_text.CACHE_KEY`, which is why `politikfelder.save_cache` lists the keys it writes. A3 coordination is on the A3 entry.
+**Completed locally:**
+1. Preserved the canonical `.context/dip-pulse-site` and a baseline copy (all 4,096 files hash-identical), created separate offline replay control and enriched working copy. No sitting reacquisition or A3 backfill. Artifacts: `.context/b4-local-20261029-163417/`.
+2. Verified the renderer's narrow cohort: 217 votes, 153 with an abstract, 64 without. Descriptions **153/217 → 196/217**; 43/64 previously abstract-less votes gain quotes. Across all contexts, **50/71** candidate documents extract (**50/68** with verified demands); all 50 reference quotes are verified after the small v7 elision-hyphen fix. Wholly abstract-less subset: **43/60** candidate documents, **43/59** with demands.
+3. Audited 20 mid-period A3-linked WP 18/19 documents (10 each). **16/20** extract (16/16 with demands), but **three passages are incorrect**: `18/2742` loses a hard hyphen, `18/3154` loses nine bullet markers, `19/16794` includes printer-footer text.
+4. Counted misses and edge cases before changing extraction: ten interposed-anchor clauses in the reference cohort, one `dazu`, one `möge beschließen`, one demand without an explicit Bundesregierung object, four footnote misses, one direct motion to revoke a regulation, three documents without an applicable demands section. No unsupported inverted Bundesregierung anchor in either local sample. Empty texts **0/91**, so the conditional retry-on-`aktualisiert` fix was not triggered. No broader anchor or footnote rule was added.
+5. Compared protected fields by stable IDs in SQLite. Tallies, member rows, tags, abstracts and links are unchanged by enrichment. Every old interpretation difference is reproduced without fallback by the offline replay control (formerly null derived results/scopes/inversion/procedure fields). Checked rendered quotes against stored documents/associations and export CSV/SQLite.
+6. Ran compilation, full unittest suite, CI zero-network demo/publication checks and the Node browser runner. Chrome DevTools checked 906, 996, 1005, abstract 846, no_passage 997, and labelled disposable not_fetched/mixed states in light/dark and desktop/mobile. Fixed the missing-cache notice beside an existing quote. `/review` ran with native adversarial review; optional Claude retry was rejected by automatic approval review. Logs and exact check results are in the research note.
 
-**Effort:** S (mostly running and reading)
+**Remaining:** ≥90% extraction coverage and zero incorrect passages are **not satisfied**. The historical cloud result (32/36 demand-bearing candidates, 89%, no known incorrect quotes in that sample) does not override the local results. Do not close this TODO or treat the 196/217 description percentage as the extraction gate.
+
+**Smallest follow-up:** fix source fidelity first with real fixtures for `18/2742`, `18/3154`, `19/16794`, returning `no_passage` where lost source structure cannot be proved. Acceptance: zero incorrect accepted passages on the saved 91-document corpus. Then address measured interposed-anchor clauses and the `dazu` variant while retaining complete sentence openings; re-check cloud inverted cases `20/4666`, `19/30983` before supporting them. Re-audit until ≥90% coverage passes with failures retained in explicitly stated denominators. Substantial extraction work belongs in that separate session.
+
+**Why:** The local audit found actual errors in quoted older-period texts. The reference population has now been read; fidelity beyond that population remains unproven until the failing sample documents are fixed or safely refused.
+
+**Context:** PR #113, branch `claude/charming-lovelace-4a229o`; `EXTRACTOR_VERSION` 7. The Drucksache cache rides in the in-memory Vorgang cache under `antrag_text.CACHE_NAMESPACE`; A3 coordination is on the A3 entry.
+
+**Effort:** M (remaining source fidelity and measured anchor follow-ups)
 **Priority:** P2
-**Depends on:** The reference store, a DIP key and network, on the owner's machine
+**Depends on:** Saved local corpus; no new backfill required
 
 ### Mitberatende Ausschüsse on the vote panel
 
