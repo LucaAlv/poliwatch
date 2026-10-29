@@ -49,7 +49,7 @@ NAV_ITEMS = (
 COMPONENTS = (
     ComponentDefinition("dip-fetch", "DIP-Daten", "Ruft die offiziellen DIP-Daten des Bundestags ab.", "Kern", core=True, default_built=True),
     ComponentDefinition("sitting-catalog", "Sitzungskatalog", "Zeigt den Katalog der Plenarprotokolle und API-Sitzungen.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
-    ComponentDefinition("dossiers", "Protokoll-Dossiers", "Erzeugt die Detailansichten der Plenarprotokolle.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
+    ComponentDefinition("dossiers", "Dossiers", "Erzeugt je Sitzung ein Dossier aus Plenarprotokoll und DIP-Daten.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
     ComponentDefinition("store", "Datenbank", "Speichert die verknüpften Parlamentsdaten in SQLite.", "Kern", core=True, default_built=True, requires=("dip-fetch",)),
     ComponentDefinition("votes", "Namentliche Abstimmungen", "Rendert Abstimmungssummen, Fraktionen und einzelne Stimmen.", "Analyse", requires=("dip-fetch",)),
     ComponentDefinition("summaries", "KI-Zusammenfassungen", "Rendert validierte KI-Zusammenfassungen.", "Analyse", requires=("dip-fetch",)),

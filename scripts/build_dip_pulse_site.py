@@ -9289,7 +9289,7 @@ def render_overview(
     </section>
     <div class="periods">{period_badges}</div>
     <div class="section-head">
-      <h2>Erzeugte Sitzungsdossiers</h2>
+      <h2>Erzeugte Dossiers</h2>
       <p>Diese Seiten enthalten die XML-Protokollauswertung, die Aufmerksamkeit je Tagesordnungspunkt, Rednerinnen und Redner, Reden, zugeordnete DIP-Positionen und -Aktivitäten, verknüpfte Drucksachen, namentliche Abstimmungen, Personendatensätze und die Roh-API-Nutzdaten.</p>
     </div>
     <section class="sessions">
@@ -10240,7 +10240,7 @@ def render_sources_page(
           <li><strong>Abgeordnetenprofile</strong><span>Jeder Name verlinkt das passende Profil auf abgeordnetenwatch.de. Zugeordnet wird über die Bundestags-Redner-ID, ersatzweise über Name und Fraktion; nur eindeutige Treffer werden verlinkt, mehrdeutige bleiben ohne Link.</span></li>
           <li><strong>Verknüpfte Dokumente</strong><span>Kombiniert Drucksachen, die direkt im Protokoll verlinkt sind, mit zugehörigen DIP-Vorgangspositionen der Sitzung.</span></li>
           <li><strong>Abstimmungspanels</strong><span>Werden nur angezeigt, wenn eine namentliche Abstimmung am selben Datum über überlappende Drucksachennummern einem Tagesordnungspunkt zugeordnet werden kann.</span></li>
-          <li><strong>Erzeugtes JSON</strong><span>Jede Sitzungsseite verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
+          <li><strong>Erzeugtes JSON</strong><span>Jedes Dossier verlinkt den Zwischenbericht als JSON, damit Extraktion und Anreicherung direkt geprüft werden können.</span></li>
           <li id="ki-zusammenfassungen"><strong>KI-Zusammenfassungen</strong><span>Sie sind als „KI-generiert · nicht redaktionell geprüft“ markiert und verlinken drei bis fünf technisch geprüfte Belegstellen. Diese Linkprüfung beweist weder sachliche Richtigkeit noch Ausgewogenheit oder Vollständigkeit.</span></li>
           {database_method_item}
           {licence_method_item}
