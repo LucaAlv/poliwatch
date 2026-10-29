@@ -515,6 +515,20 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P1
 **Depends on:** None
 
+### The carried-forward registry diverges from a fresh build after A3
+
+**What:** The A3 Phase 4 gate failed `replayed_store_groups_like_fresh` on a clone of `~/agent-runs/a3/full` (4,168 vs. 4,165 groups on the fresh store's bindings). Details are in [the Phase 4 record](docs/plans/a3-phase4.md), Step 1. There are two parts:
+1. **Köstering/Krampe split.** One person, Jan Köstering (formerly Krampe, Die Linke), is a single person with 121 bindings in a fresh build. In the replayed store he is four persons: `dip:8257`, `aw:178656`, and the profiles `koestering_jan-1045564` and `krampe_jan-1045564`. `baseline` had `aw:178656` and the Köstering profile as one person. So A3 newly separates his speeches from his votes, and a replay does not heal it.
+2. **Orphan persons.** 295 persons hold only retired bindings. Each holds one `roster-v1-…` binding of a `dip:` record that the roster no longer produces: 295 of the 307 retired roster bindings. The other 12, and the 187 retired contribution bindings of speech rule v6, sit on persons that also hold live bindings. 282 of the orphans render an Abgeordnete page and are listed on the index. They raise the store's person count from 4,165 (fresh) to 4,463.
+
+Decide whether a registry rebuild or a rule change (member number instead of profile URL, which is the open identity decision) fixes part 1, and whether retired-only persons should render. Report persons and Abgeordnete rows old/new.
+
+**Why:** pages for persons with no live occurrence, and one MdB whose speeches and votes are on different pages.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** the identity decision of A3 Phase 4 (voter profile links)
+
 ### Group MP pages by Wahlperiode and write abgeordnete.json without indent
 
 **What:** Group or page the speech and vote rows on each MP page by Wahlperiode, and write `data/abgeordnete.json` without `indent=2`.
@@ -1257,6 +1271,7 @@ About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3
   - 556 namentliche Abstimmungen (WP 18–21: 127, 179, 171, 79); 382,441 Einzelstimmen.
   - 54,718 Reden and 42,465 other Beiträge; 529 publishable Fakten.
   - Baseline before A3: 290 Sitzungen, 217 Abstimmungen, 26,267 Reden.
+- **Gate ([receipt](docs/plans/a3-phase4-gate.json)):** 9 of 10 checks pass. `replayed_store_groups_like_fresh` fails. The carried-forward registry splits Jan Köstering/Krampe into 4 persons, where a fresh build has 1, and it keeps 295 persons with only retired bindings. See "The carried-forward registry diverges from a fresh build after A3".
 - **Still open:**
   - 41 stored sittings have roll-call votes that matched no TOP; those votes are dropped (see "Unmatched roll-call votes never reach the report").
   - 21/103 waits for the roll-call list (`source_stale`); the next backfill after 2026-10-30 retakes it.

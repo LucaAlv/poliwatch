@@ -4,6 +4,56 @@ Runs the steps of [a3-coverage.md](a3-coverage.md), "Phase 4: verify and documen
 
 `full` is not written in Phase 4. Steps 1 and 2 run on their own copies, so step 3 compares `baseline` against `full` exactly as Phase 3 left it.
 
+## Step 1: gate, 2026-10-29 11:44–13:05 UTC (no DIP)
+
+- **Command:** `validate_store_gate.py ~/agent-runs/a3/phase4/gate-full --today 2026-10-28`, under `/usr/bin/time -l`. `gate-full` is an APFS clone of `full`, so `full` itself stays as Phase 3 left it.
+- **Receipt:** [a3-phase4-gate.json](a3-phase4-gate.json), with `$HOME` written as `~`. Logs are in `~/agent-runs/a3/phase4/gate-run.log` and `gate-scratch/*.log`.
+- **Code:** the receipt reads commit 58d3a47. While the gate ran, the Daten scope line of step 5 was added to `build_dip_pulse_site.py` (committed in 5a76aa6). Gate subprocesses started after that edit render it. The edit only adds one paragraph to `database.html`: no link, no store value.
+- **Result: `all_passed: false`.** 9 of the 10 checks pass. `replayed_store_groups_like_fresh` fails.
+
+| Check | Result |
+|---|---|
+| `--offline --repersist` | exit 0, 716 reports, store replaced (1,650 s) |
+| integrity / foreign keys | ok / 0 |
+| fresh vs. half-then-full | identical fingerprint `0bb8a287…`, 4,165 persons, 481,087 bindings |
+| **replayed vs. fresh, on the fresh store's bindings** | **fails: 4,168 vs. 4,165 groups** |
+| unchanged replay | exit 0, store kept (same sha256, size, mtime, inode) |
+| link audit | 6,750 pages, 558,408 links, 0 broken |
+| export | `g-9e3ef1279dd7`, 29 files match; 716 protocols, 556 votes, 382,441 vote members |
+| `--validate-publication` | passes |
+
+Store counts are unchanged by the replay: 716 protocols, 54,718 speeches, 42,465 contributions, 556 votes, 1,908 facts (529 Fakten), 4,463 persons.
+
+### Why the check fails (read-only diagnosis, nothing changed)
+
+The replayed store (`gate-full`) and the fresh store (`gate-scratch/fresh`) were compared binding by binding.
+
+1. **One person is split in the replayed store.** The fresh build joins four records into one person with 121 bindings, but the replayed store keeps them as four persons. This explains all of the 4,168 − 4,165 = 3 gap.
+   - The person is Jan Köstering (formerly Jan Krampe), Die Linke.
+   - The four records are `dip:8257` "Jan Krampe, MdB" (1 binding), `aw:178656` (41), profile `…/koestering_jan-1045564` (63) and profile `…/krampe_jan-1045564` (16).
+   - The two bundestag.de profile URLs carry the same member number 1045564 and differ only in the name slug. This is the same shape as the open identity finding (differing voter URLs count as different people).
+   - In `baseline`, `aw:178656` and the Köstering profile were one person. So on this store, A3 newly separates his speeches (`aw:178656`) from his roll-call votes (profile). The fresh build has the more correct grouping.
+   - The replayed store does not heal: the registry carries its earlier grouping forward.
+2. **295 persons hold only retired bindings.** The replayed store has 494 bindings that no fresh build produces.
+   - 187 are `contribution-v1-…` ids. That is exactly the Zwischenfragen that speech rule v6 merged (1,433 → 1,246).
+   - 307 are `roster-v1-…` ids of `dip:` records that the current roster inputs no longer produce. Examples: Nina Warken `dip:8131`, Philipp Amthor `dip:8154`, Jan Köstering `dip:8054`.
+   - Carry-forward is by design, as in Phase 0 (10 bindings then). Here, though, it leaves 295 persons whose every binding is retired. That is why the store reports 4,463 persons against 4,165 in a fresh build.
+   - 282 of these persons render an Abgeordnete page, and the index links to each of them. One example is the index entry "Jan Köstering", which links to `person-v1-6d527d…`. Its only binding is a retired roster binding. His speeches are on a different page.
+
+The gate's own comparison excludes retired bindings, so finding 2 does not make the check fail. It is recorded because it moves the published person count and the Abgeordnete index. Neither is fixed here: both are registry behaviour, and the registry decision is still with the owner.
+
+### Timing and memory
+
+- Total 4,838 s (1 h 21 min). Phases:
+  - repersist with render and export: 1,650 s;
+  - fresh database-only persist: 724 s;
+  - half: 333 s;
+  - half then full: 783 s;
+  - unchanged replay: 974 s;
+  - publication check: 212 s.
+- Largest RSS: 5.59 GB (`/usr/bin/time -l`). Phase 0 measured 2.59 GB on 290 reports, so memory grows about linearly with the store.
+- Disk: 19 GB free at the end. The gate scratch (7.4 GB) and `gate-full` (5.4 GB) are kept for the owner's inspection.
+
 ## Step 2: missing count. Purpose and cost, written before sending
 
 - **Purpose:** a fresh DIP catalog, to judge whether any WP 18–21 sitting is still missing from `full`. WP 21 is still running, so DIP may have listed sittings since 2026-10-28.

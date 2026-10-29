@@ -1,0 +1,285 @@
+{
+  "output_dir": "~/agent-runs/a3/phase4/gate-full",
+  "started_at": "2026-10-29T11:44:15Z",
+  "commit": "58d3a47",
+  "today": "2026-10-28",
+  "reports": 716,
+  "xml_files": 716,
+  "counts_before": {
+    "protocols": 716,
+    "agenda_items": 7131,
+    "speeches": 54718,
+    "contributions": 42465,
+    "mps": 7457,
+    "person_records": 7470,
+    "person_bindings": 481581,
+    "person_aliases": 0,
+    "documents": 20557,
+    "votes": 556,
+    "vote_members": 382441,
+    "facts": 1908,
+    "persons": 4463,
+    "contribution_kinds": {
+      "befragung_antwort": 7442,
+      "befragung_frage": 7559,
+      "erwiderung": 1127,
+      "fragestunde_antwort": 9300,
+      "fragestunde_frage": 9378,
+      "kurzintervention": 1275,
+      "zu_protokoll": 3326,
+      "zwischenfrage": 3058
+    },
+    "protocols_per_wahlperiode": {
+      "18": 194,
+      "19": 206,
+      "20": 213,
+      "21": 103
+    }
+  },
+  "replay": {
+    "command": [
+      "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--offline",
+      "--repersist",
+      "--output-dir",
+      "~/agent-runs/a3/phase4/gate-full",
+      "--today",
+      "2026-10-28"
+    ],
+    "exit_code": 0,
+    "seconds": 1649.9,
+    "log": "~/agent-runs/a3/phase4/gate-scratch/replay.log",
+    "store_replaced": true,
+    "store_kept": false,
+    "tail": [
+      "fakten: 529 Fakten in 412 Sitzungswochen",
+      "abstimmungen: 556 im Archiv",
+      "[puls] KW 42/2026: 3 Sitzungen, 7 Themen, 2 Frageformate, 24 weitere, today=2026-10-28",
+      "offline: rendered 716 cached dossiers",
+      "~/agent-runs/a3/phase4/gate-full/index.html"
+    ]
+  },
+  "integrity": {
+    "integrity_check": [
+      "ok"
+    ],
+    "integrity_ok": true,
+    "foreign_key_violations": 0
+  },
+  "counts": {
+    "protocols": 716,
+    "agenda_items": 7131,
+    "speeches": 54718,
+    "contributions": 42465,
+    "mps": 7457,
+    "person_records": 7470,
+    "person_bindings": 481581,
+    "person_aliases": 0,
+    "documents": 20557,
+    "votes": 556,
+    "vote_members": 382441,
+    "facts": 1908,
+    "persons": 4463,
+    "contribution_kinds": {
+      "befragung_antwort": 7442,
+      "befragung_frage": 7559,
+      "erwiderung": 1127,
+      "fragestunde_antwort": 9300,
+      "fragestunde_frage": 9378,
+      "kurzintervention": 1275,
+      "zu_protokoll": 3326,
+      "zwischenfrage": 3058
+    },
+    "protocols_per_wahlperiode": {
+      "18": 194,
+      "19": 206,
+      "20": 213,
+      "21": 103
+    }
+  },
+  "counts_vs_2026_10_05": {
+    "speeches": {
+      "old": 26271,
+      "new": 54718,
+      "delta": 28447
+    },
+    "contributions": {
+      "old": 16799,
+      "new": 42465,
+      "delta": 25666
+    },
+    "persons": {
+      "old": 3370,
+      "new": 4463,
+      "delta": 1093
+    }
+  },
+  "grouping": {
+    "fingerprint": "f3bb675011fbeae58eab413d9c4dc25513620c9df2487337044c3acef019a56e",
+    "groups": 4463,
+    "bindings": 481581
+  },
+  "order_independence": {
+    "fresh": {
+      "command": [
+        "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "~/agent-runs/a3/phase4/gate-scratch/fresh",
+        "--today",
+        "2026-10-28"
+      ],
+      "exit_code": 0,
+      "seconds": 724.2,
+      "log": "~/agent-runs/a3/phase4/gate-scratch/fresh.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "warning: [redner-id] 21/24 Rede ID212409300: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211802600: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211807500: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "facts: wrote 1908 rows, 529 Fakten in 242 von 412 Perioden",
+        "warning: [classification] 193 sitting/kind differences against DIP across 119 sittings. Inspect source turns in ~/agent-runs/a3/phase4/gate-scratch/fresh/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "grouping": {
+        "fingerprint": "0bb8a28736934f626dc94ed2fc6596f1c364bb2f7796c85e046870c2f241cea6",
+        "groups": 4165,
+        "bindings": 481087
+      }
+    },
+    "half": {
+      "command": [
+        "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "~/agent-runs/a3/phase4/gate-scratch/half",
+        "--today",
+        "2026-10-28"
+      ],
+      "exit_code": 0,
+      "seconds": 332.8,
+      "log": "~/agent-runs/a3/phase4/gate-scratch/half.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "warning: [redner-id] 21/25 Rede ID212504800: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211802600: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "warning: [redner-id] 21/18 Rede ID211807500: the Redner id \"11005217 999990074\" names 2 ids (a merged record in the Bundestag XML); using the first, 11005217.",
+        "facts: wrote 1908 rows, 0 Fakten in 0 von 412 Perioden",
+        "warning: [classification] 99 sitting/kind differences against DIP across 62 sittings. Inspect source turns in ~/agent-runs/a3/phase4/gate-scratch/half/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "reports": 358
+    },
+    "half_then_full": {
+      "command": [
+        "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/validate_store_gate.py",
+        "--persist-only",
+        "~/agent-runs/a3/phase4/gate-scratch/half",
+        "--today",
+        "2026-10-28"
+      ],
+      "exit_code": 0,
+      "seconds": 782.6,
+      "log": "~/agent-runs/a3/phase4/gate-scratch/half-then-full.log",
+      "store_replaced": false,
+      "store_kept": false,
+      "tail": [
+        "facts: changed winner 2026-W37: kein Fakt -> laengste-rede (30668) [speech 21/91 ID219100300 https://dserver.bundestag.de/btp/21/21091.pdf]",
+        "facts: changed winner 2026-W39: kein Fakt -> laengste-sitzung (916) [protocol 21/96 https://dserver.bundestag.de/btp/21/21096.pdf]",
+        "facts: changed winner 2026-W41: kein Fakt -> laengste-sitzung (967) [protocol 21/99 https://dserver.bundestag.de/btp/21/21099.pdf], laengste-debatte (111839) [agenda_item 21/99 S. 12282 https://dserver.bundestag.de/btp/21/21099.pdf]",
+        "facts: changed winner 2026-W42: kein Fakt -> laengste-sitzung (935) [protocol 21/102 https://dserver.bundestag.de/btp/21/21102.pdf], laengste-rede (20443) [speech 21/101 ID2110100200 https://dserver.bundestag.de/btp/21/21101.pdf], laengste-debatte (96955) [agenda_item 21/101 S. 12642 https://dserver.bundestag.de/btp/21/21101.pdf]",
+        "warning: [classification] 193 sitting/kind differences against DIP across 119 sittings. Inspect source turns in ~/agent-runs/a3/phase4/gate-scratch/half/data/a1-classification-diagnostics.json; disagreement alone does not reject a parse."
+      ],
+      "grouping": {
+        "fingerprint": "0bb8a28736934f626dc94ed2fc6596f1c364bb2f7796c85e046870c2f241cea6",
+        "groups": 4165,
+        "bindings": 481087
+      }
+    },
+    "equal": true
+  },
+  "grouping_on_fresh_bindings": {
+    "fingerprint": "a95447d4aa12cf717c92154736d5101448afb7b2523ce46f723f2b3ac00d8e9a",
+    "groups": 4168,
+    "bindings": 481087
+  },
+  "bindings_of_retired_occurrences": 494,
+  "unchanged_replay": {
+    "command": [
+      "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--offline",
+      "--repersist",
+      "--output-dir",
+      "~/agent-runs/a3/phase4/gate-full",
+      "--today",
+      "2026-10-28"
+    ],
+    "exit_code": 0,
+    "seconds": 974.1,
+    "log": "~/agent-runs/a3/phase4/gate-scratch/replay-unchanged.log",
+    "store_replaced": false,
+    "store_kept": true,
+    "tail": [
+      "fakten: 529 Fakten in 412 Sitzungswochen",
+      "abstimmungen: 556 im Archiv",
+      "[puls] KW 42/2026: 3 Sitzungen, 7 Themen, 2 Frageformate, 24 weitere, today=2026-10-28",
+      "offline: rendered 716 cached dossiers",
+      "~/agent-runs/a3/phase4/gate-full/index.html"
+    ],
+    "store_before": {
+      "sha256": "1df6f56fa43bb873d6dc87d85e5a10ea9d8b1a503f0d32e336f867a8d53688be",
+      "bytes": 884559872,
+      "mtime_ns": 1793275304686939295,
+      "inode": 217968519
+    },
+    "store_after": {
+      "sha256": "1df6f56fa43bb873d6dc87d85e5a10ea9d8b1a503f0d32e336f867a8d53688be",
+      "bytes": 884559872,
+      "mtime_ns": 1793275304686939295,
+      "inode": 217968519
+    }
+  },
+  "links": {
+    "pages": 6750,
+    "links": 558408,
+    "broken": [],
+    "broken_count": 0
+  },
+  "export": {
+    "generation": "g-9e3ef1279dd7",
+    "files": 29,
+    "counts": {
+      "protocols": 716,
+      "votes": 556,
+      "vote members": 382441
+    },
+    "problems": []
+  },
+  "publication": {
+    "command": [
+      "~/Projects/poliwatch/.claude/worktrees/a3-plan/scripts/build_dip_pulse_site.py",
+      "--validate-publication",
+      "~/agent-runs/a3/phase4/gate-full"
+    ],
+    "exit_code": 0,
+    "seconds": 211.9,
+    "log": "~/agent-runs/a3/phase4/gate-scratch/validate-publication.log",
+    "store_replaced": false,
+    "store_kept": false,
+    "tail": [
+      "validated: ~/agent-runs/a3/phase4/gate-full"
+    ]
+  },
+  "checks": {
+    "replay_exit_0": true,
+    "sqlite_integrity_ok": true,
+    "no_foreign_key_violations": true,
+    "half_then_full_groups_like_fresh": true,
+    "replayed_store_groups_like_fresh": false,
+    "unchanged_replay_exit_0": true,
+    "unchanged_replay_keeps_store": true,
+    "no_broken_local_links": true,
+    "export_matches_store": true,
+    "publication_valid": true,
+    "all_passed": false
+  },
+  "seconds_total": 4838.2
+}
