@@ -1255,6 +1255,38 @@ class CurrentPulseOrderTests(unittest.TestCase):
         self.assertIn("Der vollständige Abgeordnetenkader wurde nicht abgerufen", markup)
         self.assertIn("Profilverknüpfungen konnten nicht abgerufen werden", markup)
 
+    # Value: protects=only an MdB is shown as an Abgeordnete; a Person without a Mandat is a Redner with the Sprechrolle they spoke in, and "früheres Mitglied" only when a Rede counted for a Zusammenschluss; fails_when=a minister's page shows a Fraktion metric again, or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite): "Abgeordnete" for anyone who speaks is on the avoid list; seam=none
+    def test_only_mdbs_are_called_abgeordnete(self) -> None:
+        base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}}
+        mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "speech_count": 3,
+               "sprechrollen": [], "spoke_for_zusammenschluss": True}
+        minister = {**base, "id": "p2", "name": "Bea Minister", "party": None, "is_mdb": False, "speech_count": 5,
+                    "sprechrollen": ["Bundesregierung"], "spoke_for_zusammenschluss": False}
+        former = {**base, "id": "p3", "name": "Cem Frueher", "party": "CDU/CSU", "is_mdb": False, "speech_count": 2,
+                  "sprechrollen": [], "spoke_for_zusammenschluss": True}
+        land = {**base, "id": "p4", "name": "Dora Land", "party": None, "is_mdb": False, "speech_count": 0,
+                "has_page": True, "sprechrollen": [], "spoke_for_zusammenschluss": False}
+
+        page = build_dip_pulse_site.render_abgeordnete_detail(minister, default_selection())
+        self.assertIn('<span class="eyebrow">Redner · Bundesregierung</span>', page)
+        self.assertIn("<span>Sprechrolle</span><strong>Bundesregierung</strong>", page)
+        self.assertNotIn("<span>Fraktion</span>", page)
+        self.assertIn('href="index.html#weitere-redner"', page)
+        self.assertIn("Redner · früheres Mitglied des Bundestages",
+                      build_dip_pulse_site.render_abgeordnete_detail(former, default_selection()))
+        mdb_page = build_dip_pulse_site.render_abgeordnete_detail(mdb, default_selection())
+        self.assertIn('<span class="eyebrow">SPD</span>', mdb_page)
+        self.assertIn("<span>Fraktion</span><strong>SPD</strong>", mdb_page)
+
+        index = build_dip_pulse_site.render_abgeordnete_index([mdb, minister, former, land], default_selection())
+        roster, redner = index.split('id="weitere-redner"', 1)
+        self.assertEqual(roster.count("data-mp-row"), 1)
+        self.assertIn('<div class="metric"><span>Abgeordnete</span><strong>1</strong></div>', roster)
+        # Most Reden first; a page kept by registry evidence alone (no Rede, no Beitrag) gets no row.
+        self.assertEqual(re.findall(r'<a href="(p\d)\.html">', redner), ["p2", "p3"])
+        self.assertIn("<td>Bundesregierung</td>", redner)
+        self.assertIn("<td>früheres Mitglied des Bundestages</td>", redner)
+
     def test_manifest_preserves_cached_acquisition_times_and_fails_empty_requested_roster(self) -> None:
         previous_time = "2026-08-01T10:00:00Z"
         previous = {

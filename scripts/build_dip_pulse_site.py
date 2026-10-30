@@ -1105,6 +1105,16 @@ PIPELINE_ERRORS = (RuntimeError, OSError, ValueError, json.JSONDecodeError, Data
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
 
 
+def _bundesrat_only(function: Any) -> bool:
+    """A stored roster row whose offices are all Bundesrat ones. Stores built
+    before the exact MdB rule (derive.is_mdb_of_wahlperiode) flagged Bundesrat
+    members as MdBs; such a row is not carried into the rebuilt store. The rule's
+    other half (a Fraktion role) cannot be re-run here: person_roles is not
+    stored, so rows are dropped only on this clear sign."""
+    offices = {str(value).strip() for value in _parse_listish(function)}
+    return bool(offices) and offices <= derive.BUNDESRAT_FUNKTIONEN
+
+
 def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
     """The MdB roster rows of an existing store, read without migrating it."""
     if not database_path.exists():
@@ -1124,6 +1134,7 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
                 WHERE m.is_mdb = 1
                 """
             )
+            if not _bundesrat_only(row["function"])
         ]
     finally:
         previous.close()
@@ -7314,10 +7325,14 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
-# DIP marks a person's roles in "funktion"; a Bundestag member has one that
-# contains "MdB".
-def _has_mdb_funktion(funktion: Any) -> bool:
-    return any("mdb" in str(value).lower() for value in (funktion or []))
+def _role_fraktion(person: dict[str, Any], wahlperiode: int) -> str | None:
+    """The Fraktion of the person's role in ``wahlperiode``. DIP leaves the
+    top-level ``fraktion`` empty for an MdB whose current office is a
+    government one (a Parl. Staatssekretär, a Bundesminister)."""
+    for role in person.get("person_roles") or []:
+        if role.get("fraktion") and any(str(p) == str(wahlperiode) for p in role.get("wahlperiode_nummer") or []):
+            return role["fraktion"]
+    return None
 
 
 def ingest_mdb_roster(
@@ -7340,10 +7355,11 @@ def ingest_mdb_roster(
     pulse_store.initialize(store)
     with store:
         for person in persons:
+            # Decided on the raw record: compact_person drops person_roles.
+            if not derive.is_mdb_of_wahlperiode(person, wahlperiode):
+                continue
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
-            if not _has_mdb_funktion(funktion):
-                continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
                 # such row would share one name-party:Unbekannt record.
@@ -7351,7 +7367,7 @@ def ingest_mdb_roster(
                 continue
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
-            fraktion = fraktion_list[0] if fraktion_list else None
+            fraktion = fraktion_list[0] if fraktion_list else _role_fraktion(person, wahlperiode)
             party_name = derive.zusammenschluss(fraktion)
             party_id = pulse_store.upsert_party(store, party_name, now)
             display_name = (
@@ -7479,6 +7495,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     for row in conn.execute(
         """
         SELECT s.mp_id, s.rede_id, s.page, s.char_count, s.snippet, s.sequence,
+               s.fraktion, s.sprechrolle,
                p.document_number, p.date AS protocol_date,
                ai.heading, ai.item_index
         FROM speeches s
@@ -7498,6 +7515,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "date": row["protocol_date"],
                 "heading": row["heading"],
                 "item_index": row["item_index"],
+                "fraktion": row["fraktion"],
+                "sprechrolle": row["sprechrolle"],
             }
         )
 
@@ -7611,9 +7630,15 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             if key in tally:
                 tally[key] += 1
 
+        # The sides a non-MdB spoke for, most Reden first (a Bundesminister:
+        # Bundesregierung), and whether any Rede counted for a Zusammenschluss,
+        # which only an MdB's does (ADR 0001): an earlier Mandat.
+        sprechrollen = Counter(s["sprechrolle"] for s in merged_speeches if s.get("sprechrolle"))
         mp = {
             "id": cid,
             "has_page": cid in page_eligible,
+            "sprechrollen": [derive.SPRECHROLLE_LABELS.get(side, side) for side, _ in sprechrollen.most_common()],
+            "spoke_for_zusammenschluss": any(s.get("fraktion") for s in merged_speeches),
             "name": registry.clean_mp_name(first("display_name")),
             "party": first("party"),
             "title": first("title"),
@@ -7722,6 +7747,9 @@ def abgeordnete_styles() -> str:
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+    .redner-group { margin-top:32px; }
+    .redner-group h2 { margin:0 0 6px; font-size:20px; }
+    .redner-group p { margin:0; color:var(--muted); }
     .mp-table th, .mp-table td {
       text-align:left;
       padding:9px 10px;
@@ -7766,6 +7794,8 @@ def render_abgeordnete_script() -> str:
     (() => {
       const search = document.querySelector("[data-mp-search]");
       const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const rednerRows = Array.from(document.querySelectorAll("[data-redner-row]"));
+      const rednerGroup = document.querySelector("[data-redner-group]");
       const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
       const counter = document.querySelector("[data-mp-count]");
       let activeParty = "";
@@ -7780,6 +7810,14 @@ def render_abgeordnete_script() -> str:
           if (show) visible += 1;
         });
         if (counter) counter.textContent = String(visible);
+        // Redner have no Fraktion: a Fraktion filter hides them all.
+        let rednerVisible = 0;
+        rednerRows.forEach((row) => {
+          const show = !activeParty && (!q || row.dataset.search.includes(q));
+          row.hidden = !show;
+          if (show) rednerVisible += 1;
+        });
+        if (rednerGroup) rednerGroup.hidden = rednerVisible === 0;
       };
       if (search) search.addEventListener("input", apply);
       partyButtons.forEach((btn) => {
@@ -7847,6 +7885,37 @@ def render_abgeordnete_index(
             """
         )
 
+    # Persons who spoke but are no MdB of the roster's Wahlperiode: members of
+    # the Bundesregierung or the Bundesrat without a Mandat, earlier MdBs. Listed
+    # apart so their pages are reachable without calling them Abgeordnete. A page
+    # kept only by registry evidence (no Rede, no Beitrag) is not listed.
+    redner = sorted(
+        (mp for mp in mps if not mp.get("is_mdb") and ((mp.get("speech_count") or 0) or (mp.get("contribution_count") or 0))),
+        key=lambda mp: (-(mp.get("speech_count") or 0), str(mp.get("name") or "").casefold()),
+    )
+    redner_rows = []
+    for mp in redner:
+        label = redner_label(mp).removeprefix("Redner").lstrip(" ·") or "—"
+        search_key = " ".join(str(value).lower() for value in (mp.get("name"), label) if value)
+        redner_rows.append(
+            f"""
+            <tr data-redner-row data-party="" data-search="{pulse_html.esc(search_key)}">
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(label)}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        )
+    redner_section = (
+        '<section class="redner-group" id="weitere-redner" data-redner-group>'
+        "<h2>Weitere Rednerinnen und Redner</h2>"
+        "<p>Personen, die im Plenum gesprochen haben, ohne Mitglied des Bundestages der laufenden Wahlperiode zu sein: "
+        "etwa für die Bundesregierung oder den Bundesrat, oder mit einem früheren Mandat.</p>"
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
+        + "".join(redner_rows)
+        + "</tbody></table></section>"
+    ) if redner_rows else ""
+
     with_speeches = sum(1 for mp in listed if (mp.get("speech_count") or 0) > 0)
     total_speeches = sum(mp.get("speech_count") or 0 for mp in listed)
     domains = publication_domains or {}
@@ -7871,7 +7940,7 @@ def render_abgeordnete_index(
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
-        <p>Vollständige Liste der Mitglieder des Bundestages der laufenden Wahlperiode aus den DIP-Personendaten, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion.</p>
+        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. Wer ohne Mandat im Plenum sprach, steht unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
       </div>
       <div class="follow-summary">
         <span class="eyebrow">Angezeigt</span>
@@ -7890,6 +7959,7 @@ def render_abgeordnete_index(
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
     </div>
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
+    {redner_section}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
@@ -7897,6 +7967,18 @@ def render_abgeordnete_index(
 </body>
 </html>
 """
+
+
+def redner_label(mp: dict[str, Any]) -> str:
+    """How a Person without a Mandat in the roster's Wahlperiode is named:
+    "Redner" with the Sprechrollen they spoke in, and "früheres Mitglied des
+    Bundestages" when a Rede of theirs counted for a Zusammenschluss (only an
+    MdB's does, ADR 0001). The registry's ever_mdb evidence is not used: it
+    was set for Bundesrat members before the exact MdB rule."""
+    parts = ["Redner", *(mp.get("sprechrollen") or [])]
+    if mp.get("spoke_for_zusammenschluss"):
+        parts.append("früheres Mitglied des Bundestages")
+    return " · ".join(parts)
 
 
 # PAGE: abgeordnete/<id>.html - one MP profile.
@@ -8000,6 +8082,21 @@ def render_abgeordnete_detail(
 
     tally = mp.get("vote_tally") or {}
     participation = tally.get("yes", 0) + tally.get("no", 0) + tally.get("abstain", 0)
+    # Only an MdB is shown as one (CONTEXT.md, Personenseite); everyone else is a
+    # Redner with the Sprechrolle they spoke in.
+    if mp.get("is_mdb"):
+        eyebrow = mp.get("party") or "Fraktion unbekannt"
+        role_metrics = (
+            f'<div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get("party") or "—")}</strong></div>'
+            f'<div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get("wahlkreis") or "—")}</strong></div>'
+        )
+        back_links = '<a href="index.html">Alle Abgeordnete</a>'
+    else:
+        eyebrow = redner_label(mp)
+        role_metrics = (
+            f'<div class="metric"><span>Sprechrolle</span><strong>{pulse_html.esc(", ".join(mp.get("sprechrollen") or []) or "—")}</strong></div>'
+        )
+        back_links = '<a href="index.html#weitere-redner">Weitere Rednerinnen und Redner</a><a href="index.html">Alle Abgeordnete</a>'
     domains = publication_domains or {}
     notices = "".join(
         (
@@ -8022,17 +8119,16 @@ def render_abgeordnete_detail(
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
-          <a href="index.html">Alle Abgeordnete</a>
+          {back_links}
         </nav>
-        <span class="eyebrow">{pulse_html.esc(mp.get('party') or 'Fraktion unbekannt')}</span>
+        <span class="eyebrow">{pulse_html.esc(eyebrow)}</span>
         <h1>{pulse_html.esc(mp.get('name'))}</h1>
         <p>Stammdaten aus der DIP-API und abgeordnetenwatch.de sowie alle in den erfassten Plenarprotokollen erkannten Reden.</p>
       </div>
       <div class="actions">{profile_link}</div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get('party') or '—')}</strong></div>
-      <div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get('wahlkreis') or '—')}</strong></div>
+      {role_metrics}
       <div class="metric"><span>Reden</span><strong>{pulse_html.esc(mp.get('speech_count') or 0)}</strong></div>
       <div class="metric"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(participation)}</strong></div>
     </section>

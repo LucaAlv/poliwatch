@@ -264,6 +264,41 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual([row[0] for row in roster.execute("SELECT identity_key FROM person_records")], ["dip:dip-9"])
         self.assertIn("2 DIP persons with an MdB function have no id and were skipped", stderr.getvalue())
 
+    # Value: protects=the roster holds exactly the MdBs of its Wahlperiode: "MdB" as an exact funktion, or a Fraktion role in that Wahlperiode, never a Bundesrat member; fails_when=the substring test lets "MdBR"/"Stellv. MdBR" in again, or an MdB whose current office is a government one is dropped; why_new=on DIP WP 21 (2026-10-30) the substring test listed 151 Bundesrat members and missed 48 MdBs, 740 listed instead of 637; seam=none
+    def test_only_mdbs_of_the_wahlperiode_enter_the_roster(self):
+        def person(pid, name, funktion, fraktion=(), roles=()):
+            first, last = name.split()
+            return {"id": pid, "titel": name, "vorname": first, "nachname": last, "fraktion": list(fraktion),
+                    "funktion": [funktion], "wahlperiode": [21], "person_roles": list(roles)}
+        client = mock.Mock()
+        client.list_all.return_value = [
+            person("dip-1", "Ada Example", "MdB", fraktion=["SPD"]),
+            person("dip-2", "Bea Land", "MdBR", roles=[{"bundesland": "Bayern", "wahlperiode_nummer": [21]}]),
+            person("dip-3", "Cem Land", "Stellv. MdBR"),
+            person("dip-4", "Dora Staat", "Parl. Staatssekr.", roles=[{"fraktion": "CDU/CSU", "wahlperiode_nummer": [20, 21]}]),
+            person("dip-5", "Emil Frueher", "Bundesmin.", roles=[{"fraktion": "SPD", "wahlperiode_nummer": [19, 20]}]),
+        ]
+        roster = self.open_store("roster.sqlite")
+        stats = build.ingest_mdb_roster(client, roster, wahlperiode=21)
+        self.assertEqual((stats["fetched"], stats["mdb"]), (5, 2))
+        rows = roster.execute(
+            "SELECT m.dip_person_id, p.name FROM mps m LEFT JOIN parties p ON p.id = m.party_id WHERE m.is_mdb = 1 ORDER BY 1"
+        ).fetchall()
+        # A Parl. Staatssekretärin's Fraktion comes from her role: DIP leaves the top-level field empty.
+        self.assertEqual([tuple(row) for row in rows], [("dip-1", "SPD"), ("dip-4", "CDU/CSU")])
+
+    # Value: protects=an offline rebuild drops preserved roster rows of Bundesrat members a store from before the exact MdB rule holds, and keeps an MdB in a government office; fails_when=_read_roster_rows carries every is_mdb row again, or filters by "MdB" in function and loses the Parl. Staatssekretärin; why_new=preserved rows survive until the roster is fetched again, so the fix would not reach an offline rebuild; seam=none
+    def test_a_preserved_bundesrat_row_is_not_carried_over(self):
+        def ingest(staged):
+            for pid, funktion in (("dip-1", ["MdB"]), ("dip-2", ["MdBR"]), ("dip-3", ["Stellv. MdBR"]), ("dip-4", ["Parl. Staatssekr."])):
+                store.upsert_mp(staged, now=store.utc_now(), display_name=f"Person {pid}", party_id=None,
+                                identity_key=f"dip:{pid}", dip_person_id=pid, occurrence_id=roster_occurrence_id(pid),
+                                function=funktion, is_mdb=True)
+        self.rebuild([report("s1", names=("Bea Example",))], preserve_roster=False, roster_ingest=ingest)
+        entries = [{"report": report("s1", names=("Bea Example",)), "report_path": self.root / "s1.json"}]
+        build.rebuild_database_from_entries(self.db, entries)
+        self.assertEqual(sorted(r["dip_person_id"] for r in self.rows("mps") if r["is_mdb"]), ["dip-1", "dip-4"])
+
     # Value: protects=a preserved roster row without a DIP id is skipped with a warning on the next rebuild instead of becoming a name-party record; fails_when=the preserved-roster replay persists it under mp_identity(display_name, party); why_new=third ship round (4): the preserved path built the identity from name and party; seam=none
     def test_a_preserved_roster_row_without_a_dip_id_is_skipped_with_a_warning(self):
         def ingest(staged):
