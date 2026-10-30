@@ -256,9 +256,16 @@ def _persist_clone(output_dir: Path, today: str, log_path: Path) -> dict[str, An
     return _run([sys.executable, str(Path(__file__).resolve()), "--persist-only", str(output_dir), "--today", today], log_path)
 
 
+def _require_disjoint_paths(source: Path, target: Path) -> None:
+    source, target = source.resolve(), target.resolve()
+    if source.is_relative_to(target) or target.is_relative_to(source):
+        raise ValueError(f"clone target {target} must not overlap input {source}")
+
+
 def _data_clone(source: Path, target: Path) -> Path:
     """A copy of ``source/data`` under ``target`` without its store: an APFS clone
     where the file system offers one."""
+    _require_disjoint_paths(source, target)
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
@@ -297,6 +304,10 @@ def order_independence(output_dir: Path, scratch: Path, today: str) -> dict[str,
 
 def run_gate(output_dir: Path, scratch: Path, today: str) -> dict[str, Any]:
     output_dir = output_dir.resolve()
+    scratch = scratch.resolve()
+    # Refuse unsafe scratch before even the first replay can change the input.
+    for name in ("fresh", "half"):
+        _require_disjoint_paths(output_dir, scratch / name)
     scratch.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     receipt: dict[str, Any] = {
@@ -394,7 +405,11 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR [gate]: --receipt is required", file=sys.stderr)
         return 2
     scratch = (args.scratch or output_dir.with_name(f"{output_dir.name}-gate-scratch")).resolve()
-    receipt = run_gate(output_dir, scratch, args.today)
+    try:
+        receipt = run_gate(output_dir, scratch, args.today)
+    except ValueError as exc:
+        print(f"ERROR [gate]: {exc}", file=sys.stderr)
+        return 2
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(json.dumps(receipt, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(receipt["checks"], indent=2), file=sys.stderr)

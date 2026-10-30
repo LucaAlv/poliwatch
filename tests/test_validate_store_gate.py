@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _support  # noqa: F401
 import validate_store_gate as gate
@@ -51,6 +52,69 @@ class GroupingFingerprintTest(unittest.TestCase):
             live = gate.binding_ids(fresh)
             self.assertNotEqual(gate.grouping_fingerprint(replayed), gate.grouping_fingerprint(fresh))
             self.assertEqual(gate.grouping_fingerprint(replayed, only=live), gate.grouping_fingerprint(fresh))
+
+
+class ClonePathSafetyTest(unittest.TestCase):
+    # Value: protects=cloning cannot remove overlapping input data; fails_when=resolved overlap reaches deletion; why_new=QA reproduced source deletion; seam=none
+    def test_overlapping_clone_paths_preserve_the_source(self) -> None:
+        for relation in ("same", "parent", "child"):
+            with self.subTest(relation=relation), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "site"
+                (source / "data").mkdir(parents=True)
+                evidence = source / "data" / "evidence.txt"
+                evidence.write_text("keep")
+                target = {"same": source, "parent": root, "child": source / "scratch"}[relation]
+                error = None
+                # Avoid recursive OS copies on the deliberately invalid child path.
+                with mock.patch.object(gate.subprocess, "run"):
+                    try:
+                        gate._data_clone(source, target)
+                    except Exception as exc:
+                        error = exc
+                self.assertIsInstance(error, ValueError)
+                self.assertEqual(evidence.read_text(), "keep")
+
+    # Value: protects=symlinks cannot hide clone/input overlap; fails_when=only lexical paths are compared; why_new=aliases reach the same destructive boundary; seam=none
+    def test_symlink_to_source_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "site"
+            (source / "data").mkdir(parents=True)
+            alias = Path(tmp) / "alias"
+            alias.symlink_to(source, target_is_directory=True)
+            error = None
+            try:
+                gate._data_clone(source, alias)
+            except Exception as exc:
+                error = exc
+            self.assertIsInstance(error, ValueError)
+            self.assertTrue((source / "data").is_dir())
+
+    # Value: protects=invalid CLI scratch is refused before replay changes the input; fails_when=validation occurs only in the late clone stage; why_new=helper-only coverage misses earlier mutation; seam=none
+    def test_cli_refuses_overlap_before_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "fresh"
+            (source / "data").mkdir(parents=True)
+            with mock.patch.object(gate, "replay", side_effect=AssertionError("replay must not run")) as replay:
+                with mock.patch("sys.stderr"):
+                    result = gate.main([str(source), "--scratch", tmp, "--receipt", str(Path(tmp) / "receipt.json")])
+            self.assertEqual(result, 2)
+            replay.assert_not_called()
+            self.assertTrue((source / "data").is_dir())
+
+    # Value: protects=separate scratch still copies evidence and removes only cloned stores/exports; fails_when=the safety guard blocks normal clones; why_new=positive control for overlap checks; seam=none
+    def test_separate_clone_preserves_source_and_drops_derived_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / "site", Path(tmp) / "scratch" / "fresh"
+            (source / "data" / "exports").mkdir(parents=True)
+            for relative in ("evidence.txt", "bundestag-pulse.sqlite", "bundestag-pulse.sqlite-wal", "exports/old.txt"):
+                (source / "data" / relative).write_text("keep")
+            gate._data_clone(source, target)
+            self.assertEqual((target / "data" / "evidence.txt").read_text(), "keep")
+            self.assertFalse((target / "data" / "bundestag-pulse.sqlite").exists())
+            self.assertFalse((target / "data" / "bundestag-pulse.sqlite-wal").exists())
+            self.assertFalse((target / "data" / "exports").exists())
+            self.assertEqual((source / "data" / "bundestag-pulse.sqlite").read_text(), "keep")
 
 
 class LinkAuditTest(unittest.TestCase):
