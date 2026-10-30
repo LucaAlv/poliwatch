@@ -8212,7 +8212,7 @@ def _facts_page_style() -> str:
 
 
 def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
-    """Materialize LEAD_POSITION_CTE/LEAD_PROCEEDING_CTE once per connection.
+    """Materialize LEAD_POSITION_CTE/SINGLE_VORGANG_CTE once per connection.
 
     _fact_speech_citation/_fact_agenda_item_citation/_fact_proceeding_citation
     are each called once per receipt (a monthly grouped_extreme fact can cite
@@ -8230,12 +8230,12 @@ def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_lead_position_topic ON _lead_position_topic(agenda_item_id)"
     )
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_proceeding AS\n"
-        + facts.LEAD_PROCEEDING_CTE
-        + "SELECT agenda_item_id, proceeding_id FROM lead_position"
+        "CREATE TEMP TABLE IF NOT EXISTS _single_vorgang AS\n"
+        + facts.SINGLE_VORGANG_CTE
+        + "SELECT agenda_item_id, proceeding_id FROM single_vorgang"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lead_position_proceeding ON _lead_position_proceeding(agenda_item_id)"
+        "CREATE INDEX IF NOT EXISTS idx_single_vorgang ON _single_vorgang(agenda_item_id)"
     )
 
 
@@ -8300,14 +8300,15 @@ def _fact_proceeding_citation(
     conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
 ) -> dict[str, Any] | None:
     """(document_number, page, page_quadrant) against the agenda item's
-    page_start, resolved through its lead position to the Vorgang
-    (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
+    page_start, resolved to the one Vorgang (proceedings.id) the item deals
+    with -- meistdiskutierter-vorgang's receipt, by the metric's own rule
+    (facts.SINGLE_VORGANG_CTE)."""
     row = conn.execute(
         """
         SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
-        JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
+        JOIN _single_vorgang lp ON lp.agenda_item_id = ai.id
         JOIN proceedings pr ON pr.id = lp.proceeding_id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,

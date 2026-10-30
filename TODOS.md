@@ -314,18 +314,16 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
 
-### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
+### One rule for a Tagesordnungspunkt's Thema (lead Vorgang), computed once at persist time
 
-**What:** `meistdiskutierter-vorgang` (`scripts/facts.py`) credits every speech of a Tagesordnungspunkt to its lead Vorgang (`LEAD_PROCEEDING_CTE`: first Gesetzgebung by `proceeding_positions.id`, else lowest id). Decide how the metric handles a Tagesordnungspunkt that deals with several Vorgänge: skip bundled TOPs, count per Tagesordnungspunkt instead, or count only TOPs whose Vorgang set is a single Vorgang. Done when no Vorgang can win on Reden given under a TOP it merely shares.
+**What:** Compute a Tagesordnungspunkt's Thema/lead Vorgang once, at persist time, with `topic_identity`'s full rule (`derive.agenda_procedures`: `mitberaten` twins, `equal_weight`), and store it. `LEAD_POSITION_CTE` (`scripts/facts.py`) and the `_lead_position_topic` TEMP table in `build_dip_pulse_site._ensure_lead_position_tables` then read the stored value instead of re-implementing a simpler rule in SQL (no twins, no `equal_weight`).
 
-**Why:** CONTEXT.md (Vorgang, Thema, 2026-09-25): a Rede addresses its Tagesordnungspunkt and is never attributed to a Vorgang; the lead Vorgang is a naming rule only. Example: a verbundene Beratung of two competing Anträge credits all its Reden to whichever Antrag DIP gave the lower position id.
+**Why:** Until the rule exists once, the Wochenradar and a Fakt card (`laengste-debatte` and the other metrics that name a topic) can name different Themen for the same TOP. Split from the `meistdiskutierter-vorgang` item (done 2026-10-30, see Completed), whose metric no longer uses a lead Vorgang at all.
 
-**Context:** The two lead rules disagree today. The Wochenradar (`topic_identity`, `scripts/render_dip_pulse_html.py`) also reads `mitberaten` twins and has no lead at all for `equal_weight` TOPs (Final Gate 2026-09-15); the SQL always picks one. Check whether `proceeding_positions` holds the twins; if not, the SQL also misses the 40 TOPs where the only Gesetzgebung is a twin. Any fix changes past monthly winners, so it needs a metric version bump.
-
-**Update 2026-10-03 (architecture review):** fix the duplicated rule along with the metric. Compute a Tagesordnungspunkt's Thema/lead Vorgang once, at persist time, with `topic_identity`'s full rule (twins, `equal_weight`), and store it. `LEAD_POSITION_CTE`, `LEAD_PROCEEDING_CTE` and the TEMP tables in `build_dip_pulse_site._ensure_lead_position_tables` then read the stored value instead of re-implementing it in SQL. The CTE comment says "same rule topic_identity uses", and that is false. Until the rule exists once, the Wochenradar and a Fakt card can name different Themen for the same TOP.
+**Context:** Adds a stored column to `agenda_items`, so it touches the store schema; do it with or after "The store owns its schema and its rebuild". Any metric that names a topic then needs a version bump.
 
 **Effort:** S
-**Priority:** P2
+**Priority:** P3
 **Depends on:** None
 
 ### Fakt der Woche, Approach B: site-wide facts layer (full implementation)
@@ -1005,6 +1003,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
+
+Done 2026-10-30 (metric version 2 → 3). A Tagesordnungspunkt counts for a Vorgang only when it deals with exactly that one Vorgang; the Reden of a verbundene Beratung of several Vorgänge count for none (`facts.SINGLE_VORGANG_CTE`). The Vorgang set is `derive.agenda_procedures`' set, including the `mitberaten` twins (`proceeding_positions.mitberaten_json`), and a test pins the SQL to it over persisted reports. The receipt resolver (`_fact_proceeding_citation`) reads the same rule; `LEAD_PROCEEDING_CTE` is gone. The card and the Methodik carry the rule as the metric's caveat. Storing one Thema rule at persist time is split out as "One rule for a Tagesordnungspunkt's Thema (lead Vorgang), computed once at persist time".
 
 ### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
 

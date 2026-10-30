@@ -926,6 +926,90 @@ class MeistdiskutierterVorgangTests(StoreCase):
         self.assertEqual(row["week_n"], 0)
 
 
+    # Value: protects=a Rede under a verbundene Beratung is credited to no Vorgang (CONTEXT.md, Vorgang); fails_when=the metric goes back to crediting a bundled item's Reden to its lead Vorgang; why_new=v2 let the Antrag DIP gave the lower position id win on Reden it merely shared (TODOS 2026-09-25); seam=none
+    def test_a_bundled_agenda_item_counts_for_no_vorgang(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [
+                        {"heading": "TOP 1", "proceeding_title": "Antrag A", "proceeding_id": "VA",
+                         "more_proceedings": [("VB", "Antrag B")]},
+                        {"heading": "TOP 2", "proceeding_title": "Gesetz C", "proceeding_id": "VC"},
+                    ],
+                    "speeches": [
+                        {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA1", "item": 0},
+                        {"char_count": 100, "speaker": "Karl Marx", "rede_id": "IDK1", "item": 0},
+                        {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA2", "item": 0},
+                        {"char_count": 100, "speaker": "Karl Marx", "rede_id": "IDK2", "item": 1},
+                    ],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 1)
+        self.assertEqual(row["citation"]["title"], "Gesetz C")
+
+    # Value: protects=a mitberaten twin makes an item bundled, as derive.agenda_procedures counts it; fails_when=the Vorgang set is read from proceeding_positions alone; why_new=40 archive TOPs carry their only Gesetzgebung as a twin; seam=none
+    def test_a_mitberaten_twin_makes_the_item_bundled(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Antrag A", "proceeding_id": "VA",
+                               "mitberaten": [{"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung"}]}],
+                    "speeches": [(100, "Ada Lovelace", "IDA1")],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertIsNone(row["value"])
+
+    # Value: protects=the SQL Vorgang set of an agenda item equals derive.agenda_procedures', the rule the Wochenradar names Themen by; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
+    def test_single_vorgang_items_match_derive_agenda_procedures(self) -> None:
+        import derive
+        import persist_dip_pulse_store as pulse_store
+        from _support import FIXTURES
+
+        def position(pid, vorgang, twins=()):
+            return {"id": pid, "vorgang_id": vorgang, "vorgangsposition": "Beratung", "vorgangstyp": "Antrag",
+                    "titel": f"Vorgang {vorgang}", "source": {}, "mitberaten": list(twins)}
+
+        twin = {"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung", "vorgangsposition": "Beratung"}
+        variants = {
+            "one position": [position("p1", "v1")],
+            "one position and a twin": [position("p1", "v1", [twin])],
+            "a twin of its own Vorgang": [position("p1", "4711", [twin])],
+            "two Vorgänge": [position("p1", "v1"), position("p2", "v2")],
+            "one Vorgang twice": [position("p1", "v1"), position("p2", "v1")],
+            "no position": [],
+        }
+        for label, positions in variants.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                report = json.loads((FIXTURES / "report.json").read_text())
+                item = report["agenda_items"][0]
+                item.setdefault("api", {})["positions"] = positions
+                conn = pulse_store.connect(Path(tmp) / "store.sqlite")
+                try:
+                    pulse_store.persist_report(conn, report, {"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+                    single = {
+                        row[0] for row in conn.execute(
+                            facts.SINGLE_VORGANG_CTE
+                            + "SELECT ai.item_index FROM single_vorgang sv JOIN agenda_items ai ON ai.id = sv.agenda_item_id"
+                        )
+                    }
+                finally:
+                    conn.close()
+                expected = {
+                    entry["index"] for entry in report["agenda_items"]
+                    if len(derive.agenda_procedures(entry)[0]) == 1
+                }
+                self.assertEqual(single, expected)
+                self.assertEqual(bool(single), label in ("one position", "a twin of its own Vorgang", "one Vorgang twice"))
+
+
 class ObserveTests(StoreCase):
     def test_depends_on_skips_an_unbuilt_metric(self) -> None:
         self.seed(week_specs(2))
