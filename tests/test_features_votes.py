@@ -653,7 +653,20 @@ class VotePanelAnchorTests(unittest.TestCase):
         self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
 
 
+LEAD_TERM = '<a href="../bundestag.html#abstimmen">namentliche Abstimmung</a>'
+
+
 class VoteLeadTests(unittest.TestCase):
+    # Value: protects=the lead links "namentliche Abstimmung" to the explainer at the depth of the page that shows the panel, and still escapes the subject once; fails_when=the link is escaped into visible text, the subject is no longer escaped, or the prefix is fixed; why_new=TODO "Link the vote panel's namentlich badge to bundestag.html" (2026-10-30); seam=none
+    def test_the_lead_links_the_term_to_the_explainer(self) -> None:
+        vote = _vote(description='Antrag „A & B“ <b>fett</b>')
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn(f"die {LEAD_TERM} „Antrag „A &amp; B“ &lt;b&gt;fett&lt;/b&gt;“ statt", markup)
+        self.assertNotIn("&amp;amp;", markup)
+        self.assertNotIn("<b>", markup)
+        deeper = vote_summary({"votes": [vote]}, site_prefix="../../")
+        self.assertIn('<a href="../../bundestag.html#abstimmen">namentliche Abstimmung</a>', deeper)
+
     def test_lead_names_raw_counts_and_marks_derived_result(self) -> None:
         vote = _vote(date="2024-03-14", result_raw="accepted", result_source="derived",
                      description='Antrag "X" <img>', total={"yes": 10, "no": 5, "abstain": 0})
@@ -697,7 +710,7 @@ class VoteLeadTests(unittest.TestCase):
             "titel": "Lieferkettensorgfaltspflichtenaufhebungsgesetz",
         }]}}
         markup = vote_summary(item)
-        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn(f"die {LEAD_TERM} „{description}“ statt", markup)
         self.assertIn("wurde abgelehnt", markup)
 
     def test_vote_889_lead_preserves_hier_scope_before_generic_title(self) -> None:
@@ -711,7 +724,7 @@ class VoteLeadTests(unittest.TestCase):
         vote = _vote(id="889", description=description, document_numbers=["20/8657", "20/9781"],
                      title="Erneuerbare-Energien-Gesetz (GesEntw BReg)", result_raw="accepted", result_source="official")
         markup = vote_summary({"votes": [vote]})
-        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn(f"die {LEAD_TERM} „{description}“ statt", markup)
         self.assertIn("Die Vorlage wurde angenommen", markup)
 
     def test_confirmed_rejecting_recommendation_names_application_outcome(self) -> None:

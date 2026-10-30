@@ -551,16 +551,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** Vote outcome badge
 
-### Link the vote panel's "namentlich" badge to `bundestag.html`
-
-**What:** The vote panel (`scripts/features/votes.py`) names a namentliche Abstimmung without explaining it. Link its "namentlich" wording to `bundestag.html#abstimmen`, as the week radar's "namentlich abgestimmt" badge already does (depth-aware: the panel renders on dossiers under `protocols/` and on `votes/index.html`).
-
-**Why:** The vote panel is where readers meet the term most. Left out of the explainer change (2026-10-30) because the panel is B-track code.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Impressum, Datenschutz and licence files before the site goes public
 
 **What:** Implement [ADR 0003](docs/adr/0003-licences-and-impressum.md):
@@ -1052,6 +1042,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Link the vote panel's "namentlich" wording to `bundestag.html`
+
+Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" to `bundestag.html#abstimmen`, as the week radar's badge does. The link goes through `VotePanelContext.site_prefix` ("../", set beside `mp_prefix`; the only page that renders the lead is the dossier under `protocols/`), and the lead is now built from escaped parts so the link is markup while the subject stays escaped once.
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
