@@ -338,6 +338,9 @@ def member_profile_url(member: Mapping[str, Any]) -> str | None:
 
 
 _UNSAFE_URL_CHARS = re.compile(r"[\\\s\x00-\x1f\x7f]")
+#: A "." or ".." path segment, also percent-encoded: a browser resolves it, so
+#: "/abgeordnete/../apps" leaves the person path (WHATWG URL, dot segments).
+_DOT_SEGMENT = re.compile(r"(?:^|/)(?:\.|%2e){1,2}(?:/|$)", re.IGNORECASE)
 
 
 def person_profile_url(url: Any) -> str | None:
@@ -346,7 +349,7 @@ def person_profile_url(url: Any) -> str | None:
     bundestag.de links an MP without a biography back to the Abstimmung itself
     (77 rows on the reference cache); that page names nobody. A URL a browser
     could read as another host (a backslash, user info, a port, whitespace or a
-    control character) is none."""
+    control character), or whose path climbs out with a dot segment, is none."""
     if not url or _UNSAFE_URL_CHARS.search(str(url)):
         return None
     try:
@@ -356,6 +359,8 @@ def person_profile_url(url: Any) -> str | None:
     except ValueError:
         return None
     if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None:
+        return None
+    if _DOT_SEGMENT.search(parts.path):
         return None
     if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
         return str(url)
