@@ -288,16 +288,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
-
-**What:** `tests/fixtures/demo-report-21-84.json` holds 16 speeches for TOP 32 of Sitzung 21/84, but `scripts/extract_demo_fixture.py` run on the official XML (dserver `btp/21/21084.xml`) now finds 14 and stops at its guard ("expected 16 TOP 32 speeches"). Find which two are no longer Reden (most likely Kurzinterventionen or Erwiderungen, #68), then regenerate the fixture from the XML and update the guard and `test_demo_site.py`'s "16 Reden". The extractor's crash on bytes input (`parse_protocol_xml` takes text) was fixed in v0.23.3.0.
-
-**Why:** The demo and every test built on it show a count the current rules would not publish, and the fixture can only be edited by hand until it is regenerated.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
@@ -1015,6 +1005,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
+
+Done 2026-10-30. The two speeches that stopped being Reden are the Kurzintervention ID218403400 and its Erwiderung ID218403500 (#68). `scripts/extract_demo_fixture.py` now builds the agenda item from `validate_dip_protocol.xml_top_fields`, the helper real reports use, so the fixture carries `xml_contributions` (the demo dossier lists „1 Kurzintervention, 1 Erwiderung, 1 Zwischenfrage“ as Beiträge) and cannot fall behind the parser's fields again. The guard expects 14 Reden. Demo dossier: 16 → 14 Reden.
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 

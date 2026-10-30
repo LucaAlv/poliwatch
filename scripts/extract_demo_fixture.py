@@ -56,8 +56,11 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
         if title not in heading:
             raise ValueError(f"title of {number} is not in the TOP 32 heading; review the fixture before updating")
     speeches = source_item.get("speeches") or []
-    if len(speeches) != 16:
-        raise ValueError(f"expected 16 TOP 32 speeches, found {len(speeches)}")
+    # A deliberate tripwire: a change to what counts as a Rede must be reviewed
+    # against the demo before the fixture is regenerated. Since A1 the
+    # Kurzintervention ID218403400 and its Erwiderung ID218403500 are Beiträge.
+    if len(speeches) != 14:
+        raise ValueError(f"expected 14 TOP 32 Reden, found {len(speeches)}")
 
     positions = []
     for index, document in enumerate(documents, 1):
@@ -78,14 +81,12 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             }
         )
 
+    # Every XML-derived key comes from the helper a real report is built with, so
+    # the fixture cannot fall behind the parser's fields (Reden and Beiträge alike).
     item = {
         "index": 1,
+        **dip.xml_top_fields(source_item),
         "top_id": "Tagesordnungspunkt 32 a/b",
-        "heading": source_item.get("heading"),
-        "page_range": source_item.get("page_range"),
-        "xml_drucksachen": documents,
-        "xml_speakers": speeches,
-        "xml_speech_count": len(speeches),
         "api": {
             "positions": positions,
             "linked_drucksachen": [
@@ -109,6 +110,7 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             "source": XML_URL,
             "extracted_scope": "Plenarprotokoll 21/84, Tagesordnungspunkt 32 a/b",
             "note": "DIP position wrappers are fixture-derived from the two XML Drucksachen.",
+            "regenerated": "2026-10-30",
         },
         "protocol": {
             "id": DOCUMENT_ID,
