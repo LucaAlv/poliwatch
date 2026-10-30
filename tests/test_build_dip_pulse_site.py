@@ -1255,37 +1255,49 @@ class CurrentPulseOrderTests(unittest.TestCase):
         self.assertIn("Der vollständige Abgeordnetenkader wurde nicht abgerufen", markup)
         self.assertIn("Profilverknüpfungen konnten nicht abgerufen werden", markup)
 
-    # Value: protects=only an MdB is shown as an Abgeordnete; a Person without a Mandat is a Redner with the Sprechrolle they spoke in, and "Mitglied des Bundestages laut Plenarprotokoll" only when a Rede counted for a Zusammenschluss; fails_when=a minister's page shows a Fraktion metric again, or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite): "Abgeordnete" for anyone who speaks is on the avoid list; seam=none
+    # Value: protects=only a roster MdB is shown as an Abgeordnete; anyone else who spoke is a Redner with the Sprechrolle they spoke in, the Fraktion stays visible when the protocols record a Mandat, and a page kept by registry evidence alone claims no Rede; fails_when=a minister's page shows a Fraktion metric again, a roster-less build hides every MdB's Fraktion, an orphan page says "Redner", or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite) and review 2026-10-30; seam=none
     def test_only_mdbs_are_called_abgeordnete(self) -> None:
-        base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}}
+        base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}, "contribution_count": 0}
         mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "speech_count": 3,
-               "sprechrollen": [], "spoke_for_zusammenschluss": True}
+               "sprechrollen": [], "mandat_in_protocols": True}
         minister = {**base, "id": "p2", "name": "Bea Minister", "party": None, "is_mdb": False, "speech_count": 5,
-                    "sprechrollen": ["Bundesregierung"], "spoke_for_zusammenschluss": False}
-        former = {**base, "id": "p3", "name": "Cem Frueher", "party": "CDU/CSU", "is_mdb": False, "speech_count": 2,
-                  "sprechrollen": [], "spoke_for_zusammenschluss": True}
-        land = {**base, "id": "p4", "name": "Dora Land", "party": None, "is_mdb": False, "speech_count": 0,
-                "has_page": True, "sprechrollen": [], "spoke_for_zusammenschluss": False}
+                    "sprechrollen": ["Bundesregierung"], "mandat_in_protocols": False}
+        spoke_as_mdb = {**base, "id": "p3", "name": "Cem Protokoll", "party": "CDU/CSU", "is_mdb": False, "speech_count": 2,
+                        "sprechrollen": [], "mandat_in_protocols": True}
+        orphan = {**base, "id": "p4", "name": "Dora Land", "party": None, "is_mdb": False, "speech_count": 0,
+                  "has_page": True, "sprechrollen": [], "mandat_in_protocols": False}
+        answers_only = {**base, "id": "p5", "name": "Emil Antwort", "party": None, "is_mdb": False, "speech_count": 0,
+                        "contribution_count": 2, "sprechrollen": ["Bundesregierung"], "mandat_in_protocols": False}
 
         page = build_dip_pulse_site.render_abgeordnete_detail(minister, default_selection())
         self.assertIn('<span class="eyebrow">Redner · Bundesregierung</span>', page)
         self.assertIn("<span>Sprechrolle</span><strong>Bundesregierung</strong>", page)
         self.assertNotIn("<span>Fraktion</span>", page)
         self.assertIn('href="index.html#weitere-redner"', page)
-        self.assertIn("Redner · Mitglied des Bundestages laut Plenarprotokoll",
-                      build_dip_pulse_site.render_abgeordnete_detail(former, default_selection()))
+        # Without the roster (or for an MdB in a government office) the protocols still give the Fraktion.
+        protocol_page = build_dip_pulse_site.render_abgeordnete_detail(spoke_as_mdb, default_selection())
+        self.assertIn("Redner · Mitglied des Bundestages laut Plenarprotokoll", protocol_page)
+        self.assertIn("<span>Fraktion</span><strong>CDU/CSU</strong>", protocol_page)
+        orphan_page = build_dip_pulse_site.render_abgeordnete_detail(orphan, default_selection())
+        self.assertIn('<span class="eyebrow">Keine Reden erfasst</span>', orphan_page)
+        self.assertNotIn("Redner", orphan_page)
+        self.assertNotIn("<span>Sprechrolle</span>", orphan_page)
         mdb_page = build_dip_pulse_site.render_abgeordnete_detail(mdb, default_selection())
         self.assertIn('<span class="eyebrow">SPD</span>', mdb_page)
         self.assertIn("<span>Fraktion</span><strong>SPD</strong>", mdb_page)
 
-        index = build_dip_pulse_site.render_abgeordnete_index([mdb, minister, former, land], default_selection())
+        index = build_dip_pulse_site.render_abgeordnete_index([mdb, minister, spoke_as_mdb, orphan, answers_only], default_selection())
         roster, redner = index.split('id="weitere-redner"', 1)
         self.assertEqual(roster.count("data-mp-row"), 1)
         self.assertIn('<div class="metric"><span>Abgeordnete</span><strong>1</strong></div>', roster)
-        # Most Reden first; a page kept by registry evidence alone (no Rede, no Beitrag) gets no row.
-        self.assertEqual(re.findall(r'<a href="(p\d)\.html">', redner), ["p2", "p3"])
-        self.assertIn("<td>Bundesregierung</td>", redner)
+        self.assertIn("<strong data-mp-count>4</strong>", roster)
+        # Most Reden first, then Beiträge only; a page kept by registry evidence alone gets no row.
+        self.assertEqual(re.findall(r'<a href="(p\d)\.html">', redner), ["p2", "p3", "p5"])
         self.assertIn("<td>Mitglied des Bundestages laut Plenarprotokoll</td>", redner)
+        # The anchor exists even when nobody spoke outside the list.
+        empty = build_dip_pulse_site.render_abgeordnete_index([mdb], default_selection())
+        self.assertIn('id="weitere-redner"', empty)
+        self.assertIn("sprach niemand außerhalb der Liste", empty)
 
     def test_manifest_preserves_cached_acquisition_times_and_fails_empty_requested_roster(self) -> None:
         previous_time = "2026-08-01T10:00:00Z"
@@ -2127,6 +2139,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('aria-current="page"', markup)
         sources = build_dip_pulse_site.render_sources_page([], features=default_selection())
         self.assertIn('<a href="bundestag.html">So arbeitet der Bundestag</a>', sources)
+        self.assertIn('<a href="bundestag.html#vorlagen">So arbeitet der Bundestag</a>', sources)  # from the Vorgangstyp glossary
 
     def test_sources_page_explains_speech_ranking_and_text_share(self) -> None:
         markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
@@ -4168,6 +4181,8 @@ class WeekRadarPageTests(unittest.TestCase):
     def test_vote_badge_is_unconditional(self) -> None:
         rows = self._rows(self._section(self._render(), "radar"))
         self.assertIn('<a class="badge radar-badge" href="bundestag.html#abstimmen">namentlich abgestimmt</a>', rows[0])
+        # A visited badge keeps its amber: the global a:visited rule outranks .radar-badge.
+        self.assertIn(".radar-badge:visited {", self._render())
         self.assertEqual(sum("radar-badge" in row for row in rows), 1)
         without = self._rows(self._section(self._render(features=default_selection()), "radar"))
         self.assertEqual(sum("radar-badge" in row for row in without), 1)
