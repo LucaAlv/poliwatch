@@ -1556,6 +1556,7 @@ def _rebuild_database_from_entries(
                 raise DatabaseRebuildError(f"{_entry_label(entry)} did not persist: {exc}") from exc
         if roster_rows:
             now = pulse_store.utc_now()
+            live_records = {row[0] for row in store.execute("SELECT id FROM temp.registry_touched")}
             with store:
                 skipped = [row for row in roster_rows if not canonical_dip_person_id(row.get("dip_person_id"))]
                 if skipped:
@@ -1565,7 +1566,7 @@ def _rebuild_database_from_entries(
                     if not canonical_dip_person_id(row.get("dip_person_id")):
                         continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
-                    pulse_store.upsert_mp(
+                    record_id = pulse_store.upsert_mp(
                         store,
                         now=now,
                         display_name=row.get("display_name"),
@@ -1602,6 +1603,9 @@ def _rebuild_database_from_entries(
                         person_roles_json=row.get("person_roles_json"),
                         is_mdb=True,
                     )
+                    # Preserved biographies are not fresh source evidence for matching.
+                    if record_id not in live_records:
+                        store.execute("DELETE FROM temp.registry_touched WHERE id=?", (record_id,))
         if roster_ingest is not None:
             try:
                 roster_ingest(store)

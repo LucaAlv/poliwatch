@@ -155,6 +155,35 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual((adas[0]["id"], adas[0]["speech_count"], adas[0]["wahlperioden"]), (person, 1, [21]))
         self.assertEqual(lookup["dip:dip-7"], person)
 
+    # Value: protects=offline replay keeps a renamed speaker joined while retaining retired roster keys and biographies; fails_when=preserved roster rows become live matching evidence; why_new=prior roster tests never replayed an obsolete DIP id beside a renamed speaker and replacement id; seam=none; no_claim=full-data store gate.
+    def test_preserved_roster_does_not_reactivate_retired_matching_evidence(self):
+        old = {"id": "7", "titel": "Ada Earlier", "vorname": "Ada", "nachname": "Earlier",
+               "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21}
+        first = report(names=("Ada Earlier",))
+        client = mock.Mock()
+        client.list_all.return_value = [old]
+        self.rebuild([first], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
+        retired = roster_occurrence_id("7")
+        issued = {r["identity_key"]: r["home_person_id"] for r in self.rows("person_records")}["dip:7"]
+
+        current = report(names=("Ada Earlier", "Ada Current"))
+        for speaker in current["agenda_items"][0]["xml_speakers"]:
+            speaker["speaker"]["xml_redner_id"] = "1"
+        current["sampled_people"] = [{"id": "9", "titel": "Ada Current", "fraktion": ["SPD"],
+                                      "funktion": ["MdB"], "wahlperiode": 21}]
+        live = {stable_key("speech", "s1", "s1-r0"), stable_key("speech", "s1", "s1-r1"),
+                roster_occurrence_id("9")}
+        for _ in range(2):
+            self.rebuild([current])
+            bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
+            self.assertEqual(len({bindings[b] for b in live}), 1)
+            self.assertEqual(bindings[retired], issued)
+            with sqlite3.connect(self.db) as conn:
+                conn.row_factory = sqlite3.Row
+                pages, _ = build.collect_abgeordnete(conn)
+            self.assertTrue(any(p["id"] == issued and p["is_mdb"] for p in pages))
+
     # Value (Former-MPs answer, O2): protects=WP 18-20 leavers get roster rows and pages that
     # survive a replay, while the index of the current Wahlperiode lists the same people as a
     # WP 21-only roster; fails_when=the union replaces instead of joining, flags every former
