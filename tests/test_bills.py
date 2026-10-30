@@ -239,6 +239,36 @@ class CollectTests(unittest.TestCase):
         with self.assertRaises(build.publication.PublicationStateError):
             build.render_bill_detail(single)
 
+    # Value: protects=on a date tie the procedurally latest step is the bill's latest step whatever the insertion order: the sitting's Beratung over a Drucksache filed that day, the final Beratung over a same-day vote or Entschließungsantrag, a Gesetzesbeschluss over the 2. Beratung, and an unlisted Vorgangsposition over a same-day Drucksache; fails_when=the tie-break falls back to insertion order (documents first), so a Gesetzentwurf or Entschließungsantrag dated on the sitting day is shown as the latest step; why_new=the existing tie test dates its draft before the sitting, so the TODO's case was never exercised; seam=none; no_claim=the real DIP vocabulary beyond these kinds (measured on the cache separately)
+    def test_same_day_ties_rank_by_procedural_step(self) -> None:
+        def latest(vorgangsposition: str, doc_type: str, votes: list[dict] | None = None) -> str:
+            pos = dict(GESETZ, vorgangsposition=vorgangsposition)
+            doc = {"vorgang_id": "100", "dokumentnummer": "21/100", "drucksachetyp": doc_type, "datum": "2026-01-15"}
+            first = entry([pos], [doc])
+            first["report"]["agenda_items"][0]["votes"] = votes or []
+            bill = build.collect_bill_pages([first])[0]
+            self.assertEqual(bill["latest_date"], "2026-01-15")
+            return bill["latest_step"]
+
+        self.assertEqual(latest("1. Beratung", "Gesetzentwurf"), "1. Beratung")
+        self.assertEqual(latest("2. Beratung", "Gesetzesbeschluss"), "Gesetzesbeschluss")
+        self.assertEqual(latest("2. Beratung", "Entschließungsantrag"), "2. Beratung")
+        self.assertEqual(latest("2. Beratung", "Beschlussempfehlung und Bericht"), "2. Beratung")
+        self.assertEqual(latest("Abschließende Beratungen ohne Aussprache", "Gesetzentwurf"), "Abschließende Beratungen ohne Aussprache")
+        self.assertEqual(latest("Beratung", "Neuer Drucksachetyp"), "Beratung")
+        vote = {"id": "v1", "date": "2026-01-15", "title": "Gesetz zur Sache", "document_numbers": ["21/100"]}
+        self.assertEqual(latest("3. Beratung", "Beschlussempfehlung und Bericht", [vote]), "3. Beratung")
+        # The order the timeline is published in, not only its head.
+        pos = dict(GESETZ, vorgangsposition="3. Beratung")
+        docs = [
+            {"vorgang_id": "100", "dokumentnummer": "21/100", "drucksachetyp": "Gesetzentwurf", "datum": "2026-01-15"},
+            {"vorgang_id": "100", "dokumentnummer": "PlPr 21/5", "drucksachetyp": "Plenarprotokoll", "datum": "2026-01-15"},
+        ]
+        first = entry([pos], docs)
+        first["report"]["agenda_items"][0]["votes"] = [vote]
+        kinds = [event["kind"] for event in build.collect_bill_pages([first])[0]["events"]]
+        self.assertEqual(kinds, ["3. Beratung", "Namentliche Abstimmung", "Gesetzentwurf", "Plenarprotokoll"])
+
     # Value: protects=a same-day Plenarprotokoll document never becomes the latest step, and the published order matches the overview script's default (newest first, then German title order with numbers in numeric order); fails_when=date ties keep insertion order or titles sort Z-A/codepoint-wise, so the list reshuffles when the script runs; why_new=no collect test had same-date events or same-date bills; seam=none; no_claim=Intl.Collator parity beyond accents, case and digit runs
     def test_same_day_ties_pick_the_step_and_order_titles_like_the_overview_script(self) -> None:
         protocol_doc = {"vorgang_id": "100", "dokumentnummer": "PlPr 21/5", "drucksachetyp": "Plenarprotokoll", "datum": "2026-01-15"}

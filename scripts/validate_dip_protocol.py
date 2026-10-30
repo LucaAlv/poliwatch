@@ -1845,10 +1845,15 @@ _VOTE_OUTCOME_WORD_RE = re.compile(r"\b(angenommen|abgelehnt)\b")
 _VOTE_NEGATION_RE = re.compile(r"\bnicht\b", re.I)
 # Where the next vote's narration starts: its "Gesamt" or its own tally.
 _NEXT_TALLY_RE = re.compile(r"Gesamt|Ja:\s*\d")
-# A Drucksache number's shape, e.g. "21/6561". Shared with
-# parse_roll_call_list_page, which populates the document_numbers this
-# function cross-checks against.
-_DOCUMENT_NUMBER_RE = derive.DOCUMENT_NUMBER_RE
+# A Drucksache number's shape on the vote pages and in the chair's
+# announcements, e.g. "21/6561". Shared with parse_roll_call_list_page, which
+# populates the document_numbers this function cross-checks against. Unlike
+# derive.DOCUMENT_NUMBER_RE (Plenarprotokoll headings of every Wahlperiode) the
+# Wahlperiode has two digits: bundestag.de lists namentliche Abstimmungen from
+# WP 17 and structured XML starts at WP 18, so "2/3-Mehrheit" or "3/4" is never
+# a Drucksache here and must neither join a vote's documents nor read as the
+# "different document" that refuses an official outcome.
+_DOCUMENT_NUMBER_RE = re.compile(r"\b[1-9][0-9]/[0-9]{1,6}\b")
 
 
 def _beschluss_paragraphs(section_html: str) -> list[list[str]]:

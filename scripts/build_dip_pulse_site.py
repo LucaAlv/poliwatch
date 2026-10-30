@@ -862,7 +862,15 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
 
 
 class CachedReportError(Exception):
-    """A cached dossier report that a strict load could not read."""
+    """A cached dossier report that a strict load could not read. ``numbers``
+    names the sittings to re-fetch where they are known, so the printed fix can
+    name the command; ``fix`` replaces that fix where a re-fetch is not the
+    remedy (``cached_report_fix``)."""
+
+    def __init__(self, message: str, numbers: list[str] | tuple[str, ...] = (), *, fix: str | None = None) -> None:
+        super().__init__(message)
+        self.numbers = [number for number in numbers if number]
+        self.fix = fix
 
 
 # What a build prints when a cached report stops it before any dossier is
@@ -872,6 +880,19 @@ CACHED_REPORT_FIX = (
     "Fix: move that report out of data/, then re-fetch its sitting with an online update "
     "and --document-number <its number>"
 )
+
+
+def cached_report_fix(exc: CachedReportError) -> str:
+    """The error's own fix, else CACHED_REPORT_FIX with the refused reports'
+    own numbers filled in."""
+    if exc.fix:
+        return exc.fix
+    if not exc.numbers:
+        return CACHED_REPORT_FIX
+    flags = " ".join(f"--document-number {number}" for number in exc.numbers)
+    if len(exc.numbers) == 1:
+        return f"Fix: move that report out of data/, then re-fetch its sitting with an online update and {flags}"
+    return f"Fix: move those reports out of data/, then re-fetch their sittings with an online update and {flags}"
 
 
 # Collect cached dossiers from data/ for the given protocols (every online build
@@ -928,7 +949,7 @@ def load_existing_detail_entries(
         try:
             derive.require_vote_shape(report)
         except ValueError as exc:
-            raise CachedReportError(f"{report_path}: {exc}") from exc
+            raise CachedReportError(f"{report_path}: {exc}", [document_number]) from exc
         expected_report_path, page_path, slug = report_paths(output_dir, document_number)
         entries.append(
             {
@@ -1388,13 +1409,26 @@ def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
     """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
-        numbers = ", ".join(
-            sorted(str((entry["report"].get("protocol") or {}).get("dokumentnummer") or "?") for entry in stale)
+        def number(entry: dict[str, Any]) -> str:
+            return normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?"
+
+        # Most of them only lack the XML, which --fetch-xml downloads. Only a
+        # report with no xml_url has to go: the plain online update re-fetches
+        # just the newest sittings, so the fix names those by number.
+        unfetchable = sorted(
+            number(entry) for entry in stale if not (entry["report"].get("protocol") or {}).get("xml_url")
         )
+        fix = "Fix: run --fetch-xml, then --offline --repersist"
+        if unfetchable:
+            flags = " ".join(f"--document-number {n}" for n in unfetchable if n != "?") or "--document-number <its number>"
+            fix += (
+                f"; {len(unfetchable)} of them have no xml_url: move them out of data/, then re-fetch their sittings "
+                f"with an online update and {flags}"
+            )
         raise CachedReportError(
             f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
-            f"them from ({numbers}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
-            "fetched (no xml_url) must be deleted from data/"
+            f"them from ({', '.join(sorted(map(number, stale)))})",
+            fix=fix,
         )
 
 
@@ -1445,7 +1479,8 @@ def reparse_cached_xml(
             dip.reparse_report_xml(report, parsed)
         except (dip.ET.ParseError, OSError, UnicodeDecodeError, ValueError, derive.SprechrolleError) as exc:
             raise CachedReportError(
-                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again"
+                f"{path} is not the Plenarprotokoll XML of {document_number}: {exc}. Check the source identity and TOP evidence; reacquire the report on ambiguous association, or delete corrupt XML and run --fetch-xml again",
+                [document_number],
             ) from exc
         for item in [report, *(report.get("agenda_items") or [])]:
             attach_speaker_profiles(item, profiles.get(item.get("index"), {}), by_redner_id)
@@ -3699,12 +3734,14 @@ def render_daten_recipes(
 ) -> str:
     blocks = []
     for recipe_row in manifest["recipes"]:
-        recipe = RECIPES_BY_ID.get(recipe_row["id"], {})
-        columns = recipe.get("columns", ())
+        # validate_manifest (an override) or the export itself (this build's
+        # manifest) guarantees every id is a local recipe with the same SQL.
+        recipe = RECIPES_BY_ID[recipe_row["id"]]
+        columns = recipe["columns"]
         visible_columns = [column for column in columns if not column.get("hidden")]
         rows = recipe_row["rows"]
         if not rows:
-            body = f'<p class="recipe-empty">{pulse_html.esc(recipe_row["empty_reason"] or "keine Daten in diesem Build")}</p>'
+            body = f'<p class="recipe-empty">{pulse_html.esc(recipe_row.get("empty_reason") or "keine Daten in diesem Build")}</p>'
         else:
             header = "".join(f"<th scope=\"col\">{pulse_html.esc(column['name'])}</th>" for column in visible_columns)
             body_rows = []
@@ -3755,7 +3792,7 @@ def render_daten_recipes(
             body = f"""
               <div class="table-scroll">
                 <table>
-                  <caption class="visually-hidden">{pulse_html.esc(recipe_row['title'])}</caption>
+                  <caption class="visually-hidden">{pulse_html.esc(recipe['title'])}</caption>
                   <thead><tr>{header}</tr></thead>
                   <tbody>{''.join(body_rows)}</tbody>
                 </table>
@@ -3767,8 +3804,8 @@ def render_daten_recipes(
             f"""
             <section class="recipe" aria-labelledby="{title_id}">
               <div class="recipe-sql">
-                <h3 id="{title_id}">{pulse_html.esc(recipe_row['title'])}</h3>
-                <pre><code>{pulse_html.esc(recipe_row['sql'])}</code></pre>
+                <h3 id="{title_id}">{pulse_html.esc(recipe['title'])}</h3>
+                <pre><code>{pulse_html.esc(recipe['sql'])}</code></pre>
                 <button type="button" class="recipe-copy" aria-live="polite" hidden>Kopieren</button>
               </div>
               <div class="recipe-result">
@@ -4830,12 +4867,12 @@ def write_votes_archive_page(
 
 
 def _speakers_note(stats: dict[str, Any]) -> str:
-    """" Fraktionen für N von M Reden erfasst." when a week's speaker lists are cut short."""
+    """" Zuordnung für N von M Reden erfasst." when a week's speaker lists are cut short."""
     if stats.get("speakers_complete", True):
         return ""
     recorded = sum(stats["party_counts"].values())
     return (
-        f" Fraktionen f&uuml;r {pulse_html.format_int(recorded)} von "
+        f" Zuordnung f&uuml;r {pulse_html.format_int(recorded)} von "
         f"{pulse_html.format_count(stats['speech_count'], 'Rede', 'Reden')} erfasst."
     )
 
@@ -4884,7 +4921,7 @@ def render_week_comparison_section(
           <p class="week-note">Diese Woche; ein Vergleichswert folgt mit der n&auml;chsten Woche mit Sitzung.</p>
         </article>
         <article class="week-card">
-          <h3>Redeanteil der Fraktionen</h3>
+          <h3>Redeanteil der Fraktionen und Gruppen</h3>
           {pulse_html.render_share_shift(current_stats["party_counts"], None, show_deltas=False)}
           <p class="week-note">Anteil an allen Reden der Woche.{_speakers_note(current_stats)}</p>
         </article>{votes_card}
@@ -5014,7 +5051,7 @@ def render_week_comparison_section(
           <p class="week-note">{pulse_html.esc(spark_note)}, letzte {pulse_html.format_count(len(points), "Woche mit Sitzung", "Wochen mit Sitzung")} bis {pulse_html.esc(current["label"])}.</p>
         </article>
         <article class="week-card">
-          <h3>Redeanteil der Fraktionen</h3>
+          <h3>Redeanteil der Fraktionen und Gruppen</h3>
           {pulse_html.render_share_shift(compared_current["party_counts"], compared_previous["party_counts"] if basis else None)}
           <p class="week-note">{share_note}</p>
         </article>
@@ -5952,6 +5989,8 @@ def render_front_page(
     .week-list-current-only .week-row {{
       grid-template-columns:minmax(96px,1.1fr) minmax(0,2fr) auto;
     }}
+    /* Redeanteil: the rows outside the Zusammenschlüsse start below a rule. */
+    .week-row-split {{ border-top:1px solid var(--line); padding-top:8px; }}
     .week-label {{
       color:var(--muted);
       font-size:12px;
@@ -6182,6 +6221,35 @@ def unique_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list
     return result
 
 
+# Same-day order of a bill's timeline events, latest step highest. A Drucksache
+# dated on the sitting day is filed before the debate it belongs to, the sitting's
+# Plenarprotokoll only records the day, a roll-call vote happens inside its
+# Beratung, and the Gesetzesbeschluss follows the final Beratung. A kind not
+# listed ranks by where the event came from (BILL_EVENT_ORIGIN_RANK), so an
+# unfamiliar Vorgangsposition still outranks a Drucksache of the same day.
+BILL_STEP_RANK = {
+    "Plenarprotokoll": 0,
+    "Gesetzentwurf": 10,
+    "Antrag": 10,
+    "Unterrichtung": 10,
+    "Stellungnahme": 12,
+    "Entschließungsantrag": 14,
+    "Änderungsantrag": 14,
+    "Beschlussempfehlung": 16,
+    "Beschlussempfehlung und Bericht": 16,
+    "Bericht": 16,
+    "Namentliche Abstimmung": 25,
+    "Beratung": 30,
+    "Beratung und Ausschussüberweisung": 30,
+    "Plenarberatung": 30,
+    "1. Beratung": 30,
+    "2. Beratung": 32,
+    "3. Beratung": 34,
+    "Gesetzesbeschluss": 40,
+}
+BILL_EVENT_ORIGIN_RANK = {"document": 10, "vote": 25, "position": 30}
+
+
 # File name for a bill's detail page, e.g. "bill-315678.html".
 def bill_slug(bill: dict[str, Any]) -> str:
     identity = first_value(bill.get("vorgang_id"), bill.get("primary_document"), bill.get("title"), "bill")
@@ -6241,6 +6309,17 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
     speaker_counts: dict[str, dict[str, dict[str, Any]]] = {}
     seen_speeches: dict[str, set[str]] = {}
     seen_agenda_items: dict[str, set[tuple[Any, Any]]] = {}
+    # id(event) -> where it came from, for BILL_EVENT_ORIGIN_RANK; kept out of
+    # the event itself because bills.json publishes the whole record.
+    event_origin: dict[int, str] = {}
+
+    def add_event(bill: dict[str, Any], origin: str, event: dict[str, Any]) -> None:
+        bill["events"].append(event)
+        event_origin[id(event)] = origin
+
+    def step_rank(event: dict[str, Any]) -> int:
+        rank = BILL_STEP_RANK.get(str(event.get("kind") or ""))
+        return rank if rank is not None else BILL_EVENT_ORIGIN_RANK[event_origin[id(event)]]
 
     # Walk every dossier, every agenda item, every DIP position within it.
     for entry in detail_entries:
@@ -6348,7 +6427,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                 # Timeline entries ("Verlauf" on the detail page): one per linked
                 # document, plus one for the plenary debate itself.
                 for doc in position_docs:
-                    bill["events"].append(
+                    add_event(
+                        bill,
+                        "document",
                         {
                             "date": first_value(doc.get("datum"), protocol.get("datum")),
                             "kind": first_value(doc.get("drucksachetyp"), "Drucksache"),
@@ -6357,7 +6438,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                             "url": doc.get("url"),
                         }
                     )
-                bill["events"].append(
+                add_event(
+                    bill,
+                    "position",
                     {
                         "date": protocol.get("datum"),
                         "kind": first_value(position.get("vorgangsposition"), "Plenarberatung"),
@@ -6377,7 +6460,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
                     if numbers and vote_numbers and not (numbers & vote_numbers):
                         continue
                     bill["votes"].append(vote)
-                    bill["events"].append(
+                    add_event(
+                        bill,
+                        "vote",
                         {
                             "date": first_value(vote.get("date"), protocol.get("datum")),
                             "kind": "Namentliche Abstimmung",
@@ -6449,9 +6534,9 @@ def collect_bill_pages(detail_entries: list[dict[str, Any]], mp_lookup: dict[str
         for speaker in bill["speakers"]:
             speaker["speeches"].sort(key=lambda ref: str(ref.get("protocol_date") or ""), reverse=True)
         bill["events"] = unique_records(bill["events"], ("date", "kind", "title", "source"))
-        # On a date tie the sitting's "Plenarprotokoll" document yields: it is the
-        # record of that day's step, not the step itself.
-        bill["events"].sort(key=lambda event: (str(event.get("date") or ""), event.get("kind") != "Plenarprotokoll"), reverse=True)
+        # On a date tie the procedurally later step leads (BILL_STEP_RANK); the
+        # stable sort keeps insertion order among equal ranks.
+        bill["events"].sort(key=lambda event: (str(event.get("date") or ""), step_rank(event)), reverse=True)
         latest = bill["events"][0] if bill["events"] else {}
         bill["latest_date"] = first_value(latest.get("date"), *(ref.get("protocol_date") for ref in bill["protocol_refs"]))
         bill["latest_step"] = first_value(latest.get("kind"), "Erfasst")
@@ -11360,6 +11445,37 @@ _MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
 )
 
 
+# The Daten page shows each recipe's SQL next to its rows and offers it for
+# copying, so an override must carry exactly this build's recipes: the rows
+# came from the manifest's SQL, and showing any other SQL beside them (local or
+# tampered, sqlite3 dot-commands included) would misstate where they came from.
+# Titles are display copy and come from RECIPES, like recipes_hash ignores them.
+def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
+    if not all(
+        isinstance(r, dict)
+        and isinstance(r.get("id"), str)
+        and isinstance(r.get("rows"), list)
+        and all(isinstance(row, dict) for row in r["rows"])
+        and (r.get("empty_reason") is None or isinstance(r.get("empty_reason"), str))
+        for r in recipes
+    ):
+        return ["recipes[] entries need id, rows (a list of objects) and empty_reason (text or null)"]
+    problems = []
+    for index, recipe in enumerate(recipes):
+        local = RECIPES_BY_ID.get(recipe["id"])
+        if local is None:
+            problems.append(f"recipes[{index}] id {recipe['id']!r} is not a recipe of this build")
+        elif recipe.get("sql") != local["sql"]:
+            problems.append(
+                f"recipes[{index}] ({recipe['id']}) SQL differs from this build's; export the data with this version of the code"
+            )
+    ids = [recipe["id"] for recipe in recipes]
+    expected = [recipe["id"] for recipe in RECIPES]
+    if not problems and ids != expected:
+        problems.append(f"recipes ids {ids} differ from this build's {expected}")
+    return problems
+
+
 def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         raise RuntimeError(f"error: --data-manifest {source} is not a JSON object")
@@ -11399,10 +11515,8 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
         isinstance(t, dict) and isinstance(t.get("name"), str) and isinstance(t.get("columns"), list) for t in manifest["tables"]
     ):
         problems.append("tables[] entries need name and columns")
-    if isinstance(manifest.get("recipes"), list) and not all(
-        isinstance(r, dict) and isinstance(r.get("id"), str) and isinstance(r.get("rows"), list) for r in manifest["recipes"]
-    ):
-        problems.append("recipes[] entries need id and rows")
+    if isinstance(manifest.get("recipes"), list):
+        problems.extend(_manifest_recipe_problems(manifest["recipes"]))
     if problems:
         raise RuntimeError(f"error: --data-manifest {source} is not a usable Daten manifest: " + "; ".join(problems))
     return manifest
@@ -11929,7 +12043,7 @@ def main() -> int:
         try:
             entries = load_existing_detail_entries(output_dir, load_cached_protocols(output_dir))
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
         fetched, failed = fetch_missing_xml(output_dir, entries)
         print(f"fetch-xml: {fetched} fetched, {failed} failed, {len(entries) - fetched - failed} already cached", file=sys.stderr)
@@ -12057,9 +12171,8 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    "Fix: repair that cached report, or move it out of data/ and re-fetch its sitting with an online update "
-                    "and --document-number <its number>, then re-run. "
-                    "Docs: README.md#re-persist-the-cached-reports",
+                    + (f"{exc.fix}. " if exc.fix else f"{cached_report_fix(exc)}, or repair the report in place; then re-run. ")
+                    + "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
                 return 1
@@ -12105,7 +12218,7 @@ def main() -> int:
             try:
                 cached_entries = load_existing_detail_entries(output_dir, protocols)
             except CachedReportError as exc:
-                print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+                print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
                 return 1
             warn_unparsed_reports(cached_entries)
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
@@ -12114,6 +12227,7 @@ def main() -> int:
         try:
             validate_cached_kinds(cached_entries)
         except CachedReportError as exc:
+            # The message names its own remedy (re-read the cached XML).
             print(f"ERROR [cached input]: {exc}", file=sys.stderr)
             return 1
         if not getattr(args, "repersist", False):
@@ -12258,7 +12372,7 @@ def main() -> int:
         try:
             existing_entries = load_existing_detail_entries(output_dir, protocols)
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {CACHED_REPORT_FIX}", file=sys.stderr)
+            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
             return 1
         # --week must name a week this build will actually hold; check it against
         # the dossier catalog (plus the cached dossiers that stay in the
@@ -12320,7 +12434,7 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [persist]: {exc}. The previous store is untouched "
-                    "(Dossiers wurden bereits geschrieben, puls.html nicht).",
+                    f"(Dossiers wurden bereits geschrieben, puls.html nicht). {cached_report_fix(exc)}.",
                     file=sys.stderr,
                 )
                 return 1

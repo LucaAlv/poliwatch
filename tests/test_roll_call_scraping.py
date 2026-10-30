@@ -312,6 +312,20 @@ class OfficialVoteResultTests(unittest.TestCase):
         body = "<p>Gesamt: 500 Ja: 300 Nein: 200 Enthaltungen --<br/>Gesetzentwurf angenommen</p>"
         self.assertEqual(dip.official_vote_result(self._section(body), 300, 200)[0], "accepted")
 
+    # Value: protects=a fractional majority in the outcome sentence ("2/3-Mehrheit") is not read as another Drucksache, so the official outcome is kept on both the exact-tally and the identified-block path; fails_when=the vote pages' document-number pattern accepts a one-digit Wahlperiode again; why_new=TODOS "`2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check"; seam=none
+    def test_a_fractional_majority_is_not_another_document(self) -> None:
+        exact = "<p>Gesamt: 500 Ja: 400 Nein: 100 Enthaltungen --<br/>Gesetzentwurf mit der erforderlichen 2/3-Mehrheit angenommen</p>"
+        self.assertEqual(dip.official_vote_result(self._section(exact), 400, 100, ["21/1234"])[0], "accepted")
+        # Provisional tally (one off ours): only the document match finds the block.
+        identified = (
+            "<p>Namentliche Abstimmung über den Gesetzentwurf 21/1234<br/>"
+            "Gesamt: 501 Ja: 401 Nein: 100 Enthaltungen --<br/>Gesetzentwurf mit 2/3-Mehrheit angenommen</p>"
+        )
+        self.assertEqual(dip.official_vote_result(self._section(identified), 400, 100, ["21/1234"])[0], "accepted")
+        # A real other Drucksache still refuses.
+        other = "<p>Gesamt: 500 Ja: 400 Nein: 100 Enthaltungen --<br/>Gesetzentwurf 21/9999 angenommen</p>"
+        self.assertIsNone(dip.official_vote_result(self._section(other), 400, 100, ["21/1234"])[0])
+
     def test_both_outcome_words_for_one_tally_are_refused(self) -> None:
         body = "<p>Gesamt: 500 Ja:300 Nein:200 angenommen aber abgelehnt</p>"
         self.assertIsNone(dip.official_vote_result(self._section(body), 300, 200)[0])

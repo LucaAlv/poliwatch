@@ -291,7 +291,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
             build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
         self.assertIn("1 cached reports predate the current speech-counting rule and have no cached XML", str(caught.exception))
         self.assertIn("(21/6)", str(caught.exception))
-        self.assertIn("--fetch-xml", str(caught.exception))
+        self.assertIn("--fetch-xml", caught.exception.fix)
         self.assertEqual(self.database.read_bytes(), b"previous store")
 
     # Value: protects=a cached report from before A1 is counted and named once with the two commands that fix it, and a current report stays silent;
@@ -943,7 +943,12 @@ class RepersistTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("ERROR [repersist]:", err)
         self.assertIn("plenarprotokoll-21-99.json", err)
-        self.assertIn("Fix:", err)
+        # An unreadable file names no sitting, so the fix keeps the placeholder.
+        self.assertIn(
+            "The previous store is untouched. Fix: move that report out of data/, then re-fetch its sitting with an "
+            "online update and --document-number <its number>, or repair the report in place; then re-run.",
+            err,
+        )
         self.assertIn("Docs: README.md#re-persist-the-cached-reports", err)
         self.assertEqual(before, sha(self.database))
 
