@@ -421,16 +421,21 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaisesRegex(RuntimeError, "cannot be part of a file name"):
                 self.export(tag=tag)
         self.assertFalse(self.exports_dir.exists())
+        for commit in ("abc123def456-dirty-0123abcd", "abc123def456-unverified", None):
+            with self.subTest(commit=commit), self.assertRaisesRegex(RuntimeError, "needs a clean, known build revision"):
+                self.export(tag="v-test", commit=commit)
+        self.assertFalse(self.exports_dir.exists())
         self.export()
         before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
-        real = b.validate_manifest
+        # A real validator rule: the new manifest's recipe CSV rows disagree with the file.
+        real_run_export = b._run_export
 
-        def reject_new(manifest, source):
-            if source == "new export":
-                raise RuntimeError("export: rejected by validator")
-            return real(manifest, source)
+        def miscounted(**kwargs):
+            manifest = real_run_export(**kwargs)
+            next(file for file in manifest["files"] if file["kind"] == "recipe_csv")["rows"] += 1
+            return manifest
 
-        with mock.patch.object(b, "validate_manifest", side_effect=reject_new), self.assertRaisesRegex(RuntimeError, "rejected by validator"):
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "the export's new datenstand.json is not a usable Daten manifest: .*rows mismatch"):
             self.export(force=True)
         self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
         self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])

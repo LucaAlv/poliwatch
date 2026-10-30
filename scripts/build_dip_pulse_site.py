@@ -3272,7 +3272,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
     lines = [
         "# DATA — Datenwörterbuch dieses Exports", "",
         f"Export: {_export_label(manifest)}; letzte gespeicherte Sitzung: {_latest_sitting(manifest)}. Erzeugungszeitpunkt: `generated_at` in `datenstand.json`.",
-        f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (lokale Änderungen siehe Eingabehashes).",
+        f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; `-unverified`: ob sie abwichen, ließ sich nicht prüfen).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
         f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzkurzhinweis dieses Exports: {manifest['license'] or 'nicht gesetzt; die geschichteten Quellenbedingungen stehen unten'}.", "",
@@ -3419,6 +3419,9 @@ def export_distribution_data(
     # The tag ends every file name of the generation.
     if not EXPORT_FILE_NAME_RE.fullmatch(tag):
         raise RuntimeError(f"export: tag {tag!r} cannot be part of a file name")
+    # A release cites its revision, so it must be one anyone can check out.
+    if tag != "local" and (not commit or "-" in commit):
+        raise RuntimeError(f"export: release {tag} needs a clean, known build revision (got {commit or 'none'})")
 
     source = facts.open_readonly(database_path)
     try:
@@ -3494,7 +3497,7 @@ def export_distribution_data(
             )
 
             # Publish only what the site's own validator accepts on the next run.
-            validate_manifest(manifest, "new export")
+            validate_manifest(manifest, "new export", subject="the export's new datenstand.json")
             manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             # A forced re-export of unchanged inputs names the published
@@ -11725,9 +11728,12 @@ _MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
 )
 
 
-def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
+# `subject` names the manifest in errors; by default it is the --data-manifest
+# argument, the only place an operator supplies one.
+def validate_manifest(manifest: Any, source: str, *, subject: str | None = None) -> dict[str, Any]:
+    subject = subject or f"--data-manifest {source}"
     if not isinstance(manifest, dict):
-        raise RuntimeError(f"error: --data-manifest {source} is not a JSON object")
+        raise RuntimeError(f"error: {subject} is not a JSON object")
     problems = []
     for key, expected in _MANIFEST_REQUIRED:
         if key not in manifest:
@@ -11773,7 +11779,7 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
     elif isinstance(files, list):
         problems += _manifest_inventory_problems(manifest, files)
     if problems:
-        raise RuntimeError(f"error: --data-manifest {source} is not a usable Daten manifest: " + "; ".join(problems))
+        raise RuntimeError(f"error: {subject} is not a usable Daten manifest: " + "; ".join(problems))
     return manifest
 
 
@@ -12184,28 +12190,32 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     return base_url_raw, manifest_raw, license_text, issues_url
 
 
-# The cited build revision: a fixed-length commit id, marked -dirty when
-# tracked files differ from it, so an export never cites a commit that lacks
-# the code or text that produced it. Untracked files are not counted.
+# The cited build revision: a fixed-length commit id, or
+# <commit>-dirty-<hash of `git diff HEAD`> when tracked files differ from it,
+# so the revision (and with it the export's cache identity) changes with every
+# local edit. Untracked files are not counted. A diff git cannot produce gives
+# <commit>-unverified rather than dropping the known commit.
 def resolve_commit() -> str | None:
-    def git(*args: str) -> str:
+    def git(*args: str, timeout: int) -> bytes:
         return subprocess.run(
-            ["git", *args],
+            ["git", "--no-optional-locks", *args],
             cwd=Path(__file__).resolve().parent,
             capture_output=True,
-            text=True,
-            timeout=5,
+            timeout=timeout,
             check=True,
-        ).stdout.strip()
+        ).stdout
 
     try:
-        commit = git("rev-parse", "--short=12", "HEAD")
-        dirty = git("status", "--porcelain", "--untracked-files=no")
-    except (OSError, subprocess.SubprocessError):
+        commit = git("rev-parse", "--short=12", "HEAD", timeout=5).decode().strip()
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return None
     if not commit:
         return None
-    return f"{commit}-dirty" if dirty else commit
+    try:
+        diff = git("diff", "HEAD", "--binary", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return f"{commit}-unverified"
+    return f"{commit}-dirty-{hashlib.sha256(diff).hexdigest()[:8]}" if diff else commit
 
 
 # D1A/D3A: the Fakt der Woche engine sits between the finalised store and the

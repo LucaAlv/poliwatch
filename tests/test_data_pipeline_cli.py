@@ -115,15 +115,26 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
 
 
 class ResolveCommitTests(unittest.TestCase):
-    # Value: protects=the cited build revision is a 12-character commit id, marked -dirty when tracked files differ; fails_when=the length floats with --short or the dirty marker is dropped or set by untracked files; why_new=DATA.md and the cache key cite this value; seam=none; no_claim=real git output
-    def test_returns_a_fixed_length_sha_marked_dirty_for_tracked_changes(self) -> None:
-        for status, expected in (("", "abc1234def56"), (" M scripts/build_dip_pulse_site.py\n", "abc1234def56-dirty")):
-            with self.subTest(status=status):
-                outputs = [SimpleNamespace(stdout="abc1234def56\n"), SimpleNamespace(stdout=status)]
+    # Value: protects=the cited build revision is a 12-character commit id, suffixed with a hash of the tracked-file diff when the tree differs and -unverified when git cannot diff; fails_when=the length floats, two different edits share a revision, or a diff failure drops the known commit; why_new=DATA.md and the cache key cite this value; seam=none; no_claim=real git output
+    def test_revision_identifies_the_commit_and_any_local_edit(self) -> None:
+        diff = b"diff --git a/x b/x\n+changed\n"
+        cases = (
+            (b"", "abc1234def56"),
+            (diff, "abc1234def56-dirty-" + b.hashlib.sha256(diff).hexdigest()[:8]),
+            (b.subprocess.TimeoutExpired("git", 30), "abc1234def56-unverified"),
+        )
+        for outcome, expected in cases:
+            with self.subTest(expected=expected):
+                outputs = [SimpleNamespace(stdout=b"abc1234def56\n"), outcome if isinstance(outcome, Exception) else SimpleNamespace(stdout=outcome)]
                 with mock.patch.object(b.subprocess, "run", side_effect=outputs) as run:
                     self.assertEqual(b.resolve_commit(), expected)
-                self.assertEqual(run.call_args_list[0].args[0], ["git", "rev-parse", "--short=12", "HEAD"])
-                self.assertEqual(run.call_args_list[1].args[0], ["git", "status", "--porcelain", "--untracked-files=no"])
+                self.assertEqual(run.call_args_list[0].args[0], ["git", "--no-optional-locks", "rev-parse", "--short=12", "HEAD"])
+                self.assertEqual(run.call_args_list[1].args[0], ["git", "--no-optional-locks", "diff", "HEAD", "--binary"])
+        other = b"diff --git a/y b/y\n+other\n"
+        with mock.patch.object(b.subprocess, "run", side_effect=[SimpleNamespace(stdout=b"abc1234def56\n"), SimpleNamespace(stdout=other)]):
+            self.assertNotEqual(b.resolve_commit(), cases[1][1])
+        with mock.patch.object(b.subprocess, "run", return_value=SimpleNamespace(stdout=b"\n")):
+            self.assertIsNone(b.resolve_commit())
 
     def test_returns_none_when_git_is_unavailable_or_fails(self) -> None:
         for exc in (FileNotFoundError("no git"), b.subprocess.SubprocessError("boom")):
@@ -333,7 +344,7 @@ class RunDataPipelineTests(unittest.TestCase):
         # tag so the override is recognisable; shape-valid by construction.
         scratch = self.tmp / "scratch-exports"
         exported = b.export_distribution_data(
-            self.database_path, scratch, mp_lookup=self.lookup, tag="override"
+            self.database_path, scratch, mp_lookup=self.lookup, tag="override", commit="0123456789ab"
         )
         exported.update(changes)
         override_path = self.tmp / "override-manifest.json"
