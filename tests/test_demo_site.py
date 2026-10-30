@@ -30,7 +30,9 @@ class DemoSiteTests(unittest.TestCase):
             self.assertIn("Tagesordnungspunkt 32 a/b", markup)
             self.assertIn("21/6354", markup)
             self.assertIn("21/4833", markup)
-            self.assertIn("16 Reden", markup)
+            # Since A1 the Kurzintervention and its Erwiderung are Beiträge, not Reden.
+            self.assertIn("14 Reden", markup)
+            self.assertIn("nicht mitgezählt: 1 Kurzintervention, 1 Erwiderung, 1 Zwischenfrage.", markup)
             self.assertIn("Profilverknüpfungen wurden nicht abgerufen", markup)
             self.assertIn("keine namentliche Abstimmung verzeichnet", markup)
             self.assertNotIn("data-ai-generated", markup)

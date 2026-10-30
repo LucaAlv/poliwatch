@@ -91,6 +91,18 @@ def _known(text: str) -> str | None:
     return name if name in _KNOWN else None
 
 
+def is_mdb_funktion(funktion: Any) -> bool:
+    """Whether a DIP ``funktion`` list marks an MdB (CONTEXT.md): "MdB" as an
+    exact value. A substring test also matched "MdBR" and "Stellv. MdBR" and
+    listed Bundesrat members as MdBs (151 for WP 21 on 2026-10-30).
+
+    DIP's ``funktion`` is the current office only, so an MdB who is also
+    Parl. Staatssekretär or Bundesminister does not carry "MdB" here (TODOS.md,
+    "List MdBs in a government office"). DIP gives no Mandat end date: an MdB
+    who left during the Wahlperiode still counts."""
+    return "MdB" in {str(value).strip() for value in funktion or []}
+
+
 def zusammenschluss(value: Any) -> str | None:
     """The name of a Zusammenschluss as a parties row carries it, from any
     spelling the sources use; other names pass through unchanged.
@@ -338,6 +350,9 @@ def member_profile_url(member: Mapping[str, Any]) -> str | None:
 
 
 _UNSAFE_URL_CHARS = re.compile(r"[\\\s\x00-\x1f\x7f]")
+#: A "." or ".." path segment, also percent-encoded: a browser resolves it, so
+#: "/abgeordnete/../apps" leaves the person path (WHATWG URL, dot segments).
+_DOT_SEGMENT = re.compile(r"(?:^|/)(?:\.|%2e){1,2}(?:/|$)", re.IGNORECASE)
 
 
 def person_profile_url(url: Any) -> str | None:
@@ -346,7 +361,7 @@ def person_profile_url(url: Any) -> str | None:
     bundestag.de links an MP without a biography back to the Abstimmung itself
     (77 rows on the reference cache); that page names nobody. A URL a browser
     could read as another host (a backslash, user info, a port, whitespace or a
-    control character) is none."""
+    control character), or whose path climbs out with a dot segment, is none."""
     if not url or _UNSAFE_URL_CHARS.search(str(url)):
         return None
     try:
@@ -356,6 +371,8 @@ def person_profile_url(url: Any) -> str | None:
     except ValueError:
         return None
     if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None:
+        return None
+    if _DOT_SEGMENT.search(parts.path):
         return None
     if host in {"www.bundestag.de", "bundestag.de"} and parts.path.startswith("/abgeordnete/"):
         return str(url)
@@ -472,6 +489,24 @@ def agenda_procedures(item: Mapping[str, Any]) -> tuple[list[dict[str, str]], di
     if lead is None and procedures:
         lead = procedures[0]
     return procedures, lead
+
+
+#: DIP's Vorgangstyp of an Entschließungsantrag. It is an unselbständige Vorlage
+#: (§ 75 Abs. 2 Buchstabe c GOBT): moved to a Gesetzentwurf, a Regierungserklärung
+#: or the like, and debated with it, so it does not make a second subject.
+ENTSCHLIESSUNGSANTRAG = "Entschließungsantrag BT"
+
+
+def debated_vorgang(item: Mapping[str, Any]) -> str | None:
+    """The one Vorgang an agenda item debates, or None for a verbundene
+    Beratung of several (or an item without a Vorgang). Of
+    ``agenda_procedures``' set, Entschließungsanträge do not count beside
+    another Vorgang; an item about nothing but one Entschließungsantrag debates
+    that. ``facts.SINGLE_VORGANG_CTE`` is this rule in SQL."""
+    procedures, _ = agenda_procedures(item)
+    main = [p["vorgang_id"] for p in procedures if p["vorgangstyp"] != ENTSCHLIESSUNGSANTRAG]
+    candidates = main or [p["vorgang_id"] for p in procedures]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 #: A Drucksache number's shape, e.g. "21/6561" (ASCII digits, like stable_ids).
