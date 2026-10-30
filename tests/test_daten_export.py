@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import antrag_text
 import person_registry
 import _daten_fixture
 import build_dip_pulse_site as b
@@ -233,17 +234,17 @@ class ExportDistributionDataTests(unittest.TestCase):
                 digest = hashlib.sha256((gen_dir / file_info["name"]).read_bytes()).hexdigest()
                 self.assertEqual(digest, file_info["sha256"])
 
-    def test_all_twenty_eight_csvs_named_and_headered(self) -> None:
+    def test_all_twenty_nine_csvs_named_and_headered(self) -> None:
         # The facts tables (T5/T6) are part of the store by the time export
         # runs in a real build; run the engine first so they are here too.
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
         manifest = self.export()
         csv_files = [f["name"] for f in manifest["files"] if f["name"].endswith(".csv.gz")]
-        self.assertEqual(len(csv_files), 28)
+        self.assertEqual(len(csv_files), 29)
         for name in (
             "fact_metrics-local.csv.gz", "facts-local.csv.gz", "fact_sources-local.csv.gz",
             "agenda_item_politikfelder-local.csv.gz", "vote_politikfelder-local.csv.gz",
-            "vote_proceedings-local.csv.gz",
+            "vote_proceedings-local.csv.gz", "vote_passages-local.csv.gz",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, csv_files)
@@ -263,19 +264,26 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
-    # Value: protects=format 8 carries vote context and the Bundestag report source URL through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
-    def test_vote_context_and_debate_url_round_trip_in_format_8_with_captions(self) -> None:
+    # Value: protects=format 9 carries vote context, the Bundestag report source URL and the quoted Antrag passage through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
+    def test_vote_context_debate_url_and_passage_round_trip_in_format_9_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
             conn.execute("UPDATE proceedings SET abstract = ? WHERE id = 'vg-1'", ("Erster Absatz\n\nZweiter",))
             conn.execute("UPDATE votes SET context_state = CASE id WHEN 'v1' THEN 'resolved' ELSE 'not_fetched' END")
             conn.execute("UPDATE votes SET debate_url = ? WHERE id = 'v1'", ("https://www.bundestag.de/dokumente/textarchiv/2024/kw11-debatte-123456",))
             conn.execute("INSERT INTO vote_proceedings(vote_id, proceeding_id, rank) VALUES ('v1', 'vg-1', 1)")
+            document_id = pulse_store.upsert_document(conn, now="2024-01-01T00:00:00Z", document_number="20/1234", herausgeber="BT")
+            conn.execute(
+                "UPDATE documents SET forderung = ?, forderung_state = 'extracted', forderung_version = ? WHERE id = ?",
+                ("Der Deutsche Bundestag fordert die Bundesregierung auf,\n\n1. zu handeln.", antrag_text.EXTRACTOR_VERSION, document_id),
+            )
+            conn.execute("INSERT INTO vote_passages(vote_id, document_id, proceeding_id, rank) VALUES ('v1', ?, 'vg-1', 1)", (document_id,))
+            conn.execute("UPDATE votes SET passage_state = CASE id WHEN 'v1' THEN 'extracted' ELSE 'not_applicable' END")
             conn.commit()
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 8)
+        self.assertEqual(manifest["export_format"], 9)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -289,11 +297,19 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(b.column_source("votes", "debate_url"), "bundestag.de")
         self.assertEqual({r["id"]: r["abstract"] for r in read("proceedings")}["vg-1"], "Erster Absatz\n\nZweiter")
         _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
-        for name in ("vote_proceedings", "proceedings", "votes"):
+        self.assertEqual({r["id"]: r["passage_state"] for r in read("votes")}, {"v1": "extracted", "v2": "not_applicable"})
+        self.assertEqual([(r["vote_id"], r["proceeding_id"], r["rank"]) for r in read("vote_passages")], [("v1", "vg-1", "1")])
+        quoted = {r["document_number"]: r for r in read("documents")}["20/1234"]
+        self.assertEqual((quoted["forderung"], quoted["forderung_state"]), (
+            "Der Deutsche Bundestag fordert die Bundesregierung auf,\n\n1. zu handeln.", "extracted"))
+        self.assertEqual(b.column_source("documents", "forderung"), "derived")
+        for name in ("vote_proceedings", "vote_passages", "proceedings", "votes", "documents"):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
         self.assertIn("context_state", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
         self.assertIn("debate_url", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
+        self.assertIn("passage_state", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
+        self.assertIn("forderung", b.DATABASE_TABLE_DESCRIPTIONS["documents"])
         self.assertIn("abstract", b.DATABASE_TABLE_DESCRIPTIONS["proceedings"])
 
     def test_dash_leading_text_is_exported_verbatim(self) -> None:
@@ -672,7 +688,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             "proceeding_positions": ["id"], "proceedings": ["id"], "protocols": ["id"],
             "schema_migrations": ["version"], "speech_rule_inputs": ["protocol_id"], "speeches": ["id"],
             "vote_documents": ["vote_id", "document_id"], "vote_fractions": ["vote_id", "party_id"],
-            "vote_members": ["vote_id", "mp_id"], "vote_politikfelder": ["vote_id", "politikfeld"],
+            "vote_members": ["vote_id", "mp_id"], "vote_passages": ["vote_id", "document_id"],
+            "vote_politikfelder": ["vote_id", "politikfeld"],
             "vote_proceedings": ["vote_id", "proceeding_id"], "votes": ["id"],
         })
 

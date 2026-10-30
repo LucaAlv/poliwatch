@@ -201,6 +201,7 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 - Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
 - WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
 - Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
+- **B4 extractive descriptions (2026-10-28):** [plan](docs/plans/b4-extractive-antrag.md#a3-coordination). It needs no report field and no re-acquisition: the Antrag text is a third stage of `refresh_vorgang_cache`, keyed by Drucksache number, using A3's DIP pacing. If B4 lands before Phase 3, the Phase 3 Vorgang fill also fills the texts for WP 18–21; otherwise one online build afterwards does. Schema/export bumps: whichever branch merges second takes the next number. Add the text cache to `validate_store_gate.py`'s replay inputs, and the extraction states to the pilot metrics if B4 has merged.
 
 **Effort:** M (mostly running time and checking)
 **Priority:** P1
@@ -693,7 +694,7 @@ Done when the chart and the recipe give the same numbers on the same release, an
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
 1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). 64 of 217 votes on the reference store have none (measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153); those panels say "Keine Beschreibung in DIP". The factual lead and Bundestag report link below are implemented (2026-10-25); the extractive fallback remains open. The labelled AI sentence under the validators item is deferred (decided 2026-10-20).
    - **Done (2026-10-25): lead sentence from stored facts** on every panel, including panels with an abstract: date, recorded subject, interpreted outcome and raw Ja/Nein/Enthaltungen counts, immediately followed by the committee citation. Derived and unavailable outcomes remain labelled. [Implementation plan](docs/plans/b4-vote-lead-and-article.md).
-   - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free.
+   - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free. Implemented 2026-10-28 without real-data validation: [plan and status](docs/plans/b4-extractive-antrag.md#implementation-status-2026-10-28). Step 0 on real texts 2026-10-28/29 ([note](docs/research/b4-antrag-extraction.md)): DIP `drucksache-text` keeps list order, so it stays the source (D3); 32 of 37 Fraktion/Gruppe Anträge quoted, none known wrong, 89 % of those with a demands section (gate 90 %). Open items: [B4 extractive fallback: finish validation locally](#b4-extractive-fallback-finish-validation-locally-open-items-from-pr-113) and step 5 (reference-store before/after). Coordinated with A3 so the backfill's Vorgang fill also fetches the Antrag texts.
    - **Done (2026-10-25): “Bericht und Debatte beim Bundestag”** links the whole associated Textarchiv report through the vote’s bounded Debatte association. Repeated copies of one article are allowed; conflicting or missing article IDs omit the link. The nullable scraped `debate_url` survives report replay, schema 7 storage and format 8 export. No editorial body is copied or section-matched; shared articles such as 1005 are valid. Offline replay cannot discover a missing URL; targeted online refresh can.
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
 3. ~~The named Abweichler per Fraktion on the vote panel.~~ Done in B4 (`derive.vote_abweichler`; 632 Abweichler in 95 of 217 votes; archive rows carry the count where every group's Einzelstimmen are complete).
@@ -708,6 +709,32 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 **Effort:** M
 **Priority:** P2
 **Depends on:** Vote reading misses half the inverted votes and never stores it; deterministic validators (only for the deferred AI fallback in 1)
+
+### B4 extractive fallback: finish validation locally (open items from PR #113)
+
+**What:** Validate quoted-Antrag fallback coverage and fidelity, retaining measured failures as separate extractor follow-ups.
+
+**Status: OPEN — validation executed 2026-10-29; acceptance gates fail.** [Plan](docs/plans/b4-extractive-antrag.md#local-validation-outcome-2026-10-29), [Run 3 evidence](docs/research/b4-antrag-extraction.md#run-3-local-reference-and-mid-period-validation-2026-10-29), [91-document audit](docs/research/b4-local-audit-2026-10-29.csv).
+
+**Completed locally:**
+1. Preserved the canonical `.context/dip-pulse-site` and a baseline copy (all 4,096 files hash-identical), created separate offline replay control and enriched working copy. No sitting reacquisition or A3 backfill. Artifacts: `.context/b4-local-20261029-163417/`.
+2. Verified the renderer's narrow cohort: 217 votes, 153 with an abstract, 64 without. Descriptions **153/217 → 196/217**; 43/64 previously abstract-less votes gain quotes. Across all contexts, **50/71** candidate documents extract (**50/68** with verified demands); all 50 reference quotes are verified after the small v7 elision-hyphen fix. Wholly abstract-less subset: **43/60** candidate documents, **43/59** with demands.
+3. Audited 20 mid-period A3-linked WP 18/19 documents (10 each). **16/20** extract (16/16 with demands), but **three passages are incorrect**: `18/2742` loses a hard hyphen, `18/3154` loses nine bullet markers, `19/16794` includes printer-footer text.
+4. Counted misses and edge cases before changing extraction: ten interposed-anchor clauses in the reference cohort, one `dazu`, one `möge beschließen`, one demand without an explicit Bundesregierung object, four footnote misses, one direct motion to revoke a regulation, three documents without an applicable demands section. No unsupported inverted Bundesregierung anchor in either local sample. Empty texts **0/91**, so the conditional retry-on-`aktualisiert` fix was not triggered. No broader anchor or footnote rule was added.
+5. Compared protected fields by stable IDs in SQLite. Tallies, member rows, tags, abstracts and links are unchanged by enrichment. Every old interpretation difference is reproduced without fallback by the offline replay control (formerly null derived results/scopes/inversion/procedure fields). Checked rendered quotes against stored documents/associations and export CSV/SQLite.
+6. Ran compilation, full unittest suite, CI zero-network demo/publication checks and the Node browser runner. Chrome DevTools checked 906, 996, 1005, abstract 846, no_passage 997, and labelled disposable not_fetched/mixed states in light/dark and desktop/mobile. Fixed the missing-cache notice beside an existing quote. `/review` ran with native adversarial review; optional Claude retry was rejected by automatic approval review. Logs and exact check results are in the research note.
+
+**Remaining:** ≥90% extraction coverage and zero incorrect passages are **not satisfied**. The historical cloud result (32/36 demand-bearing candidates, 89%, no known incorrect quotes in that sample) does not override the local results. Do not close this TODO or treat the 196/217 description percentage as the extraction gate.
+
+**Smallest follow-up:** fix source fidelity first with real fixtures for `18/2742`, `18/3154`, `19/16794`, returning `no_passage` where lost source structure cannot be proved. Acceptance: zero incorrect accepted passages on the saved 91-document corpus. Then address measured interposed-anchor clauses and the `dazu` variant while retaining complete sentence openings; re-check cloud inverted cases `20/4666`, `19/30983` before supporting them. Re-audit until ≥90% coverage passes with failures retained in explicitly stated denominators. Substantial extraction work belongs in that separate session.
+
+**Why:** The local audit found actual errors in quoted older-period texts. The reference population has now been read; fidelity beyond that population remains unproven until the failing sample documents are fixed or safely refused.
+
+**Context:** PR #113, branch `claude/charming-lovelace-4a229o`; `EXTRACTOR_VERSION` 7. The Drucksache cache rides in the in-memory Vorgang cache under `antrag_text.CACHE_NAMESPACE`; A3 coordination is on the A3 entry.
+
+**Effort:** M (remaining source fidelity and measured anchor follow-ups)
+**Priority:** P2
+**Depends on:** Saved local corpus; no new backfill required
 
 ### Mitberatende Ausschüsse on the vote panel
 
