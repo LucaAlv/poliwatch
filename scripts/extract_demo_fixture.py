@@ -14,6 +14,7 @@ if __name__ == "__main__":
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -110,7 +111,7 @@ def extract_report(xml_path: Path) -> dict[str, Any]:
             "source": XML_URL,
             "extracted_scope": "Plenarprotokoll 21/84, Tagesordnungspunkt 32 a/b",
             "note": "DIP position wrappers are fixture-derived from the two XML Drucksachen.",
-            "regenerated": "2026-10-30",
+            "regenerated": date.today().isoformat(),
         },
         "protocol": {
             "id": DOCUMENT_ID,

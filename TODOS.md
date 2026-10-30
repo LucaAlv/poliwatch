@@ -363,6 +363,16 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
+### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
+
+**What:** `facts.render_card_svg` keeps two lines of 76 characters of a metric's caveat (`wrap_lines(..., max_lines=2)`). The caveat of `knappste-abstimmung` wraps to 4 lines and that of `meiste-abweichler` to 5 (measured 2026-10-30), so their cards show half a sentence. Shorten the caveats (or give the card room for them) and pin every caveat's line count with a test, as `meistdiskutierter-vorgang` now has.
+
+**Why:** D27: a metric may not be read without its caveat, and a card is read without its page.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### List MdBs in a government office as Abgeordnete
 
 **What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
@@ -1018,7 +1028,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
-Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. An offline rebuild drops preserved roster rows whose stored funktion is known and not "MdB". DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden (and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede counted for a Zusammenschluss; not "früheres", because MdBs in a government office are not in the roster yet), the Fraktion and Wahlkreis metrics give way to the Sprechrolle, and the index lists them under "Weitere Rednerinnen und Redner". Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix keeps its Bundesrat roster rows until the roster is fetched again (`--enrich mp-roster`); no migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 ### "So arbeitet der Bundestag" explainer page
 
