@@ -71,8 +71,14 @@ class ExportHelpersTests(unittest.TestCase):
         for column in ("display_name", "party_id"):
             self.assertEqual(dictionary["mps"]["columns"][column]["license"], "dip-oder-bundestag-abstimmungen")
 
+    # Value: protects=definitions corrected against the real store (source kind, unit, created_at semantics) and the methods doc quoting CONTEXT.md/ADRs verbatim; fails_when=a correction is reverted (e.g. created_at of re-persisted tables called a first-ingest time) or a quotation drifts from its source; why_new=completeness checks cannot see wrong content; seam=none; no_claim=every other definition is true
     def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        # replace_protocol deletes and re-inserts a sitting's rows; upserted tables keep their first created_at.
+        for table in ("agenda_items", "speeches", "contributions"):
+            self.assertIn("gleich updated_at", dictionary[table]["columns"]["created_at"]["meaning"])
+            self.assertNotIn("erstmals", dictionary[table]["columns"]["created_at"]["meaning"])
+        self.assertIn("erstmals", dictionary["protocols"]["columns"]["created_at"]["meaning"])
         self.assertIn("DIP-API", dictionary["proceedings"]["columns"]["title"]["source"])
         self.assertIn("XML", dictionary["speeches"]["columns"]["text"]["source"])
         self.assertIn("UTC", dictionary["speeches"]["columns"]["created_at"]["unit"])
@@ -256,7 +262,8 @@ class ExportDistributionDataTests(unittest.TestCase):
                     with (gen_dir / recipe["file"]).open(encoding="utf-8", newline="") as handle:
                         self.assertEqual(list(csv.reader(handle)), [columns])
                     self.assertEqual(recipe["rows"], [])
-                    self.assertIn(recipe["empty_reason"], codebook)
+                    # The whole line, so a reason that ends in a period does not get a second one.
+                    self.assertIn(f"Leeres Ergebnis: {recipe['empty_reason'].rstrip('.')}.\n", codebook)
                     entry = next(file for file in manifest["files"] if file["name"] == recipe["file"])
                     self.assertEqual(entry["rows"], 0)
                     self.assertEqual(entry["sha256"], b._hash_file(gen_dir / recipe["file"]))

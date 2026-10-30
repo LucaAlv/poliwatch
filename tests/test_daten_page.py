@@ -18,6 +18,7 @@ from features import all_selection
 
 READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"}
 
+
 def build_manifest(tmp: Path) -> tuple[dict, dict]:
     db_path = tmp / "pulse.sqlite"
     ids = _daten_fixture.seed_store(db_path)

@@ -151,9 +151,9 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz erstmals in diesem Projekt gespeichert wurde; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
-          "source": "Lokale Projektbuchhaltung: agenda_items.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
+          "source": "Lokale Projektbuchhaltung: agenda_items.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
         },
         "updated_at": {
@@ -252,9 +252,9 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz erstmals in diesem Projekt gespeichert wurde; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
-          "source": "Lokale Projektbuchhaltung: contributions.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
+          "source": "Lokale Projektbuchhaltung: contributions.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
         },
         "updated_at": {
@@ -1296,9 +1296,9 @@
           "license": "eigene-auswertung"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz erstmals in diesem Projekt gespeichert wurde; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
-          "source": "Lokale Projektbuchhaltung: speeches.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
+          "source": "Lokale Projektbuchhaltung: speeches.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
         },
         "updated_at": {

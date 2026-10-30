@@ -3565,7 +3565,7 @@ def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
         if recipe.get("caveat"):
             lines += ["", recipe["caveat"]]
         if recipe["empty_reason"]:
-            lines += ["", f"Leeres Ergebnis: {recipe['empty_reason']}."]
+            lines += ["", f"Leeres Ergebnis: {recipe['empty_reason'].rstrip('.')}."]
         lines += ["", "```sql", recipe["sql"], "```", ""]
     return lines
 
