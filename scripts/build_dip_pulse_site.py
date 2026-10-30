@@ -1367,7 +1367,7 @@ _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
 
 
 def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
-    """The MdB roster rows of an existing store, read without migrating it."""
+    """Preserved roster biographies, read without migrating the existing store."""
     if not database_path.exists():
         return []
     previous = facts.open_readonly(database_path)
@@ -1375,6 +1375,12 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
         columns = {row[1] for row in previous.execute("PRAGMA table_info(mps)")}
         if "is_mdb" not in columns:
             return []
+        roster_records = set()
+        if previous.execute("SELECT 1 FROM sqlite_master WHERE name='person_records'").fetchone():
+            for record in previous.execute("SELECT id, evidence_json FROM person_records"):
+                evidence = json.loads(record["evidence_json"])
+                if (evidence.get("ever_mdb") or evidence.get("is_mdb")) and not evidence.get("vacated"):
+                    roster_records.add(record["id"])
         return [
             dict(row)
             for row in previous.execute(
@@ -1382,9 +1388,10 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
                 SELECT m.*, p.name AS party_name
                 FROM mps m
                 LEFT JOIN parties p ON p.id = m.party_id
-                WHERE m.is_mdb = 1
                 """
             )
+            # Retain biographies after a known non-MdB role clears its old flag.
+            if row["is_mdb"] or row["id"] in roster_records
         ]
     finally:
         previous.close()
@@ -1587,6 +1594,7 @@ def _rebuild_database_from_entries(
                     if not canonical_dip_person_id(row.get("dip_person_id")):
                         continue
                     party_id = pulse_store.upsert_party(store, row.get("party_name"), now)
+                    roles = _parse_listish(row.get("function"))
                     record_id = pulse_store.upsert_mp(
                         store,
                         now=now,
@@ -1622,7 +1630,7 @@ def _rebuild_database_from_entries(
                         aw_politician_id=row.get("aw_politician_id"),
                         aw_match=row.get("aw_match"),
                         person_roles_json=row.get("person_roles_json"),
-                        is_mdb=True,
+                        is_mdb=not roles or _has_mdb_funktion(roles),
                     )
                     # Preserved biographies are not fresh source evidence for matching.
                     if record_id not in live_records:
@@ -7650,9 +7658,9 @@ def write_bill_pages(
 
 
 # DIP marks a person's roles in "funktion"; a Bundestag member has one that
-# contains "MdB".
+# is exactly "MdB".
 def _has_mdb_funktion(funktion: Any) -> bool:
-    return any("mdb" in str(value).lower() for value in (funktion or []))
+    return any(str(value).strip().casefold() == "mdb" for value in (funktion or []))
 
 
 def ingest_mdb_roster(
@@ -8205,7 +8213,7 @@ def render_abgeordnete_index(
     former_section = (
         f'<details class="former-mps"><summary>Frühere Abgeordnete seit der {V1_FIRST_WAHLPERIODE}. Wahlperiode '
         f"({pulse_html.format_int(len(former))})</summary>"
-        '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion (zuletzt)</th><th>Wahlperioden</th>'
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlperioden</th>'
         f'<th class="num">Reden</th></tr></thead><tbody>{former_rows}</tbody></table></details>'
         if former
         else ""

@@ -63,13 +63,17 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             proc.wait()
             proc.stdout.close()
 
-    # Value: protects=online roster ingestion inside the staged rebuild binds roster and speaker to one stable person; fails_when=roster_ingest is skipped, bound under another key, or a failure replaces the store; why_new=no test passes roster_ingest or calls ingest_mdb_roster; seam=none
+    # Value: protects=staged ingestion binds valid MdB and speaker evidence while excluding BR-only roles; fails_when=MdBR roles enter the Bundestag roster or a valid MdB no longer binds; why_new=prior fixture covered MdB and Bundesminister only; seam=none; no_claim=live DIP roster shape
     def test_staged_roster_ingestion_binds_with_speaker_and_failure_keeps_store(self):
         roster = [
             {"id": "dip-7", "titel": "Ada Example", "vorname": "Ada", "nachname": "Example",
              "fraktion": ["SPD"], "funktion": ["MdB"], "wahlperiode": 21},
             {"id": "dip-8", "titel": "Bea Minister", "vorname": "Bea", "nachname": "Minister",
              "fraktion": ["SPD"], "funktion": ["Bundesminister"], "wahlperiode": 21},
+            {"id": "dip-9", "titel": "Carl Bundesrat", "vorname": "Carl", "nachname": "Bundesrat",
+             "fraktion": ["SPD"], "funktion": ["MdBR"], "wahlperiode": 21},
+            {"id": "dip-10", "titel": "Dana Stellvertretung", "vorname": "Dana", "nachname": "Stellvertretung",
+             "fraktion": ["SPD"], "funktion": ["Stellv. MdBR"], "wahlperiode": 21},
         ]
         client = mock.Mock()
         client.list_all.return_value = roster
@@ -78,11 +82,13 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
             stats.append(build.ingest_mdb_roster(client, staged, wahlperioden=[21]))
         r = report()
         self.rebuild([r], preserve_roster=False, roster_ingest=ingest)
-        self.assertEqual((stats[0]["fetched"], stats[0]["mdb"]), (2, 1))
+        self.assertEqual((stats[0]["fetched"], stats[0]["mdb"]), (4, 1))
         bindings = {b["id"]: b["person_id"] for b in self.rows("person_bindings")}
         roster_binding = stable_key("roster", "dip-7")
         self.assertIn(roster_binding, bindings)
         self.assertNotIn(stable_key("roster", "dip-8"), bindings)
+        self.assertNotIn(stable_key("roster", "dip-9"), bindings)
+        self.assertNotIn(stable_key("roster", "dip-10"), bindings)
         speech_binding = stable_key("speech", "s1", "s1-r0")
         self.assertEqual(bindings[roster_binding], bindings[speech_binding])
         self.assertEqual(len(self.rows("mps")), 2)
@@ -184,11 +190,10 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 pages, _ = build.collect_abgeordnete(conn)
             self.assertTrue(any(p["id"] == issued and p["is_mdb"] for p in pages))
 
-    # Value (Former-MPs answer, O2): protects=WP 18-20 leavers get roster rows and pages that
-    # survive a replay, while the index of the current Wahlperiode lists the same people as a
-    # WP 21-only roster; fails_when=the union replaces instead of joining, flags every former
-    # member as current, drops ever_mdb, or a roster row inherits a Redner-ID; seam=ingest_mdb_roster
-    # inside the staged rebuild, collect_abgeordnete, render_abgeordnete_index.
+    # Value: protects=WP 18-20 leavers keep roster pages and the former table labels stored Fraktion without claiming recency;
+    #   fails_when=the roster union drops leavers or the former header says Fraktion (zuletzt);
+    #   why_new=prior assertions checked membership and rows but not that header; seam=none;
+    #   no_claim=source Fraktion history beyond stored rows
     def test_the_roster_unions_its_wahlperioden_and_keeps_former_members(self):
         lea = {"id": "dip-1", "titel": "Lea Former", "vorname": "Lea", "nachname": "Former",
                "fraktion": ["FDP"], "funktion": ["MdB"], "wahlperiode": 18}
@@ -228,6 +233,9 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
                 self.assertEqual(len(current_rows), 1)
                 self.assertIn(f'href="{mps["Lea Former"]["id"]}.html"', index)
                 self.assertIn("data-former-mp-row", index)
+                former = index.split('<details class="former-mps">', 1)[1].split("</details>", 1)[0]
+                self.assertIn("<th>Fraktion</th>", former)
+                self.assertNotIn("Fraktion (zuletzt)", former)
 
     # Value: protects=malformed or unresolvable corrections abort the rebuild before replacement; fails_when=a validation guard is dropped so a bad file is applied or partially applied; why_new=only unknown merge persons were tested; seam=none
     def test_invalid_corrections_abort_without_replacing_store(self):
