@@ -22,6 +22,8 @@ _ABBREVIATIONS = frozenset(
     " abschn bd jh mio mrd tsd".split()
 )
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
+# Stripped off a token before the abbreviation test: "(Abs." is "Abs.".
+_OPENERS = "([„\"‚'"
 # The fallback for markup html.parser cannot read: a "<" that opens no tag stays text,
 # and a closed <script> or <style> goes with its text, as on the parser's path. A
 # comment goes first, to its "-->" or, unclosed, to the end.
@@ -138,7 +140,8 @@ def abstract_teaser(text: str) -> tuple[str, bool]:
         return first, len(paragraphs) > 1
     cut = None
     for match in _SENTENCE_END.finditer(first, 0, CONTEXT_TEASER + 1):
-        token = first[: match.start()].rsplit(None, 1)[-1] if first[: match.start()].strip() else ""
+        before = first[: match.start()]
+        token = before.rsplit(None, 1)[-1].lstrip(_OPENERS) if before.strip() else ""
         if token.isdigit() or len(token) <= 1 or "." in token or token.casefold() in _ABBREVIATIONS:
             continue
         cut = match.end()

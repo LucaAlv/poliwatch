@@ -768,7 +768,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 1. No per-vote cap on "Worum es geht" blocks.
 2. `abstract_text` output can differ across Python patch levels (it feeds the content-hashed export).
 3. CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles).
-4. The teaser can cut after "(Abs.".
+4. ~~The teaser can cut after "(Abs.".~~ Done 2026-10-30: an opening bracket or quote is stripped off the token before the abbreviation test. 10 of 3,922 cached abstracts had a teaser ending in "(sog."; they now end at a word with " …" or at an earlier sentence end. For example, "Umsetzung der Erneuerbare-Energie-Richtlinie (sog." became "Umsetzung der Erneuerbare-Energie-Richtlinie (sog. RED III) zur Verkürzung … für Windenergieanlagen an Land …". Render-only, no stored value moves.
 5. `derive.vote_identity` uses the raw id while persist cleans it.
 6. One member/count mismatch hides a whole group's Abweichler.
 7. ~~`derive.vote_abweichler` dedupes member rows by name~~ Done 2026-10-22 (B4 Codex P2 F3): it dedupes on `derive.vote_member_identity`, the key persist hands `upsert_mp`, vote-wide. The 63 occurrences the old Abstimmung-page "profile URL" folded were unfolded by rebuilding the reference store's registry from scratch (2026-10-22, `vote_members` 154,078). Left: merges `registry.bind` makes later are not seen by derive.

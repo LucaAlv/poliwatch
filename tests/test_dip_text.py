@@ -125,6 +125,17 @@ class AbstractTeaserTests(unittest.TestCase):
         self.assertTrue(more)
         self.assertEqual(teaser, "x" * CONTEXT_TEASER + " …")
 
+    # Value: protects=an abbreviation behind an opening bracket or quote ("(Abs.", "„Art.", "[Nr.") ends no sentence, so the teaser is not cut there; fails_when=the token keeps its "(" and misses _ABBREVIATIONS; why_new=B4 review edge 4 (2026-10-22); seam=none
+    def test_an_abbreviation_after_a_bracket_or_quote_ends_no_sentence(self) -> None:
+        for opener in ("(Abs.", "„Art.", "[Nr.", "(vgl."):
+            with self.subTest(opener=opener):
+                teaser, more = abstract_teaser(f"Die Regel gilt nach § 5 {opener} 2) " + "wort " * 80)
+                self.assertTrue(more)
+                self.assertTrue(teaser.endswith("wort …"), teaser)
+        # A real sentence end before the bracket is still where it cuts.
+        teaser, _ = abstract_teaser("Erster Satz. Nach § 5 (Abs. 2) " + "wort " * 80)
+        self.assertEqual(teaser, "Erster Satz.")
+
 
 REFERENCE_URHEBER = (
     # Every Beschlussempfehlung urheber on the reference store (2026-10-20).
