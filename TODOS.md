@@ -161,18 +161,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2 (raised 2026-09-30: part of a citable release)
 **Depends on:** None
 
-### Validate remote-manifest recipes before showing their SQL
-
-**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
-
-**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
-
-**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Validate final merged A1/A2 before the A3 backfill
 
 **Completed:** 2026-10-19 (A3 Phase 0). `scripts/validate_store_gate.py` on a clone of the reference store with `main` v0.20.0.0: replay, integrity, fresh vs. half-then-full grouping, unchanged replay, links, export and publication all pass; every moved figure is explained in [the gate record](docs/plans/a3-gate-validation.md).
@@ -215,16 +203,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** None
-
-### A Drucksache reference can be a URL fragment
-
-**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
-
-**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
-
-**Effort:** S
-**Priority:** P3
 **Depends on:** None
 
 ### Tell official addresses and presidium Reden apart from Fraktionsreden (ADR 0004)
@@ -328,18 +306,17 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
 
-### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
+### Textanteil for the r2 Daten recipe, the rest of the ADR 0001 UI half
 
-**What:** The data half is done: puls.html's Redeanteil shows Bundesregierung, Bundesrat and weitere Sprechrolle as their own rows in the denominator, no row is called "Regierung", and the Daten recipes r1/r2 follow the same rule. What is left is wording: head the puls.html card "Redeanteil der Fraktionen und Gruppen" (Gruppen are still headed as "Fraktionen"), and rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
+**What:** The data half is done, and so is puls.html (v0.23.6.0, 2026-10-29): the card is headed "Redeanteil der Fraktionen und Gruppen", lists every row (it cut at eight before, so a WP 21 week's Bundesrat or fraktionslos row could drop and the bars sum to less than 100 %), and sets fraktionslos, Bundesregierung, Bundesrat, weitere Sprechrolle and Unbekannt apart below a rule; its note says "Zuordnung für N von M Reden erfasst". What is left is the recipe: rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil ("Textanteil je Fraktion oder Gruppe") sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
 
 **Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25).
 
-**Context:** The three sides sit in the same list as the Zusammenschlüsse in `week_stats`; a card that wants them "outside the Zusammenschlüsse" needs a visual split as well as the heading.
+**Context:** `worktree-a3-plan` rewrites r2's SELECT, ORDER BY and caveat (per-Wahlperiode shares), exactly the lines this needs, so do it on or after that branch. A changed recipe SQL makes every earlier export's manifest invalid as an override (by design since v0.23.6.0).
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
-
+**Depends on:** `worktree-a3-plan` merged (it rewrites r2)
 ### "Nächste Sitzungswoche" in the puls.html header
 
 **What:** Show the next planned sitting week from the Bundestag Sitzungskalender when the page is opened during a non-sitting week.
@@ -504,18 +481,6 @@ Find why a replay still matches a roster record that no current input binds (`di
 **Priority:** P3
 **Depends on:** A3 (v1 coverage)
 
-### The Bundestag XML gives one Redner-ID to two people (11005304)
-
-**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
-
-**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
-
-**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Store DIP `person_roles` so a Rede without a Zusammenschluss uses the Zugehörigkeit of its Wahlperiode
 
 **What:** ADR 0001 says a Rede whose Plenarprotokoll names no Zusammenschluss counts for the speaker's Zugehörigkeit on the date of the Sitzung. The store keeps no membership history: `mps.person_roles_json` is DIP's `funktion` list, and `compact_person` drops DIP's `person_roles` (fraktion and Wahlperiode per role). The Rede therefore counts for the speaker's party as the store holds it. Keep `person_roles`, and let `derive` pick the role of the Rede's Wahlperiode.
@@ -624,16 +589,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Context:** The badge already discloses "(berechnet)" for any non-official result, so a bleed here would show a false-confidence "Laut Beschluss auf bundestag.de" label with the wrong outcome rather than the honest derived caveat — worse than the inversion caveat, which at least states the right raw counts.
 
 **Update (2026-09-28):** narrowed: the outcome is now only read from the line directly under the tally (a blank "<br/><br/>" line ends the block), which closes the blank-line-separated shape. Still open: two decisions with no blank line between them.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
-
-**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
-
-**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
 
 **Effort:** S
 **Priority:** P3
@@ -930,18 +885,14 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 
 ### Stale cached-report error lines: polish
 
-**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290):
-1. The `--backfill-incomplete` stop reuses `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`; give that call site "move it out and re-run `--backfill-incomplete`", and fill in the report's number instead of `<its number>`.
-2. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
-3. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
-4. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
+**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): a refusal whose remedy is a re-fetch prints the report's own number (`cached_report_fix`, `--document-number 21/82`), the stale-rule refusal says `--fetch-xml` and names for a re-fetch only the reports without an `xml_url`, an unknown contribution kind keeps its own remedy (`--offline --repersist`), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
+1. The `--backfill-incomplete` stop still prints `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`. Give that call site "move it out of data/ and re-run `--backfill-incomplete`" through `cached_report_fix`. Do it on or after `worktree-a3-plan`, which rewrites that block of `main()` and adds `--exclude-document-number` (which may be the better remedy).
 
 **Why:** These lines are the only guide out of a stopped build; each should name a command that works.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
-
+**Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
 ### Politikfelder: findings deferred from the B3 review
 
 **What:** Nine findings of the /ship review (2026-10-09) that B3 does not fix:
@@ -979,6 +930,18 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 **Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
 ## Architektur
+
+### Correct a cached report's XML Drucksache references at the source, not at every reader
+
+**What:** A report cached before `validate_dip_protocol.extract_drucksachen` checked the link host keeps a number read off a quoted URL in `xml_drucksachen` (88/739016 from a syriahr.com link in 20/206), for good: `reparse_report_xml` re-reads Reden and Beiträge from the cached XML but not the Drucksache references. Since v0.23.6.0 every reader filters through `derive.xml_drucksachen` (persist, `item_document_numbers`, the dossier pills, the vote panel's link map), so nothing shows or stores it, but a new reader that reads `item["xml_drucksachen"]` directly brings the bug back. Either refresh `xml_drucksachen` from the cached XML in `--offline --repersist` (then the stored report is right and the filter can go after one replay of every cache), or filter once where reports are loaded (`load_existing_detail_entries`) and drop the per-reader calls.
+
+**Why:** Found by the code review of v0.23.6.0 (2026-10-30). One correction at the source beats a rule every future reader has to remember.
+
+**Context:** Refreshing from XML changes what a repersist writes into the cached reports, and `load_existing_detail_entries` is code `worktree-a3-plan` edits; do it after that branch. Check that `reparse_report_xml` keeps the API's `linked_drucksachen` untouched.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** `worktree-a3-plan` merged
 
 ### A.2 follow-up ship review: deferred findings
 
@@ -1040,7 +1003,7 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 
 ### A.2 registry follow-ups from the third review pass
 
-**What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) done 2026-10-02: a stale roster record joins a live speaker as a partner only (`person_registry._stale_roster_partners`); (2) done v0.17.1.0 (2026-10-09): evidence is folded order-independently (`person_registry._fold`): the set of (name, party) pairs and of Redner-IDs per record, a separate deterministic representative for the biography; a record in two qualifying name+party buckets joins neither (see docs/stable-ids.md); (3) done 2026-10-16 (handoff 06): the coverage gaps left after the third ship round's generated tests, each an extension of an existing test: `_guess_merges` partitions from live rows only; the offline CLI with all four registry tables dropped; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (4) done 2026-10-16 (handoff 08) for `occurrence`: it is required in `bind`/`upsert_mp`, and liveness is the build's touched set alone; the vacated flag stays, because the stale-roster-partner rule needs it (third ship round (5)). (5) the durable home person of a new record is allocated from its first persisted occurrence's own Redner-ID (`bind`, `allocate(conn, preferred)`), so a record holding several Redner-IDs gets a home that depends on persist order; found 2026-10-04 by the ship Red Team: build 1 persists the aw:5 record's occurrences a (Redner-ID 1) and b (Redner-ID 2) as [a,b] or [b,a]; build 2 moves b to Redner-ID 9 and adds an unrelated record with Redner-ID 2, which is pooled into the aw:5 person only for [b,a]. Reference cache: 0 records with more than one Redner-ID, so unreached there. Fix options: key the home on the record's identity (`stable_key('person','record',identity)`), or defer the xml/dip-preferred choice to `reconcile`, where `min(xml_redner_ids)` is known; either changes issued person keys and needs its own continuity decision and a two-build test. (6) findings of the ship review of 2026-10-04..09 that were accepted as follow-ups (none is a persist-order bug): the pass-1 durable union on a shared Redner-ID ignores abgeordnetenwatch conflicts (`match_rows`, pass 1; it is the same at the base for single ids and only newly reachable for records holding several Redner-IDs); pass 3 ignores a conflicting name-found aw profile because it blanks the anchor's profile bucket; a second `dip_person_id` on one record is resolved by string order (`_fold`; contradicting trusted aw ids give no trust since 2026-10-14); "Unbekannt" is a name key and can win the shown party over a lowercase party such as "fraktionslos"; `reconcile(full_build=True)` silently matches nothing when the touched table is missing (done 2026-10-16: a connection without a build is refused); `_touched` treats every `sqlite3.OperationalError` as "untouched" (done 2026-10-15: only the missing temp table); a preserved roster row counts as roster authority for biography values that once came from a cached dossier; a stale roster record with two normalised name+party keys never rejoins its speaker; removing a partition correction is refused, done 2026-10-12 (third ship round (1)); roll-call members keyed `name-party:{name}|{party}` collapse two same-name members of one Fraktion in a vote; a wrong multi-Redner-ID merge never heals because `_hard_id_conflict` ignores aw ids; `bind` is about 60 µs slower per call (fold, one more `_touched` lookup), roughly 12 s per full rebuild, which a short-circuit for evidence already contained in the record would remove; tests: no case for two roster occurrences with different biography values (the `roster_bio` smallest-value rule), no seeded property test for `_fold`, the nine biography field names are spelled in three places, `tests/test_registry_evidence.py` takes about 15 s. Measured on the merged tree (2026-10-09, `docs/a2-validation.md`): 23 roll-call records of party-switching MdBs that `main` attached to their person stay separate, because their Bundestag biography links of two legislative periods (same member number, `biografien/` and `biografien20/`) now share a name+party bucket and trigger the profile-conflict rule; comparing roll-call profile links by member number in pass 3 would attach 619 more roll-call records (2,460 persons) and needs a decision on `main`'s matching design. Done 2026-10-29 (415a8a6, A3 Phase 4 option C): member numbers, conflicting only within one Wahlperiode; fresh `full` 4,165 → 1,942 persons, voter-only 2,306 → 83 ([record](docs/plans/a3-phase4.md)). From the final review pass (also none a persist-order bug): pass 2 vetoes a record in two qualifying name+party buckets but not one that also sits in a bucket with three or more records (it joins the clean bucket; pass 3 vetoes the same shape for roll-call records); pass 3 is all-or-none per anchor, so one conflicting namesake voter in one party bucket of a party-switching anchor also keeps the clean voter of the other bucket split (conservative); a record's `record_id`, `identity_key` and `mps.id` come from the first persisted occurrence (a sampled person `dip:X` against a roster upsert `aw:N` of the same DIP person), so a carried-forward store and a fresh build differ in those ids though groupings and pages agree; `_pair_rank` lets name features (title, length) decide the shown party; `mps.xml_redner_id` holds only the smallest Redner-ID, so `mp_keys` over live `mps` rows never emits the second `xml:` key; the baseline of a record created in the same build is NULL, so `bind` compares against already folded evidence in the rare case that one occurrence id is persisted twice with conflicting hard ids; tests: no case for a party-switching anchor with a voter printed under both of its parties, the five `sorted(...)` calls in pass 3 are for stable iteration only.
+**What:** Findings of the third A.2 ship review that need a design decision and were not patched (2026-10-02): (1) done 2026-10-02: a stale roster record joins a live speaker as a partner only (`person_registry._stale_roster_partners`); (2) done v0.17.1.0 (2026-10-09): evidence is folded order-independently (`person_registry._fold`): the set of (name, party) pairs and of Redner-IDs per record, a separate deterministic representative for the biography; a record in two qualifying name+party buckets joins neither (see docs/stable-ids.md); (3) done 2026-10-16 (handoff 06): the coverage gaps left after the third ship round's generated tests, each an extension of an existing test: `_guess_merges` partitions from live rows only; the offline CLI with all four registry tables dropped; the `-journal`/`-wal`/`-shm` sidecar sweep and `glob.escape`; the `--repersist` DatabaseRebuildError branch (exit 1, hint); `compare_store_values._zusammenfuehrung` totals; the manifest `stable_keys` exact value; (4) done 2026-10-16 (handoff 08) for `occurrence`: it is required in `bind`/`upsert_mp`, and liveness is the build's touched set alone; the vacated flag stays, because the stale-roster-partner rule needs it (third ship round (5)). (5) the durable home person of a new record is allocated from its first persisted occurrence's own Redner-ID (`bind`, `allocate(conn, preferred)`), so a record holding several Redner-IDs gets a home that depends on persist order; found 2026-10-04 by the ship Red Team: build 1 persists the aw:5 record's occurrences a (Redner-ID 1) and b (Redner-ID 2) as [a,b] or [b,a]; build 2 moves b to Redner-ID 9 and adds an unrelated record with Redner-ID 2, which is pooled into the aw:5 person only for [b,a]. Reference cache: 0 records with more than one Redner-ID, so unreached there. Fix options: key the home on the record's identity (`stable_key('person','record',identity)`), or defer the xml/dip-preferred choice to `reconcile`, where `min(xml_redner_ids)` is known; either changes issued person keys and needs its own continuity decision and a two-build test. (6) findings of the ship review of 2026-10-04..09 that were accepted as follow-ups (none is a persist-order bug): the pass-1 durable union on a shared Redner-ID ignores abgeordnetenwatch conflicts (`match_rows`, pass 1; it is the same at the base for single ids and only newly reachable for records holding several Redner-IDs); pass 3 ignores a conflicting name-found aw profile because it blanks the anchor's profile bucket; a second `dip_person_id` on one record is resolved by string order (`_fold`; contradicting trusted aw ids give no trust since 2026-10-14); "Unbekannt" is a name key and can win the shown party over a lowercase party such as "fraktionslos"; `reconcile(full_build=True)` silently matches nothing when the touched table is missing (done 2026-10-16: a connection without a build is refused); `_touched` treats every `sqlite3.OperationalError` as "untouched" (done 2026-10-15: only the missing temp table); a preserved roster row counts as roster authority for biography values that once came from a cached dossier; a stale roster record with two normalised name+party keys never rejoins its speaker; removing a partition correction is refused, done 2026-10-12 (third ship round (1)); roll-call members keyed `name-party:{name}|{party}` collapse two same-name members of one Fraktion in a vote; a wrong multi-Redner-ID merge never heals because `_hard_id_conflict` ignores aw ids; `bind` is about 60 µs slower per call (fold, one more `_touched` lookup), roughly 12 s per full rebuild, which a short-circuit for evidence already contained in the record would remove; tests: no case for two roster occurrences with different biography values (the `roster_bio` smallest-value rule), no seeded property test for `_fold`, the nine biography field names are spelled in three places, `tests/test_registry_evidence.py` takes about 15 s. Measured on the merged tree (2026-10-09, `docs/a2-validation.md`): 23 roll-call records of party-switching MdBs that `main` attached to their person stay separate, because their Bundestag biography links of two legislative periods (same member number, `biografien/` and `biografien20/`) now share a name+party bucket and trigger the profile-conflict rule; comparing roll-call profile links by member number in pass 3 would attach 619 more roll-call records (2,460 persons) and needs a decision on `main`'s matching design. From the final review pass (also none a persist-order bug): pass 2 vetoes a record in two qualifying name+party buckets but not one that also sits in a bucket with three or more records (it joins the clean bucket; pass 3 vetoes the same shape for roll-call records); pass 3 is all-or-none per anchor, so one conflicting namesake voter in one party bucket of a party-switching anchor also keeps the clean voter of the other bucket split (conservative); a record's `record_id`, `identity_key` and `mps.id` come from the first persisted occurrence (a sampled person `dip:X` against a roster upsert `aw:N` of the same DIP person), so a carried-forward store and a fresh build differ in those ids though groupings and pages agree; `_pair_rank` lets name features (title, length) decide the shown party; `mps.xml_redner_id` holds only the smallest Redner-ID, so `mp_keys` over live `mps` rows never emits the second `xml:` key; the baseline of a record created in the same build is NULL, so `bind` compares against already folded evidence in the rare case that one occurrence id is persisted twice with conflicting hard ids; tests: no case for a party-switching anchor with a voter printed under both of its parties, the five `sorted(...)` calls in pass 3 are for stable iteration only.
 
 **Why:** (1) and (2) change which pages exist or how records group in rare, specific situations; (3) and (4) are hygiene and guards that no test pins.
 
@@ -1049,7 +1012,6 @@ Done when an offline build from a downloaded release SQLite, with no report JSON
 **Effort:** M
 **Priority:** P2
 **Depends on:** None
-
 ### A.2 second-round review leftovers
 
 **What:** Findings of the second A.2 ship round that were deferred by decision (2026-10-01): (1) done 2026-10-16: r1 and r3 pick each person's row once (`REPRESENTATIVE_SQL`: roster, then speaker, then `identity_key`), and `collect_abgeordnete` orders a person's rows the same way, so the label is the Personenseite's; r1 0.26 s to 0.15 s, r3 stays at 0.12 s because its cost is the vote aggregation (the 1.61 s below did not reproduce on SQLite 3.52, and no available store has roster rows); rows and figures are unchanged, 496 r1 labels lose a DIP ", MdB, ..." title or a roll-call "surname, given name", 16 r1 parties move to the speaker row's, all 16 to an older one (Robert Farle fraktionslos to AfD, Klaus Ernst Gruppe BSW to Die Linke), 25 r3 labels change, one page heading ("Özoguz, Aydan" to "Aydan Özoguz"); open: the speaker record's party is the registry's smallest pair, not its newest (`_representative_pair` has no chronology), so the Personenseite and now r1 show those 16 persons under a former party while their DIP row names the current one; was: the r1/r3 Daten recipes choose each person's representative record with a correlated subquery (`JOIN mps m ON m.id = (SELECT m2.id ... ORDER BY m2.is_mdb DESC, m2.id LIMIT 1)`), about 15x slower than a plain join (r3 1.61 s against 0.11 s on the reference store), run at every export and again in `compare_store_values`; precompute a representative column in `mp_canonical` and join on it (the `m2.id` tie-break is now a hash, so choose by a content key); (2) done 2026-10-16: `_content_digests` sums per-row sha256 values modulo 2**256 with the column names and row count, in storage order; 28 s to 16-17 s per repeat replay (two digests); was: `_content_digests` orders every table by its text primary key, about 3 s more per store and 6-7 s per rebuild than rowid order; fold per-row hashes with a commutative sum instead; (3) advisory simplifications: drop `AbgeordneteComponent.after_persist` and call `collect_abgeordnete` directly, build the `collect_abgeordnete` lookup in one pass, replace the `ensure_canonical` temp copy by a view over `mps(id, person_id)`, drop the `mp_canonical` table if it is not a published contract, one `has_page` predicate instead of three, done 2026-10-15: one `valid_person_key` helper for the key checks; (4) done 2026-10-15: `write_abgeordnete_pages` re-checks every page key, removes whatever sits at the target and creates the file with `O_EXCL|O_NOFOLLOW`, so it never writes through a symlink; (5) a person whose only occurrence moved to another identity loses its page without a redirect (decided: accepted, see docs/stable-ids.md).
@@ -1225,6 +1187,56 @@ About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3
 - **Covered range stated** in README, PRODUCT.md and the Daten page (scope line).
 - **DIP cost:** about 6,000 requests in Phase 3, 3 in Phase 4.
 
+### The Bundestag XML gives one Redner-ID to two people (11005304)
+
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
+
+**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
+
+**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
+
+**Completed:** v0.23.6.0 (2026-10-29). The fix suggested below ("at least 3 digits before the slash") would have rejected every real number ("21/6561"). Instead the vote pages' own pattern (`validate_dip_protocol._DOCUMENT_NUMBER_RE`, no longer an alias of `derive.DOCUMENT_NUMBER_RE`) needs a two-digit Wahlperiode: bundestag.de lists namentliche Abstimmungen from WP 17 and structured XML starts at WP 18. That covers every vote-page site with one rule: the outcome mismatch check, the block identification by documents, the trailing-outcome paragraph, the DIP title evidence, the chair's announcements, and `parse_roll_call_list_page`, where a "2/3" in a teaser would have joined the vote's `document_numbers` and reached `vote_documents`. `derive.DOCUMENT_NUMBER_RE` (headings of every Wahlperiode) is unchanged and still filtered by `plausible_document_number`. No stored vote moves until it is re-acquired: `official_result` is computed at fetch time and a repersist keeps it; no fixture or live page checked so far uses the shape.
+
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+
+**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### A Drucksache reference can be a URL fragment
+
+**Completed:** v0.23.6.0 (2026-10-29). The parser part was already fixed: `extract_drucksachen` skips an anchor off the Bundestag host (`tests/test_validate_dip_protocol.py`), and today's parser finds no 88/739016 in the live `btp/20/20206.xml`. What remained were reports cached before that check: persist and the Politikfelder skipped such a reference, but the dossier still showed it as a muted Drucksache and the vote panel's link map took its URL. `derive.xml_drucksachen(item)` is now the one rule (no link, or a link on the XML host) and every reader uses it: persist, `item_document_numbers`, `render_source_links`, `render_top_documents` (a TOP whose only reference is a fragment gets no empty "Drucksachen" section) and `features/votes.py`. Store figures do not move, since persist already skipped these; only dossier HTML of such stale reports changes.
+
+**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
+
+**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Validate remote-manifest recipes before showing their SQL
+
+**Completed:** v0.23.6.0 (2026-10-29). Verify equal, not pin to local: an override manifest must carry exactly this build's recipes, same ids in the same order with byte-equal SQL, rows that are objects, and `empty_reason` text or null; otherwise `validate_manifest` names the recipe ("recipes[0] (r1-meiste-reden) SQL differs from this build's; export the data with this version of the code"). The rows came from the manifest's SQL, so showing local SQL beside them would misstate them as much as tampered SQL would. `render_daten_recipes` takes title and SQL from `RECIPES`; a retitled recipe still validates (titles are not in `recipes_hash`). A manifest exported before a recipe's SQL changed is now refused; re-export it. A missing `empty_reason` no longer raises a KeyError.
+
+**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
+
+**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
+
+**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Bill overview polish: same-day step ties
 
 **Completed:** v0.23.5.0 (2026-10-29). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss); a kind not listed ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat the Beratung, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
@@ -1346,7 +1358,6 @@ Done when the 14 votes above render the inversion legend, a test pins one WP 20 
 
 **Completed:** v0.20.6.2 (2026-10-22). README's update section now documents the default `21`, filtering only with positive `--limit`, older-Wahlperiode and all-Wahlperioden examples, the separate `--detail-limit`, and explicit/backfill selection. The former TODO's catalog-filter claim was stale: online builds always fetch the whole catalog; the Wahlperiode filter applies only to acquisition. Verified against `parse_args()`, `main()`, `select_acquisition_protocols()` and offline parser/selection checks of the examples.
 
-**Superseded on the A3 branch (merged 2026-10-25):** the flag now defaults to `0` (every Wahlperiode) and also scopes `--backfill-incomplete`; the README flag table and the paragraph under it describe that.
 
 ### Fakt der Woche, copy fixes from the glossary review
 

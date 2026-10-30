@@ -56,6 +56,13 @@ class DocumentSourceLinksTests(unittest.TestCase):
         links = document_source_links(item)
         self.assertEqual(links["21/8157"], ("https://dip.bundestag.de/x", "bundestag-dip"))
 
+    def test_an_xml_reference_off_the_xml_host_never_replaces_the_dip_link(self) -> None:
+        item = {
+            "xml_drucksachen": [{"dokumentnummer": "21/6561", "url": "https://www.example.org/21/6561"}],
+            "api": {"linked_drucksachen": [{"dokumentnummer": "21/6561", "url": "https://dip.bundestag.de/x"}]},
+        }
+        self.assertEqual(document_source_links(item), {"21/6561": ("https://dip.bundestag.de/x", "bundestag-dip")})
+
     def test_a_number_with_no_url_anywhere_is_absent_from_the_map(self) -> None:
         self.assertEqual(document_source_links({}), {})
 

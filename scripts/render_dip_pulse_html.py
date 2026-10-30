@@ -2334,24 +2334,39 @@ def render_sparkline(points: list[dict[str, Any]]) -> str:
     return f'<div class="week-spark">{"".join(bars)}</div>'
 
 
-def render_share_shift(
-    current: Counter[str], previous: Counter[str] | None, limit: int = 8, *, show_deltas: bool = True
-) -> str:
-    """Per-fraction share of the week's speeches, optionally with the shift in percentage points."""
+#: The Redeanteil rows outside the Zusammenschlüsse (CONTEXT.md, Redeanteil je
+#: Zusammenschluss), in the order the card lists them below the split: the
+#: three Sprechrolle sides, then fraktionslos and Unbekannt.
+SHARE_ROWS_OUTSIDE = (*derive.SPRECHROLLE_LABELS.values(), *sorted(derive.NO_ZUSAMMENSCHLUSS, key=str.casefold))
+
+
+def render_share_shift(current: Counter[str], previous: Counter[str] | None, *, show_deltas: bool = True) -> str:
+    """Redeanteil je Zusammenschluss of the week's Reden, optionally with the
+    shift in percentage points: the Zusammenschlüsse by count, then, below a
+    split, the three Sprechrolle sides, fraktionslos and Unbekannt. Every row with
+    Reden is shown, so the shares add up to 100 %; with deltas, a row that had
+    Reden only in the compared week is shown at 0 %, so the shifts net to zero."""
     total_now = sum(current.values())
     if not total_now:
         return '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
     total_before = sum(previous.values()) if previous else 0
+    shown = Counter(current)
+    if total_before and show_deltas:
+        shown.update({party: 0 for party, count in previous.items() if count and party not in current})
+    groups = [party for party, _count in shown.most_common() if party not in SHARE_ROWS_OUTSIDE]
+    outside = [party for party in SHARE_ROWS_OUTSIDE if party in shown]
     rows = []
-    for party, count in current.most_common(limit):
+    for party in [*groups, *outside]:
+        count = current.get(party, 0)
         share = percent(count, total_now)
         shift = None
         if total_before:
             shift = share - percent(previous.get(party, 0), total_before)
         color = PARTY_COLORS.get(party, "#6b7280")
+        row_class = "week-row week-row-split" if groups and outside and party == outside[0] else "week-row"
         rows.append(
             f"""
-            <li class="week-row">
+            <li class="{row_class}">
               <span class="week-label">{esc(party)}</span>
               <span class="week-bar"><span style="width:{share:.2f}%;background:{color}"></span></span>
               <strong>{format_percent(share)}</strong>
@@ -2444,17 +2459,15 @@ def document_chamber(doc: dict[str, Any]) -> str:
 
 def render_source_links(item: dict[str, Any]) -> str:
     links = []
-    for doc in item.get("xml_drucksachen") or []:
+    for doc in derive.xml_drucksachen(item):
         url = doc.get("url")
         number = doc.get("dokumentnummer")
         if document_chamber(doc) == "BR":
             number = f"BR-Drs. {number}"
         href = None
         if url:
-            # The XML's Drucksache references are extracted from running text,
-            # so one can carry any URL (20/206 quotes a syriahr.com article).
-            # A foreign or unsafe host loses its link like every other dossier
-            # link does; it must not abort the whole build.
+            # Only Bundestag-host links are left; the allowlist check stays the
+            # one every dossier link passes, and a refusal must not abort the build.
             try:
                 href = source_url(url, "bundestag-xml")
             except publication.PublicationStateError:
@@ -2469,7 +2482,7 @@ def render_source_links(item: dict[str, Any]) -> str:
 
 
 def render_top_documents(item: dict[str, Any]) -> str:
-    if not item.get("xml_drucksachen"):
+    if not derive.xml_drucksachen(item):
         return ""
     return (
         '<section class="top-documents">'
