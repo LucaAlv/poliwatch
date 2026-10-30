@@ -4530,9 +4530,12 @@ def _vote_procedure_type(
 
 
 def _abweichler_count(vote: dict[str, Any]) -> int | None:
-    """The vote's Abweichler, or None unless every group's member rows are complete."""
+    """The vote's Abweichler, or None unless every group's member rows are
+    complete and the groups add up to the vote (derive.vote_groups_cover_total)."""
     groups = derive.vote_abweichler(vote)
     if not groups or any(group["state"] != "complete" for group in groups.values()):
+        return None
+    if not derive.vote_groups_cover_total(vote):
         return None
     return sum(len(group["members"]) for group in groups.values())
 

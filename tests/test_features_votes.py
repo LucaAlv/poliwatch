@@ -322,8 +322,10 @@ def _members(faction: str, yes: list[str], no: list[str]) -> list[dict[str, str]
 
 
 def _roll_call(members: list[dict[str, str]], **overrides: object) -> dict[str, object]:
-    """A vote whose fraction counts are exactly its member rows."""
-    return _vote(fractions=fractions_of(members), members=members, **overrides)
+    """A vote whose fraction counts and total are exactly its member rows."""
+    fractions = fractions_of(members)
+    total = {key: sum(row["counts"][key] for row in fractions) for key in ("yes", "no", "abstain", "absent")}
+    return _vote(fractions=fractions, members=members, total=total, **overrides)
 
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
@@ -380,6 +382,14 @@ class AbweichlerPanelTests(unittest.TestCase):
         self.assertNotIn(NONE_NOTE, markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)
 
+    # Value: protects=a Fraktion missing from both the fraction rows and the Einzelstimmen stops "Niemand stimmt anders" and shows the gap note; fails_when=the vote-wide line only checks the groups it has, so the missing Fraktion's Stimmen go unseen; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
+    def test_groups_that_do_not_add_up_to_the_vote_make_no_vote_wide_claim(self) -> None:
+        vote = _roll_call(_members("SPD", ["Ada", "Bea"], []) + _members("AfD", [], ["Cem"]))
+        vote["total"] = {**vote["total"], "no": vote["total"]["no"] + 40}
+        markup = vote_summary({"votes": [vote]})
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+
     def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
         members = (
             _members("SPD", ["Ada", "Bea"], [])
@@ -408,6 +418,7 @@ class AbweichlerPanelTests(unittest.TestCase):
         vote = _roll_call(members)
         # AfD reports two Nein but only one member row is known.
         vote["fractions"][1]["counts"]["no"] = 2
+        vote["total"]["no"] += 1
         markup = vote_summary({"votes": [vote]})
         self.assertIn("<li>Cem</li>", markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)

@@ -158,6 +158,21 @@ def merge_fractions(fractions: Iterable[Mapping[str, Any]] | None) -> list[dict[
     return [{"name": name, **row} for name, row in merged.items()]
 
 
+def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
+    """Whether the vote's fraction rows, fraktionslos and Unbekannt included,
+    add up to its total on every count. Only then can a claim about the whole
+    vote ("Niemand stimmt anders …", an Abweichler count) rest on its groups: a
+    Fraktion missing from both the rows and the Einzelstimmen leaves the others
+    complete. No total or no fraction row covers nothing."""
+    total = vote.get("total") or {}
+    rows = merge_fractions(vote.get("fractions"))
+    if not total or not rows:
+        return False
+    return all(
+        sum(row["counts"][key] for row in rows) == int(total.get(key) or 0) for key in VOTE_COUNT_KEYS
+    )
+
+
 def speech_zusammenschluss(speaker: Mapping[str, Any] | None, protocol: Mapping[str, Any] | None = None) -> str | None:
     """The Zusammenschluss the Plenarprotokoll names beside a Redner for one
     Rede: ``zusammenschluss`` of the raw string, told apart by the Sitzung when

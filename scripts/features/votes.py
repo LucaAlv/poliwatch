@@ -437,11 +437,15 @@ def _fraction_group_html(
     )
 
 
-def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool) -> str:
+def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, covered: bool) -> str:
     """The vote-wide line under the groups: one gap note when no group has
-    member rows or a group has member rows but no fraction row (it has no row
-    to carry its own note), "Niemand stimmt anders …" when every group is
-    complete and has none, else nothing (each short group carries its own note)."""
+    member rows, a group has member rows but no fraction row (it has no row
+    to carry its own note) or the fraction rows do not add up to the vote
+    (``covered``, derive.vote_groups_cover_total), "Niemand stimmt anders …"
+    when every group is complete and has none, else nothing (each short group
+    carries its own note)."""
+    if abweichler and not covered:
+        return ABWEICHLER_GAP_HTML
     if no_members or any(group.get("unlisted") for group in abweichler.values()):
         return ABWEICHLER_GAP_HTML
     if abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
@@ -553,7 +557,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
             f'{render_vote_lead(vote, panel.report)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
-            f'{_abweichler_summary_html(abweichler, no_members)}'
+            f'{_abweichler_summary_html(abweichler, no_members, derive.vote_groups_cover_total(vote))}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{_member_sections_html(vote, panel)}</div>'
