@@ -967,26 +967,33 @@ class MeistdiskutierterVorgangTests(StoreCase):
         row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
         self.assertIsNone(row["value"])
 
-    # Value: protects=the SQL Vorgang set of an agenda item equals derive.agenda_procedures', the rule the Wochenradar names Themen by; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
-    def test_single_vorgang_items_match_derive_agenda_procedures(self) -> None:
+    # Value: protects=the SQL single-Vorgang rule equals derive.debated_vorgang (agenda_procedures' set, Entschließungsanträge only when alone), item by item and Vorgang by Vorgang; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id, an Entschließungsantrag) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
+    def test_single_vorgang_items_match_derive_debated_vorgang(self) -> None:
         import derive
         import persist_dip_pulse_store as pulse_store
         from _support import FIXTURES
 
-        def position(pid, vorgang, twins=()):
-            return {"id": pid, "vorgang_id": vorgang, "vorgangsposition": "Beratung", "vorgangstyp": "Antrag",
+        ea = "Entschließungsantrag BT"
+
+        def position(pid, vorgang, twins=(), typ="Antrag"):
+            return {"id": pid, "vorgang_id": vorgang, "vorgangsposition": "Beratung", "vorgangstyp": typ,
                     "titel": f"Vorgang {vorgang}", "source": {}, "mitberaten": list(twins)}
 
         twin = {"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung", "vorgangsposition": "Beratung"}
         variants = {
-            "one position": [position("p1", "v1")],
-            "one position and a twin": [position("p1", "v1", [twin])],
-            "a twin of its own Vorgang": [position("p1", "4711", [twin])],
-            "two Vorgänge": [position("p1", "v1"), position("p2", "v2")],
-            "one Vorgang twice": [position("p1", "v1"), position("p2", "v1")],
-            "no position": [],
+            "one position": ("v1", [position("p1", "v1")]),
+            "one position and a twin": (None, [position("p1", "v1", [twin])]),
+            "a twin of its own Vorgang": ("4711", [position("p1", "4711", [twin])]),
+            "two Vorgänge": (None, [position("p1", "v1"), position("p2", "v2")]),
+            "one Vorgang twice": ("v1", [position("p1", "v1"), position("p2", "v1")]),
+            "no position": (None, []),
+            "a Gesetz and its Entschließungsantrag": ("v1", [position("p1", "v1", typ="Gesetzgebung"), position("p2", "e1", typ=ea)]),
+            "an Entschließungsantrag twin": ("v1", [position("p1", "v1", [{**twin, "id": 815, "vorgangstyp": ea}])]),
+            "only an Entschließungsantrag": ("e1", [position("p1", "e1", typ=ea)]),
+            "two Entschließungsanträge": (None, [position("p1", "e1", typ=ea), position("p2", "e2", typ=ea)]),
+            "two Vorgänge and an Entschließungsantrag": (None, [position("p1", "v1"), position("p2", "v2"), position("p3", "e1", typ=ea)]),
         }
-        for label, positions in variants.items():
+        for label, (debated, positions) in variants.items():
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
                 report = json.loads((FIXTURES / "report.json").read_text())
                 item = report["agenda_items"][0]
@@ -995,19 +1002,20 @@ class MeistdiskutierterVorgangTests(StoreCase):
                 try:
                     pulse_store.persist_report(conn, report, {"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
                     single = {
-                        row[0] for row in conn.execute(
+                        row[0]: row[1] for row in conn.execute(
                             facts.SINGLE_VORGANG_CTE
-                            + "SELECT ai.item_index FROM single_vorgang sv JOIN agenda_items ai ON ai.id = sv.agenda_item_id"
+                            + "SELECT ai.item_index, sv.proceeding_id FROM single_vorgang sv "
+                            "JOIN agenda_items ai ON ai.id = sv.agenda_item_id"
                         )
                     }
                 finally:
                     conn.close()
                 expected = {
-                    entry["index"] for entry in report["agenda_items"]
-                    if len(derive.agenda_procedures(entry)[0]) == 1
+                    entry["index"]: derive.debated_vorgang(entry)
+                    for entry in report["agenda_items"] if derive.debated_vorgang(entry)
                 }
                 self.assertEqual(single, expected)
-                self.assertEqual(bool(single), label in ("one position", "a twin of its own Vorgang", "one Vorgang twice"))
+                self.assertEqual(derive.debated_vorgang(item), debated)
 
 
 class ObserveTests(StoreCase):

@@ -502,6 +502,24 @@ def agenda_procedures(item: Mapping[str, Any]) -> tuple[list[dict[str, str]], di
     return procedures, lead
 
 
+#: DIP's Vorgangstyp of an Entschließungsantrag. It is an unselbständige Vorlage
+#: (§ 75 Abs. 2 Buchstabe c GOBT): moved to a Gesetzentwurf, a Regierungserklärung
+#: or the like, and debated with it, so it does not make a second subject.
+ENTSCHLIESSUNGSANTRAG = "Entschließungsantrag BT"
+
+
+def debated_vorgang(item: Mapping[str, Any]) -> str | None:
+    """The one Vorgang an agenda item debates, or None for a verbundene
+    Beratung of several (or an item without a Vorgang). Of
+    ``agenda_procedures``' set, Entschließungsanträge do not count beside
+    another Vorgang; an item about nothing but one Entschließungsantrag debates
+    that. ``facts.SINGLE_VORGANG_CTE`` is this rule in SQL."""
+    procedures, _ = agenda_procedures(item)
+    main = [p["vorgang_id"] for p in procedures if p["vorgangstyp"] != ENTSCHLIESSUNGSANTRAG]
+    candidates = main or [p["vorgang_id"] for p in procedures]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 #: A Drucksache number's shape, e.g. "21/6561" (ASCII digits, like stable_ids).
 DOCUMENT_NUMBER_RE = re.compile(r"\b[0-9]{1,2}/[0-9]{1,6}\b")
 

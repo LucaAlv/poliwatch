@@ -118,26 +118,38 @@ LEAD_POSITION_CTE = (
     ")\n"
 )
 
-# The agenda items that deal with exactly one Vorgang, and that Vorgang
+# The agenda items that debate exactly one Vorgang, and that Vorgang
 # (proceedings.id) -- meistdiskutierter-vorgang credits a Rede only through
 # these. A Rede addresses its Tagesordnungspunkt (CONTEXT.md, Vorgang): under a
 # verbundene Beratung of several Vorgänge no single one of them was debated,
 # so such an item counts for none. The Vorgang set is derive.agenda_procedures'
-# set: each position's Vorgang plus its ``mitberaten`` twins, by id.
+# set (each position's Vorgang plus its ``mitberaten`` twins, by id), where an
+# Entschließungsantrag, an unselbständige Vorlage (§ 75 Abs. 2 GOBT), counts
+# only when nothing else is there: derive.debated_vorgang is the same rule.
 SINGLE_VORGANG_CTE = (
     "WITH item_vorgaenge AS (\n"
-    "  SELECT pp.agenda_item_id AS agenda_item_id, pp.proceeding_id AS vorgang_id\n"
+    "  SELECT pp.agenda_item_id AS agenda_item_id, pp.proceeding_id AS vorgang_id,\n"
+    "         COALESCE(pp.proceeding_type, '') = 'Entschließungsantrag BT' AS ea\n"
     "  FROM proceeding_positions pp\n"
     "  WHERE pp.agenda_item_id IS NOT NULL AND pp.proceeding_id IS NOT NULL\n"
     "  UNION\n"
-    "  SELECT pp.agenda_item_id, CAST(json_extract(twin.value, '$.id') AS TEXT)\n"
+    "  SELECT pp.agenda_item_id, CAST(json_extract(twin.value, '$.id') AS TEXT),\n"
+    "         COALESCE(json_extract(twin.value, '$.vorgangstyp'), '') = 'Entschließungsantrag BT'\n"
     "  FROM proceeding_positions pp, json_each(pp.mitberaten_json) twin\n"
     "  WHERE pp.agenda_item_id IS NOT NULL\n"
     "    AND TRIM(COALESCE(CAST(json_extract(twin.value, '$.id') AS TEXT), '')) <> ''\n"
     "),\n"
+    "item_counts AS (\n"
+    "  SELECT agenda_item_id,\n"
+    "         COUNT(DISTINCT CASE WHEN NOT ea THEN vorgang_id END) AS main_n,\n"
+    "         MIN(CASE WHEN NOT ea THEN vorgang_id END) AS main_id,\n"
+    "         COUNT(DISTINCT vorgang_id) AS all_n, MIN(vorgang_id) AS any_id\n"
+    "  FROM item_vorgaenge GROUP BY agenda_item_id\n"
+    "),\n"
     "single_vorgang AS (\n"
-    "  SELECT agenda_item_id, MIN(vorgang_id) AS proceeding_id FROM item_vorgaenge\n"
-    "  GROUP BY agenda_item_id HAVING COUNT(DISTINCT vorgang_id) = 1\n"
+    "  SELECT agenda_item_id,\n"
+    "         CASE WHEN main_n = 1 THEN main_id ELSE any_id END AS proceeding_id\n"
+    "  FROM item_counts WHERE main_n = 1 OR (main_n = 0 AND all_n = 1)\n"
     ")\n"
 )
 
@@ -520,8 +532,9 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         "min_value": None,
         "requires_topic": False,
         "caveat": (
-            "Gezählt werden nur Tagesordnungspunkte zu genau einem Vorgang. Reden einer "
-            "verbundenen Beratung mehrerer Vorgänge zählen für keinen von ihnen."
+            "Gezählt werden nur Tagesordnungspunkte zu genau einem Vorgang; ein "
+            "Entschließungsantrag dazu zählt nicht als zweiter. Reden einer verbundenen "
+            "Beratung mehrerer Vorgänge zählen für keinen von ihnen."
         ),
     },
 )
