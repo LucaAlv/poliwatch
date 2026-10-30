@@ -129,27 +129,35 @@ LEAD_POSITION_CTE = (
 SINGLE_VORGANG_CTE = (
     "WITH item_vorgaenge AS (\n"
     "  SELECT pp.agenda_item_id AS agenda_item_id, pp.proceeding_id AS vorgang_id,\n"
-    "         COALESCE(pp.proceeding_type, '') = 'Entschließungsantrag BT' AS ea\n"
+    "         pp.title AS title, pp.proceeding_type AS proceeding_type\n"
     "  FROM proceeding_positions pp\n"
     "  WHERE pp.agenda_item_id IS NOT NULL AND pp.proceeding_id IS NOT NULL\n"
     "  UNION\n"
     "  SELECT pp.agenda_item_id, CAST(json_extract(twin.value, '$.id') AS TEXT),\n"
-    "         COALESCE(json_extract(twin.value, '$.vorgangstyp'), '') = 'Entschließungsantrag BT'\n"
+    "         json_extract(twin.value, '$.titel'), json_extract(twin.value, '$.vorgangstyp')\n"
     "  FROM proceeding_positions pp, json_each(pp.mitberaten_json) twin\n"
     "  WHERE pp.agenda_item_id IS NOT NULL\n"
     "    AND TRIM(COALESCE(CAST(json_extract(twin.value, '$.id') AS TEXT), '')) <> ''\n"
     "),\n"
     "item_counts AS (\n"
     "  SELECT agenda_item_id,\n"
-    "         COUNT(DISTINCT CASE WHEN NOT ea THEN vorgang_id END) AS main_n,\n"
-    "         MIN(CASE WHEN NOT ea THEN vorgang_id END) AS main_id,\n"
+    f"         COUNT(DISTINCT CASE WHEN COALESCE(proceeding_type, '') <> '{derive.ENTSCHLIESSUNGSANTRAG}' THEN vorgang_id END) AS main_n,\n"
+    f"         MIN(CASE WHEN COALESCE(proceeding_type, '') <> '{derive.ENTSCHLIESSUNGSANTRAG}' THEN vorgang_id END) AS main_id,\n"
     "         COUNT(DISTINCT vorgang_id) AS all_n, MIN(vorgang_id) AS any_id\n"
     "  FROM item_vorgaenge GROUP BY agenda_item_id\n"
     "),\n"
-    "single_vorgang AS (\n"
-    "  SELECT agenda_item_id,\n"
-    "         CASE WHEN main_n = 1 THEN main_id ELSE any_id END AS proceeding_id\n"
+    "single_ids AS (\n"
+    "  SELECT agenda_item_id, CASE WHEN main_n = 1 THEN main_id ELSE any_id END AS proceeding_id\n"
     "  FROM item_counts WHERE main_n = 1 OR (main_n = 0 AND all_n = 1)\n"
+    "),\n"
+    # Title and type come from the position or the twin itself: a twin has no
+    # proceedings row (persist stores a position's own Vorgang only).
+    "single_vorgang AS (\n"
+    "  SELECT si.agenda_item_id, si.proceeding_id,\n"
+    "         MIN(NULLIF(TRIM(iv.title), '')) AS title, MIN(iv.proceeding_type) AS proceeding_type\n"
+    "  FROM single_ids si\n"
+    "  JOIN item_vorgaenge iv ON iv.agenda_item_id = si.agenda_item_id AND iv.vorgang_id = si.proceeding_id\n"
+    "  GROUP BY si.agenda_item_id, si.proceeding_id\n"
     ")\n"
 )
 
@@ -508,15 +516,14 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
             + "SELECT sv.proceeding_id AS id, sv.proceeding_id AS group_id, ai.id AS source_entity_id,\n"
             "       MIN(ai.item_index) AS first_item_index,\n"
             "       COUNT(DISTINCT s.id) AS value,\n"
-            "       pr.title, pr.proceeding_type,\n"
+            "       sv.title, sv.proceeding_type,\n"
             "       ai.page_start AS page, ai.page_start_quadrant AS page_quadrant,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
             "FROM single_vorgang sv\n"
             "JOIN agenda_items ai ON ai.id = sv.agenda_item_id\n"
             "JOIN speeches s ON s.agenda_item_id = ai.id\n"
             "JOIN protocols p ON p.id = ai.protocol_id\n"
-            "JOIN proceedings pr ON pr.id = sv.proceeding_id\n"
-            "WHERE TRIM(COALESCE(pr.title, '')) <> ''\n"
+            "WHERE sv.title IS NOT NULL\n"
             "GROUP BY sv.proceeding_id, p.id"
         ),
         "min_history_weeks": MIN_HISTORY_MONTHS,
@@ -532,9 +539,8 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         "min_value": None,
         "requires_topic": False,
         "caveat": (
-            "Gezählt werden nur Tagesordnungspunkte zu genau einem Vorgang; ein "
-            "Entschließungsantrag dazu zählt nicht als zweiter. Reden einer verbundenen "
-            "Beratung mehrerer Vorgänge zählen für keinen von ihnen."
+            "Reden einer verbundenen Beratung mehrerer Vorgänge zählen für keinen; ein "
+            "Entschließungsantrag zählt dabei nicht als weiterer Vorgang."
         ),
     },
 )

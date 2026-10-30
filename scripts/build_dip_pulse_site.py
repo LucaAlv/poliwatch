@@ -8313,7 +8313,7 @@ def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS _single_vorgang AS\n"
         + facts.SINGLE_VORGANG_CTE
-        + "SELECT agenda_item_id, proceeding_id FROM single_vorgang"
+        + "SELECT agenda_item_id, proceeding_id, title, proceeding_type FROM single_vorgang"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_single_vorgang ON _single_vorgang(agenda_item_id)"
@@ -8386,11 +8386,10 @@ def _fact_proceeding_citation(
     (facts.SINGLE_VORGANG_CTE)."""
     row = conn.execute(
         """
-        SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
+        SELECT ai.id, lp.proceeding_id, lp.title, lp.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
         JOIN _single_vorgang lp ON lp.agenda_item_id = ai.id
-        JOIN proceedings pr ON pr.id = lp.proceeding_id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,
         (str(document_number), page, page_quadrant),

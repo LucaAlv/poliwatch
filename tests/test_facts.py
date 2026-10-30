@@ -967,6 +967,35 @@ class MeistdiskutierterVorgangTests(StoreCase):
         row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
         self.assertIsNone(row["value"])
 
+    # Value: protects=a card shows the whole caveat of this metric (render_card_svg keeps two lines of 76); fails_when=the caveat grows past two lines and the card cuts the rule off mid-sentence; why_new=the first v3 caveat wrapped to three lines and lost the sentence saying what happens to bundled items (review 2026-10-30); seam=none
+    def test_the_caveat_fits_on_the_card(self) -> None:
+        metric = next(m for m in facts.MONTHLY_REGISTRY if m["id"] == VORGANG)
+        self.assertLessEqual(len(facts.wrap_lines(metric["caveat"], width=76, max_lines=20)), 2)
+
+    # Value: protects=an item whose one debated Vorgang is a mitberaten twin counts for it, named by the twin's own title; fails_when=the metric joins proceedings again, where persist stores no twin; why_new=review 2026-10-30: an Entschließungsantrag position with a Gesetz twin dropped out of the metric; seam=none
+    def test_a_twin_as_the_debated_vorgang_counts_with_its_title(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Entschließungsantrag zu T", "proceeding_id": "E1",
+                               "proceeding_type": "Entschließungsantrag BT",
+                               "mitberaten": [{"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung"}]}],
+                    "speeches": [(100, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 2)
+        self.assertEqual(row["citation"]["title"], "Gesetz T")
+        self.assertEqual(row["citation"]["proceeding_type"], "Gesetzgebung")
+        # The page resolves the receipt by the same rule, with no proceedings row for the twin.
+        build._ensure_lead_position_tables(self.conn)
+        receipt = row["receipts"][0]
+        cited = build._fact_proceeding_citation(self.conn, receipt["document_number"], receipt.get("page"), receipt.get("page_quadrant"))
+        self.assertEqual((cited["proceeding_id"], cited["title"]), ("4711", "Gesetz T"))
+
     # Value: protects=the SQL single-Vorgang rule equals derive.debated_vorgang (agenda_procedures' set, Entschließungsanträge only when alone), item by item and Vorgang by Vorgang; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id, an Entschließungsantrag) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
     def test_single_vorgang_items_match_derive_debated_vorgang(self) -> None:
         import derive
