@@ -139,9 +139,29 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
 
-**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
+**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL. The /ship review of the codebook branch (2026-10-30) adds the column half: a format-9 manifest from another revision shows blank cells for recipe columns local `RECIPES` lacks, and its "Ergebnis als CSV" header can differ from the table above it; compare `recipes[].columns` with the local columns, or render columns and caveat from the manifest.
 
 **Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Make the build revision reproducible before the release script passes a tag
+
+**What:** `resolve_commit` hashes porcelain `git diff HEAD --binary`, whose bytes depend on the user's git config (`color.ui=always`, `diff.noprefix`, `diff.mnemonicPrefix`, `core.abbrev`, `diff.external`, which also runs that tool) and inherited `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`; a 30 s timeout gives a constant `-unverified`. The release gate in `export_distribution_data` only looks for `-` in the string, lets untracked or modified `CODEBOOK_INPUT_FILES` through, and no production caller passes a tag yet. Fix: `git diff-index -p --binary --full-index --no-ext-diff --no-textconv --no-color --no-renames HEAD` with `-c core.abbrev=40 -c diff.noprefix=false -c diff.mnemonicPrefix=false` and the `GIT_*` variables removed; a timeout fallback that still moves with edits; gate on `re.fullmatch(r"[0-9a-f]{12}", commit)` and tracked, unmodified authored inputs; a test that a `local` export accepts dirty, unverified and `None` revisions; a real-git temporary-repo test; explain the suffix next to "Commit …" on the Daten page; wire the tag through the release script or a `--data-tag` option. Done when the same edit yields the same revision on any machine and a release export from a tree with an untracked authored input fails.
+
+**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decision D6): every gap bites only when a release tag is passed, which nothing does until the release script exists.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** Scheduled data-release workflow
+
+### Export robustness gaps found by the codebook review
+
+**What:** (1) The publish step in `export_distribution_data` is not atomic: if renaming `datenstand.json` fails after `gen_dir.replace(published)`, the `finally` deletes the set-aside previous generation and leaves the old manifest over the new files; undo the generation swap on any failure after it and test the five untested cells (fresh and new-generation rename-in failure; fresh, new-generation and forced manifest-rename failure). (2) `validate_public_output` (`scripts/publication_state.py`) scans only HTML and three presentation JSON files, not `data/exports/**/DATA.md` or `datenstand.json`, so a local path pasted into an authored doc would ship with CI green. (3) Smaller: authored-input and licence-layer errors surface only after the store copy and CSV pass (pre-validate the dictionary shape and the licence doc's `## ` section first); `render_daten_recipes` defaults `data_base_url` (make it a required keyword); `_recipes_hash` raises a raw `KeyError` for an old-shape caller recipe; decide whether recipe CSVs keep formula-leading text unchanged now that they are plain double-clickable `.csv`. Done when each item has a fix and a test, or a recorded decision.
+
+**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decisions D4 and D7). (1) predates the branch and the window is narrow; (2) guards a leak that does not exist today.
+
+**Effort:** M
 **Priority:** P2
 **Depends on:** None
 

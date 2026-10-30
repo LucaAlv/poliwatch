@@ -2577,6 +2577,7 @@ LICENSE_LAYER_SOURCES = {
 
 EXPORT_FORMAT = 9
 REPO_ROOT = Path(__file__).resolve().parents[1]
+EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 # The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
 CODEBOOK_INPUT_FILES = {
     "dictionary": "scripts/data_dictionary.json",
@@ -2898,6 +2899,9 @@ def _inputs_hash(
         "tag": tag,
         "license": license_text,
         "commit": commit,
+        # The code that writes DATA.md and the CSVs, so an edit re-exports even
+        # where no git revision is available.
+        "exporter_sha256": EXPORTER_SHA256,
         "codebook_sha256": codebook_sha256,
         "issues_url": issues_url,
         "catalog_count": catalog_count,
@@ -2936,6 +2940,9 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
 # F1.1: a manifest is only reusable when it parses, matches the current
 # export format and inputs, and every file it names still exists at the
 # recorded size. Anything else re-exports rather than trusting stale bytes.
+# The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells
+# readers to check every file's SHA-256, and these cost nothing to verify.
+_REUSE_HASHED_KINDS = ("codebook", "recipe_csv")
 def _manifest_reusable(manifest: dict[str, Any] | None, exports_dir: Path, *, inputs_hash: str, export_format: int) -> bool:
     if not manifest:
         return False
@@ -2958,6 +2965,8 @@ def _manifest_reusable(manifest: dict[str, Any] | None, exports_dir: Path, *, in
         try:
             file_path = gen_dir / str(file_info["name"])
             if file_path.stat().st_size != file_info["bytes"]:
+                return False
+            if file_info.get("kind") in _REUSE_HASHED_KINDS and _hash_file(file_path) != file_info["sha256"]:
                 return False
         except (KeyError, OSError, TypeError):
             return False
@@ -3275,7 +3284,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; `-unverified`: ob sie abwichen, ließ sich nicht prüfen).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
-        f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzkurzhinweis dieses Exports: {manifest['license'] or 'nicht gesetzt; die geschichteten Quellenbedingungen stehen unten'}.", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzkurzhinweis dieses Exports: {' '.join(manifest['license'].split()) or 'nicht gesetzt; die geschichteten Quellenbedingungen stehen unten'}.", "",
         "## Dateien und Verwendung", "",
         "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
         "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",

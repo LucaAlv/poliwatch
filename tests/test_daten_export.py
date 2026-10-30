@@ -41,6 +41,18 @@ class ExportHelpersTests(unittest.TestCase):
         for field in b.CODEBOOK_INPUT_FILES:
             self.assertTrue(authored(field).is_file(), field)
 
+    # Value: protects=DATA.md names the codes and period units the store actually holds; fails_when=result_scope is documented with German labels instead of its codes, or min_history_weeks as weeks while monthly metrics store months; why_new=both definitions were wrong until the 2026-10-30 review; seam=none; no_claim=other columns' wording
+    def test_codebook_matches_stored_codes_and_period_units(self) -> None:
+        dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        scope = dictionary["votes"]["columns"]["result_scope"]
+        for code in ("application", "proposition"):
+            self.assertIn(code, scope["unit"])
+            self.assertIn(code, scope["meaning"])
+        self.assertTrue(any(metric["min_history_weeks"] == facts.MIN_HISTORY_MONTHS for metric in facts.MONTHLY_REGISTRY))
+        history = dictionary["fact_metrics"]["columns"]["min_history_weeks"]
+        self.assertIn("Monate", history["unit"])
+        self.assertIn("Monatskennzahlen", history["meaning"])
+
     def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
         self.assertIn("DIP-API", dictionary["proceedings"]["columns"]["title"]["source"])
@@ -390,11 +402,14 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_missing_or_truncated_new_assets_trigger_regeneration(self) -> None:
         manifest = self.export()
         for name in ("DATA.md", manifest["recipes"][0]["file"]):
-            for truncated in (False, True):
-                with self.subTest(name=name, truncated=truncated):
+            for damage in ("missing", "truncated", "same size, altered"):
+                with self.subTest(name=name, damage=damage):
                     path = self.exports_dir / manifest["generation"] / name
-                    if truncated:
+                    if damage == "truncated":
                         path.write_bytes(b"short")
+                    elif damage == "same size, altered":
+                        original = path.read_bytes()
+                        path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
                     else:
                         path.unlink()
                     rebuilt = self.export()
@@ -403,6 +418,17 @@ class ExportDistributionDataTests(unittest.TestCase):
                     self.assertEqual(b._hash_file(path), entry["sha256"])
                     self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
                     manifest = rebuilt
+
+    # Value: protects=an edit to the exporter code re-exports even without a git revision, and the operator licence text cannot add lines to DATA.md; fails_when=EXPORTER_SHA256 leaves the cache key or the licence text is written raw; why_new=commit was the only code identity and None without git; seam=none; no_claim=which edits matter
+    def test_exporter_code_and_licence_text_reach_the_codebook_safely(self) -> None:
+        first = self.export(commit=None)
+        with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
+            second = self.export(commit=None)
+        self.assertNotEqual(first["generation"], second["generation"])
+        manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertIn("Lizenzkurzhinweis dieses Exports: CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
     def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:

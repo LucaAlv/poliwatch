@@ -416,8 +416,8 @@
           "license": "eigene-auswertung"
         },
         "min_history_weeks": {
-          "meaning": "Mindestzahl historischer Wochen für einen belastbaren Vergleich.",
-          "unit": "Wochenanzahl als Ganzzahl.",
+          "meaning": "Mindestzahl früherer Perioden der Kennzahl für einen belastbaren Vergleich: Wochen bei Wochenkennzahlen, Monate bei Monatskennzahlen; der Spaltenname nennt nur Wochen.",
+          "unit": "Anzahl Perioden als Ganzzahl (bei den Monatskennzahlen Monate, sonst Wochen).",
           "source": "Projektdefinition in scripts/facts.py: Kennzahl-SQL, Einheit, Vergleichsrichtung, Version und Veröffentlichungsregel.",
           "license": "eigene-auswertung"
         },
@@ -1523,8 +1523,8 @@
           "license": "eigene-auswertung"
         },
         "result_scope": {
-          "meaning": "Gibt an, auf welchen Gegenstand sich ein offizielles Ergebnis bezieht (Antrag oder Beschlussempfehlung).",
-          "unit": "Gegenstands-Code Antrag/Beschlussempfehlung bzw. Quellenwert oder NULL.",
+          "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition.",
+          "unit": "Textcode application oder proposition; NULL ohne Ergebnis.",
           "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "bundestag-abstimmungen"
         },
