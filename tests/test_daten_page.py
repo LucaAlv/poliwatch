@@ -179,6 +179,13 @@ class DatenPageTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "files is not list"):
             b.validate_manifest(manifest, "dict files")
 
+    # Value: protects=a manifest that is not a JSON object is refused naming the --data-manifest source, or the exporter's own subject when it validates its output; fails_when=the subject default drops the flag and source or the object check is removed; why_new=the problem-list errors are pinned but the not-an-object branch was never reached; seam=none; no_claim=the manifest the operator supplied can be read
+    def test_manifest_that_is_not_an_object_names_its_source(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, r"^error: --data-manifest remote\.json is not a JSON object$"):
+            b.validate_manifest([self.manifest], "remote.json")
+        with self.assertRaisesRegex(RuntimeError, r"^error: the export's new datenstand\.json is not a JSON object$"):
+            b.validate_manifest(None, "new export", subject="the export's new datenstand.json")
+
     # Value: protects=a --data-manifest with a bad sqlite size, repeated recipe id or table CSV list that does not match the tables is refused before rendering links to absent files; fails_when=those inventory checks are dropped; why_new=extends the table of inventory faults, which omitted these branches; seam=none; no_claim=remote fetch
     def test_new_manifest_rejects_missing_mistyped_or_malformed_inventory(self) -> None:
         def codebook(manifest):

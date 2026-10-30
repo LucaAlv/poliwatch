@@ -450,9 +450,12 @@ class ExportDistributionDataTests(unittest.TestCase):
                     self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
                     manifest = rebuilt
 
-    # Value: protects=an edit to the exporter code re-exports even without a git revision, and the operator licence text cannot add lines to DATA.md; fails_when=EXPORTER_SHA256 leaves the cache key or the licence text is written raw; why_new=commit was the only code identity and None without git; seam=none; no_claim=which edits matter
+    # Value: protects=an edit to the exporter code re-exports even without a git revision, and the operator licence text cannot add lines to DATA.md; fails_when=EXPORTER_SHA256 leaves the cache key, the licence text is written raw, or an empty one leaves a blank licence line; why_new=commit was the only code identity and None without git, and no test read the empty-licence default; seam=none; no_claim=which edits matter
     def test_exporter_code_and_licence_text_reach_the_codebook_safely(self) -> None:
         first = self.export(commit=None)
+        # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
+        first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
+        self.assertIn("(--data-license): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
             second = self.export(commit=None)
         self.assertNotEqual(first["generation"], second["generation"])
