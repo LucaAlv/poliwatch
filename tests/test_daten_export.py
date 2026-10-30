@@ -589,6 +589,58 @@ class ExportDistributionDataTests(unittest.TestCase):
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
         self.assertRegex(codebook, r"(?m)^\| unbekannt \| 1 \| unbekannt \| unbekannt \| 1 \|")
 
+    # Value: protects=a Wahlperiode with several sittings sums them across protocol numbers, with the earliest and latest date and empty dates ignored; fails_when=the min/max comparison flips, an empty date wins, or one sitting overwrites another; why_new=every existing coverage fixture has one sitting per WP; seam=none; no_claim=counts of the other tables
+    def test_snapshot_coverage_merges_the_sittings_of_one_wahlperiode(self) -> None:
+        now = "2024-06-01T00:00:00+00:00"
+        with sqlite3.connect(self.db_path) as conn:
+            for protocol_id, number, date in (("5701", "20/10", ""), ("5702", "20/99", "2024-03-01"), ("5703", "20/98", "2024-09-30")):
+                conn.execute(
+                    "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'Weitere Sitzung', '{}', ?, ?)", (protocol_id, number, date, now, now))
+            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        (row,) = [row for row in self.export()["coverage"]["wahlperioden"] if row["wp"] == "20"]
+        self.assertEqual((row["wp"], row["sittings"], row["date_from"], row["date_to"]), ("20", 5, "2024-03-01", "2024-09-30"))
+
+    # Value: protects=votes without a protocol, and their members, are counted under unbekannt instead of dropping out of the per-WP totals; fails_when=a coverage join becomes inner or a NULL protocol_id raises; why_new=the unknown-WP test only has votes whose protocol exists but has no number; seam=none; no_claim=agenda_items/speeches
+    def test_snapshot_coverage_counts_a_vote_without_protocol_as_unbekannt(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN NULL ELSE '5801' END")
+            totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("votes", "vote_members")}
+        rows = {row["wp"]: row for row in self.export()["coverage"]["wahlperioden"]}
+        self.assertEqual(list(rows), ["20", "unbekannt"])
+        self.assertEqual((rows["unbekannt"]["votes"], rows["unbekannt"]["vote_members"], rows["unbekannt"]["sittings"]), (1, 1, 0))
+        self.assertEqual((rows["unbekannt"]["date_from"], rows["unbekannt"]["date_to"]), (None, None))
+        for table, total in totals.items():
+            with self.subTest(table=table):
+                self.assertEqual(sum(row[table] for row in rows.values()), total)
+
+    # Value: protects=a pipe or line break inside an authored column definition stays inside its DATA.md table cell; fails_when=_md_cell stops escaping, splitting the row into extra columns or ending the table; why_new=no authored text holds a pipe or newline, so the escape assertion elsewhere is vacuous; seam=none; no_claim=table meanings
+    def test_codebook_cell_text_cannot_break_the_table_row(self) -> None:
+        inputs = b._read_codebook_inputs()
+        dictionary = json.loads(inputs.dictionary)
+        dictionary["tables"]["speeches"]["columns"]["text"]["meaning"] = "Volltext a | b\nzweite Zeile"
+        with mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, dictionary=json.dumps(dictionary))):
+            manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        (row,) = re.findall(r"(?m)^\| `text` \| Volltext .*$", re.search(r"(?ms)^### `speeches`\n(.*?)(?=^### )", codebook).group(1))
+        self.assertIn("Volltext a \\| b<br>zweite Zeile", row)
+        self.assertEqual(len(re.split(r"(?<!\\)\|", row.strip())) - 2, 9)
+
+    # Value: protects=DATA.md's file table lists every file of the generation except itself, with the manifest's kind, rows, bytes and SHA-256; fails_when=a file kind drops out, rows or bytes shift a column, or a hash is not the file's; why_new=readers verify downloads from this table, and only the manifest was compared; seam=none; no_claim=wording
+    def test_codebook_file_table_matches_the_manifest_files(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        table = re.search(r"(?ms)^\| Datei \| Art .*?\n\| --- .*?\n(.*?)(?=\n\n)", codebook).group(1).split("\n")
+        listed = [[cell.strip(" `") for cell in line.strip("| ").split(" | ")] for line in table]
+        files = [file for file in manifest["files"] if file["kind"] != "codebook"]
+        self.assertEqual(
+            [[cells[0].split("](")[0].lstrip("["), *cells[1:]] for cells in listed],
+            [[file["name"], file["kind"], str(file.get("rows", "\u2014")), str(file["bytes"]), file["sha256"]] for file in files],
+        )
+        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv"})
+        for file in files:
+            self.assertEqual(b._hash_file(self.exports_dir / manifest["generation"] / file["name"]), file["sha256"])
+
     # Value: protects=a broken authored input (unreadable, not UTF-8, bad JSON, wrong shape, licence doc without a "## " section) fails the export with a named RuntimeError and leaves the published generation untouched; fails_when=a raw OSError/UnicodeDecodeError/JSON error escapes or a half-written generation replaces the published one; why_new=only dictionary content errors were pinned, not file or shape errors; seam=none; no_claim=message wording beyond the cause
     def test_unreadable_or_malformed_authored_inputs_fail_by_name_and_preserve_publication(self) -> None:
         root = self.authored_copy()
