@@ -70,7 +70,7 @@
         },
         "source": {
           "meaning": "Erste erfolgreiche Stufe der festen Zuordnungsregel; not_fetched signalisiert fehlenden DIP-Kontext, untagged keinen passenden Tag.",
-          "unit": "Textcode sachgebiet, drucksache, einzelplan, top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
+          "unit": "Textcode sachgebiet, drucksache, einzelplan, einzelplan_unknown (Einzelplan, den die feste Regel nicht kennt), top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
           "source": "scripts/politikfelder.py: Regel aus DIP-Sachgebieten verknüpfter Vorgänge, Drucksachen, ersatzweise WP-spezifischen Einzelplänen (TOP) bzw. verknüpften TOP-Tags (Abstimmung).",
           "license": "eigene-metadaten-zuordnung"
         }
@@ -714,13 +714,13 @@
         },
         "function": {
           "meaning": "DIP-Funktionsangabe zur Person; kein verlässlicher Verlauf der Fraktionszugehörigkeit.",
-          "unit": "DIP-Funktionsangabe als Text oder NULL.",
+          "unit": "Liste der DIP-Funktionsangaben als Text in Python-Schreibweise (einfache Anführungszeichen, kein JSON), z. B. ['MdB'], oder NULL.",
           "source": "DIP-API-Funktionsangabe.",
           "license": "dip"
         },
         "wahlperiode": {
           "meaning": "Wahlperiodenangabe, der der Quellenpersonendatensatz zugeordnet ist.",
-          "unit": "Nummer der Wahlperiode als Ganzzahl oder Quellenkennung je Tabelle.",
+          "unit": "Liste der Wahlperiodennummern als Text, z. B. [19, 20, 21], oder NULL; keine einzelne Ganzzahl.",
           "source": "DIP-API-Wahlperiodenfeld.",
           "license": "dip"
         },
@@ -1157,7 +1157,7 @@
           "meaning": "Ganzzahlige Versionsnummer der initialisierten Store-Schemamigration.",
           "unit": "Versionsnummer als nichtnegative Ganzzahl.",
           "source": "Lokale Store-Schemaverwaltung in scripts/persist_dip_pulse_store.py; kein externes Quelldatum.",
-          "license": "dip"
+          "license": "eigene-metadaten-zuordnung"
         },
         "applied_at": {
           "meaning": "Projektgenerierter UTC-Zeitpunkt, zu dem die Schema-Version im lokalen Store als angewendet registriert wurde.",
@@ -1413,7 +1413,7 @@
         },
         "source": {
           "meaning": "Erste erfolgreiche Stufe der festen Zuordnungsregel; not_fetched signalisiert fehlenden DIP-Kontext, untagged keinen passenden Tag.",
-          "unit": "Textcode sachgebiet, drucksache, einzelplan, top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
+          "unit": "Textcode sachgebiet, drucksache, einzelplan, einzelplan_unknown (Einzelplan, den die feste Regel nicht kennt), top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
           "source": "scripts/politikfelder.py: Regel aus DIP-Sachgebieten verknüpfter Vorgänge, Drucksachen, ersatzweise WP-spezifischen Einzelplänen (TOP) bzw. verknüpften TOP-Tags (Abstimmung).",
           "license": "eigene-metadaten-zuordnung"
         }

@@ -2991,12 +2991,15 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
         return None
 
 
-# F1.1: a manifest is only reusable when it parses, matches the current
-# export format and inputs, and every file it names still exists at the
-# recorded size. Anything else re-exports rather than trusting stale bytes.
 # The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells
 # readers to check every file's SHA-256, and these cost nothing to verify.
 _REUSE_HASHED_KINDS = ("codebook", "recipe_csv")
+
+
+# F1.1: a manifest is only reusable when it parses, matches the current
+# export format and inputs, passes validate_manifest, and every file it names
+# still exists at the recorded size (and hash, for _REUSE_HASHED_KINDS).
+# Anything else re-exports rather than trusting stale bytes.
 def _manifest_reusable(
     manifest: dict[str, Any] | None,
     exports_dir: Path,
@@ -3264,6 +3267,7 @@ def _write_recipe_csv(path: Path, columns: list[str], rows: list[dict[str, Any]]
     return sum(_surrogate_count(cell) for row in cells for cell in row)
 
 
+# Wahlperiode from the protocol number, the rule facts.wahlperiode applies.
 def _protocol_wahlperiode(document_number: Any) -> str:
     try:
         return str(facts.wahlperiode(document_number))
@@ -3271,7 +3275,8 @@ def _protocol_wahlperiode(document_number: Any) -> str:
         return "unbekannt"
 
 
-# Wahlperiode from the protocol number, the rule facts.wahlperiode applies.
+# Per Wahlperiode: sittings, date range and the COVERAGE_COUNT_TABLES counts,
+# numbered periods first and unbekannt last.
 def _snapshot_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     # Grouped by protocol in SQL, so the Wahlperiode rule runs once per protocol.
     coverage: dict[str, dict[str, Any]] = {}
