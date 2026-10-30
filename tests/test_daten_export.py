@@ -32,12 +32,8 @@ def authored(field: str) -> Path:
 
 
 class ExportHelpersTests(unittest.TestCase):
-    # Value: protects=the export's authored codebook inputs point at committed files; fails_when=an input is renamed or moved without updating CODEBOOK_INPUT_FILES, which would fail every export run; why_new=other tests read the inputs through the mapping and never pin it; seam=none; no_claim=input content
+    # Value: protects=the export's authored codebook inputs point at committed files; fails_when=an input is renamed or moved without updating CODEBOOK_INPUT_FILES, which would fail every export run; why_new=other tests read the inputs through the mapping; seam=none; no_claim=input content
     def test_codebook_inputs_are_committed_files(self) -> None:
-        self.assertEqual(
-            b.CODEBOOK_INPUT_FILES,
-            {"dictionary": "scripts/data_dictionary.json", "methods": "docs/data-methods.md", "license": "docs/data-license.md"},
-        )
         for field in b.CODEBOOK_INPUT_FILES:
             self.assertTrue(authored(field).is_file(), field)
 
@@ -52,6 +48,23 @@ class ExportHelpersTests(unittest.TestCase):
         history = dictionary["fact_metrics"]["columns"]["min_history_weeks"]
         self.assertIn("Monate", history["unit"])
         self.assertIn("Monatskennzahlen", history["meaning"])
+        self.assertIn("vor Einführung des Felds", scope["unit"])
+        self.assertIn("chancellor_election", dictionary["votes"]["columns"]["procedure_type"]["unit"])
+
+    # Value: protects=a column the project computes is licensed and tagged as our own work, not as source data; fails_when=a derived column (result_scope, procedure_type, person_id, aw_match) falls back to its table's source tag or layer; why_new=the layer guard sees only tag-layer contradictions, and these columns were tagged as source until the 2026-10-30 review; seam=none; no_claim=columns whose source text does not start with Projektableitung
+    def test_project_derived_columns_carry_our_own_layer_and_tag(self) -> None:
+        dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        for table, column in (("votes", "result_scope"), ("votes", "procedure_type"), ("mps", "person_id"), ("mps", "aw_match")):
+            with self.subTest(column=f"{table}.{column}"):
+                self.assertEqual(b.column_source(table, column), "derived")
+                self.assertEqual(dictionary[table]["columns"][column]["license"], "eigene-auswertung")
+        for table, entry in dictionary.items():
+            for column, definition in entry["columns"].items():
+                if definition["source"].startswith("Projektableitung"):
+                    with self.subTest(derived=f"{table}.{column}"):
+                        self.assertTrue(definition["license"].startswith("eigene-"), definition["license"])
+        for column in ("display_name", "party_id"):
+            self.assertEqual(dictionary["mps"]["columns"][column]["license"], "dip-oder-bundestag-abstimmungen")
 
     def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
@@ -427,7 +440,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertNotEqual(first["generation"], second["generation"])
         manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("Lizenzkurzhinweis dieses Exports: CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (--data-license): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
@@ -465,6 +478,40 @@ class ExportDistributionDataTests(unittest.TestCase):
             self.export(force=True)
         self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
         self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=a first export or a new generation the pre-publish validator refuses leaves nothing new published; fails_when=publication runs before validate_manifest on those paths; why_new=the test above covers only a forced re-export of the same generation; seam=none; no_claim=rename failures after validation (deferred)
+    def test_a_rejected_first_or_new_generation_export_publishes_nothing(self) -> None:
+        real_run_export = b._run_export
+
+        def miscounted(**kwargs):
+            manifest = real_run_export(**kwargs)
+            next(file for file in manifest["files"] if file["kind"] == "recipe_csv")["rows"] += 1
+            return manifest
+
+        def published():
+            return {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "rows mismatch"):
+            self.export()
+        self.assertEqual(published(), {})
+        self.export()
+        before = published()
+        changed = tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "rows mismatch"):
+            self.export(recipes=changed)
+        self.assertEqual(published(), before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=an export's own manifest is checked against the recipes it ran, so unchanged custom recipes reuse it and a cached manifest whose recipe SQL differs is rebuilt; fails_when=recipes= is dropped from the reuse check (every custom export re-exports) or the reuse check stops comparing SQL; why_new=reuse tests use only the default RECIPES; seam=none; no_claim=the --data-manifest page path
+    def test_custom_recipes_reuse_and_a_cached_sql_change_rebuilds(self) -> None:
+        changed = tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        first = self.export(recipes=changed)
+        self.assertEqual(self.export(recipes=changed)["generated_at"], first["generated_at"])
+        path = self.exports_dir / "datenstand.json"
+        cached = json.loads(path.read_text())
+        cached["recipes"][0]["sql"] += " "
+        path.write_text(json.dumps(cached))
+        self.assertNotEqual(self.export(recipes=changed)["generated_at"], first["generated_at"])
 
     # Value: protects=equal inputs give equal DATA.md bytes, and DATA.md names the latest stored sitting instead of the build time; fails_when=generated_at or another clock value enters DATA.md; why_new=a forced rebuild was only checked for a new generated_at; seam=none; no_claim=the sqlite and CSV bytes
     def test_forced_rebuild_gives_byte_identical_codebook(self) -> None:

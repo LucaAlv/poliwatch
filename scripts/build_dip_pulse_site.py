@@ -2566,6 +2566,10 @@ _TABLE_SOURCE_DERIVED = (
 _COLUMN_SOURCE_DERIVED = {
     ("votes", "result_raw"),
     ("votes", "result_source"),
+    # What result_raw refers to, read from the outcome wording or set by rule.
+    ("votes", "result_scope"),
+    # special_majority_procedure's regex over the title and Vorgang context.
+    ("votes", "procedure_type"),
     # Inferred rejection-recommendation semantics and their supporting evidence.
     ("votes", "inverted"),
     ("votes", "inversion_source"),
@@ -2578,6 +2582,9 @@ _COLUMN_SOURCE_DERIVED = {
     ("speeches", "unattributed_char_count"),
     # The kind is decided by the parser from the sitting's wording and structure.
     ("contributions", "kind"),
+    # The person register's own key and its abgeordnetenwatch matching outcome.
+    ("mps", "person_id"),
+    ("mps", "aw_match"),
     ("contributions", "parent_rede_id"),
     ("contributions", "sprechrolle"),
 }
@@ -2601,6 +2608,7 @@ LICENSE_LAYER_SOURCES = {
     "dip": {"dip"},
     "dip-quellenangabe": {"dip"},
     "bundestag-abstimmungen": {"bundestag.de"},
+    "dip-oder-bundestag-abstimmungen": {"dip"},
     "abgeordnetenwatch": {"abgeordnetenwatch"},
     "abgeordnetenwatch-mit-bundestag-fallback": {"abgeordnetenwatch"},
     "eigene-auswertung": {"derived"},
@@ -2623,6 +2631,15 @@ CODEBOOK_INPUT_FILES = {
 ATTRIBUTION_NAME = "Bundestag-Puls"
 # Per-Wahlperiode counts in DATA.md, in table order.
 COVERAGE_COUNT_TABLES = ("agenda_items", "speeches", "contributions", "votes", "vote_members")
+# Each counted table's rows joined to their protocol (LEFT: a row without one counts as unbekannt).
+_COVERAGE_SOURCES = {
+    "agenda_items": "agenda_items s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "speeches": "speeches s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "contributions": "contributions s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "votes": "votes s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "vote_members": "vote_members s JOIN votes v ON v.id = s.vote_id LEFT JOIN protocols p ON p.id = v.protocol_id",
+}
+assert set(_COVERAGE_SOURCES) == set(COVERAGE_COUNT_TABLES)
 # Exported in the SQLite file but not as a CSV extract: an internal version mark.
 TABLES_WITHOUT_CSV = frozenset({"schema_migrations"})
 BAUSTEINE_LABELS = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
@@ -2747,23 +2764,24 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "  AND vf.leading_vote IN ('yes', 'no')\n"
             "  AND vm.vote <> vf.leading_vote\n"
             "  AND p.name <> 'fraktionslos'\n"
-            "GROUP BY mc.canonical_id\n"
-            "ORDER BY abweichungen DESC, m.display_name\n"
+            "GROUP BY mc.canonical_id, p.name\n"
+            "ORDER BY abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
             {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
             {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
             {"name": "fraktion", "meaning": "Fraktion oder Gruppe laut Stimme (vote_members.party_id); Stimmen fraktionsloser Mitglieder sind ausgeschlossen.", "align": "text"},
-            {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe.", "align": "num"},
+            {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe, je Person und Fraktion oder Gruppe.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": None,
         "method": (
-            "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person, nicht einzelne Stimmen; Stimme und "
+            "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person und Fraktion oder Gruppe, nicht einzelne "
+            "Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Stimme und "
             "Gruppensumme (vote_fractions) müssen beide vorliegen. Enthaltungen, nicht abgegebene Stimmen, Abstimmungen "
             "ohne Ja/Nein-Mehrheitsvotum und fraktionslose Mitglieder zählen nicht. Reihenfolge: Abweichungen absteigend, "
-            "dann Anzeigename."
+            "dann Anzeigename, Personenkennung und Fraktion."
         ),
     },
     {
@@ -2825,7 +2843,7 @@ RECIPES: tuple[dict[str, Any], ...] = (
         "caveat": None,
         "method": (
             "Nur Verknüpfungen über proceeding_positions und agenda_items zählen. Reihenfolge: Reden, dann Sitzungen "
-            "absteigend, dann Kennung."
+            "absteigend, dann Kennung. Die CSV folgt der SQL-Projektion; das HTML zeigt erste_drucksache vor reden und sitzungen."
         ),
     },
     {
@@ -3251,20 +3269,23 @@ def _protocol_wahlperiode(document_number: Any) -> str:
 
 # Wahlperiode from the protocol number, the rule facts.wahlperiode applies.
 def _snapshot_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    conn.create_function("wahlperiode", 1, _protocol_wahlperiode, deterministic=True)
-    wp = "wahlperiode(p.document_number)"
-    coverage = {}
-    for row in conn.execute(f"SELECT {wp} AS wp, COUNT(*) AS sittings, MIN(NULLIF(p.date, '')) AS date_from, MAX(NULLIF(p.date, '')) AS date_to FROM protocols p GROUP BY 1"):
-        coverage[row["wp"]] = dict(row)
-    for name, source in (
-        ("agenda_items", "agenda_items s LEFT JOIN protocols p ON p.id = s.protocol_id"),
-        ("speeches", "speeches s LEFT JOIN protocols p ON p.id = s.protocol_id"),
-        ("contributions", "contributions s LEFT JOIN protocols p ON p.id = s.protocol_id"),
-        ("votes", "votes s LEFT JOIN protocols p ON p.id = s.protocol_id"),
-        ("vote_members", "vote_members s JOIN votes v ON v.id = s.vote_id LEFT JOIN protocols p ON p.id = v.protocol_id"),
+    # Grouped by protocol in SQL, so the Wahlperiode rule runs once per protocol.
+    coverage: dict[str, dict[str, Any]] = {}
+    for document_number, sittings, date_from, date_to in conn.execute(
+        "SELECT document_number, COUNT(*), MIN(NULLIF(date, '')), MAX(NULLIF(date, '')) FROM protocols GROUP BY document_number"
     ):
-        for row in conn.execute(f"SELECT {wp} AS wp, COUNT(*) AS n FROM {source} GROUP BY 1"):
-            coverage.setdefault(row["wp"], {"wp": row["wp"], "sittings": 0, "date_from": None, "date_to": None})[name] = row["n"]
+        wp = _protocol_wahlperiode(document_number)
+        row = coverage.setdefault(wp, {"wp": wp, "sittings": 0, "date_from": None, "date_to": None})
+        row["sittings"] += sittings
+        if date_from is not None and (row["date_from"] is None or date_from < row["date_from"]):
+            row["date_from"] = date_from
+        if date_to is not None and (row["date_to"] is None or date_to > row["date_to"]):
+            row["date_to"] = date_to
+    for name in COVERAGE_COUNT_TABLES:
+        for document_number, n in conn.execute(f"SELECT p.document_number, COUNT(*) FROM {_COVERAGE_SOURCES[name]} GROUP BY 1"):
+            wp = _protocol_wahlperiode(document_number)
+            row = coverage.setdefault(wp, {"wp": wp, "sittings": 0, "date_from": None, "date_to": None})
+            row[name] = row.get(name, 0) + n
     return [
         {**row, **{name: row.get(name, 0) for name in COVERAGE_COUNT_TABLES}}
         for _, row in sorted(coverage.items(), key=lambda item: (not item[0].isdigit(), int(item[0]) if item[0].isdigit() else 0))
@@ -3326,7 +3347,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
         f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; `-unverified`: ob sie abwichen, ließ sich nicht prüfen).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
-        f"Schema-SHA-256: `{manifest['schema_hash']}`. Lizenzkurzhinweis dieses Exports: {' '.join(manifest['license'].split()) or 'nicht gesetzt; die geschichteten Quellenbedingungen stehen unten'}.", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (--data-license): {' '.join(manifest['license'].split()) or 'keiner; es gelten die geschichteten Quellenbedingungen unten'}.", "",
         "## Dateien und Verwendung", "",
         "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
         "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
@@ -3389,7 +3410,7 @@ def _codebook_tables(tables: list[dict[str, Any]], dictionary: dict[str, Any]) -
 
 def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
     lines = ["", "## Veröffentlichte SQL-Rezepte", "",
-             "Die CSVs sind die begrenzten Ergebnislisten der SQL-Rezepte, keine Rohdatenauszüge. Jede enthält alle SQL-Spalten in Projektionsreihenfolge, auch die nur im HTML versteckten Link-IDs. Alle Abfragen behalten ihr SQL-`LIMIT 5`; eine kurze oder leere CSV belegt deshalb keine Nullwerte in der Gesamtpopulation, und ohne Treffer enthält die Datei dennoch ihre Kopfzeile. Die folgende Spaltenreihenfolge ist die maschinelle; r5 zeigt im HTML erste_drucksache vor reden und sitzungen.", ""]
+             "Die CSVs sind die begrenzten Ergebnislisten der SQL-Rezepte, keine Rohdatenauszüge. Jede enthält alle SQL-Spalten in Projektionsreihenfolge, auch die nur im HTML versteckten Link-IDs. Alle Abfragen behalten ihr SQL-`LIMIT 5`; eine kurze oder leere CSV belegt deshalb keine Nullwerte in der Gesamtpopulation, und ohne Treffer enthält die Datei dennoch ihre Kopfzeile. Die folgende Spaltenreihenfolge ist die maschinelle.", ""]
     files = {file["name"]: file for file in manifest["files"]}
     for recipe in manifest["recipes"]:
         file = files[recipe["file"]]
@@ -11787,7 +11808,8 @@ _MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
 # copying, so an override must carry exactly this build's recipes: the rows
 # came from the manifest's SQL, and showing any other SQL beside them (local or
 # tampered, sqlite3 dot-commands included) would misstate where they came from.
-# Titles are display copy and come from RECIPES, like recipes_hash ignores them.
+# Titles are display copy the page takes from RECIPES, so they are not compared
+# here (recipes_hash does include them: a title edit re-exports DATA.md).
 def _manifest_recipe_problems(recipes: list[Any], expected_recipes: tuple[dict[str, Any], ...] = RECIPES) -> list[str]:
     if not all(
         isinstance(r, dict)

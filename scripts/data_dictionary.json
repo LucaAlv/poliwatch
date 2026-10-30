@@ -3,6 +3,7 @@
     "dip": "DIP-Nutzungsbedingungen für DIP-Daten; Protokollangabe „Deutscher Bundestag/Bundesrat – DIP“ und zitierte Plenarprotokolle gemäß docs/data-license.md.",
     "dip-quellenangabe": "DIP-Nutzungsbedingungen und Quellenangabe gemäß docs/data-license.md.",
     "bundestag-abstimmungen": "Quelle Deutscher Bundestag; namentliche Abstimmungen gemäß der bestehenden Layerbeschreibung in docs/data-license.md und ADR 0003.",
+    "dip-oder-bundestag-abstimmungen": "Je nach Zeile DIP-Nutzungsbedingungen (DIP-Personenliste, XML-Rednerangabe) oder Quelle Deutscher Bundestag (Mitgliederliste der namentlichen Abstimmungen) gemäß docs/data-license.md; die Zeile sagt nicht, welche Quelle griff.",
     "abgeordnetenwatch": "Abgeordnetenwatch-Profildaten: CC0 1.0; Attribution als Courtesy gemäß docs/data-license.md.",
     "abgeordnetenwatch-mit-bundestag-fallback": "Bestehender Manifest-Layer abgeordnetenwatch: CC0 1.0 für aw-Profildaten. Ein Bundestags-Fallback bleibt Bundestagsquelle; der grobe Tag ist kein Nachweis ausschließlicher aw-Herkunft (docs/data-license.md/ADR 0003).",
     "eigene-auswertung": "Eigene Auswertung CC BY 4.0 (Bundestag-Puls, Luca Veh); verwendete Quelldaten behalten ihre jeweiligen Bedingungen.",
@@ -685,7 +686,7 @@
           "meaning": "Aktuelle Personenregisterkennung, der diese DIP-/Protokoll-/Roster-Aufzeichnung zugeordnet ist.",
           "unit": "Dauerhafte Personenkennung als Text.",
           "source": "Projektableitung des Personenregisters aus DIP-Roster, Protokoll-Rednerkennungen, abgeordnetenwatch-Profilzuordnung und geprüften Korrekturen; unsichere Fälle bleiben getrennt.",
-          "license": "dip"
+          "license": "eigene-auswertung"
         },
         "dip_person_id": {
           "meaning": "Personenkennung, die DIP dem Abgeordneten-Roster-Eintrag zuweist.",
@@ -703,7 +704,7 @@
           "meaning": "Im Datensatz überlieferter Name der Person, einschließlich gegebenenfalls mitgelieferter Amts-/Fraktionsangabe.",
           "unit": "Personenname als Anzeigetext.",
           "source": "Gemischte Quellen: DIP-API-Personenliste, XML-Rednerangabe oder Bundestags-Abstimmungsmitgliederliste; das Personenregister wählt daraus deterministisch einen repräsentativen Namen.",
-          "license": "dip"
+          "license": "dip-oder-bundestag-abstimmungen"
         },
         "title": {
           "meaning": "Akademischer oder sonstiger Personentitel aus dem DIP-Roster, nicht der Titel eines Dokuments.",
@@ -733,7 +734,7 @@
           "meaning": "Normalisierte Zugehörigkeit dieser Personenaufzeichnung nach den zuletzt gespeicherten und im Register konsolidierten Quellangaben; keine datierte Mitgliedschaftshistorie.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
           "source": "Gemischte Quellen: DIP-API-Personenliste, XML-Rednerfraktion oder Bundestags-Abstimmungsmitgliederliste; normalisiert und im Personenregister mit dem zugehörigen Namen konsolidiert.",
-          "license": "dip"
+          "license": "dip-oder-bundestag-abstimmungen"
         },
         "birth_year": {
           "meaning": "Geburtsjahr laut abgeordnetenwatch-Profil.",
@@ -775,7 +776,7 @@
           "meaning": "Ergebnis/Art des abgeordnetenwatch-Abgleichs für diese Personenaufzeichnung; Werte wie partitioned/conflicting markieren Sonderfälle.",
           "unit": "Abgleichstatuscode als Text oder NULL.",
           "source": "Projektableitung des Personenregisters aus DIP-Roster, Protokoll-Rednerkennungen, abgeordnetenwatch-Profilzuordnung und geprüften Korrekturen; unsichere Fälle bleiben getrennt.",
-          "license": "dip"
+          "license": "eigene-auswertung"
         },
         "person_roles_json": {
           "meaning": "JSON-Liste der DIP-Funktionsangaben zur Person; keine vollständige Mandats- oder Fraktionshistorie.",
@@ -1524,15 +1525,15 @@
         },
         "result_scope": {
           "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition.",
-          "unit": "Textcode application oder proposition; NULL ohne Ergebnis.",
+          "unit": "Textcode application oder proposition; NULL nur in Zeilen aus Berichten, die vor Einführung des Felds gespeichert wurden.",
           "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
-          "license": "bundestag-abstimmungen"
+          "license": "eigene-auswertung"
         },
         "procedure_type": {
           "meaning": "Typ des parlamentarischen Verfahrens, zu dem die Abstimmung gehört.",
-          "unit": "Verfahrensart als Quellen-/Projekttext oder NULL.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
-          "license": "bundestag-abstimmungen"
+          "unit": "Textcode constitutional_amendment, confidence, no_confidence oder chancellor_election; NULL, wenn keine Regel greift.",
+          "source": "Projektregel (special_majority_procedure) über Abstimmungstitel und verknüpften Vorgangskontext; kein Feld der Bundestagsquelle.",
+          "license": "eigene-auswertung"
         },
         "inverted": {
           "meaning": "Projektregel erkennt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt (1/0; unbekannt NULL).",
