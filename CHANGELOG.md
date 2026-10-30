@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.23.7.0] - 2026-10-30
+## [0.24.1.0] - 2026-10-30
 
 ### Added
 
@@ -15,6 +15,22 @@ All notable changes to this project will be documented in this file.
 - „Der meistdiskutierte Vorgang des Monats“ (metric version 3) counts a Tagesordnungspunkt only when it debates exactly one Vorgang; the Reden of a verbundene Beratung of several Vorgänge count for none, where version 2 credited them all to the Vorgang DIP listed first. An Entschließungsantrag debated with its Gesetzentwurf does not make a second Vorgang. On WP 21 sittings 21/87–21/103, 3 of 4 monthly winners change: June from „Infrastruktur-Zukunftsgesetz“ (16 Reden) to „Empfehlungen der Rentenkommission …“ (13), July from „… Straßenverkehrsgesetzes (Tempolimit)“ (17) to „Deutschland braucht echte Reformen …“ (14), September from „Haushaltsgesetz 2027“ (16) to „Das Solidarprinzip stärken“ (13); October stays „Nachhaltigkeit und Zukunftsfragen“ (26). Each old winner was debated together with other Anträge. When the one Vorgang is a co-advised (mitberatener) one, it is named by its own title. The card and the Methodik state the rule in full.
 - A roll-call profile link with a `.` or `..` path segment, also percent-encoded, is no longer taken as a person's profile (it could resolve to the Abstimmung page itself). No stored link had one.
 - The zero-network demo shows 14 Reden for TOP 32 of 21/84, as today's parser counts them, instead of 16; the Kurzintervention and its Erwiderung appear as Beiträge, with a Zwischenfrage.
+
+## [0.24.0.0] - 2026-10-29
+
+### Added
+
+- Vote panels can quote an Antrag's demands when DIP has no abstract, with sponsor attribution, a link to the original Drucksache and a fold for longer passages. Existing DIP descriptions take precedence.
+
+### Changed
+
+- Antrag texts are cached for offline extraction and included in schema 8 / export format 9 through document passages and vote associations. Rebuild older stores with `--offline --repersist`.
+- Local validation increases reference votes with descriptions from 153 to 196 of 217. Extraction remains below its acceptance threshold, and three historical WP 18/19 quotation fidelity defects remain documented.
+
+### Fixed
+
+- Quotes retain an elision hyphen stranded at a line break, such as `Steuerzahler und -zahlerinnen` in Drucksache 21/224. Extractor version 7 requires re-persisting existing passage data.
+- A context that already has a quotation still reports when another candidate's text or metadata has not been fetched.
 
 ## [0.23.6.0] - 2026-10-29
 
