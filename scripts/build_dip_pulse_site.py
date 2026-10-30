@@ -2608,6 +2608,7 @@ LICENSE_LAYER_SOURCES = {
     "dip": {"dip"},
     "dip-quellenangabe": {"dip"},
     "bundestag-abstimmungen": {"bundestag.de"},
+    # Only mps.display_name/party_id use it, and the mps table is tagged dip.
     "dip-oder-bundestag-abstimmungen": {"dip"},
     "abgeordnetenwatch": {"abgeordnetenwatch"},
     "abgeordnetenwatch-mit-bundestag-fallback": {"abgeordnetenwatch"},

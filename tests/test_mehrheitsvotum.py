@@ -248,7 +248,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
 
 class AbweichlerParityTests(unittest.TestCase):
     """C1: ``derive.vote_abweichler`` names the same (vote, MdB) pairs a per-vote
-    SQL with the r3 predicate finds in the store. r3 itself counts per MdB."""
+    SQL with the r3 predicate finds in the store. r3 itself counts per MdB and Fraktion."""
 
     R3_PAIRS = (
         "SELECT vm.vote_id, m.display_name, p.name\n"

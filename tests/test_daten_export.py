@@ -27,6 +27,10 @@ from stable_ids import stable_key
 READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"}
 
 
+def _r2_limited_to_4() -> tuple[dict, ...]:
+    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+
+
 def authored(field: str) -> Path:
     return b.REPO_ROOT / b.CODEBOOK_INPUT_FILES[field]
 
@@ -496,7 +500,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(published(), {})
         self.export()
         before = published()
-        changed = tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        changed = _r2_limited_to_4()
         with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "rows mismatch"):
             self.export(recipes=changed)
         self.assertEqual(published(), before)
@@ -504,7 +508,7 @@ class ExportDistributionDataTests(unittest.TestCase):
 
     # Value: protects=an export's own manifest is checked against the recipes it ran, so unchanged custom recipes reuse it and a cached manifest whose recipe SQL differs is rebuilt; fails_when=recipes= is dropped from the reuse check (every custom export re-exports) or the reuse check stops comparing SQL; why_new=reuse tests use only the default RECIPES; seam=none; no_claim=the --data-manifest page path
     def test_custom_recipes_reuse_and_a_cached_sql_change_rebuilds(self) -> None:
-        changed = tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+        changed = _r2_limited_to_4()
         first = self.export(recipes=changed)
         self.assertEqual(self.export(recipes=changed)["generated_at"], first["generated_at"])
         path = self.exports_dir / "datenstand.json"
