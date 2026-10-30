@@ -89,6 +89,20 @@ class ExportHelpersTests(unittest.TestCase):
         for quote in quotes:
             self.assertIn(quote, sources)
 
+    # Value: protects=an embedded document's code block keeps its "#" lines while real headings move down a level; fails_when=demotion ignores fences and a shell comment becomes a DATA.md heading; why_new=the embedded docs had no code block, so no test held one; seam=none; no_claim=other Markdown block types
+    def test_heading_demotion_leaves_fenced_code_alone(self) -> None:
+        text = "## Teil\n```sh\n# Kommentar\n```\n~~~~\n# auch Code\n~~~\n# noch Code\n~~~~\n### Unterteil\n"
+        self.assertEqual(
+            b._demote_headings(text).split("\n"),
+            ["### Teil", "```sh", "# Kommentar", "```", "~~~~", "# auch Code", "~~~", "# noch Code", "~~~~", "#### Unterteil"],
+        )
+
+    # Value: protects=documents.id is described as the project key docs/stable-ids.md defines, not a DIP id; fails_when=the dictionary source again calls it a DIP-API id; why_new=the adversarial review found the stale text on 2026-10-30; seam=none; no_claim=other id columns
+    def test_documents_id_source_names_the_project_key(self) -> None:
+        source = json.loads(authored("dictionary").read_text())["tables"]["documents"]["columns"]["id"]["source"]
+        self.assertIn("Herausgeber", source)
+        self.assertNotIn("DIP-API: id", source)
+
     def test_recipes_hash_ignores_html_only_column_keys(self) -> None:
         display_only = tuple(
             {**recipe, "columns": tuple({**column, "align": "text", "truncate": 5, "hidden": False} for column in recipe["columns"])}
@@ -582,6 +596,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             cases = [
                 ("missing licence file", license_doc, None, "codebook input .*data-license.md"),
                 ("not UTF-8", methods, b"\xff\xfe\x00", "codebook input .*data-methods.md"),
+                ("empty methods", methods, b"", "data-methods.md is empty"),
+                ("whitespace-only methods", methods, b" \n\t\n", "data-methods.md is empty"),
                 ("invalid JSON", dictionary, b"{", "data dictionary is not valid JSON"),
                 ("no tables object", dictionary, b'{"licenses": {}}', 'needs "licenses" and "tables" objects'),
                 ("no licenses object", dictionary, b'{"tables": {}}', 'needs "licenses" and "tables" objects'),

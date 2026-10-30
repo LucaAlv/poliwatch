@@ -3181,6 +3181,9 @@ def _read_codebook_inputs() -> CodebookInputs:
             texts[field] = content.decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError(f"export: codebook input {path}: {exc}") from exc
+        # An emptied document would drop its whole DATA.md section silently.
+        if not texts[field].strip():
+            raise RuntimeError(f"export: codebook input {path} is empty")
         hashes[relative] = hashlib.sha256(content).hexdigest()
     return CodebookInputs(**texts, sha256=hashes)
 
@@ -3311,10 +3314,18 @@ def _md_cell(value: Any) -> str:
 
 
 # An embedded document's headings move down one level so they nest under the
-# codebook's sections and DATA.md keeps a single H1. The embedded documents
-# hold no code blocks, so every line starting with "#" is a heading.
+# codebook's sections and DATA.md keeps a single H1. Lines inside a fenced
+# code block are code, not headings, and stay as written.
 def _demote_headings(text: str) -> str:
-    return re.sub(r"^(#{1,5}) ", r"#\1 ", text.rstrip(), flags=re.MULTILINE)
+    lines, fence = [], None
+    for line in text.rstrip().split("\n"):
+        marker = re.match(r"^(`{3,}|~{3,})", line)
+        if marker and (fence is None or marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence)):
+            fence = None if fence else marker.group(1)
+        elif fence is None:
+            line = re.sub(r"^(#{1,5}) ", r"#\1 ", line)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 # The release-facing part of docs/data-license.md starts at its first "## "

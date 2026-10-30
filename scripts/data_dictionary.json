@@ -306,7 +306,7 @@
         "id": {
           "meaning": "Projektseitige Kennung dieses Drucksachen-/Dokumentdatensatzes.",
           "unit": "Projekt- oder Quellkennung als Text (Bedeutung des konkreten Schlüssels siehe Feldbeschreibung).",
-          "source": "DIP-API: id aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
+          "source": "Projektschlüssel aus Namensraum document, Herausgeber (documents.herausgeber, BT oder BR) und kanonischer Drucksachennummer (docs/stable-ids.md); keine DIP-Kennung, die Dokument-URL ist ein Attribut.",
           "license": "eigene-metadaten"
         },
         "herausgeber": {
