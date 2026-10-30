@@ -389,6 +389,14 @@ class AbweichlerPanelTests(unittest.TestCase):
         markup = vote_summary({"votes": [vote]})
         self.assertNotIn(NONE_NOTE, markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)
+        # A short group already carries the note under its row: once, not twice.
+        members = _members("SPD", ["Ada", "Bea"], ["Cem"]) + _members("AfD", [], ["Dora"])
+        vote = _roll_call(members)
+        vote["fractions"][1]["counts"]["no"] = 2  # the total is not raised with it
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("<li>Cem</li>", markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+        self.assertLess(markup.index("<strong>AfD</strong>"), markup.index(GAP_NOTE))
 
     def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
         members = (

@@ -442,19 +442,19 @@ def _fraction_group_html(
     )
 
 
-def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, covered: bool) -> str:
-    """The vote-wide line under the groups: one gap note when no group has
-    member rows, a group has member rows but no fraction row (it has no row
-    to carry its own note) or the fraction rows do not add up to the vote
-    (``covered``, derive.vote_groups_cover_total), "Niemand stimmt anders …"
-    when every group is complete and has none, else nothing (each short group
-    carries its own note)."""
-    if abweichler and not covered:
-        return ABWEICHLER_GAP_HTML
+def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, count: int | None) -> str:
+    """The vote-wide line under the groups, from ``count``
+    (derive.vote_abweichler_count): one gap note when no group has member
+    rows, a group has member rows but no fraction row (it has no row to carry
+    its own note) or every group is complete but the fraction rows do not add
+    up to the vote (no short group to carry it); "Niemand stimmt anders …"
+    when the count is 0; else nothing (each short group carries its own note)."""
     if no_members or any(group.get("unlisted") for group in abweichler.values()):
         return ABWEICHLER_GAP_HTML
-    if abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
+    if count == 0:
         return f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
+    if count is None and derive.abweichler_groups_complete(abweichler):
+        return ABWEICHLER_GAP_HTML
     return ""
 
 
@@ -562,7 +562,7 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
             f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
-            f'{_abweichler_summary_html(abweichler, no_members, derive.vote_groups_cover_total(vote))}'
+            f'{_abweichler_summary_html(abweichler, no_members, derive.vote_abweichler_count(vote, abweichler))}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{_member_sections_html(vote, panel)}</div>'
