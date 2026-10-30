@@ -291,7 +291,7 @@ class ReparseCachedXmlTests(unittest.TestCase):
             build.repersist_cached_reports(self.output_dir, self.database, build.load_cached_protocols(self.output_dir))
         self.assertIn("1 cached reports predate the current speech-counting rule and have no cached XML", str(caught.exception))
         self.assertIn("(21/6)", str(caught.exception))
-        self.assertIn("--fetch-xml", str(caught.exception))
+        self.assertIn("--fetch-xml", caught.exception.fix)
         self.assertEqual(self.database.read_bytes(), b"previous store")
 
     # Value: protects=a cached report from before A1 is counted and named once with the two commands that fix it, and a current report stays silent;

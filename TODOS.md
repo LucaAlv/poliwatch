@@ -757,7 +757,7 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 
 ### Stale cached-report error lines: polish
 
-**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): every other refusal prints the report's own number (`cached_report_fix`, `--document-number 21/82`, one flag per sitting when several are named), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
+**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): a refusal whose remedy is a re-fetch prints the report's own number (`cached_report_fix`, `--document-number 21/82`), the stale-rule refusal says `--fetch-xml` and names for a re-fetch only the reports without an `xml_url`, an unknown contribution kind keeps its own remedy (`--offline --repersist`), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
 1. The `--backfill-incomplete` stop still prints `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`. Give that call site "move it out of data/ and re-run `--backfill-incomplete`" through `cached_report_fix`. Do it on or after `worktree-a3-plan`, which rewrites that block of `main()` and adds `--exclude-document-number` (which may be the better remedy).
 
 **Why:** These lines are the only guide out of a stopped build; each should name a command that works.
@@ -803,6 +803,19 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 **Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
 ## Architektur
+
+### Correct a cached report's XML Drucksache references at the source, not at every reader
+
+**What:** A report cached before `validate_dip_protocol.extract_drucksachen` checked the link host keeps a number read off a quoted URL in `xml_drucksachen` (88/739016 from a syriahr.com link in 20/206), for good: `reparse_report_xml` re-reads Reden and Beiträge from the cached XML but not the Drucksache references. Since v0.23.6.0 every reader filters through `derive.xml_drucksachen` (persist, `item_document_numbers`, the dossier pills, the vote panel's link map), so nothing shows or stores it, but a new reader that reads `item["xml_drucksachen"]` directly brings the bug back. Either refresh `xml_drucksachen` from the cached XML in `--offline --repersist` (then the stored report is right and the filter can go after one replay of every cache), or filter once where reports are loaded (`load_existing_detail_entries`) and drop the per-reader calls.
+
+**Why:** Found by the code review of v0.23.6.0 (2026-10-30). One correction at the source beats a rule every future reader has to remember.
+
+**Context:** Refreshing from XML changes what a repersist writes into the cached reports, and `load_existing_detail_entries` is code `worktree-a3-plan` edits; do it after that branch. Check that `reparse_report_xml` keeps the API's `linked_drucksachen` untouched.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** `worktree-a3-plan` merged
+
 
 ### A.2 follow-up ship review: deferred findings
 
@@ -1041,7 +1054,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Validate remote-manifest recipes before showing their SQL
 
-**Completed:** v0.23.6.0 (2026-10-29). Verify equal, not pin to local: an override manifest must carry exactly this build's recipes, same ids in the same order with byte-equal SQL, and `empty_reason` text or null; otherwise `validate_manifest` names the recipe ("recipes[0] (r1-meiste-reden) SQL differs from this build's; export the data with this version of the code"). The rows came from the manifest's SQL, so showing local SQL beside them would misstate them as much as tampered SQL would. `render_daten_recipes` takes title and SQL from `RECIPES`; a retitled recipe still validates (titles are not in `recipes_hash`). A manifest exported before a recipe's SQL changed is now refused; re-export it. A missing `empty_reason` no longer raises a KeyError.
+**Completed:** v0.23.6.0 (2026-10-29). Verify equal, not pin to local: an override manifest must carry exactly this build's recipes, same ids in the same order with byte-equal SQL, rows that are objects, and `empty_reason` text or null; otherwise `validate_manifest` names the recipe ("recipes[0] (r1-meiste-reden) SQL differs from this build's; export the data with this version of the code"). The rows came from the manifest's SQL, so showing local SQL beside them would misstate them as much as tampered SQL would. `render_daten_recipes` takes title and SQL from `RECIPES`; a retitled recipe still validates (titles are not in `recipes_hash`). A manifest exported before a recipe's SQL changed is now refused; re-export it. A missing `empty_reason` no longer raises a KeyError.
 
 **What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
 

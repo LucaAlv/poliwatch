@@ -1819,14 +1819,24 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertEqual(
             labels,
             ["CDU/CSU", "AfD", "SPD", "BÜNDNIS 90/DIE GRÜNEN", "Die Linke",
-             "fraktionslos", "Bundesregierung", "Bundesrat", "weitere Sprechrolle", "Unbekannt"],
+             "Bundesregierung", "Bundesrat", "weitere Sprechrolle", "fraktionslos", "Unbekannt"],
         )
         self.assertAlmostEqual(sum(float(width) for width in re.findall(r'width:([0-9.]+)%', markup)), 100.0, places=1)
         self.assertEqual(markup.count("week-row-split"), 1)
-        self.assertRegex(markup, r'<li class="week-row week-row-split">\s*<span class="week-label">fraktionslos</span>')
+        self.assertRegex(markup, r'<li class="week-row week-row-split">\s*<span class="week-label">Bundesregierung</span>')
         # Only sides, or only Zusammenschlüsse: nothing to split.
         self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"Bundesregierung": 1}), None))
         self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"SPD": 1}), None))
+
+    # Value: protects=in the Wochenvergleich a row that spoke only in the compared week shows at 0 % with its negative shift, so the shifts net to zero; fails_when=render_share_shift lists only this week's keys and a Bundesrat row with -28,6 pp disappears; why_new=code review of the Redeanteil card (2026-10-30); seam=none
+    def test_share_shift_keeps_a_row_that_spoke_only_in_the_compared_week(self) -> None:
+        current, previous = Counter({"SPD": 5}), Counter({"SPD": 5, "Bundesrat": 2})
+        markup = pulse_html.render_share_shift(current, previous)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', markup), ["SPD", "Bundesrat"])
+        self.assertIn("&#9660; &minus;28,6&nbsp;pp", markup)
+        # Without deltas there is nothing to net: only this week's rows.
+        current_only = pulse_html.render_share_shift(current, previous, show_deltas=False)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', current_only), ["SPD"])
 
     def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
         truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
@@ -2584,6 +2594,26 @@ class LegacyVoteShapeTests(unittest.TestCase):
             "--document-number 21/82 --document-number 21/83",
             fix(error("x", ["21/82", "21/83"])),
         )
+
+
+    # Value: protects=a refusal of stale-rule reports tells the operator to fetch the missing XML, and names for a re-fetch only the reports that have no xml_url; fails_when=the fix tells the operator to move every stale report out of data/ (a whole pre-A1 cache) when --fetch-xml would do; why_new=code review of the cached-report polish (2026-10-30); seam=none
+    def test_stale_rule_refusal_re_fetches_only_reports_without_xml_url(self) -> None:
+        def stale(number: str, xml_url: str | None) -> dict[str, Any]:
+            protocol = {"dokumentnummer": number, **({"xml_url": xml_url} if xml_url else {})}
+            return {"report": {"protocol": protocol, "validation_summary": {}}}
+
+        fetchable = [stale("21/1", "https://dserver.bundestag.de/btp/21/21001.xml"), stale("21/2", "https://dserver.bundestag.de/btp/21/21002.xml")]
+        with self.assertRaises(build_dip_pulse_site.CachedReportError) as caught:
+            build_dip_pulse_site.require_parsed_reports(fetchable)
+        self.assertIn("(21/1, 21/2)", str(caught.exception))
+        self.assertEqual(build_dip_pulse_site.cached_report_fix(caught.exception), "Fix: run --fetch-xml, then --offline --repersist")
+
+        with self.assertRaises(build_dip_pulse_site.CachedReportError) as caught:
+            build_dip_pulse_site.require_parsed_reports([*fetchable, stale("21/3", None)])
+        fix = build_dip_pulse_site.cached_report_fix(caught.exception)
+        self.assertTrue(fix.startswith("Fix: run --fetch-xml, then --offline --repersist; 1 of them have no xml_url"))
+        self.assertTrue(fix.endswith("with an online update and --document-number 21/3"))
+        self.assertNotIn("21/1", fix)
 
 
 class VoteContextPageWiringTests(unittest.TestCase):

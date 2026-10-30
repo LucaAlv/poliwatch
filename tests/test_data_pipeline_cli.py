@@ -386,6 +386,7 @@ class RunDataPipelineTests(unittest.TestCase):
             "missing recipe": (recipes[1:], "differ from this build's"),
             "swapped order": ([recipes[1], recipes[0], *recipes[2:]], "differ from this build's"),
             "empty_reason not text": ([{**recipes[0], "empty_reason": 5}, *recipes[1:]], "empty_reason"),
+            "row not an object": ([{**recipes[0], "rows": [[1, 2]]}, *recipes[1:]], "a list of objects"),
         }
         for label, (changed, message) in cases.items():
             with self.subTest(case=label):

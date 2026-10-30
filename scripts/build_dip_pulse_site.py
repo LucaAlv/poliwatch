@@ -861,12 +861,14 @@ def load_existing_report(output_dir: Path, protocol: dict[str, Any]) -> dict[str
 
 class CachedReportError(Exception):
     """A cached dossier report that a strict load could not read. ``numbers``
-    names the sittings of the refused reports where they are known, so the
-    printed fix can name the command that re-fetches them."""
+    names the sittings to re-fetch where they are known, so the printed fix can
+    name the command; ``fix`` replaces that fix where a re-fetch is not the
+    remedy (``cached_report_fix``)."""
 
-    def __init__(self, message: str, numbers: list[str] | tuple[str, ...] = ()) -> None:
+    def __init__(self, message: str, numbers: list[str] | tuple[str, ...] = (), *, fix: str | None = None) -> None:
         super().__init__(message)
         self.numbers = [number for number in numbers if number]
+        self.fix = fix
 
 
 # What a build prints when a cached report stops it before any dossier is
@@ -879,7 +881,10 @@ CACHED_REPORT_FIX = (
 
 
 def cached_report_fix(exc: CachedReportError) -> str:
-    """CACHED_REPORT_FIX with the refused reports' own numbers filled in."""
+    """The error's own fix, else CACHED_REPORT_FIX with the refused reports'
+    own numbers filled in."""
+    if exc.fix:
+        return exc.fix
     if not exc.numbers:
         return CACHED_REPORT_FIX
     flags = " ".join(f"--document-number {number}" for number in exc.numbers)
@@ -1402,16 +1407,26 @@ def require_parsed_reports(entries: list[dict[str, Any]]) -> None:
     """Refuse stale rule inputs before mixing them into the store's counts."""
     stale = unparsed_reports(entries)
     if stale:
-        numbers = sorted(
-            normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?" for entry in stale
+        def number(entry: dict[str, Any]) -> str:
+            return normalized_document_number((entry["report"].get("protocol") or {}).get("dokumentnummer")) or "?"
+
+        # Most of them only lack the XML, which --fetch-xml downloads. Only a
+        # report with no xml_url has to go: the plain online update re-fetches
+        # just the newest sittings, so the fix names those by number.
+        unfetchable = sorted(
+            number(entry) for entry in stale if not (entry["report"].get("protocol") or {}).get("xml_url")
         )
-        # The plain online update only re-fetches the newest sittings, so a
-        # report deleted here is re-fetched by number (the printed Fix).
+        fix = "Fix: run --fetch-xml, then --offline --repersist"
+        if unfetchable:
+            flags = " ".join(f"--document-number {n}" for n in unfetchable if n != "?") or "--document-number <its number>"
+            fix += (
+                f"; {len(unfetchable)} of them have no xml_url: move them out of data/, then re-fetch their sittings "
+                f"with an online update and {flags}"
+            )
         raise CachedReportError(
             f"{len(stale)} cached reports predate the current speech-counting rule and have no cached XML in data/xml/ to re-read "
-            f"them from ({', '.join(numbers)}). Run --fetch-xml, then --offline --repersist; a report whose XML cannot be "
-            "fetched (no xml_url) must be moved out of data/ and its sitting re-fetched by number",
-            [number for number in numbers if number != "?"],
+            f"them from ({', '.join(sorted(map(number, stale)))})",
+            fix=fix,
         )
 
 
@@ -1527,8 +1542,7 @@ def validate_cached_kinds(entries: list[dict[str, Any]]) -> None:
             for kind in kinds:
                 speech_kinds.validate_kind(kind)
         except ValueError as exc:
-            number = normalized_document_number((report.get("protocol") or {}).get("dokumentnummer"))
-            raise CachedReportError(f"{_entry_label(entry)}: {exc}", [number]) from exc
+            raise CachedReportError(f"{_entry_label(entry)}: {exc}") from exc
 
 
 def write_classification_diagnostics(output_dir: Path, entries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -11323,10 +11337,11 @@ def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
         isinstance(r, dict)
         and isinstance(r.get("id"), str)
         and isinstance(r.get("rows"), list)
+        and all(isinstance(row, dict) for row in r["rows"])
         and (r.get("empty_reason") is None or isinstance(r.get("empty_reason"), str))
         for r in recipes
     ):
-        return ["recipes[] entries need id, rows and empty_reason (text or null)"]
+        return ["recipes[] entries need id, rows (a list of objects) and empty_reason (text or null)"]
     problems = []
     for index, recipe in enumerate(recipes):
         local = RECIPES_BY_ID.get(recipe["id"])
@@ -12036,8 +12051,8 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [repersist]: {exc}. The previous store is untouched. "
-                    f"{cached_report_fix(exc)}, or repair the report in place; then re-run. "
-                    "Docs: README.md#re-persist-the-cached-reports",
+                    + (f"{exc.fix}. " if exc.fix else f"{cached_report_fix(exc)}, or repair the report in place; then re-run. ")
+                    + "Docs: README.md#re-persist-the-cached-reports",
                     file=sys.stderr,
                 )
                 return 1
@@ -12092,7 +12107,8 @@ def main() -> int:
         try:
             validate_cached_kinds(cached_entries)
         except CachedReportError as exc:
-            print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
+            # The message names its own remedy (re-read the cached XML).
+            print(f"ERROR [cached input]: {exc}", file=sys.stderr)
             return 1
         if not getattr(args, "repersist", False):
             write_classification_diagnostics(output_dir, cached_entries)
@@ -12298,7 +12314,7 @@ def main() -> int:
             except CachedReportError as exc:
                 print(
                     f"ERROR [persist]: {exc}. The previous store is untouched "
-                    "(Dossiers wurden bereits geschrieben, puls.html nicht).",
+                    f"(Dossiers wurden bereits geschrieben, puls.html nicht). {cached_report_fix(exc)}.",
                     file=sys.stderr,
                 )
                 return 1

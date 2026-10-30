@@ -2330,24 +2330,29 @@ def render_sparkline(points: list[dict[str, Any]]) -> str:
 
 
 #: The Redeanteil rows outside the Zusammenschlüsse (CONTEXT.md, Redeanteil je
-#: Zusammenschluss), in the order the card lists them below the split.
-SHARE_ROWS_OUTSIDE = ("fraktionslos", *derive.SPRECHROLLE_LABELS.values(), "Unbekannt")
+#: Zusammenschluss), in the order the card lists them below the split: the
+#: three Sprechrolle sides, then fraktionslos and Unbekannt.
+SHARE_ROWS_OUTSIDE = (*derive.SPRECHROLLE_LABELS.values(), *sorted(derive.NO_ZUSAMMENSCHLUSS, key=str.casefold))
 
 
 def render_share_shift(current: Counter[str], previous: Counter[str] | None, *, show_deltas: bool = True) -> str:
     """Redeanteil je Zusammenschluss of the week's Reden, optionally with the
     shift in percentage points: the Zusammenschlüsse by count, then, below a
-    split, fraktionslos, the three Sprechrolle sides and Unbekannt. Every row with
-    Reden is shown, so the shares add up to 100 %."""
+    split, the three Sprechrolle sides, fraktionslos and Unbekannt. Every row with
+    Reden is shown, so the shares add up to 100 %; with deltas, a row that had
+    Reden only in the compared week is shown at 0 %, so the shifts net to zero."""
     total_now = sum(current.values())
     if not total_now:
         return '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
     total_before = sum(previous.values()) if previous else 0
-    groups = [party for party, _count in current.most_common() if party not in SHARE_ROWS_OUTSIDE]
-    outside = [party for party in SHARE_ROWS_OUTSIDE if current.get(party)]
+    shown = Counter(current)
+    if total_before and show_deltas:
+        shown.update({party: 0 for party, count in previous.items() if count and party not in current})
+    groups = [party for party, _count in shown.most_common() if party not in SHARE_ROWS_OUTSIDE]
+    outside = [party for party in SHARE_ROWS_OUTSIDE if party in shown]
     rows = []
     for party in [*groups, *outside]:
-        count = current[party]
+        count = current.get(party, 0)
         share = percent(count, total_now)
         shift = None
         if total_before:

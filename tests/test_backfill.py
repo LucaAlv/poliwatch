@@ -279,6 +279,7 @@ class RetainedScopeTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("ERROR [persist]: 1 cached reports predate the current speech-counting rule", stderr)
         self.assertIn("(21/1)", stderr)
+        self.assertIn("Fix: run --fetch-xml, then --offline --repersist", stderr)
         self.assertEqual(self.database.read_bytes(), before)
         render_site.assert_not_called()
 
