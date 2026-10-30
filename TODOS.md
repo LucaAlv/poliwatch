@@ -143,18 +143,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2 (raised 2026-09-30: part of a citable release)
 **Depends on:** None
 
-### Validate remote-manifest recipes before showing their SQL
-
-**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
-
-**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
-
-**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Validate final merged A1/A2 before the A3 backfill
 
 **What:** Finish Claude's paused A2 follow-ups on `right-counts`, review [the A1 identity/schema handoff](docs/plans/a1-a2-contract.md), merge the final A2 changes with `a1-followups`, and repeat combined suite, fresh/incremental grouping, unchanged replay, links and export checks. The current scratch overlay validates an uncommitted A2 snapshot; it is not final merged validation.
@@ -191,16 +179,6 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** None
-
-### A Drucksache reference can be a URL fragment
-
-**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
-
-**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
-
-**Effort:** S
-**Priority:** P3
 **Depends on:** None
 
 ### v1 coverage: every Sitzung from WP 18 to the present
@@ -250,17 +228,17 @@ The catalog itself is from 2026-08-25, and the store was last updated on 2026-06
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
 
-### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
+### Textanteil for the r2 Daten recipe, the rest of the ADR 0001 UI half
 
-**What:** The data half is done: puls.html's Redeanteil shows Bundesregierung, Bundesrat and weitere Sprechrolle as their own rows in the denominator, no row is called "Regierung", and the Daten recipes r1/r2 follow the same rule. What is left is wording: head the puls.html card "Redeanteil der Fraktionen und Gruppen" (Gruppen are still headed as "Fraktionen"), and rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
+**What:** The data half is done, and so is puls.html (v0.23.6.0, 2026-10-29): the card is headed "Redeanteil der Fraktionen und Gruppen", lists every row (it cut at eight before, so a WP 21 week's Bundesrat or fraktionslos row could drop and the bars sum to less than 100 %), and sets fraktionslos, Bundesregierung, Bundesrat, weitere Sprechrolle and Unbekannt apart below a rule; its note says "Zuordnung für N von M Reden erfasst". What is left is the recipe: rename r2 "Redeanteil je Fraktion nach Zeichen" to a Textanteil ("Textanteil je Fraktion oder Gruppe") sorted by characters, not by Reden. Done when no share by characters is called Redeanteil.
 
 **Why:** CONTEXT.md (Redeanteil, Textanteil, Redeanteil je Zusammenschluss, 2026-09-25).
 
-**Context:** The three sides sit in the same list as the Zusammenschlüsse in `week_stats`; a card that wants them "outside the Zusammenschlüsse" needs a visual split as well as the heading.
+**Context:** `worktree-a3-plan` rewrites r2's SELECT, ORDER BY and caveat (per-Wahlperiode shares), exactly the lines this needs, so do it on or after that branch. A changed recipe SQL makes every earlier export's manifest invalid as an override (by design since v0.23.6.0).
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged (it rewrites r2)
 
 ### "Nächste Sitzungswoche" in the puls.html header
 
@@ -387,18 +365,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Abgeordnete
 
-### The Bundestag XML gives one Redner-ID to two people (11005304)
-
-**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
-
-**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
-
-**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Store DIP `person_roles` so a Rede without a Zusammenschluss uses the Zugehörigkeit of its Wahlperiode
 
 **What:** ADR 0001 says a Rede whose Plenarprotokoll names no Zusammenschluss counts for the speaker's Zugehörigkeit on the date of the Sitzung. The store keeps no membership history: `mps.person_roles_json` is DIP's `funktion` list, and `compact_person` drops DIP's `person_roles` (fraktion and Wahlperiode per role). The Rede therefore counts for the speaker's party as the store holds it. Keep `person_roles`, and let `derive` pick the role of the Rede's Wahlperiode.
@@ -495,16 +461,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Context:** The badge already discloses "(berechnet)" for any non-official result, so a bleed here would show a false-confidence "Laut Beschluss auf bundestag.de" label with the wrong outcome rather than the honest derived caveat — worse than the inversion caveat, which at least states the right raw counts.
 
 **Update (2026-09-28):** narrowed: the outcome is now only read from the line directly under the tally (a blank "<br/><br/>" line ends the block), which closes the blank-line-separated shape. Still open: two decisions with no blank line between them.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
-
-**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
-
-**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
 
 **Effort:** S
 **Priority:** P3
@@ -801,17 +757,14 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 
 ### Stale cached-report error lines: polish
 
-**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290):
-1. The `--backfill-incomplete` stop reuses `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`; give that call site "move it out and re-run `--backfill-incomplete`", and fill in the report's number instead of `<its number>`.
-2. The `sitting_votes` non-list branch is untested; the `[repersist]` remedy text is asserted nowhere (`tests/test_repersist.py` checks only "Fix:").
-3. The refusal lines do not name the TOP (or `sitting_votes`) that holds the bad vote.
-4. README.md ("has to be deleted from `data/` (an online update re-fetches it)", from A1) promises a re-fetch a plain update only does for the newest sittings.
+**What:** From the B4 `/ship` review cycle 3 (2026-10-22), on a path no reference report hits (0 of 290). Points 2–4 are done (v0.23.6.0, 2026-10-29): a refusal whose remedy is a re-fetch prints the report's own number (`cached_report_fix`, `--document-number 21/82`), the stale-rule refusal says `--fetch-xml` and names for a re-fetch only the reports without an `xml_url`, an unknown contribution kind keeps its own remedy (`--offline --repersist`), the `[repersist]` remedy comes from the same helper and is asserted in full, `require_vote_shape` names the holder ("TOP 3: …", "sitting_votes: …") with a test for the `sitting_votes` branch, and README.md and the stale-rule refusal no longer promise that a plain update re-fetches a deleted report. Left:
+1. The `--backfill-incomplete` stop still prints `CACHED_REPORT_FIX`, which names `--document-number`, a flag `parse_args` refuses next to `--backfill-incomplete`. Give that call site "move it out of data/ and re-run `--backfill-incomplete`" through `cached_report_fix`. Do it on or after `worktree-a3-plan`, which rewrites that block of `main()` and adds `--exclude-document-number` (which may be the better remedy).
 
 **Why:** These lines are the only guide out of a stopped build; each should name a command that works.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged (it rewrites the backfill block of `main()`)
 
 ### Politikfelder: findings deferred from the B3 review
 
@@ -850,6 +803,19 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 **Depends on:** Deterministic validators; a data-licence decision on model-written tags in the export
 
 ## Architektur
+
+### Correct a cached report's XML Drucksache references at the source, not at every reader
+
+**What:** A report cached before `validate_dip_protocol.extract_drucksachen` checked the link host keeps a number read off a quoted URL in `xml_drucksachen` (88/739016 from a syriahr.com link in 20/206), for good: `reparse_report_xml` re-reads Reden and Beiträge from the cached XML but not the Drucksache references. Since v0.23.6.0 every reader filters through `derive.xml_drucksachen` (persist, `item_document_numbers`, the dossier pills, the vote panel's link map), so nothing shows or stores it, but a new reader that reads `item["xml_drucksachen"]` directly brings the bug back. Either refresh `xml_drucksachen` from the cached XML in `--offline --repersist` (then the stored report is right and the filter can go after one replay of every cache), or filter once where reports are loaded (`load_existing_detail_entries`) and drop the per-reader calls.
+
+**Why:** Found by the code review of v0.23.6.0 (2026-10-30). One correction at the source beats a rule every future reader has to remember.
+
+**Context:** Refreshing from XML changes what a repersist writes into the cached reports, and `load_existing_detail_entries` is code `worktree-a3-plan` edits; do it after that branch. Check that `reparse_report_xml` keeps the API's `linked_drucksachen` untouched.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** `worktree-a3-plan` merged
+
 
 ### A.2 follow-up ship review: deferred findings
 
@@ -1049,6 +1015,56 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### The Bundestag XML gives one Redner-ID to two people (11005304)
+
+**Completed:** v0.12.0.0 (2026-10-02, A.2). Version-controlled source partitions and six reviewed occurrences separate Alexander Föhr's 13 speeches from Dirk-Ulrich Mende's 9 before persistence. Their stable person URLs and speech links are distinct; the shared profile cannot merge them again. See [reference validation](docs/a2-validation.md).
+
+**What:** `<redner id="11005304">` is Alexander Föhr (CDU/CSU) and Dirk-Ulrich Mende (SPD) in 22 Reden of WP 20 (20/91 to 20/190). Where the element is intact the id is the only thing that tells the Reden apart, so all 22 are attributed to one Person (abgeordnetenwatch's Föhr profile, found by ext_id); 6 of them carry a merged element ("SPDCDU/CSU", "Dirk-UlrichAlexander Mende Föhr") that `parse_redner` now repairs from the printed label. Detect an id whose Redner name (or printed label) changes between Reden and split it by name and Zusammenschluss, or report it to the Bundestag.
+
+**Why:** 9 Reden by Mende stand on Föhr's Personenseite. It is the same defect class as the doubled id of Svenja Schulze, but here the id itself is shared, so no derivation from one Rede can spot it.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
+
+**Completed:** v0.23.6.0 (2026-10-29). The fix suggested below ("at least 3 digits before the slash") would have rejected every real number ("21/6561"). Instead the vote pages' own pattern (`validate_dip_protocol._DOCUMENT_NUMBER_RE`, no longer an alias of `derive.DOCUMENT_NUMBER_RE`) needs a two-digit Wahlperiode: bundestag.de lists namentliche Abstimmungen from WP 17 and structured XML starts at WP 18. That covers every vote-page site with one rule: the outcome mismatch check, the block identification by documents, the trailing-outcome paragraph, the DIP title evidence, the chair's announcements, and `parse_roll_call_list_page`, where a "2/3" in a teaser would have joined the vote's `document_numbers` and reached `vote_documents`. `derive.DOCUMENT_NUMBER_RE` (headings of every Wahlperiode) is unchanged and still filtered by `plausible_document_number`. No stored vote moves until it is re-acquired: `official_result` is computed at fetch time and a repersist keeps it; no fixture or live page checked so far uses the shape.
+
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+
+**Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### A Drucksache reference can be a URL fragment
+
+**Completed:** v0.23.6.0 (2026-10-29). The parser part was already fixed: `extract_drucksachen` skips an anchor off the Bundestag host (`tests/test_validate_dip_protocol.py`), and today's parser finds no 88/739016 in the live `btp/20/20206.xml`. What remained were reports cached before that check: persist and the Politikfelder skipped such a reference, but the dossier still showed it as a muted Drucksache and the vote panel's link map took its URL. `derive.xml_drucksachen(item)` is now the one rule (no link, or a link on the XML host) and every reader uses it: persist, `item_document_numbers`, `render_source_links`, `render_top_documents` (a TOP whose only reference is a fragment gets no empty "Drucksachen" section) and `features/votes.py`. Store figures do not move, since persist already skipped these; only dossier HTML of such stale reports changes.
+
+**What:** The XML parser reads `88/739016` from a syriahr.com URL in 20/206 as a Drucksache (`xml_drucksachen`). Only the link is dropped now (`render_source_links`), and since 2026-10-14 persist skips an `xml_drucksachen` entry whose link is not on a Bundestag host (documents are keyed by number, so it would join the real Drucksache of that number); the reference is still shown as a plain Drucksache number on the dossier, which renders from the report.
+
+**Why:** Found when it aborted the reference store's offline rebuild; the crash is fixed, the false positive is not. Belongs with the other Plenarprotokoll extraction fixes.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Validate remote-manifest recipes before showing their SQL
+
+**Completed:** v0.23.6.0 (2026-10-29). Verify equal, not pin to local: an override manifest must carry exactly this build's recipes, same ids in the same order with byte-equal SQL, rows that are objects, and `empty_reason` text or null; otherwise `validate_manifest` names the recipe ("recipes[0] (r1-meiste-reden) SQL differs from this build's; export the data with this version of the code"). The rows came from the manifest's SQL, so showing local SQL beside them would misstate them as much as tampered SQL would. `render_daten_recipes` takes title and SQL from `RECIPES`; a retitled recipe still validates (titles are not in `recipes_hash`). A manifest exported before a recipe's SQL changed is now refused; re-export it. A missing `empty_reason` no longer raises a KeyError.
+
+**What:** `validate_manifest` checks `recipes[]` only for a string `id` and a list `rows`; `render_daten_recipes` then shows each recipe's `title` and `sql` straight from the manifest (`build_dip_pulse_site.py`, `manifest["recipes"]` loop), and an unknown id silently gets `{}` from `RECIPES_BY_ID`. Reject unknown recipe ids, and either take `title`/`sql` from the local `RECIPES` by id or require the manifest's SQL to match it. Done when a manifest with an unknown id or altered SQL fails validation with a clear error.
+
+**Why:** Found by the adversarial review of the recipe "Kopieren" button (2026-09-26). HTML escaping already stops XSS, but a tampered or mistaken remote `--data-manifest` could present any text as SQL, including sqlite3 dot-commands such as `.shell`, and the copy button makes pasting it one click. The gap predates the button; only reachable through an explicit remote manifest.
+
+**Context:** Choosing between "pin to local" and "verify equal" touches the manifest contract: a newer remote export may legitimately ship newer recipe SQL whose `rows` no longer match the local SQL.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
 
 ### Bill overview polish: same-day step ties
 

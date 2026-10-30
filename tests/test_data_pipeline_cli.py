@@ -373,6 +373,34 @@ class RunDataPipelineTests(unittest.TestCase):
                 self.assertIn("--data-manifest", str(ctx.exception))
                 self.assertIn(str(override_path), str(ctx.exception))
 
+    # Value: protects=an override manifest can only show this build's recipes, with this build's SQL, next to its rows; fails_when=validate_manifest accepts an unknown recipe id, altered SQL (e.g. a sqlite3 dot-command the copy button would paste), a missing recipe or a reordered list, or a recipe without empty_reason; why_new=TODOS "Validate remote-manifest recipes before showing their SQL"; seam=none
+    def test_an_override_with_other_recipes_fails_naming_the_recipe(self) -> None:
+        full = json.loads(self._override_manifest().read_text(encoding="utf-8"))
+        recipes = full["recipes"]
+        cases = {
+            "unknown id": ([{**recipes[0], "id": "r9-erfunden"}, *recipes[1:]], "'r9-erfunden' is not a recipe of this build"),
+            "altered sql": (
+                [{**recipes[0], "sql": recipes[0]["sql"] + "\n.shell rm -rf ~"}, *recipes[1:]],
+                f"({recipes[0]['id']}) SQL differs from this build's",
+            ),
+            "missing recipe": (recipes[1:], "differ from this build's"),
+            "swapped order": ([recipes[1], recipes[0], *recipes[2:]], "differ from this build's"),
+            "empty_reason not text": ([{**recipes[0], "empty_reason": 5}, *recipes[1:]], "empty_reason"),
+            "row not an object": ([{**recipes[0], "rows": [[1, 2]]}, *recipes[1:]], "a list of objects"),
+        }
+        for label, (changed, message) in cases.items():
+            with self.subTest(case=label):
+                override_path = self.tmp / f"recipes-{label.replace(' ', '-')}.json"
+                override_path.write_text(json.dumps({**full, "recipes": changed}), encoding="utf-8")
+                with self.assertRaises(RuntimeError) as ctx:
+                    self._run(data_manifest=str(override_path))
+                self.assertIn("is not a usable Daten manifest", str(ctx.exception))
+                self.assertIn(message, str(ctx.exception))
+        retitled = self.tmp / "recipes-retitled.json"
+        retitled.write_text(json.dumps({**full, "recipes": [{**recipes[0], "title": "Anders"}, *recipes[1:]]}), encoding="utf-8")
+        manifest, *_ = self._run(data_manifest=str(retitled))
+        self.assertEqual(manifest["recipes"][0]["title"], "Anders")
+
     def test_changing_the_issues_url_reexports(self) -> None:
         first, *_ = self._run(data_issues_url="https://example.org/a")
         reused, *_ = self._run(data_issues_url="https://example.org/a")
