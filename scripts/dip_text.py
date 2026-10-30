@@ -38,14 +38,11 @@ MAX_ABSTRACT_CHARS = 10_000
 # leading zeros as digits, so they go first: "&#x0000041;" is "A".
 _CHARREF_ZEROS = re.compile(r"&#(?:([xX])0+(?=[0-9a-fA-F])|0+(?=[0-9]))")
 _OVERLONG_CHARREF = re.compile(r"&#(?:[xX][0-9a-fA-F]{7,}|[0-9]{8,});?")
+_PARTIAL_CHARREF = re.compile(r"&#?[0-9A-Za-z]*\Z")
 
 
-def _strip_tags(text: str) -> str:
-    """Each tag in ``text`` replaced by a space: ``<`` and a letter, ``!``, ``/``
-    or ``?``, up to the first ``>`` outside a quoted attribute value. A ``<``
-    whose tag never closes stays text. Linear time: a regex retried at every
-    ``<`` rescans to the end for each unclosed quote."""
-    # closes[i]: where a tag still open at i, outside quotes, ends; -1 if never.
+def _tag_closes(text: str) -> list[int]:
+    """closes[i]: where a tag still open at i, outside quotes, ends; -1 if never."""
     closes = [-1] * (len(text) + 1)
     for i in range(len(text) - 1, -1, -1):
         char = text[i]
@@ -56,6 +53,15 @@ def _strip_tags(text: str) -> str:
             closes[i] = closes[quote_end + 1] if quote_end != -1 else -1
         else:
             closes[i] = closes[i + 1]
+    return closes
+
+
+def _strip_tags(text: str) -> str:
+    """Each tag in ``text`` replaced by a space: ``<`` and a letter, ``!``, ``/``
+    or ``?``, up to the first ``>`` outside a quoted attribute value. A ``<``
+    whose tag never closes stays text. Linear time: a regex retried at every
+    ``<`` rescans to the end for each unclosed quote."""
+    closes = _tag_closes(text)
     parts: list[str] = []
     start = i = 0
     while i < len(text) - 1:
@@ -67,6 +73,31 @@ def _strip_tags(text: str) -> str:
             i += 1
     parts.append(text[start:])
     return "".join(parts)
+
+
+def _drop_cut_markup(kept: str, rest: str) -> str:
+    """``kept`` without the character reference or tag the cut before ``rest``
+    splits, which the parser would hand back as text ("&am", "<a hr"). Tags
+    are read over the whole raw text as ``_strip_tags`` reads them: a tag that
+    closes before the cut is passed over whole, a "<" inside its quoted
+    attribute included; a "<" whose tag never closes stays text, as it does
+    in an abstract that fits; the one tag that closes after the cut goes."""
+    text = kept + rest
+    closes = _tag_closes(text)
+    i = 0
+    while i < len(kept):
+        if text[i] == "<" and text[i + 1 : i + 2] in _TAG_START and closes[i + 1] != -1:
+            if closes[i + 1] >= len(kept):
+                kept = kept[:i]
+                break
+            i = closes[i + 1] + 1
+        else:
+            i += 1
+    partial = _PARTIAL_CHARREF.search(kept)
+    follower = text[len(kept) : len(kept) + 1]
+    if partial and follower and (follower.isalnum() or follower in "#;"):
+        kept = kept[: partial.start()]
+    return kept
 
 
 class _AbstractParser(HTMLParser):
@@ -107,10 +138,14 @@ def abstract_text(raw: Any) -> str:
     """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
     whitespace inside a paragraph collapsed to single spaces, entities unescaped,
     markup gone. The caller escapes the result; the raw text stays in the cache.
-    Only the first ``MAX_ABSTRACT_CHARS`` characters are read."""
+    Only the first ``MAX_ABSTRACT_CHARS`` characters are read, less a tag or
+    character reference the cut splits."""
     if not raw:
         return ""
-    raw = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), str(raw)[:MAX_ABSTRACT_CHARS])
+    raw = str(raw)
+    if len(raw) > MAX_ABSTRACT_CHARS:
+        raw = _drop_cut_markup(raw[:MAX_ABSTRACT_CHARS], raw[MAX_ABSTRACT_CHARS:])
+    raw = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), raw)
     raw = _OVERLONG_CHARREF.sub("\ufffd", raw)
     parser = _AbstractParser()
     try:
