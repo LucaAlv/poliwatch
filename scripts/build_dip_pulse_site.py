@@ -3109,9 +3109,11 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
     if not manifest_path.exists():
         return None
     try:
-        return json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
+    # Valid JSON that is not an object cannot be reused either: re-export.
+    return manifest if isinstance(manifest, dict) else None
 
 
 # The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells

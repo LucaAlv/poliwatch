@@ -646,6 +646,24 @@ class ExportDistributionDataTests(unittest.TestCase):
         for file in files:
             self.assertEqual(b._hash_file(self.exports_dir / manifest["generation"] / file["name"]), file["sha256"])
 
+    # Value: protects=every link in DATA.md, including those in the embedded methods and licence documents, resolves for a reader of the published generation; fails_when=an embedded doc gains a repo-relative link (e.g. research/...md) that is dead beside DATA.md; why_new=the embedded docs are authored for the repository, not the release folder; seam=none; no_claim=that the absolute URLs are reachable
+    def test_codebook_links_resolve_inside_the_generation_or_are_absolute(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        names = {file["name"] for file in manifest["files"]}
+        targets = re.findall(r"\]\(([^)\s]+)\)", codebook)
+        self.assertTrue(targets)
+        relative = [target for target in targets if not re.match(r"https?://", target) and target not in names]
+        self.assertEqual(relative, [])
+
+    # Value: protects=a datenstand.json that is valid JSON but not an object is treated like any other unusable manifest and re-exported; fails_when=_read_previous_manifest returns the list and _source_sha256 calls .get on it; why_new=only unparsable and missing manifests were covered; seam=none; no_claim=other damaged manifest shapes
+    def test_a_previous_manifest_that_is_not_an_object_is_re_exported(self) -> None:
+        self.export()
+        (self.exports_dir / "datenstand.json").write_text("[1]\n", encoding="utf-8")
+        manifest = self.export()
+        self.assertEqual(json.loads((self.exports_dir / "datenstand.json").read_text(encoding="utf-8"))["generation"], manifest["generation"])
+        self.assertTrue((self.exports_dir / manifest["generation"] / "DATA.md").is_file())
+
     # Value: protects=a broken authored input (unreadable, not UTF-8, bad JSON, wrong shape, licence doc without a "## " section) fails the export with a named RuntimeError and leaves the published generation untouched; fails_when=a raw OSError/UnicodeDecodeError/JSON error escapes or a half-written generation replaces the published one; why_new=only dictionary content errors were pinned, not file or shape errors; seam=none; no_claim=message wording beyond the cause
     def test_unreadable_or_malformed_authored_inputs_fail_by_name_and_preserve_publication(self) -> None:
         root = self.authored_copy()
