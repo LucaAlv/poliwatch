@@ -526,13 +526,11 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** Vote outcome badge
 
-### "So arbeitet der Bundestag" explainer page
+### Link the vote panel's "namentlich" badge to `bundestag.html`
 
-**What:** A static `bundestag.html` in `NAV_ITEMS` answering, from GG and GOBT only with article/paragraph citations: who may bring a bill or motion; when the Bundestag sits (Sitzungswochen, Ältestenrat); how votes are taken (Handzeichen, Aufstehen, namentlich on request of a Fraktion or 5 %); whether MPs are bound (Art. 38 GG); what happens after a vote (three readings, Bundesrat, Vermittlungsausschuss). Done when every section cites its source and the site's existing Vorgangstyp glossary links to it.
+**What:** The vote panel (`scripts/features/votes.py`) names a namentliche Abstimmung without explaining it. Link its "namentlich" wording to `bundestag.html#abstimmen`, as the week radar's "namentlich abgestimmt" badge already does (depth-aware: the panel renders on dossiers under `protocols/` and on `votes/index.html`).
 
-**Why:** Our only explanatory surface is the Vorgangstyp glossary on `sources.html` (`VORGANGSTYP_GLOSSARY`, `scripts/render_dip_pulse_html.py:59-188`) and landing-page prose (`render_landing_page`, `build_dip_pulse_site.py:2742,2761`); the vote and Präsenz pages assume the reader knows what a namentliche Abstimmung is.
-
-**Context:** Prose page, no data; write it once, link it from the vote panel's "namentlich" badge and from `bundestag.html` back to the glossary. Reference: [plenarwatch.de/bundestag/](https://plenarwatch.de/bundestag/) for the section set, GG/GOBT for the content.
+**Why:** The vote panel is where readers meet the term most. Left out of the explainer change (2026-10-30) because the panel is B-track code.
 
 **Effort:** S
 **Priority:** P3
@@ -1003,6 +1001,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### "So arbeitet der Bundestag" explainer page
+
+Done 2026-10-30. `bundestag.html` (`render_bundestag_page`) is the ninth nav entry and explains, in five sections, who brings in Vorlagen (Art. 76 GG, §§ 75, 76 GOBT), when the Bundestag sits (Art. 39 Abs. 3 GG, §§ 6, 20, 21 GOBT), how it votes (Art. 42 Abs. 2, 79 Abs. 2 GG, §§ 48, 51, 52 GOBT), the freies Mandat (Art. 38 Abs. 1 Satz 2 GG) and the way from Gesetzentwurf to Gesetz (§§ 78–86 GOBT, Art. 77, 78, 82 GG). Every citation was checked against gesetze-im-internet.de and the GOBT on bundestag.de; § 52 is worded as it stands ("bis zum Beginn der Sitzung", five percent of the members present). The sources page's glossaries and the week radar's "namentlich abgestimmt" badge link to it; the vote panel link is its own item (B-track code).
 
 ### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
 

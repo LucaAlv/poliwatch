@@ -2077,6 +2077,25 @@ class SittingWeekComparisonTests(unittest.TestCase):
             self.assertLessEqual(len(entry["kurz"]), 200, msg=f"{kind}: bubble text too long")
         self.assertIsNone(pulse_html.vorgangstyp_anchor("Nie gesehen"))
 
+    # Value: protects=every section of the explainer names its legal basis with a working GG or GOBT link, and the page links back to the glossary; fails_when=a section is added without a citation, or a citation link points outside the allowlisted law sources; why_new=bundestag.html is the first prose page that states rules rather than data (TODOS "So arbeitet der Bundestag"); seam=none
+    def test_bundestag_page_cites_a_legal_basis_in_every_section(self) -> None:
+        markup = build_dip_pulse_site.render_bundestag_page(features=default_selection())
+        sections = re.findall(r'<section class="panel explainer-section" id="([^"]+)">(.*?)</section>', markup, re.S)
+        self.assertEqual([key for key, _ in sections], ["vorlagen", "sitzungen", "abstimmen", "mandat", "gesetzgebung"])
+        for key, body in sections:
+            with self.subTest(section=key):
+                cite = re.search(r'<p class="explainer-cite">Rechtsgrundlage: (.*?)</p>', body, re.S)
+                self.assertIsNotNone(cite)
+                hrefs = re.findall(r'href="([^"]+)"', cite.group(1))
+                self.assertTrue(hrefs)
+                for href in hrefs:
+                    self.assertRegex(href, r"^https://www\.(gesetze-im-internet\.de/gg/art_\d+\.html|bundestag\.de/parlament/aufgaben/rechtsgrundlagen/go_btg)$")
+        self.assertIn("bis zum Beginn der Sitzung", markup)  # § 52 GOBT, as worded
+        self.assertIn(f'href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}"', markup)
+        self.assertIn('aria-current="page"', markup)
+        sources = build_dip_pulse_site.render_sources_page([], features=default_selection())
+        self.assertIn('<a href="bundestag.html">So arbeitet der Bundestag</a>', sources)
+
     def test_sources_page_explains_speech_ranking_and_text_share(self) -> None:
         markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
 
@@ -4116,7 +4135,7 @@ class WeekRadarPageTests(unittest.TestCase):
 
     def test_vote_badge_is_unconditional(self) -> None:
         rows = self._rows(self._section(self._render(), "radar"))
-        self.assertIn('<span class="badge radar-badge">namentlich abgestimmt</span>', rows[0])
+        self.assertIn('<a class="badge radar-badge" href="bundestag.html#abstimmen">namentlich abgestimmt</a>', rows[0])
         self.assertEqual(sum("radar-badge" in row for row in rows), 1)
         without = self._rows(self._section(self._render(features=default_selection()), "radar"))
         self.assertEqual(sum("radar-badge" in row for row in without), 1)

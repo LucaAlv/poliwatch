@@ -50,6 +50,8 @@ SOURCE_HOSTS = {
     "bundestag-xml": {"dserver.bundestag.de", "www.bundestag.de", "bundestag.de"},
     "bundestag-roll-call": {"www.bundestag.de", "bundestag.de"},
     "abgeordnetenwatch": {"www.abgeordnetenwatch.de", "abgeordnetenwatch.de"},
+    # The Grundgesetz cited on bundestag.html ("So arbeitet der Bundestag").
+    "gesetze-im-internet": {"www.gesetze-im-internet.de"},
     "public-profile": {
         "www.abgeordnetenwatch.de",
         "abgeordnetenwatch.de",

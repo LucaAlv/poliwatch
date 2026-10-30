@@ -38,6 +38,7 @@
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
+#   bundestag.html       ``render_bundestag_page``   how the Bundestag works (GG, GOBT)
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
@@ -5325,7 +5326,7 @@ def render_radar_row(
 
     badge_html = ""
     if row["has_votes"]:
-        badge_html = '<span class="badge radar-badge">namentlich abgestimmt</span>'
+        badge_html = '<a class="badge radar-badge" href="bundestag.html#abstimmen">namentlich abgestimmt</a>'
 
     foot_parts = [pulse_html.format_sitting_date(row["datum"]), f"Tagesordnungspunkt {row['index']}", "Debatte im Protokoll öffnen"]
     foot_html = f'<p class="radar-open"><a href="{href}">{" · ".join(esc(part) for part in foot_parts if part)}</a></p>'
@@ -9945,6 +9946,144 @@ def render_catalog_page(
 
 
 # ---------------------------------------------------------------------------
+# PAGE: bundestag.html - "So arbeitet der Bundestag"
+#
+# Static prose: who brings in Vorlagen, when the Bundestag sits, how it votes,
+# the freies Mandat and the way from Gesetzentwurf to Gesetz. Every statement
+# cites the Grundgesetz or the Geschäftsordnung (GOBT), checked against the
+# official texts on 2026-10-30; nothing here is derived from the data.
+# ---------------------------------------------------------------------------
+
+GOBT_URL = "https://www.bundestag.de/parlament/aufgaben/rechtsgrundlagen/go_btg"
+
+
+def _gg(article: str, label: str) -> str:
+    """A link to one Grundgesetz article on gesetze-im-internet.de."""
+    href = pulse_html.source_url(f"https://www.gesetze-im-internet.de/gg/art_{article}.html", "gesetze-im-internet")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def _gobt(label: str) -> str:
+    """A link to the Geschäftsordnung des Deutschen Bundestages on bundestag.de."""
+    href = pulse_html.source_url(GOBT_URL, "bundestag-dip")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def render_bundestag_page(features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    sections = (
+        (
+            "vorlagen",
+            "Wer Vorlagen einbringt",
+            "<p>Gesetzentwürfe bringen die Bundesregierung, der Bundesrat oder Abgeordnete „aus der Mitte des "
+            "Bundestages“ ein. Vorlagen der Bundesregierung gehen zuerst an den Bundesrat, der dazu Stellung "
+            "nehmen kann.</p>"
+            "<p>Eine Vorlage aus der Mitte des Bundestages, etwa ein Gesetzentwurf oder ein Antrag, muss von "
+            "einer Fraktion oder von fünf Prozent der Mitglieder des Bundestages unterzeichnet sein. Welche "
+            "Vorlagen auf die Tagesordnung kommen können, zählt die Geschäftsordnung auf: unter anderem "
+            "Gesetzentwürfe, Anträge, Unterrichtungen und Große Anfragen. Was die Vorgangstypen im DIP "
+            f'bedeuten, erklärt das <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Glossar der '
+            "Vorgangstypen</a>.</p>",
+            f'{_gg("76", "Art. 76 Abs. 1 und 2 GG")} · {_gobt("§§ 75, 76 Abs. 1 GOBT")}',
+        ),
+        (
+            "sitzungen",
+            "Wann der Bundestag tagt",
+            "<p>Der Bundestag bestimmt selbst, wann seine Sitzungen schließen und wieder beginnen. In welchen "
+            "Wochen er sitzt, legt der Sitzungskalender fest; über diesen Arbeitsplan verständigen sich die "
+            "Fraktionen im Ältestenrat, und dort werden auch Termin und Tagesordnung jeder Sitzung "
+            "vereinbart.</p>"
+            "<p>Verlangen ein Drittel der Mitglieder, der Bundespräsident oder der Bundeskanzler eine Sitzung, "
+            "muss die Präsidentin oder der Präsident des Bundestages sie einberufen. Eine solche Sondersitzung "
+            "kann außerhalb jeder Sitzungswoche liegen.</p>",
+            f'{_gg("39", "Art. 39 Abs. 3 GG")} · {_gobt("§ 6 Abs. 2, §§ 20, 21 Abs. 2 GOBT")}',
+        ),
+        (
+            "abstimmen",
+            "Wie abgestimmt wird",
+            "<p>Abgestimmt wird durch Handzeichen oder durch Aufstehen oder Sitzenbleiben, die "
+            "Schlussabstimmung über einen Gesetzentwurf immer durch Aufstehen oder Sitzenbleiben. Ist sich der "
+            "Sitzungsvorstand über das Ergebnis auch nach der Gegenprobe nicht einig, werden die Stimmen "
+            "gezählt, auf seine Anordnung im sogenannten Hammelsprung: Alle verlassen den Saal und kommen "
+            "durch die Tür „Ja“, „Nein“ oder „Enthaltung“ zurück.</p>"
+            "<p>Eine namentliche Abstimmung findet statt, wenn eine Fraktion oder fünf Prozent der anwesenden "
+            "Mitglieder sie bis zum Beginn der Sitzung verlangen. Jedes Mitglied gibt dann eine "
+            "Abstimmungskarte mit seinem Namen ab. Nur bei ihr ist festgehalten, wie jedes einzelne Mitglied "
+            "gestimmt hat; Bundestag-Puls zeigt Einzelstimmen deshalb nur für "
+            '<a href="votes/index.html">namentliche Abstimmungen</a>.</p>'
+            "<p>Beschlossen ist, wofür die Mehrheit der abgegebenen Stimmen stimmt, soweit das Grundgesetz "
+            "nichts anderes bestimmt. Stimmengleichheit verneint die Frage, Enthaltungen zählen für die "
+            "Mehrheit nicht mit. Manche Beschlüsse brauchen mehr: Eine Änderung des Grundgesetzes etwa "
+            "braucht zwei Drittel der Mitglieder des Bundestages und zwei Drittel der Stimmen des "
+            "Bundesrates.</p>",
+            f'{_gg("42", "Art. 42 Abs. 2 GG")} · {_gg("79", "Art. 79 Abs. 2 GG")} · '
+            f'{_gobt("§§ 48, 51, 52 GOBT")}',
+        ),
+        (
+            "mandat",
+            "Freies Mandat",
+            "<p>Die Abgeordneten sind „Vertreter des ganzen Volkes, an Aufträge und Weisungen nicht gebunden "
+            "und nur ihrem Gewissen unterworfen“. Eine Stimme gegen das Mehrheitsvotum des eigenen "
+            "Zusammenschlusses verstößt gegen keine Regel. Bundestag-Puls nennt sie Abweichung und zählt sie, "
+            "ohne sie zu bewerten.</p>",
+            _gg("38", "Art. 38 Abs. 1 Satz 2 GG"),
+        ),
+        (
+            "gesetzgebung",
+            "Vom Gesetzentwurf zum Gesetz",
+            "<p>Gesetzentwürfe berät der Bundestag in drei Beratungen, die meisten anderen Vorlagen in einer. "
+            "Nach der ersten Beratung wird ein Gesetzentwurf in der Regel an einen Ausschuss überwiesen; "
+            "dessen Beschlussempfehlung und Bericht sind die Grundlage der zweiten Beratung. Nach der dritten "
+            "Beratung folgt die Schlussabstimmung.</p>"
+            "<p>Den Gesetzesbeschluss leitet die Präsidentin oder der Präsident des Bundestages dem Bundesrat "
+            "zu. Der Bundesrat kann den Vermittlungsausschuss anrufen. Braucht das Gesetz seine Zustimmung, "
+            "muss er zustimmen; sonst kann er Einspruch einlegen, den der Bundestag zurückweisen kann. Ein "
+            "zustande gekommenes Gesetz fertigt der Bundespräsident nach Gegenzeichnung aus und verkündet es "
+            "im Bundesgesetzblatt.</p>",
+            f'{_gobt("§§ 78, 80, 81, 84, 86 GOBT")} · {_gg("77", "Art. 77 GG")} · {_gg("78", "Art. 78 GG")} · '
+            f'{_gg("82", "Art. 82 Abs. 1 GG")}',
+        ),
+    )
+    toc = "".join(f'<li><a href="#{key}">{pulse_html.esc(title)}</a></li>' for key, title, _, _ in sections)
+    body = "".join(
+        f'<section class="panel explainer-section" id="{key}"><h2>{pulse_html.esc(title)}</h2>{prose}'
+        f'<p class="explainer-cite">Rechtsgrundlage: {cite}</p></section>'
+        for key, title, prose, cite in sections
+    )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · So arbeitet der Bundestag</title>
+  {pulse_html.page_head(features)}
+  <style>{bill_styles()}
+    .explainer {{ display:grid; gap:16px; max-width:860px; margin-top:18px; }}
+    .explainer-section p {{ line-height:1.6; }}
+    .explainer-cite {{ color:var(--muted); font-size:14px; }}
+    .explainer-toc {{ display:flex; flex-wrap:wrap; gap:6px 18px; padding:0; margin:12px 0 0; list-style:none; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(active="bundestag", features=features)}
+    <header class="page-header">
+      <div>
+        <h1>So arbeitet der Bundestag</h1>
+        <p>Die Regeln hinter den Sitzungen, Reden und Abstimmungen auf dieser Website, aus dem Grundgesetz und der Geschäftsordnung des Deutschen Bundestages (GOBT). Jeder Abschnitt nennt seine Rechtsgrundlage.</p>
+        <ul class="explainer-toc">{toc}</ul>
+      </div>
+    </header>
+    <main class="explainer">{body}</main>
+    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
 # PAGE: sources.html - "Quellen und Methode"
 #
 # The transparency page: which official sources are used, how each visible
@@ -10343,6 +10482,7 @@ def render_sources_page(
         <h2>Parlamentarische Begriffe</h2>
         <p>Kurze Erläuterungen zu Dokumenten, Beratungen und Beteiligten. Die Links führen zu den offiziellen Quellen des Deutschen Bundestages.</p>
         <ul class="method-list glossary">{parliamentary_items}</ul>
+        <p>Wie der Bundestag Vorlagen berät und abstimmt, mit den Artikeln des Grundgesetzes und den Paragrafen der Geschäftsordnung: <a href="bundestag.html">So arbeitet der Bundestag</a>.</p>
       </section>
       <section class="panel note">
         <h2>Was nicht genutzt wird</h2>
@@ -10903,6 +11043,7 @@ def render_site(
     overview_path = output_dir / "overview.html"
     catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
+    bundestag_path = output_dir / "bundestag.html"
     database_page_path = output_dir / "database.html"
     settings_path = output_dir / "settings.html"
     feature_manifest_path = output_dir / "data" / "features.json"
@@ -10949,6 +11090,7 @@ def render_site(
         ),
         encoding="utf-8",
     )
+    bundestag_path.write_text(render_bundestag_page(features=features), encoding="utf-8")
     sources_path.write_text(
         render_sources_page(
             entries,
