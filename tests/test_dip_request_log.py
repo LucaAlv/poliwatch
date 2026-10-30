@@ -16,7 +16,7 @@ from unittest import mock
 import _support  # noqa: F401
 import validate_dip_protocol as dip
 
-KEY = "SECRET-KEY-5f3a9c"
+KEY = "test-key-5f3a9c"
 
 
 class Response:

@@ -54,6 +54,27 @@ class GroupingFingerprintTest(unittest.TestCase):
             self.assertEqual(gate.grouping_fingerprint(replayed, only=live), gate.grouping_fingerprint(fresh))
 
 
+class IntegrityTest(unittest.TestCase):
+    # Value: protects=the store gate reports SQLite foreign-key violations even when integrity_check is clean; fails_when=the FK check is removed or ignored; why_new=existing gate tests covered grouping, links and export but not database integrity; seam=none; no_claim=SQLite's own pragma checks only
+    def test_reports_foreign_key_violations_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.sqlite"
+            conn = sqlite3.connect(path)
+            conn.executescript(
+                "PRAGMA foreign_keys=OFF;"
+                "CREATE TABLE parent (id TEXT PRIMARY KEY);"
+                "CREATE TABLE child (parent_id TEXT REFERENCES parent(id));"
+                "INSERT INTO child VALUES ('missing');"
+            )
+            conn.commit()
+            conn.close()
+
+            result = gate.integrity(path)
+
+        self.assertTrue(result["integrity_ok"])
+        self.assertEqual(result["foreign_key_violations"], 1)
+
+
 class ClonePathSafetyTest(unittest.TestCase):
     # Value: protects=cloning cannot remove overlapping input data; fails_when=resolved overlap reaches deletion; why_new=QA reproduced source deletion; seam=none
     def test_overlapping_clone_paths_preserve_the_source(self) -> None:

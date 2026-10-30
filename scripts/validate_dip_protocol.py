@@ -1203,11 +1203,11 @@ def speech_segments(rede: ET.Element, *, inline: bool = False, all_speakers: boo
         if "grant_epoch" in nested_segment:
             # 6a (2): an opening thank-you that is not negated grants, over a carried
             # refusal; the same speaker's next turn continues that grant.
-            key = ((nested_segment["speaker"] or {}).get("xml_redner_id"), nested_segment["grant_epoch"])
+            speaker_grant = ((nested_segment["speaker"] or {}).get("xml_redner_id"), nested_segment["grant_epoch"])
             thanks = NESTED_OPENING_THANKS.search(nested_segment["paragraphs"][0][:140]) if nested_segment["paragraphs"] else None
             if nested_segment["granted"] or (thanks and not speech_kinds.NOT_GRANTED.search(thanks.group())):
-                nested_segment["granted"], granted_key = True, key
-            elif key[0] and key == granted_key:
+                nested_segment["granted"], granted_key = True, speaker_grant
+            elif speaker_grant[0] and speaker_grant == granted_key:
                 nested_segment["granted"] = True
             else:
                 granted_key = None
@@ -1493,8 +1493,8 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                               or announced or continuation)):
                     raise ValueError(f"{root.get('wahlperiode')}/{root.get('sitzung-nr')} {top.get('top-id')}: unresolved nested contribution at {rid} marker {segment['marker']}")
                 granted_nested_speaker = speaker_id if nested_kind == speech_kinds.ZWISCHENFRAGE else None
-                exchange_key = (speaker_id, segment.get("exchange")) if nested_kind == speech_kinds.ZWISCHENFRAGE else None
-                if exchange_key and exchange_key == open_exchange:
+                exchange_identity = (speaker_id, segment.get("exchange")) if nested_kind == speech_kinds.ZWISCHENFRAGE else None
+                if exchange_identity and exchange_identity == open_exchange:
                     # The same asker again, with no new chair offer since: one
                     # Zwischenfrage, not one per marker.
                     first = nested_units[-1]
@@ -1506,7 +1506,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
                                         "evidence": "same asker, same exchange", "treatment": "merged_zwischenfrage",
                                         "target_rede_id": first["rede_id"]})
                     continue
-                open_exchange = exchange_key
+                open_exchange = exchange_identity
                 nested_units.append(contribution_unit(
                     nested_kind, f"nested:{rid}:{segment['marker']}", rid, 0,
                     segment["speaker"], segment["paragraphs"], page_ref))
