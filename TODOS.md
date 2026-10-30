@@ -364,16 +364,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
-### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
-
-**What:** `facts.render_card_svg` keeps two lines of 76 characters of a metric's caveat (`wrap_lines(..., max_lines=2)`). The caveat of `knappste-abstimmung` wraps to 4 lines and that of `meiste-abweichler` to 5 (measured 2026-10-30), so their cards show half a sentence. Shorten the caveats (or give the card room for them) and pin every caveat's line count with a test, as `meistdiskutierter-vorgang` now has.
-
-**Why:** D27: a metric may not be read without its caveat, and a card is read without its page.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### List MdBs in a government office as Abgeordnete
 
 **What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
@@ -1042,6 +1032,10 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
+
+Done 2026-10-30. The card kept two lines of 76 characters of a caveat, so `knappste-abstimmung` (4 lines) and `meiste-abweichler` (5) showed half a sentence. It now shows up to four lines of 83 characters at 22px (the same line width as 76 at 24px; the widest line measured 869 of 920 px in Chrome), anchored above the footer, and the comparison block moves up only as far as a long caveat needs (`facts.card_lower_layout`). The caveat texts are unchanged, so pages and Methodik read as before. Tests pin every metric's caveat, with A3's longest coverage phrase filled in, to `CARD_CAVEAT_LINES`, the rendered caveat to the whole text, and the blocks to never overlap.
 
 ### Link the vote panel's "namentlich" wording to `bundestag.html`
 
