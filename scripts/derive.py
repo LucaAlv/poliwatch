@@ -396,14 +396,16 @@ def require_vote_shape(report: Mapping[str, Any]) -> None:
     for item in items:
         if item.get("vote"):
             raise ValueError(f'TOP {item.get("index")} has a singular "vote" (a shape from before "votes")')
-    for votes in [*(item.get("votes") for item in items), report.get("sitting_votes")]:
+    # Each message names the holder, so the reader knows where in the file to look.
+    holders = [*((f'TOP {item.get("index")}', item.get("votes")) for item in items), ("sitting_votes", report.get("sitting_votes"))]
+    for holder, votes in holders:
         if votes is None:
             continue
         if not isinstance(votes, list):
-            raise ValueError("roll-call votes are not a list")
+            raise ValueError(f"{holder}: roll-call votes are not a list")
         for vote in votes:
             if not isinstance(vote, dict) or not _clean(vote.get("id")):
-                raise ValueError("a roll-call vote has no id")
+                raise ValueError(f"{holder}: a roll-call vote has no id")
 
 
 def vote_identity(vote: Mapping[str, Any]) -> str:
@@ -485,6 +487,19 @@ def is_bundestag_xml_url(url: Any) -> bool:
     return parts.scheme == "https" and (parts.hostname or "").lower().rstrip(".") in publication.SOURCE_HOSTS["bundestag-xml"]
 
 
+def xml_drucksachen(item: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The agenda item's XML Drucksache references that can be Drucksachen: one
+    without a link, or linked to the Bundestag's XML host. A reference whose link
+    points elsewhere is a number read off a quoted URL in a report cached before
+    ``validate_dip_protocol.extract_drucksachen`` checked the host (88/739016 from
+    a syriahr.com path in 20/206); persist, the Politikfelder, the dossier and the
+    vote links all read the references through this one rule."""
+    return [
+        doc for doc in item.get("xml_drucksachen") or []
+        if not doc.get("url") or is_bundestag_xml_url(doc["url"])
+    ]
+
+
 def report_wahlperiode(report: Mapping[str, Any]) -> str:
     """The Wahlperiode of a sitting, from its protocol number "20/194" ("" if unknown)."""
     number = str((report.get("protocol") or {}).get("dokumentnummer") or "")
@@ -515,7 +530,7 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
     numbers in the heading. A heading also carries case numbers of other
     shapes ("10/21", "1/22" in Streitsachen lists), so every number counts only
     when ``plausible_document_number`` accepts it. The same rules as persist
-    decide what is a Bundestag Drucksache: an XML number only from the XML host,
+    decide what is a Bundestag Drucksache: an XML number only from the XML host (``xml_drucksachen``),
     a linked paper only when ``stable_ids.document_issuer`` says BT, and every
     number in its canonical form.
     """
@@ -526,9 +541,8 @@ def item_document_numbers(item: Mapping[str, Any], wahlperiode: str) -> list[str
         if text and text not in numbers and plausible_document_number(text, wahlperiode):
             numbers.append(text)
 
-    for doc in item.get("xml_drucksachen") or []:
-        if not doc.get("url") or is_bundestag_xml_url(doc["url"]):
-            add(doc.get("dokumentnummer"))
+    for doc in xml_drucksachen(item):
+        add(doc.get("dokumentnummer"))
     for doc in (item.get("api") or {}).get("linked_drucksachen") or []:
         # A Bundesrat paper ("20/23" at .../brd/2023/0020-23.pdf) shares the shape of a Bundestag number.
         if document_issuer(doc.get("herausgeber"), doc.get("url")) == "BT":

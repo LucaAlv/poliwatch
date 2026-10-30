@@ -739,16 +739,20 @@ class CitationLabelTests(unittest.TestCase):
         self.assertIn("S. 7B", markup)
         self.assertIn("&lt;TOP&gt;", markup)
 
-    def test_xml_pills_qualify_bundesrat_and_preserve_unsafe_fallback(self) -> None:
+    def test_xml_pills_qualify_bundesrat_and_drop_a_reference_off_the_xml_host(self) -> None:
         docs = [
             {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/btd/21/001/2100001.pdf"},
             {"dokumentnummer": "21/1", "url": "https://dserver.bundestag.de/brd/2021/0001-21.pdf"},
             {"dokumentnummer": "<21/2>", "herausgeber": "BR", "url": "javascript:alert(1)"},
+            {"dokumentnummer": "<21/3>", "herausgeber": "BR"},
         ]
         markup = build_dip_pulse_site.pulse_html.render_source_links({"xml_drucksachen": docs})
         self.assertIn('>21/1</a>', markup)
         self.assertIn('>BR-Drs. 21/1</a>', markup)
-        self.assertIn('<span class="doc-link muted">BR-Drs. &lt;21/2&gt;</span>', markup)
+        # A link off the XML host is no Drucksache (persist skips it too); one
+        # without a link stays a muted, escaped pill.
+        self.assertNotIn("21/2", markup)
+        self.assertIn('<span class="doc-link muted">BR-Drs. &lt;21/3&gt;</span>', markup)
         self.assertNotIn("javascript:", markup)
         self.assertEqual(build_dip_pulse_site.pulse_html.document_chamber({"url": "https://[invalid"}), "")
 
@@ -760,6 +764,11 @@ class CitationLabelTests(unittest.TestCase):
         markup = build_dip_pulse_site.render_daten_recipes(manifest, mp_lookup={}, document_numbers={"21/84"}, bill_slugs=set())
         self.assertIn("<td>BT-PlPr. 21/84</td>", markup)
         self.assertEqual(row["erste_drucksache"], "21/84")
+        # Title and SQL are this build's, never the manifest's text.
+        local = build_dip_pulse_site.RECIPES_BY_ID["r5-vorgaenge-meiste-reden"]
+        self.assertIn(f">{local['title']}</h3>", markup)
+        self.assertNotIn("SELECT ...", markup)
+        self.assertNotIn(">Test</h3>", markup)
 
 
 class CurrentPulseOrderTests(unittest.TestCase):
@@ -1761,7 +1770,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         ]
         band = re.search(r'<section class="week-compare".*?</section>', self._render(entries), re.S).group()
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertIn('<span class="week-delta flat">n/a</span>', metrics)
         self.assertIn('<span class="week-delta flat">n/a</span>', shares)
         self.assertNotIn('week-list-current-only', shares)
@@ -1800,6 +1809,36 @@ class SittingWeekComparisonTests(unittest.TestCase):
         empty = '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
         self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1})), empty)
         self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1}), show_deltas=False), empty)
+
+    # Value: protects=the Redeanteil card shows every row of a WP 21 week (ten here) and sets fraktionslos, the three Sprechrolle sides and Unbekannt apart below the Zusammenschlüsse, so the bars add up to 100 %; fails_when=render_share_shift cuts rows at a limit again or mixes the sides into the ranking of the Zusammenschlüsse; why_new=TODOS "Redeanteil heading and Textanteil", the card had most_common(8); seam=none
+    def test_share_shift_shows_every_row_and_sets_the_sides_apart(self) -> None:
+        current = Counter({
+            "CDU/CSU": 30, "AfD": 25, "SPD": 20, "BÜNDNIS 90/DIE GRÜNEN": 10, "Die Linke": 6,
+            "Bundesregierung": 4, "Bundesrat": 1, "weitere Sprechrolle": 1, "fraktionslos": 2, "Unbekannt": 1,
+        })
+        markup = pulse_html.render_share_shift(current, None, show_deltas=False)
+        labels = re.findall(r'<span class="week-label">(.*?)</span>', markup)
+        self.assertEqual(
+            labels,
+            ["CDU/CSU", "AfD", "SPD", "BÜNDNIS 90/DIE GRÜNEN", "Die Linke",
+             "Bundesregierung", "Bundesrat", "weitere Sprechrolle", "fraktionslos", "Unbekannt"],
+        )
+        self.assertAlmostEqual(sum(float(width) for width in re.findall(r'width:([0-9.]+)%', markup)), 100.0, places=1)
+        self.assertEqual(markup.count("week-row-split"), 1)
+        self.assertRegex(markup, r'<li class="week-row week-row-split">\s*<span class="week-label">Bundesregierung</span>')
+        # Only sides, or only Zusammenschlüsse: nothing to split.
+        self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"Bundesregierung": 1}), None))
+        self.assertNotIn("week-row-split", pulse_html.render_share_shift(Counter({"SPD": 1}), None))
+
+    # Value: protects=in the Wochenvergleich a row that spoke only in the compared week shows at 0 % with its negative shift, so the shifts net to zero; fails_when=render_share_shift lists only this week's keys and a Bundesrat row with -28,6 pp disappears; why_new=code review of the Redeanteil card (2026-10-30); seam=none
+    def test_share_shift_keeps_a_row_that_spoke_only_in_the_compared_week(self) -> None:
+        current, previous = Counter({"SPD": 5}), Counter({"SPD": 5, "Bundesrat": 2})
+        markup = pulse_html.render_share_shift(current, previous)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', markup), ["SPD", "Bundesrat"])
+        self.assertIn("&#9660; &minus;28,6&nbsp;pp", markup)
+        # Without deltas there is nothing to net: only this week's rows.
+        current_only = pulse_html.render_share_shift(current, previous, show_deltas=False)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', current_only), ["SPD"])
 
     def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
         truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
@@ -1914,7 +1953,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('id="wochenvergleich"', markup)
         self.assertIn("KW 24/2026", markup)
         self.assertIn("KW 21/2026", markup)
-        self.assertIn("Redeanteil der Fraktionen", markup)
+        self.assertIn("Redeanteil der Fraktionen und Gruppen", markup)
         self.assertIn("Debattenprofil", markup)
         self.assertIn("Wieder auf der Tagesordnung", markup)
         self.assertIn("Kein Vorgang dieser Woche", markup)
@@ -1955,7 +1994,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertRegex(metrics, r'<span>Redetext \(Zeichen\)</span>\s*<strong>100</strong>')
         self.assertNotIn('class="week-delta', band)
         self.assertNotIn('class="week-metric-foot"', band)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertIn('<ul class="week-list week-list-current-only">', shares)
         self.assertIn('width:100.00%', shares)
         self.assertIn('<strong>100,0%</strong>', shares)
@@ -2474,16 +2513,19 @@ class LegacyVoteShapeTests(unittest.TestCase):
 
     # Value: protects=a build stopped by a stale cached report ends with an ERROR line naming the file and a fix that works (move it out, then update online), not a traceback; fails_when=a lenient call site lets CachedReportError escape main, or the message points back to the online update that just failed; why_new=the load refusal was tested, its call sites in main were not; seam=none; no_claim=the online entry point (same handler, needs a DIP client)
     def test_a_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
+        # Each refusal names where the bad vote sits: the TOP, or sitting_votes.
         shapes = {
-            "a roll-call vote has no id": {"index": 1, "votes": [{"id": " "}]},
-            'has a singular "vote"': {"index": 1, "vote": {"id": "v1"}},
-            "roll-call votes are not a list": {"index": 1, "votes": 5},
+            "TOP 1: a roll-call vote has no id": {"agenda_items": [{"index": 1, "votes": [{"id": " "}]}]},
+            'TOP 1 has a singular "vote"': {"agenda_items": [{"index": 1, "vote": {"id": "v1"}}]},
+            "TOP 1: roll-call votes are not a list": {"agenda_items": [{"index": 1, "votes": 5}]},
+            "sitting_votes: roll-call votes are not a list": {"agenda_items": [], "sitting_votes": {}},
+            "sitting_votes: a roll-call vote has no id": {"agenda_items": [], "sitting_votes": [{"id": ""}]},
         }
-        for (reason, item), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
+        for (reason, shape), mode in itertools.product(shapes.items(), ("offline", "fetch_xml")):
             with self.subTest(reason=reason, mode=mode), tempfile.TemporaryDirectory() as tmp:
                 data = Path(tmp) / "data"
                 data.mkdir()
-                report = {"protocol": {"dokumentnummer": "21/82"}, "agenda_items": [item]}
+                report = {"protocol": {"dokumentnummer": "21/82"}, **shape}
                 (data / "plenarprotokoll-21-82.json").write_text(json.dumps(report), encoding="utf-8")
                 args = SimpleNamespace(
                     output_dir=Path(tmp), database_path=None, offline=mode == "offline", no_persist=True,
@@ -2500,8 +2542,11 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
                 self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
                 self.assertIn(reason, stderr.getvalue())
-                self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
-                self.assertIn("--document-number", stderr.getvalue())
+                self.assertIn(
+                    "Fix: move that report out of data/, then re-fetch its sitting with an online update "
+                    "and --document-number 21/82",
+                    stderr.getvalue(),
+                )
 
     # Value: protects=the two online load sites of main (the --backfill-incomplete scan and the cached-dossier merge) end a build on a stale cached report with the same ERROR line, fix and exit 1 as the offline sites, before any dossier is fetched; fails_when=either site loses its CachedReportError handler so the build dies with a traceback, or the handler returns before the message names the file; why_new=the offline test above reaches only the --offline and --fetch-xml sites; seam=none; no_claim=the DIP client and catalog fetch (patched out)
     def test_an_online_build_stopped_by_a_stale_report_names_the_file_and_the_fix(self) -> None:
@@ -2536,6 +2581,41 @@ class LegacyVoteShapeTests(unittest.TestCase):
                 self.assertIn("ERROR [cached input]: ", stderr.getvalue())
                 self.assertIn("plenarprotokoll-21-82.json", stderr.getvalue())
                 self.assertIn("move that report out of data/, then re-fetch its sitting", stderr.getvalue())
+                if not backfill:
+                    self.assertIn("--document-number 21/82", stderr.getvalue())
+
+    # Value: protects=the printed fix names every refused sitting's number and falls back to a placeholder only when none is known; fails_when=cached_report_fix drops a number or prints "--document-number" for an unnumbered report; why_new=TODOS "Stale cached-report error lines: polish"; seam=none
+    def test_the_cached_report_fix_names_each_known_number(self) -> None:
+        fix = build_dip_pulse_site.cached_report_fix
+        error = build_dip_pulse_site.CachedReportError
+        self.assertEqual(fix(error("x")), build_dip_pulse_site.CACHED_REPORT_FIX)
+        self.assertIn("<its number>", fix(error("x", [None, ""])))
+        self.assertTrue(fix(error("x", ["21/82"])).endswith("--document-number 21/82"))
+        self.assertIn(
+            "move those reports out of data/, then re-fetch their sittings with an online update and "
+            "--document-number 21/82 --document-number 21/83",
+            fix(error("x", ["21/82", "21/83"])),
+        )
+
+
+    # Value: protects=a refusal of stale-rule reports tells the operator to fetch the missing XML, and names for a re-fetch only the reports that have no xml_url; fails_when=the fix tells the operator to move every stale report out of data/ (a whole pre-A1 cache) when --fetch-xml would do; why_new=code review of the cached-report polish (2026-10-30); seam=none
+    def test_stale_rule_refusal_re_fetches_only_reports_without_xml_url(self) -> None:
+        def stale(number: str, xml_url: str | None) -> dict[str, Any]:
+            protocol = {"dokumentnummer": number, **({"xml_url": xml_url} if xml_url else {})}
+            return {"report": {"protocol": protocol, "validation_summary": {}}}
+
+        fetchable = [stale("21/1", "https://dserver.bundestag.de/btp/21/21001.xml"), stale("21/2", "https://dserver.bundestag.de/btp/21/21002.xml")]
+        with self.assertRaises(build_dip_pulse_site.CachedReportError) as caught:
+            build_dip_pulse_site.require_parsed_reports(fetchable)
+        self.assertIn("(21/1, 21/2)", str(caught.exception))
+        self.assertEqual(build_dip_pulse_site.cached_report_fix(caught.exception), "Fix: run --fetch-xml, then --offline --repersist")
+
+        with self.assertRaises(build_dip_pulse_site.CachedReportError) as caught:
+            build_dip_pulse_site.require_parsed_reports([*fetchable, stale("21/3", None)])
+        fix = build_dip_pulse_site.cached_report_fix(caught.exception)
+        self.assertTrue(fix.startswith("Fix: run --fetch-xml, then --offline --repersist; 1 of them have no xml_url"))
+        self.assertTrue(fix.endswith("with an online update and --document-number 21/3"))
+        self.assertNotIn("21/1", fix)
 
 
 class VoteContextPageWiringTests(unittest.TestCase):
@@ -4127,7 +4207,7 @@ class WeekRadarPageTests(unittest.TestCase):
         band = self._section(self._render(entries), "week-compare")
         self.assertIn('<h2 id="wochenvergleich-h2">Noch keine Vergleichswoche</h2>', band)
         self.assertIn("<h3>Wochenpuls</h3>", band)
-        self.assertIn("<h3>Redeanteil der Fraktionen</h3>", band)
+        self.assertIn("<h3>Redeanteil der Fraktionen und Gruppen</h3>", band)
         self.assertEqual(re.findall(r"<span>(Reden|Tagesordnungspunkte|Redetext \(Zeichen\))</span>", band), ["Reden", "Tagesordnungspunkte"])
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
         self.assertNotIn('class="week-delta', band)
@@ -4137,7 +4217,7 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("<em>", metrics)
         self.assertNotIn("week-spark", band)
         self.assertNotIn("Debattenprofil", band)
-        self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
+        self.assertIn("Anteil an allen Reden der Woche. Zuordnung f&uuml;r 2 von 5 Reden erfasst.", band)
         self.assertIn('<li class="week-row">', band)
         self.assertEqual(band.count("<strong>50,0%</strong>"), 2)
 
@@ -4151,7 +4231,7 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertNotIn("n/a", metrics)
         self.assertIn("Anteil an allen Reden der verglichenen Sitzungstage", band)
         self.assertNotIn("Tagesmischung", band)
-        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen und Gruppen</h3>(.*?)</article>', band, re.S).group(1)
         self.assertRegex(shares, r'<span class="week-delta (up|down|flat)">')
 
     def test_equal_sitting_counts_keep_the_delta_chips(self) -> None:

@@ -1303,7 +1303,8 @@ class DossierSourceLinkTests(unittest.TestCase):
         self.assertIn("Rede B", activities)
         self.assertEqual(activities.count("<a "), 1)
 
-    def test_a_drucksache_reference_with_a_foreign_host_loses_its_link_instead_of_aborting(self) -> None:
+    # Value: protects=a dossier cached before the parser checked the link host shows no Drucksache read off a news URL, and the build does not abort on it; fails_when=render_source_links or render_top_documents read xml_drucksachen without derive.xml_drucksachen, so 88/739016 shows as a Drucksache that persist never stored; why_new=TODOS "A Drucksache reference can be a URL fragment"; seam=none
+    def test_a_drucksache_reference_with_a_foreign_host_is_dropped_instead_of_aborting(self) -> None:
         # Real case: 20/206's XML yields a "Drucksache" 88/739016 whose URL is a
         # syriahr.com article, and one such reference used to abort the build.
         item = {
@@ -1316,11 +1317,14 @@ class DossierSourceLinkTests(unittest.TestCase):
         }
         links = pulse_html.render_source_links(item)
         self.assertIn('<a class="doc-link" href="https://dserver.bundestag.de/btd/20/000/2000001.pdf">20/1</a>', links)
-        for number in ("88/739016", "20/2", "20/3"):
-            self.assertIn(f'<span class="doc-link muted">{number}</span>', links)
-        self.assertNotIn("syriahr", links)
-        self.assertNotIn("javascript:", links)
+        self.assertIn('<span class="doc-link muted">20/3</span>', links)
+        for text in ("88/739016", "syriahr", "20/2", "javascript:"):
+            self.assertNotIn(text, links)
         self.assertEqual(links.count("<a "), 1)
+        # A TOP whose only reference is such a fragment has no Drucksachen section.
+        only_foreign = {"xml_drucksachen": [item["xml_drucksachen"][1]]}
+        self.assertEqual(pulse_html.render_top_documents(only_foreign), "")
+        self.assertIn("<h3>Drucksachen</h3>", pulse_html.render_top_documents(item))
 
     def test_dev_details_pdf_source_links_only_to_http(self) -> None:
         def details(url: str) -> str:

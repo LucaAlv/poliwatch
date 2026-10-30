@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.6.0] - 2026-10-29
+
+### Fixed
+
+- puls.html's Redeanteil card is headed „Redeanteil der Fraktionen und Gruppen“ and lists every row. It stopped at eight before, so in a WP 21 week (up to ten rows) the Bundesrat or fraktionslos row could drop and the bars summed to less than 100 %. Bundesregierung, Bundesrat, weitere Sprechrolle, fraktionslos and Unbekannt now follow the Fraktionen and Gruppen below a rule; in the Wochenvergleich a row that spoke only in the compared week shows at 0 % with its loss, so the shifts net to zero; and a cut-short week's note reads „Zuordnung für N von M Reden erfasst“.
+- A dossier cached before the parser checked link hosts no longer shows a number read off a quoted news URL as a Drucksache (88/739016 from a syriahr.com link in 20/206), and the vote panel no longer takes such a link. Every reader of the XML Drucksache references applies the rule persist already used, so no stored figure moves.
+- On bundestag.de vote pages a fractional majority such as „2/3-Mehrheit“ is no longer read as a Drucksache number: it neither refuses an official outcome as naming another document nor joins a vote's documents from the roll-call list. No stored vote changes until it is fetched again, since the official outcome is read at fetch time.
+- A `--data-manifest` override must carry exactly this build's recipes (same ids in order, identical SQL); the Daten page takes each recipe's title and SQL from the build, so a tampered manifest cannot show other text as SQL next to the copy button. An override exported by code with different recipe SQL is refused with the recipe named; re-export it. A recipe without `empty_reason`, or with a row that is not an object, is refused instead of crashing the build.
+- A build stopped by a stale cached report prints the command that re-fetches that very sitting (`--document-number 21/82`), and a refused vote shape names its TOP or `sitting_votes`. A refusal of reports from an older counting rule says to run `--fetch-xml`, then `--offline --repersist`, and names for a re-fetch only the reports without an `xml_url`; `ERROR [persist]` now prints that fix too. README no longer says a plain online update re-fetches a deleted report.
+
 ## [0.23.5.0] - 2026-10-29
 
 ### Fixed
