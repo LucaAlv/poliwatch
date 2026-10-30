@@ -38,6 +38,7 @@
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
+#   bundestag.html       ``render_bundestag_page``   how the Bundestag works (GG, GOBT)
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
@@ -5443,7 +5444,7 @@ def render_radar_row(
 
     badge_html = ""
     if row["has_votes"]:
-        badge_html = '<span class="badge radar-badge">namentlich abgestimmt</span>'
+        badge_html = '<a class="badge radar-badge" href="bundestag.html#abstimmen">namentlich abgestimmt</a>'
 
     foot_parts = [pulse_html.format_sitting_date(row["datum"]), f"Tagesordnungspunkt {row['index']}", "Debatte im Protokoll öffnen"]
     foot_html = f'<p class="radar-open"><a href="{href}">{" · ".join(esc(part) for part in foot_parts if part)}</a></p>'
@@ -5843,6 +5844,7 @@ def render_front_page(
       color:var(--ink);
     }}
     .radar-badge {{ justify-self:start; color:var(--amber); border-color:var(--amber); }}
+    .radar-badge:visited {{ color:var(--amber); }}
     .radar-open {{ margin:2px 0 0; font-size:13px; }}
     .radar-share {{ display:grid; gap:3px; align-content:start; padding-top:2px; }}
     .radar-share strong {{ font-size:18px; font-weight:750; font-variant-numeric:tabular-nums; line-height:1.2; }}
@@ -7431,12 +7433,6 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
-# DIP marks a person's roles in "funktion"; a Bundestag member has one that
-# contains "MdB".
-def _has_mdb_funktion(funktion: Any) -> bool:
-    return any("mdb" in str(value).lower() for value in (funktion or []))
-
-
 def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
@@ -7459,7 +7455,7 @@ def ingest_mdb_roster(
         for person in persons:
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
-            if not _has_mdb_funktion(funktion):
+            if not derive.is_mdb_funktion(funktion):
                 continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
@@ -7596,6 +7592,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     for row in conn.execute(
         """
         SELECT s.mp_id, s.rede_id, s.page, s.char_count, s.snippet, s.sequence,
+               s.fraktion, s.sprechrolle,
                p.document_number, p.date AS protocol_date,
                ai.heading, ai.item_index
         FROM speeches s
@@ -7615,6 +7612,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "date": row["protocol_date"],
                 "heading": row["heading"],
                 "item_index": row["item_index"],
+                "fraktion": row["fraktion"],
+                "sprechrolle": row["sprechrolle"],
             }
         )
 
@@ -7628,7 +7627,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
-        "SELECT c.id, c.mp_id, c.kind, p.document_number, p.date "
+        "SELECT c.id, c.mp_id, c.kind, c.fraktion, c.sprechrolle, p.document_number, p.date "
         "FROM contributions c JOIN protocols p ON p.id=c.protocol_id "
         "WHERE c.mp_id IS NOT NULL ORDER BY p.date DESC, c.sequence, c.id"
     ):
@@ -7728,9 +7727,26 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             if key in tally:
                 tally[key] += 1
 
+        # The sides a Person spoke for in Reden and Beiträge, most first (a
+        # Bundesminister: Bundesregierung), and whether the protocols record a
+        # Mandat: a Rede or Beitrag that counts for a Zusammenschluss (ADR 0001,
+        # derive.ZUSAMMENSCHLUSS_SQL: no Sprechrolle, the Fraktion, else the
+        # party of the record) or a namentliche Abstimmung, which only MdBs cast.
+        spoken = [
+            (unit, r)
+            for r in members
+            for unit in (*speeches_by_mp.get(r["id"], []), *contribution_links_by_mp.get(r["id"], []))
+        ]
+        sprechrollen = Counter(unit["sprechrolle"] for unit, _ in spoken if unit.get("sprechrolle"))
+        counted_for = {
+            None if unit.get("sprechrolle") else (unit.get("fraktion") or r.get("party"))
+            for unit, r in spoken
+        }
         mp = {
             "id": cid,
             "has_page": cid in page_eligible,
+            "sprechrollen": [derive.SPRECHROLLE_LABELS.get(side, side) for side, _ in sprechrollen.most_common()],
+            "mandat_in_protocols": bool(merged_votes) or bool(counted_for - {None, "Unbekannt"}),
             "name": registry.clean_mp_name(first("display_name")),
             "party": first("party"),
             "title": first("title"),
@@ -7839,6 +7855,9 @@ def abgeordnete_styles() -> str:
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+    .redner-group { margin-top:32px; }
+    .redner-group h2 { margin:0 0 6px; font-size:20px; }
+    .redner-group p { margin:0; color:var(--muted); }
     .mp-table th, .mp-table td {
       text-align:left;
       padding:9px 10px;
@@ -7883,6 +7902,8 @@ def render_abgeordnete_script() -> str:
     (() => {
       const search = document.querySelector("[data-mp-search]");
       const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const rednerRows = Array.from(document.querySelectorAll("[data-redner-row]"));
+      const rednerEmpty = document.querySelector("[data-redner-empty]");
       const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
       const counter = document.querySelector("[data-mp-count]");
       let activeParty = "";
@@ -7896,7 +7917,16 @@ def render_abgeordnete_script() -> str:
           row.hidden = !show;
           if (show) visible += 1;
         });
-        if (counter) counter.textContent = String(visible);
+        // The Fraktion filter narrows the Abgeordnete list only: Redner outside
+        // it are listed without one, so the search alone filters them.
+        let rednerVisible = 0;
+        rednerRows.forEach((row) => {
+          const show = !q || row.dataset.search.includes(q);
+          row.hidden = !show;
+          if (show) rednerVisible += 1;
+        });
+        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
+        if (counter) counter.textContent = String(visible + rednerVisible);
       };
       if (search) search.addEventListener("input", apply);
       partyButtons.forEach((btn) => {
@@ -7964,6 +7994,41 @@ def render_abgeordnete_index(
             """
         )
 
+    # Persons who spoke but are no MdB of the roster's Wahlperiode: members of
+    # the Bundesregierung or the Bundesrat without a Mandat, earlier MdBs. Listed
+    # apart so their pages are reachable without calling them Abgeordnete. A page
+    # kept only by registry evidence (no Rede, no Beitrag) is not listed.
+    redner = sorted(
+        (mp for mp in mps if not mp.get("is_mdb") and has_spoken(mp)),
+        key=lambda mp: (-(mp.get("speech_count") or 0), str(mp.get("name") or "").casefold()),
+    )
+    redner_rows = []
+    for mp in redner:
+        label = " · ".join(redner_details(mp)) or "—"
+        search_key = " ".join(str(value).lower() for value in (mp.get("name"), label) if value)
+        redner_rows.append(
+            f"""
+            <tr data-redner-row data-party="" data-search="{pulse_html.esc(search_key)}">
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(label)}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        )
+    redner_section = (
+        '<section class="redner-group" id="weitere-redner">'
+        "<h2>Weitere Rednerinnen und Redner</h2>"
+        "<p>Personen, die im Plenum gesprochen haben und nicht in der Liste oben stehen: etwa für die Bundesregierung "
+        "oder den Bundesrat, oder als Mitglied des Bundestages einer früheren Wahlperiode. Mitglieder des Bundestages, "
+        "die ein Regierungsamt haben, führt DIP ohne die Funktion MdB; sie stehen bis auf Weiteres hier.</p>"
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
+        + "".join(redner_rows)
+        + "</tbody></table>"
+        + f'<p class="mp-empty" data-redner-empty{"" if not redner_rows else " hidden"}>'
+        + ("Keine Treffer." if redner_rows else "In den erfassten Plenarprotokollen sprach niemand außerhalb der Liste.")
+        + "</p></section>"
+    )
+
     with_speeches = sum(1 for mp in listed if (mp.get("speech_count") or 0) > 0)
     total_speeches = sum(mp.get("speech_count") or 0 for mp in listed)
     domains = publication_domains or {}
@@ -7988,11 +8053,11 @@ def render_abgeordnete_index(
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
-        <p>Vollständige Liste der Mitglieder des Bundestages der laufenden Wahlperiode aus den DIP-Personendaten, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion.</p>
+        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. Wer im Plenum sprach und nicht in dieser Liste steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
       </div>
       <div class="follow-summary">
         <span class="eyebrow">Angezeigt</span>
-        <strong data-mp-count>{pulse_html.esc(len(listed))}</strong>
+        <strong data-mp-count>{pulse_html.esc(len(listed) + len(redner))}</strong>
       </div>
     </header>
     <section class="summary-grid">
@@ -8007,6 +8072,7 @@ def render_abgeordnete_index(
       <div class="party-filters" role="group" aria-label="Nach Fraktion filtern">{party_chips}</div>
     </div>
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
+    {redner_section}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
@@ -8014,6 +8080,32 @@ def render_abgeordnete_index(
 </body>
 </html>
 """
+
+
+def has_spoken(mp: dict[str, Any]) -> bool:
+    """A Redner (CONTEXT.md): at least one Rede or Beitrag."""
+    return bool((mp.get("speech_count") or 0) or (mp.get("contribution_count") or 0))
+
+
+def redner_details(mp: dict[str, Any]) -> list[str]:
+    """What the protocols say about a Person outside the roster: the
+    Sprechrollen they spoke in, and "Mitglied des Bundestages laut
+    Plenarprotokoll" when a Rede, Beitrag or namentliche Abstimmung records a
+    Mandat. Not "früheres": an MdB in a government office is not in the roster
+    yet (TODOS.md), and without a roster nobody is. The registry's ever_mdb
+    evidence is not used: it was set for Bundesrat members before the exact
+    MdB rule."""
+    details = list(mp.get("sprechrollen") or [])
+    if mp.get("mandat_in_protocols"):
+        details.append("Mitglied des Bundestages laut Plenarprotokoll")
+    return details
+
+
+def redner_label(mp: dict[str, Any]) -> str:
+    """The eyebrow of a Personenseite outside the roster. A page kept only by
+    registry evidence (no Rede, no Beitrag) does not call its Person a Redner."""
+    parts = (["Redner"] if has_spoken(mp) else []) + redner_details(mp)
+    return " · ".join(parts) or "Keine Reden erfasst"
 
 
 # PAGE: abgeordnete/<id>.html - one MP profile.
@@ -8117,6 +8209,26 @@ def render_abgeordnete_detail(
 
     tally = mp.get("vote_tally") or {}
     participation = tally.get("yes", 0) + tally.get("no", 0) + tally.get("abstain", 0)
+    # Only an MdB is shown as one (CONTEXT.md, Personenseite); everyone else is a
+    # Redner with the Sprechrolle they spoke in.
+    if mp.get("is_mdb"):
+        eyebrow = mp.get("party") or "Fraktion unbekannt"
+        role_metrics = (
+            f'<div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get("party") or "—")}</strong></div>'
+            f'<div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get("wahlkreis") or "—")}</strong></div>'
+        )
+        back_links = '<a href="index.html">Alle Abgeordnete</a>'
+    else:
+        eyebrow = redner_label(mp)
+        role_metrics = ""
+        # The Fraktion the protocols record, so a build without the roster still shows it.
+        if mp.get("mandat_in_protocols") and mp.get("party"):
+            role_metrics += f'<div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp["party"])}</strong></div>'
+        if mp.get("sprechrollen"):
+            role_metrics += f'<div class="metric"><span>Sprechrolle</span><strong>{pulse_html.esc(", ".join(mp["sprechrollen"]))}</strong></div>'
+        back_links = (
+            '<a href="index.html#weitere-redner">Weitere Rednerinnen und Redner</a>' if has_spoken(mp) else ""
+        ) + '<a href="index.html">Alle Abgeordnete</a>'
     domains = publication_domains or {}
     notices = "".join(
         (
@@ -8139,17 +8251,16 @@ def render_abgeordnete_detail(
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
-          <a href="index.html">Alle Abgeordnete</a>
+          {back_links}
         </nav>
-        <span class="eyebrow">{pulse_html.esc(mp.get('party') or 'Fraktion unbekannt')}</span>
+        <span class="eyebrow">{pulse_html.esc(eyebrow)}</span>
         <h1>{pulse_html.esc(mp.get('name'))}</h1>
         <p>Stammdaten aus der DIP-API und abgeordnetenwatch.de sowie alle in den erfassten Plenarprotokollen erkannten Reden.</p>
       </div>
       <div class="actions">{profile_link}</div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get('party') or '—')}</strong></div>
-      <div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get('wahlkreis') or '—')}</strong></div>
+      {role_metrics}
       <div class="metric"><span>Reden</span><strong>{pulse_html.esc(mp.get('speech_count') or 0)}</strong></div>
       <div class="metric"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(participation)}</strong></div>
     </section>
@@ -8330,7 +8441,7 @@ def _facts_page_style() -> str:
 
 
 def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
-    """Materialize LEAD_POSITION_CTE/LEAD_PROCEEDING_CTE once per connection.
+    """Materialize LEAD_POSITION_CTE/SINGLE_VORGANG_CTE once per connection.
 
     _fact_speech_citation/_fact_agenda_item_citation/_fact_proceeding_citation
     are each called once per receipt (a monthly grouped_extreme fact can cite
@@ -8348,12 +8459,12 @@ def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_lead_position_topic ON _lead_position_topic(agenda_item_id)"
     )
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_proceeding AS\n"
-        + facts.LEAD_PROCEEDING_CTE
-        + "SELECT agenda_item_id, proceeding_id FROM lead_position"
+        "CREATE TEMP TABLE IF NOT EXISTS _single_vorgang AS\n"
+        + facts.SINGLE_VORGANG_CTE
+        + "SELECT agenda_item_id, proceeding_id, title, proceeding_type FROM single_vorgang"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lead_position_proceeding ON _lead_position_proceeding(agenda_item_id)"
+        "CREATE INDEX IF NOT EXISTS idx_single_vorgang ON _single_vorgang(agenda_item_id)"
     )
 
 
@@ -8418,15 +8529,15 @@ def _fact_proceeding_citation(
     conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
 ) -> dict[str, Any] | None:
     """(document_number, page, page_quadrant) against the agenda item's
-    page_start, resolved through its lead position to the Vorgang
-    (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
+    page_start, resolved to the one Vorgang (proceedings.id) the item deals
+    with -- meistdiskutierter-vorgang's receipt, by the metric's own rule
+    (facts.SINGLE_VORGANG_CTE)."""
     row = conn.execute(
         """
-        SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
+        SELECT ai.id, lp.proceeding_id, lp.title, lp.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
-        JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
-        JOIN proceedings pr ON pr.id = lp.proceeding_id
+        JOIN _single_vorgang lp ON lp.agenda_item_id = ai.id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,
         (str(document_number), page, page_quadrant),
@@ -10062,6 +10173,144 @@ def render_catalog_page(
 
 
 # ---------------------------------------------------------------------------
+# PAGE: bundestag.html - "So arbeitet der Bundestag"
+#
+# Static prose: who brings in Vorlagen, when the Bundestag sits, how it votes,
+# the freies Mandat and the way from Gesetzentwurf to Gesetz. Every statement
+# cites the Grundgesetz or the Geschäftsordnung (GOBT), checked against the
+# official texts on 2026-10-30; nothing here is derived from the data.
+# ---------------------------------------------------------------------------
+
+GOBT_URL = "https://www.bundestag.de/parlament/aufgaben/rechtsgrundlagen/go_btg"
+
+
+def _gg(article: str, label: str) -> str:
+    """A link to one Grundgesetz article on gesetze-im-internet.de."""
+    href = pulse_html.source_url(f"https://www.gesetze-im-internet.de/gg/art_{article}.html", "gesetze-im-internet")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def _gobt(label: str) -> str:
+    """A link to the Geschäftsordnung des Deutschen Bundestages on bundestag.de."""
+    href = pulse_html.source_url(GOBT_URL, "bundestag-dip")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def render_bundestag_page(features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    sections = (
+        (
+            "vorlagen",
+            "Wer Vorlagen einbringt",
+            "<p>Gesetzentwürfe bringen die Bundesregierung, der Bundesrat oder Abgeordnete „aus der Mitte des "
+            "Bundestages“ ein. Vorlagen der Bundesregierung gehen zuerst an den Bundesrat, der dazu Stellung "
+            "nehmen kann.</p>"
+            "<p>Eine Vorlage aus der Mitte des Bundestages, etwa ein Gesetzentwurf oder ein Antrag, muss von "
+            "einer Fraktion oder von fünf Prozent der Mitglieder des Bundestages unterzeichnet sein. Welche "
+            "Vorlagen auf die Tagesordnung kommen können, zählt die Geschäftsordnung auf: unter anderem "
+            "Gesetzentwürfe, Anträge, Unterrichtungen und Große Anfragen. Was die Vorgangstypen im DIP "
+            f'bedeuten, erklärt das <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Glossar der '
+            "Vorgangstypen</a>.</p>",
+            f'{_gg("76", "Art. 76 Abs. 1 und 2 GG")} · {_gobt("§§ 75, 76 Abs. 1 GOBT")}',
+        ),
+        (
+            "sitzungen",
+            "Wann der Bundestag tagt",
+            "<p>Der Bundestag bestimmt selbst, wann seine Sitzungen schließen und wieder beginnen. In welchen "
+            "Wochen er sitzt, legt der Sitzungskalender fest; über diesen Arbeitsplan verständigen sich die "
+            "Fraktionen im Ältestenrat, und dort werden auch Termin und Tagesordnung jeder Sitzung "
+            "vereinbart.</p>"
+            "<p>Verlangen ein Drittel der Mitglieder, der Bundespräsident oder der Bundeskanzler eine Sitzung, "
+            "muss die Präsidentin oder der Präsident des Bundestages sie einberufen. Eine solche Sondersitzung "
+            "kann außerhalb jeder Sitzungswoche liegen.</p>",
+            f'{_gg("39", "Art. 39 Abs. 3 GG")} · {_gobt("§ 6 Abs. 2, §§ 20, 21 Abs. 2 GOBT")}',
+        ),
+        (
+            "abstimmen",
+            "Wie abgestimmt wird",
+            "<p>Abgestimmt wird durch Handzeichen oder durch Aufstehen oder Sitzenbleiben, die "
+            "Schlussabstimmung über einen Gesetzentwurf immer durch Aufstehen oder Sitzenbleiben. Ist sich der "
+            "Sitzungsvorstand über das Ergebnis auch nach der Gegenprobe nicht einig, werden die Stimmen "
+            "gezählt, auf seine Anordnung im sogenannten Hammelsprung: Alle verlassen den Saal und kommen "
+            "durch die Tür „Ja“, „Nein“ oder „Enthaltung“ zurück.</p>"
+            "<p>Eine namentliche Abstimmung findet statt, wenn eine Fraktion oder fünf Prozent der anwesenden "
+            "Mitglieder sie bis zum Beginn der Sitzung verlangen. Jedes Mitglied gibt dann eine "
+            "Abstimmungskarte mit seinem Namen ab. Nur bei ihr ist festgehalten, wie jedes einzelne Mitglied "
+            "gestimmt hat; Bundestag-Puls zeigt Einzelstimmen deshalb nur für "
+            '<a href="votes/index.html">namentliche Abstimmungen</a>.</p>'
+            "<p>Beschlossen ist, wofür die Mehrheit der abgegebenen Stimmen stimmt, soweit das Grundgesetz "
+            "nichts anderes bestimmt. Stimmengleichheit verneint die Frage, Enthaltungen zählen für die "
+            "Mehrheit nicht mit. Manche Beschlüsse brauchen mehr: Eine Änderung des Grundgesetzes etwa "
+            "braucht zwei Drittel der Mitglieder des Bundestages und zwei Drittel der Stimmen des "
+            "Bundesrates.</p>",
+            f'{_gg("42", "Art. 42 Abs. 2 GG")} · {_gg("79", "Art. 79 Abs. 2 GG")} · '
+            f'{_gobt("§§ 48, 51, 52 GOBT")}',
+        ),
+        (
+            "mandat",
+            "Freies Mandat",
+            "<p>Die Abgeordneten sind „Vertreter des ganzen Volkes, an Aufträge und Weisungen nicht gebunden "
+            "und nur ihrem Gewissen unterworfen“. Eine Stimme gegen das Mehrheitsvotum des eigenen "
+            "Zusammenschlusses verstößt gegen keine Regel. Bundestag-Puls nennt sie Abweichung und zählt sie, "
+            "ohne sie zu bewerten.</p>",
+            _gg("38", "Art. 38 Abs. 1 Satz 2 GG"),
+        ),
+        (
+            "gesetzgebung",
+            "Vom Gesetzentwurf zum Gesetz",
+            "<p>Gesetzentwürfe berät der Bundestag in drei Beratungen, die meisten anderen Vorlagen in einer. "
+            "Nach der ersten Beratung wird ein Gesetzentwurf in der Regel an einen Ausschuss überwiesen; "
+            "dessen Beschlussempfehlung und Bericht sind die Grundlage der zweiten Beratung. Nach der dritten "
+            "Beratung folgt die Schlussabstimmung.</p>"
+            "<p>Den Gesetzesbeschluss leitet die Präsidentin oder der Präsident des Bundestages dem Bundesrat "
+            "zu. Der Bundesrat kann den Vermittlungsausschuss anrufen. Braucht das Gesetz seine Zustimmung, "
+            "muss er zustimmen; sonst kann er Einspruch einlegen, den der Bundestag zurückweisen kann. Ein "
+            "zustande gekommenes Gesetz fertigt der Bundespräsident nach Gegenzeichnung aus und verkündet es "
+            "im Bundesgesetzblatt.</p>",
+            f'{_gobt("§§ 78, 80, 81, 84, 86 GOBT")} · {_gg("77", "Art. 77 GG")} · {_gg("78", "Art. 78 GG")} · '
+            f'{_gg("82", "Art. 82 Abs. 1 GG")}',
+        ),
+    )
+    toc = "".join(f'<li><a href="#{key}">{pulse_html.esc(title)}</a></li>' for key, title, _, _ in sections)
+    body = "".join(
+        f'<section class="panel explainer-section" id="{key}"><h2>{pulse_html.esc(title)}</h2>{prose}'
+        f'<p class="explainer-cite">Rechtsgrundlage: {cite}</p></section>'
+        for key, title, prose, cite in sections
+    )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · So arbeitet der Bundestag</title>
+  {pulse_html.page_head(features)}
+  <style>{bill_styles()}
+    .explainer {{ display:grid; gap:16px; max-width:860px; margin-top:18px; }}
+    .explainer-section p {{ line-height:1.6; }}
+    .explainer-cite {{ color:var(--muted); font-size:14px; }}
+    .explainer-toc {{ display:flex; flex-wrap:wrap; gap:6px 18px; padding:0; margin:12px 0 0; list-style:none; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(active="bundestag", features=features)}
+    <header class="page-header">
+      <div>
+        <h1>So arbeitet der Bundestag</h1>
+        <p>Die Regeln hinter den Sitzungen, Reden und Abstimmungen auf dieser Website, aus dem Grundgesetz und der Geschäftsordnung des Deutschen Bundestages (GOBT). Jeder Abschnitt nennt seine Rechtsgrundlage.</p>
+        <ul class="explainer-toc">{toc}</ul>
+      </div>
+    </header>
+    <main class="explainer">{body}</main>
+    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
 # PAGE: sources.html - "Quellen und Methode"
 #
 # The transparency page: which official sources are used, how each visible
@@ -10455,11 +10704,13 @@ def render_sources_page(
         <ul class="method-list glossary">
           {vorgangstyp_items}
         </ul>
+        <p>Wer welche Vorlagen einbringen kann und wie sie beraten werden: <a href="bundestag.html#vorlagen">So arbeitet der Bundestag</a>.</p>
       </section>
       <section class="panel" id="parlamentarische-begriffe">
         <h2>Parlamentarische Begriffe</h2>
         <p>Kurze Erläuterungen zu Dokumenten, Beratungen und Beteiligten. Die Links führen zu den offiziellen Quellen des Deutschen Bundestages.</p>
         <ul class="method-list glossary">{parliamentary_items}</ul>
+        <p>Wie der Bundestag Vorlagen berät und abstimmt, mit den Artikeln des Grundgesetzes und den Paragrafen der Geschäftsordnung: <a href="bundestag.html">So arbeitet der Bundestag</a>.</p>
       </section>
       <section class="panel note">
         <h2>Was nicht genutzt wird</h2>
@@ -11020,6 +11271,7 @@ def render_site(
     overview_path = output_dir / "overview.html"
     catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
+    bundestag_path = output_dir / "bundestag.html"
     database_page_path = output_dir / "database.html"
     settings_path = output_dir / "settings.html"
     feature_manifest_path = output_dir / "data" / "features.json"
@@ -11066,6 +11318,7 @@ def render_site(
         ),
         encoding="utf-8",
     )
+    bundestag_path.write_text(render_bundestag_page(features=features), encoding="utf-8")
     sources_path.write_text(
         render_sources_page(
             entries,

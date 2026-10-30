@@ -43,6 +43,7 @@ NAV_ITEMS = (
     NavItem("fakten", "Fakten", "fakt/index.html"),
     NavItem("database", "Daten", "database.html"),
     NavItem("sources", "Quellen", "sources.html"),
+    NavItem("bundestag", "So arbeitet der Bundestag", "bundestag.html"),
 )
 
 

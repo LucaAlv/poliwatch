@@ -926,6 +926,127 @@ class MeistdiskutierterVorgangTests(StoreCase):
         self.assertEqual(row["week_n"], 0)
 
 
+    # Value: protects=a Rede under a verbundene Beratung is credited to no Vorgang (CONTEXT.md, Vorgang); fails_when=the metric goes back to crediting a bundled item's Reden to its lead Vorgang; why_new=v2 let the Antrag DIP gave the lower position id win on Reden it merely shared (TODOS 2026-09-25); seam=none
+    def test_a_bundled_agenda_item_counts_for_no_vorgang(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [
+                        {"heading": "TOP 1", "proceeding_title": "Antrag A", "proceeding_id": "VA",
+                         "more_proceedings": [("VB", "Antrag B")]},
+                        {"heading": "TOP 2", "proceeding_title": "Gesetz C", "proceeding_id": "VC"},
+                    ],
+                    "speeches": [
+                        {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA1", "item": 0},
+                        {"char_count": 100, "speaker": "Karl Marx", "rede_id": "IDK1", "item": 0},
+                        {"char_count": 100, "speaker": "Ada Lovelace", "rede_id": "IDA2", "item": 0},
+                        {"char_count": 100, "speaker": "Karl Marx", "rede_id": "IDK2", "item": 1},
+                    ],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 1)
+        self.assertEqual(row["citation"]["title"], "Gesetz C")
+
+    # Value: protects=a mitberaten twin makes an item bundled, as derive.agenda_procedures counts it; fails_when=the Vorgang set is read from proceeding_positions alone; why_new=40 archive TOPs carry their only Gesetzgebung as a twin; seam=none
+    def test_a_mitberaten_twin_makes_the_item_bundled(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Antrag A", "proceeding_id": "VA",
+                               "mitberaten": [{"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung"}]}],
+                    "speeches": [(100, "Ada Lovelace", "IDA1")],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertIsNone(row["value"])
+
+    # Value: protects=a card shows the whole caveat of this metric (render_card_svg keeps two lines of 76); fails_when=the caveat grows past two lines and the card cuts the rule off mid-sentence; why_new=the first v3 caveat wrapped to three lines and lost the sentence saying what happens to bundled items (review 2026-10-30); seam=none
+    def test_the_caveat_fits_on_the_card(self) -> None:
+        metric = next(m for m in facts.MONTHLY_REGISTRY if m["id"] == VORGANG)
+        self.assertLessEqual(len(facts.wrap_lines(metric["caveat"], width=76, max_lines=20)), 2)
+
+    # Value: protects=an item whose one debated Vorgang is a mitberaten twin counts for it, named by the twin's own title; fails_when=the metric joins proceedings again, where persist stores no twin; why_new=review 2026-10-30: an Entschließungsantrag position with a Gesetz twin dropped out of the metric; seam=none
+    def test_a_twin_as_the_debated_vorgang_counts_with_its_title(self) -> None:
+        self.seed(
+            [
+                {
+                    "document_number": "21/1",
+                    "date": "2025-06-03",
+                    "items": [{"heading": "TOP 1", "proceeding_title": "Entschließungsantrag zu T", "proceeding_id": "E1",
+                               "proceeding_type": "Entschließungsantrag BT",
+                               "mitberaten": [{"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung"}]}],
+                    "speeches": [(100, "Ada Lovelace", "IDA1"), (100, "Karl Marx", "IDK1")],
+                }
+            ]
+        )
+        row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
+        self.assertEqual(row["value"], 2)
+        self.assertEqual(row["citation"]["title"], "Gesetz T")
+        self.assertEqual(row["citation"]["proceeding_type"], "Gesetzgebung")
+        # The page resolves the receipt by the same rule, with no proceedings row for the twin.
+        build._ensure_lead_position_tables(self.conn)
+        receipt = row["receipts"][0]
+        cited = build._fact_proceeding_citation(self.conn, receipt["document_number"], receipt.get("page"), receipt.get("page_quadrant"))
+        self.assertEqual((cited["proceeding_id"], cited["title"]), ("4711", "Gesetz T"))
+
+    # Value: protects=the SQL single-Vorgang rule equals derive.debated_vorgang (agenda_procedures' set, Entschließungsanträge only when alone), item by item and Vorgang by Vorgang; fails_when=either side changes what counts as an item's Vorgang (twins, a repeated Vorgang, an int twin id, an Entschließungsantrag) without the other; why_new=the facts SQL and topic_identity disagreed on the lead rule (TODOS 2026-10-03); seam=persist_report to SQL
+    def test_single_vorgang_items_match_derive_debated_vorgang(self) -> None:
+        import derive
+        import persist_dip_pulse_store as pulse_store
+        from _support import FIXTURES
+
+        ea = "Entschließungsantrag BT"
+
+        def position(pid, vorgang, twins=(), typ="Antrag"):
+            return {"id": pid, "vorgang_id": vorgang, "vorgangsposition": "Beratung", "vorgangstyp": typ,
+                    "titel": f"Vorgang {vorgang}", "source": {}, "mitberaten": list(twins)}
+
+        twin = {"id": 4711, "titel": "Gesetz T", "vorgangstyp": "Gesetzgebung", "vorgangsposition": "Beratung"}
+        variants = {
+            "one position": ("v1", [position("p1", "v1")]),
+            "one position and a twin": (None, [position("p1", "v1", [twin])]),
+            "a twin of its own Vorgang": ("4711", [position("p1", "4711", [twin])]),
+            "two Vorgänge": (None, [position("p1", "v1"), position("p2", "v2")]),
+            "one Vorgang twice": ("v1", [position("p1", "v1"), position("p2", "v1")]),
+            "no position": (None, []),
+            "a Gesetz and its Entschließungsantrag": ("v1", [position("p1", "v1", typ="Gesetzgebung"), position("p2", "e1", typ=ea)]),
+            "an Entschließungsantrag twin": ("v1", [position("p1", "v1", [{**twin, "id": 815, "vorgangstyp": ea}])]),
+            "only an Entschließungsantrag": ("e1", [position("p1", "e1", typ=ea)]),
+            "two Entschließungsanträge": (None, [position("p1", "e1", typ=ea), position("p2", "e2", typ=ea)]),
+            "two Vorgänge and an Entschließungsantrag": (None, [position("p1", "v1"), position("p2", "v2"), position("p3", "e1", typ=ea)]),
+        }
+        for label, (debated, positions) in variants.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                report = json.loads((FIXTURES / "report.json").read_text())
+                item = report["agenda_items"][0]
+                item.setdefault("api", {})["positions"] = positions
+                conn = pulse_store.connect(Path(tmp) / "store.sqlite")
+                try:
+                    pulse_store.persist_report(conn, report, {"version": 1, "vorgaenge": {}, "dokumentnummern": {}})
+                    single = {
+                        row[0]: row[1] for row in conn.execute(
+                            facts.SINGLE_VORGANG_CTE
+                            + "SELECT ai.item_index, sv.proceeding_id FROM single_vorgang sv "
+                            "JOIN agenda_items ai ON ai.id = sv.agenda_item_id"
+                        )
+                    }
+                finally:
+                    conn.close()
+                expected = {
+                    entry["index"]: derive.debated_vorgang(entry)
+                    for entry in report["agenda_items"] if derive.debated_vorgang(entry)
+                }
+                self.assertEqual(single, expected)
+                self.assertEqual(derive.debated_vorgang(item), debated)
+
+
 class ObserveTests(StoreCase):
     def test_depends_on_skips_an_unbuilt_metric(self) -> None:
         self.seed(week_specs(2))

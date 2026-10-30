@@ -289,16 +289,6 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
-
-**What:** `tests/fixtures/demo-report-21-84.json` holds 16 speeches for TOP 32 of Sitzung 21/84, but `scripts/extract_demo_fixture.py` run on the official XML (dserver `btp/21/21084.xml`) now finds 14 and stops at its guard ("expected 16 TOP 32 speeches"). Find which two are no longer Reden (most likely Kurzinterventionen or Erwiderungen, #68), then regenerate the fixture from the XML and update the guard and `test_demo_site.py`'s "16 Reden". The extractor's crash on bytes input (`parse_protocol_xml` takes text) was fixed in v0.23.3.0.
-
-**Why:** The demo and every test built on it show a count the current rules would not publish, and the fixture can only be edited by hand until it is regenerated.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Fakten
 
 Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The session chose Approach A (engine + two metrics + one weekly SVG card + Methodik, registry-shaped) as a **test run** of the concept; Approach A (A0 + A1, all eight metrics, weekly and monthly) shipped in v0.6.0.0. The items below are Approach B/C, the full implementation A was the test for. They are deliberately not discarded.
@@ -325,18 +315,16 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A1 shipped and at least one card posted
 
-### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
+### One rule for a Tagesordnungspunkt's Thema (lead Vorgang), computed once at persist time
 
-**What:** `meistdiskutierter-vorgang` (`scripts/facts.py`) credits every speech of a Tagesordnungspunkt to its lead Vorgang (`LEAD_PROCEEDING_CTE`: first Gesetzgebung by `proceeding_positions.id`, else lowest id). Decide how the metric handles a Tagesordnungspunkt that deals with several Vorgänge: skip bundled TOPs, count per Tagesordnungspunkt instead, or count only TOPs whose Vorgang set is a single Vorgang. Done when no Vorgang can win on Reden given under a TOP it merely shares.
+**What:** Compute a Tagesordnungspunkt's Thema/lead Vorgang once, at persist time, with `topic_identity`'s full rule (`derive.agenda_procedures`: `mitberaten` twins, `equal_weight`), and store it. `LEAD_POSITION_CTE` (`scripts/facts.py`) and the `_lead_position_topic` TEMP table in `build_dip_pulse_site._ensure_lead_position_tables` then read the stored value instead of re-implementing a simpler rule in SQL (no twins, no `equal_weight`).
 
-**Why:** CONTEXT.md (Vorgang, Thema, 2026-09-25): a Rede addresses its Tagesordnungspunkt and is never attributed to a Vorgang; the lead Vorgang is a naming rule only. Example: a verbundene Beratung of two competing Anträge credits all its Reden to whichever Antrag DIP gave the lower position id.
+**Why:** Until the rule exists once, the Wochenradar and a Fakt card (`laengste-debatte` and the other metrics that name a topic) can name different Themen for the same TOP. Split from the `meistdiskutierter-vorgang` item (done 2026-10-30, see Completed), whose metric no longer uses a lead Vorgang at all.
 
-**Context:** The two lead rules disagree today. The Wochenradar (`topic_identity`, `scripts/render_dip_pulse_html.py`) also reads `mitberaten` twins and has no lead at all for `equal_weight` TOPs (Final Gate 2026-09-15); the SQL always picks one. Check whether `proceeding_positions` holds the twins; if not, the SQL also misses the 40 TOPs where the only Gesetzgebung is a twin. Any fix changes past monthly winners, so it needs a metric version bump.
-
-**Update 2026-10-03 (architecture review):** fix the duplicated rule along with the metric. Compute a Tagesordnungspunkt's Thema/lead Vorgang once, at persist time, with `topic_identity`'s full rule (twins, `equal_weight`), and store it. `LEAD_POSITION_CTE`, `LEAD_PROCEEDING_CTE` and the TEMP tables in `build_dip_pulse_site._ensure_lead_position_tables` then read the stored value instead of re-implementing it in SQL. The CTE comment says "same rule topic_identity uses", and that is false. Until the rule exists once, the Wochenradar and a Fakt card can name different Themen for the same TOP.
+**Context:** Adds a stored column to `agenda_items`, so it touches the store schema; do it with or after "The store owns its schema and its rebuild". Any metric that names a topic then needs a version bump.
 
 **Effort:** S
-**Priority:** P2
+**Priority:** P3
 **Depends on:** None
 
 ### Fakt der Woche, Approach B: site-wide facts layer (full implementation)
@@ -376,11 +364,35 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
-### Call only current MdBs "Abgeordnete" on the Personenseiten
+### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
 
-**What:** Every Person with a Mandat or at least one Rede gets a page under `abgeordnete/`, including members of the Bundesrat and the Bundesregierung without a Mandat. On the list and each page, show only Persons with a current Mandat as Abgeordnete; show everyone else as a Redner with the Sprechrolle they spoke in (and a former Mandat where one exists). Decide whether the list keeps them in one filterable list or a separate group. The URL path can stay.
+**What:** `facts.render_card_svg` keeps two lines of 76 characters of a metric's caveat (`wrap_lines(..., max_lines=2)`). The caveat of `knappste-abstimmung` wraps to 4 lines and that of `meiste-abweichler` to 5 (measured 2026-10-30), so their cards show half a sentence. Shorten the caveats (or give the card room for them) and pin every caveat's line count with a test, as `meistdiskutierter-vorgang` now has.
 
-**Why:** CONTEXT.md (MdB, Personenseite, 2026-09-25): "Abgeordnete" for anyone who speaks is on the MdB entry's avoid list.
+**Why:** D27: a metric may not be read without its caveat, and a card is read without its page.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### List MdBs in a government office as Abgeordnete
+
+**What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
+
+**Why:** They are MdBs (CONTEXT.md) and the list says it is complete.
+
+**Context:** Tried 2026-10-30 with the `person_roles` rule (637 listed) and backed out: the registry's name guesses match on (name, party), and a Rede given as a member of the Bundesregierung has no party, so 29 of the 48 split into an Abgeordnete row without Reden and a separate Redner page with them (5 such splits before). Needs, first, a registry rule that joins a party-less Sprechrolle record to a roster record of the same name (`person_registry.match_rows`, A.2 territory: guard namesakes), then the roster rule (`derive.is_mdb_funktion` plus the Fraktion role, display name = the name segment of DIP's `titel`, Fraktion from the role when the top-level field is empty).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs
+
+**What:** Before 2026-10-30 the roster ingest flagged every DIP person whose `funktion` contained "MdB" as an MdB, which matched "MdBR" and "Stellv. MdBR" (151 Bundesrat members for WP 21). `person_registry.bind` records that as sticky `ever_mdb` evidence (`person_registry.py`, `evidence["ever_mdb"]`, `was_mdb`), so the registry still treats them as former roster persons: they stay page-eligible and `is_stale_roster_partner` can apply to them. Decide whether `ever_mdb` is re-derived from the exact rule (`derive.is_mdb_funktion`) or reset once for records whose only roster evidence is a Bundesrat funktion.
+
+**Why:** No page now calls them Abgeordnete (the Personenseite derives "Mitglied des Bundestages laut Plenarprotokoll" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
+
+**Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
 
 **Effort:** S
 **Priority:** P3
@@ -539,13 +551,11 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Priority:** P3
 **Depends on:** Vote outcome badge
 
-### "So arbeitet der Bundestag" explainer page
+### Link the vote panel's "namentlich" badge to `bundestag.html`
 
-**What:** A static `bundestag.html` in `NAV_ITEMS` answering, from GG and GOBT only with article/paragraph citations: who may bring a bill or motion; when the Bundestag sits (Sitzungswochen, Ältestenrat); how votes are taken (Handzeichen, Aufstehen, namentlich on request of a Fraktion or 5 %); whether MPs are bound (Art. 38 GG); what happens after a vote (three readings, Bundesrat, Vermittlungsausschuss). Done when every section cites its source and the site's existing Vorgangstyp glossary links to it.
+**What:** The vote panel (`scripts/features/votes.py`) names a namentliche Abstimmung without explaining it. Link its "namentlich" wording to `bundestag.html#abstimmen`, as the week radar's "namentlich abgestimmt" badge already does (depth-aware: the panel renders on dossiers under `protocols/` and on `votes/index.html`).
 
-**Why:** Our only explanatory surface is the Vorgangstyp glossary on `sources.html` (`VORGANGSTYP_GLOSSARY`, `scripts/render_dip_pulse_html.py:59-188`) and landing-page prose (`render_landing_page`, `build_dip_pulse_site.py:2742,2761`); the vote and Präsenz pages assume the reader knows what a namentliche Abstimmung is.
-
-**Context:** Prose page, no data; write it once, link it from the vote panel's "namentlich" badge and from `bundestag.html` back to the glossary. Reference: [plenarwatch.de/bundestag/](https://plenarwatch.de/bundestag/) for the section set, GG/GOBT for the content.
+**Why:** The vote panel is where readers meet the term most. Left out of the explainer change (2026-10-30) because the panel is B-track code.
 
 **Effort:** S
 **Priority:** P3
@@ -770,7 +780,7 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 11. A Fraktion missing from both the fraction rows and the Einzelstimmen leaves the other groups "complete", so the panel can say "Niemand stimmt anders …" and the archive show 0 while `vote.total` shows the missing Stimmen. Require the groups' totals to equal the vote total before any vote-wide claim (`build_dip_pulse_site.py` `_abweichler_count`, `features/votes.py` `_abweichler_summary_html`). 217 of 217 reference votes have matching totals.
 12. Pages and the Fakt `meiste-abweichler` / recipe `r3-abweichler` count Abweichler differently on an incomplete vote: `derive.vote_abweichler` withholds a group whose Einzelstimmen do not match its tally and excludes `Unbekannt`, the SQL (`facts.py`, the r3 recipe) does neither. Decide whether the SQL takes the page's completeness rule. 0 partial groups on the reference data.
 13. `derive.report_drucksachen` keeps the first TOP's copy of a Drucksache while persist keeps the fullest, so an empty `urheber` first can make the panel say "Ausschuss nicht ermittelt" while `r6-ausschuss` counts the committee. D15 shows 0 of 217 differ.
-14. `derive.person_profile_url` accepts a `..` segment (`/abgeordnete/../apps/na/x` resolves to the Abstimmung page it exists to exclude).
+14. ~~`derive.person_profile_url` accepts a `..` segment (`/abgeordnete/../apps/na/x` resolves to the Abstimmung page it exists to exclude).~~ Done 2026-10-30: a `.` or `..` path segment, also percent-encoded (`%2E%2e`), makes the URL no profile. No reference row carries one, so no stored value moves.
 15. The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.
 16. html.parser is quadratic on runs like `'<a "'`: 10,000 characters take about 0.9 s per call, paid per persist and per vote panel. Computing the plain text once at cache-write time removes it.
 17. Vote ids are not limited to anchor-safe characters, so an id with spaces makes an invalid `id="vote- 7 "` and an archive link that does not scroll (reference ids are numeric).
@@ -1042,6 +1052,22 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Call only current MdBs "Abgeordnete" on the Personenseiten
+
+Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix keeps its Bundesrat roster rows until the roster is fetched again (`--enrich mp-roster`); no migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+
+### "So arbeitet der Bundestag" explainer page
+
+Done 2026-10-30. `bundestag.html` (`render_bundestag_page`) is the ninth nav entry and explains, in five sections, who brings in Vorlagen (Art. 76 GG, §§ 75, 76 GOBT), when the Bundestag sits (Art. 39 Abs. 3 GG, §§ 6, 20, 21 GOBT), how it votes (Art. 42 Abs. 2, 79 Abs. 2 GG, §§ 48, 51, 52 GOBT), the freies Mandat (Art. 38 Abs. 1 Satz 2 GG) and the way from Gesetzentwurf to Gesetz (§§ 78–86 GOBT, Art. 77, 78, 82 GG). Every citation was checked against gesetze-im-internet.de and the GOBT on bundestag.de; § 52 is worded as it stands ("bis zum Beginn der Sitzung", five percent of the members present). The sources page's glossaries and the week radar's "namentlich abgestimmt" badge link to it; the vote panel link is its own item (B-track code).
+
+### Fakt der Woche, stop crediting a bundled TOP's Reden to one Vorgang (`meistdiskutierter-vorgang`)
+
+Done 2026-10-30 (metric version 2 → 3). A Tagesordnungspunkt counts for a Vorgang only when it debates exactly that one Vorgang; the Reden of a verbundene Beratung of several Vorgänge count for none (`facts.SINGLE_VORGANG_CTE`, `derive.debated_vorgang`). The Vorgang set is `derive.agenda_procedures`' set, including the `mitberaten` twins (`proceeding_positions.mitberaten_json`); an Entschließungsantrag (DIP „Entschließungsantrag BT“, an unselbständige Vorlage under § 75 Abs. 2 GOBT) counts only when it is the item's only Vorgang. A test pins the SQL to `derive.debated_vorgang` over persisted reports. Measured on WP 21 sittings 21/87–21/103 (2026-10-30): 56 of 121 TOPs with a Vorgang are verbundene Beratungen, and 3 of 4 monthly winners change, from bundled Gesetz debates (Haushaltsgesetz 2027 16 Reden, Tempolimit 17, Infrastruktur-Zukunftsgesetz 16, each debated with other Anträge) to single-Vorgang Anträge (13–14 Reden); October stays (26). Consequence worth a product look: a big Gesetz debate is usually a verbundene Beratung, so the card will rarely name a Gesetz. The receipt resolver (`_fact_proceeding_citation`) reads the same rule; `LEAD_PROCEEDING_CTE` is gone. The card and the Methodik carry the rule as the metric's caveat. Storing one Thema rule at persist time is split out as "One rule for a Tagesordnungspunkt's Thema (lead Vorgang), computed once at persist time".
+
+### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
+
+Done 2026-10-30. The two speeches that stopped being Reden are the Kurzintervention ID218403400 and its Erwiderung ID218403500 (#68). `scripts/extract_demo_fixture.py` now builds the agenda item from `validate_dip_protocol.xml_top_fields`, the helper real reports use, so the fixture carries `xml_contributions` (the demo dossier lists „1 Kurzintervention, 1 Erwiderung, 1 Zwischenfrage“ as Beiträge) and cannot fall behind the parser's fields again. The guard expects 14 Reden. Demo dossier: 16 → 14 Reden.
 
 ### The Bundestag XML gives one Redner-ID to two people (11005304)
 
