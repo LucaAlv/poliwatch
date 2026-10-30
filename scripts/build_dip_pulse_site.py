@@ -2794,8 +2794,10 @@ _DISPLAY_NAME_MEANING = "Anzeigename der repräsentativen Quellaufzeichnung: MdB
 
 # The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
-# addendum: R1/R3 join mp_canonical and group by the canonical id, so their
-# counts equal the pooled counts on the MP profile pages).
+# addendum: R1/R3 join mp_canonical). R1 groups by the canonical id, so its
+# counts equal the pooled counts on the MP profile pages; R3 groups by the
+# canonical id and Fraktion, so a member who switched Fraktion has one row per
+# Fraktion.
 #
 # Every "hidden" column is selected (it is the link key) but never rendered as
 # its own cell; the "link" on a visible column says which kind of link to try
@@ -3884,7 +3886,7 @@ def _run_export(
                 continue
             # Every listed table must have its CSV (validate_manifest checks),
             # so a name that cannot be a file name fails the export.
-            if not DATA_TABLE_NAME_RE.match(table["name"]):
+            if not DATA_TABLE_NAME_RE.fullmatch(table["name"]):
                 raise RuntimeError(f"export: table {table['name']!r} has no safe CSV file name")
             csv_name = f"{table['name']}-{tag}.csv.gz"
             csv_path = gen_dir / csv_name
@@ -12256,7 +12258,7 @@ def validate_manifest(
         if files and isinstance(files[0], dict) and not all(k in files[0] for k in ("unpacked_bytes", "sha256")):
             problems.append("files[0] needs unpacked_bytes and sha256")
     generation = manifest.get("generation")
-    if isinstance(generation, str) and not re.match(r"^g-[0-9a-f]{12}$", generation):
+    if isinstance(generation, str) and not re.fullmatch(r"g-[0-9a-f]{12}", generation):
         problems.append(f"generation {generation!r} is not g-<12 hex>")
     for key in ("protocols", "votes", "coverage"):
         value = manifest.get(key)

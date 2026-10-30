@@ -367,15 +367,20 @@ class ExportDistributionDataTests(unittest.TestCase):
     def test_a_table_without_a_safe_csv_name_fails_the_export(self) -> None:
         self.export()
         before = (self.exports_dir / "datenstand.json").read_bytes()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute('CREATE TABLE "bad-name" (id TEXT PRIMARY KEY)')
         inputs = b._read_codebook_inputs()
-        dictionary = json.loads(inputs.dictionary)
-        dictionary["tables"]["bad-name"] = {"meaning": "Tabelle mit unsicherem Namen.", "columns": {"id": dictionary["tables"]["speeches"]["columns"]["id"]}}
-        with mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, dictionary=json.dumps(dictionary))):
-            with self.assertRaisesRegex(RuntimeError, "'bad-name' has no safe CSV file name"):
-                self.export()
-        self.assertEqual((self.exports_dir / "datenstand.json").read_bytes(), before)
+        # A trailing newline passes a $-anchored re.match, so the check must be a full match.
+        for name in ("bad-name", "trailing\n"):
+            with self.subTest(name=name):
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(f'CREATE TABLE "{name}" (id TEXT PRIMARY KEY)')
+                dictionary = json.loads(inputs.dictionary)
+                dictionary["tables"][name] = {"meaning": "Tabelle mit unsicherem Namen.", "columns": {"id": dictionary["tables"]["speeches"]["columns"]["id"]}}
+                with mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, dictionary=json.dumps(dictionary))):
+                    with self.assertRaisesRegex(RuntimeError, re.escape(f"{name!r} has no safe CSV file name")):
+                        self.export()
+                self.assertEqual((self.exports_dir / "datenstand.json").read_bytes(), before)
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(f'DROP TABLE "{name}"')
 
     def authored_copy(self) -> Path:
         root = self.tmp / "repo"

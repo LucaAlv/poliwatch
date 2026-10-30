@@ -373,6 +373,8 @@ class RunDataPipelineTests(unittest.TestCase):
             "files empty": {"files": []},
             "path in file name": {"files": [{"name": "../x.gz", "bytes": 1, "unpacked_bytes": 1, "sha256": "a"}]},
             "bad generation": {"generation": "../../etc"},
+            # re.match's $ also matches before a final newline, which would split the page's curl line.
+            "generation with trailing newline": {"generation": "g-0123456789ab\n"},
             "not an object": [],
         }
         for label, payload in cases.items():
