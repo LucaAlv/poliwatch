@@ -1105,16 +1105,6 @@ PIPELINE_ERRORS = (RuntimeError, OSError, ValueError, json.JSONDecodeError, Data
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "applied_at"})
 
 
-def _bundesrat_only(function: Any) -> bool:
-    """A stored roster row whose offices are all Bundesrat ones. Stores built
-    before the exact MdB rule (derive.is_mdb_of_wahlperiode) flagged Bundesrat
-    members as MdBs; such a row is not carried into the rebuilt store. The rule's
-    other half (a Fraktion role) cannot be re-run here: person_roles is not
-    stored, so rows are dropped only on this clear sign."""
-    offices = {str(value).strip() for value in _parse_listish(function)}
-    return bool(offices) and offices <= derive.BUNDESRAT_FUNKTIONEN
-
-
 def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
     """The MdB roster rows of an existing store, read without migrating it."""
     if not database_path.exists():
@@ -1134,7 +1124,9 @@ def _read_roster_rows(database_path: Path) -> list[dict[str, Any]]:
                 WHERE m.is_mdb = 1
                 """
             )
-            if not _bundesrat_only(row["function"])
+            # Stores from before the exact rule flagged Bundesrat members as MdBs;
+            # a row without a stored funktion is kept, nothing says otherwise.
+            if not row["function"] or derive.is_mdb_funktion(_parse_listish(row["function"]))
         ]
     finally:
         previous.close()
@@ -7325,28 +7317,6 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
-def _roster_display_name(titel: Any) -> str | None:
-    """DIP's ``titel`` is the name, then the current office: "Dr. Carolin
-    Wagner, MdB, SPD" (registry.clean_mp_name trims the ", MdB…" tail) or
-    "Michael Kellner, Parl. Staatssekr., Bundesministerium …". For an MdB in a
-    government office only the name is kept, or the name matching against
-    their Reden fails and the Person splits into a roster row and a Redner."""
-    text = pulse_store.clean(titel)
-    if not text or ", MdB" in text:
-        return text
-    return pulse_store.clean(text.split(",", 1)[0])
-
-
-def _role_fraktion(person: dict[str, Any], wahlperiode: int) -> str | None:
-    """The Fraktion of the person's role in ``wahlperiode``. DIP leaves the
-    top-level ``fraktion`` empty for an MdB whose current office is a
-    government one (a Parl. Staatssekretär, a Bundesminister)."""
-    for role in person.get("person_roles") or []:
-        if role.get("fraktion") and any(str(p) == str(wahlperiode) for p in role.get("wahlperiode_nummer") or []):
-            return role["fraktion"]
-    return None
-
-
 def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
@@ -7367,11 +7337,10 @@ def ingest_mdb_roster(
     pulse_store.initialize(store)
     with store:
         for person in persons:
-            # Decided on the raw record: compact_person drops person_roles.
-            if not derive.is_mdb_of_wahlperiode(person, wahlperiode):
-                continue
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
+            if not derive.is_mdb_funktion(funktion):
+                continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
                 # such row would share one name-party:Unbekannt record.
@@ -7379,11 +7348,11 @@ def ingest_mdb_roster(
                 continue
             stats["mdb"] += 1
             fraktion_list = compact.get("fraktion") or []
-            fraktion = fraktion_list[0] if fraktion_list else _role_fraktion(person, wahlperiode)
+            fraktion = fraktion_list[0] if fraktion_list else None
             party_name = derive.zusammenschluss(fraktion)
             party_id = pulse_store.upsert_party(store, party_name, now)
             display_name = (
-                _roster_display_name(compact.get("titel"))
+                pulse_store.clean(compact.get("titel"))
                 or pulse_store.clean(f"{compact.get('vorname') or ''} {compact.get('nachname') or ''}")
                 or "Unbekannt"
             )
@@ -7921,8 +7890,9 @@ def render_abgeordnete_index(
     redner_section = (
         '<section class="redner-group" id="weitere-redner" data-redner-group>'
         "<h2>Weitere Rednerinnen und Redner</h2>"
-        "<p>Personen, die im Plenum gesprochen haben, ohne Mitglied des Bundestages der laufenden Wahlperiode zu sein: "
-        "etwa für die Bundesregierung oder den Bundesrat, oder mit einem früheren Mandat.</p>"
+        "<p>Personen, die im Plenum gesprochen haben und nicht in der Liste oben stehen: etwa für die Bundesregierung "
+        "oder den Bundesrat, oder als Mitglied des Bundestages einer früheren Wahlperiode. Mitglieder des Bundestages, "
+        "die ein Regierungsamt haben, führt DIP ohne die Funktion MdB; sie stehen bis auf Weiteres hier.</p>"
         '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
         + "".join(redner_rows)
         + "</tbody></table></section>"
@@ -7982,14 +7952,16 @@ def render_abgeordnete_index(
 
 
 def redner_label(mp: dict[str, Any]) -> str:
-    """How a Person without a Mandat in the roster's Wahlperiode is named:
-    "Redner" with the Sprechrollen they spoke in, and "früheres Mitglied des
-    Bundestages" when a Rede of theirs counted for a Zusammenschluss (only an
-    MdB's does, ADR 0001). The registry's ever_mdb evidence is not used: it
-    was set for Bundesrat members before the exact MdB rule."""
+    """How a Person outside the roster is named: "Redner" with the Sprechrollen
+    they spoke in, and "Mitglied des Bundestages laut Plenarprotokoll" when a
+    Rede of theirs counted for a Zusammenschluss (only an MdB's does, ADR 0001).
+    Not "früheres": an MdB in a government office is not in the roster yet
+    (TODOS.md), and the Reden say nothing about today. The registry's ever_mdb
+    evidence is not used: it was set for Bundesrat members before the exact
+    MdB rule."""
     parts = ["Redner", *(mp.get("sprechrollen") or [])]
     if mp.get("spoke_for_zusammenschluss"):
-        parts.append("früheres Mitglied des Bundestages")
+        parts.append("Mitglied des Bundestages laut Plenarprotokoll")
     return " · ".join(parts)
 
 

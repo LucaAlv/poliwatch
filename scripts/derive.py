@@ -91,27 +91,16 @@ def _known(text: str) -> str | None:
     return name if name in _KNOWN else None
 
 
-#: DIP ``funktion`` values of Bundesrat members. "MdBR" contains "MdB", so a
-#: substring test lists them as MdBs (151 persons for WP 21 on 2026-10-30).
-BUNDESRAT_FUNKTIONEN = frozenset({"MdBR", "Stellv. MdBR", "Bundesratspräs."})
+def is_mdb_funktion(funktion: Any) -> bool:
+    """Whether a DIP ``funktion`` list marks an MdB (CONTEXT.md): "MdB" as an
+    exact value. A substring test also matched "MdBR" and "Stellv. MdBR" and
+    listed Bundesrat members as MdBs (151 for WP 21 on 2026-10-30).
 
-
-def is_mdb_of_wahlperiode(person: Mapping[str, Any], wahlperiode: int) -> bool:
-    """Whether a raw DIP ``/person`` record is an MdB (CONTEXT.md) of
-    ``wahlperiode``: its ``funktion`` names "MdB" exactly, or one of its
-    ``person_roles`` carries a ``fraktion`` for that Wahlperiode.
-
-    DIP's ``funktion`` is the person's current office only, so an MdB who is
-    also Parl. Staatssekretär, Bundesminister or Vizepräsident(in) shows the
-    Mandat only as a Fraktion role (48 persons for WP 21 on 2026-10-30). DIP
-    gives no Mandat end date: an MdB who left during the Wahlperiode counts."""
-    if "MdB" in {str(value).strip() for value in person.get("funktion") or []}:
-        return True
-    for role in person.get("person_roles") or []:
-        periods = role.get("wahlperiode_nummer") or []
-        if _clean(role.get("fraktion")) and any(str(period) == str(wahlperiode) for period in periods):
-            return True
-    return False
+    DIP's ``funktion`` is the current office only, so an MdB who is also
+    Parl. Staatssekretär or Bundesminister does not carry "MdB" here (TODOS.md,
+    "List MdBs in a government office"). DIP gives no Mandat end date: an MdB
+    who left during the Wahlperiode still counts."""
+    return "MdB" in {str(value).strip() for value in funktion or []}
 
 
 def zusammenschluss(value: Any) -> str | None:

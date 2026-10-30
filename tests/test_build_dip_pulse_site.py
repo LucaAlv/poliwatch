@@ -1255,7 +1255,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
         self.assertIn("Der vollständige Abgeordnetenkader wurde nicht abgerufen", markup)
         self.assertIn("Profilverknüpfungen konnten nicht abgerufen werden", markup)
 
-    # Value: protects=only an MdB is shown as an Abgeordnete; a Person without a Mandat is a Redner with the Sprechrolle they spoke in, and "früheres Mitglied" only when a Rede counted for a Zusammenschluss; fails_when=a minister's page shows a Fraktion metric again, or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite): "Abgeordnete" for anyone who speaks is on the avoid list; seam=none
+    # Value: protects=only an MdB is shown as an Abgeordnete; a Person without a Mandat is a Redner with the Sprechrolle they spoke in, and "Mitglied des Bundestages laut Plenarprotokoll" only when a Rede counted for a Zusammenschluss; fails_when=a minister's page shows a Fraktion metric again, or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite): "Abgeordnete" for anyone who speaks is on the avoid list; seam=none
     def test_only_mdbs_are_called_abgeordnete(self) -> None:
         base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}}
         mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "speech_count": 3,
@@ -1272,7 +1272,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
         self.assertIn("<span>Sprechrolle</span><strong>Bundesregierung</strong>", page)
         self.assertNotIn("<span>Fraktion</span>", page)
         self.assertIn('href="index.html#weitere-redner"', page)
-        self.assertIn("Redner · früheres Mitglied des Bundestages",
+        self.assertIn("Redner · Mitglied des Bundestages laut Plenarprotokoll",
                       build_dip_pulse_site.render_abgeordnete_detail(former, default_selection()))
         mdb_page = build_dip_pulse_site.render_abgeordnete_detail(mdb, default_selection())
         self.assertIn('<span class="eyebrow">SPD</span>', mdb_page)
@@ -1285,7 +1285,7 @@ class CurrentPulseOrderTests(unittest.TestCase):
         # Most Reden first; a page kept by registry evidence alone (no Rede, no Beitrag) gets no row.
         self.assertEqual(re.findall(r'<a href="(p\d)\.html">', redner), ["p2", "p3"])
         self.assertIn("<td>Bundesregierung</td>", redner)
-        self.assertIn("<td>früheres Mitglied des Bundestages</td>", redner)
+        self.assertIn("<td>Mitglied des Bundestages laut Plenarprotokoll</td>", redner)
 
     def test_manifest_preserves_cached_acquisition_times_and_fails_empty_requested_roster(self) -> None:
         previous_time = "2026-08-01T10:00:00Z"

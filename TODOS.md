@@ -363,11 +363,23 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
+### List MdBs in a government office as Abgeordnete
+
+**What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
+
+**Why:** They are MdBs (CONTEXT.md) and the list says it is complete.
+
+**Context:** Tried 2026-10-30 with the `person_roles` rule (637 listed) and backed out: the registry's name guesses match on (name, party), and a Rede given as a member of the Bundesregierung has no party, so 29 of the 48 split into an Abgeordnete row without Reden and a separate Redner page with them (5 such splits before). Needs, first, a registry rule that joins a party-less Sprechrolle record to a roster record of the same name (`person_registry.match_rows`, A.2 territory: guard namesakes), then the roster rule (`derive.is_mdb_funktion` plus the Fraktion role, display name = the name segment of DIP's `titel`, Fraktion from the role when the top-level field is empty).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs
 
-**What:** Before 2026-10-30 the roster ingest flagged every DIP person whose `funktion` contained "MdB" as an MdB, which matched "MdBR" and "Stellv. MdBR" (151 Bundesrat members for WP 21). `person_registry.bind` records that as sticky `ever_mdb` evidence (`person_registry.py`, `evidence["ever_mdb"]`, `was_mdb`), so the registry still treats them as former roster persons: they stay page-eligible and `is_stale_roster_partner` can apply to them. Decide whether `ever_mdb` is re-derived from the exact rule (`derive.is_mdb_of_wahlperiode`) or reset once for records whose only roster evidence is a Bundesrat funktion.
+**What:** Before 2026-10-30 the roster ingest flagged every DIP person whose `funktion` contained "MdB" as an MdB, which matched "MdBR" and "Stellv. MdBR" (151 Bundesrat members for WP 21). `person_registry.bind` records that as sticky `ever_mdb` evidence (`person_registry.py`, `evidence["ever_mdb"]`, `was_mdb`), so the registry still treats them as former roster persons: they stay page-eligible and `is_stale_roster_partner` can apply to them. Decide whether `ever_mdb` is re-derived from the exact rule (`derive.is_mdb_funktion`) or reset once for records whose only roster evidence is a Bundesrat funktion.
 
-**Why:** No page now calls them Abgeordnete (the Personenseite derives "früheres Mitglied" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
+**Why:** No page now calls them Abgeordnete (the Personenseite derives "Mitglied des Bundestages laut Plenarprotokoll" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
 
 **Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
 
@@ -1006,7 +1018,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
-Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR", and DIP's `funktion` holds only the current office, so MdBs who are Parl. Staatssekretär, Bundesminister, Staatsminister or Vizepräsident(in) were missed. `derive.is_mdb_of_wahlperiode` takes "MdB" as an exact funktion or a `person_roles` entry with a Fraktion for the Wahlperiode (Fraktion from that role when the top-level field is empty). DIP WP 21 on 2026-10-30: the Abgeordnete list goes from 740 (589 MdB + 151 Bundesrat) to 637 (589 + 48). DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". An offline rebuild drops preserved roster rows whose offices are all Bundesrat ones. A Person with a page but no Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden (and "früheres Mitglied des Bundestages" when a Rede counted for a Zusammenschluss), the Fraktion and Wahlkreis metrics give way to the Sprechrolle, and the index lists them under "Weitere Rednerinnen und Redner". Follow-up: "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. An offline rebuild drops preserved roster rows whose stored funktion is known and not "MdB". DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden (and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede counted for a Zusammenschluss; not "früheres", because MdBs in a government office are not in the roster yet), the Fraktion and Wahlkreis metrics give way to the Sprechrolle, and the index lists them under "Weitere Rednerinnen und Redner". Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 ### "So arbeitet der Bundestag" explainer page
 
