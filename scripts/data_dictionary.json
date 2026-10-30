@@ -1602,8 +1602,8 @@
           "license": "eigene-metadaten"
         },
         "passage_state": {
-          "meaning": "Ob die Abstimmung einen Forderungsteil zitiert: extracted (mindestens einer gezeigt), no_passage (alle Kandidaten gelesen, keiner hat einen), not_fetched (Metadaten oder Text eines Kandidaten fehlen), not_applicable (jeder Vorgang hat eine DIP-Zusammenfassung oder keine Drucksache ist ein Antrag eines solchen Vorgangs).",
-          "unit": "Textcode extracted, no_passage, not_fetched oder not_applicable; NULL, wenn die Regel für diese Abstimmung nicht lief.",
+          "meaning": "Ob die Abstimmung einen Forderungsteil zitiert: extracted (mindestens einer gezeigt), no_passage (alle Kandidaten gelesen, keiner hat einen), not_fetched (Metadaten oder Text eines Kandidaten fehlen), not_applicable (jeder Vorgang hat eine DIP-Zusammenfassung, keine Drucksache ist ein Antrag eines solchen Vorgangs, oder kein Vorgang der Abstimmung ist bekannt bzw. im Cache; dann steht votes.context_state auf none oder not_fetched).",
+          "unit": "Textcode extracted, no_passage, not_fetched oder not_applicable; not_applicable heißt nicht geprüft, nicht ohne Antrag.",
           "source": "scripts/antrag_text.py: Forderungsteil aus dem DIP-Volltext (drucksache-text) von Antrag- und Entschließungsantrag-Drucksachen, gelesen für Abstimmungen, deren Vorgang keine DIP-Zusammenfassung hat; geschrieben von scripts/persist_dip_pulse_store.py.",
           "license": "eigene-auswertung"
         }
