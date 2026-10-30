@@ -7325,6 +7325,18 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
+def _roster_display_name(titel: Any) -> str | None:
+    """DIP's ``titel`` is the name, then the current office: "Dr. Carolin
+    Wagner, MdB, SPD" (registry.clean_mp_name trims the ", MdB…" tail) or
+    "Michael Kellner, Parl. Staatssekr., Bundesministerium …". For an MdB in a
+    government office only the name is kept, or the name matching against
+    their Reden fails and the Person splits into a roster row and a Redner."""
+    text = pulse_store.clean(titel)
+    if not text or ", MdB" in text:
+        return text
+    return pulse_store.clean(text.split(",", 1)[0])
+
+
 def _role_fraktion(person: dict[str, Any], wahlperiode: int) -> str | None:
     """The Fraktion of the person's role in ``wahlperiode``. DIP leaves the
     top-level ``fraktion`` empty for an MdB whose current office is a
@@ -7371,7 +7383,7 @@ def ingest_mdb_roster(
             party_name = derive.zusammenschluss(fraktion)
             party_id = pulse_store.upsert_party(store, party_name, now)
             display_name = (
-                pulse_store.clean(compact.get("titel"))
+                _roster_display_name(compact.get("titel"))
                 or pulse_store.clean(f"{compact.get('vorname') or ''} {compact.get('nachname') or ''}")
                 or "Unbekannt"
             )

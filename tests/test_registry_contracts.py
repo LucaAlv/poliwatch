@@ -287,6 +287,20 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         # A Parl. Staatssekretärin's Fraktion comes from her role: DIP leaves the top-level field empty.
         self.assertEqual([tuple(row) for row in rows], [("dip-1", "SPD"), ("dip-4", "CDU/CSU")])
 
+    # Value: protects=an MdB in a government office is one Person: the roster row keeps only the name from DIP's titel, so it merges with the Reden; fails_when=the roster stores the whole titel ("…, Parl. Staatssekr., Bundesministerium …") as the display name again; why_new=on the WP 21 reference build every one of the 48 newly listed MdBs split into a roster row and a separate Redner; seam=none
+    def test_an_mdb_in_a_government_office_merges_with_their_reden(self):
+        client = mock.Mock()
+        client.list_all.return_value = [{
+            "id": "dip-4", "titel": "Dora Staat, Parl. Staatssekr., Bundesministerium für Beispiele",
+            "vorname": "Dora", "nachname": "Staat", "fraktion": [], "funktion": ["Parl. Staatssekr."],
+            "wahlperiode": [21], "person_roles": [{"fraktion": "SPD", "wahlperiode_nummer": [21]}],
+        }]
+        self.rebuild([report("s1", names=("Dora Staat",))], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperiode=21))
+        mps = self.rows("mps")
+        self.assertEqual([m["display_name"] for m in mps if m["is_mdb"]], ["Dora Staat"])
+        self.assertEqual(len({m["person_id"] for m in mps}), 1)
+
     # Value: protects=an offline rebuild drops preserved roster rows of Bundesrat members a store from before the exact MdB rule holds, and keeps an MdB in a government office; fails_when=_read_roster_rows carries every is_mdb row again, or filters by "MdB" in function and loses the Parl. Staatssekretärin; why_new=preserved rows survive until the roster is fetched again, so the fix would not reach an offline rebuild; seam=none
     def test_a_preserved_bundesrat_row_is_not_carried_over(self):
         def ingest(staged):
