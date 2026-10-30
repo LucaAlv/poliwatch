@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import build_dip_pulse_site as site
 import validate_store_gate as gate
 
 
@@ -185,7 +186,8 @@ def _export_dir(root: Path, *, protocols_in_manifest: int = 2, corrupt: bool = F
         "files": [{"name": "votes-local.csv.gz", "bytes": len(payload), "unpacked_bytes": len(payload),
                    "sha256": hashlib.sha256(payload).hexdigest()}],
         "protocols": {"count": protocols_in_manifest}, "tables": [], "relationships": 0, "total_rows": 6,
-        "votes": {"count": 1, "members": 3}, "recipes": [],
+        "votes": {"count": 1, "members": 3},
+        "recipes": [{"id": recipe["id"], "sql": recipe["sql"], "rows": []} for recipe in site.RECIPES],
         "coverage": {"catalog_count": 2, "dossier_count": 2, "bausteine": {}},
     }
     (data / "exports" / "datenstand.json").write_text(json.dumps(manifest), encoding="utf-8")
