@@ -23,7 +23,7 @@ import persist_dip_pulse_store as pulse_store
 import person_registry
 import render_dip_pulse_html as pulse_html
 import speech_kinds
-from features import EnrichmentSelection, all_selection, default_selection
+from features import COMPONENTS, EnrichmentSelection, all_selection, default_selection
 
 
 
@@ -973,15 +973,16 @@ class CurrentPulseOrderTests(unittest.TestCase):
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
 
         # _render_pulse builds on 2026-09-15, fourteen ISO weeks after KW 24:
-        # the stale-archive state, which leads with the age.
+        # the stale-archive state, whose age stands in the flag after the h1.
         self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
         self.assertIn("<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>", header)
         self.assertIn(
             '<a href="protocols/plenarprotokoll-21-84.html"><time datetime="2026-06-12">Fr 12.06.</time> · 21/84</a>',
             header,
         )
+        self.assertIn('<p class="stale-flag">Nicht aktuell: letzte Woche mit Sitzung vor 14 Wochen</p>', header)
         self.assertIn(
-            "Letzte Sitzungswoche vor 14 Wochen · 1 Rede in 1 Tagesordnungspunkt · 1 Sitzung, "
+            '<p class="week-facts">1 Rede in 1 Tagesordnungspunkt · 1 Sitzung, '
             'letztes Protokoll 21/84 verteilt am <time datetime="2026-06-15">15.06.2026</time> · '
             'Auswertung vom <time datetime="2026-09-15">15.09.2026</time>',
             header,
@@ -1770,6 +1771,18 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn('<span class="week-delta flat">n/a</span>', text_metric)
         self.assertNotIn("KW 21/2026:", text_metric)
 
+    def test_zero_prior_metric_keeps_its_unavailable_delta(self) -> None:
+        entries = [
+            self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])]),
+            self._entry("2026-05-20", "21/79", []),
+        ]
+        band = re.search(r'<section class="week-compare".*?</section>', self._render(entries), re.S).group()
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        self.assertIn('<span class="week-delta flat">n/a</span>', metrics)
+        self.assertIn('<span class="week-delta flat">n/a</span>', shares)
+        self.assertNotIn('week-list-current-only', shares)
+
     def test_matched_redeanteil_recomputes_shares_from_selected_sittings(self) -> None:
         current = pulse_html.week_stats(
             (2026, 24), [self._entry("2026-06-10", "21/82", [self._item(1, [("SPD", 100)])])]
@@ -1788,6 +1801,22 @@ class SittingWeekComparisonTests(unittest.TestCase):
             comparison["compared_previous"]["party_counts"],
         )
         self.assertIn("+50,0&nbsp;pp", markup)
+
+    def test_share_shift_can_hide_deltas_without_changing_current_rows(self) -> None:
+        current = Counter({"SPD": 3, "AfD": 1})
+        previous = Counter({"SPD": 1, "AfD": 1})
+        compared = pulse_html.render_share_shift(current, previous)
+        current_only = pulse_html.render_share_shift(current, previous, show_deltas=False)
+        self.assertEqual(re.findall(r'<span class="week-label">(.*?)</span>', compared), re.findall(r'<span class="week-label">(.*?)</span>', current_only))
+        self.assertEqual(re.findall(r'width:([0-9.]+)%', compared), re.findall(r'width:([0-9.]+)%', current_only))
+        self.assertEqual(re.findall(r'<strong>(.*?)</strong>', compared), re.findall(r'<strong>(.*?)</strong>', current_only))
+        self.assertIn('<ul class="week-list">', compared)
+        self.assertIn('<ul class="week-list week-list-current-only">', current_only)
+        self.assertNotIn('class="week-delta', current_only)
+        self.assertIn('class="week-delta', compared)
+        empty = '<p class="week-note">Keine Redebeitr&auml;ge zugeordnet.</p>'
+        self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1})), empty)
+        self.assertEqual(pulse_html.render_share_shift(Counter(), Counter({"SPD": 1}), show_deltas=False), empty)
 
     def test_unmatched_truncated_sitting_does_not_hide_matched_text_metric(self) -> None:
         truncated = self._entry("2026-05-21", "21/80", [self._item(1, [("SPD", 100)])])
@@ -1905,7 +1934,7 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn("Redeanteil der Fraktionen", markup)
         self.assertIn("Debattenprofil", markup)
         self.assertIn("Wieder auf der Tagesordnung", markup)
-        self.assertIn("Kein Vorgang dieser Sitzungswoche", markup)
+        self.assertIn("Kein Vorgang dieser Woche", markup)
         self.assertNotIn("Verfahren, die", markup)
 
     def test_placeholder_is_gone(self) -> None:
@@ -1927,12 +1956,26 @@ class SittingWeekComparisonTests(unittest.TestCase):
         self.assertIn("Noch keine Vergleichswoche", markup)
         self.assertNotIn("KW 17/2023", markup)
         self.assertNotIn("2023-04-27", markup)
+        band = re.search(r'<section class="week-compare".*?</section>', markup, re.S).group()
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
 
     def test_single_week_has_no_comparison(self) -> None:
         markup = self._render(
             [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
         )
         self.assertIn("Noch keine Vergleichswoche", markup)
+        band = re.search(r'<section class="week-compare".*?</section>', markup, re.S).group()
+        metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
+        self.assertRegex(metrics, r'<span>Reden</span>\s*<strong>1</strong>')
+        self.assertRegex(metrics, r'<span>Tagesordnungspunkte</span>\s*<strong>1</strong>')
+        self.assertRegex(metrics, r'<span>Redetext \(Zeichen\)</span>\s*<strong>100</strong>')
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
+        shares = re.search(r'<h3>Redeanteil der Fraktionen</h3>(.*?)</article>', band, re.S).group(1)
+        self.assertIn('<ul class="week-list week-list-current-only">', shares)
+        self.assertIn('width:100.00%', shares)
+        self.assertIn('<strong>100,0%</strong>', shares)
 
     def test_running_week_shows_no_delta_without_shared_weekday(self) -> None:
         entries = [
@@ -2025,6 +2068,21 @@ class SittingWeekComparisonTests(unittest.TestCase):
             markup,
         )
         self.assertNotIn("Aufmerksamkeitsranking", markup)
+
+    # Value: protects=the pages that describe Dossiers call them "Dossier", not a name on CONTEXT.md's avoid list; fails_when=Sitzungsseite, Sitzungsdossier or Protokoll-Dossier returns to the Methodik or the overview, or the component list labels them otherwise; why_new=both pages and the component list used avoided names; seam=none; no_claim=pages that render no Dossier description
+    def test_dossier_pages_say_dossier_not_an_avoided_name(self) -> None:
+        sources = build_dip_pulse_site.render_sources_page([], features=default_selection())
+        overview = build_dip_pulse_site.render_overview(
+            [{"id": "5799", "dokumentnummer": "21/84", "datum": "2026-06-12", "titel": "Plenarprotokoll 21/84"}],
+            [],
+            features=default_selection(),
+        )
+        self.assertIn("Jedes Dossier verlinkt den Zwischenbericht als JSON", sources)
+        self.assertIn("<h2>Erzeugte Dossiers</h2>", overview)
+        for markup in (sources, overview):
+            for avoided in ("Sitzungsseite", "Sitzungsdossier", "Protokoll-Dossier"):
+                self.assertNotIn(avoided, markup)
+        self.assertEqual(next(c for c in COMPONENTS if c.id == "dossiers").label, "Dossiers")
 
     def test_sources_page_has_a_glossary_entry_per_vorgangstyp(self) -> None:
         markup = build_dip_pulse_site.render_sources_page([], features=default_selection())
@@ -3787,16 +3845,34 @@ class WeekRadarPageTests(unittest.TestCase):
         )
 
     def test_header_older_week_leads_with_its_age(self) -> None:
-        markup = self._render(today=date(2026, 9, 15))
+        # KW 24/2026 seen from KW 28: four ISO weeks, an ordinary sitting break.
+        markup = self._render(today=date(2026, 7, 7))
         header = re.search(r'<header class="page-header">(.*?)</header>', markup, re.S).group(1)
         self.assertIn('<span class="eyebrow">Wochenübersicht</span>', header)
-        self.assertIn("Letzte Sitzungswoche vor 14 Wochen · 29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll 21/84 vom", header)
-        self.assertIn('Auswertung vom <time datetime="2026-09-15">15.09.2026</time>', header)
+        self.assertIn("Letzte Woche mit Sitzung: vor 4 Wochen · 29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll 21/84 vom", header)
+        self.assertIn('Auswertung vom <time datetime="2026-07-07">07.07.2026</time>', header)
+        self.assertNotIn("stale-flag", header)
         # A build dated before the week renders as a past week and warns.
         with mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
             early = build_dip_pulse_site.render_front_page(self._week(), database_href=None, today=date(2026, 6, 1))
         self.assertIn("Stand: 3 Sitzungen", early)
-        self.assertIn("warning: [puls] Auswertung liegt vor der Sitzungswoche", stderr.getvalue())
+        self.assertIn("warning: [puls] Auswertung liegt vor der ausgewählten Woche", stderr.getvalue())
+
+    # Value: protects=a week older than STALE_AFTER_WEEKS is flagged as not current in text right after the h1, outside it, and the facts line does not repeat the age; fails_when=the age stays only in the muted facts line, the flag lands inside the heading's accessible name, or a running or recent week is flagged; why_new=the h1 read as current for a months-old week; seam=none; no_claim=visual contrast of the flag
+    def test_header_flags_a_stale_week_after_the_h1(self) -> None:
+        stale = self._render(today=date(2026, 7, 14))
+        header = re.search(r'<header class="page-header">(.*?)</header>', stale, re.S).group(1)
+        self.assertIn(
+            '<h1>Was der Bundestag in KW 24/2026 verhandelt hat</h1>'
+            '<p class="stale-flag">Nicht aktuell: letzte Woche mit Sitzung vor 5 Wochen</p>',
+            header,
+        )
+        facts_line = re.search(r'<p class="week-facts">(.*?)</p>', header, re.S).group(1)
+        self.assertTrue(facts_line.startswith("29 Reden in 9 Tagesordnungspunkten · 3 Sitzungen, letztes Protokoll"))
+        self.assertNotIn("vor 5 Wochen", facts_line)
+        self.assertIn(".stale-flag {", stale)
+        for today in (date(2026, 6, 11), date(2026, 6, 16), date(2026, 7, 7)):
+            self.assertNotIn('class="stale-flag"', self._render(today=today), msg=today)
 
     def test_header_uses_verteildatum_when_the_newest_protocol_has_one(self) -> None:
         entries = self._week()
@@ -3846,7 +3922,7 @@ class WeekRadarPageTests(unittest.TestCase):
             markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
         radar = self._section(markup, "radar")
         self.assertIn("<h2 id=\"radar-h2\">Wor&uuml;ber am meisten gesprochen wurde</h2>", radar)
-        self.assertIn('<p class="week-note">In dieser Sitzungswoche wurden keine Reden extrahiert.</p>', radar)
+        self.assertIn('<p class="week-note">In dieser Woche wurden keine Reden extrahiert.</p>', radar)
         self.assertNotIn("radar-method", radar)
         self.assertNotIn("radar-row", radar)
         self.assertNotIn("radar-also", radar)
@@ -3868,7 +3944,7 @@ class WeekRadarPageTests(unittest.TestCase):
         with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
             markup = build_dip_pulse_site.render_front_page(entries, database_href=None, today=self.TODAY)
         radar = self._section(markup, "radar")
-        self.assertIn("In dieser Sitzungswoche wurden keine Reden extrahiert, nur Fragen und Antworten aus Frageformaten.", radar)
+        self.assertIn("In dieser Woche wurden keine Reden extrahiert, nur Fragen und Antworten aus Frageformaten.", radar)
         self.assertIn("Fragestunde</a> · 2 Fragen, 3 Antworten", radar)
         self.assertNotIn("radar-row", radar)
 
@@ -4056,7 +4132,7 @@ class WeekRadarPageTests(unittest.TestCase):
         entries = [self._entry("2026-06-12", "21/84", [self._item(1, [("SPD", 100)])])]
         markup = self._render(entries)
         card = re.search(r'<article class="week-card votes-card".*?</article>', markup, re.S).group(0)
-        self.assertIn("Keine namentlichen Abstimmungen in dieser Sitzungswoche erfasst.", card)
+        self.assertIn("Keine namentlichen Abstimmungen in dieser Woche erfasst.", card)
         self.assertIn('<a class="feature-link" href="protocols/plenarprotokoll-21-84.html">Sitzungsbelege pr&uuml;fen</a>', card)
         # Not built at all without the votes Baustein; present in both band states with it.
         self.assertNotIn('<article class="week-card votes-card"', self._render(entries, features=default_selection()))
@@ -4071,19 +4147,23 @@ class WeekRadarPageTests(unittest.TestCase):
         self.assertIn("<h3>Redeanteil der Fraktionen</h3>", band)
         self.assertEqual(re.findall(r"<span>(Reden|Tagesordnungspunkte|Redetext \(Zeichen\))</span>", band), ["Reden", "Tagesordnungspunkte"])
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<p class="week-note">', band, re.S).group(1)
-        self.assertEqual(metrics.count('<span class="week-delta flat">n/a</span>'), 2)
+        self.assertNotIn('class="week-delta', band)
+        self.assertNotIn('class="week-metric-foot"', band)
+        self.assertIn("<strong>5</strong>", metrics)
+        self.assertIn("<strong>2</strong>", metrics)
         self.assertNotIn("<em>", metrics)
         self.assertNotIn("week-spark", band)
         self.assertNotIn("Debattenprofil", band)
         self.assertIn("Anteil an allen Reden der Woche. Fraktionen f&uuml;r 2 von 5 Reden erfasst.", band)
         self.assertIn('<li class="week-row">', band)
+        self.assertEqual(band.count("<strong>50,0%</strong>"), 2)
 
     def test_weekday_comparison_shows_deltas_and_subset_note(self) -> None:
         entries = self._week()
         entries.append(self._entry("2026-05-22", "21/81", [self._item(1, [("SPD", 100)] * 2)]))
         band = self._section(self._render(entries), "week-compare")
         self.assertIn("Für Wochenpuls und Redeanteil verglichen: Do–Fr beider Wochen.", band)
-        self.assertIn("Verlauf aller Sitzungstage: Reden je Sitzungswoche", band)
+        self.assertIn("Verlauf aller Sitzungstage: Reden je Woche mit Sitzung", band)
         metrics = re.search(r'<div class="week-metrics">(.*?)</div>\s*<div class="week-spark', band, re.S).group(1)
         self.assertNotIn("n/a", metrics)
         self.assertIn("Anteil an allen Reden der verglichenen Sitzungstage", band)
@@ -4213,5 +4293,28 @@ class AgendaItemReuseKeyTests(unittest.TestCase):
         self.assertEqual(build_dip_pulse_site.agenda_item_reuse_keys({"top_id": "TOP 1", "index": " 03 "}), ["top:TOP 1", "index:3"])
 
 
+def write_week_comparison_browser_fixture(output: Path) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    current = [SittingWeekComparisonTests._entry(
+        "2026-06-12", "21/84", [SittingWeekComparisonTests._item(1, [("SPD", 100), ("AfD", 100)])]
+    )]
+    comparison = current + [
+        SittingWeekComparisonTests._entry(
+            "2026-05-22", "21/81", [SittingWeekComparisonTests._item(1, [("SPD", 100), ("SPD", 100)])]
+        ),
+    ]
+    with mock.patch.object(sys, "stderr", new_callable=io.StringIO):
+        for name, entries in (("current-only", current), ("comparison", comparison)):
+            markup = build_dip_pulse_site.render_front_page(
+                entries, features=default_selection(), today=date(2026, 6, 16)
+            )
+            (output / f"{name}.html").write_text(markup, encoding="utf-8")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if "--browser-fixture" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--browser-fixture", type=Path, required=True)
+        write_week_comparison_browser_fixture(parser.parse_args().browser_fixture)
+    else:
+        unittest.main()

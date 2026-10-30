@@ -253,7 +253,7 @@ python3 -m unittest discover -s tests
 scripts/preview_dip_pulse_site.sh
 ```
 
-The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 6 (integer IDs, documents keyed by URL, no Politikfeld tables, or no vote context) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
+The offline rebuild regenerates every page from the existing cache, so template, renderer, navigation, and presentation changes land without re-fetching. A store from before schema 7 (integer IDs, documents keyed by URL, no Politikfeld tables, no vote context, or no `votes.debate_url` column) requires explicit `--offline --repersist`; plain offline rendering and direct export print the exact upgrade command instead of migrating them.
 
 An offline rebuild does *not* re-derive the rows in that store — it only re-renders. Two cases therefore need more than step 4c:
 
@@ -286,9 +286,11 @@ Rule version 3 rejected unproven nested turns instead of counting them as Zwisch
 
 Each persisted protocol records its actual input rule version in `speech_rule_inputs`. Facts, export and store-consuming offline/`--no-persist` rendering refuse missing/stale versions before writing output. Fresh report JSON cannot certify an old database. Repair with the command above; missing XML requires `--fetch-xml` first. Replay validates the XML/report SHA when present and proves one-to-one TOP associations before updating DIP/vote enrichment. A changed or ambiguous source set requires reacquiring the whole sitting report. Detailed DIP kind differences are retained in `data/a1-classification-diagnostics.json`; one build warning points to that file. See [A1 source and scratch validation](docs/plans/a1-validation.md).
 
-Schema 6 / export format 8 uses stable text row IDs and issued person URLs. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
+Schema 7 / export format 9 uses stable text row IDs and issued person URLs. Export format 8 added the nullable `votes.debate_url` source link; format 9 makes the Daten recipes r1–r5 Wahlperiode-aware. Speech rules are version 6. See the [key dictionary, correction format and backup requirements](docs/stable-ids.md). Back up the build store with all cached evidence: the registry retains issued keys, aliases and historical occurrence bindings that cannot be reconstructed from current reports alone.
 
 It applies what is derived when persisting, and re-reads the Reden and Beiträge of every report from its cached Plenarprotokoll XML (`data/xml/plenarprotokoll-<sitting>.xml`, written by every online update since A1), so a change to what counts as a Rede needs no re-fetch. A store built before A1 has no cached XML: run `python3 scripts/build_dip_pulse_site.py --fetch-xml --output-dir .context/dip-pulse-site` once (public bundestag.de files, no API key, about 0.3 s per sitting), then `--offline --repersist`. A report from before A1 with no cached XML stops the re-persist with the store untouched, so old Reden counts never sit next to new ones; a report whose XML cannot be fetched (no `xml_url`) has to be deleted from `data/` (an online update re-fetches it). It does not re-resolve profiles or re-fetch anything else; those need an online update (4b). To prove what a correction moved, compare against a copy of the directory made beforehand (`scripts/compare_store_values.py`, see "Validate a data correction").
+
+The replay also interprets every cached vote again, once per vote id for every copy of it in a report: whether a Ja rejects an Antrag (read from the chair's announcement of the Beschlussempfehlung in the cached XML, `inversion_source = bundestag-protocol`) and the outcome derived from the final tally. Reports cached before votes were interpreted need this one repersist. The replay cannot recover what the bundestag.de page printed as the outcome (`result_source = official`) where that was never cached; refresh such a sitting once online, for example `--document-number 21/67` into a scratch copy of the directory, then repersist. An official result and its scope already in a report are kept. A report without cached XML keeps an inversion the XML once gave it, but gains no new one.
 
 #### Validate a data correction
 
@@ -348,7 +350,7 @@ python3 scripts/build_dip_pulse_site.py --explain-config
 
 | Enrichment | Network work |
 |---|---|
-| `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, and the XLSX Namensliste link from bundestag.de. **On by default** for every online update. |
+| `votes` | Refresh roll-call totals, fraction results, individual votes, the Angenommen/Abgelehnt outcome, the XLSX Namensliste link, and the associated Bundestag report link where available. **On by default** for every online update. |
 | `aw-profiles` | Resolve public abgeordnetenwatch.de profile links |
 | `mp-roster` | Refresh the complete MdB roster from DIP |
 
@@ -401,7 +403,7 @@ Developer payloads are separate from presentation and enrichment. Use `--include
 PORT=9000 OPEN_BROWSER=0 scripts/preview_dip_pulse_site.sh
 ```
 
-`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Sitzungswoche vor 13 Wochen"), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
+`--today`, `SOURCE_DATE_EPOCH`, and `--week` pin the build clock and sitting week for `puls.html` and the homepage's weekly entry. The selected week on the homepage now matches `puls.html`; the weekly page uses the date to label a running week, state the age of an older week ("Letzte Woche mit Sitzung: vor 3 Wochen", or past four weeks a "Nicht aktuell" flag after the heading), and print the "Auswertung vom" date. Pin them so two builds of the same cache are byte-identical:
 
 | Input | Effect |
 |---|---|
@@ -466,6 +468,7 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [docs/project-documentation.md](docs/project-documentation.md) — full command, flag, and environment reference, pipeline internals, SQLite schema.
 - [A1 source and scratch validation](docs/plans/a1-validation.md), [A1/A2 coordination contract](docs/plans/a1-a2-contract.md), and [ADR 0002](docs/adr/0002-kurzinterventionen-are-not-reden.md) — source coverage, persistence/replay boundaries, and the Rede/Beitrag counting decision.
 - [Politikfelder fetch and replay hardening](docs/plans/politikfelder-hardening.md) — implementation scope and verification record.
+- [B4 vote lead and Bundestag report link](docs/plans/b4-vote-lead-and-article.md) — implementation scope; [source validation](docs/research/b4-vote-lead-validation.md) records the acquisition, replay, export, and browser checks.
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.

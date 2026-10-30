@@ -30,8 +30,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Literal, NamedTuple
 
 import derive
 import publication_state as publication
@@ -1572,6 +1573,7 @@ def parse_protocol_xml(xml_text: str) -> dict[str, Any]:
     return {
         "xml_sha256": xml_source_sha256(xml_text),
         "sitting_contributions": sitting_contributions,
+        "vote_recommendations": parse_vote_recommendations(root),
         "xml_protocol": {
             "wahlperiode": root.attrib.get("wahlperiode"),
             "sitzung_nr": root.attrib.get("sitzung-nr"),
@@ -1784,8 +1786,189 @@ def vote_result(
     return ("accepted" if yes_count > no_count else "rejected"), "derived"
 
 
-def recommendation_inversion(vote: dict[str, Any], documents: list[dict[str, Any]] | None = None) -> tuple[bool | None, str | None, str | None]:
-    """Only vote-specific wording or an unambiguous matched DIP recommendation counts."""
+# --- Protocol evidence for what a vote was about -------------------------------
+#
+# The chair announces a Beschlussempfehlung before it is voted on ("Der Ausschuss
+# empfiehlt in seiner Beschlussempfehlung auf Drucksache N, den Antrag ... auf
+# Drucksache A abzulehnen."). That sentence, not the roll-call title, says which
+# way the recommendation points. Only the chair's paragraphs of the sitting
+# proceedings count: a speech or a §31 declaration in the annex repeats the same
+# words ("lehne den Antrag ... ab") without announcing anything.
+
+_ABBREVIATION_RE = re.compile(
+    r"\b(?:Dr|Nr|Prof|Abs|Art|Buchst|bzw|ca|Mio|Mrd|Ziff|Anl|Dipl|Ing|Rn|vgl|ggf|usw|etc|ff)\.|(?<=[ (])\d{1,2}\.(?=\s)"
+)
+_QUOTED_RE = re.compile(r"„[^“]*“")
+_RECOMMENDS_RE = re.compile(r"\bempfiehl\w*", re.I)
+_REJECT_PHRASE_RE = re.compile(r"\babzulehnen\b|\bAblehnung\s+(?:des|der|eines)\s+Antr", re.I)
+_ACCEPT_PHRASE_RE = re.compile(r"\banzunehmen\b|\bAnnahme\s+(?:des|der|eines)\s+Antr", re.I)
+_ANTRAG_WORD_RE = re.compile(r"\bAntr(?:ag|ages|ags|äge|ägen)\b")
+_RECOMMENDATION_NEGATION_RE = re.compile(r"\b(?:nicht|kein\w*|ohne)\b", re.I)
+_CLAUSE_SPLIT_RE = re.compile(r"[;,]?\s+(?:und|sowie)\s+(?=unter\s+Buchstabe)|;\s*")
+# "Beschlussempfehlung (des Ausschusses ...) auf Drucksache N": the Drucksache of the
+# recommendation itself, not one named after an Antrag or Gesetzentwurf.
+_RECOMMENDATION_DOCUMENT_RE = re.compile(
+    r"Beschlussempfehlung(?:(?!Antr|Gesetzentwurf|Entwurf|Ablehnung|Annahme|empfiehl|Drucksache).){0,120}?"
+    r"\bauf\s+(?:der\s+|den\s+)?Drucksachen?\s+((?:[0-9]{1,2}/[0-9]{1,6}(?:\s*\(neu\))?(?:,|\s+und)?\s*)+)"
+)
+# What the chair's announcements say about one vote's recommendation; "none"
+# when no announcement is attributable to it.
+ProtocolDirection = Literal["reject", "accept", "conflict", "none"]
+
+
+def _protocol_sentences(text: str) -> list[str]:
+    """Sentences of one chair paragraph; periods inside quoted titles, after
+    abbreviations and after an ordinal ("3. Ausschuss") do not end one."""
+    protected = _QUOTED_RE.sub(lambda m: m.group(0).replace(".", "․"), text)
+    protected = _ABBREVIATION_RE.sub(lambda m: m.group(0).replace(".", "․"), protected)
+    return [part.replace("․", ".").strip() for part in re.split(r"(?<=[.!?])\s+", protected) if part.strip()]
+
+
+def _document_numbers_in(text: str) -> list[str]:
+    return list(dict.fromkeys(_DOCUMENT_NUMBER_RE.findall(text)))
+
+
+def chair_paragraph_texts(root: ET.Element) -> list[tuple[str, str]]:
+    """(top_id, text) of uninterrupted chair passages, joining adjacent
+    paragraphs so an announcement can continue into the next one. Speeches,
+    TOP boundaries, annexes and front matter never supply chair context."""
+    paragraphs: list[tuple[str, str]] = []
+    continued = False
+
+    def chair_text(paragraph: ET.Element) -> str:
+        copy = ET.fromstring(ET.tostring(paragraph))
+        for note in copy.findall(".//fussnote"):
+            note.clear()
+        for mark in copy.findall(".//sup"):
+            mark.text = None
+        return elem_text(copy)
+
+    def append_chair(paragraph: ET.Element, top_id: str) -> None:
+        nonlocal continued
+        text = chair_text(paragraph)
+        if continued:
+            paragraphs[-1] = (top_id, f"{paragraphs[-1][1]} {text}")
+        else:
+            paragraphs.append((top_id, text))
+        continued = True
+
+    for top in root.findall("./sitzungsverlauf/tagesordnungspunkt"):
+        top_id = top.get("top-id") or ""
+        continued = False
+        for child in top:
+            if child.tag == "p":
+                if not (child.get("klasse") or "").startswith("T_"):
+                    append_chair(child, top_id)
+                else:
+                    continued = False
+            elif child.tag == "rede":
+                chair = False
+                for part in child:
+                    if part.tag == "name":
+                        chair = True
+                    elif part.tag == "p" and part.get("klasse") == "redner":
+                        chair = False
+                        continued = False
+                    elif chair and part.tag == "p":
+                        append_chair(part, top_id)
+                    elif part.tag == "p":
+                        continued = False
+            else:
+                continued = False
+    return paragraphs
+
+
+def parse_vote_recommendations(root: ET.Element) -> list[dict[str, Any]]:
+    """The chair's recommendation announcements about an Antrag, one record per
+    clause: direction (reject, accept or conflict), the Antrag's Drucksachen,
+    the Beschlussempfehlung's, and the clause as excerpt. Wording the parser
+    does not understand yields nothing, never a guess."""
+    records: list[dict[str, Any]] = []
+    for paragraph_index, (top_id, text) in enumerate(chair_paragraph_texts(root)):
+        context_numbers: list[str] = []
+        for sentence in _protocol_sentences(text):
+            named = _RECOMMENDATION_DOCUMENT_RE.search(sentence)
+            if not _RECOMMENDS_RE.search(sentence):
+                if named:
+                    context_numbers = _document_numbers_in(named.group(1))
+                continue
+            # A later clause ("... und unter Buchstabe b den Antrag ... abzulehnen")
+            # speaks of the Beschlussempfehlung its sentence named first.
+            if named:
+                context_numbers = _document_numbers_in(named.group(1))
+            # The words of a quoted Antrag title ("Kein Heizungsgesetz ...") say nothing
+            # about the recommendation: judge the clause with its quotes blanked out.
+            masked = _QUOTED_RE.sub(lambda m: " " * len(m.group(0)), sentence)
+            bounds = [0, *(pos for m in _CLAUSE_SPLIT_RE.finditer(masked) for pos in (m.start(), m.end())), len(sentence)]
+            for start, end in zip(bounds[::2], bounds[1::2]):
+                clause, plain = sentence[start:end], masked[start:end]
+                rejects, accepts = _REJECT_PHRASE_RE.search(plain), _ACCEPT_PHRASE_RE.search(plain)
+                antrag = _ANTRAG_WORD_RE.search(plain)
+                if not (rejects or accepts) or antrag is None:
+                    continue
+                direction = "conflict" if (rejects and accepts) or _RECOMMENDATION_NEGATION_RE.search(plain) else (
+                    "reject" if rejects else "accept"
+                )
+                recommendation_numbers = _document_numbers_in(clause[: antrag.start()]) or list(context_numbers)
+                records.append({
+                    "top_id": top_id,
+                    "paragraph": paragraph_index,
+                    "direction": direction,
+                    "antrag_numbers": _document_numbers_in(clause[antrag.start():]),
+                    "recommendation_numbers": recommendation_numbers,
+                    "excerpt": clamp_text(clause, 300),
+                })
+    return records
+
+
+def protocol_recommendation_evidence(
+    vote: dict[str, Any], records: list[dict[str, Any]], sitting_votes: list[dict[str, Any]]
+) -> tuple[ProtocolDirection, dict[str, Any] | None]:
+    """What the chair's announcements say about this vote's recommendation.
+
+    ("none", None): no announcement is attributable; fall back to other evidence.
+    ("conflict", None): attributable evidence disagrees, fits several votes, or
+    does not show that the Abstimmungsgegenstand is the Beschlussempfehlung;
+    the direction stays unknown.
+    ("reject" | "accept", record): every attributable announcement agrees."""
+    numbers = set(vote.get("document_numbers") or [])
+    if not numbers or not records:
+        return "none", None
+
+    def fits(record: dict[str, Any], candidate: dict[str, Any]) -> bool:
+        candidate_numbers = set(candidate.get("document_numbers") or [])
+        return bool(
+            record["antrag_numbers"]
+            and set(record["antrag_numbers"]) <= candidate_numbers
+            and set(record["recommendation_numbers"]) <= candidate_numbers
+        )
+
+    matching = [record for record in records if fits(record, vote)]
+    if not matching:
+        return "none", None
+    # One announcement fitting two votes of the sitting (a shared Drucksache) is
+    # attributed to none of them, unless the listings' Abstimmungsgegenstand separates them.
+    own_id = str(vote.get("id"))
+    rivals = [other for other in sitting_votes if str(other.get("id")) != own_id and any(fits(r, other) for r in matching)]
+    if any(derive.abstimmungsgegenstand(other) != "vorlage" for other in rivals):
+        return "conflict", None
+    # The Antrag's number alone fits a vote on the Antrag itself just as well: the
+    # listing must open with the Beschlussempfehlung, or the chair must name a
+    # Beschlussempfehlung Drucksache that is among the vote's.
+    if derive.abstimmungsgegenstand(vote) != "beschlussempfehlung" and not any(record["recommendation_numbers"] for record in matching):
+        return "conflict", None
+    directions = {record["direction"] for record in matching}
+    if directions != {"reject"} and directions != {"accept"}:
+        return "conflict", None
+    return directions.pop(), matching[0]
+
+
+def _text_recommendation_inversion(
+    vote: dict[str, Any], documents: list[dict[str, Any]] | None = None
+) -> tuple[Literal["reject", "blocked", "none"], str | None, str | None]:
+    """("reject", source, text) when vote-specific wording or an unambiguous
+    matched DIP recommendation says the Antrag is to be rejected; ("blocked", ...)
+    when attributable text accepts or negates; else ("none", ...)."""
     reject = re.compile(r"Ablehnung\s+(?:eines|des|der)\s+(?:Antrag|Anträge)|(?:den|der|dem)\s+Antrag\b.{0,180}?(?:abzulehnen|ablehnen)", re.I)
     accept = re.compile(r"Annahme\s+(?:eines|des|der)\s+Antrag|(?:den|der|dem)\s+Antrag\b.{0,180}?anzunehmen", re.I)
     evidence = [("bundestag-roll-call", str(vote.get(field) or ""))
@@ -1806,25 +1989,63 @@ def recommendation_inversion(vote: dict[str, Any], documents: list[dict[str, Any
         # All attributable evidence must agree, including across fields and
         # documents. Negated wording never proves a recommendation to reject.
         if accept.search(text):
-            return None, None, None
+            return "blocked", None, None
         for match in reject.finditer(text):
             clause_start = max(text.rfind(mark, 0, match.start()) for mark in (".", ";", "\n")) + 1
             if negation.search(text[clause_start:match.end()]):
-                return None, None, None
+                return "blocked", None, None
             if rejection is None:
-                rejection = (True, source, text)
+                rejection = (source, text)
     if rejection is not None:
-        return rejection
+        return "reject", rejection[0], rejection[1]
+    return "none", None, None
+
+
+def recommendation_inversion(
+    vote: dict[str, Any],
+    documents: list[dict[str, Any]] | None = None,
+    protocol_evidence: tuple[ProtocolDirection, dict[str, Any] | None] | None = None,
+) -> tuple[bool | None, str | None, str | None]:
+    """Whether a Ja on this vote rejects an Antrag, with the evidence behind it.
+
+    The chair's announcement in the sitting's proceedings leads. Without one,
+    vote-specific wording or an unambiguous matched DIP recommendation counts,
+    but never against attributable protocol evidence of any other reading."""
+    direction, record = protocol_evidence or ("none", None)
+    # A roll-call listing that opens with the Vorlage itself ("Gesetzentwurf der
+    # ...", "Antrag der ...") is a vote on it: Ja is for the Vorlage even where a
+    # title says "ablehnen".
+    if derive.abstimmungsgegenstand(vote) == "vorlage":
+        return None, None, None
+    text_state, text_source, text_excerpt = _text_recommendation_inversion(vote, documents)
+    if direction == "reject" and record is not None:
+        if text_state == "blocked":
+            return None, None, None
+        return True, "bundestag-protocol", record["excerpt"]
+    if direction in ("accept", "conflict"):
+        return None, None, None
+    if text_state == "reject":
+        return True, text_source, text_excerpt
     return None, None, None
 
 
-def interpret_vote(vote: dict[str, Any], documents: list[dict[str, Any]] | None = None, procedure_context: Any = None) -> None:
-    inverted, source, excerpt = recommendation_inversion(vote, documents)
-    vote.update(inverted=inverted, inversion_source=source, inversion_excerpt=excerpt)
-    vote["procedure_type"] = special_majority_procedure(vote.get("title"), procedure_context)
+def _recorded_official_result(vote: dict[str, Any]) -> str | None:
     official = vote.get("official_result")
     if official is None and vote.get("result_source") == "official":
         official = vote.get("result_raw")
+    return official
+
+
+def interpret_vote(
+    vote: dict[str, Any],
+    documents: list[dict[str, Any]] | None = None,
+    procedure_context: Any = None,
+    protocol_evidence: tuple[ProtocolDirection, dict[str, Any] | None] | None = None,
+) -> None:
+    inverted, source, excerpt = recommendation_inversion(vote, documents, protocol_evidence)
+    vote.update(inverted=inverted, inversion_source=source, inversion_excerpt=excerpt)
+    vote["procedure_type"] = special_majority_procedure(vote.get("title"), procedure_context)
+    official = _recorded_official_result(vote)
     # Preserve the official outcome and its scope across reinterpretation.
     # Consumers already distinguish application outcomes from recommendations.
     counts = vote.get("total") or {}
@@ -1834,6 +2055,121 @@ def interpret_vote(vote: dict[str, Any], documents: list[dict[str, Any]] | None 
     )
     if vote["result_source"] != "official":
         vote["result_scope"] = "proposition"
+
+
+def position_drucksache_numbers(position: dict[str, Any], vorgang_numbers: Callable[[str], set[str]]) -> set[str]:
+    """The Drucksachen a Vorgang position links to: those of its Vorgang and of
+    every Vorgang beraten with it, as ``vorgang_numbers`` knows them (live from
+    DIP while enriching, from the stored documents on replay)."""
+    numbers: set[str] = set()
+    if position.get("vorgang_id"):
+        numbers |= vorgang_numbers(str(position["vorgang_id"]))
+    for linked in position.get("mitberaten") or []:
+        if linked.get("id"):
+            numbers |= vorgang_numbers(str(linked["id"]))
+    return numbers
+
+
+def interpret_sitting_votes(
+    agenda_items: list[dict[str, Any]],
+    sitting_votes: list[dict[str, Any]],
+    recommendations: list[dict[str, Any]] | None,
+) -> None:
+    """Interpret every vote of one sitting from its stored evidence, the same
+    way online and on replay: the Drucksachen and Vorgang positions the agenda
+    items carry, plus the chair's recommendation announcements.
+
+    ``agenda_items`` need ``api.linked_drucksachen``, ``api.raw.positions`` and
+    ``votes``; ``sitting_votes`` are the votes no TOP claimed. A vote can appear
+    several times (under several TOPs, among the matched votes), as separate
+    dictionaries after a JSON reload: the evidence is gathered once per vote id
+    from what all copies hold, and every copy is interpreted from it alike.
+
+    With ``recommendations`` None (no protocol XML at hand) a protocol-sourced
+    inversion already on a vote is kept rather than cleared. A present XML is
+    the source and decides on its own, also when it announces nothing for a
+    vote: the plan's "missing source evidence must not silently clear" means
+    a missing XML (docs/plans/fix-vote-interpretation.md, step 4)."""
+    documents = [doc for item in agenda_items for doc in (item.get("api") or {}).get("linked_drucksachen") or []]
+    numbers_by_vorgang: dict[str, set[str]] = {}
+    for doc in documents:
+        if doc.get("vorgang_id") and doc.get("dokumentnummer"):
+            numbers_by_vorgang.setdefault(str(doc["vorgang_id"]), set()).add(str(doc["dokumentnummer"]))
+
+    def vorgang_numbers(vorgang_id: str) -> set[str]:
+        return numbers_by_vorgang.get(vorgang_id, set())
+
+    context_items: list[tuple[str, str, set[str]]] = []
+    for item in agenda_items:
+        for position in ((item.get("api") or {}).get("raw") or {}).get("positions") or []:
+            linked_numbers = position_drucksache_numbers(position, vorgang_numbers)
+            if position.get("titel"):
+                context_items.append((str(position["titel"]), str(position.get("vorgangstyp") or ""), linked_numbers))
+            for linked in position.get("mitberaten") or []:
+                title = str(linked.get("titel") or "")
+                linked_type = str(linked.get("vorgangstyp") or linked.get("typ") or "")
+                if title or linked_type:
+                    context_items.append((title, linked_type, vorgang_numbers(str(linked["id"])) if linked.get("id") else linked_numbers))
+
+    occurrences: dict[str, list[dict[str, Any]]] = {}
+    for vote in [*(vote for item in agenda_items for vote in item.get("votes") or []), *sitting_votes]:
+        if vote.get("id") is not None:
+            occurrences.setdefault(str(vote["id"]), []).append(vote)
+    representatives = []
+    for copies in occurrences.values():
+        first = next((copy for copy in copies if derive.abstimmungsgegenstand(copy) is not None), copies[0])
+        representative = dict(first)
+        representative["document_numbers"] = list(dict.fromkeys(
+            number for copy in copies for number in copy.get("document_numbers") or []
+        ))
+        for field in ("title", "description", "vote_heading"):
+            representative[field] = "\n".join(dict.fromkeys(str(copy.get(field) or "") for copy in [first, *copies])).strip()
+        representative["total"] = next((copy["total"] for copy in copies if copy.get("total")), {})
+        representatives.append(representative)
+    for copies, representative in zip(occurrences.values(), representatives):
+        # An absent legacy key contributes no evidence; explicit null is a fresh
+        # refusal. Conflicting copies lose the link rather than picking an order.
+        debate_urls = {publication.vote_debate_url(copy.get("debate_url")) for copy in copies if "debate_url" in copy}
+        if debate_urls:
+            debate_url = next(iter(debate_urls)) if len(debate_urls) == 1 else None
+            for copy in copies:
+                copy["debate_url"] = debate_url
+        numbers = set(representative["document_numbers"])
+        vote_documents = [doc for doc in documents if doc.get("dokumentnummer") in numbers]
+        context = [f"{title} {vorgang_type}" for title, vorgang_type, linked_numbers in context_items if numbers & linked_numbers]
+        context.extend(f"{doc.get('titel') or ''} {doc.get('drucksachetyp') or ''}" for doc in vote_documents)
+        official = next((o for o in map(_recorded_official_result, copies) if o is not None), None)
+        scope = next((c.get("result_scope") for c in copies if _recorded_official_result(c) is not None and c.get("result_scope")), None)
+        if recommendations is not None:
+            evidence = protocol_recommendation_evidence(representative, recommendations, representatives)
+        else:
+            # No XML at hand: the announcement it once gave still leads, also over a title.
+            kept = next((c.get("inversion_excerpt") for c in copies
+                         if c.get("inverted") is True and c.get("inversion_source") == "bundestag-protocol"), None)
+            evidence = ("reject", {"excerpt": kept}) if kept is not None else None
+        subjects = {derive.abstimmungsgegenstand(copy) for copy in copies} - {None}
+        if len(subjects) > 1:
+            evidence = ("conflict", None)
+        if official is not None:
+            representative["official_result"] = official
+            representative["result_scope"] = scope or "proposition"
+        interpret_vote(representative, documents=vote_documents, procedure_context=context, protocol_evidence=evidence)
+        fields = ("inverted", "inversion_source", "inversion_excerpt", "procedure_type", "result_raw", "result_source", "result_scope")
+        for vote in copies:
+            vote.update({field: representative.get(field) for field in fields})
+            if official is not None:
+                vote["official_result"] = official
+
+
+def interpret_report_votes(report: dict[str, Any], recommendations: list[dict[str, Any]] | None) -> None:
+    """``interpret_sitting_votes`` on a stored report: its TOP votes and every
+    other copy of a vote it holds (sitting-level votes, the matched list in
+    ``api_records``). Restore sitting-level votes older reports kept only there."""
+    records = report.get("api_records") or {}
+    report.setdefault("sitting_votes", records.get("sitting_votes") or [])
+    others = [*(report.get("sitting_votes") or []), *(records.get("sitting_votes") or []),
+              *(records.get("matched_roll_call_votes") or [])]
+    interpret_sitting_votes(report.get("agenda_items") or [], others, recommendations)
 
 
 _BESCHLUSS_SECTION_RE = re.compile(
@@ -1866,14 +2202,87 @@ def _beschluss_paragraphs(section_html: str) -> list[list[str]]:
     return paragraphs
 
 
+# The tally as bundestag.de prints it, whichever vote it belongs to.
+_ANY_TALLY_RE = re.compile(r"Ja:\s*(\d+)\s*Nein:\s*(\d+)\b")
+_ROLL_CALL_START_RE = re.compile(r"namentliche\s+Abstimmung", re.I)
+# The page prints the tally read out in the sitting; ours is the final one from
+# the Plenarprotokoll. Measured on 217 votes (docs/research/bundestag-vote-pages.md):
+# they differ by 1-3 per side.
+_PROVISIONAL_TALLY_TOLERANCE = 3
+
+
+class BeschlussTally(NamedTuple):
+    """One tally of a Beschluss section with the text that belongs to it."""
+
+    yes: int
+    no: int
+    announcement: str  # the block's lines above the tally: the roll call, naming the Vorlage
+    outcome_text: str  # what follows the tally, up to the next vote
+
+
+def _beschluss_tallies(section_html: str) -> list[BeschlussTally]:
+    """Every tally of a Beschluss section, in page order (see ``_official_vote_text``)."""
+    tallies: list[BeschlussTally] = []
+    paragraphs = _beschluss_paragraphs(section_html)
+    for paragraph_index, lines in enumerate(paragraphs):
+        for index, line in enumerate(lines):
+            for match in _ANY_TALLY_RE.finditer(line):
+                rest = line[match.end() :]
+                boundary = _NEXT_TALLY_RE.search(rest)
+                # The text that belongs to this vote: the rest of its line and, only when
+                # no other vote started on that line, the next line up to the next tally.
+                text = rest[: boundary.start()] if boundary else rest
+                if not boundary and index + 1 < len(lines):
+                    following = lines[index + 1]
+                    next_boundary = _NEXT_TALLY_RE.search(following)
+                    text = f"{text} {following[: next_boundary.start()] if next_boundary else following}"
+                start = index
+                while start > 0 and lines[start - 1]:
+                    start -= 1
+                announcement = " ".join([*lines[start:index], line[: match.start()]])
+                if roll_call := list(_ROLL_CALL_START_RE.finditer(announcement)):
+                    announcement = announcement[roll_call[-1].start() :]
+                if not boundary and not any(lines[index + 1 :]) and paragraph_index + 1 < len(paragraphs):
+                    if trailing := _trailing_outcome(paragraphs[paragraph_index + 1], announcement):
+                        text = f"{text} {trailing}"
+                tallies.append(BeschlussTally(int(match.group(1)), int(match.group(2)), announcement, text))
+    return tallies
+
+
+def _trailing_outcome(lines: list[str], announcement: str) -> str:
+    """The outcome a live page sets in the paragraph after the tally list (vote
+    996: a <ul> ending in the tally, then "<p><br/>Antrag 21/4466 abgelehnt</p>"):
+    its first block of lines, only when it names documents of this very block
+    and starts no other vote; else ""."""
+    upcoming: list[str] = []
+    for line in lines:
+        if upcoming and not line:
+            break
+        if line:
+            upcoming.append(line)
+    text = " ".join(upcoming)
+    named = set(_DOCUMENT_NUMBER_RE.findall(text))
+    if named and named <= set(_DOCUMENT_NUMBER_RE.findall(announcement)) and not _NEXT_TALLY_RE.search(text):
+        return text
+    return ""
+
+
 def _official_vote_text(
     detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
 ) -> str | None:
     """bundestag.de states a vote's result only as prose in the page's
     "Beschluss" section, never as a machine-readable field, and one page's
     Beschluss text can narrate several related votes (a Gesetzentwurf, then its
-    Entschließungsantrag). This vote's own Ja/Nein counts are the only way to
-    find its sentence. The outcome must follow the tally directly: on the same
+    Entschließungsantrag). The text of this vote's own block is found by
+    its Drucksache number: the block's roll-call announcement names the
+    Vorlage voted on, and a block naming only this vote's documents, uniquely,
+    is this vote's even where its printed tally is the provisional one read
+    out in the sitting (1-3 off ours per side).
+
+    Without a unique document match the vote's own Ja/Nein counts are the only
+    way to find its sentence, and they must match exactly and once.
+
+    The outcome must follow the tally directly: on the same
     line before the next "Gesamt", or on the next line of the same paragraph
     ("Gesamt: 562 Ja:434 Nein:128 Enthaltungen --<br/>Gesetzentwurf
     angenommen"). Anything looser, a negation ("nicht angenommen") or both
@@ -1898,47 +2307,62 @@ def _official_vote_text(
     section_match = _BESCHLUSS_SECTION_RE.search(detail_html)
     if not section_match:
         return None
-    tally_re = re.compile(rf"Ja:\s*{yes_count}\s*Nein:\s*{no_count}\b")
+    tallies = _beschluss_tallies(section_match.group(1))
+    own = set(document_numbers or [])
+    if own:
+        # An exact tally cannot override a different document on the current roll-call announcement.
+        tallies = [
+            tally for tally in tallies
+            if not (
+                _ROLL_CALL_START_RE.search(tally.announcement)
+                and (announced := set(_DOCUMENT_NUMBER_RE.findall(tally.announcement)))
+                and not announced & own
+            )
+        ]
+        # A block counts as this vote's by its documents: it names some of them
+        # and none besides. One shared Drucksache, or several parts of one
+        # recommendation, name the same documents in several blocks: not unique.
+        identified = [
+            tally for tally in tallies
+            if (named := set(_DOCUMENT_NUMBER_RE.findall(f"{tally.announcement} {tally.outcome_text}"))) and named <= own
+        ]
+        if len(identified) == 1:
+            (tally,) = identified
+            if abs(tally.yes - yes_count) <= _PROVISIONAL_TALLY_TOLERANCE and abs(tally.no - no_count) <= _PROVISIONAL_TALLY_TOLERANCE:
+                return tally.outcome_text
+        elif len(identified) > 1:
+            tallies = identified
     # Two votes in one section with identical tallies would be indistinguishable:
     # only a unique match is confident enough to call official.
-    hits = [
-        (lines, index, match)
-        for lines in _beschluss_paragraphs(section_match.group(1))
-        for index, line in enumerate(lines)
-        for match in tally_re.finditer(line)
-    ]
+    hits = [tally for tally in tallies if (tally.yes, tally.no) == (yes_count, no_count)]
     if len(hits) != 1:
         return None
-    lines, index, match = hits[0]
-    rest = lines[index][match.end() :]
-    boundary = _NEXT_TALLY_RE.search(rest)
-    # The text that belongs to this vote: the rest of its line and, only when
-    # no other vote started on that line, the next line up to the next tally.
-    text = rest[: boundary.start()] if boundary else rest
-    if not boundary and index + 1 < len(lines):
-        following = lines[index + 1]
-        next_boundary = _NEXT_TALLY_RE.search(following)
-        text = f"{text} {following[: next_boundary.start()] if next_boundary else following}"
-    return text
+    return hits[0].outcome_text
 
 
-def scrape_official_vote_result(
+def official_vote_result(
     detail_html: str, yes_count: int, no_count: int, document_numbers: list[str] | None = None
-) -> str | None:
+) -> tuple[str | None, str]:
+    """(outcome, scope) from the one Beschluss block of this vote. The outcome
+    is "accepted", "rejected" or None (derive instead); the scope is
+    "application" when the block names the Antrag itself as accepted or rejected
+    and "proposition" when it speaks of the Beschlussempfehlung or a Vorlage."""
     text = _official_vote_text(detail_html, yes_count, no_count, document_numbers)
     if text is None:
-        return None
+        return None, "proposition"
     words = set(_VOTE_OUTCOME_WORD_RE.findall(text))
     # The negation check spans both lines: "ist nicht<br/>angenommen".
     if len(words) != 1 or _VOTE_NEGATION_RE.search(text):
-        return None
+        return None, "proposition"
     # Refuse only on a proven mismatch (the text names a specific OTHER
     # document): a genuine outcome sentence often names no number at all, so
     # absence of our own number is not itself suspicious.
     named_numbers = set(_DOCUMENT_NUMBER_RE.findall(text))
     if document_numbers and named_numbers and not named_numbers & set(document_numbers):
-        return None
-    return "accepted" if words == {"angenommen"} else "rejected"
+        return None, "proposition"
+    outcome = "accepted" if words == {"angenommen"} else "rejected"
+    scope = "application" if re.search(r"\bAntrag\b", text, re.I) and not re.search(r"Beschlussempfehlung", text, re.I) else "proposition"
+    return outcome, scope
 
 
 # bundestag.de publishes each roll-call vote's PDF/XLSX Namensliste on a page
@@ -2260,11 +2684,75 @@ def parse_member_votes(member_html: str) -> list[dict[str, Any]]:
     return members
 
 
+class _VoteDebateParser(HTMLParser):
+    """Only associations and links inside the vote's own Debatte panel."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[tuple[str, bool]] = []
+        self.video_ids: set[str] = set()
+        self.associations: set[tuple[str, str]] = set()
+        self.links: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        element_id = attributes.get("id") or ""
+        tab = re.fullmatch(r"tab_debatte_([0-9]+)", element_id)
+        if (tag == "a" and tab and attributes.get("role") == "tab"
+                and attributes.get("href") == "#debatte" and attributes.get("aria-controls") == "debatte"):
+            self.video_ids.add(tab[1])
+        inside = bool(self.stack and self.stack[-1][1]) or (
+            element_id == "debatte" and attributes.get("role") == "tabpanel"
+        )
+        if inside:
+            association = re.fullmatch(r"showItContainer_([0-9]+)_([0-9]+)", element_id)
+            if association:
+                self.associations.add((association[1], association[2]))
+            if tag == "a" and attributes.get("href"):
+                self.links.add(attributes["href"])
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append((tag, inside))
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+
+def parse_vote_debate_url(html_text: str, detail_url: str) -> str | None:
+    parser = _VoteDebateParser()
+    parser.feed(html_text)
+    article_ids = {article for article, _ in parser.associations}
+    if len(article_ids) != 1 or not parser.associations or any(
+        video not in parser.video_ids for _, video in parser.associations
+    ):
+        return None
+    article_id = next(iter(article_ids))
+    explicit = set()
+    for href in parser.links:
+        try:
+            url = publication.vote_debate_url(urllib.parse.urljoin(detail_url, href), article_id)
+        except ValueError:
+            continue
+        if url:
+            explicit.add(url)
+    if len(explicit) == 1:
+        return next(iter(explicit))
+    # The ID route redirects to the canonical article (verified on 906 and 1005).
+    return publication.vote_debate_url(f"{BT_BASE_URL}/dokumente/textarchiv/{article_id}", article_id)
+
+
 def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     vote_id = str(vote["id"])
     detail_html = fetch_html(roll_call_vote_url(vote_id))
     member_html = fetch_html(f"{BT_BASE_URL}/apps/na/namensliste.form?id={urllib.parse.quote(vote_id)}&ajax=true")
     enriched_vote = dict(vote)
+    enriched_vote["debate_url"] = parse_vote_debate_url(detail_html, roll_call_vote_url(vote_id))
     heading = re.search(r"<h1\b[^>]*>(.*?)</h1>", detail_html, re.S | re.I)
     if heading:
         enriched_vote["vote_heading"] = strip_tags(heading.group(1))
@@ -2274,10 +2762,9 @@ def fetch_roll_call_vote_detail(vote: dict[str, Any]) -> dict[str, Any]:
     total = vote.get("total") or {}
     yes_count = int(total.get("yes") or 0)
     no_count = int(total.get("no") or 0)
-    official = scrape_official_vote_result(detail_html, yes_count, no_count, vote.get("document_numbers"))
-    outcome_text = _official_vote_text(detail_html, yes_count, no_count, vote.get("document_numbers")) or ""
+    official, scope = official_vote_result(detail_html, yes_count, no_count, vote.get("document_numbers"))
     enriched_vote["official_result"] = official
-    enriched_vote["result_scope"] = "application" if re.search(r"\bAntrag\b", outcome_text, re.I) and not re.search(r"Beschlussempfehlung", outcome_text, re.I) else "proposition"
+    enriched_vote["result_scope"] = scope
     result_raw, result_source = vote_result(
         official=official, yes_count=yes_count, no_count=no_count, title=vote.get("title")
     )
@@ -3066,22 +3553,8 @@ def enrich_with_api(
             }
         return linked_drucksachen_by_vorgang[vorgang_id]["drucksachen"]
 
-    def position_drucksache_numbers(position: dict[str, Any]) -> set[str]:
-        numbers: set[str] = set()
-        if position.get("vorgang_id"):
-            numbers.update(
-                str(doc.get("dokumentnummer"))
-                for doc in linked_drucksachen_for_vorgang(str(position["vorgang_id"]))
-                if doc.get("dokumentnummer")
-            )
-        for linked in position.get("mitberaten") or []:
-            if linked.get("id"):
-                numbers.update(
-                    str(doc.get("dokumentnummer"))
-                    for doc in linked_drucksachen_for_vorgang(str(linked["id"]))
-                    if doc.get("dokumentnummer")
-                )
-        return numbers
+    def vorgang_drucksache_numbers(vorgang_id: str) -> set[str]:
+        return {str(doc.get("dokumentnummer")) for doc in linked_drucksachen_for_vorgang(vorgang_id) if doc.get("dokumentnummer")}
 
     def position_matches_top(position: dict[str, Any], top: dict[str, Any]) -> bool:
         if not overlaps(top, position):
@@ -3092,15 +3565,13 @@ def enrich_with_api(
             if doc.get("dokumentnummer")
         }
         if xml_numbers:
-            return bool(xml_numbers & position_drucksache_numbers(position)) or title_matches(
+            return bool(xml_numbers & position_drucksache_numbers(position, vorgang_drucksache_numbers)) or title_matches(
                 top.get("heading"), position.get("titel")
             )
         return title_matches(top.get("heading"), position.get("titel"))
 
     enriched_tops: list[dict[str, Any]] = []
     linked_titles_by_top: list[list[str]] = []
-    vote_documents_by_top: list[list[dict[str, Any]]] = []
-    vote_procedure_context_by_top: list[list[tuple[str, str, set[str]]]] = []
     top_candidate_ids: list[set[str]] = []
     agenda_items = parsed_xml["agenda_items"]
     for top_index, top in enumerate(agenda_items, start=1):
@@ -3129,22 +3600,6 @@ def enrich_with_api(
                 if title
             ))
         )
-        vote_documents_by_top.append(linked_drucksachen)
-        procedure_evidence: list[tuple[str, str, set[str]]] = []
-        for position in matching_positions:
-            linked_numbers = position_drucksache_numbers(position)
-            if position.get("titel"):
-                procedure_evidence.append((str(position["titel"]), str(position.get("vorgangstyp") or ""), linked_numbers))
-            for linked in position.get("mitberaten") or []:
-                title = str(linked.get("titel") or "")
-                linked_type = str(linked.get("vorgangstyp") or linked.get("typ") or "")
-                if title or linked_type:
-                    linked_numbers_for_item = (
-                        {str(doc.get("dokumentnummer")) for doc in linked_drucksachen_for_vorgang(str(linked["id"]))
-                         if doc.get("dokumentnummer")} if linked.get("id") else linked_numbers
-                    )
-                    procedure_evidence.append((title, linked_type, linked_numbers_for_item))
-        vote_procedure_context_by_top.append(procedure_evidence)
         xml_and_linked_numbers = top_document_numbers(top, linked_drucksachen)
         candidate_ids = {
             str(candidate["id"])
@@ -3270,17 +3725,10 @@ def enrich_with_api(
     attributed_vote_ids = {vote_id for vote_id, indices in candidate_top_indices.items() if indices}
     unmatched_candidates = [candidate for candidate in candidate_by_id.values() if str(candidate["id"]) not in attributed_vote_ids]
     sitting_votes = [roll_call_cache[str(candidate["id"])] for candidate in unmatched_candidates if str(candidate["id"]) in roll_call_cache]
-    # Interpret each vote once using only evidence attributable to its documents.
-    # A shared vote may have several TOP links; no later TOP can erase evidence.
-    all_vote_documents = [doc for docs in vote_documents_by_top for doc in docs]
-    all_vote_context = [item for contexts in vote_procedure_context_by_top for item in contexts]
-    for vote in roll_call_cache.values():
-        numbers = set(vote.get("document_numbers") or [])
-        documents = [doc for doc in all_vote_documents if doc.get("dokumentnummer") in numbers]
-        context = [f"{title} {vorgang_type}" for title, vorgang_type, linked_numbers
-                   in all_vote_context if numbers & linked_numbers]
-        context.extend(f"{doc.get('titel') or ''} {doc.get('drucksachetyp') or ''}" for doc in documents)
-        interpret_vote(vote, documents=documents, procedure_context=context)
+    # Interpret each vote once from the evidence attributable to its documents
+    # and the chair's announcements. A shared vote may have several TOP links;
+    # no later TOP can erase evidence. A replay runs the same step.
+    interpret_sitting_votes(enriched_tops, sitting_votes, parsed_xml.get("vote_recommendations"))
     if progress and vote_scan_pages > 0:
         # Every fetched vote costs two requests (detail page, member list); the
         # Namenslisten page is one more per build, shared by all sittings.
@@ -3543,6 +3991,8 @@ def build_report(
         "sampled_people": enrichment["sampled_people"],
         "api_records": enrichment["api_records"],
         "agenda_items": agenda_items,
+        # The votes no TOP claimed; derive and the store read them from here.
+        "sitting_votes": enrichment["sitting_votes"],
         "xml_contributions": parsed_xml.get("sitting_contributions", []),
         "acquisition": acquisition,
     }

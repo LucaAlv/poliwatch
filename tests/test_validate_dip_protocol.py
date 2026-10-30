@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import derive
 import speech_kinds
 import validate_dip_protocol as dip
 from _support import FIXTURES
@@ -157,6 +158,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
             "warnings": [],
             "sampled_people": [],
             "api_records": {},
+            "sitting_votes": [],
         }
 
         with (
@@ -197,6 +199,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
             "warnings": [],
             "sampled_people": [],
             "api_records": {},
+            "sitting_votes": [],
         }
 
         with (
@@ -229,7 +232,7 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
             limit_tops=None,
             xml_sink=sink,
         )
-        enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}}
+        enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [], "api_records": {}, "sitting_votes": []}
         with (
             mock.patch.object(dip, "fetch_text", return_value="<dbtplenarprotokoll>ä</dbtplenarprotokoll>"),
             mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
@@ -241,6 +244,21 @@ class ValidateDipProtocolHelperTests(unittest.TestCase):
         self.assertEqual(sink, {"text": "<dbtplenarprotokoll>ä</dbtplenarprotokoll>"})
         # A report an online update makes carries the current rule marker, so the A1 warning stays silent.
         self.assertEqual(report["validation_summary"]["speech_kinds_version"], speech_kinds.VERSION)
+
+    def test_build_report_keeps_the_votes_no_top_claimed_where_derive_reads_them(self) -> None:
+        protocol = {"id": "5805", "dokumentnummer": "21/87", "fundstelle": {"xml_url": "https://example.test/protocol.xml"}}
+        args = Namespace(api_key="test-key", sleep=0, person_limit=0, vote_scan_pages=0, roll_call_list_id=None, limit_tops=None)
+        sitting_vote = {"id": "996", "title": "Sitting-level vote", "date": "2026-07-01"}
+        enrichment = {"agenda_items": [], "api_totals": {}, "warnings": [], "sampled_people": [],
+                      "api_records": {"sitting_votes": [sitting_vote]}, "sitting_votes": [sitting_vote]}
+        with (
+            mock.patch.object(dip, "fetch_text", return_value="<xml />"),
+            mock.patch.object(dip, "parse_protocol_xml", return_value={"xml_protocol": {}, "agenda_items": []}),
+            mock.patch.object(dip, "enrich_with_api", return_value=enrichment),
+            mock.patch.object(dip, "enrich_with_llm_summaries"),
+        ):
+            report = dip.build_report(args, protocol=protocol)
+        self.assertEqual([vote["id"] for _, vote in derive.iter_report_votes(report)], ["996"])
 
     def test_vote_helpers(self) -> None:
         counts = dip.vote_counts_from_csv("10, 5, 2, 1")

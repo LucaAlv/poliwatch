@@ -333,18 +333,19 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
-    # Value: protects=format 7 carries a vote's context to the download: proceedings.abstract, the vote_proceedings junction and votes.context_state round-trip, with captions on the Daten page; fails_when=a new column or table is dropped from the export, or the page falls back to the generic caption; why_new=B4 adds them (D7); seam=none
-    def test_vote_context_round_trips_in_format_7_with_captions(self) -> None:
+    # Value: protects=format 8 carries vote context and the Bundestag report source URL through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
+    def test_vote_context_and_debate_url_round_trip_in_format_8_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
             conn.execute("UPDATE proceedings SET abstract = ? WHERE id = 'vg-1'", ("Erster Absatz\n\nZweiter",))
             conn.execute("UPDATE votes SET context_state = CASE id WHEN 'v1' THEN 'resolved' ELSE 'not_fetched' END")
+            conn.execute("UPDATE votes SET debate_url = ? WHERE id = 'v1'", ("https://www.bundestag.de/dokumente/textarchiv/2024/kw11-debatte-123456",))
             conn.execute("INSERT INTO vote_proceedings(vote_id, proceeding_id, rank) VALUES ('v1', 'vg-1', 1)")
             conn.commit()
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], b.EXPORT_FORMAT)
+        self.assertEqual(manifest["export_format"], 9)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):
@@ -353,12 +354,16 @@ class ExportDistributionDataTests(unittest.TestCase):
 
         self.assertEqual([(r["vote_id"], r["proceeding_id"], r["rank"]) for r in read("vote_proceedings")], [("v1", "vg-1", "1")])
         self.assertEqual({r["id"]: r["context_state"] for r in read("votes")}, {"v1": "resolved", "v2": "not_fetched"})
+        self.assertEqual({r["id"]: r["debate_url"] for r in read("votes")}['v1'], "https://www.bundestag.de/dokumente/textarchiv/2024/kw11-debatte-123456")
+        self.assertEqual({r["id"]: r["debate_url"] for r in read("votes")}['v2'], "")
+        self.assertEqual(b.column_source("votes", "debate_url"), "bundestag.de")
         self.assertEqual({r["id"]: r["abstract"] for r in read("proceedings")}["vg-1"], "Erster Absatz\n\nZweiter")
         _chips, table_rows_html, _relationships = b.render_daten_schema(manifest)
         for name in ("vote_proceedings", "proceedings", "votes"):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
         self.assertIn("context_state", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
+        self.assertIn("debate_url", b.DATABASE_TABLE_DESCRIPTIONS["votes"])
         self.assertIn("abstract", b.DATABASE_TABLE_DESCRIPTIONS["proceedings"])
 
     def test_dash_leading_text_is_exported_verbatim(self) -> None:

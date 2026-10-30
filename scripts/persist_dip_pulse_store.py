@@ -31,7 +31,7 @@ from stable_ids import (
 )
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 UPGRADE_INSTRUCTION = "Run python3 scripts/build_dip_pulse_site.py --offline --repersist --output-dir <site-dir> to upgrade the build store."
 
 def require_current_schema(conn):
@@ -45,6 +45,9 @@ def require_current_schema(conn):
     if proceedings and "abstract" not in proceedings:
         # Schema 5: initialize() would add vote_proceedings empty, leave every
         # votes.context_state NULL and stamp version 6.
+        raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
+    votes = {row[1] for row in conn.execute("PRAGMA table_info(votes)")}
+    if votes and "debate_url" not in votes:
         raise RuntimeError("Old build-store schema. " + UPGRADE_INSTRUCTION)
     if columns:
         # A store with current mps rows must carry its whole registry:
@@ -322,6 +325,7 @@ def initialize(conn: sqlite3.Connection) -> None:
           inversion_source TEXT,
           inversion_excerpt TEXT,
           xlsx_url TEXT,
+          debate_url TEXT,
           context_state TEXT CHECK (context_state IN (%(context_states)s)),
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -1246,10 +1250,10 @@ def persist_vote(
         INSERT INTO votes(
           id, protocol_id, date, topic, title, description, detail_url, yes_count, no_count,
           abstain_count, absent_count, result_raw, result_source, result_scope, procedure_type,
-          inverted, inversion_source, inversion_excerpt, xlsx_url,
+          inverted, inversion_source, inversion_excerpt, xlsx_url, debate_url,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           protocol_id = excluded.protocol_id,
           date = excluded.date,
@@ -1268,6 +1272,7 @@ def persist_vote(
           inverted = excluded.inverted,
           inversion_source = excluded.inversion_source,
           inversion_excerpt = excluded.inversion_excerpt,
+          debate_url = CASE WHEN ? THEN excluded.debate_url ELSE COALESCE(excluded.debate_url, votes.debate_url) END,
           -- A copy of the vote without a link (e.g. the same vote attached to
           -- a second agenda item) never erases one already stored, so a
           -- missing link normally falls back to COALESCE. Two cases must
@@ -1308,8 +1313,10 @@ def persist_vote(
             clean(vote.get("inversion_source")),
             clean(vote.get("inversion_excerpt")),
             clean(vote.get("xlsx_url")),
+            clean(vote.get("debate_url")),
             now,
             now,
+            "debate_url" in vote,
             bool(vote.get("xlsx_ambiguous")),
         ),
     )

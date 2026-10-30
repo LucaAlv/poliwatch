@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import unittest
@@ -13,10 +14,54 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import build_dip_pulse_site as build_site  # noqa: E402
+import derive  # noqa: E402
 import validate_dip_protocol as dip  # noqa: E402
+from _votes_fixture import vote_summary  # noqa: E402
 
 
 class RollCallScrapingTests(unittest.TestCase):
+    def test_associated_debate_targets_from_bounded_live_fixtures(self) -> None:
+        fixtures = REPO_ROOT / "tests" / "fixtures"
+        for vote_id, article_id in (("906", "992936"), ("1005", "1181880"), ("994", None)):
+            with self.subTest(vote_id=vote_id):
+                page = (fixtures / f"vote_debate_{vote_id}.html").read_text()
+                expected = f"https://www.bundestag.de/dokumente/textarchiv/{article_id}" if article_id else None
+                self.assertEqual(dip.parse_vote_debate_url(page, dip.roll_call_vote_url(vote_id)), expected)
+
+    def test_debate_association_is_bounded_unique_and_safe(self) -> None:
+        page = (REPO_ROOT / "tests/fixtures/vote_debate_1005.html").read_text()
+        source = dip.roll_call_vote_url("1005")
+        expected = "https://www.bundestag.de/dokumente/textarchiv/1181880"
+        unrelated = '<div id="showItContainer_999_7654043"></div><a href="/dokumente/textarchiv/999">Other</a>'
+        self.assertEqual(dip.parse_vote_debate_url(unrelated + page + unrelated, source), expected)
+        repeated = page.replace('</div>', '<div id="showItContainer_1181880_7654043"></div></div>', 1)
+        self.assertEqual(dip.parse_vote_debate_url(repeated, source), expected)
+        conflicting = page.replace('</div>', '<div id="showItContainer_999_7654043"></div></div>', 1)
+        self.assertIsNone(dip.parse_vote_debate_url(conflicting, source))
+        self.assertIsNone(dip.parse_vote_debate_url(page.replace('tab_debatte_7654043', 'tab_debatte_0'), source))
+        canonical = "/dokumente/textarchiv/2026/kw24-de-familien-kinder-1181880"
+        for href in (canonical, "https://evil.example" + canonical, "http://www.bundestag.de" + canonical,
+                     "/dokumente/textarchiv/2026/unrelated-999", "javascript:alert(1)", "https://[broken"):
+            with self.subTest(href=href):
+                linked = page.replace('</div>', f'<a href="{href}">Bericht</a></div>', 1)
+                self.assertEqual(dip.parse_vote_debate_url(linked, source),
+                                 "https://www.bundestag.de" + canonical if href == canonical else expected)
+        for unsafe in ("https://evil.example/dokumente/textarchiv/1181880", "javascript:alert(1)",
+                       expected + "?redirect=evil", expected + "#debatte", "https://[broken", None):
+            self.assertIsNone(dip.publication.vote_debate_url(unsafe))
+
+    def test_detail_fetch_sets_nullable_debate_without_changing_the_ballot(self) -> None:
+        page = (REPO_ROOT / "tests/fixtures/vote_debate_1005.html").read_text()
+        vote = {"id": "1005", "total": {"yes": 442, "no": 141, "abstain": 0}}
+        with patch.object(dip, "fetch_html", side_effect=[page, ""]), patch.object(dip, "namenslisten_entries", return_value=[]):
+            enriched = dip.fetch_roll_call_vote_detail(vote)
+        self.assertEqual(enriched["debate_url"], "https://www.bundestag.de/dokumente/textarchiv/1181880")
+        self.assertEqual(enriched["total"], vote["total"])
+        with patch.object(dip, "fetch_html", return_value=""), patch.object(dip, "namenslisten_entries", return_value=[]):
+            refreshed = dip.fetch_roll_call_vote_detail(enriched)
+        self.assertIn("debate_url", refreshed)
+        self.assertIsNone(refreshed["debate_url"])
+
     def test_default_roll_call_list_url_matches_previous_path(self) -> None:
         self.assertEqual(
             dip.roll_call_list_url(None, 0, 10),
@@ -169,21 +214,21 @@ class VoteResultTests(unittest.TestCase):
         self.assertEqual(dip.vote_result(official=None, yes_count=0, no_count=0), (None, None))
 
 
-class ScrapeOfficialVoteResultTests(unittest.TestCase):
+class OfficialVoteResultTests(unittest.TestCase):
     def setUp(self) -> None:
         self.html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
 
     def test_finds_accepted_result_by_its_own_counts(self) -> None:
-        self.assertEqual(dip.scrape_official_vote_result(self.html, 434, 128), "accepted")
+        self.assertEqual(dip.official_vote_result(self.html, 434, 128)[0], "accepted")
 
     def test_finds_rejected_result_for_a_different_vote_in_the_same_text(self) -> None:
-        self.assertEqual(dip.scrape_official_vote_result(self.html, 127, 418), "rejected")
+        self.assertEqual(dip.official_vote_result(self.html, 127, 418)[0], "rejected")
 
     def test_no_matching_counts_returns_none(self) -> None:
-        self.assertIsNone(dip.scrape_official_vote_result(self.html, 1, 2))
+        self.assertIsNone(dip.official_vote_result(self.html, 1, 2)[0])
 
     def test_missing_beschluss_section_returns_none(self) -> None:
-        self.assertIsNone(dip.scrape_official_vote_result("<html><body>no beschluss here</body></html>", 434, 128))
+        self.assertIsNone(dip.official_vote_result("<html><body>no beschluss here</body></html>", 434, 128)[0])
 
     def test_matching_counts_without_an_outcome_word_returns_none(self) -> None:
         # The Beschluss section can narrate a vote's counts without ever using
@@ -195,7 +240,7 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         </div>
         <div class="bt-artikel__aside-section">
         """
-        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+        self.assertIsNone(dip.official_vote_result(html, 300, 200)[0])
 
     def test_negated_outcome_is_not_read_as_official(self) -> None:
         # "nicht angenommen" (e.g. a qualified majority missed) must never be
@@ -206,7 +251,7 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         </div>
         <div class="bt-artikel__aside-section">
         """
-        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+        self.assertIsNone(dip.official_vote_result(html, 300, 200)[0])
 
     def _section(self, body: str) -> str:
         return (
@@ -220,15 +265,15 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
             "<p>Gesamt:500 Ja:100 Nein:400 Der Antrag ist <strong>nicht</strong> angenommen.</p>",
         ):
             with self.subTest(body=body):
-                self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
+                self.assertIsNone(dip.official_vote_result(self._section(body), 100, 400)[0])
 
     def test_outcome_in_a_later_paragraph_is_not_this_votes(self) -> None:
         body = "<p>Gesamt:500 Ja:100 Nein:400 Enthaltungen --</p><p>Ein weiterer Antrag wurde angenommen.</p>"
-        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
+        self.assertIsNone(dip.official_vote_result(self._section(body), 100, 400)[0])
 
     def test_outcome_on_the_line_after_the_tally_is_read(self) -> None:
         body = "<p>Gesamt: 500 Ja: 100 Nein: 400 Enthaltungen --<br/>Antrag abgelehnt</p>"
-        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 100, 400), "rejected")
+        self.assertEqual(dip.official_vote_result(self._section(body), 100, 400)[0], "rejected")
 
     def test_next_votes_tally_on_the_following_line_is_a_boundary(self) -> None:
         for body in (
@@ -236,18 +281,18 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
             "<p>Gesamt:500 Ja:300 Nein:200 Gesamt:400 Ja:100 Nein:300<br/>Antrag abgelehnt</p>",
         ):
             with self.subTest(body=body):
-                self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+                self.assertIsNone(dip.official_vote_result(self._section(body), 300, 200)[0])
 
     def test_outcome_behind_a_blank_line_belongs_to_the_next_decision(self) -> None:
         # A show-of-hands decision after this vote's tally has no tally of its
         # own and, here, no document number; the blank line ("<br/><br/>")
         # that separates decision blocks on live pages keeps its outcome out.
         body = "<p>Gesamt:500 Ja:100 Nein:400 Enthaltungen --<br/><br/>Antrag einstimmig angenommen</p>"
-        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 100, 400))
+        self.assertIsNone(dip.official_vote_result(self._section(body), 100, 400)[0])
 
     def test_negation_split_across_the_line_break_is_refused(self) -> None:
         body = "<p>Gesamt: 500 Ja:300 Nein:200 Enthaltungen -- Der Gesetzentwurf ist nicht<br/>angenommen.</p>"
-        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+        self.assertIsNone(dip.official_vote_result(self._section(body), 300, 200)[0])
 
     def test_list_items_are_lines_as_on_live_pages(self) -> None:
         # bundestag.de vote 949 (live, 2026-09-27): one <li> per line.
@@ -255,21 +300,21 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
             "<ul><li>endgültiges Ergebnis</li><li>Gesamt: 716 Ja: 87 Nein: 626 Enthaltungen: 3</li>"
             "<li>Gesetzentwurf 20/15099 abgelehnt</li></ul>"
         )
-        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 87, 626), "rejected")
+        self.assertEqual(dip.official_vote_result(self._section(body), 87, 626)[0], "rejected")
         # ...and the next vote's tally item is still a boundary.
         body = "<ul><li>Gesamt:500 Ja:300 Nein:200</li><li>Gesamt:400 Ja:100 Nein:300 Antrag abgelehnt</li></ul>"
-        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+        self.assertIsNone(dip.official_vote_result(self._section(body), 300, 200)[0])
 
     def test_nbsp_inside_the_tally_itself_still_matches(self) -> None:
         # Live pages can render the tally's own spacing as &nbsp; too, not
         # only the "nicht angenommen" phrase; strip_tags decodes it to a
         # literal NBSP character, which \s still has to match.
         body = "<p>Gesamt: 500 Ja: 300 Nein: 200 Enthaltungen --<br/>Gesetzentwurf angenommen</p>"
-        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 300, 200), "accepted")
+        self.assertEqual(dip.official_vote_result(self._section(body), 300, 200)[0], "accepted")
 
     def test_both_outcome_words_for_one_tally_are_refused(self) -> None:
         body = "<p>Gesamt: 500 Ja:300 Nein:200 angenommen aber abgelehnt</p>"
-        self.assertIsNone(dip.scrape_official_vote_result(self._section(body), 300, 200))
+        self.assertIsNone(dip.official_vote_result(self._section(body), 300, 200)[0])
 
     def test_boundary_stops_before_the_next_votes_outcome_word(self) -> None:
         # This vote's own count match is unique, but its sentence has no outcome
@@ -281,7 +326,7 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         </div>
         <div class="bt-artikel__aside-section">
         """
-        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+        self.assertIsNone(dip.official_vote_result(html, 300, 200)[0])
 
     def test_duplicate_tallies_in_one_section_are_not_attributed(self) -> None:
         # A Gesetzentwurf and its Entschließungsantrag voted along the same lines
@@ -292,7 +337,7 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         </div>
         <div class="bt-artikel__aside-section">
         """
-        self.assertIsNone(dip.scrape_official_vote_result(html, 300, 200))
+        self.assertIsNone(dip.official_vote_result(html, 300, 200)[0])
 
     def test_a_tally_less_neighbor_decision_is_rejected_when_it_names_another_document(self) -> None:
         # A unanimous/show-of-hands decision has no "Gesamt"/"Ja: N" of its own,
@@ -304,13 +349,13 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         # numbers; the neighbor names a specific, different one.
         body = "<p>Gesamt:500 Ja:100 Nein:400<br/>Entschließungsantrag 21/999 einstimmig angenommen</p>"
         self.assertIsNone(
-            dip.scrape_official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"])
+            dip.official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"])[0]
         )
 
     def test_document_numbers_still_confirm_a_genuine_match(self) -> None:
         body = "<p>Gesamt: 500 Ja: 100 Nein: 400 Enthaltungen --<br/>Antrag 21/123 abgelehnt</p>"
         self.assertEqual(
-            dip.scrape_official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"]),
+            dip.official_vote_result(self._section(body), 100, 400, document_numbers=["21/123"])[0],
             "rejected",
         )
 
@@ -322,15 +367,160 @@ class ScrapeOfficialVoteResultTests(unittest.TestCase):
         # line, outside the checked window. Absence of our number must never
         # by itself refuse a match - only a proven, different number does.
         html = (FIXTURES_DIR / "roll_call_detail_beschluss.html").read_text(encoding="utf-8")
-        self.assertEqual(dip.scrape_official_vote_result(html, 434, 128, document_numbers=["21/6561"]), "accepted")
-        self.assertEqual(dip.scrape_official_vote_result(html, 127, 418, document_numbers=["21/8195"]), "rejected")
+        self.assertEqual(dip.official_vote_result(html, 434, 128, document_numbers=["21/6561"])[0], "accepted")
+        self.assertEqual(dip.official_vote_result(html, 127, 418, document_numbers=["21/8195"])[0], "rejected")
 
     def test_document_numbers_defaults_to_the_old_behavior_when_unknown(self) -> None:
         # Without document_numbers (e.g. a candidate the overview list page
         # named no Drucksache for), the cross-check cannot run; the caller
         # still gets the pre-existing one-line-lookahead result.
         body = "<p>Gesamt:500 Ja:100 Nein:400<br/>Entschließungsantrag 21/999 einstimmig angenommen</p>"
-        self.assertEqual(dip.scrape_official_vote_result(self._section(body), 100, 400), "accepted")
+        self.assertEqual(dip.official_vote_result(self._section(body), 100, 400)[0], "accepted")
+
+
+class OfficialVoteBlockTests(unittest.TestCase):
+    """The Beschluss text prints the tally read out in the sitting; ours is the final
+    one. A block is this vote's by its Drucksachen (docs/plans/fix-vote-interpretation.md)."""
+
+    def _section(self, body: str) -> str:
+        return (
+            '<h2 class="bt-artikel__aside-section-title">Beschluss</h2>'
+            f"{body}</div>\n<div class=\"bt-artikel__aside-section\">"
+        )
+
+    def block(self, documents: str, tally: str, outcome: str, heading: str = "namentliche Abstimmung zu") -> str:
+        return f"<p>{heading} {documents}<br/>Gesamt: {tally}<br/>{outcome}</p>"
+
+    def test_a_block_naming_this_votes_document_survives_a_one_vote_discrepancy(self) -> None:
+        # Vote 996 (21/67), retrieved 2026-10-23: the page reads Ja 438, the final tally is 439/135.
+        html = (FIXTURES_DIR / "roll_call_detail_996.html").read_text(encoding="utf-8")
+        self.assertEqual(dip.official_vote_result(html, 439, 135, ["21/4466", "21/4792"]), ("rejected", "application"))
+        # Without a document match only the exact tally counts; the page's own 438 is exact.
+        self.assertEqual(dip.official_vote_result(html, 439, 135), (None, "proposition"))
+        self.assertEqual(dip.official_vote_result(html, 438, 135), ("rejected", "application"))
+
+    def test_a_three_vote_discrepancy_from_the_measured_corpus_is_still_this_votes_block(self) -> None:
+        # Vote 869 (20/122), retrieved 2026-10-23: printed Ja 635, final 632. The block sits
+        # between others of one bundled Beschluss.
+        html = (FIXTURES_DIR / "roll_call_detail_869.html").read_text(encoding="utf-8")
+        self.assertEqual(dip.official_vote_result(html, 632, 34, ["20/7226", "20/7623"]), ("accepted", "proposition"))
+        # Four votes off is no provisional tally any more.
+        self.assertEqual(dip.official_vote_result(html, 631, 34, ["20/7226", "20/7623"]), (None, "proposition"))
+        self.assertEqual(dip.official_vote_result(html, 632, 34), (None, "proposition"))
+
+    def test_a_nearby_tally_of_an_unrelated_block_is_not_adopted(self) -> None:
+        other = self.block("Antrag 21/999", "500 Ja: 438 Nein: 135", "Antrag 21/999 angenommen")
+        far = self.block("Antrag 21/4466", "500 Ja: 300 Nein: 250", "Antrag 21/4466 abgelehnt")
+        self.assertEqual(
+            dip.official_vote_result(self._section(other + far), 439, 135, ["21/4466"]), (None, "proposition")
+        )
+        near = self.block("Antrag 21/4466", "500 Ja: 437 Nein: 136", "Antrag 21/4466 abgelehnt")
+        self.assertEqual(
+            dip.official_vote_result(self._section(other + near), 439, 135, ["21/4466"]), ("rejected", "application")
+        )
+
+    def test_exact_tally_does_not_override_a_different_current_roll_call(self) -> None:
+        # Value: protects=current announced document identity;
+        # fails_when=matching counts override another document on the roll-call line;
+        # why_new=existing cases checked only outcome-text documents; seam=none;
+        # no_claim=synthetic HTML attribution, not live provider availability.
+        body = "<p>namentliche Abstimmung zu Antrag 21/999<br/>Gesamt: 500 Ja: 300 Nein: 200<br/>Antrag angenommen</p>"
+        self.assertEqual(
+            dip.official_vote_result(self._section(body), 300, 200, ["21/123"]), (None, "proposition")
+        )
+
+    def test_last_roll_call_identity_ignores_earlier_unrelated_decisions(self) -> None:
+        # Value: protects=current roll-call attribution in bundled decisions;
+        # fails_when=earlier unrelated decisions contaminate announcement identity;
+        # why_new=the new mismatch guard must retain this compatibility; seam=none;
+        # no_claim=synthetic HTML attribution, not live provider availability.
+        body = (
+            "<p>Überweisung 20/9100 beschlossen<br/>Antrag 20/10057 angenommen<br/>"
+            "namentliche Abstimmung zu Antrag 20/10050<br/>Gesamt: 500 Ja: 188 Nein: 420<br/>"
+            "Antrag 20/10050 abgelehnt</p>"
+        )
+        self.assertEqual(
+            dip.official_vote_result(self._section(body), 188, 420, ["20/10050"]), ("rejected", "application")
+        )
+
+    def test_a_block_naming_a_document_besides_this_votes_is_not_identified(self) -> None:
+        mixed = self.block("Antrag 21/4466 und Antrag 21/5000", "500 Ja: 438 Nein: 135", "Antrag 21/4466 abgelehnt")
+        self.assertEqual(dip.official_vote_result(self._section(mixed), 439, 135, ["21/4466"]), (None, "proposition"))
+        self.assertEqual(dip.official_vote_result(self._section(mixed), 438, 135, ["21/4466"]), ("rejected", "application"))
+
+    def test_two_blocks_sharing_the_documents_fall_back_to_the_exact_tally(self) -> None:
+        # Parts of one recommendation name the same Drucksachen: neither is picked by them.
+        parts = (
+            self.block("Beschlussempfehlung 21/5546 Buchstabe c (Antrag 21/2363 ablehnen)", "585 Ja: 449 Nein: 136", "Beschlussempfehlung angenommen")
+            + self.block("Beschlussempfehlung 21/5546 Buchstabe c (Antrag 21/2363 ablehnen)", "590 Ja: 454 Nein: 136", "Beschlussempfehlung abgelehnt")
+        )
+        numbers = ["21/2363", "21/5546"]
+        self.assertEqual(dip.official_vote_result(self._section(parts), 447, 136, numbers), (None, "proposition"))
+        self.assertEqual(dip.official_vote_result(self._section(parts), 449, 136, numbers), ("accepted", "proposition"))
+        self.assertEqual(dip.official_vote_result(self._section(parts), 454, 136, numbers), ("rejected", "proposition"))
+
+    def test_without_documents_a_provisional_tally_is_not_matched(self) -> None:
+        body = "<p>Gesamt: 573 Ja: 438 Nein: 135 Enthaltungen 0<br/>Antrag abgelehnt</p>"
+        self.assertEqual(dip.official_vote_result(self._section(body), 439, 135), (None, "proposition"))
+        self.assertEqual(dip.official_vote_result(self._section(body), 438, 135), ("rejected", "application"))
+
+    def test_the_outcome_and_the_scope_come_from_the_same_block(self) -> None:
+        recommendation = self.block("Beschlussempfehlung 21/5 (Antrag 21/4 ablehnen)", "500 Ja: 300 Nein: 200", "Beschlussempfehlung 21/5 angenommen")
+        antrag = self.block("Antrag 21/9", "500 Ja: 300 Nein: 200", "Antrag 21/9 abgelehnt")
+        # Identical tallies in both blocks: the documents separate them, and the block that
+        # answers for the vote answers for its scope too.
+        for documents, expected in (
+            (["21/4", "21/5"], ("accepted", "proposition")),
+            (["21/9"], ("rejected", "application")),
+            (None, (None, "proposition")),  # two blocks with this tally: no exact, unique match
+        ):
+            with self.subTest(documents=documents):
+                self.assertEqual(dip.official_vote_result(self._section(recommendation + antrag), 301, 200, documents), expected)
+                self.assertEqual(dip.official_vote_result(self._section(recommendation + antrag), 300, 200, documents), expected)
+
+    def test_a_trailing_outcome_paragraph_counts_only_with_a_document_of_the_block(self) -> None:
+        tally = "<ul><li>namentliche Abstimmung zu Antrag 21/4466</li><li>Gesamt: 573 Ja: 438 Nein: 135</li></ul>"
+        self.assertEqual(
+            dip.official_vote_result(self._section(tally + "<p><br/>Antrag 21/4466 abgelehnt</p>"), 438, 135),
+            ("rejected", "application"),
+        )
+        self.assertEqual(
+            dip.official_vote_result(self._section(tally + "<p><br/>Antrag 21/9999 abgelehnt</p>"), 438, 135),
+            (None, "proposition"),
+        )
+        self.assertEqual(
+            dip.official_vote_result(self._section(tally + "<p><br/>Der Antrag wurde abgelehnt</p>"), 438, 135),
+            (None, "proposition"),
+        )
+
+    def test_the_detail_fetch_of_vote_996_keeps_the_final_tally_and_reads_the_antrag_outcome(self) -> None:
+        page = (FIXTURES_DIR / "roll_call_detail_996.html").read_text(encoding="utf-8")
+        listing = json.loads((FIXTURES_DIR / "vote_interpretation_votes.json").read_text(encoding="utf-8"))["996"]
+        listing.pop("fractions")
+        listing.pop("members")
+
+        def fake_fetch_html(url: str) -> str:
+            if "/liste/" in url:
+                return ""
+            return "" if "namensliste.form" in url else page
+
+        dip._namenslisten_entries = None
+        self.addCleanup(setattr, dip, "_namenslisten_entries", None)
+        with patch.object(dip, "fetch_html", side_effect=fake_fetch_html), patch("sys.stderr", StringIO()):
+            vote = dip.fetch_roll_call_vote_detail(listing)
+
+        self.assertEqual(vote["total"], {"yes": 439, "no": 135, "abstain": 0, "absent": 55})
+        self.assertEqual(
+            (vote["official_result"], vote["result_raw"], vote["result_source"], vote["result_scope"]),
+            ("rejected", "rejected", "official", "application"),
+        )
+        self.assertTrue(vote["inverted"])
+        # The page speaks of the Antrag: rejected once, not inverted a second time.
+        self.assertEqual(derive.vote_outcome(vote), "rejected")
+        panel = vote_summary({"votes": [vote]})
+        self.assertIn("Antrag: Abgelehnt", panel)
+        self.assertIn("Ja = Antrag ablehnen · Nein = Antrag annehmen", panel)
+        self.assertNotIn("berechnet", panel)
 
 
 class NamenslistenMatchingTests(unittest.TestCase):
@@ -488,7 +678,7 @@ class FetchRollCallVoteDetailTests(unittest.TestCase):
             "total": {"yes": 434, "no": 128, "abstain": 0, "absent": 68},
             # A real roll-call candidate always carries this from
             # parse_roll_call_list_page; pin that fetch_roll_call_vote_detail
-            # actually threads it into scrape_official_vote_result.
+            # actually threads it into official_vote_result.
             "document_numbers": ["21/6561"],
         }
         with patch.object(dip, "fetch_html", side_effect=fake_fetch_html):

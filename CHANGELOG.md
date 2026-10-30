@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.5.0] - 2026-10-29
+
+### Fixed
+
+- A bill's „Zuletzt erfasst“ step on a day with several events is now the procedurally latest one: the sitting's Beratung over a Drucksache filed that day (a same-day „Gesetzentwurf“ no longer beats „1. Beratung“), the Beratung over a same-day Entschließungsantrag or roll-call vote, and the Gesetzesbeschluss over the 2. Beratung. On the reference cache 8 of 562 bills change: 5 from „Beschluss“ to „Abstimmung über Vermittlungsvorschlag“, 1 from „Geschäftsordnungsantrag zur Beratung“ to „2. Beratung“, 1 from „2. Beratung“ to „3. Beratung“ and 1 from „Unterrichtung“ to „2. Beratung“. The 47 bills whose latest step is „Gesetzesbeschluss“ keep it.
+
+## [0.23.4.0] - 2026-10-29
+
+### Changed
+
+- The Methodik page and the Plenarprotokoll overview call a Sitzung's page a „Dossier“ („Jedes Dossier verlinkt den Zwischenbericht als JSON“, „Erzeugte Dossiers“) instead of „Sitzungsseite“ and „Sitzungsdossiers“.
+
+## [0.23.3.0] - 2026-10-29
+
+### Fixed
+
+- The demo build's grouped Antrag TOP on puls.html lists each Antrag's own title instead of one bold block of the joint „a) … b) …“ agenda heading. The demo fixture had copied that heading into both titles; real builds were not affected.
+- `scripts/extract_demo_fixture.py` runs again: it passed bytes to the protocol parser, which now takes text.
+
+## [0.23.2.0] - 2026-10-29
+
+### Changed
+
+- puls.html flags a week older than four ISO weeks with „Nicht aktuell: letzte Woche mit Sitzung vor N Wochen“ right after the heading, instead of only in the muted facts line; shorter gaps still lead the facts line with the age.
+- The site calls its reporting period „Woche mit Sitzung“ (or „Woche“), not „Sitzungswoche“, which names the Bundestag's planned calendar. This covers the Wochenvergleich, the Fakt der Woche cards and footer („Vergleich: N Wochen mit Sitzung“), and the Fakten Methodik.
+
+## [0.23.1.0] - 2026-10-28
+
+### Fixed
+
+- Bill search now ignores accents and treats ß as ss, so “fur” finds “für” and “strasse” finds “Straße”. Titles and query spelling remain unchanged, including when restoring searches through browser history.
+
+## [0.23.0.0] - 2026-10-26
+
+### Added
+
+- Each roll-call vote panel now introduces the recorded subject, date, outcome and raw vote counts, followed by its committee citation where available. Calculated and unavailable outcomes remain clearly labelled.
+- Vote panels link to the associated Bundestag report where one can be identified. The optional source link is also included in SQLite and CSV downloads; existing cached reports need an online vote refresh to acquire it.
+
+## [0.22.1.0] - 2026-10-26
+
+### Fixed
+
+- Weeks without an eligible comparison week retain their current totals and fraction shares without repeated `n/a` markers or an empty delta column. Comparisons with no shared sitting weekdays retain their per-row unavailable deltas.
+
+## [0.22.0.0] - 2026-10-24
+
+### Fixed
+
+- Vote panels now explain when a Ja supports a recommendation to reject an Antrag, using the chair's announcement and its Drucksachen. All 14 previously missed reference votes show the inversion legend; direct votes on a Vorlage remain uninverted.
+- Existing caches recover vote interpretation with `--offline --repersist`, keeping every copy of a vote consistent across dossiers, the archive and data exports. Vote 1005 now shows `Antrag: Abgelehnt (berechnet)` instead of a missing result, and sitting-level votes survive online acquisition.
+- Official outcomes remain attributable when the read-out tally differs from the final tally by up to three votes per side, only within a uniquely identified document block. The reference-page comparison recovers 43 additional official outcomes without changing an existing one; vote 996 shows the official Antrag rejection at 439/135 without double inversion. Ambiguous matches stay unresolved.
+
 ## [0.21.1.0] - 2026-10-23
 
 ### Added

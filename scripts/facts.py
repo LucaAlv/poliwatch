@@ -2315,7 +2315,7 @@ POPULATION_PHRASES = {
     "laengste-debatte": ("länger als", "der wöchentlichen Spitzendebatten"),
     "laengste-rede": ("länger als", "der wöchentlichen Spitzenreden"),
     "laengste-sitzung": ("länger als", "der wöchentlich längsten Sitzungen"),
-    "erste-reden": ("mehr als in", "der Sitzungswochen"),
+    "erste-reden": ("mehr als in", "der Wochen mit Sitzung"),
     "aktivste-abgeordnete": ("mehr als", "der monatlich aktivsten Abgeordneten"),
     "meistdiskutierter-vorgang": ("mehr als bei", "der monatlich meistdiskutierten Vorgänge"),
 }
@@ -2505,11 +2505,11 @@ def _text_block(
 
 
 def baseline_comparison_line(row: Mapping[str, Any]) -> str:
-    """"Vergleich: N <Sitzungswochen|Monate> (from bis to)" - shared by the
+    """"Vergleich: N <Wochen mit Sitzung|Monate> (from bis to)" - shared by the
     SVG card's footer and the page's baseline paragraph, so the two never
     drift (D12)."""
     count = row.get("baseline_count") or 0
-    period_noun = "Monate" if row.get("period_kind") == "month" else "Sitzungswochen"
+    period_noun = "Monate" if row.get("period_kind") == "month" else "Wochen mit Sitzung"
     text = f"Vergleich: {format_int(count)} {period_noun}"
     if row.get("baseline_from") and row.get("baseline_to"):
         text += f" ({row['baseline_from']} bis {row['baseline_to']})"

@@ -16,7 +16,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 1. Completed v0.10.0.0 (2026-09-30): "Inverted-vote reading for Beschlussempfehlungen", "Majority rule for derived vote outcomes" and "Match roll-call votes to a TOP when Drucksache numbers fail".
 2. Completed (2026-10-04): "Roll-call member rows link to external profiles, never to our own MP pages" (B.2, including vote-member reconciliation).
 3. Done (see Completed): "Politikfeld tags on Tagesordnungspunkte and votes". This also feeds C.
-4. "Vote reading misses half the inverted votes and never stores it" (P1, found 2026-10-20), then the rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". B4 did the DIP abstract, the Abweichler and the committee; the deterministic fallbacks for votes without an abstract are open, the AI sentence is deferred. Item 2 (the topic filter) came with B3.
+4. "Vote reading misses half the inverted votes and never stores it" (P1, found 2026-10-20), then the rest of "Abstimmungen for the daily view: what was decided, by topic, with dissenters". B4 added the DIP abstract, Abweichler, committee citation, factual lead and optional Bundestag report link; the extractive fallback for votes without an abstract remains open, and the AI sentence is deferred. Item 2 (the topic filter) came with B3.
 5. "Take namentliche Abstimmungen from the official XLSX instead of the chart markup" can come later. It adds ungültig and Bemerkung but changes no count seen so far.
 
 **C. Analysen (long-term view), after A1–A3**
@@ -306,31 +306,27 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** A3 (v1 coverage)
 
-### Say "Dossier" consistently, and say when a count covers only Sitzungen mit Dossier
+### Say when a count covers only Sitzungen mit Dossier
 
-**What:** (1) Public copy uses "Sitzungsseite" for a Dossier (the Daten/Methodik "Erzeugtes JSON" bullet in `scripts/build_dip_pulse_site.py`) and the component list calls it "Protokoll-Dossiers" (`scripts/features/__init__.py`); say "Dossier". (2) Wherever a published count (Puls, Fakten, Abgeordnete, Daten recipes) spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". First check which pages already disclose this; not audited.
+**Part 1 completed:** v0.23.4.0 (2026-10-29). Public copy says "Dossier": the Methodik's "Erzeugtes JSON" bullet ("Jedes Dossier verlinkt …", was "Sitzungsseite"), the overview heading "Erzeugte Dossiers" (was "Sitzungsdossiers"), and the internal component label "Dossiers" (was "Protokoll-Dossiers"). A test keeps the avoided names off both pages.
+
+**What is left:** wherever a published count spans a range for which the catalog lists more Sitzungen than have a Dossier, say so, e.g. "in 60 von 94 Sitzungen (nur Sitzungen mit Dossier)". Audit on main at v0.23.1.0 (2026-10-29):
+- Already disclosed: the Daten Datenstand ("N von M Protokollen im Katalog als Dossier erfasst", `render_daten_datenstand`), the votes archive footer ("Die Liste umfasst die Dossiers, die in diesem Build mit --detail-limit erzeugt wurden"), and the catalog's "Erzeugte Dossiers" tile and its "Nur mit Dossier" filter.
+- Not disclosed: the Abgeordnete list's "Reden" column (`render_abgeordnete_index`), the puls.html header and Wochenvergleich, the Fakten pages and Methodik, and the speech counts on the Gesetzesvorhaben pages.
 
 **Why:** CONTEXT.md "Sitzung mit Dossier": every count covers only Sitzungen mit Dossier, because the store is rebuilt only from Dossier entries (`rebuild_database_from_entries`). A build with `--detail-limit` silently reports a subset as if it were the whole Wahlperiode.
 
-**Effort:** S
+**Context:** Wait for `worktree-a3-plan` to merge: it rewrites `render_abgeordnete_index`, extends `coverage_line` in `render_daten_datenstand`, and adds Fakten coverage text (`facts.coverage_label`, `fill_caveat`). Reuse those rather than adding a second coverage phrase.
+
+**Effort:** S–M
 **Priority:** P3
-**Depends on:** None
+**Depends on:** `worktree-a3-plan` merged
+
+
 
 ## Puls
 
 The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are no longer blocked by it. The weekday comparison is completed below.
-
-### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
-
-**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
-
-**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
-
-**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Redeanteil heading and Textanteil (puls.html and Daten recipes), the UI half of ADR 0001
 
@@ -392,33 +388,11 @@ The week radar shipped in 0.3.0.0 (#58, 2026-09-18), so the remaining items are 
 **Priority:** P3
 **Depends on:** None
 
-### Combined Antrag titles render as one four-line bold block on puls.html
+### The demo fixture predates the A1 Rede rules (16 Reden in the fixture, 14 from today's parser)
 
-**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+**What:** `tests/fixtures/demo-report-21-84.json` holds 16 speeches for TOP 32 of Sitzung 21/84, but `scripts/extract_demo_fixture.py` run on the official XML (dserver `btp/21/21084.xml`) now finds 14 and stops at its guard ("expected 16 TOP 32 speeches"). Find which two are no longer Reden (most likely Kurzinterventionen or Erwiderungen, #68), then regenerate the fixture from the XML and update the guard and `test_demo_site.py`'s "16 Reden". The extractor's crash on bytes input (`parse_protocol_xml` takes text) was fixed in v0.23.3.0.
 
-**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Week comparison with no basis still draws every n/a slot
-
-**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
-
-**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
-### Staleness of the "Aktueller Puls" week is only gray meta text
-
-**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
-
-**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
-
-**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
+**Why:** The demo and every test built on it show a count the current rules would not publish, and the fixture can only be edited by hand until it is regenerated.
 
 **Effort:** S
 **Priority:** P3
@@ -488,17 +462,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 
 ## Gesetzesvorhaben
 
-### Bill overview polish: same-day step ties, diacritic-insensitive search
-
-**What:** (1) On a date tie, `collect_bill_pages` now only demotes the sitting's „Plenarprotokoll“ event; a Drucksache dated on the sitting day (e.g. „Gesetzentwurf“) still beats „1. Beratung“ as the latest step by insertion order. Decide a full step ranking (and keep „Gesetzesbeschluss“ ahead of „2. Beratung“, which the narrower rule deliberately preserved for 18 bills). (2) Search folds case and Unicode form but not diacritics or ß: „fur“ does not find „für“, „strasse“ not „Straße“. Fold both the build-time `data-search` and the query.
-
-**Why:** v0.18.0.0 adversarial review findings, deferred at the fix-cycle limit. Low severity each.
-
-**Context:** (1) changes published `latest_step` values; report old/new counts per CLAUDE.md. Measuring recipe: call `collect_bill_pages` on `load_existing_detail_entries(.context/dip-pulse-site, …)` from an origin/main worktree and from the working tree.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ## Abgeordnete
 
@@ -654,7 +617,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### A tally-less neighboring decision with no document number of its own can still steal the official badge
 
-**What:** `scrape_official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
+**What:** `official_vote_result`'s document-number cross-check (this item's own commit) only refuses when the attributed text names a *different*, specific document number. A neighboring, tally-less decision (e.g. a unanimous show-of-hands item, which needs no "Gesamt"/"Ja: N" marker) that names NO number at all is indistinguishable from this vote's own legitimate number-less outcome sentence, and its outcome word can still be adopted as this vote's official result. Done when a fixture or live page demonstrating this shape is found and a fix (e.g. requiring positional/structural confirmation, not just absence-of-mismatch) is verified against it without regressing the fixture or any of the 8 real votes already pinned in the test suite.
 
 **Why:** Found by the /ship red-team review (2026-09-27), same family as the Beschlussempfehlung-inversion badge caveat already shipped in 85411a4 ("acceptable only while the site is not public"). Latent: every real "Beschluss" narration checked so far — the project's own fixture and every live bundestag.de page fetched during this and the prior review round — attaches a document number to every decision it mentions, including tally-less ones, so this specific shape has not been observed on real data. A cheap fix was explored and rejected: requiring a document-number match whenever the lookahead line starts with a proposition keyword (Gesetzentwurf/Beschlussempfehlung/Entschließungsantrag/...) also rejects the fixture's own legitimate "Gesetzentwurf angenommen" case, which has the identical shape.
 
@@ -668,7 +631,7 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 
 ### `2/3-Mehrheit` phrasing can spuriously trip the document-number mismatch check
 
-**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `scrape_official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
+**What:** `_DOCUMENT_NUMBER_RE` (`\b\d{1,2}/\d{1,6}\b`) also matches a fractional-majority phrase like "2/3-Mehrheit". If such a phrase appears in the attributed outcome text and doesn't happen to equal one of the vote's own document numbers, `official_vote_result` refuses (falls back to derived) even though the actual outcome word is correct. Require at least 3 digits before the slash for a document number, or exclude common fraction phrases (`1/2`, `2/3`, `3/4`) from the pattern used by this specific check.
 
 **Why:** Found by the /ship red-team review (2026-09-27); not verified against real bundestag.de wording (live pages checked so far spell out "Zweidrittelmehrheit", not "2/3-Mehrheit"). The failure direction is always safe — a spurious refusal falls back to the derived yes>no rule, never produces a wrong official value — so this is a false-negative/coverage gap, not a correctness bug.
 
@@ -901,10 +864,10 @@ Done when the chart and the recipe give the same numbers on the same release, an
 ### Abstimmungen for the daily view: what was decided, by topic, with dissenters
 
 **What:** Close the gap to the abgeordnetenwatch.de Abstimmungen (checked 2026-09-30: their vote pages carry a plain-language description of what was decided, topic tags, the committees involved, the source documents and the named dissenters; the list filters by topic and date). For us:
-1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). 64 of 217 votes on the reference store have none (measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153); those panels say "Keine Beschreibung in DIP". **Still open** for them: the two deterministic layers below. The labelled AI sentence under the validators item is deferred (decided 2026-10-20).
-   - **Lead sentence from facts we already hold**, in the pattern of the bundestag.de Textarchiv: date, what was voted on (Gesetzentwurf / Beschlussempfehlung zu Antrag X), result with tally, committee.
+1. A short description of what the vote decided. ~~The DIP abstract.~~ Done in B4: the panel's "Worum es geht" block shows the abstract of each Vorgang the vote's narrow Drucksache numbers resolve to (`politikfelder.vote_vorgang_ids`), and the store keeps it (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). 64 of 217 votes on the reference store have none (measured 2026-10-20 on a copy, the online refetch of all 86 empty-abstract context Vorgänge filled none, so votes with an abstract stay 153 → 153); those panels say "Keine Beschreibung in DIP". The factual lead and Bundestag report link below are implemented (2026-10-25); the extractive fallback remains open. The labelled AI sentence under the validators item is deferred (decided 2026-10-20).
+   - **Done (2026-10-25): lead sentence from stored facts** on every panel, including panels with an abstract: date, recorded subject, interpreted outcome and raw Ja/Nein/Enthaltungen counts, immediately followed by the committee citation. Derived and unavailable outcomes remain labelled. [Implementation plan](docs/plans/b4-vote-lead-and-article.md).
    - **Extractive fallback from the Antrag itself:** quote section II ("Der Deutsche Bundestag fordert die Bundesregierung auf …") verbatim with a source line. A Drucksache is an amtliches Werk (§5 UrhG), so quoting is free.
-   - **Link the bundestag.de "Debatte" text, never copy it.** It is editorial content of the Internetredaktion, private use only under their Impressum (215 of 217 votes have one). The vote page's `showItContainer_<articleId>_…` gives the article id exactly. One article covers up to 9 votes and its section headings can name the wrong Antrag (vote 1005), so match a vote to its section by Drucksache number. Consider adding these texts to the ADR 0003 consent e-mail (question 5).
+   - **Done (2026-10-25): “Bericht und Debatte beim Bundestag”** links the whole associated Textarchiv report through the vote’s bounded Debatte association. Repeated copies of one article are allowed; conflicting or missing article IDs omit the link. The nullable scraped `debate_url` survives report replay, schema 7 storage and format 8 export. No editorial body is copied or section-matched; shared articles such as 1005 are valid. Offline replay cannot discover a missing URL; targeted online refresh can.
 2. ~~Topic filter on `votes/index.html`, from the Politikfeld tags.~~ Covered by B3 (done).
 3. ~~The named Abweichler per Fraktion on the vote panel.~~ Done in B4 (`derive.vote_abweichler`; 632 Abweichler in 95 of 217 votes; archive rows carry the count where every group's Einzelstimmen are complete).
 4. ~~The responsible committee, from the Beschlussempfehlung.~~ Done in B4: "Beschlussempfehlung des <Ausschuss> (Drucksache …)" on 190 of 217 panels, recipe `r6-ausschuss`. Mitberatende committees are the follow-up "Mitberatende Ausschüsse on the vote panel".
@@ -913,28 +876,11 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 
 **Why:** PRODUCT.md names this as the votes part of the daily view. The vote panel and archive (v0.7.0.0) already cover tallies, outcome badge and sources. They miss the "what does this mean" layer a citizen needs.
 
-**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. That item shipped, but the inversion it detects is incomplete and never reaches the page: see "Vote reading misses half the inverted votes and never stores it". Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
+**Context:** Correctness items come first, above all the P1 "Inverted-vote reading for Beschlussempfehlungen". A plain-language description of a rejected Beschlussempfehlung that doesn't handle the inversion would be wrong. The remaining interpretation and replay defects are fixed in v0.22.0.0: see the completed "Vote reading misses half the inverted votes and never stores it" item. Full analysis of the bundestag.de vote pages (2026-10-20): [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md).
 
 **Effort:** M
 **Priority:** P2
 **Depends on:** Vote reading misses half the inverted votes and never stores it; deterministic validators (only for the deferred AI fallback in 1)
-
-### Vote reading misses half the inverted votes and never stores it
-
-**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
-1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
-2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
-3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
-
-Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
-
-**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
-
-**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** None
 
 ### Mitberatende Ausschüsse on the vote panel
 
@@ -1249,7 +1195,7 @@ About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3
 **Why:** PRODUCT.md (2026-09-30) sets v1 coverage at the Wahlperioden with structured Plenarprotokoll XML, which the DIP catalog lists for WP 18 onward (every WP 18–20 Sitzung has an `xml_url`; no WP 1–17 Sitzung does). Every long-term analysis is only as long as this coverage. A trend that starts in 2022 says little about change over time.
 
 **Context:**
-- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including Sitzungen with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
+- WP 18 and 19 XML parse with today's code. Test on 2026-09-30 with 18/1, 18/100, 18/200, 18/245, 19/1, 19/100 and 19/239 against `parse_protocol_xml`: every `<rede>` under `<sitzungsverlauf>` is parsed. A1 now ingests the 35 explicitly typed written submissions in 18/100 separately; the 11 annex units in 18/200 and 29 in 19/239 are §31 declarations and remain excluded. See the A1 validation record. Before running the full backfill, check a larger sample of WP 18 and 19, including sittings with Befragung, Fragestunde and Aktuelle Stunde, and the DIP enrichment path (Vorgänge, Drucksachen, roll-call votes), which this test did not touch.
 - Speakers from the Bundesregierung have no Fraktion in the XML (45 of 117 Reden in 19/100). Sprechrolle handles this already (ADR 0001).
 - WP 18 and 19 roughly triple the Dossier count, so the 2.5 GB site grows accordingly. That makes the P1 site-hosting item harder.
 - Budget about half a minute per Sitzung plus votes. `--backfill-incomplete` and `--protocol-wahlperiode` are the tools.
@@ -1278,6 +1224,105 @@ About 505 Sitzungen are missing. Plan: [docs/plans/a3-coverage.md](docs/plans/a3
 - **Excluded sittings:** the 85 come back through "WP 18/19: nested Erwiderung, Erklärung and Geschäftsordnung turns" and "20/11: the chair's handover exchange".
 - **Covered range stated** in README, PRODUCT.md and the Daten page (scope line).
 - **DIP cost:** about 6,000 requests in Phase 3, 3 in Phase 4.
+
+### Bill overview polish: same-day step ties
+
+**Completed:** v0.23.5.0 (2026-10-29). `collect_bill_pages` breaks a date tie by `BILL_STEP_RANK` (Plenarprotokoll < Drucksachen < Beschlussempfehlung < Namentliche Abstimmung < Beratung / 1. < 2. < 3. Beratung < Gesetzesbeschluss); a kind not listed ranks by where the event came from (document 10, vote 25, Vorgangsposition 30). Before, insertion order decided: a Drucksache filed on the sitting day beat the Beratung, and Gesetzesbeschluss beat „2. Beratung“ only because documents are appended first.
+
+Measured on the reference cache (`.context/dip-pulse-site`, main vs the branch, 2026-10-29): 8 of 562 bills change `latest_step`:
+- „Beschluss“ → „Abstimmung über Vermittlungsvorschlag“: 5
+- „Geschäftsordnungsantrag zur Beratung“ → „2. Beratung“: 1
+- „2. Beratung“ → „3. Beratung“: 1
+- „Unterrichtung“ → „2. Beratung“: 1
+
+„Gesetzesbeschluss“ stays the latest step of 47 bills before and after. No bill moves to a procedurally earlier step. Kinds in the cache not in the table, ranked by origin: „2. Beratung und Schlussabstimmung“, „Abstimmung über Vermittlungsvorschlag“, „Zurückverweisung an die Ausschüsse in 2./3. Beratung“, „Geschäftsordnungsantrag zur Beratung“ (Vorgangspositionen, 30), and „Beschluss“, „Berichtigung“, „Empfehlungen“ (30 or 10 by origin).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Combined Antrag titles render as one four-line bold block on puls.html
+
+**Completed:** v0.23.3.0 (2026-10-29). The cause was the demo fixture, not the renderer: `scripts/extract_demo_fixture.py` copied the joint „a) … b) …“ agenda heading into both Anträge's DIP titles, so `topic_identity` saw one title, the row lost `equal_weight` and the heading became its bold `.radar-title`. The extractor now carries each Antrag's own title (`TITLES`, checked against the Drucksachen 21/6354 = a) and 21/4833 = b) on dserver and against the heading), the fixture's four `titel` fields follow, and the demo row lists both titles like a real build. Real data never had the block: each Vorgang has its own title, and the heading fallback is cut at 120 characters. Splitting titles on „a)“/„b)“ was rejected, since real titles cite „§ 3 Abs. 1 a)“.
+
+**What:** `.radar-title` shows DIP's combined TOP title ("a) Beratung des Antrags … b) Beratung des Antrags …") as one 750-weight wall of text. Split on the `a)`/`b)` markers into the existing `.radar-titles` list, or cap the title with a "mehr" link.
+
+**Why:** It is the heaviest element on the page and pushes the numbers (Reden, Anteil, Wer sprach) off the first screen on mobile. The rest of the page is scannable; this row is not.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Staleness of the "Aktueller Puls" week is only gray meta text
+
+**Completed:** v0.23.2.0 (2026-10-29). Past `STALE_AFTER_WEEKS` (4 ISO weeks) puls.html shows „Nicht aktuell: letzte Woche mit Sitzung vor N Wochen“ right after the h1, outside it, and the facts line no longer repeats the age; up to four weeks the facts line still leads with it. The eyebrow stays „Wochenübersicht“; the docstring and `docs/designs/puls-wochenradar.md` no longer claim it changes. Still open: the homepage's weekly entry shows no age at all (`render_landing_page`), and „Nächste Sitzungswoche“ above.
+
+**What:** When the latest sitting week is more than ~4 weeks old ("vor 16 Wochen" in the demo build), say so next to the h1 instead of in the gray subtitle line.
+
+**Why:** The h1 reads "Was der Bundestag in KW 24/2026 verhandelt hat" as if it were current; the age is only in the muted meta line below it.
+
+**Context:** Same header as "Nächste Sitzungswoche" in the puls.html header above, whose stale-archive state is specified in the week-radar design doc; do both together or this one first, since it needs no Sitzungskalender fetch.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Say "Woche mit Sitzung", not "Sitzungswoche", for the reporting period
+
+**Completed:** v0.23.2.0 (2026-10-29). Every reporting-period use in `scripts/` now says "Woche mit Sitzung" or "Woche", worded per line ("dieser Woche", "je Woche mit Sitzung", "Vergleich: N Wochen mit Sitzung"); the build log counts "Perioden (Wochen und Monate)", and the unused plural in `_PERIOD_NOUN` is gone (`_PERIOD_DEMONSTRATIVE`). A test keeps the longer card footer inside one card line. README and the design docs follow; the source XML fixtures keep the Bundestag's own wording.
+
+**What:** Replace "Sitzungswoche" wherever it names this project's reporting period with "Woche mit Sitzung" or plain "Woche": 32 occurrences on 29 lines in `scripts/`. That includes the Wochenradar notes (among them "ein Vergleichswert folgt mit der nächsten Sitzungswoche"), the Fakt der Woche card footer "Vergleich: N Sitzungswochen" (`baseline_comparison_line()`), the erste-reden card sentence "mehr als in … der Sitzungswochen", the Methodik's "mindestens N Sitzungswochen", and the build log line that also counts months as "Sitzungswochen". No current use means the official Sitzungskalender, which the site does not read at all. Update the 13 test lines that assert these strings. Done when no copy calls a Kalenderwoche a Sitzungswoche.
+
+**Why:** CONTEXT.md (Sitzungswoche, Kalenderwoche, 2026-09-25): a Sitzungswoche is the Ältestenrat's plan, and the site counts Kalenderwochen with at least one Sitzung. A week with only a Sondersitzung counts for us but is sitzungsfrei in the Sitzungskalender, so the current copy overstates it.
+
+**Context:** The card footer and the erste-reden sentence are on the Karten, so this re-renders published Karten; see the footer fix under Fakten.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### Bill overview: accent-insensitive search
+
+**Completed:** v0.23.1.0 (2026-10-28). Both build-time `data-search` and the query fold accents and ß, so „fur“ finds „für“ and „strasse“ finds „Straße“. Original titles and query spelling remain visible and survive URL/history restoration. See the [implementation plan and validation](docs/plans/bill-search-accent-insensitive.md). Same-day step ranking followed in v0.23.5.0 (see its entry above).
+
+### Week comparison with no basis still draws every n/a slot
+
+**What:** With a single sitting week, "Noch keine Vergleichswoche" is followed by three N/A metric tiles and six `n/a` chips beside the Redeanteil bars. Collapse the delta column and metric footers when the whole panel has no basis. `test_no_comparison_state_renders_the_current_week_without_deltas` in `tests/test_build_dip_pulse_site.py` asserts the chips today, so it changes with this; the partial-week tests keep their per-row `n/a`.
+
+**Why:** The no-basis marker is honest per row, but repeated nine times it is noise beside a heading that already says there is nothing to compare.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+**Completed:** v0.22.1.0 (2026-10-26). Implemented [the empty-week comparison plan](docs/plans/empty-week-comparisons.md): missing-week panels retain current totals and fraction shares without metric footers, delta chips or an unused delta column. Partial comparisons and zero-prior values keep their unavailable deltas. Focused tests pass (219); the full Python 3.13 suite passes (1,523 tests, two skipped). Chrome DevTools checks at 1440px, 700px and 375px and a printed PDF confirm the current-only layout.
+
+### Vote reading misses half the inverted votes and never stores it
+
+**What:** Three defects found while analysing the bundestag.de vote pages (2026-10-20, [docs/research/bundestag-vote-pages.md](docs/research/bundestag-vote-pages.md)):
+1. **Missed inversions.** Of 28 votes whose Beschluss line reads "Beschlussempfehlung … (Antrag … ablehnen)", `recommendation_inversion` (`scripts/validate_dip_protocol.py`) flags 14 and misses 14: 773, 790, 793, 798, 803, 811, 819, 841, 850, 855, 873, 882, 892, 906. In 9 of them the sponsoring Fraktion voted Nein on its own Antrag, which confirms the inversion. Their WP 20 titles lack the "Ablehnung eines Antrags" wording the regex looks for. The 23 "Beschlussempfehlung annehmen" votes all agree. Detect from the Plenarprotokoll announcement ("Abstimmung über die Beschlussempfehlung … auf Drucksache …", already in the cached XML) or the Beschluss line, not from titles. Careful: "zu Gesetzentwurf X (… ablehnen)" is a vote on the Vorlage and is not inverted.
+2. **Nothing persisted.** `inverted` and `result_raw` are empty for all 217 votes in every local store; the replay site shows no inversion note on any of its 108 vote panels, and vote 1005 renders "Kein Ergebnis verfügbar". Not checked against an online build, so first establish whether only offline replays lose them.
+3. **Provisional tally blocks the official result.** The bundestag.de Beschluss box prints the tally read out in the sitting; we store the final one from the Plenarprotokoll (correct). For 43 votes they differ by 1–3 (vote 996: 438 Ja vs 439). `_official_vote_text` finds the box line by matching our tally, so these votes fall back to a derived result (inferred from the code, not from a build). Match with a tolerance, or by Drucksache number.
+
+Done when the 14 votes above render the inversion legend, a test pins one WP 20 case (e.g. 906) and one "zu Gesetzentwurf … ablehnen" non-inversion, a replay store has `inverted`/`result_raw` filled, and vote 996 shows the official result.
+
+**Why:** A missed inversion makes the badge read "Angenommen" on a vote whose political meaning is "Antrag abgelehnt", the most misleading state a panel can be in (see the completed "Inverted-vote reading" item). The B4 descriptions build on this flag.
+
+**Result (2026-10-24, [plan](docs/plans/fix-vote-interpretation.md)):** Measured on a disposable copy of the reference site (217 votes).
+- **Inversions:** `inverted` was NULL on all 217 stored votes; after the replay 40 are `true` and 177 NULL (none `false`, which the field never holds). All 14 missed IDs are inverted from the chair's announcement in the cached XML (`inversion_source = bundestag-protocol`), and so are four votes the title never flagged (843, 869, 907, 990); 37 protocol inversions in all, plus 1001, 1002 and 983 with title-based evidence. No inversion is lost. Adjacent chair paragraphs are read together; where the combined announcement is not uniquely attributable, the existing unambiguous title fallback remains. Each protocol excerpt names the Antrag of the vote and asks to reject it.
+- **Results:** `result_source` NULL on 217 → `derived` 208 and NULL 9 (special-majority votes); `result_scope` NULL on 217 → `proposition` 217; final counts 85496/48366 unchanged. Online builds already stored these fields; only the cached reports of earlier builds lacked them, and `--offline --repersist` now interprets every vote again. A second replay changes nothing. Vote 1005 now renders the legend and `Antrag: Abgelehnt (berechnet)` instead of `Kein Ergebnis verfügbar`.
+- **Official results:** the Beschluss block is found by its Drucksachen, with a tolerance of 3 per side only inside such a block, and the outcome may sit in the next paragraph when it names the block's document. Official results 140 → 183 of 217 by the live-page corpus check (43 gained, none changed; 34 stay unresolved, for example 1002, whose page prints several blocks with the same final tally). Vote 996, freshly acquired online (`--document-number 21/67`, including 629 member records): `rejected`, official, scope `application`, inverted, 439/135, and the result survives two replays, with no store replacement on the second.
+- **Review fixes:** an announcement now proves an inversion only for a vote on the recommendation (the listing opens with the Beschlussempfehlung, or the chair names its Drucksache among the vote's); a report replayed without its XML keeps its protocol inversion also where its title would invert on its own (the source no longer flips to `bundestag-roll-call`); `build_report` sets the top-level `report["sitting_votes"]` that derive and the store read, so an online build no longer drops the votes no TOP claims (the reference reports hold none, so no figure moves). Adjacent chair passages retain recommendation context, later duplicate copies supply their evidence to every copy, and a foreign current roll-call announcement cannot earn an official result from matching counts. Final revalidation: 290 reports rebuilt; all 217 votes agree across JSON, SQLite, downloadable SQLite and CSV; raw member/fraction counts unchanged. Chrome DevTools confirms 906, 996, 1005 and the direct-vote control. The full suite passes (1,521 unit tests, one skipped, plus browser integration).
+
+**Remaining limits:** Official results missing from a cached report require an online refresh; even then 34 source-page matches remain unresolved. Optional `majorityType`, vote times and the Fundstelle anchor remain open and are outside this completed correctness repair.
+
+**Context:** Smaller extras from the same analysis, worth storing when touching this code: the page's own `<roll-call-votes-component>` JSON carries `majorityType` (only from 2024; 2 of 5 non-simple values look wrong, 926 and 973, so use it only as a cross-check), plus the protocol Fundstelle anchor and vote times.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+**Completed:** v0.22.0.0 (2026-10-24).
 
 ### Test the independently loaded historical parser and classifier
 

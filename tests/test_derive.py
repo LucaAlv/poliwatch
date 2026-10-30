@@ -374,5 +374,85 @@ class VoteMemberIdentityTests(unittest.TestCase):
                 self.assertIsNone(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}}))
 
 
+class VoteSubjectTests(unittest.TestCase):
+    def test_unique_exact_document_supplies_its_type_and_title(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Gesetzentwurf", ["Bundesregierung"], titel="Gespeicherter Titel"),
+            linked("20/101", "Antrag", ["Fraktion"], titel="Nachbar"),
+        ]}}]}
+        self.assertEqual(derive.vote_subject({"document_numbers": ["20/100"]}, report),
+                         "Gesetzentwurf: Gespeicherter Titel")
+        self.assertEqual(derive.vote_subject({"document_numbers": ["20/100", "20/999"],
+                                            "title": "Verzeichneter Abstimmungstitel"}, report),
+                         "Verzeichneter Abstimmungstitel")
+
+    def test_subject_classifier_keeps_field_precedence(self) -> None:
+        self.assertEqual(derive.abstimmungsgegenstand({"description": "Antrag X", "title": "Beschlussempfehlung"}), "vorlage")
+        self.assertEqual(derive.abstimmungsgegenstand({"description": "Beschlussempfehlung X"}), "beschlussempfehlung")
+        self.assertIsNone(derive.abstimmungsgegenstand({"description": "Unklar"}))
+
+    def test_subject_does_not_pick_a_neighbor_document(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Gesetzentwurf", ["Bundesregierung"], titel="Nachbar"),
+        ]}}]}
+        self.assertEqual(derive.vote_subject({"description": "Vorlage", "document_numbers": ["20/999"]}, report), "Vorlage")
+
+    def test_multiple_matching_documents_do_not_supply_one_arbitrary_title(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Antrag", ["Fraktion"], titel="Erster Titel"),
+            linked("20/101", "Gesetzentwurf", ["Bundesregierung"], titel="Zweiter Titel"),
+        ]}}]}
+        vote = {"description": "Vorlagen im Paket", "title": "Allgemeiner Titel",
+                "document_numbers": ["20/100", "20/101"]}
+        self.assertEqual(derive.vote_subject(vote, report), "Vorlagen im Paket")
+
+    def test_conflicting_metadata_for_the_same_document_does_not_supply_a_title(self) -> None:
+        report = {"agenda_items": [
+            {"api": {"linked_drucksachen": [linked("20/100", "Antrag", ["Fraktion"], titel="Erster Titel")]}},
+            {"api": {"linked_drucksachen": [linked("20/100", "Antrag", ["Fraktion"], titel="Anderer Titel")]}},
+        ]}
+        self.assertEqual(derive.vote_subject({"description": "Antrag mit unklarer Zuordnung", "document_numbers": ["20/100"]}, report),
+                         "Antrag mit unklarer Zuordnung")
+
+    def test_recommendation_uses_its_recorded_description_not_an_underlying_document_title(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Antrag", ["Fraktion"], titel="Underlying title"),
+        ]}}]}
+        vote = {"description": "Beschlussempfehlung des Ausschusses zu einem Antrag",
+                "title": "Allgemeiner Titel", "document_numbers": ["20/100"]}
+        self.assertEqual(derive.vote_subject(vote, report), vote["description"])
+
+    def test_vote_811_preserves_the_motion_description_and_falls_back_when_missing(self) -> None:
+        vote = json.loads((FIXTURES / "vote_interpretation_votes.json").read_text(encoding="utf-8"))["811"]
+        self.assertEqual(derive.vote_subject(vote, {}), vote["description"])
+        for description in (None, "", "   "):
+            with self.subTest(description=description):
+                self.assertEqual(derive.vote_subject({**vote, "description": description}, {}), vote["title"])
+
+    def test_bookstabe_or_artikel_in_heading_prevents_title_shortening(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Gesetzentwurf", ["Bundesregierung"], titel="Gesetz"),
+        ]}}]}
+        for field in ("vote_heading", "title"):
+            with self.subTest(field=field):
+                vote = {"document_numbers": ["20/100"], field: "Gesetzentwurf hier: Artikel 5 Buchstabe a"}
+                self.assertIn("Artikel 5 Buchstabe a", derive.vote_subject(vote, report))
+
+    def test_procedural_subject_and_hier_scope_survive_title_fallbacks(self) -> None:
+        report = {"agenda_items": [{"api": {"linked_drucksachen": [
+            linked("20/100", "Gesetzentwurf", ["Bundesregierung"], titel="Allgemeiner Gesetzentwurf"),
+        ]}}]}
+        for subject in (
+            "Geschäftsordnungsantrag über den sofortigen Eintritt in die zweite Beratung",
+            "Gesetzentwurf hier: Änderung zur Vermeidung wirtschaftlicher Härten",
+        ):
+            for field in ("description", "vote_heading", "title"):
+                for numbers in (["20/100"], ["20/100", "20/101"]):
+                    with self.subTest(subject=subject, field=field, numbers=numbers):
+                        vote = {"description": "Gesetzentwurf", "title": "Allgemeiner Titel",
+                                "document_numbers": numbers, field: subject}
+                        self.assertIn(subject, derive.vote_subject(vote, report))
+
+
 if __name__ == "__main__":
     unittest.main()

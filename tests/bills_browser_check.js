@@ -1,5 +1,5 @@
 // Value: protects=same-URL speech clicks honor inherited base targets; fails_when=the click handler ignores <base target>; why_new=anchor target tests do not exercise the inherited target branch; seam=none; no_claim=browser behavior outside Chrome/Chromium
-(async function () {
+(async function ({ initial = false } = {}) {
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const tick = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
   if (document.querySelector('details#speech-4-ID0')) {
@@ -133,9 +133,34 @@
   const next = document.querySelector('[data-bill-next]');
   const summary = document.querySelector('[data-bill-summary]');
   const rows = [...document.querySelectorAll('[data-bill-row]')];
-  assert(document.querySelectorAll('[data-bill-row] h2 a').length === 41, 'each static result title must be the detail link');
   const visible = () => [...root.querySelectorAll('[data-bill-row]')].filter(row => !row.hidden);
   const change = async (el, value) => { el.focus(); el.value = value; el.dispatchEvent(new Event(el.matches('input') ? 'input' : 'change', { bubbles: true })); await tick(); };
+  const resultIds = () => visible().map(row => row.dataset.id).sort();
+  const expectIds = (expected, message) => assert(JSON.stringify(resultIds()) === JSON.stringify([...expected].sort()), message);
+  if (initial) {
+    const criteria = document.querySelector('[data-bill-criteria]');
+    const original = 'FU\u0308R';
+    expectIds(['browser-03'], 'initial decomposed FÜR URL query must find browser-03');
+    assert(query.value === original && new URL(location.href).searchParams.get('q') === original &&
+      criteria.textContent === `Suche: „${original}“`, 'initial query spelling must survive in field, URL and criteria');
+    const waitPop = () => new Promise(resolve => { const timer = setTimeout(resolve, 1000); addEventListener('popstate', () => { clearTimeout(timer); setTimeout(resolve, 0); }, { once: true }); });
+    await reset.click(); await tick();
+    assert(query.value === '' && visible().length === 20, 'reset should create the next history state');
+    await change(query, 'café');
+    expectIds(['browser-03'], 'typed accented café query must restore folded matches');
+    assert(query.value === 'café' && new URL(location.href).searchParams.get('q') === 'café' &&
+      criteria.textContent === 'Suche: „café“', 'typed query spelling must survive in field, URL and criteria');
+    let popped = waitPop(); history.back(); await popped; await tick();
+    expectIds(['browser-03'], 'Back did not restore folded initial query results');
+    assert(query.value === original && new URL(location.href).searchParams.get('q') === original &&
+      criteria.textContent === `Suche: „${original}“`, 'Back did not restore original query spelling');
+    popped = waitPop(); history.forward(); await popped; await tick();
+    expectIds(['browser-03'], 'Forward did not restore the folded café query');
+    assert(query.value === 'café' && new URL(location.href).searchParams.get('q') === 'café' &&
+      criteria.textContent === 'Suche: „café“', 'Forward did not restore accented query spelling');
+    return { initialQuery: original, history: 'passed' };
+  }
+  assert(document.querySelectorAll('[data-bill-row] h2 a').length === 41, 'each static result title must be the detail link');
   assert(rows.length === 41 && visible().length === 20, 'initialized overview should retain 41 static rows and show the first 20');
   assert(root.dataset.billReady === 'true' && !query.disabled && !year.disabled && !sort.disabled, 'successful initialization must enable controls');
 
@@ -145,6 +170,25 @@
   assert(document.activeElement === query, 'typing into search moved focus');
   await change(query, 'gesetzesvorhaben 04');
   assert(visible().length === 1 && visible()[0].dataset.id === 'browser-04', 'AND word matching failed');
+  for (const [term, expected, label] of [
+    ['anderung', ['browser-01', 'browser-02'], 'plain umlaut folding'],
+    ['ÄNDERUNG', ['browser-01', 'browser-02'], 'uppercase umlaut folding'],
+    ['A\u0308nderung', ['browser-01', 'browser-02'], 'decomposed umlaut folding'],
+    ['fur', ['browser-03'], 'plain query against für'],
+    ['für', ['browser-03'], 'accented query against für'],
+    ['FU\u0308R', ['browser-03'], 'decomposed query against für'],
+    ['strasse', ['browser-03'], 'plain query against Straße'],
+    ['straße', ['browser-03'], 'accented query against Straße'],
+    ['STRAẞE', ['browser-03'], 'capital sharp-s query against Straße'],
+    ['cafe', ['browser-03'], 'plain query against Café'],
+    ['café', ['browser-03'], 'accented query against Café'],
+    ['cafe\u0301', ['browser-03'], 'decomposed query against Café'],
+    ['Gésetz 04', ['browser-04'], 'accented query against plain title'],
+    ['fur strasse', ['browser-03'], 'AND matching across folded words'],
+  ]) {
+    await change(query, term);
+    expectIds(expected, `${label} failed`);
+  }
   await change(query, 'COHORT');
   assert(visible().length === 20, '21 matching rows should paginate as 20 plus 1');
   await next.click(); await tick();
