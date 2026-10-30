@@ -2556,6 +2556,8 @@ _TABLE_SOURCE_DERIVED = (
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
         "vote_proceedings",
+        # The local store's own schema version counter, not source data.
+        "schema_migrations",
     }
     | set(facts.FACTS_TABLES)
 )

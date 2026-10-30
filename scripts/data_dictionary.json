@@ -19,19 +19,19 @@
           "meaning": "Kennung des Tagesordnungspunkts, an den das Dokument gekoppelt ist.",
           "unit": "Projektkennung des Tagesordnungspunkts als Text.",
           "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
-          "license": "dip"
+          "license": "eigene-metadaten-zuordnung"
         },
         "document_id": {
           "meaning": "Kennung des verknüpften Drucksachen-/Dokumentdatensatzes.",
           "unit": "Projektkennung des Dokuments als Text.",
           "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
-          "license": "dip"
+          "license": "eigene-metadaten-zuordnung"
         },
         "source": {
           "meaning": "Herkunft der Dokumentverknüpfung: xml für im Protokoll genannte Drucksache, api für DIP-verknüpfte Drucksache.",
           "unit": "Textcode xml oder api.",
           "source": "Projektseitig zusammengestellte Verknüpfung: DIP-Dokument-/Vorgangsreferenz mit dem aus Protokoll-XML gelesenen Tagesordnungspunkt.",
-          "license": "dip"
+          "license": "eigene-metadaten-zuordnung"
         },
         "proceeding_id": {
           "meaning": "Optionale Kennung des DIP-Vorgangs, aus dem die Zuordnung stammt.",
@@ -69,7 +69,7 @@
           "license": "eigene-auswertung"
         },
         "source": {
-          "meaning": "Erste erfolgreiche Stufe der festen Zuordnungsregel; not_fetched signalisiert fehlenden DIP-Kontext, untagged keinen passenden Tag.",
+          "meaning": "Erste erfolgreiche Stufe der festen Zuordnungsregel; not_fetched signalisiert fehlenden DIP-Kontext, untagged keinen passenden Tag. einzelplan_unknown: Einzelplan ohne Eintrag in der festen Regel, Politikfeld untagged.",
           "unit": "Textcode sachgebiet, drucksache, einzelplan, einzelplan_unknown (Einzelplan, den die feste Regel nicht kennt), top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
           "source": "scripts/politikfelder.py: Regel aus DIP-Sachgebieten verknüpfter Vorgänge, Drucksachen, ersatzweise WP-spezifischen Einzelplänen (TOP) bzw. verknüpften TOP-Tags (Abstimmung).",
           "license": "eigene-metadaten-zuordnung"
@@ -116,13 +116,13 @@
         },
         "top_id": {
           "meaning": "Im Protokoll geführte TOP-Kennung des Tagesordnungspunkts.",
-          "unit": "TOP-Kennung als Protokolltext, etwa „TOP 1“; NULL falls nicht ausgewiesen.",
+          "unit": "Protokollbezeichnung des TOP als Text, z. B. 'Tagesordnungspunkt 32', 'Zusatzpunkt 16' oder 'Einzelplan 02'; nicht NULL, die Nummer kann fehlen ('Tagesordnungspunkt', 'Zur Geschäftsordnung').",
           "source": "Plenarprotokoll-XML: TOP-Verweis aus Überschrift/Referenz.",
           "license": "dip"
         },
         "heading": {
           "meaning": "Überschrift des Tagesordnungspunkts aus dem Protokoll.",
-          "unit": "Protokollüberschrift als Text.",
+          "unit": "Protokollüberschrift als Text oder NULL.",
           "source": "Plenarprotokoll-XML: Überschrift des Tagesordnungspunkts.",
           "license": "dip"
         },
@@ -134,7 +134,7 @@
         },
         "page_start_quadrant": {
           "meaning": "Quadrant der ersten Protokollseite des Tagesordnungspunkts, sofern das XML ihn markiert.",
-          "unit": "Seitenquadrant als Textcode oder NULL.",
+          "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
           "source": "Plenarprotokoll-XML: Quadrant der Startseite.",
           "license": "dip"
         },
@@ -146,7 +146,7 @@
         },
         "page_end_quadrant": {
           "meaning": "Quadrant der letzten Protokollseite des Tagesordnungspunkts, sofern das XML ihn markiert.",
-          "unit": "Seitenquadrant als Textcode oder NULL.",
+          "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
           "source": "Plenarprotokoll-XML: Quadrant der Endseite.",
           "license": "dip"
         },
@@ -181,7 +181,7 @@
         },
         "agenda_item_id": {
           "meaning": "Kennung des zugeordneten Tagesordnungspunkts; bei nicht sicherer Zuordnung NULL.",
-          "unit": "Projektkennung des Tagesordnungspunkts als Text.",
+          "unit": "Projektkennung des Tagesordnungspunkts als Text oder NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
         },
@@ -193,7 +193,7 @@
         },
         "rede_id": {
           "meaning": "Quellmarkerkennung des Beitrags; je nach Format XML-ID oder synthetische Kennung.",
-          "unit": "Protokollinterne Rede-/Markerkennung als Text; synthetische Kennungen sind möglich.",
+          "unit": "Protokollinterne Rede-/Markerkennung als Text; synthetische Kennungen sind möglich; NULL bei Fragestunde-Beiträgen.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
         },
@@ -211,7 +211,7 @@
         },
         "mp_id": {
           "meaning": "Kennung der zugeordneten Redner-Personenaufzeichnung; NULL bei fehlender sicherer Zuordnung.",
-          "unit": "Kennung der Personenaufzeichnung als Text.",
+          "unit": "Kennung der Personenaufzeichnung als Text oder NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
         },
@@ -247,7 +247,7 @@
         },
         "text": {
           "meaning": "Wortlaut der Rede/des Beitrags; bei Reden Whitespace normalisiert und Absatzumbrüche zu Leerzeichen zusammengeführt.",
-          "unit": "Beitragswortlaut als normalisierter Text.",
+          "unit": "Beitragswortlaut als normalisierter Text; vereinzelt NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
         },
@@ -323,7 +323,7 @@
         },
         "url": {
           "meaning": "URL der Dokumentquelle.",
-          "unit": "Dokument-URL als Text.",
+          "unit": "Dokument-URL als Text; leerer Text, wenn keine URL bekannt ist.",
           "source": "DIP-API: url aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
@@ -388,7 +388,7 @@
         },
         "unit": {
           "meaning": "Einheit, in der die Kennzahl ausgegeben wird.",
-          "unit": "Fachliche Einheit der Kennzahl, beispielsweise Anzahl oder Prozent.",
+          "unit": "Einheit als deutscher Freitext, z. B. Zeichen, Reden, Minuten oder ein Anteil von 0 bis 1 (kein Prozentwert).",
           "source": "Projektdefinition in scripts/facts.py: Kennzahl-SQL, Einheit, Vergleichsrichtung, Version und Veröffentlichungsregel.",
           "license": "eigene-auswertung"
         },
@@ -464,20 +464,20 @@
           "license": "eigene-auswertung"
         },
         "entity_kind": {
-          "meaning": "Art des durch die Quellenzeile belegten Objekts (z. B. Sitzung, Rede oder Vorgang).",
-          "unit": "Code für die Art der belegenden Einheit.",
+          "meaning": "Art des belegten Objekts: Rede (speech), Drucksache (document), Tagesordnungspunkt (agenda_item), Abstimmung (vote) oder Sitzungsprotokoll (protocol).",
+          "unit": "Textcode speech, document, agenda_item, vote oder protocol.",
           "source": "scripts/facts.py: Belegzeile aus den Entitäten, die die zugehörige Kennzahlbeobachtung stützen.",
           "license": "eigene-auswertung"
         },
         "document_number": {
           "meaning": "Im Bundestag/DIP verwendete Drucksachen- oder Protokollnummer.",
-          "unit": "Drucksachennummer als Text oder NULL.",
+          "unit": "Nummer des belegenden Dokuments als Text, z. B. 18/15: Drucksachennummer bei entity_kind document, Plenarprotokollnummer bei speech, agenda_item, vote und protocol; nicht NULL.",
           "source": "scripts/facts.py: Belegzeile aus den Entitäten, die die zugehörige Kennzahlbeobachtung stützen.",
           "license": "eigene-auswertung"
         },
         "rede_id": {
           "meaning": "Protokollinterne Rede-ID der Belegstelle, sofern der Beleg eine Rede ist.",
-          "unit": "Protokollinterne Rede-/Markerkennung als Text; synthetische Kennungen sind möglich.",
+          "unit": "Protokollinterne Rede-/Markerkennung als Text; synthetische Kennungen sind möglich; NULL, wenn der Beleg keine Rede ist.",
           "source": "scripts/facts.py: Belegzeile aus den Entitäten, die die zugehörige Kennzahlbeobachtung stützen.",
           "license": "eigene-auswertung"
         },
@@ -495,7 +495,7 @@
         },
         "official_url": {
           "meaning": "Offizielle URL zur Belegquelle.",
-          "unit": "URL als Text.",
+          "unit": "URL als Text oder NULL.",
           "source": "scripts/facts.py: Belegzeile aus den Entitäten, die die zugehörige Kennzahlbeobachtung stützen.",
           "license": "eigene-auswertung"
         },
@@ -542,19 +542,19 @@
         },
         "iso_year": {
           "meaning": "ISO-Kalenderjahr der Wochenperiode.",
-          "unit": "ISO-Jahr als Ganzzahl.",
+          "unit": "ISO-Jahr als Ganzzahl; NULL bei period_kind month.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
         "iso_week": {
           "meaning": "ISO-Kalenderwochennummer.",
-          "unit": "ISO-Wochennummer 1–53 als Ganzzahl.",
+          "unit": "ISO-Wochennummer 1–53 als Ganzzahl; NULL bei period_kind month.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
         "wahlperiode": {
           "meaning": "Wahlperiodennummer, deren historische Vergleichsbasis bei dieser Beobachtung verwendet wird.",
-          "unit": "Nummer der Wahlperiode als Ganzzahl oder Quellenkennung je Tabelle.",
+          "unit": "Nummer der Wahlperiode als Ganzzahl.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -566,7 +566,7 @@
         },
         "week_n": {
           "meaning": "Anzahl der gültigen Kandidatenbeobachtungen in der aktuellen Periode, aus denen der ausgewählte Wert berechnet wurde; bei vollständiger Periode ohne Kandidaten 0.",
-          "unit": "Anzahl gültiger Kandidatenwerte als Ganzzahl.",
+          "unit": "Anzahl gültiger Kandidatenwerte als Ganzzahl; NULL, wenn complete = 0.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -590,7 +590,7 @@
         },
         "baseline_count": {
           "meaning": "Anzahl der Vergleichsbeobachtungen im Maßstab.",
-          "unit": "Anzahl historischer Beobachtungen als Ganzzahl.",
+          "unit": "Anzahl historischer Beobachtungen als Ganzzahl oder NULL ohne Vergleichsbasis.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -608,7 +608,7 @@
         },
         "baseline_label": {
           "meaning": "Lesbare Kennzeichnung des Vergleichsfensters (Wahlperiodenhistorie oder Gesamtarchiv).",
-          "unit": "Anzeigetext des Vergleichszeitraums.",
+          "unit": "Anzeigetext des Vergleichszeitraums oder NULL ohne Vergleichsbasis.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -707,14 +707,14 @@
           "license": "dip-oder-bundestag-abstimmungen"
         },
         "title": {
-          "meaning": "Akademischer oder sonstiger Personentitel aus dem DIP-Roster, nicht der Titel eines Dokuments.",
-          "unit": "Personentitel als Text oder NULL.",
+          "meaning": "DIP-Titelzeile der Person aus dem Roster: Name mit Amts- und Fraktionsangabe, kein akademischer Titel allein.",
+          "unit": "Titelzeile als Text, z. B. 'Marc Bernhard, MdB, AfD'; NULL ohne DIP-Rostereintrag.",
           "source": "DIP-Roster-Titel/Anrede.",
           "license": "dip"
         },
         "function": {
           "meaning": "DIP-Funktionsangabe zur Person; kein verlässlicher Verlauf der Fraktionszugehörigkeit.",
-          "unit": "Liste der DIP-Funktionsangaben als Text in Python-Schreibweise (einfache Anführungszeichen, kein JSON), z. B. ['MdB'], oder NULL.",
+          "unit": "Liste der DIP-Funktionsangaben als Text in Python-Schreibweise, z. B. ['MdB'], oder NULL; nicht als JSON lesen (Python-Literal, z. B. mit ast.literal_eval).",
           "source": "DIP-API-Funktionsangabe.",
           "license": "dip"
         },
@@ -738,7 +738,7 @@
         },
         "birth_year": {
           "meaning": "Geburtsjahr laut abgeordnetenwatch-Profil.",
-          "unit": "Jahreszahl als Ganzzahl.",
+          "unit": "Jahreszahl als Ganzzahl oder NULL.",
           "source": "abgeordnetenwatch.de-Profil/API: birth_year als Profildatum; bei geteilten oder mehrdeutigen Identitäten gelten die dokumentierten Registerregeln.",
           "license": "abgeordnetenwatch"
         },
@@ -780,13 +780,13 @@
         },
         "person_roles_json": {
           "meaning": "JSON-Liste der DIP-Funktionsangaben zur Person; keine vollständige Mandats- oder Fraktionshistorie.",
-          "unit": "UTF-8-Text mit JSON-Struktur.",
+          "unit": "UTF-8-Text mit JSON-Liste der DIP-Funktionsangaben; nur für Roster-Zeilen mit is_mdb = 1 gesetzt, sonst NULL.",
           "source": "DIP-API-Funktionsliste, vom Projekt als JSON abgelegt.",
           "license": "dip"
         },
         "is_mdb": {
-          "meaning": "Kennzeichnet den Roster-Datensatz als Mitglied des Bundestages (1) oder nicht (0).",
-          "unit": "Boolescher Wert als 0 oder 1.",
+          "meaning": "1, wenn eine DIP-Funktionsangabe der Person den Text 'MdB' enthält, also auch 'MdBR' und 'Stellv. MdBR' (Mitglieder des Bundesrats); sonst 0. Kein Nachweis der Bundestagsmitgliedschaft.",
+          "unit": "0 oder 1; 1 auch für Bundesratsmitglieder.",
           "source": "Mitgliedskennzeichen aus dem DIP-Roster.",
           "license": "dip"
         },
@@ -815,7 +815,7 @@
         },
         "name": {
           "meaning": "Anzeigename des parlamentarischen Zusammenschlusses.",
-          "unit": "Normalisierter Zusammenschlussname als Text.",
+          "unit": "Zusammenschlussname als Text; enthält vereinzelt Parserfehler aus dem Protokoll, etwa 'Bremen' oder einen Zwischenrufsatz.",
           "source": "Projektseitig normalisierter Zusammenschlussname aus DIP-Roster-/Protokollschreibweisen.",
           "license": "dip"
         },
@@ -949,8 +949,8 @@
         "agenda_item_id": {
           "meaning": "Kennung des Tagesordnungspunkts, auf dem diese Vorgangsposition behandelt wurde; NULL, wenn nicht verknüpft.",
           "unit": "Projektkennung des Tagesordnungspunkts als Text.",
-          "source": "DIP-API: agenda_item_id aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
-          "license": "dip"
+          "source": "Projektschlüssel des über Dokumentnummer und Vorgang zugeordneten Tagesordnungspunkts (agenda_items.id); keine DIP-Angabe.",
+          "license": "eigene-metadaten-zuordnung"
         },
         "position_type": {
           "meaning": "Art der Beziehung/Position dieses Eintrags im Vorgang.",
@@ -996,13 +996,13 @@
         },
         "page_start": {
           "meaning": "Startseite des Dokumentbereichs laut DIP-Position.",
-          "unit": "Gedruckte Seitenzahl/Seitenangabe als Ganzzahl oder Text gemäß DIP-Feld.",
+          "unit": "Gedruckte Seitenzahl als Text aus Ziffern (immer TEXT, nie INTEGER); vor einem Vergleich mit agenda_items.page_start umwandeln.",
           "source": "DIP-API: page_start aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
         "page_end": {
           "meaning": "Endseite des Dokumentbereichs laut DIP-Position.",
-          "unit": "Gedruckte Seitenzahl/Seitenangabe als Ganzzahl oder Text gemäß DIP-Feld.",
+          "unit": "Gedruckte Seitenzahl als Text aus Ziffern (immer TEXT, nie INTEGER); vor einem Vergleich mit agenda_items.page_start umwandeln.",
           "source": "DIP-API: page_end aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
@@ -1114,7 +1114,7 @@
         },
         "verteildatum": {
           "meaning": "Datum, an dem das Plenarprotokoll verteilt/veröffentlicht wurde.",
-          "unit": "Kalenderdatum als Quelltext.",
+          "unit": "Kalenderdatum als Quelltext oder NULL.",
           "source": "DIP-Angabe zum Verteil-/Veröffentlichungstag.",
           "license": "dip"
         },
@@ -1231,7 +1231,7 @@
         },
         "page_quadrant": {
           "meaning": "Quadrant der gedruckten Seite, sofern im XML angegeben.",
-          "unit": "Seitenquadrant als kurzer Textcode.",
+          "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
         },
@@ -1413,7 +1413,7 @@
         },
         "source": {
           "meaning": "Erste erfolgreiche Stufe der festen Zuordnungsregel; not_fetched signalisiert fehlenden DIP-Kontext, untagged keinen passenden Tag.",
-          "unit": "Textcode sachgebiet, drucksache, einzelplan, einzelplan_unknown (Einzelplan, den die feste Regel nicht kennt), top, not_fetched oder untagged; je Tabelle nur anwendbare Stufen.",
+          "unit": "Textcode drucksache, top, not_fetched oder untagged.",
           "source": "scripts/politikfelder.py: Regel aus DIP-Sachgebieten verknüpfter Vorgänge, Drucksachen, ersatzweise WP-spezifischen Einzelplänen (TOP) bzw. verknüpften TOP-Tags (Abstimmung).",
           "license": "eigene-metadaten-zuordnung"
         }
@@ -1536,8 +1536,8 @@
           "license": "eigene-auswertung"
         },
         "inverted": {
-          "meaning": "Projektregel erkennt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt (1/0; unbekannt NULL).",
-          "unit": "Boolescher Wert als 0 oder 1, unbekannt als NULL.",
+          "meaning": "1, wenn die Projektregel feststellt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt; NULL, wenn sie das nicht feststellt (kein Beleg, Abstimmung über die Vorlage selbst oder widersprüchliche Evidenz). Der Wert 0 wird nicht geschrieben.",
+          "unit": "1 oder NULL; NULL heißt nicht festgestellt, nicht bestätigt nicht umgekehrt.",
           "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
@@ -1555,7 +1555,7 @@
         },
         "xlsx_url": {
           "meaning": "URL zur Bundestags-XLSX-Datei mit namentlicher Stimmenliste.",
-          "unit": "URL als Text.",
+          "unit": "URL als Text oder NULL (nur für Abstimmungen mit veröffentlichter XLSX-Datei).",
           "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
