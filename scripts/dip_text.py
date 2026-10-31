@@ -41,14 +41,24 @@ _OVERLONG_CHARREF = re.compile(r"&#(?:[xX][0-9a-fA-F]{7,}|[0-9]{8,});?")
 _PARTIAL_CHARREF = re.compile(r"&#?[0-9A-Za-z]*\Z")
 
 
+def _after_equals(text: str, i: int) -> bool:
+    """Whether ``text[i]`` follows "=" and nothing but whitespace."""
+    j = i - 1
+    while j >= 0 and text[j].isspace():
+        j -= 1
+    return j >= 0 and text[j] == "="
+
+
 def _tag_closes(text: str) -> list[int]:
-    """closes[i]: where a tag still open at i, outside quotes, ends; -1 if never."""
+    """closes[i]: where a tag still open at i, outside quotes, ends; -1 if never.
+    A quote counts only as an attribute value, after "=", as html.parser reads
+    it: the apostrophe in ``<b it's>`` is part of a name and the tag ends at its ">"."""
     closes = [-1] * (len(text) + 1)
     for i in range(len(text) - 1, -1, -1):
         char = text[i]
         if char == ">":
             closes[i] = i
-        elif char in "\"'":
+        elif char in "\"'" and _after_equals(text, i):
             quote_end = text.find(char, i + 1)
             closes[i] = closes[quote_end + 1] if quote_end != -1 else -1
         else:
@@ -81,12 +91,22 @@ def _drop_cut_markup(kept: str, rest: str) -> str:
     are read over the whole raw text as ``_strip_tags`` reads them: a tag that
     closes before the cut is passed over whole, a "<" inside its quoted
     attribute included; a "<" whose tag never closes stays text, as it does
-    in an abstract that fits; the one tag that closes after the cut goes."""
+    in an abstract that fits; the one tag that closes after the cut goes.
+    A comment runs to its "-->", as html.parser reads it; one that never
+    closes is text to the end."""
     text = kept + rest
     closes = _tag_closes(text)
     i = 0
     while i < len(kept):
-        if text[i] == "<" and text[i + 1 : i + 2] in _TAG_START and closes[i + 1] != -1:
+        if text.startswith("<!--", i):
+            end = text.find("-->", i + 4)
+            if end == -1:
+                break
+            if end + 3 > len(kept):
+                kept = kept[:i]
+                break
+            i = end + 3
+        elif text[i] == "<" and text[i + 1 : i + 2] in _TAG_START and closes[i + 1] != -1:
             if closes[i + 1] >= len(kept):
                 kept = kept[:i]
                 break
@@ -138,8 +158,8 @@ def abstract_text(raw: Any) -> str:
     """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
     whitespace inside a paragraph collapsed to single spaces, entities unescaped,
     markup gone. The caller escapes the result; the raw text stays in the cache.
-    Only the first ``MAX_ABSTRACT_CHARS`` characters are read, less a tag or
-    character reference the cut splits."""
+    Only the first ``MAX_ABSTRACT_CHARS`` characters are kept, less a tag or
+    character reference the cut splits; finding that tag scans the rest."""
     if not raw:
         return ""
     raw = str(raw)

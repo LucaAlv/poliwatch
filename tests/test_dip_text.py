@@ -126,6 +126,24 @@ class AbstractTextTests(unittest.TestCase):
         quoted = '<a title="x<y">text ' + "z" * MAX_ABSTRACT_CHARS
         self.assertEqual(abstract_text(quoted), "text " + "z" * (MAX_ABSTRACT_CHARS - 20))
 
+    # Value: protects=an apostrophe in a tag name or comment before the cut never pairs with one past it; fails_when=the trim reads every quote in a tag as a value quote and drops the whole abstract from that tag; why_new=/ship red team 2026-10-31: 0 characters left where main kept 9,981; seam=none; no_claim=no reference abstract reaches the cut (longest 5,111)
+    def test_an_apostrophe_in_a_tag_or_comment_keeps_the_abstract(self) -> None:
+        apostrophe = "'"
+        past_cut = "x " * 6000 + "don" + apostrophe + "t>"
+        comment = "<!-- it" + apostrophe + "s -->"
+        raw = comment + "Anfang " + past_cut
+        self.assertEqual(abstract_text(raw), " ".join(raw[len(comment) : MAX_ABSTRACT_CHARS].split()))
+        tag = "<b it" + apostrophe + "s>fett</b>"
+        raw = tag + " " + past_cut
+        self.assertEqual(abstract_text(raw), " ".join(("fett" + raw[len(tag) : MAX_ABSTRACT_CHARS]).split()))
+
+    # Value: protects=a comment is read to its "-->" as html.parser reads it; fails_when=the trim ends a comment at an inner ">" and keeps a comment the cut splits, or drops the text after a comment that never closes; why_new=the comment rule added with the apostrophe fix (/ship 2026-10-31); seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_reads_a_comment_to_its_end(self) -> None:
+        filler = "a" * (MAX_ABSTRACT_CHARS - 10)
+        self.assertEqual(abstract_text(filler + "<!-- a > b --> c"), filler)  # cut after "<!-- a > ", inside the comment
+        unclosed = "vor <!-- offen " + "x " * 6000
+        self.assertEqual(abstract_text(unclosed), " ".join(unclosed[:MAX_ABSTRACT_CHARS].split()))
+
     # Value: protects=an abstract shorter than the cut is read exactly as before; fails_when=the trim runs on every abstract and drops a trailing "<" or "&" that is text; why_new=B4 review edge 15 trim; seam=none
     def test_an_abstract_within_the_limit_is_not_trimmed(self) -> None:
         self.assertEqual(abstract_text("a < b &"), "a < b &")
