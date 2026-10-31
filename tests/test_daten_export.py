@@ -1077,6 +1077,26 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertFalse(b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())["written"])
         self.assertEqual(self.db_path.stat().st_ino, inode)
 
+    # Value: protects=an exported distribution SQLite (user_version or datenstand table) given as --database-path is refused by the facts engine before anything is computed or staged, and the file stays byte for byte as it was; fails_when=run_facts_engine checks only the schema again and writes changed facts into a downloaded release; why_new=v0.19.0.0 ship review (1): the build-store guard lived only in pulse_store.connect; seam=run_facts_engine
+    def test_engine_refuses_a_distribution_copy_and_leaves_it_untouched(self) -> None:
+        for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
+            with self.subTest(marker=marker):
+                copy = self.tmp / "distribution.sqlite"
+                import shutil as _shutil
+                _shutil.copyfile(self.db_path, copy)
+                conn = sqlite3.connect(copy)
+                conn.execute(marker)
+                conn.commit()
+                conn.close()
+                before = copy.read_bytes()
+                with mock.patch.object(facts, "compute_and_store") as compute:
+                    with self.assertRaisesRegex(RuntimeError, "distribution copy"):
+                        b.run_facts_engine(copy, self.FACTS_ENTRIES, self.facts_catalog())
+                compute.assert_not_called()
+                self.assertEqual(copy.read_bytes(), before)
+                self.assertEqual([p.name for p in self.tmp.iterdir() if p.name.startswith(copy.name + "-")], [])
+                copy.unlink()
+
     # Value: protects=a facts write that fails midway leaves the published store byte for byte as it was and no staged copy (full speech text) behind; fails_when=_write_facts_staged stops removing its temp file or swaps in before the write succeeded; why_new=only the successful staged write was pinned; seam=write_snapshot raises
     def test_a_failing_facts_write_keeps_the_store_and_leaves_no_staged_copy(self) -> None:
         before = self.db_path.read_bytes()

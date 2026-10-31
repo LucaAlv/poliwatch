@@ -12736,6 +12736,7 @@ def run_facts_engine(
     with registry.writer_lock(database_path):
         store = facts.open_readonly(database_path)
         try:
+            pulse_store.require_build_store(store, database_path)
             pulse_store.require_current_schema(store)
             return facts.compute_and_store(
                 store,
