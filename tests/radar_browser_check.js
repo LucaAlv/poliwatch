@@ -12,29 +12,35 @@
   const verkehr = chip('Verkehr'), gesundheit = chip('Gesundheit');
   assert(verkehr && gesundheit && empty, 'filter chips or the empty note are missing');
 
+  // The last visible row has no bottom border; the listed earlier rows keep theirs.
+  const expectBorders = (lastIdx, borderedIdxs, step) => {
+    const now = borders();
+    assert(now[lastIdx] === '0px' && borderedIdxs.every((i) => now[i] !== '0px'), `${step}: borders wrong: ${now}`);
+  };
+
   assert(visible().length === 3, 'rows are hidden before any chip is pressed');
-  assert(borders()[2] === '0px' && borders()[0] !== '0px', `initial borders wrong: ${borders()}`);
+  expectBorders(2, [0], 'initial');
 
   // Rows are Verkehr, Gesundheit, Verkehr. Gesundheit hides the last row.
   gesundheit.click();
   assert(JSON.stringify(rows.map((row) => row.hidden)) === '[true,false,true]', 'Gesundheit did not show only the middle row');
   assert(gesundheit.getAttribute('aria-pressed') === 'true' && gesundheit.classList.contains('is-active'), 'chip state not set');
-  assert(borders()[1] === '0px', `last visible row keeps its bottom border: ${borders()}`);
+  expectBorders(1, [], 'last visible row (Gesundheit only)');
   assert(empty.hidden, 'empty note shown although a row matches');
 
   // Verkehr too (any match): all rows back, last row borderless, middle still bordered.
   verkehr.click();
   assert(visible().length === 3, 'two chips (any match) did not show all rows');
-  assert(borders()[2] === '0px' && borders()[1] !== '0px', `borders after two chips wrong: ${borders()}`);
+  expectBorders(2, [1], 'two chips');
 
   // Only Verkehr: rows 0 and 2; row 2 is last.
   gesundheit.click();
   assert(JSON.stringify(rows.map((row) => row.hidden)) === '[false,true,false]', 'Verkehr did not show rows 1 and 3');
-  assert(borders()[2] === '0px' && borders()[0] !== '0px', `Verkehr borders wrong: ${borders()}`);
+  expectBorders(2, [0], 'Verkehr only');
 
-  // Row 3 hidden by pressing Gesundheit alone after Verkehr off: covered above; clear everything.
+  // Clear every chip.
   verkehr.click();
   assert(visible().length === 3 && empty.hidden, 'clearing the chips did not restore every row');
-  assert(borders()[2] === '0px' && borders()[1] !== '0px', `borders after clearing wrong: ${borders()}`);
+  expectBorders(2, [1], 'cleared');
   return { rows: rows.length, borders: borders() };
 })
