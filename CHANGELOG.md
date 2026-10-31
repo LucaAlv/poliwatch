@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0.0] - 2026-10-31
+
+### Added
+
+- A data release script, `scripts/publish_dip_pulse_data.sh` (logic in `publish_dip_pulse_data.py`). It turns an existing Daten export into an immutable, versioned release directory `data-<version>/`, which holds `datenstand.json`, the export files, `CHANGES.md`, `changes.json` and `SHA256SUMS`.
+  - **Dry run by default:** it prints the site-build flags and the `gh release create` command it would run.
+  - **`--publish`** creates the GitHub release. It refuses until `LICENSE-DATA.md` exists (ADR 0003) and the export carries a licence string.
+  - **What gets refused:** an export not built with a release tag, a cited revision that is not a bare commit of this repository, authored inputs that differ from that commit, any file that does not match the manifest, and an existing tag or release directory.
+  - Nothing has been published yet.
+- Release versions are calendar versions, `YYYY.MM.DD` (`.2`, `.3` for further releases on the same day), tagged `data-<version>`. `--next-version` prints the next one. The site build takes it as `--data-tag`, which accepts only `local` or a release version.
+- Every release carries a public data changelog: `CHANGES.md` plus `changes.json`, in the format described in `docs/data-changelog.md`.
+  - **Derived from the two manifests:** export format, store schema, key version and schema hash, plus protocol, vote and row counts, old to new.
+  - **Authored per release:** a summary, schema changes, added coverage, and every correction of a published value (table, key, column, old value, new value, reason).
+  - **Refusal:** a release whose schema moved without an authored description is refused.
+- `CITATION.cff` at the repository root. It claims no DOI or version yet.
+
+### Changed
+
+- The cited build revision is reproducible.
+  - **Same edit, same revision:** the same edit gives the same `-dirty-<hash>` under the common git diff settings. A git timeout gives `-unverified-<hash>`, which still changes with every edit, instead of one fixed `-unverified`.
+  - **Release requirements:** a release export needs a bare 12-digit commit, and its authored codebook inputs must be committed and unchanged.
+  - **Where it's explained:** the Daten page and DATA.md explain the suffix.
+  - **Effect on local exports:** a dirty tree's revision string changes form and hash once. No figure moves.
+- The publication check (`--validate-publication`) also scans the export's `DATA.md` and `datenstand.json` for leaked local paths and placeholders.
+
+### Fixed
+
+- An export that fails after swapping in its new generation puts the previous generation back. Before, the old manifest could be left pointing at the new files.
+
 ## [0.25.2.0] - 2026-10-31
 
 ### Changed

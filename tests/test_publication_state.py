@@ -130,6 +130,32 @@ class PublicationStateContractTests(unittest.TestCase):
             )
 
 
+    # Value: protects=a local path or developer marker pasted into an authored export document ships with CI red, not green; fails_when=data/exports/**/DATA.md or data/exports/datenstand.json stops being scanned, or an unrelated exports file starts to be; why_new=the validator scanned only HTML and three presentation JSON files; seam=validate_public_output; no_claim=CSV and SQLite content
+    def test_public_output_validator_also_scans_the_export_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "data" / "exports" / "g-0123456789ab"
+            generation.mkdir(parents=True)
+            (generation / "DATA.md").write_text("# DATA\n\nKlar.\n", encoding="utf-8")
+            (root / "data" / "exports" / "datenstand.json").write_text('{"license": ""}\n', encoding="utf-8")
+            (generation / "notes.md").write_text("/Users/example", encoding="utf-8")
+            self.assertEqual(publication.validate_public_output(root), [])
+            (generation / "DATA.md").write_text("# DATA\n\nSiehe /Users/example/poliwatch/docs.\n", encoding="utf-8")
+            self.assertEqual(
+                publication.validate_public_output(root),
+                ["data/exports/g-0123456789ab/DATA.md:3: local-path"],
+            )
+            (generation / "DATA.md").write_bytes(b"\xff\xfe")
+            self.assertEqual(
+                publication.validate_public_output(root), ["data/exports/g-0123456789ab/DATA.md: undecodable-text"]
+            )
+            (generation / "DATA.md").write_text("# DATA\n", encoding="utf-8")
+            (root / "data" / "exports" / "datenstand.json").write_text('{"issues_url": "file:///tmp/x"}\n', encoding="utf-8")
+            self.assertEqual(
+                publication.validate_public_output(root), ["data/exports/datenstand.json:1: file-url"]
+            )
+
+
 class VoteStateCopyTests(unittest.TestCase):
     def test_empty_vote_copy_reflects_pipeline_truth(self) -> None:
         expected = {
