@@ -39,11 +39,14 @@ _CHARREF_AT = re.compile(r"&#?[0-9A-Za-z]*;?")
 # Markup: "<" and a letter, "!", "/" or "?".
 _MARKUP_OPEN = re.compile(r"<[!/?A-Za-z]")
 _TAG_NAME = re.compile(r"[A-Za-z][^\t\n\r\f />\x00]*")
-_SKIPPED_CLOSE = re.compile(r"</(?:script|style)[\t\n\r\f />]", re.IGNORECASE)
 #: A ``<br>`` or a block element, opened or closed, ends a paragraph.
 _BREAKS = frozenset({"br", "p", "div", "li", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6"})
-#: ``<script>`` and ``<style>`` go with their text.
-_SKIPPED = frozenset({"script", "style"})
+#: ``<script>`` and ``<style>`` go with their text, up to their own end tag
+#: (a ``</style>`` inside a script does not end it).
+_SKIPPED_CLOSE = {
+    name: re.compile(rf"</{name}[\t\n\r\f />]", re.IGNORECASE) for name in ("script", "style")
+}
+_SKIPPED = frozenset(_SKIPPED_CLOSE)
 _SPACE = " \t\n\r\f"
 
 
@@ -119,6 +122,19 @@ def _markup_end(text: str, i: int, ends: list[int]) -> tuple[int, str | None, st
     return end, match.group().lower(), "tag"
 
 
+def _self_closing(text: str, i: int, end: int) -> bool:
+    """Whether the start tag ``text[i:end]`` closes itself ("/>"). The "/" counts
+    only when it is not the last character of an unquoted attribute value, as
+    html.parser reads it: ``<script/>`` and ``<script src="x" />`` close
+    themselves, ``<script src=x/>`` opens a block whose value is "x/"."""
+    if text[end - 2] != "/":
+        return False
+    j = end - 3
+    while j > i and text[j] not in _SPACE and text[j] not in "\"'=<":
+        j -= 1
+    return text[j] != "="
+
+
 def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
     """The paragraphs of ``text[:cut]`` as runs of read text. ``text`` is the
     abstract, or when ``truncated`` its first ``cut`` + ``CUT_LOOKAHEAD``
@@ -135,8 +151,8 @@ def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
         if i >= cut:
             break
         end, name, kind = _markup_end(text, i, ends)
-        if kind == "tag" and name in _SKIPPED and end != -1 and text[end - 2] != "/":
-            close = _SKIPPED_CLOSE.search(text, end)
+        if kind == "tag" and name in _SKIPPED and end != -1 and not _self_closing(text, i, end):
+            close = _SKIPPED_CLOSE[name].search(text, end)
             close_end = text.find(">", close.end() - 1) if close else -1
             # An unclosed <script> is a plain tag: the rest stays text.
             kind, end = ("block", close_end + 1) if close_end != -1 else (kind, end)

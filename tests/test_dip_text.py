@@ -180,6 +180,12 @@ class AbstractTextTests(unittest.TestCase):
             ("x GmbH&C", "x GmbH&C"),
             ("x<br/>y<br class='a'/>z", "x\n\ny\n\nz"),
             ("x<script/>y</script>z", "xyz"),  # a self-closing <script/> opens no block; the later </script> is a stray end tag
+            # A block ends only at its own end tag; "/" ending an unquoted value is not "/>".
+            ('Vor<script>const s="</style>"; hidden();</script>nach', "Vornach"),
+            ("Vor<style>a{content:'</script>'}</style>nach", "Vornach"),
+            ("Vor<script src=x/>hidden</script>nach", "Vornach"),
+            ('x<script src="a" />y</script>z', "xyz"),
+            ("x<script async/>y</script>z", "xyz"),
         ]
         for raw_text, expected in cases:
             with self.subTest(raw=raw_text):
