@@ -151,7 +151,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; ein --repersist ohne Inhaltsänderung behält den bisherigen Store samt Zeitpunkten; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: agenda_items.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -222,7 +222,7 @@
           "license": "dip"
         },
         "fraktion": {
-          "meaning": "Im Protokoll genannter Zusammenschluss für diese Rede/diesen Beitrag; bei Rolle ohne Zusammenschluss NULL.",
+          "meaning": "Im Protokoll genannter Zusammenschluss für diese Rede/diesen Beitrag, in der Schreibweise von parties.name vereinheitlicht (WP 20 ab 2023-12-06 „Gruppe Die Linke“ statt „Die Linke“); NULL, wenn das Protokoll keinen nennt (Rolle ohne Zusammenschluss) oder der Datensatz zwei Namen verschmilzt.",
           "unit": "Protokollierter Zusammenschlussname als Text oder NULL.",
           "source": "Plenarprotokoll-XML, gelesen in scripts/validate_dip_protocol.py; Art, Bezugsrede und Rolle klassifiziert scripts/speech_kinds.py aus Struktur und Wortlaut. Diese Labels liefert die Quelle nicht als fertige Felder.",
           "license": "dip"
@@ -252,7 +252,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; ein --repersist ohne Inhaltsänderung behält den bisherigen Store samt Zeitpunkten; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: contributions.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -352,7 +352,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: documents.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -632,7 +632,7 @@
         },
         "percentile": {
           "meaning": "Anteil der früheren Vergleichswerte, die der aktuelle Wert in der Kennzahlenrichtung strikt übertrifft; 0 bis 1, nicht Prozentpunkte.",
-          "unit": "Gleitkommaanteil von 0 bis einschließlich 1.",
+          "unit": "Gleitkommaanteil von 0 bis einschließlich 1; NULL ohne Vergleichswerte.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -809,7 +809,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: mps.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -838,7 +838,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: parties.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -1043,7 +1043,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: proceeding_positions.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -1090,7 +1090,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: proceedings.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -1155,7 +1155,7 @@
           "license": "dip"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: protocols.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -1236,7 +1236,7 @@
           "license": "dip"
         },
         "mp_id": {
-          "meaning": "Kennung der zugeordneten Personenaufzeichnung; NULL, wenn keine sichere Sprecherzuordnung vorliegt.",
+          "meaning": "Kennung der zugeordneten Personenaufzeichnung; nie NULL: nennt das Protokoll keinen erkennbaren Redner, verweist sie auf eine gemeinsame Aufzeichnung mit dem Anzeigenamen „Unbekannt“.",
           "unit": "Kennung der Personenaufzeichnung als Text.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
@@ -1278,7 +1278,7 @@
           "license": "dip"
         },
         "fraktion": {
-          "meaning": "Im Protokoll genannter Zusammenschluss für diese Rede/diesen Beitrag; bei Rolle ohne Zusammenschluss NULL.",
+          "meaning": "Im Protokoll genannter Zusammenschluss für diese Rede/diesen Beitrag, in der Schreibweise von parties.name vereinheitlicht (WP 20 ab 2023-12-06 „Gruppe Die Linke“ statt „Die Linke“); NULL, wenn das Protokoll keinen nennt (Rolle ohne Zusammenschluss) oder der Datensatz zwei Namen verschmilzt.",
           "unit": "Protokollierter Zusammenschlussname als Text oder NULL.",
           "source": "Plenarprotokoll-XML: Redner-/Rede- und Absatzdaten werden von scripts/validate_dip_protocol.py gelesen; Text und Zeichenmaß folgen der dokumentierten Normalisierung, Sprechrolle und nicht zugeschriebene Zeichen sind Projektableitungen.",
           "license": "dip"
@@ -1296,7 +1296,7 @@
           "license": "eigene-auswertung"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem die Datensätze der zugehörigen Sitzung zuletzt neu geschrieben wurden: jede erneute Speicherung der Sitzung (Abruf, Regelversion, Neuaufbau) löscht sie und legt sie neu an, daher gleich updated_at; ein --repersist ohne Inhaltsänderung behält den bisherigen Store samt Zeitpunkten; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: speeches.created_at wird gesetzt, wenn persist_dip_pulse_store.replace_protocol die Datensätze der Sitzung neu schreibt, und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
@@ -1395,7 +1395,7 @@
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
-          "meaning": "Zusammenschluss, dem das Mitglied in der Abstimmungsquelle zugeordnet ist; kann NULL sein.",
+          "meaning": "Zusammenschluss, dem das Mitglied in der Abstimmungsquelle zugeordnet ist; immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
           "source": "Bundestags-XLSX der namentlichen Abstimmung: veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
@@ -1590,7 +1590,7 @@
           "license": "eigene-auswertung"
         },
         "created_at": {
-          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: speichernde Online-Builds und --repersist bauen den Store aus dem Cache neu auf und legen jeden Datensatz mit neuem Zeitpunkt an; vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
+          "meaning": "Zeitpunkt, zu dem der Datensatz in diesen Store geschrieben wurde: jeder speichernde Online-Build baut den Store aus dem Cache neu auf und legt jeden Datensatz mit neuem Zeitpunkt an; --repersist ebenso, behält aber den bisherigen Store samt Zeitpunkten, wenn sich der Inhalt nicht ändert. Vom Projekt erzeugter UTC-Zeitstempel, kein Quellzeitpunkt und kein Zeitpunkt der ersten Erfassung.",
           "unit": "Projektgenerierter UTC-Zeitstempel als ISO-Text.",
           "source": "Lokale Projektbuchhaltung: votes.created_at wird beim Anlegen/Aktualisieren im Store gesetzt und stammt nicht aus einer externen Quelle.",
           "license": "eigene-metadaten"
