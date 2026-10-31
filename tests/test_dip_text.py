@@ -186,6 +186,11 @@ class AbstractTextTests(unittest.TestCase):
             ("Vor<script src=x/>hidden</script>nach", "Vornach"),
             ('x<script src="a" />y</script>z', "xyz"),
             ("x<script async/>y</script>z", "xyz"),
+            ("A<script a = b/>hidden</script>B", "AB"),
+            ('A<script a=x"/>hidden</script>B', "AB"),
+            ("A<script a=\nb/>hidden</script>B", "AB"),
+            ("A<script a=<b/>h</script>B", "AB"),
+            ("A<script a= />hidden</script>B", "AB"),
         ]
         for raw_text, expected in cases:
             with self.subTest(raw=raw_text):

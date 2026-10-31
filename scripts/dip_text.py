@@ -127,12 +127,36 @@ def _self_closing(text: str, i: int, end: int) -> bool:
     only when it is not the last character of an unquoted attribute value, as
     html.parser reads it: ``<script/>`` and ``<script src="x" />`` close
     themselves, ``<script src=x/>`` opens a block whose value is "x/"."""
-    if text[end - 2] != "/":
+    close = end - 1  # the ">"
+    if text[close - 1] != "/":
         return False
-    j = end - 3
-    while j > i and text[j] not in _SPACE and text[j] not in "\"'=<":
-        j -= 1
-    return text[j] != "="
+    pos = _TAG_NAME.match(text, i + 1).end()
+    while pos < close:
+        char = text[pos]
+        if char in _SPACE or char == "/":
+            if char == "/" and pos + 1 == close:
+                return True
+            pos += 1
+            continue
+        # An attribute name, then optionally "=" (spaces around it allowed) and a
+        # value: quoted, or unquoted up to a space or the ">" (it may hold "/").
+        pos += 1
+        while pos < close and text[pos] not in _SPACE and text[pos] not in "/=":
+            pos += 1
+        after = pos
+        while after < close and text[after] in _SPACE:
+            after += 1
+        if after < close and text[after] == "=":
+            while after < close and text[after] in _SPACE + "=":
+                after += 1
+            if after < close and text[after] in "\"'":
+                quote_end = text.find(text[after], after + 1)
+                pos = close if quote_end == -1 or quote_end > close else quote_end + 1
+            else:
+                pos = after
+                while pos < close and text[pos] not in _SPACE:
+                    pos += 1
+    return False
 
 
 def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
