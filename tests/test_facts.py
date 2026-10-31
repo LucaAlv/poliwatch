@@ -967,11 +967,6 @@ class MeistdiskutierterVorgangTests(StoreCase):
         row = self.one(VORGANG, registry=facts.MONTHLY_REGISTRY)
         self.assertIsNone(row["value"])
 
-    # Value: protects=a card shows the whole caveat of this metric (render_card_svg keeps two lines of 76); fails_when=the caveat grows past two lines and the card cuts the rule off mid-sentence; why_new=the first v3 caveat wrapped to three lines and lost the sentence saying what happens to bundled items (review 2026-10-30); seam=none
-    def test_the_caveat_fits_on_the_card(self) -> None:
-        metric = next(m for m in facts.MONTHLY_REGISTRY if m["id"] == VORGANG)
-        self.assertLessEqual(len(facts.wrap_lines(metric["caveat"], width=76, max_lines=20)), 2)
-
     # Value: protects=an item whose one debated Vorgang is a mitberaten twin counts for it, named by the twin's own title; fails_when=the metric joins proceedings again, where persist stores no twin; why_new=review 2026-10-30: an Entschließungsantrag position with a Gesetz twin dropped out of the metric; seam=none
     def test_a_twin_as_the_debated_vorgang_counts_with_its_title(self) -> None:
         self.seed(
@@ -2088,13 +2083,16 @@ class CardTests(StoreCase):
                 }
             ]
         )
-        row = self.one(ABWEICHLER)
-        self.assertEqual(facts.card_caveat(row), facts.REGISTRY_BY_ID[ABWEICHLER]["caveat"])
-        svg = facts.render_card(row)
-        root = ET.fromstring(svg)
         ns = {"svg": "http://www.w3.org/2000/svg"}
-        caveat = root.find(".//svg:text[@class='caveat']", ns)
-        self.assertIn("Gewissensfragen", "".join(caveat.itertext()))
+        for metric_id in (ABWEICHLER, KNAPPSTE):
+            with self.subTest(metric=metric_id):
+                row = self.one(metric_id)
+                self.assertEqual(facts.card_caveat(row), facts.REGISTRY_BY_ID[metric_id]["caveat"])
+                caveat = ET.fromstring(facts.render_card(row)).find(".//svg:text[@class='caveat']", ns)
+                # The whole caveat, not the first two lines of it (D27).
+                shown = " ".join(span.text for span in caveat.findall("svg:tspan", ns))
+                self.assertEqual(" ".join(shown.split()), " ".join(facts.card_caveat(row).split()))
+        self.assertIn("Gewissensfragen", facts.card_caveat(self.one(ABWEICHLER)))
         # laengste-rede states no caveat; the two vote metrics and erste-reden do.
         self.assertIsNone(facts.card_caveat({"metric_id": LAENGSTE}))
         self.assertEqual(
@@ -2141,8 +2139,61 @@ class CardTests(StoreCase):
         row = {"period_kind": "week", "baseline_count": 9999, "baseline_from": "2017-W43", "baseline_to": "2026-W53"}
         footer = facts.baseline_comparison_line(row)
         self.assertEqual(footer, "Vergleich: 9.999 Wochen mit Sitzung (2017-W43 bis 2026-W53)")
-        # The caveat wraps at 76 characters of 24px text; the footer is 26px.
-        self.assertLessEqual(len(footer), 76 * 24 // 26)
+        # The caveat's line width in characters of its font size, scaled to the 26px footer.
+        self.assertLessEqual(len(footer), facts.CARD_CAVEAT_WIDTH * facts.CARD_CAVEAT_SIZE // facts.CARD_FOOTER_SIZE)
+
+    # Value: protects=render_card places the topic, comparison and caveat text at card_lower_layout's baselines, so the rendered four-line caveat ends at CARD_CAVEAT_LAST_Y and clears the comparison above it; fails_when=render_card goes back to fixed y values and the long caveat runs into the comparison; why_new=test_the_lower_blocks_never_overlap checks the layout function, not that the SVG uses it; seam=none; no_claim=real glyph metrics
+    def test_the_rendered_card_places_its_caveat_below_the_comparison(self) -> None:
+        self.seed([{"document_number": "21/1", "date": "2025-03-25", "votes": [MeisteAbweichlerTests.VOTE]}])
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        for metric_id in (ABWEICHLER, KNAPPSTE):
+            with self.subTest(metric=metric_id):
+                root = ET.fromstring(facts.render_card(self.one(metric_id)))
+                block = {
+                    name: root.find(f".//svg:text[@class='{name}']", ns) for name in ("comparison", "caveat")
+                }
+                spans = {name: len(node.findall("svg:tspan", ns)) for name, node in block.items()}
+                self.assertGreater(spans["caveat"], 2)  # the card now shows more than the old two lines
+                layout = facts.card_lower_layout(comparison_lines=spans["comparison"], caveat_lines=spans["caveat"])
+                self.assertEqual(int(block["comparison"].get("y")), layout.comparison_y)
+                self.assertEqual(int(block["caveat"].get("y")), layout.caveat_y)
+                caveat_last = layout.caveat_y + (spans["caveat"] - 1) * facts.CARD_CAVEAT_LINE_HEIGHT
+                self.assertEqual(caveat_last, facts.CARD_CAVEAT_LAST_Y)
+                comparison_last = layout.comparison_y + (spans["comparison"] - 1) * facts.CARD_COMPARISON_LINE_HEIGHT
+                self.assertGreaterEqual(layout.caveat_y - comparison_last, facts.CARD_COMPARISON_CAVEAT_GAP)
+
+    # Value: protects=every metric's caveat fits the card whole, coverage slot filled with the longest phrase it can take; fails_when=a caveat grows past CARD_CAVEAT_LINES and wrap_lines cuts it mid-sentence on the card while page and Methodik show it whole; why_new=knappste-abstimmung (4 lines) and meiste-abweichler (5) were cut to 2 (measured 2026-10-30); seam=none; no_claim=real glyph metrics
+    def test_every_caveat_fits_on_the_card(self) -> None:
+        for metric in facts.REGISTRY + facts.MONTHLY_REGISTRY:
+            with self.subTest(metric=metric["id"]):
+                row = {"metric_id": metric["id"], "coverage_label": "seit Beginn der 18. Wahlperiode"}
+                lines = facts.wrap_lines(facts.card_caveat(row) or "", width=facts.CARD_CAVEAT_WIDTH, max_lines=99)
+                self.assertLessEqual(len(lines), facts.CARD_CAVEAT_LINES)
+
+    # Value: protects=the topic line, the comparison block, the caveat and the footer never overlap, down to a topic and a three-line comparison over a four-line caveat, and all stay clear of a three-line title; fails_when=the caveat grows to four lines at a fixed position and runs into the comparison, or the comparison moves up onto a topic line that stays put; why_new=the four-line caveat (2026-10-30) collided with a three-line comparison in a rendered card; code review 2026-10-31 found the moved comparison could reach the fixed topic line; seam=none; no_claim=real glyph metrics
+    def test_the_lower_blocks_never_overlap(self) -> None:
+        title_bottom = facts.CARD_TITLE_Y + 2 * facts.CARD_TITLE_LINE_HEIGHT + 12  # descenders of a 46px third line
+        for comparison in (1, 2, 3):
+            for caveat in range(facts.CARD_CAVEAT_LINES + 1):
+                with self.subTest(comparison=comparison, caveat=caveat):
+                    layout = facts.card_lower_layout(comparison_lines=comparison, caveat_lines=caveat)
+                    # Cap heights about 3/4 of the font size, descenders about 1/4.
+                    topic_top = layout.topic_y - facts.CARD_TOPIC_SIZE * 3 // 4
+                    self.assertGreater(topic_top, title_bottom)
+                    comparison_top = layout.comparison_y - facts.CARD_COMPARISON_SIZE * 3 // 4
+                    self.assertGreater(comparison_top, layout.topic_y + facts.CARD_TOPIC_SIZE // 4)
+                    comparison_last = layout.comparison_y + (comparison - 1) * facts.CARD_COMPARISON_LINE_HEIGHT
+                    if caveat:
+                        caveat_last = layout.caveat_y + (caveat - 1) * facts.CARD_CAVEAT_LINE_HEIGHT
+                        self.assertEqual(caveat_last, facts.CARD_CAVEAT_LAST_Y)
+                        self.assertGreaterEqual(layout.caveat_y - comparison_last, facts.CARD_COMPARISON_CAVEAT_GAP)
+                        self.assertLessEqual(caveat_last + facts.CARD_FOOTER_SIZE, facts.CARD_FOOTER_Y)
+                    else:
+                        self.assertEqual(layout, (facts.CARD_TOPIC_Y, facts.CARD_COMPARISON_Y, layout.caveat_y))
+        # A topic over a three-line title clears it by about 3px only under the cap-height estimate
+        # above; no card has had a topic and a caveat together, so render one before giving
+        # laengste-rede (the only metric with a topic line) a caveat.
+        self.assertIsNone(facts.REGISTRY_BY_ID[LAENGSTE].get("caveat"))
 
 
 class ReplayTests(StoreCase):

@@ -158,6 +158,24 @@ def merge_fractions(fractions: Iterable[Mapping[str, Any]] | None) -> list[dict[
     return [{"name": name, **row} for name, row in merged.items()]
 
 
+def vote_groups_cover_total(vote: Mapping[str, Any]) -> bool:
+    """Whether the vote's fraction rows, fraktionslos and Unbekannt included,
+    add up to its total on every count. Only then can a claim about the whole
+    vote ("Niemand stimmt anders …", an Abweichler count) rest on its groups: a
+    Zusammenschluss missing from both the rows and the Einzelstimmen leaves the
+    others complete. No total, no fraction row or a count the total does not
+    hold as a number covers nothing."""
+    total = vote.get("total") or {}
+    rows = merge_fractions(vote.get("fractions"))
+    if not total or not rows:
+        return False
+    return all(
+        isinstance(total.get(key), int) and not isinstance(total.get(key), bool)
+        and sum(row["counts"][key] for row in rows) == total[key]
+        for key in VOTE_COUNT_KEYS
+    )
+
+
 def speech_zusammenschluss(speaker: Mapping[str, Any] | None, protocol: Mapping[str, Any] | None = None) -> str | None:
     """The Zusammenschluss the Plenarprotokoll names beside a Redner for one
     Rede: ``zusammenschluss`` of the raw string, told apart by the Sitzung when
@@ -643,6 +661,23 @@ def vote_abweichler(vote: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     for name in (members_by_group.keys() - result.keys() - NO_ZUSAMMENSCHLUSS) if result else ():
         result[name] = {"members": [], "state": "partial", "unlisted": True}
     return result
+
+
+def abweichler_groups_complete(groups: Mapping[str, Mapping[str, Any]]) -> bool:
+    """Whether ``vote_abweichler`` found groups and every one's member rows are complete."""
+    return bool(groups) and all(group["state"] == "complete" for group in groups.values())
+
+
+def vote_abweichler_count(vote: Mapping[str, Any], groups: Mapping[str, Mapping[str, Any]] | None = None) -> int | None:
+    """The vote's Abweichler, the one vote-wide count the archive and the panel's
+    "Niemand stimmt anders …" rest on; None unless every group is complete
+    (``abweichler_groups_complete``) and the groups add up to the vote
+    (``vote_groups_cover_total``). ``groups`` is ``vote_abweichler(vote)``,
+    passed by a caller that already has it."""
+    groups = vote_abweichler(vote) if groups is None else groups
+    if not abweichler_groups_complete(groups) or not vote_groups_cover_total(vote):
+        return None
+    return sum(len(group["members"]) for group in groups.values())
 
 
 _VOTE_SUBJECT_RECOMMENDATION = re.compile(r"^\W*(?:Beschreibung:\s*)?(?:(?:Zweite|Dritte|Erste)\s+)?Beschlussempfehlung", re.I)

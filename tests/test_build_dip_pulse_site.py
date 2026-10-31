@@ -2907,21 +2907,25 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "C", "faction": "SPD", "vote": "no"},
         ]
         fractions = [{"name": "SPD", "counts": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}]
-        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members}
-        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2]}
+        total = {"yes": 2, "no": 1, "abstain": 0, "absent": 0}
+        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members, "total": total}
+        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2], "total": total}
         unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": [
-            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
+            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2],
+            "total": {**total, "no": 0}}
         # no_members: the fractions have counts but bundestag.de listed no Einzelstimmen.
-        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": []}
+        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": [], "total": total}
         # Value: protects=a vote whose member rows name a group with no fraction row gets no archive count, not the count of the groups that can be checked; fails_when=the unlisted group drops out and the badge reads 1; why_new=only derive and the panel saw the unlisted group; seam=none; no_claim=none
-        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "members": members + [
+        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "total": total, "members": members + [
             {"name": "D", "faction": "AfD", "vote": "yes"}, {"name": "E", "faction": "AfD", "vote": "no"}]}
+        # Value: protects=a vote whose fraction rows leave Stimmen of its total unaccounted for (a Fraktion missing from rows and Einzelstimmen) gets no archive count; fails_when=the count rests on the groups present and reads 0; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
+        uncovered = {**unanimous, "id": "v6", "title": "Y", "total": {**total, "no": 40}}
         rows = build_dip_pulse_site.collect_votes_archive(
-            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted])])]
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted, uncovered])])]
         )
         by_id = {row["vote"]["id"]: row for row in rows}
         self.assertEqual(
-            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5")), (1, None, 0, None, None)
+            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5", "v6")), (1, None, 0, None, None, None)
         )
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-abweichler="1"', markup)

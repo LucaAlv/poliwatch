@@ -3010,6 +3010,7 @@ def render_html(
     votes_component_ctx = {
         "mp_lookup": mp_lookup,
         "mp_prefix": "../abgeordnete/",
+        "site_prefix": "../",
         "vorgang_cache": cache,
         "vote_contexts": politikfelder.report_vote_vorgaenge(report, cache),
     }

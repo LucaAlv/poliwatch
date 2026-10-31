@@ -404,16 +404,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** None
 
-### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
-
-**What:** `facts.render_card_svg` keeps two lines of 76 characters of a metric's caveat (`wrap_lines(..., max_lines=2)`). The caveat of `knappste-abstimmung` wraps to 4 lines and that of `meiste-abweichler` to 5 (measured 2026-10-30), so their cards show half a sentence. Shorten the caveats (or give the card room for them) and pin every caveat's line count with a test, as `meistdiskutierter-vorgang` now has.
-
-**Why:** D27: a metric may not be read without its caveat, and a card is read without its page.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### List MdBs in a government office as Abgeordnete
 
 **What:** DIP's `funktion` holds only a person's current office, so 48 WP 21 MdBs whose office is Parl. Staatssekretär (27), Bundesminister (8), Staatsminister (7), Vizepräsident(in) (4) or another government one are not in the roster: the Abgeordnete list has 589 of about 630. Their Mandat shows in DIP only as a `person_roles` entry with a `fraktion` for the Wahlperiode, and not even that for some (Merz, Dobrindt, Dorothee Bär, Wadephul: roles end at WP 20 on 2026-10-30), so DIP alone cannot list all of them; the Bundestag's MdB-Stammdaten (MDB_STAMMDATEN XML, with MDBWP_VON/BIS) can, and would also give Mandat end dates.
@@ -590,16 +580,6 @@ Gap list against [plenarwatch.de](https://plenarwatch.de/) (Plenarwatch GbR, Mü
 **Effort:** M
 **Priority:** P3
 **Depends on:** Vote outcome badge
-
-### Link the vote panel's "namentlich" badge to `bundestag.html`
-
-**What:** The vote panel (`scripts/features/votes.py`) names a namentliche Abstimmung without explaining it. Link its "namentlich" wording to `bundestag.html#abstimmen`, as the week radar's "namentlich abgestimmt" badge already does (depth-aware: the panel renders on dossiers under `protocols/` and on `votes/index.html`).
-
-**Why:** The vote panel is where readers meet the term most. Left out of the explainer change (2026-10-30) because the panel is B-track code.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ### Impressum, Datenschutz and licence files before the site goes public
 
@@ -808,7 +788,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 1. No per-vote cap on "Worum es geht" blocks.
 2. `abstract_text` output can differ across Python patch levels (it feeds the content-hashed export).
 3. CSV formula injection now reaches free-text DIP columns (`proceedings.abstract`, titles).
-4. The teaser can cut after "(Abs.".
+4. ~~The teaser can cut after "(Abs.".~~ Done 2026-10-30: an opening bracket or quote is stripped off the token before the abbreviation test. 10 of 3,922 cached abstracts had a teaser ending in "(sog."; they now end at a word with " …" or at an earlier sentence end. For example, "Umsetzung der Erneuerbare-Energie-Richtlinie (sog." became "Umsetzung der Erneuerbare-Energie-Richtlinie (sog. RED III) zur Verkürzung … für Windenergieanlagen an Land …". Render-only, no stored value moves.
 5. `derive.vote_identity` uses the raw id while persist cleans it.
 6. One member/count mismatch hides a whole group's Abweichler.
 7. ~~`derive.vote_abweichler` dedupes member rows by name~~ Done 2026-10-22 (B4 Codex P2 F3): it dedupes on `derive.vote_member_identity`, the key persist hands `upsert_mp`, vote-wide. The 63 occurrences the old Abstimmung-page "profile URL" folded were unfolded by rebuilding the reference store's registry from scratch (2026-10-22, `vote_members` 154,078). Left: merges `registry.bind` makes later are not seen by derive.
@@ -817,14 +797,17 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 10. `derive.vote_identity` turns an id of None into `"None"` when `fetch_targets` reads a fresh report before `require_vote_shape`; `features.votes.dip_vorgang_url` puts a non-digit Vorgang id into the DIP path unchecked.
 
 Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude subagent) and deferred by the owner; none occurs on the reference data:
-11. A Fraktion missing from both the fraction rows and the Einzelstimmen leaves the other groups "complete", so the panel can say "Niemand stimmt anders …" and the archive show 0 while `vote.total` shows the missing Stimmen. Require the groups' totals to equal the vote total before any vote-wide claim (`build_dip_pulse_site.py` `_abweichler_count`, `features/votes.py` `_abweichler_summary_html`). 217 of 217 reference votes have matching totals.
+11. ~~A Fraktion missing from both the fraction rows and the Einzelstimmen leaves the other groups "complete", so the panel can say "Niemand stimmt anders …" and the archive show 0 while `vote.total` shows the missing Stimmen. Require the groups' totals to equal the vote total before any vote-wide claim (`build_dip_pulse_site.py` `_abweichler_count`, `features/votes.py` `_abweichler_summary_html`). 217 of 217 reference votes have matching totals.~~ Done 2026-10-30: `derive.vote_groups_cover_total` (fraction rows incl. fraktionslos and Unbekannt against `vote.total` on every count; no total, no row or a count that is not a number covers nothing) gates `derive.vote_abweichler_count`, the one vote-wide count the archive and the panel share; the panel shows the gap note instead, once (under the vote only when no short group already carries it). Reference: "Niemand stimmt anders" 122 → 122 votes, archive counts 217 → 217. The Fakt and r3 SQL (item 12) do not use it yet.
 12. Pages and the Fakt `meiste-abweichler` / recipe `r3-abweichler` count Abweichler differently on an incomplete vote: `derive.vote_abweichler` withholds a group whose Einzelstimmen do not match its tally and excludes `Unbekannt`, the SQL (`facts.py`, the r3 recipe) does neither. Decide whether the SQL takes the page's completeness rule. 0 partial groups on the reference data.
 13. `derive.report_drucksachen` keeps the first TOP's copy of a Drucksache while persist keeps the fullest, so an empty `urheber` first can make the panel say "Ausschuss nicht ermittelt" while `r6-ausschuss` counts the committee. D15 shows 0 of 217 differ.
 14. ~~`derive.person_profile_url` accepts a `..` segment (`/abgeordnete/../apps/na/x` resolves to the Abstimmung page it exists to exclude).~~ Done 2026-10-30: a `.` or `..` path segment, also percent-encoded (`%2E%2e`), makes the URL no profile. No reference row carries one, so no stored value moves.
-15. The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.
+15. ~~The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.~~ Done 2026-10-30: on the cut path only, a character reference the cut splits and the one tag the cut splits (opened before the cut, closed after it, read with the scan `_strip_tags` uses: a quote counts only as an attribute value after "=", a comment runs to its "-->") are dropped; a "<" that never closes stays text, as in an abstract that fits. No reference abstract reaches the cut, so 0 of 3,922 texts move. What the 2026-10-31 ship review left open is item 19.
 16. html.parser is quadratic on runs like `'<a "'`: 10,000 characters take about 0.9 s per call, paid per persist and per vote panel. Computing the plain text once at cache-write time removes it.
 17. Vote ids are not limited to anchor-safe characters, so an id with spaces makes an invalid `id="vote- 7 "` and an archive link that does not scroll (reference ids are numeric).
 18. `.vote-context-block:has(…)` hides the teaser with no fallback (a browser without `:has()` shows it twice), and `ul.vote-abweichler-list { display:inline }` drops the list semantics in Safari/VoiceOver.
+
+Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adversarial, a Claude subagent) in the item-15 trim, and deferred by the owner; no reference abstract reaches the cut (longest 5,111 characters):
+19. The trim reads tags by hand to guess where html.parser ends them, and three review rounds each found a shape it reads differently. Two empty a whole over-limit abstract where main keeps it: an end tag, `<?…?>` or `<!…>` holding `="` before the cut with a quote after it (`'Anfang </p class="x> ' + 'wort ' * 3000 + 'ende "> z'`: 6 characters, main 9,987), and a quote after "=" inside an unquoted value (`'<b data=x=">Anfang ' + 'wort ' * 2500 + '">'`: 0, main 9,988). A trailing `&` plus letters is dropped as a partial reference even when it is none (`GmbH&C|o.` at the cut keeps `GmbH`). The scan reads the whole raw abstract, not 10,000 characters (about 2 s and 16 MB at 2 million). The comment rule copies Python 3.13.2's html.parser (`<!-->` and `--!>` close a comment in later patch levels; see item 2). Candidate fixes: bound it (look 2,000 characters past the cut, drop only a tag that starts within 2,000 before it, check `&x` against real entity names), or revert to main's plain cut and accept the visible fragment. `_strip_tags`, the malformed-markup fallback, shares the quote rule and loses words on the end-tag/PI shapes too ("Anfang Ende"), on main as well.
 
 **Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export. 11 is the one item that can make a public statement false.
 
@@ -1092,6 +1075,18 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Fakt cards cut off the caveats of `knappste-abstimmung` and `meiste-abweichler`
+
+Done 2026-10-30. The card kept two lines of 76 characters of a caveat, so `knappste-abstimmung` (4 lines) and `meiste-abweichler` (5) showed half a sentence. It now shows up to four lines of 83 characters at 22px (the same line width as 76 at 24px; the widest line measured 869 of 920 px in Chrome), anchored above the footer, and the comparison block moves up only as far as a long caveat needs (`facts.card_lower_layout`). The caveat texts are unchanged, so pages and Methodik read as before. Tests pin every metric's caveat, with A3's longest coverage phrase filled in, to `CARD_CAVEAT_LINES`, the rendered caveat to the whole text, and the blocks to never overlap.
+
+**Completed:** v0.25.1.0 (2026-10-31)
+
+### Link the vote panel's "namentlich" wording to `bundestag.html`
+
+Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" to `bundestag.html#abstimmen`, as the week radar's badge does. The link goes through `VotePanelContext.site_prefix` ("../", set beside `mp_prefix`; the only page that renders the lead is the dossier under `protocols/`), and the lead is now built from escaped parts so the link is markup while the subject stays escaped once.
+
+**Completed:** v0.25.1.0 (2026-10-31)
 
 ### Audit every `data_dictionary.json` definition against the code that writes the column
 

@@ -162,6 +162,46 @@ class VoteAbweichlerTests(unittest.TestCase):
         self.assertEqual(derive.vote_abweichler({"members": [member("Ada", "SPD", "yes")]}), {})
 
 
+class VoteGroupsCoverTotalTests(unittest.TestCase):
+    # Value: protects=a vote-wide Abweichler claim is only made when the fraction rows account for every Stimme of the vote; fails_when=a Fraktion missing from both the fraction rows and the Einzelstimmen leaves the others "complete" and the panel says "Niemand stimmt anders"; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
+    def test_the_fraction_rows_must_add_up_to_the_vote_total(self) -> None:
+        rows = [fraction("SPD", yes=2, no=1), fraction("fraktionslos", no=1, absent=1)]
+        total = {"yes": 2, "no": 2, "abstain": 0, "absent": 1}
+        self.assertTrue(derive.vote_groups_cover_total({"fractions": rows, "total": total}))
+        # A Fraktion the tally holds but no row names: 40 Stimmen nobody accounts for.
+        self.assertFalse(derive.vote_groups_cover_total({"fractions": rows, "total": {**total, "no": 42}}))
+        # Two spellings of one Zusammenschluss are one row whose counts add.
+        split = [fraction("Gruppe BSW", yes=1), fraction("BSW (Gruppe)", yes=1)]
+        self.assertTrue(derive.vote_groups_cover_total({"fractions": split, "total": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}))
+
+    def test_without_a_total_or_fraction_rows_nothing_is_covered(self) -> None:
+        rows = [fraction("SPD", yes=2)]
+        self.assertFalse(derive.vote_groups_cover_total({"fractions": rows}))
+        self.assertFalse(derive.vote_groups_cover_total({"fractions": rows, "total": {}}))
+        self.assertFalse(derive.vote_groups_cover_total({"fractions": [], "total": {"yes": 0, "no": 0, "abstain": 0, "absent": 0}}))
+
+    # Value: protects=a total count that is not a number ("nicht überliefert" in the lead) makes no vote-wide claim instead of raising; fails_when=the count goes through int() and a stray string takes the page build down or a missing count passes as 0; why_new=code review 2026-10-31; seam=none
+    def test_a_count_the_total_does_not_hold_as_a_number_covers_nothing(self) -> None:
+        rows = [fraction("SPD", yes=2)]
+        for count in ("x", "2", None, True):
+            with self.subTest(count=count):
+                total = {"yes": count, "no": 0, "abstain": 0, "absent": 0}
+                self.assertFalse(derive.vote_groups_cover_total({"fractions": rows, "total": total}))
+        self.assertFalse(derive.vote_groups_cover_total({"fractions": rows, "total": {"yes": 2, "no": 0, "abstain": 0}}))
+
+
+class VoteAbweichlerCountTests(unittest.TestCase):
+    # Value: protects=the archive and the panel share one vote-wide Abweichler count: every group complete and the groups adding up to the total; fails_when=one caller drops the cover or completeness test the other applies; why_new=code review 2026-10-31 folded the two copies into derive; seam=none
+    def test_a_count_needs_complete_groups_that_cover_the_vote(self) -> None:
+        members = [member("Ada", "SPD", "yes"), member("Bo", "SPD", "no"), member("Cy", "SPD", "yes")]
+        vote = {"fractions": [fraction("SPD", yes=2, no=1)], "members": members, "total": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}
+        self.assertEqual(derive.vote_abweichler_count(vote), 1)
+        self.assertEqual(derive.vote_abweichler_count(vote, derive.vote_abweichler(vote)), 1)
+        self.assertIsNone(derive.vote_abweichler_count({**vote, "total": {"yes": 2, "no": 41, "abstain": 0, "absent": 0}}))
+        self.assertIsNone(derive.vote_abweichler_count({**vote, "members": members[:2]}))
+        self.assertIsNone(derive.vote_abweichler_count({"members": members, "total": vote["total"]}))
+
+
 def linked(number: str, drucksachetyp: str, urheber: list[str], **extra: object) -> dict[str, object]:
     return {
         "dokumentnummer": number,

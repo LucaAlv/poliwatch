@@ -5032,14 +5032,6 @@ def _vote_procedure_type(
     return "–"
 
 
-def _abweichler_count(vote: dict[str, Any]) -> int | None:
-    """The vote's Abweichler, or None unless every group's member rows are complete."""
-    groups = derive.vote_abweichler(vote)
-    if not groups or any(group["state"] != "complete" for group in groups.values()):
-        return None
-    return sum(len(group["members"]) for group in groups.values())
-
-
 def _fraction_position(fraction: dict[str, Any], inverted: bool = False) -> str | None:
     # The "Ja-Mehrheit" chip needs Ja from more than half of the votes cast
     # (Ja + Nein + Enthaltung): a Mehrheitsvotum of Ja alone would also match a
@@ -5102,7 +5094,7 @@ def collect_votes_archive(
                 "document_chambers": votes_feature.document_source_chambers(item) if item else {},
                 "fraction_positions": fraction_positions,
                 "procedure_type": _vote_procedure_type(vote, item, sitting_documents),
-                "abweichler": _abweichler_count(vote),
+                "abweichler": derive.vote_abweichler_count(vote),
                 # The vote's own panel (D9).
                 "href": f"{page_href}#{pulse_html.esc(votes_feature.vote_anchor_id(vote))}" if page_href else None,
             }
