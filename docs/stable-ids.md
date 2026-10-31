@@ -27,7 +27,7 @@ Plain offline rendering, online updates and direct export reject the old schema 
 | `person_records.home_person_id` | The durable owner of the record: its issued person key, which a merge resolves to the survivor through its alias. `person_id` is the record's current person, which `reconcile` may move to a namesake's person by a guess it recomputes |
 | `person_records.evidence_json` | Indexed record's matching evidence: trusted IDs, the set of printed (name, party) pairs and of Redner-IDs with a representative of each, source side and partition; `identities` (the source identities its occurrences presented, only when they differ from its own key) and `trusted_aw_ids` (only when two contradict) |
 | `person_bindings.id` | Speech key, `roster` with the canonical DIP person ID (`stable_ids.canonical_dip_person_id`: `7`, `"7"` and `" 07 "` are `"7"`), or `vote-member` with vote ID, printed member name and faction |
-| `person_aliases.id` | Retired issued person key; `person_id` resolves to its survivor |
+| `person_aliases.id` | Retired issued person key; `person_id` is the next key toward its survivor (aliases can chain: repeat until the key is not in `person_aliases.id`) |
 | `facts.id` | `fact`, metric ID, period kind and period key |
 | `fact_sources.id` | `fact-source`, fact ID and source-entity key; independent of receipt position |
 | `fact_sources.source_entity_id` | Persisted speech/document/vote/protocol key when available; otherwise a `source-reference` key for the cited official reference |

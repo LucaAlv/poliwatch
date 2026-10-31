@@ -159,7 +159,7 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "persons": "Dauerhafte Personenkennungen und Reihenfolge ihrer Vergabe.",
-    "person_aliases": "Historische Personenkennungen und ihre gültigen Ziele.",
+    "person_aliases": "Historische Personenkennungen und die Kennung, auf die sie verweisen; ein Ziel kann selbst wieder zurückgezogen sein.",
     "person_records": "Quellenidentitäten mit dauerhafter Personenzuordnung und Abgleichbelegen.",
     "person_bindings": "Dauerhafte Zuordnung einzelner Reden, Beiträge, MdB-Einträge und Abstimmungsmitglieder.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
@@ -3523,17 +3523,17 @@ def _codebook_coverage(coverage: dict[str, Any]) -> list[str]:
 # into person_aliases (docs/stable-ids.md); say so per table.
 def _codebook_alias_line(table: dict[str, Any]) -> str:
     if table["name"] == "person_aliases":
-        return "Aliasauflösung: diese Tabelle ist die Aliasliste; `id` ist eine zurückgezogene Personenkennung, `person_id` ihr Ziel."
+        return "Aliasauflösung: diese Tabelle ist die Aliasliste; `id` ist eine zurückgezogene Personenkennung, `person_id` ihr Ziel; ist das Ziel selbst zurückgezogen, steht es wieder in `id` (Kette)."
     if table["name"] == "persons":
         return ("Aliasauflösung: `id` ist eine ausgestellte Personenkennung; eine zurückgezogene Kennung bleibt hier als Zeile stehen "
-                "und verweist über `person_aliases.id → person_id` auf die fortgeführte. Aktuelle Personen sind die Zeilen, deren `id` "
+                "und verweist über `person_aliases.id → person_id`, wiederholt bis zu einer Kennung außerhalb von `person_aliases.id`, auf die fortgeführte. Aktuelle Personen sind die Zeilen, deren `id` "
                 "nicht in `person_aliases.id` steht.")
     person_columns = [column["name"] for column in table["columns"] if column["fk"] == "persons.id"]
     if not person_columns:
         return "Aliasauflösung: entfällt, keine Spalte verweist auf `persons.id`."
     return (f"Aliasauflösung: {', '.join('`' + name + '`' for name in person_columns)} "
             f"{'verweist' if len(person_columns) == 1 else 'verweisen'} auf `persons.id`; "
-            "früher ausgestellte Kennungen vor generationsübergreifenden Joins über `person_aliases.id → person_id` auflösen.")
+            "früher ausgestellte Kennungen vor generationsübergreifenden Joins über `person_aliases.id → person_id` auflösen, wiederholt, bis die Kennung nicht mehr in `person_aliases.id` steht.")
 
 
 def _codebook_tables(tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> list[str]:

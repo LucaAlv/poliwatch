@@ -785,7 +785,7 @@
           "license": "abgeordnetenwatch"
         },
         "aw_politician_id": {
-          "meaning": "Politikerkennung des abgeordnetenwatch-Profils; bei Treffern über die Redner-ID (aw_match = ext_id) dient sie als Identitätsschlüssel (identity_key aw:<id>), bei Namenstreffern nur als Hinweis.",
+          "meaning": "Politikerkennung des abgeordnetenwatch-Profils; bei Treffern über die Redner-ID (aw_match = ext_id) dient sie als Identitätsschlüssel (identity_key `aw:<id>`), bei Namenstreffern nur als Hinweis.",
           "unit": "Abgeordnetenwatch-Kennung als Ganzzahl oder NULL.",
           "source": "abgeordnetenwatch.de-Profil/API: aw_politician_id als Profildatum; bei geteilten oder mehrdeutigen Identitäten gelten die dokumentierten Registerregeln.",
           "license": "abgeordnetenwatch"
@@ -852,16 +852,16 @@
       }
     },
     "person_aliases": {
-      "meaning": "Stillgelegte Personenkennungen, die auf die fortgeführte Kennung verweisen.",
+      "meaning": "Stillgelegte Personenkennungen und die Kennung, auf die sie verweisen; das Ziel kann selbst stillgelegt sein, dann ist die Auflösung zu wiederholen.",
       "columns": {
         "id": {
-          "meaning": "Stillgelegte Personenkennung, die in person_id auf die fortgeführte Kennung verweist.",
+          "meaning": "Stillgelegte Personenkennung; person_id nennt die nächste Kennung in Richtung der fortgeführten.",
           "unit": "Projekt- oder Quellkennung als Text (Bedeutung des konkreten Schlüssels siehe Feldbeschreibung).",
           "source": "scripts/person_registry.py: dauerhaftes Personenregister aus Quellkennungen, Vorkommensbelegen und versionierten Korrekturen; Details in docs/stable-ids.md.",
           "license": "eigene-auswertung"
         },
         "person_id": {
-          "meaning": "Fortgeführte Personenkennung, auf die die frühere Kennung id aufgelöst wird.",
+          "meaning": "Kennung, auf die id verweist; steht sie selbst in person_aliases.id, ist die Auflösung bis zu einer Kennung außerhalb von person_aliases.id zu wiederholen.",
           "unit": "Dauerhafte Personenkennung als Text.",
           "source": "scripts/person_registry.py: dauerhaftes Personenregister aus Quellkennungen, Vorkommensbelegen und versionierten Korrekturen; Details in docs/stable-ids.md.",
           "license": "eigene-auswertung"
