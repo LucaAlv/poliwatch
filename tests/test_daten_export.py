@@ -315,7 +315,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         self.assertEqual(re.findall(r"^# .*", codebook, flags=re.MULTILINE), ["# DATA — Datenwörterbuch dieses Exports"])
         self.assertIn("## Datenstand und Auswertungsmethoden", codebook)
         self.assertIn("### Short string", codebook)
-        self.assertIn("Englischer Originaltext", codebook)
+        self.assertIn("wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer", codebook)
         self.assertNotIn("Status: decided", codebook)
         self.assertNotIn("not yet wired into the build", codebook)
         self.assertNotIn("Die sechs Rezept-CSV-Dateien", codebook)
@@ -719,7 +719,7 @@ class ExportDistributionDataTests(unittest.TestCase):
             return re.search(rf"(?ms)^### `{table}`\n(.*?)(?=^##)", codebook).group(1)
 
         self.assertIn("diese Tabelle ist die Aliasliste", section("person_aliases"))
-        self.assertIn("`id` ist die aktuelle Personenkennung", section("persons"))
+        self.assertIn("eine zurückgezogene Kennung bleibt hier als Zeile stehen", section("persons"))
         self.assertIn("`person_id`, `home_person_id` verweisen auf `persons.id`", section("person_records"))
         self.assertIn("`person_id` verweist auf `persons.id`", section("person_bindings"))
         self.assertIn("entfällt, keine Spalte verweist auf `persons.id`", section("speeches"))

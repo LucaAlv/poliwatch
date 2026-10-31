@@ -3525,7 +3525,9 @@ def _codebook_alias_line(table: dict[str, Any]) -> str:
     if table["name"] == "person_aliases":
         return "Aliasauflösung: diese Tabelle ist die Aliasliste; `id` ist eine zurückgezogene Personenkennung, `person_id` ihr Ziel."
     if table["name"] == "persons":
-        return "Aliasauflösung: `id` ist die aktuelle Personenkennung; früher ausgestellte, zurückgezogene Kennungen stehen in `person_aliases`."
+        return ("Aliasauflösung: `id` ist eine ausgestellte Personenkennung; eine zurückgezogene Kennung bleibt hier als Zeile stehen "
+                "und verweist über `person_aliases.id → person_id` auf die fortgeführte. Aktuelle Personen sind die Zeilen, deren `id` "
+                "nicht in `person_aliases.id` steht.")
     person_columns = [column["name"] for column in table["columns"] if column["fk"] == "persons.id"]
     if not person_columns:
         return "Aliasauflösung: entfällt, keine Spalte verweist auf `persons.id`."
@@ -3573,7 +3575,7 @@ def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
 def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -> list[str]:
     path = CODEBOOK_INPUT_FILES["license"]
     return ["## Quellen, Bedingungen und Transformationen", "",
-            f"Englischer Originaltext des Lizenz- und Transformationshinweises aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), unverändert ab dem Abschnitt „Short string“:", "",
+            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch:", "",
             _license_notice(license_doc), "",
             "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
             "## Diesen Export zitieren", "",
