@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.2.0] - 2026-10-31
+
+### Changed
+
+- In a vote panel's opening sentence, „namentliche Abstimmung“ links to the explainer on `bundestag.html#abstimmen`. All 246 vote leads on the reference site carry the link.
+
+### Fixed
+
+- A Fakt card shows its whole caveat, up to four lines, instead of cutting it after two. The caveats of „Die knappste Abstimmung der Woche“ and „Die meisten Abweichler der Woche“ lost their second half before. The caveat now ends just above the footer and grows upward, and the comparison text moves up to make room. The widest caveat line measures 869 of the 920 px available. The caveat texts are unchanged.
+- A vote panel says „Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe“, and the Abstimmungen archive gives an Abweichler count, only when the Fraktionen and Gruppen add up to the vote's total. Where Stimmen are missing from the groups, the panel shows the gap note once, under the vote. On the reference site all 461 cached votes add up, so no panel or archive count changes (217 archive rows, 632 Abweichler).
+- A context teaser no longer ends after an abbreviation that follows a bracket or quote, such as „(sog.“ or „(Abs.“; it cuts at the last real sentence end or at a word with „…“. 10 of 3,922 cached teasers change, all of which ended in „(sog.“.
+- An abstract cut at 10,000 characters no longer ends in a fragment of a tag or entity („<a hr“, „&am“) as visible text; only the one tag the cut splits is dropped. No cached abstract reaches the cut (the longest has 5,111 characters), so none changes.
+
 ## [0.24.1.0] - 2026-10-30
 
 ### Added

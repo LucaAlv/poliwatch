@@ -761,10 +761,13 @@ Found by the B4 ship run 3 adversarial passes (2026-10-23, Codex and a Claude su
 12. Pages and the Fakt `meiste-abweichler` / recipe `r3-abweichler` count Abweichler differently on an incomplete vote: `derive.vote_abweichler` withholds a group whose Einzelstimmen do not match its tally and excludes `Unbekannt`, the SQL (`facts.py`, the r3 recipe) does neither. Decide whether the SQL takes the page's completeness rule. 0 partial groups on the reference data.
 13. `derive.report_drucksachen` keeps the first TOP's copy of a Drucksache while persist keeps the fullest, so an empty `urheber` first can make the panel say "Ausschuss nicht ermittelt" while `r6-ausschuss` counts the committee. D15 shows 0 of 217 differ.
 14. ~~`derive.person_profile_url` accepts a `..` segment (`/abgeordnete/../apps/na/x` resolves to the Abstimmung page it exists to exclude).~~ Done 2026-10-30: a `.` or `..` path segment, also percent-encoded (`%2E%2e`), makes the URL no profile. No reference row carries one, so no stored value moves.
-15. ~~The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.~~ Done 2026-10-30: on the cut path only, a character reference the cut splits and the one tag the cut splits (opened before the cut, closed after it, read quote-aware with the scan `_strip_tags` uses) are dropped; a "<" that never closes stays text, as in an abstract that fits. No reference abstract reaches the cut, so 0 of 3,922 texts move.
+15. ~~The 10,000-character cut in `dip_text.abstract_text` can leave a cut tag or entity (`<a hr`, `&am`) as visible text; the longest reference abstract has 5,111 characters.~~ Done 2026-10-30: on the cut path only, a character reference the cut splits and the one tag the cut splits (opened before the cut, closed after it, read with the scan `_strip_tags` uses: a quote counts only as an attribute value after "=", a comment runs to its "-->") are dropped; a "<" that never closes stays text, as in an abstract that fits. No reference abstract reaches the cut, so 0 of 3,922 texts move. What the 2026-10-31 ship review left open is item 19.
 16. html.parser is quadratic on runs like `'<a "'`: 10,000 characters take about 0.9 s per call, paid per persist and per vote panel. Computing the plain text once at cache-write time removes it.
 17. Vote ids are not limited to anchor-safe characters, so an id with spaces makes an invalid `id="vote- 7 "` and an archive link that does not scroll (reference ids are numeric).
 18. `.vote-context-block:has(…)` hides the teaser with no fallback (a browser without `:has()` shows it twice), and `ul.vote-abweichler-list { display:inline }` drops the list semantics in Safari/VoiceOver.
+
+Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adversarial, a Claude subagent) in the item-15 trim, and deferred by the owner; no reference abstract reaches the cut (longest 5,111 characters):
+19. The trim reads tags by hand to guess where html.parser ends them, and three review rounds each found a shape it reads differently. Two empty a whole over-limit abstract where main keeps it: an end tag, `<?…?>` or `<!…>` holding `="` before the cut with a quote after it (`'Anfang </p class="x> ' + 'wort ' * 3000 + 'ende "> z'`: 6 characters, main 9,987), and a quote after "=" inside an unquoted value (`'<b data=x=">Anfang ' + 'wort ' * 2500 + '">'`: 0, main 9,988). A trailing `&` plus letters is dropped as a partial reference even when it is none (`GmbH&C|o.` at the cut keeps `GmbH`). The scan reads the whole raw abstract, not 10,000 characters (about 2 s and 16 MB at 2 million). The comment rule copies Python 3.13.2's html.parser (`<!-->` and `--!>` close a comment in later patch levels; see item 2). Candidate fixes: bound it (look 2,000 characters past the cut, drop only a tag that starts within 2,000 before it, check `&x` against real entity names), or revert to main's plain cut and accept the visible fragment. `_strip_tags`, the malformed-markup fallback, shares the quote rule and loses words on the end-tag/PI shapes too ("Anfang Ende"), on main as well.
 
 **Why:** 3 lets a DIP text run as a formula in a spreadsheet that opens the export. 11 is the one item that can make a public statement false.
 
@@ -1037,9 +1040,13 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 Done 2026-10-30. The card kept two lines of 76 characters of a caveat, so `knappste-abstimmung` (4 lines) and `meiste-abweichler` (5) showed half a sentence. It now shows up to four lines of 83 characters at 22px (the same line width as 76 at 24px; the widest line measured 869 of 920 px in Chrome), anchored above the footer, and the comparison block moves up only as far as a long caveat needs (`facts.card_lower_layout`). The caveat texts are unchanged, so pages and Methodik read as before. Tests pin every metric's caveat, with A3's longest coverage phrase filled in, to `CARD_CAVEAT_LINES`, the rendered caveat to the whole text, and the blocks to never overlap.
 
+**Completed:** v0.24.2.0 (2026-10-31)
+
 ### Link the vote panel's "namentlich" wording to `bundestag.html`
 
 Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" to `bundestag.html#abstimmen`, as the week radar's badge does. The link goes through `VotePanelContext.site_prefix` ("../", set beside `mp_prefix`; the only page that renders the lead is the dossier under `protocols/`), and the lead is now built from escaped parts so the link is markup while the subject stays escaped once.
+
+**Completed:** v0.24.2.0 (2026-10-31)
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
