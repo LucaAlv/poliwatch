@@ -149,6 +149,21 @@ class AbstractTextTests(unittest.TestCase):
         self.assertEqual(abstract_text("a < b &"), "a < b &")
         self.assertEqual(abstract_text("Ende <a hr"), "Ende <a hr")
 
+    # Value: protects=a "<" whose tag, comment, declaration or processing instruction never closes reads as text on every Python; fails_when=html.parser's 2025 end-of-input rule (3.11.13, 3.12.11, 3.13.4) drops "<a hr" and swallows "<!-- x" while older patch releases keep both; why_new=CI on PR #120 failed on newer patch releases while local 3.13.2 passed; seam=none
+    def test_markup_that_never_closes_is_text_on_every_python(self) -> None:
+        for raw in ["x </a hr", "x <!x", "x <?pi", "vor <!-- offen", "a <b> c <d e"]:
+            with self.subTest(raw=raw):
+                self.assertEqual(abstract_text(raw), raw.replace("<b> ", ""))
+        # A marked section takes the fallback on every Python: older releases raise on it, newer read a comment.
+        self.assertEqual(abstract_text("a<![CDATA[ x ]]>b <p>c"), "a b c")
+        self.assertEqual(abstract_text("x <![CDATA[ y"), "x <![CDATA[ y")
+        # A comment ends at its first "-->" on every Python; newer releases also end one at "--!>" or "<!-->".
+        self.assertEqual(abstract_text("a <!-- x --!> y --> b"), "a b")
+        self.assertEqual(abstract_text("a <!--> b --> c"), "a c")
+        # A comment still parts the text: no entity spliced across it, a marked section inside it stays a comment.
+        self.assertEqual(abstract_text("&am<!-- x -->p;"), "&amp;")
+        self.assertEqual(abstract_text("a<!--[if mso]><![endif]-->b<p>c"), "ab\n\nc")
+
 
 class AbstractTeaserTests(unittest.TestCase):
     def test_a_short_first_paragraph_is_the_teaser(self) -> None:

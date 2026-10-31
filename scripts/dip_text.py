@@ -92,8 +92,8 @@ def _drop_cut_markup(kept: str, rest: str) -> str:
     closes before the cut is passed over whole, a "<" inside its quoted
     attribute included; a "<" whose tag never closes stays text, as it does
     in an abstract that fits; the one tag that closes after the cut goes.
-    A comment runs to its "-->", as html.parser reads it; one that never
-    closes is text to the end."""
+    A comment runs to its first "-->", as ``_parser_input`` reads it; the
+    "<!--" of one that never closes is text."""
     text = kept + rest
     closes = _tag_closes(text)
     i = 0
@@ -101,7 +101,8 @@ def _drop_cut_markup(kept: str, rest: str) -> str:
         if text.startswith("<!--", i):
             end = text.find("-->", i + 4)
             if end == -1:
-                break
+                i += 1
+                continue
             if end + 3 > len(kept):
                 kept = kept[:i]
                 break
@@ -118,6 +119,39 @@ def _drop_cut_markup(kept: str, rest: str) -> str:
     if partial and follower and (follower.isalnum() or follower in "#;"):
         kept = kept[: partial.start()]
     return kept
+
+
+def _parser_input(text: str) -> str:
+    """``text`` as every html.parser release reads it alike: each comment, ended
+    at its first "-->", emptied to "<!---->" (it still parts the text around it,
+    so "&am<!-- -->p;" stays two runs), and each "<" that opens a tag or comment that never
+    closes written as "&lt;", so it reads as text. The 2025 security releases
+    (3.11.13, 3.12.11, 3.13.4) changed both: older releases hand an unclosed
+    "<a hr" or "<!-- x" back as text, newer ones drop the tag and read the
+    comment to the end, and end a comment at "--!>" or "<!-->" too. Tags close
+    as ``_strip_tags`` reads them and are passed over whole."""
+    closes = _tag_closes(text)
+    parts: list[str] = []
+    start = i = 0
+    while i < len(text) - 1:
+        if text.startswith("<!--", i):
+            end = text.find("-->", i + 4)
+            if end != -1:
+                parts.append(text[start:i])
+                parts.append("<!---->")
+                start = i = end + 3
+                continue
+        elif text[i] == "<" and text[i + 1] in _TAG_START and closes[i + 1] != -1:
+            i = closes[i + 1] + 1
+            continue
+        elif text[i] != "<" or text[i + 1] not in _TAG_START:
+            i += 1
+            continue
+        parts.append(text[start:i])
+        parts.append("&lt;")
+        start = i = i + 1
+    parts.append(text[start:])
+    return "".join(parts)
 
 
 class _AbstractParser(HTMLParser):
@@ -168,12 +202,18 @@ def abstract_text(raw: Any) -> str:
     raw = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), raw)
     raw = _OVERLONG_CHARREF.sub("\ufffd", raw)
     parser = _AbstractParser()
-    try:
-        parser.feed(raw)
-        parser.close()
-        malformed = parser.skipping > 0  # an unclosed <script> or <style> would swallow the rest
-    except AssertionError:  # html.parser's answer to markup it cannot read, e.g. "<![oops]>"
-        malformed = True
+    # A marked section ("<![CDATA[", "<![oops]>") outside a comment goes to the fallback
+    # unread: html.parser before the 2025 security releases raises on most of them,
+    # later ones read a comment. Word's "<!--[if mso]>…<![endif]-->" is a comment.
+    parser_input = _parser_input(raw)
+    malformed = "<![" in parser_input
+    if not malformed:
+        try:
+            parser.feed(parser_input)
+            parser.close()
+            malformed = parser.skipping > 0  # an unclosed <script> or <style> would swallow the rest
+        except AssertionError:  # html.parser's answer to other markup it cannot read
+            malformed = True
     if malformed:
         # Keep the words rather than lose them: tags out, entities read, one paragraph.
         text = _strip_tags(_SKIPPED_BLOCK.sub(" ", _COMMENT.sub(" ", raw)))

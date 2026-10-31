@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - A vote panel says „Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe“, and the Abstimmungen archive gives an Abweichler count, only when the Fraktionen and Gruppen add up to the vote's total. Where Stimmen are missing from the groups, the panel shows the gap note once, under the vote. On the reference site all 217 votes add up, so no panel or archive count changes (217 archive rows, 632 Abweichler).
 - A context teaser no longer ends after an abbreviation that follows a bracket or quote, such as „(sog.“ or „(Abs.“; it cuts at the last real sentence end or at a word with „…“. 10 of 3,922 cached teasers change, all of which ended in „(sog.“.
 - An abstract cut at 10,000 characters no longer ends in a fragment of a tag or entity („<a hr“, „&am“) as visible text; only the one tag the cut splits is dropped. No cached abstract reaches the cut (the longest has 5,111 characters), so none changes.
+- An abstract reads the same on every Python patch release. html.parser's 2025 security releases (3.11.13, 3.12.11, 3.13.4) drop a tag that never closes („Ende <a hr“ became „Ende“) and read an unclosed comment to the end; older releases keep both as text. Each comment is now removed and each never-closing „<“ escaped before parsing, so both keep the text, and an abstract with a marked section („<![CDATA[“) always takes the plain-text fallback. 0 of 3,922 cached abstracts change on either release.
 
 ## [0.24.1.0] - 2026-10-30
 
