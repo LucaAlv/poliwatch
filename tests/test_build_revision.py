@@ -138,6 +138,12 @@ class AuthoredInputsTests(unittest.TestCase):
         self.assertIn("new.md", rev.authored_inputs_problem(self.repo, (*self.paths, "new.md")))
         self.assertIn("missing.md", rev.authored_inputs_problem(self.repo, (*self.paths, "missing.md")))
 
+    # Value: protects=a checkout or rebase that only touches an authored input does not block a release the revision calls clean; fails_when=the input check reports stat-dirty files that resolve_commit treats as clean; why_new=plumbing diff-index --name-only does not compare content; seam=authored_inputs_problem; no_claim=content edits
+    def test_a_touched_but_unchanged_input_is_not_a_problem(self) -> None:
+        os.utime(self.repo / "docs/m.md", (1, 1))
+        self.assertIsNone(rev.authored_inputs_problem(self.repo, self.paths))
+        self.assertRegex(rev.resolve_commit(self.repo), r"^[0-9a-f]{12}$")
+
     # Value: protects=unrelated tracked edits do not block a release by themselves (the revision gate covers them) and no git blocks it; fails_when=an edit to another file trips the input check or git failure passes it; why_new=the two gates are separate; seam=authored_inputs_problem; no_claim=revision gate
     def test_other_edits_are_not_this_gates_business_but_missing_git_is(self) -> None:
         (self.repo / "other.txt").write_text("x\n", encoding="utf-8")

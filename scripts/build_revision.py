@@ -120,10 +120,12 @@ def authored_inputs_problem(repo_root: Path, relative_paths: Sequence[str]) -> s
         untracked = [path for path in relative_paths if path not in tracked]
         if untracked:
             return f"not tracked by git: {', '.join(untracked)}"
-        names = _git(repo_root, "diff-index", "--name-only", "-z", "--no-renames", "HEAD", "--", *relative_paths, timeout=30)
+        # A patch, not --name-only: plumbing does not refresh the index, so a
+        # file that was only touched lists as changed but has an empty patch.
+        patch = _git(repo_root, *_DIFF_FLAGS, "HEAD", "--", *relative_paths, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"git could not check them: {exc}"
-    changed = [os.fsdecode(name) for name in names.split(b"\0") if name]
-    if changed:
-        return f"differ from HEAD: {', '.join(changed)}"
+    if patch:
+        changed = sorted({os.fsdecode(m) for m in re.findall(rb"^diff --git a/(.+?) b/", patch, re.M)})
+        return f"differ from HEAD: {', '.join(changed) or ', '.join(relative_paths)}"
     return None
