@@ -2142,6 +2142,26 @@ class CardTests(StoreCase):
         # The caveat's line width in characters of its font size, scaled to the 26px footer.
         self.assertLessEqual(len(footer), facts.CARD_CAVEAT_WIDTH * facts.CARD_CAVEAT_SIZE // facts.CARD_FOOTER_SIZE)
 
+    # Value: protects=render_card places the topic, comparison and caveat text at card_lower_layout's baselines, so the rendered four-line caveat ends at CARD_CAVEAT_LAST_Y and clears the comparison above it; fails_when=render_card goes back to fixed y values and the long caveat runs into the comparison; why_new=test_the_lower_blocks_never_overlap checks the layout function, not that the SVG uses it; seam=none; no_claim=real glyph metrics
+    def test_the_rendered_card_places_its_caveat_below_the_comparison(self) -> None:
+        self.seed([{"document_number": "21/1", "date": "2025-03-25", "votes": [MeisteAbweichlerTests.VOTE]}])
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        for metric_id in (ABWEICHLER, KNAPPSTE):
+            with self.subTest(metric=metric_id):
+                root = ET.fromstring(facts.render_card(self.one(metric_id)))
+                block = {
+                    name: root.find(f".//svg:text[@class='{name}']", ns) for name in ("comparison", "caveat")
+                }
+                spans = {name: len(node.findall("svg:tspan", ns)) for name, node in block.items()}
+                self.assertGreater(spans["caveat"], 2)  # the card now shows more than the old two lines
+                layout = facts.card_lower_layout(comparison_lines=spans["comparison"], caveat_lines=spans["caveat"])
+                self.assertEqual(int(block["comparison"].get("y")), layout.comparison_y)
+                self.assertEqual(int(block["caveat"].get("y")), layout.caveat_y)
+                caveat_last = layout.caveat_y + (spans["caveat"] - 1) * facts.CARD_CAVEAT_LINE_HEIGHT
+                self.assertEqual(caveat_last, facts.CARD_CAVEAT_LAST_Y)
+                comparison_last = layout.comparison_y + (spans["comparison"] - 1) * facts.CARD_COMPARISON_LINE_HEIGHT
+                self.assertGreaterEqual(layout.caveat_y - comparison_last, facts.CARD_COMPARISON_CAVEAT_GAP)
+
     # Value: protects=every metric's caveat fits the card whole, coverage slot filled with the longest phrase it can take; fails_when=a caveat grows past CARD_CAVEAT_LINES and wrap_lines cuts it mid-sentence on the card while page and Methodik show it whole; why_new=knappste-abstimmung (4 lines) and meiste-abweichler (5) were cut to 2 (measured 2026-10-30); seam=none; no_claim=real glyph metrics
     def test_every_caveat_fits_on_the_card(self) -> None:
         for metric in facts.REGISTRY + facts.MONTHLY_REGISTRY:
