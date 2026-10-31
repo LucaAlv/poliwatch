@@ -181,3 +181,44 @@ The run root retains the baseline/control/working sites and all logs. Preparatio
 ```
 
 Recommended next session: **quotation fidelity before coverage**. Add real fixtures/provenance for `18/2742`, `18/3154`, `19/16794`; preserve the hard hyphen and all nine bullet boundaries, remove only proven printer matter, or return `no_passage` where source fidelity cannot be established. Bump the extractor and re-audit this saved 91-document corpus with **zero incorrect accepted passages**; do not reconstruct absent bullets by guessing. Then a separate anchor follow-up can address the measured ten interposed-clause misses (for example `20/6712`, `20/10050`, `20/1336`) and `20/6708`, preserving the **complete sentence opening**. Re-run the cloud inverted cases `20/4666`, `19/30983` before supporting them. Closure still requires ≥90% coverage with all denominators explicit and zero incorrect passages, plus required checks. No commit, push, merge or deployment was performed.
+
+## Run 4: source fidelity and interposed anchors (2026-10-31, extractor 7 to 9)
+
+Offline replay of `extract_forderung` over the cached texts of the saved 91-document corpus (`.context/b4-local-20261029-163417/reference-documents/*.dip.txt`, `midperiod/texts/*.txt`; read only, no network, no site build, no store touched). Source hashes in [the audit CSV](b4-local-audit-2026-10-29.csv) are unchanged; the CSV itself is the 2026-10-29 record and was not rewritten.
+
+**Step a, source fidelity (EXTRACTOR_VERSION 8).** Each of the three incorrect quotes has a real DIP-text excerpt fixture (`tests/fixtures/antrag-text/dip-1802742.txt`, `dip-1803154.txt`, `dip-1916794.txt`, provenance in `a1-source-manifest.json`) and is now refused or quoted correctly:
+
+| Document | Defect | Now |
+|---|---|---|
+| 18/2742 | `jesidisch-` + `kurdischen` joined to `jesidischkurdischen` | `no_passage`: a lowercase line-end hyphen after a part of 5+ letters that the text also uses as a word (`jesidischen`) is a break only where the text spells the joined word |
+| 18/3154 | nine bullet markers lost, list flattened | `no_passage`: an item line opening with a bare space after a finished clause is a dropped marker; none is reconstructed |
+| 19/16794 | printer imprint (`Gesamtherstellung`, `Vertrieb`, `ISSN`) between demands 3 and 4 | quoted without the imprint (295 characters fewer, otherwise identical); imprint lines are dropped like running heads |
+
+Over the 91 documents, 66 to 64 extracted; the only changes are these three. Incorrect accepted passages 3 to 0. Trade-off, measured: the hyphen rule refuses only 18/2742 here (one further lowercase join without evidence in the corpus, a URL slug in 19/17515, stays quoted, already audited correct, because its left part is no word); on text with more unattested compounds it will refuse more.
+
+**Step b, interposed anchors (EXTRACTOR_VERSION 9).** The anchor accepts a punctuation-free clause between `die Bundesregierung` and `auf` before a comma or colon, opening with `im Rahmen`, `unter Einhaltung`, `zur` or `zum`, and `dazu auf`; the opening paragraph keeps the whole sentence. Fixtures: 20/6708 (`dazu`), 20/6712, 20/10375, 20/13417; also 20/13415 and 20/2345 below. Exactly the ten reference documents the audit named as interposed-anchor or `dazu` misses become extractable (20/6708, 20/6712, 20/10050, 20/10375, 20/11393, 20/11758, 20/13415, 20/13416, 20/13417, 20/1336); nothing else changes. 20/2345, also an interposed miss, is refused (below).
+
+Each new quote was checked against the PDF `pdftotext -layout` text: the whole quote matches word for word (whitespace and hyphen-insensitive) and ends directly before the date line; list-label sequences were read for all ten; every line-end hyphen decision inside the ten spans was listed and read (all syllable breaks or elisions except the defect below). Two defects found this way, fixed with a failing fixture first:
+
+- **20/13415**: the list runs `a)` to `z)` then `aa)` to `gg)`; `_successor("z")` was `{`, so `aa)` to `ff)` were folded into demand `z)`. `aa)` is now the successor of `z)`.
+- **20/2345**: DIP's text reads `Überoder Unterforderung` (line 99 of the saved body) where the PDF prints `Über-` / `oder Unterforderung`; the hyphen was dropped at the source and the conjunction glued. A capitalised fragment of 3+ letters glued to `oder` is refused (`und` cannot be told apart: Bund, Grund, Hintergrund; a scan of all 74 quotes finds no other glued token). Source defect for a correction request; `docs/source-errors.md` lives on `worktree-a3-plan`, so it is not added here.
+
+**Cloud inverted cases `20/4666`, `19/30983`: not supported.** Their texts are not in the saved corpus and no network was used, so they could not be re-checked; the anchor stays Bundesregierung-only and the inverted form stays `no_passage`.
+
+### Re-audit, explicit denominators (extractor 9)
+
+| Population | Candidates | Extracted | All-candidate | With demands section | Demands-section coverage |
+|---|---:|---:|---:|---:|---:|
+| Reference cohort (all context blocks) | 71 | 50 to **60** | 50/71 (70.4%) to 60/71 (**84.5%**) | 68 | 50/68 (73.5%) to 60/68 (**88.2%**) |
+| Wholly abstract-less reference votes | 60 | 43 to **53** | 43/60 to 53/60 (**88.3%**) | 59 | 43/59 to 53/59 (**89.8%**) |
+| Mid-period WP 18/19 sample | 20 | 16 to **14** | 16/20 to 14/20 (**70.0%**) | 16 | 16/16 to 14/16 (**87.5%**) |
+| All 91 | 91 | 66 to **74** | 66/91 to 74/91 (**81.3%**) | 84 | 66/84 to 74/84 (**88.1%**) |
+
+Incorrect accepted passages: **3 to 0** (reference 0, mid-period 3 to 0). Demands-section judgments are those of the 2026-10-29 audit and were not redone; the two newly refused mid-period documents and 20/2345 stay in the demands denominators as misses.
+
+Derived, not site-measured: each of the ten newly extractable reference documents belongs to one vote, and each of those votes has that one candidate and was a wholly abstract-less `no_passage` vote, so the narrow-cohort description count would move **196/217 to 206/217** (43/64 to 53/64 of the abstract-less votes). No site build or store replay was run; `votes.passage_state` of a store persisted with extractor 7 is refused until `--offline --repersist`.
+
+**Gate:** zero incorrect passages holds on this corpus, but no population reaches 90% (best 89.8% of demand-bearing abstract-less documents; 88.2% for the reference cohort). The TODO stays open.
+
+Remaining misses (17 of 91 documents: 10 demand-bearing, 7 without a demands section): footnotes in the passage 20/9155, 21/354, 21/4750, 21/2553 (fail closed); `möge beschließen` 20/10055; `fordert` without a Bundesregierung object 20/14699; direct motion to revoke a regulation 20/3596; source defect 20/2345; lost structure refused 18/2742, 18/3154; no applicable demands section (not in the demands denominators) 20/9775, 20/10194, 20/14150, 18/4689, 19/17095, 19/17032, 19/17286. Reaching 90% of the reference cohort (62/68) needs two more of the footnote, `möge beschließen`, no-object or revoke documents, each a separate rule with its own fidelity risk.
+
