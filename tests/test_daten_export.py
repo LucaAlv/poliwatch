@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import dataclasses
 import gzip
 import hashlib
 import io
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -26,7 +28,116 @@ from stable_ids import stable_key
 READINESS = {"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"}
 
 
+def _r2_limited_to_4() -> tuple[dict, ...]:
+    return tuple({**r, "sql": r["sql"].replace("LIMIT 5", "LIMIT 4")} if r["id"] == "r2-redeanteil-fraktion" else r for r in b.RECIPES)
+
+
+def authored(field: str) -> Path:
+    return b.REPO_ROOT / b.CODEBOOK_INPUT_FILES[field]
+
+
 class ExportHelpersTests(unittest.TestCase):
+    # Value: protects=the export's authored codebook inputs point at committed files; fails_when=an input is renamed or moved without updating CODEBOOK_INPUT_FILES, which would fail every export run; why_new=other tests read the inputs through the mapping; seam=none; no_claim=input content
+    def test_codebook_inputs_are_committed_files(self) -> None:
+        for field in b.CODEBOOK_INPUT_FILES:
+            self.assertTrue(authored(field).is_file(), field)
+
+    # Value: protects=DATA.md names the codes and period units the store actually holds; fails_when=result_scope is documented with German labels instead of its codes, or min_history_weeks as weeks while monthly metrics store months; why_new=both definitions were wrong until the 2026-10-30 review; seam=none; no_claim=other columns' wording
+    def test_codebook_matches_stored_codes_and_period_units(self) -> None:
+        dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        scope = dictionary["votes"]["columns"]["result_scope"]
+        for code in ("application", "proposition"):
+            self.assertIn(code, scope["unit"])
+            self.assertIn(code, scope["meaning"])
+        self.assertTrue(any(metric["min_history_weeks"] == facts.MIN_HISTORY_MONTHS for metric in facts.MONTHLY_REGISTRY))
+        history = dictionary["fact_metrics"]["columns"]["min_history_weeks"]
+        self.assertIn("Monate", history["unit"])
+        self.assertIn("Monatskennzahlen", history["meaning"])
+        self.assertIn("vor Einführung des Felds", scope["unit"])
+        self.assertIn("chancellor_election", dictionary["votes"]["columns"]["procedure_type"]["unit"])
+
+    # Value: protects=a column the project computes is licensed and tagged as our own work, not as source data; fails_when=a derived column (result_scope, procedure_type, person_id, aw_match) falls back to its table's source tag or layer; why_new=the layer guard sees only tag-layer contradictions, and these columns were tagged as source until the 2026-10-30 review; seam=none; no_claim=columns whose source text does not start with Projektableitung
+    def test_project_derived_columns_carry_our_own_layer_and_tag(self) -> None:
+        dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        for table, column in (("votes", "result_scope"), ("votes", "procedure_type"), ("mps", "person_id"), ("mps", "aw_match")):
+            with self.subTest(column=f"{table}.{column}"):
+                self.assertEqual(b.column_source(table, column), "derived")
+                self.assertEqual(dictionary[table]["columns"][column]["license"], "eigene-auswertung")
+        for table, entry in dictionary.items():
+            for column, definition in entry["columns"].items():
+                if definition["source"].startswith("Projektableitung"):
+                    with self.subTest(derived=f"{table}.{column}"):
+                        self.assertTrue(definition["license"].startswith("eigene-"), definition["license"])
+        for column in ("display_name", "party_id"):
+            self.assertEqual(dictionary["mps"]["columns"][column]["license"], "dip-oder-bundestag-abstimmungen")
+
+    # Value: protects=definitions corrected against the real store (source kind, unit, created_at semantics) and the methods doc quoting CONTEXT.md/ADRs verbatim; fails_when=a correction is reverted (e.g. created_at of re-persisted tables called a first-ingest time) or a quotation drifts from its source; why_new=completeness checks cannot see wrong content; seam=none; no_claim=every other definition is true
+    def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
+        dictionary = json.loads(authored("dictionary").read_text())["tables"]
+        # replace_protocol deletes and re-inserts a sitting's rows; and every
+        # store rebuild (online build, --repersist) stages a fresh store, so no
+        # created_at is a first-ingest time.
+        for table in ("agenda_items", "speeches", "contributions"):
+            self.assertIn("gleich updated_at", dictionary[table]["columns"]["created_at"]["meaning"])
+        created = {name: entry["columns"]["created_at"]["meaning"] for name, entry in dictionary.items() if "created_at" in entry["columns"]}
+        self.assertGreaterEqual(len(created), 10)
+        for table, meaning in created.items():
+            with self.subTest(table=table):
+                self.assertNotIn("erstmals", meaning)
+                self.assertIn("kein Zeitpunkt der ersten Erfassung", meaning)
+        self.assertIn("neu auf", created["protocols"])
+        self.assertIn("DIP-API", dictionary["proceedings"]["columns"]["title"]["source"])
+        self.assertIn("XML", dictionary["speeches"]["columns"]["text"]["source"])
+        self.assertIn("UTC", dictionary["speeches"]["columns"]["created_at"]["unit"])
+        self.assertIn("nicht aus einer externen Quelle", dictionary["speeches"]["columns"]["created_at"]["source"])
+        self.assertIn("0 bis einschließlich 1", dictionary["facts"]["columns"]["percentile"]["unit"])
+        self.assertIn("Kandidaten", dictionary["facts"]["columns"]["week_n"]["meaning"])
+        self.assertIn("Bundestag", dictionary["mps"]["columns"]["profile_url"]["source"])
+        for table in dictionary.values():
+            for column in table["columns"].values():
+                self.assertNotIn("übernommen oder berechnet gemäß", column["meaning"])
+        root = Path(b.__file__).resolve().parent.parent
+        sources = "\n".join((root / path).read_text() for path in ("CONTEXT.md", "docs/adr/0001-count-speeches-by-sprechrolle.md", "docs/adr/0002-kurzinterventionen-are-not-reden.md"))
+        quotes = re.findall("“([^“”]+)”", authored("methods").read_text())
+        self.assertGreaterEqual(len(quotes), 10)
+        for quote in quotes:
+            self.assertIn(quote, sources)
+
+    # Value: protects=an embedded document's code block keeps its "#" lines while real headings move down a level; fails_when=demotion ignores fences and a shell comment becomes a DATA.md heading; why_new=the embedded docs had no code block, so no test held one; seam=none; no_claim=other Markdown block types
+    def test_heading_demotion_leaves_fenced_code_alone(self) -> None:
+        text = "## Teil\n```sh\n# Kommentar\n```\n~~~~\n# auch Code\n~~~\n# noch Code\n~~~~\n### Unterteil\n"
+        self.assertEqual(
+            b._demote_headings(text).split("\n"),
+            ["### Teil", "```sh", "# Kommentar", "```", "~~~~", "# auch Code", "~~~", "# noch Code", "~~~~", "#### Unterteil"],
+        )
+
+    # Value: protects=documents.id is described as the project key docs/stable-ids.md defines, not a DIP id; fails_when=the dictionary source again calls it a DIP-API id; why_new=the adversarial review found the stale text on 2026-10-30; seam=none; no_claim=other id columns
+    def test_documents_id_source_names_the_project_key(self) -> None:
+        source = json.loads(authored("dictionary").read_text())["tables"]["documents"]["columns"]["id"]["source"]
+        self.assertIn("Herausgeber", source)
+        self.assertNotIn("DIP-API: id", source)
+
+    def test_recipes_hash_ignores_html_only_column_keys(self) -> None:
+        display_only = tuple(
+            {**recipe, "columns": tuple({**column, "align": "text", "truncate": 5, "hidden": False} for column in recipe["columns"])}
+            for recipe in b.RECIPES
+        )
+        self.assertEqual(b._recipes_hash(display_only), b._recipes_hash(b.RECIPES))
+        renamed = ({**b.RECIPES[0], "columns": ({**b.RECIPES[0]["columns"][0], "meaning": "anders"},) + b.RECIPES[0]["columns"][1:]},)
+        self.assertNotEqual(b._recipes_hash(renamed + b.RECIPES[1:]), b._recipes_hash(b.RECIPES))
+
+    def test_recipe_csv_counts_unencodable_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recipe.csv"
+            self.assertEqual(b._write_recipe_csv(path, ["a", "b"], [{"a": "x\udc80", "b": None}, {"a": 1, "b": "ok"}]), 1)
+            self.assertEqual(path.read_text(encoding="utf-8"), "a,b\nx?,\n1,ok\n")
+
+    def test_recipe_output_definitions_name_no_other_recipe(self) -> None:
+        for recipe in b.RECIPES:
+            for column in recipe["columns"]:
+                with self.subTest(recipe=recipe["id"], column=column["name"]):
+                    self.assertIsNone(re.search(r"\br[1-6]\b", column["meaning"]))
+
     def test_format_size_de_uses_german_decimal_comma(self) -> None:
         self.assertEqual(b.format_size_de(512), "512 B")
         self.assertEqual(b.format_size_de(47_200_000), "45,0 MB")
@@ -89,6 +200,541 @@ class ExportDistributionDataTests(unittest.TestCase):
         for recipe in manifest["recipes"]:
             with self.subTest(recipe=recipe["id"]):
                 self.assertGreaterEqual(len(recipe["rows"]), 1, recipe["empty_reason"])
+
+    def test_recipe_csvs_replay_the_distribution_snapshot_in_sql_order(self) -> None:
+        manifest = self.export(tag="v-test")
+        gen_dir = self.exports_dir / manifest["generation"]
+        snapshot = self.tmp / "recipe-replay.sqlite"
+        snapshot.write_bytes(gzip.decompress((gen_dir / manifest["files"][0]["name"]).read_bytes()))
+        inventory = {entry["name"]: entry for entry in manifest["files"]}
+        with contextlib.closing(sqlite3.connect(snapshot)) as conn:
+            conn.row_factory = sqlite3.Row
+            for recipe in manifest["recipes"]:
+                with self.subTest(recipe=recipe["id"]):
+                    original = b.RECIPES_BY_ID[recipe["id"]]
+                    self.assertEqual(recipe["sql"], original["sql"])
+                    self.assertTrue(recipe["sql"].endswith("LIMIT 5;"))
+                    cursor = conn.execute(recipe["sql"])
+                    columns = [column[0] for column in cursor.description]
+                    rows = [dict(row) for row in cursor.fetchall()]
+                    self.assertEqual(recipe["columns"], columns)
+                    self.assertEqual(recipe["rows"], rows)
+                    path = gen_dir / recipe["file"]
+                    with path.open(encoding="utf-8", newline="") as handle:
+                        csv_rows = list(csv.reader(handle))
+                    self.assertEqual(csv_rows, [columns] + [["" if row[name] is None else str(row[name]) for name in columns] for row in rows])
+                    entry = inventory[recipe["file"]]
+                    self.assertEqual(entry["kind"], "recipe_csv")
+                    self.assertEqual(entry["rows"], len(rows))
+                    self.assertEqual(entry["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+                    self.assertEqual(entry["bytes"], path.stat().st_size)
+        r5 = manifest["recipes"][4]
+        self.assertEqual(r5["columns"], ["proceeding_id", "title", "typ", "reden", "sitzungen", "erste_drucksache"])
+        with (gen_dir / r5["file"]).open(newline="", encoding="utf-8") as handle:
+            self.assertEqual(list(csv.reader(handle))[1][3:], ["7", "2", "20/100"])
+
+    def test_recipe_csv_keeps_quotes_newlines_unicode_formula_text_and_nulls(self) -> None:
+        text = '=1,"Grüße"\nzweite Zeile'
+        changed = ({**b.RECIPES[0], "sql": "SELECT " + "'" + text + "' AS display_name, NULL AS fraktion, '' AS mp_id;"},)
+        manifest = self.export(recipes=changed)
+        recipe = manifest["recipes"][0]
+        with (self.exports_dir / manifest["generation"] / recipe["file"]).open(encoding="utf-8", newline="") as handle:
+            self.assertEqual(list(csv.reader(handle)), [["display_name", "fraktion", "mp_id"], [text, "", ""]])
+        self.assertIsNone(recipe["rows"][0]["fraktion"])
+        self.assertEqual(recipe["rows"][0]["mp_id"], "")
+
+    def test_empty_store_has_header_only_recipes_and_explicit_empty_coverage(self) -> None:
+        database = self.tmp / "empty.sqlite"
+        conn = pulse_store.connect(database)
+        pulse_store.initialize(conn)
+        conn.close()
+        manifest = b.export_distribution_data(database, self.exports_dir)
+        gen_dir = self.exports_dir / manifest["generation"]
+        codebook = (gen_dir / "DATA.md").read_text()
+        self.assertEqual(manifest["coverage"]["wahlperioden"], [])
+        self.assertIn("Leerer Datenbestand", codebook)
+        self.assertIn("lokaler Export", codebook)
+        self.assertIn("Revision unbekannt", codebook)
+        self.assertIn("keinen Versions-DOI", codebook)
+        self.assertNotIn("https://github.com/", codebook.split("## Diesen Export zitieren")[1])
+        snapshot = self.tmp / "empty-replay.sqlite"
+        snapshot.write_bytes(gzip.decompress((gen_dir / manifest["files"][0]["name"]).read_bytes()))
+        with contextlib.closing(sqlite3.connect(snapshot)) as conn:
+            for recipe in manifest["recipes"]:
+                with self.subTest(recipe=recipe["id"]):
+                    cursor = conn.execute(recipe["sql"])
+                    columns = [column[0] for column in cursor.description]
+                    self.assertEqual(cursor.fetchall(), [])
+                    self.assertEqual(recipe["columns"], columns)
+                    with (gen_dir / recipe["file"]).open(encoding="utf-8", newline="") as handle:
+                        self.assertEqual(list(csv.reader(handle)), [columns])
+                    self.assertEqual(recipe["rows"], [])
+                    # The whole line, so a reason that ends in a period does not get a second one.
+                    self.assertIn(f"Leeres Ergebnis: {recipe['empty_reason'].rstrip('.')}.\n", codebook)
+                    entry = next(file for file in manifest["files"] if file["name"] == recipe["file"])
+                    self.assertEqual(entry["rows"], 0)
+                    self.assertEqual(entry["sha256"], b._hash_file(gen_dir / recipe["file"]))
+
+    def test_codebook_describes_all_real_columns_and_snapshot_coverage(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE protocols SET document_number = '21/101', date = '2025-05-22' WHERE id = '5802'")
+            conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
+        b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
+        manifest = self.export(tag="v-test", catalog_count=100, dossier_count=2)
+        codebook_path = self.exports_dir / manifest["generation"] / "DATA.md"
+        codebook = codebook_path.read_text()
+        self.assertIn("Release v-test", codebook)
+        self.assertIn("`abc123`", codebook)
+        self.assertIn(f"Store-Schema: {pulse_store.SCHEMA_VERSION}", codebook)
+        self.assertIn(f"Schlüsselversion: {b.KEY_VERSION}", codebook)
+        payload = json.loads(authored("dictionary").read_text())
+        dictionary = payload["tables"]
+        for table in manifest["tables"]:
+            self.assertIn(f"### `{table['name']}`", codebook)
+            self.assertIn(dictionary[table["name"]]["meaning"], codebook)
+            for column in table["columns"]:
+                meta = dictionary[table["name"]]["columns"][column["name"]]
+                meta = {**meta, "license": payload["licenses"][meta["license"]]}
+                for key in ("meaning", "unit", "source", "license"):
+                    self.assertTrue(meta[key].strip())
+                    self.assertIn(meta[key].replace("|", "\\|").replace("\n", "<br>"), codebook)
+                self.assertNotEqual(column["name"], "paragraphs_json")
+        observed = manifest["coverage"]["wahlperioden"]
+        self.assertEqual([(row["wp"], row["sittings"], row["speeches"], row["agenda_items"], row["votes"], row["vote_members"]) for row in observed], [("20", 1, 4, 1, 1, 1), ("21", 1, 3, 1, 1, 1)])
+        self.assertEqual(observed[0]["date_from"], "2024-05-15")
+        self.assertEqual(observed[1]["date_to"], "2025-05-22")
+        self.assertIn("Erwerbsvollständigkeit je Wahlperiode: **unbekannt**", codebook)
+        self.assertIn("Katalog 100, Dossiers 2", codebook)
+        self.assertIn("Bausteine: Namentliche Abstimmungen erfasst; abgeordnetenwatch-Profile nicht erfasst; MdB-Kader erfasst.", codebook)
+        self.assertNotIn("{'", codebook)
+        self.assertIn("Aliasauflösung: `canonical_id` verweist auf `persons.id`", codebook)
+        self.assertIn("Aliasauflösung: entfällt", codebook)
+        self.assertIn("Sitzung mit Dossier", codebook)
+        self.assertIn("docs/adr/0001-count-speeches-by-sprechrolle.md", codebook)
+        self.assertIn("Weiterverbreitung", codebook)
+        self.assertEqual(re.findall(r"^# .*", codebook, flags=re.MULTILINE), ["# DATA — Datenwörterbuch dieses Exports"])
+        self.assertIn("## Datenstand und Auswertungsmethoden", codebook)
+        self.assertIn("### Short string", codebook)
+        self.assertIn("wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer", codebook)
+        self.assertNotIn("Status: decided", codebook)
+        self.assertNotIn("not yet wired into the build", codebook)
+        self.assertNotIn("Die sechs Rezept-CSV-Dateien", codebook)
+        self.assertIn("Bundestag-Puls (Arbeitstitel; der Produktname ist nicht festgelegt), Release v-test", codebook)
+        self.assertNotIn("Einzelstimme", codebook)
+        for path in b.CODEBOOK_INPUT_FILES.values():
+            self.assertIn(f"- `{path}`: `{manifest['codebook_inputs'][path]}`", codebook)
+        for recipe in manifest["recipes"]:
+            self.assertIn(recipe["sql"], codebook)
+            self.assertIn(recipe["file"], codebook)
+            self.assertEqual(recipe["method"], b.RECIPES_BY_ID[recipe["id"]]["method"])
+            self.assertIn(recipe["method"], codebook)
+        entry = next(file for file in manifest["files"] if file["kind"] == "codebook")
+        self.assertEqual(entry["sha256"], b._hash_file(codebook_path))
+        self.assertNotIn(entry["sha256"], codebook)
+
+    def test_missing_dictionary_entries_fail_by_name_and_preserve_publication(self) -> None:
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        inputs = b._read_codebook_inputs()
+
+        def export_with(dictionary, message):
+            changed = dataclasses.replace(inputs, dictionary=json.dumps(dictionary))
+            with mock.patch.object(b, "_read_codebook_inputs", return_value=changed):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.export(force=True)
+            self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+
+        for table, column in (("speeches", None), ("speeches", "meaning"), ("speeches", "text"), ("mp_canonical", "has_page"), ("datenstand", "tag")):
+            dictionary = json.loads(inputs.dictionary)
+            if column == "meaning":
+                del dictionary["tables"][table]["meaning"]
+            elif column:
+                del dictionary["tables"][table]["columns"][column]
+            else:
+                del dictionary["tables"][table]
+            with self.subTest(table=table, column=column):
+                export_with(dictionary, re.escape(table + ("." + column if column else "")))
+        cases = {
+            "unknown licence layer 'no-such-layer' for speeches.text": lambda d: d["tables"]["speeches"]["columns"]["text"].update(license="no-such-layer"),
+            "missing speeches.text.license": lambda d: d["tables"]["speeches"]["columns"]["text"].pop("license"),
+            "placeholder text at speeches.text.unit": lambda d: d["tables"]["speeches"]["columns"]["text"].update(unit="TODO"),
+            "placeholder text at speeches.text.meaning": lambda d: d["tables"]["speeches"]["columns"]["text"].update(meaning="Text der Rede, TBD"),
+            "placeholder text at licenses.dip": lambda d: d["licenses"].update(dip="?"),
+            "same meaning": lambda d: d["tables"]["speeches"]["columns"]["text"].update(meaning=d["tables"]["speeches"]["columns"]["id"]["meaning"]),
+            "describes tables no export has: removed_table": lambda d: d["tables"].update(removed_table={"meaning": "Entfernte Tabelle.", "columns": {}}),
+            "describes speeches columns the export lacks: paragraphs_json": lambda d: d["tables"]["speeches"]["columns"].update(paragraphs_json=d["tables"]["speeches"]["columns"]["text"]),
+            # DATA.md and datenstand.json must not give one column different terms.
+            "licence layer eigene-auswertung for speeches.text contradicts its manifest source tag dip": lambda d: d["tables"]["speeches"]["columns"]["text"].update(license="eigene-auswertung"),
+            "licence layer bundestag-abstimmungen for vote_fractions.leading_vote contradicts its manifest source tag derived": lambda d: d["tables"]["vote_fractions"]["columns"]["leading_vote"].update(license="bundestag-abstimmungen"),
+            "licence layers without allowed source tags: neue-schicht": lambda d: d["licenses"].update({"neue-schicht": "Neue Lizenzschicht ohne Zuordnung."}),
+        }
+        for message, change in cases.items():
+            dictionary = json.loads(inputs.dictionary)
+            change(dictionary)
+            with self.subTest(message=message):
+                export_with(dictionary, re.escape(message))
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("CREATE TABLE future_table (new_field TEXT)")
+        with self.assertRaisesRegex(RuntimeError, "future_table"):
+            self.export()
+
+    def test_a_table_without_a_safe_csv_name_fails_the_export(self) -> None:
+        self.export()
+        before = (self.exports_dir / "datenstand.json").read_bytes()
+        inputs = b._read_codebook_inputs()
+        # A trailing newline passes a $-anchored re.match, so the check must be a full match.
+        for name in ("bad-name", "trailing\n"):
+            with self.subTest(name=name):
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(f'CREATE TABLE "{name}" (id TEXT PRIMARY KEY)')
+                dictionary = json.loads(inputs.dictionary)
+                dictionary["tables"][name] = {"meaning": "Tabelle mit unsicherem Namen.", "columns": {"id": dictionary["tables"]["speeches"]["columns"]["id"]}}
+                with mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, dictionary=json.dumps(dictionary))):
+                    with self.assertRaisesRegex(RuntimeError, re.escape(f"{name!r} has no safe CSV file name")):
+                        self.export()
+                self.assertEqual((self.exports_dir / "datenstand.json").read_bytes(), before)
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(f'DROP TABLE "{name}"')
+
+    def authored_copy(self) -> Path:
+        root = self.tmp / "repo"
+        for relative in b.CODEBOOK_INPUT_FILES.values():
+            (root / relative).parent.mkdir(parents=True, exist_ok=True)
+            (root / relative).write_bytes((b.REPO_ROOT / relative).read_bytes())
+        return root
+
+    def test_each_authored_input_revision_and_recipe_metadata_invalidate_cache(self) -> None:
+        root = self.authored_copy()
+        with mock.patch.object(b, "REPO_ROOT", root):
+            first = self.export()
+            self.assertEqual(first, self.export())
+            self.assertEqual(set(first["codebook_inputs"]), set(b.CODEBOOK_INPUT_FILES.values()))
+            for relative in b.CODEBOOK_INPUT_FILES.values():
+                path = root / relative
+                with self.subTest(input=relative):
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"\n")
+                    changed = self.export()
+                    self.assertNotEqual(changed["generation"], first["generation"])
+                    self.assertEqual(changed["codebook_inputs"][relative], hashlib.sha256(path.read_bytes()).hexdigest())
+                    path.write_bytes(original)
+            for field in ("title", "caveat", "method", "columns"):
+                recipe = dict(b.RECIPES[0])
+                recipe[field] = ([{**column, "meaning": column["meaning"] + " Zusatz"} for column in recipe[field]]
+                                 if field == "columns" else str(recipe[field]) + " Zusatz")
+                with self.subTest(field=field):
+                    changed = self.export(recipes=(recipe,) + b.RECIPES[1:])
+                    self.assertNotEqual(first["generation"], changed["generation"])
+                    self.assertIn("Zusatz", (self.exports_dir / changed["generation"] / "DATA.md").read_text())
+            self.assertNotEqual(first["generation"], self.export(commit="def456")["generation"])
+
+    def test_codebook_hashing_and_rendering_use_one_capture(self) -> None:
+        root = self.authored_copy()
+        path = root / b.CODEBOOK_INPUT_FILES["methods"]
+        path.write_text("Methoden vorher")
+        read_bytes = Path.read_bytes
+        reads = []
+
+        def changing_read(file):
+            content = read_bytes(file)
+            if file == path:
+                reads.append(file)
+                file.write_text("Methoden nachher")
+            return content
+
+        with mock.patch.object(b, "REPO_ROOT", root), mock.patch.object(Path, "read_bytes", changing_read):
+            manifest = self.export()
+        self.assertEqual(len(reads), 1)
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertIn("Methoden vorher", codebook)
+        self.assertNotIn("Methoden nachher", codebook)
+        self.assertEqual(manifest["codebook_inputs"][b.CODEBOOK_INPUT_FILES["methods"]], hashlib.sha256(b"Methoden vorher").hexdigest())
+
+    def test_missing_or_truncated_new_assets_trigger_regeneration(self) -> None:
+        manifest = self.export()
+        for name in ("DATA.md", manifest["recipes"][0]["file"]):
+            for damage in ("missing", "truncated", "same size, altered"):
+                with self.subTest(name=name, damage=damage):
+                    path = self.exports_dir / manifest["generation"] / name
+                    if damage == "truncated":
+                        path.write_bytes(b"short")
+                    elif damage == "same size, altered":
+                        original = path.read_bytes()
+                        path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+                    else:
+                        path.unlink()
+                    rebuilt = self.export()
+                    entry = next(file for file in rebuilt["files"] if file["name"] == name)
+                    self.assertEqual(path.stat().st_size, entry["bytes"])
+                    self.assertEqual(b._hash_file(path), entry["sha256"])
+                    self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
+                    manifest = rebuilt
+
+    # Value: protects=an edit to the exporter code re-exports even without a git revision, and the operator licence text cannot add lines to DATA.md; fails_when=EXPORTER_SHA256 leaves the cache key, the licence text is written raw, or an empty one leaves a blank licence line; why_new=commit was the only code identity and None without git, and no test read the empty-licence default; seam=none; no_claim=which edits matter
+    def test_exporter_code_and_licence_text_reach_the_codebook_safely(self) -> None:
+        first = self.export(commit=None)
+        # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
+        first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
+        self.assertIn("(--data-license): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
+            second = self.export(commit=None)
+        self.assertNotEqual(first["generation"], second["generation"])
+        manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (--data-license): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
+
+    # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
+    def test_cached_manifest_with_invalid_inventory_is_regenerated(self) -> None:
+        manifest = self.export()
+        path = self.exports_dir / "datenstand.json"
+        cached = json.loads(path.read_text())
+        cached["files"] = [file for file in cached["files"] if file["kind"] != "codebook"]
+        path.write_text(json.dumps(cached))
+        rebuilt = self.export()
+        self.assertNotEqual(rebuilt["generated_at"], manifest["generated_at"])
+        self.assertEqual([file["name"] for file in rebuilt["files"] if file["kind"] == "codebook"], ["DATA.md"])
+
+    # Value: protects=an export the site's own validator would refuse is never published, and a tag that cannot be a file name fails before any work; fails_when=the pre-publish validate_manifest call or the tag check is removed; why_new=only cached and remote manifests were validated; seam=none; no_claim=every validator rule
+    def test_an_export_its_validator_rejects_is_not_published(self) -> None:
+        for tag in ("v1/2", "v 1", ".hidden", ""):
+            with self.subTest(tag=tag), self.assertRaisesRegex(RuntimeError, "cannot be part of a file name"):
+                self.export(tag=tag)
+        self.assertFalse(self.exports_dir.exists())
+        for commit in ("abc123def456-dirty-0123abcd", "abc123def456-unverified", None):
+            with self.subTest(commit=commit), self.assertRaisesRegex(RuntimeError, "needs a clean, known build revision"):
+                self.export(tag="v-test", commit=commit)
+        self.assertFalse(self.exports_dir.exists())
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        # A real validator rule: the new manifest's recipe CSV rows disagree with the file.
+        real_run_export = b._run_export
+
+        def miscounted(**kwargs):
+            manifest = real_run_export(**kwargs)
+            next(file for file in manifest["files"] if file["kind"] == "recipe_csv")["rows"] += 1
+            return manifest
+
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "the export's new datenstand.json is not a usable Daten manifest: .*rows mismatch"):
+            self.export(force=True)
+        self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=a first export or a new generation the pre-publish validator refuses leaves nothing new published; fails_when=publication runs before validate_manifest on those paths; why_new=the test above covers only a forced re-export of the same generation; seam=none; no_claim=rename failures after validation (deferred)
+    def test_a_rejected_first_or_new_generation_export_publishes_nothing(self) -> None:
+        real_run_export = b._run_export
+
+        def miscounted(**kwargs):
+            manifest = real_run_export(**kwargs)
+            next(file for file in manifest["files"] if file["kind"] == "recipe_csv")["rows"] += 1
+            return manifest
+
+        def published():
+            return {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "rows mismatch"):
+            self.export()
+        self.assertEqual(published(), {})
+        self.export()
+        before = published()
+        changed = _r2_limited_to_4()
+        with mock.patch.object(b, "_run_export", side_effect=miscounted), self.assertRaisesRegex(RuntimeError, "rows mismatch"):
+            self.export(recipes=changed)
+        self.assertEqual(published(), before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=an export's own manifest is checked against the recipes it ran, so unchanged custom recipes reuse it and a cached manifest whose recipe SQL differs is rebuilt; fails_when=recipes= is dropped from the reuse check (every custom export re-exports) or the reuse check stops comparing SQL; why_new=reuse tests use only the default RECIPES; seam=none; no_claim=the --data-manifest page path
+    def test_custom_recipes_reuse_and_a_cached_sql_change_rebuilds(self) -> None:
+        changed = _r2_limited_to_4()
+        first = self.export(recipes=changed)
+        self.assertEqual(self.export(recipes=changed)["generated_at"], first["generated_at"])
+        path = self.exports_dir / "datenstand.json"
+        cached = json.loads(path.read_text())
+        cached["recipes"][0]["sql"] += " "
+        path.write_text(json.dumps(cached))
+        self.assertNotEqual(self.export(recipes=changed)["generated_at"], first["generated_at"])
+
+    # Value: protects=equal inputs give equal DATA.md bytes, and DATA.md names the latest stored sitting instead of the build time; fails_when=generated_at or another clock value enters DATA.md; why_new=a forced rebuild was only checked for a new generated_at; seam=none; no_claim=the sqlite and CSV bytes
+    def test_forced_rebuild_gives_byte_identical_codebook(self) -> None:
+        first = self.export()
+        codebook = (self.exports_dir / first["generation"] / "DATA.md").read_bytes()
+        second = self.export(force=True)
+        self.assertNotEqual(first["generated_at"], second["generated_at"])
+        self.assertEqual((self.exports_dir / second["generation"] / "DATA.md").read_bytes(), codebook)
+        latest = max(row["date_to"] for row in first["coverage"]["wahlperioden"] if row["date_to"])
+        self.assertIn(f"letzte gespeicherte Sitzung: {latest}.", codebook.decode())
+        self.assertNotIn(first["generated_at"], codebook.decode())
+
+    def test_new_writer_failures_preserve_published_assets_and_clean_staging(self) -> None:
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        real_write_text = Path.write_text
+
+        def fail_codebook_write(path, *args, **kwargs):
+            if path.name == "DATA.md":
+                raise OSError("disk full")
+            return real_write_text(path, *args, **kwargs)
+
+        for writer in ("recipe CSV", "codebook"):
+            for kwargs in ({"force": True}, {"commit": "newrevision"}):
+                failure = (mock.patch.object(b, "_write_recipe_csv", side_effect=OSError("disk full"))
+                           if writer == "recipe CSV" else mock.patch.object(Path, "write_text", fail_codebook_write))
+                with self.subTest(writer=writer, kwargs=kwargs), failure:
+                    with self.assertRaisesRegex(OSError, "disk full"):
+                        self.export(**kwargs)
+                self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+                self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=a sitting whose protocol number names no Wahlperiode is counted under unbekannt, listed after the numbered WPs (numeric order), and no record is lost or double counted; fails_when=_protocol_wahlperiode stops catching FactsError, the sort turns textual, or unknown rows drop out; why_new=the fixture has only WP 20/21 and the empty store has no rows; seam=none; no_claim=wording of the cells
+    def test_snapshot_coverage_lists_unknown_wahlperiode_last_and_loses_no_record(self) -> None:
+        now = "2024-06-01T00:00:00+00:00"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE protocols SET document_number = 'Sondersitzung', date = '' WHERE id = '5802'")
+            conn.execute(
+                "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
+                "VALUES ('5700', '9/1', '1980-01-01', 'Alte Sitzung', '{}', ?, ?)", (now, now))
+            conn.execute("INSERT INTO speech_rule_inputs(protocol_id, version) VALUES ('5700', ?)", (pulse_store.speech_kinds.VERSION,))
+            conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
+            totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                      for table in ("agenda_items", "speeches", "contributions", "votes", "vote_members")}
+        manifest = self.export()
+        rows = manifest["coverage"]["wahlperioden"]
+        self.assertEqual([row["wp"] for row in rows], ["9", "20", "unbekannt"])
+        unknown = rows[-1]
+        self.assertEqual((unknown["sittings"], unknown["date_from"], unknown["date_to"], unknown["agenda_items"], unknown["votes"]), (1, None, None, 1, 1))
+        for table, total in totals.items():
+            with self.subTest(table=table):
+                self.assertEqual(sum(row[table] for row in rows), total)
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        self.assertRegex(codebook, r"(?m)^\| unbekannt \| 1 \| unbekannt \| unbekannt \| 1 \|")
+
+    # Value: protects=a Wahlperiode with several sittings sums them across protocol numbers, with the earliest and latest date and empty dates ignored; fails_when=the min/max comparison flips, an empty date wins, or one sitting overwrites another; why_new=every existing coverage fixture has one sitting per WP; seam=none; no_claim=counts of the other tables
+    def test_snapshot_coverage_merges_the_sittings_of_one_wahlperiode(self) -> None:
+        now = "2024-06-01T00:00:00+00:00"
+        with sqlite3.connect(self.db_path) as conn:
+            for protocol_id, number, date in (("5701", "20/10", ""), ("5702", "20/99", "2024-03-01"), ("5703", "20/98", "2024-09-30")):
+                conn.execute(
+                    "INSERT INTO protocols(id, document_number, date, title, xml_header_json, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'Weitere Sitzung', '{}', ?, ?)", (protocol_id, number, date, now, now))
+            conn.execute("INSERT OR REPLACE INTO speech_rule_inputs SELECT id, ? FROM protocols", (pulse_store.speech_kinds.VERSION,))
+        (row,) = [row for row in self.export()["coverage"]["wahlperioden"] if row["wp"] == "20"]
+        self.assertEqual((row["wp"], row["sittings"], row["date_from"], row["date_to"]), ("20", 5, "2024-03-01", "2024-09-30"))
+
+    # Value: protects=votes without a protocol, and their members, are counted under unbekannt instead of dropping out of the per-WP totals; fails_when=a coverage join becomes inner or a NULL protocol_id raises; why_new=the unknown-WP test only has votes whose protocol exists but has no number; seam=none; no_claim=agenda_items/speeches
+    def test_snapshot_coverage_counts_a_vote_without_protocol_as_unbekannt(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN NULL ELSE '5801' END")
+            totals = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("votes", "vote_members")}
+        rows = {row["wp"]: row for row in self.export()["coverage"]["wahlperioden"]}
+        self.assertEqual(list(rows), ["20", "unbekannt"])
+        self.assertEqual((rows["unbekannt"]["votes"], rows["unbekannt"]["vote_members"], rows["unbekannt"]["sittings"]), (1, 1, 0))
+        self.assertEqual((rows["unbekannt"]["date_from"], rows["unbekannt"]["date_to"]), (None, None))
+        for table, total in totals.items():
+            with self.subTest(table=table):
+                self.assertEqual(sum(row[table] for row in rows.values()), total)
+
+    # Value: protects=a pipe or line break inside an authored column definition stays inside its DATA.md table cell; fails_when=_md_cell stops escaping, splitting the row into extra columns or ending the table; why_new=no authored text holds a pipe or newline, so the escape assertion elsewhere is vacuous; seam=none; no_claim=table meanings
+    def test_codebook_cell_text_cannot_break_the_table_row(self) -> None:
+        inputs = b._read_codebook_inputs()
+        dictionary = json.loads(inputs.dictionary)
+        dictionary["tables"]["speeches"]["columns"]["text"]["meaning"] = "Volltext a | b\nzweite Zeile"
+        with mock.patch.object(b, "_read_codebook_inputs", return_value=dataclasses.replace(inputs, dictionary=json.dumps(dictionary))):
+            manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        (row,) = re.findall(r"(?m)^\| `text` \| Volltext .*$", re.search(r"(?ms)^### `speeches`\n(.*?)(?=^### )", codebook).group(1))
+        self.assertIn("Volltext a \\| b<br>zweite Zeile", row)
+        self.assertEqual(len(re.split(r"(?<!\\)\|", row.strip())) - 2, 9)
+
+    # Value: protects=DATA.md's file table lists every file of the generation except itself, with the manifest's kind, rows, bytes and SHA-256; fails_when=a file kind drops out, rows or bytes shift a column, or a hash is not the file's; why_new=readers verify downloads from this table, and only the manifest was compared; seam=none; no_claim=wording
+    def test_codebook_file_table_matches_the_manifest_files(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        table = re.search(r"(?ms)^\| Datei \| Art .*?\n\| --- .*?\n(.*?)(?=\n\n)", codebook).group(1).split("\n")
+        listed = [[cell.strip(" `") for cell in line.strip("| ").split(" | ")] for line in table]
+        files = [file for file in manifest["files"] if file["kind"] != "codebook"]
+        self.assertEqual(
+            [[cells[0].split("](")[0].lstrip("["), *cells[1:]] for cells in listed],
+            [[file["name"], file["kind"], str(file.get("rows", "\u2014")), str(file["bytes"]), file["sha256"]] for file in files],
+        )
+        self.assertEqual({file["kind"] for file in files}, {"sqlite", "table_csv", "recipe_csv"})
+        for file in files:
+            self.assertEqual(b._hash_file(self.exports_dir / manifest["generation"] / file["name"]), file["sha256"])
+
+    # Value: protects=every link in DATA.md, including those in the embedded methods and licence documents, resolves for a reader of the published generation; fails_when=an embedded doc gains a repo-relative link (e.g. research/...md) that is dead beside DATA.md; why_new=the embedded docs are authored for the repository, not the release folder; seam=none; no_claim=that the absolute URLs are reachable
+    def test_codebook_links_resolve_inside_the_generation_or_are_absolute(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+        names = {file["name"] for file in manifest["files"]}
+        targets = re.findall(r"\]\(([^)\s]+)\)", codebook)
+        self.assertTrue(targets)
+        relative = [target for target in targets if not re.match(r"https?://", target) and target not in names]
+        self.assertEqual(relative, [])
+
+    # Value: protects=a datenstand.json that is valid JSON but not an object is treated like any other unusable manifest and re-exported; fails_when=_read_previous_manifest returns the list and _source_sha256 calls .get on it; why_new=only unparsable and missing manifests were covered; seam=none; no_claim=other damaged manifest shapes
+    def test_a_previous_manifest_that_is_not_an_object_is_re_exported(self) -> None:
+        self.export()
+        (self.exports_dir / "datenstand.json").write_text("[1]\n", encoding="utf-8")
+        manifest = self.export()
+        self.assertEqual(json.loads((self.exports_dir / "datenstand.json").read_text(encoding="utf-8"))["generation"], manifest["generation"])
+        self.assertTrue((self.exports_dir / manifest["generation"] / "DATA.md").is_file())
+
+    # Value: protects=a broken authored input (unreadable, not UTF-8, bad JSON, wrong shape, licence doc without a "## " section) fails the export with a named RuntimeError and leaves the published generation untouched; fails_when=a raw OSError/UnicodeDecodeError/JSON error escapes or a half-written generation replaces the published one; why_new=only dictionary content errors were pinned, not file or shape errors; seam=none; no_claim=message wording beyond the cause
+    def test_unreadable_or_malformed_authored_inputs_fail_by_name_and_preserve_publication(self) -> None:
+        root = self.authored_copy()
+        with mock.patch.object(b, "REPO_ROOT", root):
+            self.export()
+            before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+            dictionary, methods, license_doc = (root / b.CODEBOOK_INPUT_FILES[field] for field in ("dictionary", "methods", "license"))
+            originals = {path: path.read_bytes() for path in (dictionary, methods, license_doc)}
+            cases = [
+                ("missing licence file", license_doc, None, "codebook input .*data-license.md"),
+                ("not UTF-8", methods, b"\xff\xfe\x00", "codebook input .*data-methods.md"),
+                ("empty methods", methods, b"", "data-methods.md is empty"),
+                ("whitespace-only methods", methods, b" \n\t\n", "data-methods.md is empty"),
+                ("invalid JSON", dictionary, b"{", "data dictionary is not valid JSON"),
+                ("no tables object", dictionary, b'{"licenses": {}}', 'needs "licenses" and "tables" objects'),
+                ("no licenses object", dictionary, b'{"tables": {}}', 'needs "licenses" and "tables" objects'),
+                ("licence doc without section", license_doc, b"# Titel\nnur Betreiberhinweise\n", 'has no "## " section'),
+            ]
+            for label, path, content, message in cases:
+                with self.subTest(label=label):
+                    try:
+                        if content is None:
+                            path.unlink()
+                        else:
+                            path.write_bytes(content)
+                        with self.assertRaisesRegex(RuntimeError, message):
+                            self.export()
+                    finally:
+                        path.write_bytes(originals[path])
+                    self.assertEqual({p.relative_to(self.exports_dir): p.read_bytes() for p in self.exports_dir.rglob("*") if p.is_file()}, before)
+                    self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+
+    # Value: protects=DATA.md tells readers per table how to resolve retired person ids (alias list, persons, one or several person columns, none); fails_when=_codebook_alias_line swaps or drops a branch so a join guidance is wrong for a table; why_new=only canonical_id and the "entfällt" case were asserted; seam=none; no_claim=German wording beyond the key phrases
+    def test_codebook_alias_guidance_is_specific_to_each_kind_of_table(self) -> None:
+        manifest = self.export()
+        codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
+
+        def section(table):
+            return re.search(rf"(?ms)^### `{table}`\n(.*?)(?=^##)", codebook).group(1)
+
+        self.assertIn("diese Tabelle ist die Aliasliste", section("person_aliases"))
+        self.assertIn("eine zurückgezogene Kennung bleibt hier als Zeile stehen", section("persons"))
+        self.assertIn("`person_id`, `home_person_id` verweisen auf `persons.id`", section("person_records"))
+        self.assertIn("`person_id` verweist auf `persons.id`", section("person_bindings"))
+        self.assertIn("entfällt, keine Spalte verweist auf `persons.id`", section("speeches"))
+        for table in ("person_aliases", "persons", "speeches"):
+            self.assertNotIn("früher ausgestellte Kennungen vor generationsübergreifenden Joins", section(table))
+
+    # Value: protects=a recipe whose SQL selects a column without an authored definition fails the export before publishing, so no undocumented CSV column ships; fails_when=the missing-definition check is removed or only checks declared columns; why_new=the fixture recipes are all fully defined; seam=none; no_claim=other recipe failure modes
+    def test_recipe_column_without_definition_fails_and_preserves_publication(self) -> None:
+        self.export()
+        before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
+        undocumented = ({**b.RECIPES[0], "sql": "SELECT '1' AS mp_id, 2 AS zusatz_b, 3 AS zusatz_a;"},) + b.RECIPES[1:]
+        with self.assertRaisesRegex(RuntimeError, "recipe r1-meiste-reden missing output definitions: zusatz_a, zusatz_b"):
+            self.export(recipes=undocumented)
+        self.assertEqual({path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}, before)
+        self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
 
     def test_r1_pools_the_consolidated_mp_like_the_profile_page(self) -> None:
         manifest = self.export()
@@ -264,8 +910,8 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(table=name):
                 self.assertIn(b.DATABASE_TABLE_DESCRIPTIONS[name], table_rows_html)
 
-    # Value: protects=format 9 carries vote context, the Bundestag report source URL and the quoted Antrag passage through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
-    def test_vote_context_debate_url_and_passage_round_trip_in_format_9_with_captions(self) -> None:
+    # Value: protects=the export carries vote context, the Bundestag report source URL and the quoted Antrag passage through downloads and captions; fails_when=a source column is dropped or its caption is generic; why_new=B4 adds the fields; seam=none
+    def test_vote_context_debate_url_and_passage_round_trip_with_captions(self) -> None:
         conn = pulse_store.connect(self.db_path)
         try:
             conn.execute("UPDATE proceedings SET abstract = ? WHERE id = 'vg-1'", ("Erster Absatz\n\nZweiter",))
@@ -283,7 +929,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         finally:
             conn.close()
         manifest = self.export()
-        self.assertEqual(manifest["export_format"], 9)
+        self.assertEqual(manifest["export_format"], 10)
         gen_dir = self.exports_dir / manifest["generation"]
 
         def read(table):

@@ -758,7 +758,9 @@ class CitationLabelTests(unittest.TestCase):
 
     def test_recipe_protocol_label_does_not_change_manifest(self) -> None:
         row = {"proceeding_id": "1", "title": "Test", "typ": "Gesetzgebung", "erste_drucksache": "21/84", "reden": 2, "sitzungen": 1}
-        manifest = {"recipes": [{"id": "r5-vorgaenge-meiste-reden", "title": "Test", "sql": "SELECT ...", "rows": [row]}]}
+        manifest = {"generation": "g-0123456789ab",
+                    "recipes": [{"id": "r5-vorgaenge-meiste-reden", "title": "Test", "sql": "SELECT ...", "rows": [row],
+                                 "file": "recipe-r5-vorgaenge-meiste-reden-local.csv"}]}
         markup = build_dip_pulse_site.render_daten_recipes(manifest, mp_lookup={}, document_numbers={"21/84"}, bill_slugs=set())
         self.assertIn("<td>BT-PlPr. 21/84</td>", markup)
         self.assertEqual(row["erste_drucksache"], "21/84")

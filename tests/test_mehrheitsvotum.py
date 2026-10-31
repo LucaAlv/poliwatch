@@ -190,6 +190,29 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    # Value: protects=a Fraktion switcher's deviations are counted per Fraktion with a fixed row order, each row naming the Fraktion it was measured against; fails_when=r3 groups by person only (an arbitrary vote row names the Fraktion) or the order has non-unique ties; why_new=every fixture member had one Fraktion; seam=none; no_claim=a real switcher in the reference store
+    def test_r3_counts_a_fraktion_switcher_once_per_fraktion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = self.store(tmp)
+            try:
+                conn.execute("UPDATE vote_members SET vote = 'no' WHERE party_id = (SELECT id FROM parties WHERE name = 'FDP')")
+                # A second vote in which the same person sits in the SPD,
+                # whose Mehrheitsvotum is Ja, and votes Nein again.
+                for table in ("votes", "vote_fractions", "vote_members"):
+                    key = "id" if table == "votes" else "vote_id"
+                    conn.execute(f"CREATE TEMP TABLE copy_{table} AS SELECT * FROM {table}")
+                    conn.execute(f"UPDATE copy_{table} SET {key} = {key} || '-b'")
+                    conn.execute(f"INSERT INTO {table} SELECT * FROM copy_{table}")
+                spd = "(SELECT id FROM parties WHERE name = 'SPD')"
+                fdp = "(SELECT id FROM parties WHERE name = 'FDP')"
+                conn.execute(f"UPDATE vote_fractions SET leading_vote = 'yes' WHERE vote_id LIKE '%-b' AND party_id = {spd}")
+                conn.execute(f"UPDATE vote_members SET party_id = {spd} WHERE vote_id LIKE '%-b' AND party_id = {fdp}")
+                rows = self.r3_rows(conn)
+                self.assertEqual([row[2:] for row in rows], [("FDP", 1), ("SPD", 1)])
+                self.assertEqual(rows[0][0], rows[1][0])
+            finally:
+                conn.close()
+
     def test_r3_title_and_metric_wording_say_anders_als_die_mehrheit(self) -> None:
         self.assertIn("anders als die Mehrheit der eigenen Fraktion oder Gruppe", self.RECIPE["title"])
         import facts
@@ -225,7 +248,7 @@ class ReadersSkipANullMehrheitsvotumTests(unittest.TestCase):
 
 class AbweichlerParityTests(unittest.TestCase):
     """C1: ``derive.vote_abweichler`` names the same (vote, MdB) pairs a per-vote
-    SQL with the r3 predicate finds in the store. r3 itself counts per MdB."""
+    SQL with the r3 predicate finds in the store. r3 itself counts per MdB and Fraktion."""
 
     R3_PAIRS = (
         "SELECT vm.vote_id, m.display_name, p.name\n"
