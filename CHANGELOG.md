@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.0.0] - 2026-10-31
+
+### Added
+
+- Every data export now carries `DATA.md`, a German codebook you can read without the website: what each table and column means, its unit, source and licence layer, the per-Wahlperiode coverage of exactly this SQLite file (sittings, date range, TOPs, Reden, Beiträge, Abstimmungen, Stimmen), the counting rules, the exact SQL of each published recipe, the layered licence terms and how to cite the export. Every definition was checked against the code that writes the column.
+- The six SQL recipes on the Daten page now also ship as result CSVs (`recipe-<id>-<tag>.csv`), with every SQL column in projection order, including the link IDs the page hides, so each result can be reproduced against the export's SQLite file. The Daten page links `DATA.md` in the download panel and each recipe's CSV beside its table.
+
+### Changed
+
+- Export format 10: `datenstand.json` lists every file of a generation with its kind (`sqlite`, `table_csv`, `recipe_csv`, `codebook`), size, SHA-256 and, for CSVs, row count, and each recipe names its CSV. A manifest of another export format is refused; re-export with this version.
+- r3 („Abweichler“) counts per person and Fraktion: someone who switched Fraktion gets one row per Fraktion instead of one row with the label of one of them. On the reference export the top five are unchanged (Bayram 30, Dieren 18, Kraft 13, Koeppen 11, Kubicki 9); 2 of 363 persons now have two rows, both below the cut.
+- The cited build revision is a 12-character commit, with `-dirty-<hash>` when tracked files differ from it and `-unverified` when git cannot tell. A release export needs a clean revision. An export re-runs when the codebook inputs, the revision or the exporter change, and a cached generation whose `DATA.md` or recipe CSVs were altered is written again.
+
+### Fixed
+
+- The licence notice (`docs/data-license.md`) lists every column it gives CC BY 4.0, including `speeches.sprechrolle`, `speeches.unattributed_char_count` and `speech_rule_inputs`, which it previously left under DIP terms.
+
 ## [0.24.1.0] - 2026-10-30
 
 ### Added
