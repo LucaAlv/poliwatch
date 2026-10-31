@@ -314,6 +314,15 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(self._with_wrapped("Bundesre-\ngierungs"), "1. die Bundesregierungs-Regeln umzusetzen;")
         self.assertIsNone(self._with_wrapped("EU-\nweiten"))
 
+    # Value: protects=a line-end hyphen after a part of under five letters ("um-" + "zusetzen"), or after a part the text never uses as a word, is a break hyphen even when the text prints that part elsewhere, while a five-letter part the text spells with an inflection ending ("jesidisch-" beside "jesidischen") leaves the passage unquoted; fails_when=the length floor or the ending list in _join is removed or loosened; why_new=the 18/2742 fixture pins only the long-part refusal; seam=none; no_claim=real DIP breaks beyond 18/2742 (synthetic words)
+    def test_a_short_part_before_a_line_end_hyphen_is_a_break(self) -> None:
+        self.assertEqual(self._with_wrapped("um-\nzusetzen", "Wir gehen um die Ecke."), "1. die umzusetzen-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Rand-\nstreifen", "Am Rand der Stadt."), "1. die Randstreifen-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Leis-\ntung", "Die Leistung zählt."), "1. die Leistung-Regeln umzusetzen;")
+        self.assertIsNone(self._with_wrapped("Haupt-\nstraßen", "Die Haupt Seite."))
+        self.assertIsNone(self._with_wrapped("jesidisch-\nkurdischen", "Die jesidischen Dörfer."))
+        self.assertEqual(self._with_wrapped("jesidisch-\nkurdischen", "Die jesidischkurdischen Dörfer."), "1. die jesidischkurdischen-Regeln umzusetzen;")
+
     def test_the_teaser_keeps_whole_demands(self) -> None:
         long_demand = "1. " + "sehr " * 100 + "lange Forderung;"
         shown, rest = antrag_text.forderung_teaser(antrag_text.Forderung(OPENING, (long_demand, "2. kurz.")))

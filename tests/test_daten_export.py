@@ -1083,8 +1083,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         for marker in ("PRAGMA user_version = 1", "CREATE TABLE datenstand (tag TEXT)"):
             with self.subTest(marker=marker):
                 copy = self.tmp / "distribution.sqlite"
-                import shutil as _shutil
-                _shutil.copyfile(self.db_path, copy)
+                shutil.copyfile(self.db_path, copy)
                 conn = sqlite3.connect(copy)
                 conn.execute(marker)
                 conn.commit()
