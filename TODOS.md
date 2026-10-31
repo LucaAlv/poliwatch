@@ -449,9 +449,16 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 1. **Köstering/Krampe split.** One person, Jan Krampe (formerly Köstering, Die Linke, WP 21), is a single person with 121 bindings in a fresh build. In the replayed store he is four persons: `dip:8257`, `aw:178656`, and the profiles `koestering_jan-1045564` and `krampe_jan-1045564`. `baseline` had `aw:178656` and the Köstering profile as one person. So A3 newly separates his speeches from his votes, and a replay does not heal it. `full` shows the same split. The cause is not the URL rule. DIP holds two person records for him (8054 Köstering, 8257 Krampe), and the store keeps `dip:8054` as a roster record. An in-memory `match_rows` on `full` joins all five records once `dip:8054` is stale. Why a replay still matches it is untraced. It is part 2's defect.
 2. **Orphan persons.** 295 persons hold only retired bindings. Each holds one `roster-v1-…` binding of a `dip:` record that the roster no longer produces: 295 of the 307 retired roster bindings. The other 12, and the 187 retired contribution bindings of speech rule v6, sit on persons that also hold live bindings. 282 of the orphans render an Abgeordnete page and are listed on the index. They raise the store's person count from 4,165 (fresh) to 4,463.
 
-Find why a replay still matches a roster record that no current input binds (`dip:8054`), and decide whether retired-only persons should render. A fix for that should also heal part 1. Report persons and Abgeordnete rows old/new.
+**Re-measured at the branch tip, 2026-10-31** (the "Gate at the branch tip" section of the [Phase 4 record](docs/plans/a3-phase4.md); rule C plus 0f59729 and a508cfa):
+- **Part 1 is healed.** The replayed store groups like the fresh one: 1,942 = 1,942 persons on live bindings, the same fingerprint. Krampe is one live person.
+- **Part 2 is open:**
+  - 302 persons hold only retired bindings, and 289 of them render a page with no Reden and no votes.
+  - The index links only 8 of them, down from 282.
+  - 281 of the 302 are Bundesrat members. So the fix likely goes with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
-**Why:** pages for persons with no live occurrence, and one MdB whose speeches and votes are on different pages.
+Decide whether retired-only persons render a page. Report persons and pages old/new.
+
+**Why:** 289 pages for persons with no live occurrence, reachable by URL.
 
 **Effort:** M
 **Priority:** P1

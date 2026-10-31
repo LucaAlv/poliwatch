@@ -327,3 +327,59 @@ Fresh stores were used, so the carried-forward registry (Step 1, finding 2) is k
   - WP 19 is otherwise unchanged (archive links key nothing).
 
 `full` itself was not repersisted with rule C. Phase 4 does not write it, so the rule reaches the store on its next build.
+
+## Gate at the branch tip, 2026-10-31 (no DIP, partial)
+
+The gate was run again on a fresh APFS clone of `full` (`~/agent-runs/a3/phase4/gate-tip`) at commit 7238045. That tip holds rule C (415a8a6), the exact MdB rule (9d05427), the replay fixes 0f59729 and a508cfa, and main up to v0.23.7.0. The command was `validate_store_gate.py … --today 2026-10-28`, run by `~/agent-runs/a3/phase4/gate-tip.sh`. `full` was not written.
+
+- **Stopped early.** At 16:30 UTC the disk watchdog stopped the gate at 3 GB free, during the half-then-full replay. Other worktrees were using the same disk.
+- **Steps that finished:**
+  - replay: `--offline --repersist`, 716 reports, site rendered;
+  - fresh persist-only.
+- **Steps not run:**
+  - half-then-full;
+  - unchanged replay;
+  - link audit;
+  - export;
+  - `--validate-publication`.
+- **No receipt was written.** The replay-against-fresh check was computed separately, with the gate's own `grouping_fingerprint` and `binding_ids`.
+- **Before shipping,** the merged tree needs a full gate run.
+
+| Figure | Phase 4 (`full`, 2026-10-29) | Tip (2026-10-31) |
+|---|---:|---:|
+| `replayed_store_groups_like_fresh` | fails: 4,168 vs. 4,165 | **passes:** 1,942 = 1,942, fingerprint `f0c2d7d9…` |
+| Persons, fresh store | 4,165 | 1,942 |
+| Persons, replayed store | 4,463 | 2,244 |
+| Bindings, fresh | 481,087 | 523,968 |
+| Retired bindings (roster / contribution) | 494 (307 / 187) | 494 (307 / 187) |
+| Persons holding only retired bindings | 295 | 302 |
+| … of them with a rendered page | 282 | 289 |
+| … of them linked from the Abgeordnete index | 282 | **8** |
+| `mps` rows with `is_mdb = 1` | 1,712 | **1,360** |
+| Index section "Frühere Abgeordnete" | 972 | 771 |
+| Index links | 1,712 | 1,653 |
+| Person pages (non-redirect) | 2,005 | 2,005 |
+| Votes in the Abstimmungen archive | 556 | 619 |
+| SQLite integrity / foreign-key violations | ok / 0 | ok / 0 (both stores) |
+
+What each change does:
+
+- **Fresh grouping (1,942):**
+  - It equals the rule-C measurement at 415a8a6 (`rule-c/runs/full-new`), so 9d05427, 0f59729 and a508cfa leave fresh grouping unchanged.
+  - The fresh store has 42,881 more bindings: 63 more votes are kept after main's merges, and the archive grows from 556 to 619 (the TODO "63 votes in 41 sittings are fetched and then dropped").
+- **Replayed equals fresh on live bindings.** The replayed store no longer holds a grouping that a fresh build would not make.
+- **Köstering/Krampe (part 1 of the registry TODO): healed.**
+  - The replayed store holds him as one live person, `p-001037`, with 5 records: `dip:8257`, `aw:178656`, `xml:11005511` and both bundestag.de profiles.
+  - The retired roster record `dip:8054` "Jan Köstering" sits alone on `person-v1-6d527d…`. Its page still renders (0 Reden, 0 Abstimmungen) but is no longer linked from the index.
+- **Bundesrat (9d05427):**
+  - The repersist alone drops the 352 Bundesrat roster rows (1,712 → 1,360); no roster refetch was needed.
+  - "Frühere Abgeordnete" goes from 972 to 771 (−201, the 201 rows without a Fraktion found in step 4).
+- **Retired-only persons (part 2 of the registry TODO): still open, and changed in kind.**
+  - 281 of the 302 are Bundesrat members (`display_name` contains "MdBR"); the rest are retired roster records such as `dip:8054`.
+  - 289 still render a page with no Reden and no votes, e.g. "Tilo Kummer, Stellv. MdBR (…), Thüringen".
+  - Only 8 are linked from the index, so the pages can be reached only by a direct URL.
+  - The TODO "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs" is the likely cause.
+- **Roster refetch not run.** The Bundesrat effect is measured without it, so the ~101 DIP requests it would cost are not spent.
+- **Tools:**
+  - count script: `~/agent-runs/a3/phase4/registry_counts.py`, read-only; it reproduces the Phase 4 figures 295 and 282 on `full`;
+  - logs: `gate-tip-run.log` and `gate-tip-scratch/*.log`.
