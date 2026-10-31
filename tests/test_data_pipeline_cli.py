@@ -12,6 +12,7 @@ manifest=None branch).
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -115,17 +116,11 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
 
 
 class ResolveCommitTests(unittest.TestCase):
-    def test_returns_the_short_sha_on_success(self) -> None:
-        completed = SimpleNamespace(stdout="abc1234\n")
-        with mock.patch.object(b.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(b.resolve_commit(), "abc1234")
-        run.assert_called_once()
-
-    def test_returns_none_when_git_is_unavailable_or_fails(self) -> None:
-        for exc in (FileNotFoundError("no git"), b.subprocess.SubprocessError("boom")):
-            with self.subTest(exc=type(exc).__name__):
-                with mock.patch.object(b.subprocess, "run", side_effect=exc):
-                    self.assertIsNone(b.resolve_commit())
+    # Value: protects=the site build cites the revision of its own checkout through build_revision; fails_when=resolve_commit stops delegating or points at another directory; why_new=the git logic moved to scripts/build_revision.py (tested there against real git); seam=none; no_claim=git behaviour
+    def test_delegates_to_build_revision_for_this_checkout(self) -> None:
+        with mock.patch.object(b.build_revision, "resolve_commit", return_value="0123456789ab") as resolve:
+            self.assertEqual(b.resolve_commit(), "0123456789ab")
+        resolve.assert_called_once_with(b.REPO_ROOT)
 
 
 class LoadRemoteManifestTests(unittest.TestCase):
@@ -216,6 +211,22 @@ class ParseArgsValidationTests(unittest.TestCase):
         with mock.patch.object(sys, "argv", ["build", "--offline", "--data-manifest", "local/datenstand.json"]):
             args = b.parse_args()
         self.assertEqual(args.data_manifest, "local/datenstand.json")
+
+    def test_data_tag_flag_is_parsed(self) -> None:
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "2026.11.01"]):
+            self.assertEqual(b.parse_args().data_tag, "2026.11.01")
+        with mock.patch.object(sys, "argv", ["build"]):
+            self.assertIsNone(b.parse_args().data_tag)
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "local"]):
+            self.assertEqual(b.parse_args().data_tag, "local")
+
+    # Value: protects=--data-tag takes only "local" or a release version, so the site and DATA.md never say "Release <typo>"; fails_when=any file-name-safe token passes as a release tag; why_new=/ship red team 2026-10-31: --data-tag draft labelled the export "Release draft"; seam=none; no_claim=export content
+    def test_data_tag_must_be_local_or_a_release_version(self) -> None:
+        for bad in ("draft", "v1", "2026.13.01", "2026.11.1"):
+            with self.subTest(tag=bad), mock.patch.object(sys, "argv", ["build", "--data-tag", bad]), contextlib.redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(SystemExit):
+                    b.parse_args()
+                self.assertIn("--data-tag", err.getvalue())
 
     def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
         with (
@@ -328,9 +339,10 @@ class RunDataPipelineTests(unittest.TestCase):
         # A real manifest (exported once into a scratch dir) with a distinct
         # tag so the override is recognisable; shape-valid by construction.
         scratch = self.tmp / "scratch-exports"
-        exported = b.export_distribution_data(
-            self.database_path, scratch, mp_lookup=self.lookup, tag="override"
-        )
+        with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None):
+            exported = b.export_distribution_data(
+                self.database_path, scratch, mp_lookup=self.lookup, tag="override", commit="0123456789ab"
+            )
         exported.update(changes)
         override_path = self.tmp / "override-manifest.json"
         override_path.write_text(json.dumps(exported), encoding="utf-8")
@@ -343,6 +355,14 @@ class RunDataPipelineTests(unittest.TestCase):
         export_mock.assert_not_called()
         self.assertEqual(manifest["tag"], "override")
         self.assertFalse(is_remote)
+
+    # Value: protects=--data-tag reaches the export as its tag and --data-tag-less builds stay local; fails_when=the tag is dropped, or a release tag is exported with a revision other than resolve_commit's; why_new=no production caller passed a tag before the release script; seam=none; no_claim=export content
+    def test_data_tag_becomes_the_export_tag_and_defaults_to_local(self) -> None:
+        for given, expected in ((None, "local"), ("2026.11.01", "2026.11.01")):
+            with self.subTest(tag=given), mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("stop")) as export_mock, mock.patch.object(b, "resolve_commit", return_value="0123456789ab"):
+                self._run(data_tag=given)
+            self.assertEqual(export_mock.call_args.kwargs["tag"], expected)
+            self.assertEqual(export_mock.call_args.kwargs["commit"], "0123456789ab")
 
     def test_force_export_still_exports_under_a_data_manifest_override(self) -> None:
         override_path = self._override_manifest()
@@ -358,6 +378,8 @@ class RunDataPipelineTests(unittest.TestCase):
             "files empty": {"files": []},
             "path in file name": {"files": [{"name": "../x.gz", "bytes": 1, "unpacked_bytes": 1, "sha256": "a"}]},
             "bad generation": {"generation": "../../etc"},
+            # re.match's $ also matches before a final newline, which would split the page's curl line.
+            "generation with trailing newline": {"generation": "g-0123456789ab\n"},
             "not an object": [],
         }
         for label, payload in cases.items():

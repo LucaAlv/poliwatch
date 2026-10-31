@@ -124,5 +124,59 @@
     "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/279507",
     "source_sha256": "04eee67affcbfc889945396feb6ba9da12dfb0a328a7034e0c39f952acee079c",
     "editing": "Unedited text field of DIP Drucksache 21/224, fetched 2026-10-29. Verified against https://dserver.bundestag.de/btd/21/002/2100224.pdf, page 3; a leading elision hyphen is stranded after und at a DIP line end."
+  },
+  {
+    "fixture": "antrag-text/dip-1802742.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/51874",
+    "source_sha256": "283521b5414104fe4979c4dde496d06f9b7e542660ea4f71af586e03555f0de3",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 51874 (Drucksache 18/2742), fetched 2026-10-29: lines 33-70, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/18/027/1802742.pdf compared 2026-10-29. Kept for: hard hyphen in 'jesidisch-' + 'kurdischen' at a DIP line end (lowercase both sides, spelled nowhere else)."
+  },
+  {
+    "fixture": "antrag-text/dip-1803154.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/52479",
+    "source_sha256": "b1191ebc6793d7f7c53884543dfcf85ff15d97c0731c4a79e24c0fb9fb336522",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 52479 (Drucksache 18/3154), fetched 2026-10-29: lines 62-102, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/18/031/1803154.pdf compared 2026-10-29. Kept for: dash bullet markers dropped, each item line starts with a bare space."
+  },
+  {
+    "fixture": "antrag-text/dip-1916794.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/238181",
+    "source_sha256": "45829980b58c22d062c7e535d90a752e9ce2f38bb0bff8c3fd8c254bbccd676b",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 238181 (Drucksache 19/16794), fetched 2026-10-29: lines 120-182, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/19/167/1916794.pdf compared 2026-10-29. Kept for: printer imprint (Gesamtherstellung, Vertrieb, ISSN) between demands 3 and 4."
+  },
+  {
+    "fixture": "antrag-text/dip-2006708.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/267422",
+    "source_sha256": "22a41df06db88fcd462e322716bd0590331db1559a9648317a57a6f25d518f15",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 267422 (Drucksache 20/6708), fetched 2026-10-29: lines 65-74, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: an interposed clause before 'auf': 'die Bundesregierung dazu auf'."
+  },
+  {
+    "fixture": "antrag-text/dip-2006712.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/267426",
+    "source_sha256": "d954ab3a16045d49fb3014d87bc0cd1037d5bc0d1a8bc0e5595279f605feca00",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 267426 (Drucksache 20/6712), fetched 2026-10-29: lines 141-184, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: an interposed clause before 'auf': 'die Bundesregierung daher im Rahmen der verfügbaren Haushaltsmittel auf' split over two lines."
+  },
+  {
+    "fixture": "antrag-text/dip-2010375.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/272591",
+    "source_sha256": "94d217dc4dd8bc8e3a3db09f3a1bcf7946813d06dc894350f9fc648348e59f48",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 272591 (Drucksache 20/10375), fetched 2026-10-29: lines 274-378, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: an interposed clause before 'auf': 'die Bundesregierung unter Einhaltung der haushälterischen Vorgaben auf'."
+  },
+  {
+    "fixture": "antrag-text/dip-2013417.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/276663",
+    "source_sha256": "7bde66543d2c2b4ccf1d52912b50015c825c72161c866b8dd235d229238ca370",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 276663 (Drucksache 20/13417), fetched 2026-10-29: lines 55-60, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: an interposed clause before 'auf': 'die Bundesregierung daher zur Aufrechterhaltung der öffentlichen Ordnung ... im Sinne von Artikel 72 AEUV auf'."
+  },
+  {
+    "fixture": "antrag-text/dip-2002345.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/261501",
+    "source_sha256": "3559cb85938c89fd99845ad84fa9ab4322fcfe8791df8987d6b3a3b140b38ab3",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record (Drucksache 20/2345), fetched 2026-10-29: lines 63-149, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). The PDF (https://dserver.bundestag.de/btd/20/023/2002345.pdf) prints 'Phasen der Über-' + 'oder Unterforderung'; DIP's text reads 'Überoder Unterforderung'. Kept for: a source defect, a truncated compound's hyphen dropped before 'oder'."
+  },
+  {
+    "fixture": "antrag-text/dip-2013415.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/276660",
+    "source_sha256": "0d6db79ab2a42f0e0b315f8b9f850b67ba88cff52f5957a73ef8be8b02304b7d",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 276660 (Drucksache 20/13415), fetched 2026-10-29: lines 38-248 (the operative part's anchor line to the end of demand 1, item list a) to z) and aa) to gg)) plus the date line 341, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: a lettered list that runs past z) into aa)."
   }
 ]

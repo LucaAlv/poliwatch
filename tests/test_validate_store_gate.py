@@ -10,8 +10,10 @@ from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import _daten_fixture
 import antrag_text
 import build_dip_pulse_site as site
+import persist_dip_pulse_store as pulse_store
 import politikfelder
 import speech_kinds
 import validate_store_gate as gate
@@ -211,31 +213,31 @@ class LinkAuditTest(unittest.TestCase):
         )
 
 
-def _export_dir(root: Path, *, protocols_in_manifest: int = 2, corrupt: bool = False) -> Path:
-    """An output directory with a two-protocol, one-vote store and its export."""
+def _export_dir(root: Path, *, protocols_in_manifest: int | None = None, corrupt: bool = False) -> Path:
+    """An output directory with the Daten fixture store and a real export of it.
+    ``protocols_in_manifest`` makes the manifest's protocol count stale;
+    ``corrupt`` damages the votes table CSV after the export."""
     data = root / "data"
-    generation = data / "exports" / "g-0123456789ab"
-    generation.mkdir(parents=True)
-    conn = sqlite3.connect(data / "bundestag-pulse.sqlite")
-    conn.executescript(
-        "CREATE TABLE protocols (id TEXT); INSERT INTO protocols VALUES ('a'), ('b');"
-        "CREATE TABLE votes (id TEXT); INSERT INTO votes VALUES ('v');"
-        "CREATE TABLE vote_members (id TEXT); INSERT INTO vote_members VALUES ('m1'), ('m2'), ('m3');"
+    data.mkdir(parents=True)
+    db_path = data / "bundestag-pulse.sqlite"
+    _daten_fixture.seed_store(db_path)
+    conn = pulse_store.connect(db_path)
+    try:
+        _, lookup = site.collect_abgeordnete(conn)
+    finally:
+        conn.close()
+    manifest = site.export_distribution_data(
+        db_path, data / "exports", mp_lookup=lookup,
+        readiness={"votes": "ready", "aw-profiles": "unavailable", "mp-roster": "ready"},
+        catalog_count=2, dossier_count=2, commit="abc123",
     )
-    conn.commit()
-    conn.close()
-    payload = b"id\nv\n"
-    (generation / "votes-local.csv.gz").write_bytes(b"tampered" if corrupt else payload)
-    manifest = {
-        "export_format": 5, "generated_at": "2026-10-19T00:00:00+00:00", "generation": "g-0123456789ab",
-        "files": [{"name": "votes-local.csv.gz", "bytes": len(payload), "unpacked_bytes": len(payload),
-                   "sha256": hashlib.sha256(payload).hexdigest()}],
-        "protocols": {"count": protocols_in_manifest}, "tables": [], "relationships": 0, "total_rows": 6,
-        "votes": {"count": 1, "members": 3},
-        "recipes": [{"id": recipe["id"], "sql": recipe["sql"], "rows": []} for recipe in site.RECIPES],
-        "coverage": {"catalog_count": 2, "dossier_count": 2, "bausteine": {}},
-    }
-    (data / "exports" / "datenstand.json").write_text(json.dumps(manifest), encoding="utf-8")
+    if corrupt:
+        (data / "exports" / manifest["generation"] / "votes-local.csv.gz").write_bytes(b"tampered")
+    if protocols_in_manifest is not None:
+        manifest_path = data / "exports" / "datenstand.json"
+        stored = json.loads(manifest_path.read_text(encoding="utf-8"))
+        stored["protocols"]["count"] = protocols_in_manifest
+        manifest_path.write_text(json.dumps(stored), encoding="utf-8")
     return root
 
 
@@ -249,7 +251,7 @@ class ExportCheckTest(unittest.TestCase):
 
     def test_a_damaged_file_and_a_stale_count_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            problems = gate.check_export(_export_dir(Path(tmp), protocols_in_manifest=3, corrupt=True))["problems"]
+            problems = gate.check_export(_export_dir(Path(tmp), protocols_in_manifest=99, corrupt=True))["problems"]
         self.assertEqual(len(problems), 2, problems)
         self.assertTrue(any("votes-local.csv.gz" in problem for problem in problems))
         self.assertTrue(any("protocols" in problem for problem in problems))

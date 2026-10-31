@@ -319,6 +319,16 @@ server so downloads work on `localhost`.
   HTML deploy when the host caps file size, pass `--data-base-url`, run the publish
   script. Documented as the v1 shipping path; the 2.4 GB site question is referenced, not
   solved. The page and the flag ship in PR 1 and work without PR 2.
+  *Status update 2026-10-31 (the bullet above is the original plan, kept as written):*
+  `scripts/publish_dip_pulse_data.sh` now exists but differs from this plan. It builds an
+  immutable `data-<version>/` directory from an export made with `--data-tag <version>` and
+  prints (dry run, the default) or runs (`--publish`) one `gh release create` that uploads
+  every file as a flat asset; there is no `gh release upload --clobber`, no
+  `releases/download/<tag>/` base URL printed, and no `published.json`. `--publish` refuses
+  while `LICENSE-DATA.md` is missing at the repository root, and no release has been made.
+  GitHub assets are flat while the page links `<base URL><generation>/<file>`, so a GitHub
+  release URL as `--data-base-url` does not resolve yet (open hosting decision). The README
+  §7 hosting paragraph named here has not been written.
 
 ### Copy and links elsewhere
 
@@ -401,6 +411,8 @@ server so downloads work on `localhost`.
 - A public deploy is possible with two commands: `publish_dip_pulse_data.sh`, then a build
   with `--data-base-url` pointing at the release. **Deferred to PR 2** (out of scope for
   this implementation pass); local preview works with no flags, confirmed on the real store.
+  (2026-10-31: the script exists now, but a public deploy through a GitHub release URL does
+  not work yet; see the status update under "The deploy knob and the release path".)
 - Offline UI rebuild stays under 1 s when store, recipes and export format are unchanged —
   **not met as measured, but not caused by the export step**: the export step itself skip-
   reuses correctly (`export: reused data/exports (unchanged)`, sub-second), but the *whole*

@@ -29,6 +29,7 @@ def panel_for(item: dict[str, object], **overrides: object) -> VotePanelContext:
         "vorgang_cache": cache,
         "mp_lookup": None,
         "mp_prefix": "../abgeordnete/",
+        "site_prefix": "../",
     }
     fields.update(overrides)
     return VotePanelContext(**fields)

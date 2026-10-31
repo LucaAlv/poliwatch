@@ -97,6 +97,73 @@ class AbstractTextTests(unittest.TestCase):
         self.assertEqual(abstract_text("a" * MAX_ABSTRACT_CHARS + "b" * 50), "a" * MAX_ABSTRACT_CHARS)
         self.assertGreater(MAX_ABSTRACT_CHARS, 5111)  # the longest abstract on the reference cache
 
+    # Value: protects=the MAX_ABSTRACT_CHARS cut never leaves a cut tag or entity ("<a hr", "&am") as visible text; fails_when=the slice is parsed as is, or the trim treats a ">" inside a quoted attribute as the tag's end; why_new=B4 review edge 15 (2026-10-23); seam=none; no_claim=no reference abstract reaches the cut (longest 5,111)
+    def test_the_cut_drops_a_tag_or_entity_it_splits(self) -> None:
+        def kept(tail: str, cut_after: int) -> str:
+            # tail placed so that the cut falls after its first cut_after characters
+            return "a" * (MAX_ABSTRACT_CHARS - cut_after) + tail
+
+        filler = lambda cut_after: "a" * (MAX_ABSTRACT_CHARS - cut_after)  # noqa: E731
+        cases = [
+            (kept('<a href="x">y</a>', 6), filler(6)),  # "<a hre"
+            (kept(" &ndash; x", 4), filler(4)),  # " &nd"
+            (kept(" &#x41; x", 5), filler(5)),  # " &#x4"
+            (kept('<a t="x>y" href="z">w</a>', 12), filler(12)),  # quoted ">" does not close it
+            (kept('<a t="x" href="y&amp;z">w</a>', 20), filler(20)),  # entity inside the cut tag
+            (kept(" b<", 3) + "p>c", filler(3) + " b"),  # "<" as the last character
+            (kept(" &amp; c", 6), filler(6) + " &"),  # a whole reference before the cut stays
+            (kept(" b<br>c", 7), filler(7) + " b\n\nc"),  # a closed tag before the cut stays
+            (kept(" b & c", 4), filler(4) + " b &"),  # "&" then a space: no reference to split
+        ]
+        for raw_text, expected in cases:
+            with self.subTest(tail=raw_text[MAX_ABSTRACT_CHARS - 20 : MAX_ABSTRACT_CHARS + 4]):
+                self.assertEqual(abstract_text(raw_text), expected)
+
+    # Value: protects=the cut drops only the tag it splits, never text before it; fails_when=a "<" that never closes, or one inside a closed tag's quoted attribute, is taken for the split tag and everything after it goes; why_new=code review 2026-10-31: "if a<b then …" past the cut came back as "if a" (4 of 10,000 characters); seam=none
+    def test_the_cut_keeps_a_lone_or_quoted_angle_bracket(self) -> None:
+        lone = "if a<b then " + "x " * 6000
+        self.assertEqual(abstract_text(lone), " ".join(lone[:MAX_ABSTRACT_CHARS].split()))
+        quoted = '<a title="x<y">text ' + "z" * MAX_ABSTRACT_CHARS
+        self.assertEqual(abstract_text(quoted), "text " + "z" * (MAX_ABSTRACT_CHARS - 20))
+
+    # Value: protects=an apostrophe in a tag name or comment before the cut never pairs with one past it; fails_when=the trim reads every quote in a tag as a value quote and drops the whole abstract from that tag; why_new=/ship red team 2026-10-31: 0 characters left where main kept 9,981; seam=none; no_claim=no reference abstract reaches the cut (longest 5,111)
+    def test_an_apostrophe_in_a_tag_or_comment_keeps_the_abstract(self) -> None:
+        apostrophe = "'"
+        past_cut = "x " * 6000 + "don" + apostrophe + "t>"
+        comment = "<!-- it" + apostrophe + "s -->"
+        raw = comment + "Anfang " + past_cut
+        self.assertEqual(abstract_text(raw), " ".join(raw[len(comment) : MAX_ABSTRACT_CHARS].split()))
+        tag = "<b it" + apostrophe + "s>fett</b>"
+        raw = tag + " " + past_cut
+        self.assertEqual(abstract_text(raw), " ".join(("fett" + raw[len(tag) : MAX_ABSTRACT_CHARS]).split()))
+
+    # Value: protects=a comment is read to its "-->" as html.parser reads it; fails_when=the trim ends a comment at an inner ">" and keeps a comment the cut splits, or drops the text after a comment that never closes; why_new=the comment rule added with the apostrophe fix (/ship 2026-10-31); seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_reads_a_comment_to_its_end(self) -> None:
+        filler = "a" * (MAX_ABSTRACT_CHARS - 10)
+        self.assertEqual(abstract_text(filler + "<!-- a > b --> c"), filler)  # cut after "<!-- a > ", inside the comment
+        unclosed = "vor <!-- offen " + "x " * 6000
+        self.assertEqual(abstract_text(unclosed), " ".join(unclosed[:MAX_ABSTRACT_CHARS].split()))
+
+    # Value: protects=an abstract shorter than the cut is read exactly as before; fails_when=the trim runs on every abstract and drops a trailing "<" or "&" that is text; why_new=B4 review edge 15 trim; seam=none
+    def test_an_abstract_within_the_limit_is_not_trimmed(self) -> None:
+        self.assertEqual(abstract_text("a < b &"), "a < b &")
+        self.assertEqual(abstract_text("Ende <a hr"), "Ende <a hr")
+
+    # Value: protects=a "<" whose tag, comment, declaration or processing instruction never closes reads as text on every Python; fails_when=html.parser's 2025 end-of-input rule (3.11.13, 3.12.11, 3.13.4) drops "<a hr" and swallows "<!-- x" while older patch releases keep both; why_new=CI on PR #120 failed on newer patch releases while local 3.13.2 passed; seam=none
+    def test_markup_that_never_closes_is_text_on_every_python(self) -> None:
+        for raw in ["x </a hr", "x <!x", "x <?pi", "vor <!-- offen", "a <b> c <d e"]:
+            with self.subTest(raw=raw):
+                self.assertEqual(abstract_text(raw), raw.replace("<b> ", ""))
+        # A marked section takes the fallback on every Python: older releases raise on it, newer read a comment.
+        self.assertEqual(abstract_text("a<![CDATA[ x ]]>b <p>c"), "a b c")
+        self.assertEqual(abstract_text("x <![CDATA[ y"), "x <![CDATA[ y")
+        # A comment ends at its first "-->" on every Python; newer releases also end one at "--!>" or "<!-->".
+        self.assertEqual(abstract_text("a <!-- x --!> y --> b"), "a b")
+        self.assertEqual(abstract_text("a <!--> b --> c"), "a c")
+        # A comment still parts the text: no entity spliced across it, a marked section inside it stays a comment.
+        self.assertEqual(abstract_text("&am<!-- x -->p;"), "&amp;")
+        self.assertEqual(abstract_text("a<!--[if mso]><![endif]-->b<p>c"), "ab\n\nc")
+
 
 class AbstractTeaserTests(unittest.TestCase):
     def test_a_short_first_paragraph_is_the_teaser(self) -> None:
@@ -124,6 +191,17 @@ class AbstractTeaserTests(unittest.TestCase):
         teaser, more = abstract_teaser("x" * (CONTEXT_TEASER + 50))
         self.assertTrue(more)
         self.assertEqual(teaser, "x" * CONTEXT_TEASER + " …")
+
+    # Value: protects=an abbreviation behind an opening bracket or quote ("(Abs.", "„Art.", "[Nr.") ends no sentence, so the teaser is not cut there; fails_when=the token keeps its "(" and misses _ABBREVIATIONS; why_new=B4 review edge 4 (2026-10-22); seam=none
+    def test_an_abbreviation_after_a_bracket_or_quote_ends_no_sentence(self) -> None:
+        for opener in ("(Abs.", "„Art.", "[Nr.", "(vgl."):
+            with self.subTest(opener=opener):
+                teaser, more = abstract_teaser(f"Die Regel gilt nach § 5 {opener} 2) " + "wort " * 80)
+                self.assertTrue(more)
+                self.assertTrue(teaser.endswith("wort …"), teaser)
+        # A real sentence end before the bracket is still where it cuts.
+        teaser, _ = abstract_teaser("Erster Satz. Nach § 5 (Abs. 2) " + "wort " * 80)
+        self.assertEqual(teaser, "Erster Satz.")
 
 
 REFERENCE_URHEBER = (

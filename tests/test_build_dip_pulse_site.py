@@ -813,7 +813,9 @@ class CitationLabelTests(unittest.TestCase):
 
     def test_recipe_protocol_label_does_not_change_manifest(self) -> None:
         row = {"proceeding_id": "1", "title": "Test", "typ": "Gesetzgebung", "erste_drucksache": "21/84", "reden": 2, "sitzungen": 1}
-        manifest = {"recipes": [{"id": "r5-vorgaenge-meiste-reden", "title": "Test", "sql": "SELECT ...", "rows": [row]}]}
+        manifest = {"generation": "g-0123456789ab",
+                    "recipes": [{"id": "r5-vorgaenge-meiste-reden", "title": "Test", "sql": "SELECT ...", "rows": [row],
+                                 "file": "recipe-r5-vorgaenge-meiste-reden-local.csv"}]}
         markup = build_dip_pulse_site.render_daten_recipes(manifest, mp_lookup={}, document_numbers={"21/84"}, bill_slugs=set())
         self.assertIn("<td>BT-PlPr. 21/84</td>", markup)
         self.assertEqual(row["erste_drucksache"], "21/84")
@@ -1313,8 +1315,8 @@ class CurrentPulseOrderTests(unittest.TestCase):
     # Value: protects=only a roster MdB is shown as an Abgeordnete; anyone else who spoke is a Redner with the Sprechrolle they spoke in, the Fraktion stays visible when the protocols record a Mandat, and a page kept by registry evidence alone claims no Rede; fails_when=a minister's page shows a Fraktion metric again, a roster-less build hides every MdB's Fraktion, an orphan page says "Redner", or the index lists non-MdBs as Abgeordnete or not at all; why_new=CONTEXT.md (MdB, Personenseite) and review 2026-10-30; seam=none
     def test_only_mdbs_are_called_abgeordnete(self) -> None:
         base = {"speeches": [], "votes": [], "vote_tally": {}, "contribution_counts": {}, "contribution_count": 0}
-        mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "speech_count": 3,
-               "sprechrollen": [], "mandat_in_protocols": True}
+        mdb = {**base, "id": "p1", "name": "Ada Example", "party": "SPD", "is_mdb": True, "current_mdb": True,
+               "speech_count": 3, "sprechrollen": [], "mandat_in_protocols": True}
         minister = {**base, "id": "p2", "name": "Bea Minister", "party": None, "is_mdb": False, "speech_count": 5,
                     "sprechrollen": ["Bundesregierung"], "mandat_in_protocols": False}
         spoke_as_mdb = {**base, "id": "p3", "name": "Cem Protokoll", "party": "CDU/CSU", "is_mdb": False, "speech_count": 2,
@@ -2960,21 +2962,25 @@ class VotesArchiveTests(unittest.TestCase):
             {"name": "C", "faction": "SPD", "vote": "no"},
         ]
         fractions = [{"name": "SPD", "counts": {"yes": 2, "no": 1, "abstain": 0, "absent": 0}}]
-        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members}
-        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2]}
+        total = {"yes": 2, "no": 1, "abstain": 0, "absent": 0}
+        complete = {"id": "v1", "date": "2026-06-10", "title": "T", "fractions": fractions, "members": members, "total": total}
+        partial = {"id": "v2", "date": "2026-06-10", "title": "U", "fractions": fractions, "members": members[:2], "total": total}
         unanimous = {"id": "v3", "date": "2026-06-10", "title": "V", "fractions": [
-            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2]}
+            {"name": "SPD", "counts": {"yes": 2, "no": 0, "abstain": 0, "absent": 0}}], "members": members[:2],
+            "total": {**total, "no": 0}}
         # no_members: the fractions have counts but bundestag.de listed no Einzelstimmen.
-        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": []}
+        no_members = {"id": "v4", "date": "2026-06-10", "title": "W", "fractions": fractions, "members": [], "total": total}
         # Value: protects=a vote whose member rows name a group with no fraction row gets no archive count, not the count of the groups that can be checked; fails_when=the unlisted group drops out and the badge reads 1; why_new=only derive and the panel saw the unlisted group; seam=none; no_claim=none
-        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "members": members + [
+        unlisted = {"id": "v5", "date": "2026-06-10", "title": "X", "fractions": fractions, "total": total, "members": members + [
             {"name": "D", "faction": "AfD", "vote": "yes"}, {"name": "E", "faction": "AfD", "vote": "no"}]}
+        # Value: protects=a vote whose fraction rows leave Stimmen of its total unaccounted for (a Fraktion missing from rows and Einzelstimmen) gets no archive count; fails_when=the count rests on the groups present and reads 0; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
+        uncovered = {**unanimous, "id": "v6", "title": "Y", "total": {**total, "no": 40}}
         rows = build_dip_pulse_site.collect_votes_archive(
-            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted])])]
+            [self._entry("2026-06-10", "21/82", [self._item(1, [complete, partial, unanimous, no_members, unlisted, uncovered])])]
         )
         by_id = {row["vote"]["id"]: row for row in rows}
         self.assertEqual(
-            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5")), (1, None, 0, None, None)
+            tuple(by_id[key]["abweichler"] for key in ("v1", "v2", "v3", "v4", "v5", "v6")), (1, None, 0, None, None, None)
         )
         markup = build_dip_pulse_site.render_votes_archive_index(rows)
         self.assertIn('data-abweichler="1"', markup)

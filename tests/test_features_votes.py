@@ -322,8 +322,10 @@ def _members(faction: str, yes: list[str], no: list[str]) -> list[dict[str, str]
 
 
 def _roll_call(members: list[dict[str, str]], **overrides: object) -> dict[str, object]:
-    """A vote whose fraction counts are exactly its member rows."""
-    return _vote(fractions=fractions_of(members), members=members, **overrides)
+    """A vote whose fraction counts and total are exactly its member rows."""
+    fractions = fractions_of(members)
+    total = {key: sum(row["counts"][key] for row in fractions) for key in ("yes", "no", "abstain", "absent")}
+    return _vote(fractions=fractions, members=members, total=total, **overrides)
 
 
 ABWEICHLER_HEADING = "Anders als die Mehrheit der eigenen Fraktion oder Gruppe"
@@ -380,6 +382,22 @@ class AbweichlerPanelTests(unittest.TestCase):
         self.assertNotIn(NONE_NOTE, markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)
 
+    # Value: protects=a Fraktion missing from both the fraction rows and the Einzelstimmen stops "Niemand stimmt anders" and shows the gap note; fails_when=the vote-wide line only checks the groups it has, so the missing Fraktion's Stimmen go unseen; why_new=B4 review edge 11 (ship run 3, 2026-10-23); seam=none; no_claim=217 of 217 reference votes cover their total
+    def test_groups_that_do_not_add_up_to_the_vote_make_no_vote_wide_claim(self) -> None:
+        vote = _roll_call(_members("SPD", ["Ada", "Bea"], []) + _members("AfD", [], ["Cem"]))
+        vote["total"] = {**vote["total"], "no": vote["total"]["no"] + 40}
+        markup = vote_summary({"votes": [vote]})
+        self.assertNotIn(NONE_NOTE, markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+        # A short group already carries the note under its row: once, not twice.
+        members = _members("SPD", ["Ada", "Bea"], ["Cem"]) + _members("AfD", [], ["Dora"])
+        vote = _roll_call(members)
+        vote["fractions"][1]["counts"]["no"] = 2  # the total is not raised with it
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn("<li>Cem</li>", markup)
+        self.assertEqual(markup.count(GAP_NOTE), 1)
+        self.assertLess(markup.index("<strong>AfD</strong>"), markup.index(GAP_NOTE))
+
     def test_a_ja_beside_an_enthaltung_majority_or_a_tie_is_no_abweichung_and_the_note_says_why(self) -> None:
         members = (
             _members("SPD", ["Ada", "Bea"], [])
@@ -408,6 +426,7 @@ class AbweichlerPanelTests(unittest.TestCase):
         vote = _roll_call(members)
         # AfD reports two Nein but only one member row is known.
         vote["fractions"][1]["counts"]["no"] = 2
+        vote["total"]["no"] += 1
         markup = vote_summary({"votes": [vote]})
         self.assertIn("<li>Cem</li>", markup)
         self.assertEqual(markup.count(GAP_NOTE), 1)
@@ -642,7 +661,20 @@ class VotePanelAnchorTests(unittest.TestCase):
         self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
 
 
+LEAD_TERM = '<a href="../bundestag.html#abstimmen">namentliche Abstimmung</a>'
+
+
 class VoteLeadTests(unittest.TestCase):
+    # Value: protects=the lead links "namentliche Abstimmung" to the explainer at the depth of the page that shows the panel, and still escapes the subject once; fails_when=the link is escaped into visible text, the subject is no longer escaped, or the prefix is fixed; why_new=TODO "Link the vote panel's namentlich badge to bundestag.html" (2026-10-30); seam=none
+    def test_the_lead_links_the_term_to_the_explainer(self) -> None:
+        vote = _vote(description='Antrag „A & B“ <b>fett</b>')
+        markup = vote_summary({"votes": [vote]})
+        self.assertIn(f"die {LEAD_TERM} „Antrag „A &amp; B“ &lt;b&gt;fett&lt;/b&gt;“ statt", markup)
+        self.assertNotIn("&amp;amp;", markup)
+        self.assertNotIn("<b>", markup)
+        deeper = vote_summary({"votes": [vote]}, site_prefix="../../")
+        self.assertIn('<a href="../../bundestag.html#abstimmen">namentliche Abstimmung</a>', deeper)
+
     def test_lead_names_raw_counts_and_marks_derived_result(self) -> None:
         vote = _vote(date="2024-03-14", result_raw="accepted", result_source="derived",
                      description='Antrag "X" <img>', total={"yes": 10, "no": 5, "abstain": 0})
@@ -686,7 +718,7 @@ class VoteLeadTests(unittest.TestCase):
             "titel": "Lieferkettensorgfaltspflichtenaufhebungsgesetz",
         }]}}
         markup = vote_summary(item)
-        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn(f"die {LEAD_TERM} „{description}“ statt", markup)
         self.assertIn("wurde abgelehnt", markup)
 
     def test_vote_889_lead_preserves_hier_scope_before_generic_title(self) -> None:
@@ -700,7 +732,7 @@ class VoteLeadTests(unittest.TestCase):
         vote = _vote(id="889", description=description, document_numbers=["20/8657", "20/9781"],
                      title="Erneuerbare-Energien-Gesetz (GesEntw BReg)", result_raw="accepted", result_source="official")
         markup = vote_summary({"votes": [vote]})
-        self.assertIn(f"die namentliche Abstimmung „{description}“ statt", markup)
+        self.assertIn(f"die {LEAD_TERM} „{description}“ statt", markup)
         self.assertIn("Die Vorlage wurde angenommen", markup)
 
     def test_confirmed_rejecting_recommendation_names_application_outcome(self) -> None:

@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0.0] - 2026-10-31
+
+### Added
+
+- A data release script, `scripts/publish_dip_pulse_data.sh` (logic in `publish_dip_pulse_data.py`). It turns an existing Daten export into an immutable, versioned release directory `data-<version>/`, which holds `datenstand.json`, the export files, `CHANGES.md`, `changes.json` and `SHA256SUMS`.
+  - **Dry run by default:** it prints the site-build flags and the `gh release create` command it would run.
+  - **`--publish`** creates the GitHub release. It refuses until `LICENSE-DATA.md` exists (ADR 0003) and the export carries a licence string.
+  - **What gets refused:** an export not built with a release tag, a cited revision that is not a bare commit of this repository, authored inputs that differ from that commit, any file that does not match the manifest, and an existing tag or release directory.
+  - Nothing has been published yet.
+- Release versions are calendar versions, `YYYY.MM.DD` (`.2`, `.3` for further releases on the same day), tagged `data-<version>`. `--next-version` prints the next one. The site build takes it as `--data-tag`, which accepts only `local` or a release version.
+- Every release carries a public data changelog: `CHANGES.md` plus `changes.json`, in the format described in `docs/data-changelog.md`.
+  - **Derived from the two manifests:** export format, store schema, key version and schema hash, plus protocol, vote and row counts, old to new.
+  - **Authored per release:** a summary, schema changes, added coverage, and every correction of a published value (table, key, column, old value, new value, reason).
+  - **Refusal:** a release whose schema moved without an authored description is refused.
+- `CITATION.cff` at the repository root. It claims no DOI or version yet.
+
+### Changed
+
+- The cited build revision is reproducible.
+  - **Same edit, same revision:** the same edit gives the same `-dirty-<hash>` under the common git diff settings. A git timeout gives `-unverified-<hash>`, which still changes with every edit, instead of one fixed `-unverified`.
+  - **Release requirements:** a release export needs a bare 12-digit commit, and its authored codebook inputs must be committed and unchanged.
+  - **Where it's explained:** the Daten page and DATA.md explain the suffix.
+  - **Effect on local exports:** a dirty tree's revision string changes form and hash once. No figure moves.
+- The publication check (`--validate-publication`) also scans the export's `DATA.md` and `datenstand.json` for leaked local paths and placeholders.
+
+### Fixed
+
+- An export that fails after swapping in its new generation puts the previous generation back. Before, the old manifest could be left pointing at the new files.
+
+## [0.25.2.0] - 2026-10-31
+
+### Changed
+
+- A vote panel can now quote an Antrag whose demand sentence puts a clause between „die Bundesregierung“ and „auf“: „im Rahmen der verfügbaren Haushaltsmittel auf“, „unter Einhaltung der haushälterischen Vorgaben auf“, „zur … auf“, „zum … auf“ and „dazu auf“. The opening quotes the whole sentence. On the saved 91-document corpus, ten more Drucksachen are quoted, each checked word for word against the PDF: quoted documents 64 → 74 of 91, reference cohort 50/71 → 60/71 (84.5 %). Derived but not measured on a site build: vote panels with a description 196/217 → 206/217. A store persisted with the previous extractor is refused until it is re-persisted with `--offline --repersist`.
+
+### Fixed
+
+- An Antrag is quoted only where its text proves the structure, so no quote on the saved corpus is wrong any more. Incorrect quotes went from 3 to 0:
+  - 18/2742 joined „jesidisch-“ and „kurdischen“ into „jesidischkurdischen“ and is now not quoted.
+  - 18/3154 lost its nine bullet markers and is now not quoted, instead of showing a flattened list.
+  - 19/16794 carried the printer's imprint (Gesamtherstellung, Vertrieb, ISSN) between two demands and is now quoted without it.
+- A lettered list that runs past z) into aa) to gg) keeps every item. 20/13415 folded aa) to ff) into demand z).
+- An Antrag whose source text glues a dropped hyphen to „oder“ („Überoder Unterforderung“, 20/2345) is not quoted.
+- The facts engine and the rebuild refuse a downloaded release SQLite given as `--database-path` and leave the file byte for byte as it was. Before, the facts engine could write into it and a rebuild replaced it with a fresh build store.
+
+## [0.25.1.0] - 2026-10-31
+
+### Changed
+
+- In a vote panel's opening sentence, „namentliche Abstimmung“ links to the explainer on `bundestag.html#abstimmen`. All 246 vote leads on the reference site carry the link.
+
+### Fixed
+
+- A Fakt card shows its whole caveat, up to four lines, instead of cutting it after two. The caveats of „Die knappste Abstimmung der Woche“ and „Die meisten Abweichler der Woche“ lost their second half before. The caveat now ends just above the footer and grows upward, and the comparison text moves up to make room. The widest caveat line measures 869 of the 920 px available. The caveat texts are unchanged.
+- A vote panel says „Niemand stimmt anders als die Mehrheit der eigenen Fraktion oder Gruppe“, and the Abstimmungen archive gives an Abweichler count, only when the Fraktionen and Gruppen add up to the vote's total. Where Stimmen are missing from the groups, the panel shows the gap note once, under the vote. On the reference site all 217 votes add up, so no panel or archive count changes (217 archive rows, 632 Abweichler).
+- A context teaser no longer ends after an abbreviation that follows a bracket or quote, such as „(sog.“ or „(Abs.“; it cuts at the last real sentence end or at a word with „…“. 10 of 3,922 cached teasers change, all of which ended in „(sog.“.
+- An abstract cut at 10,000 characters no longer ends in a fragment of a tag or entity („<a hr“, „&am“) as visible text; only the one tag the cut splits is dropped. No cached abstract reaches the cut (the longest has 5,111 characters), so none changes.
+- An abstract reads the same on every Python patch release. html.parser's 2025 security releases (3.11.13, 3.12.11, 3.13.4) drop a tag that never closes („Ende <a hr“ became „Ende“) and read an unclosed comment to the end; older releases keep both as text. Each comment is now removed and each never-closing „<“ escaped before parsing, so both keep the text, and an abstract with a marked section („<![CDATA[“) always takes the plain-text fallback. 0 of 3,922 cached abstracts change on either release.
+
+## [0.25.0.0] - 2026-10-31
+
+### Added
+
+- Every data export now carries `DATA.md`, a German codebook you can read without the website: what each table and column means, its unit, source and licence layer, the per-Wahlperiode coverage of exactly this SQLite file (sittings, date range, TOPs, Reden, Beiträge, Abstimmungen, Stimmen), the counting rules, the exact SQL of each published recipe, the layered licence terms and how to cite the export. Every definition was checked against the code that writes the column.
+- The six SQL recipes on the Daten page now also ship as result CSVs (`recipe-<id>-<tag>.csv`), with every SQL column in projection order, including the link IDs the page hides, so each result can be reproduced against the export's SQLite file. The Daten page links `DATA.md` in the download panel and each recipe's CSV beside its table.
+
+### Changed
+
+- Export format 10: `datenstand.json` lists every file of a generation with its kind (`sqlite`, `table_csv`, `recipe_csv`, `codebook`), size, SHA-256 and, for CSVs, row count, and each recipe names its CSV. A manifest of another export format is refused; re-export with this version.
+- r3 („Abweichler“) counts per person and Fraktion: someone who switched Fraktion gets one row per Fraktion instead of one row with the label of one of them. On the reference export the top five are unchanged (Bayram 30, Dieren 18, Kraft 13, Koeppen 11, Kubicki 9); 2 of 363 persons now have two rows, both below the cut.
+- The cited build revision is a 12-character commit, with `-dirty-<hash>` when tracked files differ from it and `-unverified` when git cannot tell. A release export needs a clean revision. An export re-runs when the codebook inputs, the revision or the exporter change, and a cached generation whose `DATA.md` or recipe CSVs were altered is written again.
+
+### Fixed
+
+- The licence notice (`docs/data-license.md`) lists every column it gives CC BY 4.0, including `speeches.sprechrolle`, `speeches.unattributed_char_count` and `speech_rule_inputs`, which it previously left under DIP terms.
+
 ## [0.24.1.0] - 2026-10-30
 
 ### Added

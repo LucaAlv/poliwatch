@@ -137,6 +137,8 @@ class VotePanelContext:
     vorgang_cache: Mapping[str, Any]
     mp_lookup: dict[str, str] | None
     mp_prefix: str
+    #: From the page to the site root, for site-wide links (bundestag.html).
+    site_prefix: str
     vote_passages: Mapping[str, antrag_text.VotePassages] = field(default_factory=dict)
 
 
@@ -219,8 +221,9 @@ def render_committee_line(
     return f'<p class="vote-committee">{"<br>".join(lines)}</p>'
 
 
-def render_vote_lead(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
-    """Short factual introduction from stored vote facts; never recomputes an outcome."""
+def render_vote_lead(vote: Mapping[str, Any], report: Mapping[str, Any], site_prefix: str) -> str:
+    """Short factual introduction from stored vote facts; never recomputes an
+    outcome. "namentliche Abstimmung" links to its explanation on bundestag.html."""
     subject = derive.vote_subject(vote, report)
     kind = derive.abstimmungsgegenstand(vote)
     date = html.format_date(vote.get("date"))
@@ -231,7 +234,9 @@ def render_vote_lead(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
         count_parts.append(f"{html.format_int(value)} {label}" if isinstance(value, int) and not isinstance(value, bool) else f"{label}: nicht überliefert")
     tally = ", ".join(count_parts)
     when = f"Am {date} fand im Bundestag" if date else "Im Bundestag fand"
-    sentence = f"{when} die namentliche Abstimmung „{subject}“ statt ({tally})."
+    term = f'<a href="{html.esc(site_prefix)}bundestag.html#abstimmen">namentliche Abstimmung</a>'
+    opening = f"{html.esc(when)} die {term} {html.esc(f'„{subject}“ statt ({tally}).')}"
+    inverted_note = ""
     outcome = derive.vote_outcome(vote)
     if outcome:
         label = RESULT_BADGE_LABELS[outcome].lower()
@@ -251,12 +256,12 @@ def render_vote_lead(vote: Mapping[str, Any], report: Mapping[str, Any]) -> str:
             result += " (laut Beschluss auf bundestag.de)"
     else:
         if vote.get("inverted"):
-            sentence += " Die Empfehlung lautete, den Antrag abzulehnen."
+            inverted_note = " Die Empfehlung lautete, den Antrag abzulehnen."
         result = ("Ergebnis nicht verfügbar: Zweidrittelmehrheit der Mitglieder erforderlich (Art. 79 Abs. 2 GG); kein amtliches Ergebnis gefunden"
                   if vote.get("procedure_type") == "constitutional_amendment"
                   else "Ergebnis nicht verfügbar: Mehrheit der Mitglieder erforderlich; kein amtliches Ergebnis gefunden"
                   if vote.get("procedure_type") else "Ergebnis nicht verfügbar")
-    return f'<p class="vote-lead">{html.esc(sentence + " " + result + ".")}</p>'
+    return f'<p class="vote-lead">{opening}{html.esc(inverted_note + " " + result + ".")}</p>'
 
 
 CONTEXT_HEADING = "Worum es geht"
@@ -437,15 +442,19 @@ def _fraction_group_html(
     )
 
 
-def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool) -> str:
-    """The vote-wide line under the groups: one gap note when no group has
-    member rows or a group has member rows but no fraction row (it has no row
-    to carry its own note), "Niemand stimmt anders …" when every group is
-    complete and has none, else nothing (each short group carries its own note)."""
+def _abweichler_summary_html(abweichler: Mapping[str, Any], no_members: bool, count: int | None) -> str:
+    """The vote-wide line under the groups, from ``count``
+    (derive.vote_abweichler_count): one gap note when no group has member
+    rows, a group has member rows but no fraction row (it has no row to carry
+    its own note) or every group is complete but the fraction rows do not add
+    up to the vote (no short group to carry it); "Niemand stimmt anders …"
+    when the count is 0; else nothing (each short group carries its own note)."""
     if no_members or any(group.get("unlisted") for group in abweichler.values()):
         return ABWEICHLER_GAP_HTML
-    if abweichler and all(group["state"] == "complete" and not group["members"] for group in abweichler.values()):
+    if count == 0:
         return f'<p class="vote-abweichler-none">{html.esc(ABWEICHLER_NONE)}</p>'
+    if count is None and derive.abweichler_groups_complete(abweichler):
+        return ABWEICHLER_GAP_HTML
     return ""
 
 
@@ -552,8 +561,8 @@ def render_vote_summary(item: dict[str, Any], acquisition: dict[str, Any] | None
             f'<p><a href="{html.esc(detail_url)}">{html.esc(html.short(vote.get("title"), 140))}</a>{docs_text}{xlsx_text}</p>'
             "</div>"
             f'<div class="vote-total">{html.render_vote_stack(total)}{html.render_vote_pills(total)}</div></div>'
-            f'{render_vote_lead(vote, panel.report)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
-            f'{_abweichler_summary_html(abweichler, no_members)}'
+            f'{render_vote_lead(vote, panel.report, panel.site_prefix)}{committee_line}{debate_text}{vote_context_html}{explanation}<div class="vote-fractions">{fraction_rows}</div>'
+            f'{_abweichler_summary_html(abweichler, no_members, derive.vote_abweichler_count(vote, abweichler))}'
             '<details class="member-votes">'
             f'<summary>Einzelstimmen ({html.esc(len(vote.get("members") or []))} Abgeordnete)</summary>'
             f'<div class="member-vote-grid">{_member_sections_html(vote, panel)}</div>'
@@ -572,6 +581,7 @@ class VotesComponent(BaseComponent):
             vote_passages=ctx.get("vote_passages") or {},
             mp_lookup=ctx.get("mp_lookup"),
             mp_prefix=ctx.get("mp_prefix", "../abgeordnete/"),
+            site_prefix=ctx.get("site_prefix", "../"),
         )
         return [render_vote_summary(ctx["item"], acquisition, panel)]
 

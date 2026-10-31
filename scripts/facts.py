@@ -55,7 +55,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, MutableMapping, NamedTuple, Sequence
 from xml.sax.saxutils import escape
 
 import derive
@@ -2518,6 +2518,55 @@ CARD_INK = "#171a1f"
 CARD_MUTED = "#606a78"
 CARD_PAPER = "#f7f8fa"
 CARD_BLUE = "#174ea6"
+# Each block's first baseline (_Y) and font size, top to bottom.
+CARD_EYEBROW_Y = 150
+CARD_EYEBROW_SIZE = 30
+CARD_LABEL_Y = 215
+CARD_LABEL_SIZE = 40
+CARD_HEADLINE_Y = 380
+CARD_HEADLINE_SIZE = 110
+CARD_TITLE_Y = 470
+CARD_TITLE_SIZE = 46
+CARD_TITLE_LINE_HEIGHT = 58
+CARD_TOPIC_Y = 650
+CARD_TOPIC_SIZE = 28
+CARD_COMPARISON_Y = 700
+CARD_COMPARISON_SIZE = 40
+CARD_COMPARISON_LINE_HEIGHT = 52
+# The caveat is shown whole (D27): up to four lines of 83 characters at 22px,
+# the line width the card had at 76 characters of 24px. It ends at a fixed
+# baseline above the footer and grows upwards; the comparison block above it,
+# and the topic line above that, move up only as far as a long caveat needs.
+CARD_CAVEAT_LINES = 4
+CARD_CAVEAT_WIDTH = 83
+CARD_CAVEAT_SIZE = 22
+CARD_CAVEAT_LINE_HEIGHT = 28
+CARD_CAVEAT_LAST_Y = 920
+# Baseline of the comparison's last line to the caveat's first.
+CARD_COMPARISON_CAVEAT_GAP = 60
+CARD_FOOTER_Y = 960
+CARD_FOOTER_SIZE = 26
+CARD_SITE_Y = 1000
+CARD_SITE_SIZE = 30
+
+
+class CardLowerLayout(NamedTuple):
+    """First baselines of the blocks between the title and the footer."""
+
+    topic_y: int
+    comparison_y: int
+    caveat_y: int
+
+
+def card_lower_layout(*, comparison_lines: int, caveat_lines: int) -> CardLowerLayout:
+    """Where the topic, comparison and caveat blocks start for these line counts."""
+    caveat_y = CARD_CAVEAT_LAST_Y - max(caveat_lines - 1, 0) * CARD_CAVEAT_LINE_HEIGHT
+    comparison_y = CARD_COMPARISON_Y
+    if caveat_lines:
+        room = caveat_y - CARD_COMPARISON_CAVEAT_GAP - max(comparison_lines - 1, 0) * CARD_COMPARISON_LINE_HEIGHT
+        comparison_y = min(comparison_y, room)
+    topic_y = comparison_y - (CARD_COMPARISON_Y - CARD_TOPIC_Y)
+    return CardLowerLayout(topic_y=topic_y, comparison_y=comparison_y, caveat_y=caveat_y)
 
 
 def _text_block(
@@ -2565,21 +2614,37 @@ def render_card(row: Mapping[str, Any]) -> str:
     topic_lines = wrap_lines(f"Thema: {topic}", width=58, max_lines=1) if topic else []
     comparison_lines = wrap_lines(comparison_clause(row), width=44, max_lines=3)
     footer = baseline_comparison_line(row)
-    caveat_lines = wrap_lines(card_caveat(row) or "", width=76, max_lines=2)
+    caveat_lines = wrap_lines(card_caveat(row) or "", width=CARD_CAVEAT_WIDTH, max_lines=CARD_CAVEAT_LINES)
+    layout = card_lower_layout(comparison_lines=len(comparison_lines), caveat_lines=len(caveat_lines))
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_SIZE}" height="{CARD_SIZE}" '
         f'viewBox="0 0 {CARD_SIZE} {CARD_SIZE}" font-family="{CARD_FONT}">',
         f'<rect width="{CARD_SIZE}" height="{CARD_SIZE}" fill="{CARD_PAPER}"/>',
         f'<rect x="{x}" y="{x}" width="{CARD_SIZE - 2 * x}" height="8" fill="{CARD_BLUE}"/>',
-        _text_block([eyebrow], x=x, y=150, size=30, line_height=0, fill=CARD_MUTED, css_class="eyebrow", weight="bold"),
-        _text_block([metric["title"]], x=x, y=215, size=40, line_height=0, fill=CARD_INK, css_class="label"),
-        _text_block([headline(row)], x=x, y=380, size=110, line_height=0, fill=CARD_BLUE, css_class="headline", weight="bold"),
-        _text_block(title_lines, x=x, y=470, size=46, line_height=58, fill=CARD_INK, css_class="title"),
-        _text_block(topic_lines, x=x, y=650, size=28, line_height=0, fill=CARD_MUTED, css_class="topic"),
-        _text_block(comparison_lines, x=x, y=700, size=40, line_height=52, fill=CARD_INK, css_class="comparison"),
-        _text_block(caveat_lines, x=x, y=870, size=24, line_height=32, fill=CARD_MUTED, css_class="caveat"),
-        _text_block([footer], x=x, y=960, size=26, line_height=0, fill=CARD_MUTED, css_class="footer"),
-        f'<text class="site" x="{CARD_SIZE - x}" y="1000" font-size="30" font-weight="bold" '
+        _text_block(
+            [eyebrow], x=x, y=CARD_EYEBROW_Y, size=CARD_EYEBROW_SIZE, line_height=0, fill=CARD_MUTED,
+            css_class="eyebrow", weight="bold",
+        ),
+        _text_block([metric["title"]], x=x, y=CARD_LABEL_Y, size=CARD_LABEL_SIZE, line_height=0, fill=CARD_INK, css_class="label"),
+        _text_block(
+            [headline(row)], x=x, y=CARD_HEADLINE_Y, size=CARD_HEADLINE_SIZE, line_height=0, fill=CARD_BLUE,
+            css_class="headline", weight="bold",
+        ),
+        _text_block(
+            title_lines, x=x, y=CARD_TITLE_Y, size=CARD_TITLE_SIZE, line_height=CARD_TITLE_LINE_HEIGHT, fill=CARD_INK,
+            css_class="title",
+        ),
+        _text_block(topic_lines, x=x, y=layout.topic_y, size=CARD_TOPIC_SIZE, line_height=0, fill=CARD_MUTED, css_class="topic"),
+        _text_block(
+            comparison_lines, x=x, y=layout.comparison_y, size=CARD_COMPARISON_SIZE, line_height=CARD_COMPARISON_LINE_HEIGHT,
+            fill=CARD_INK, css_class="comparison",
+        ),
+        _text_block(
+            caveat_lines, x=x, y=layout.caveat_y, size=CARD_CAVEAT_SIZE, line_height=CARD_CAVEAT_LINE_HEIGHT,
+            fill=CARD_MUTED, css_class="caveat",
+        ),
+        _text_block([footer], x=x, y=CARD_FOOTER_Y, size=CARD_FOOTER_SIZE, line_height=0, fill=CARD_MUTED, css_class="footer"),
+        f'<text class="site" x="{CARD_SIZE - x}" y="{CARD_SITE_Y}" font-size="{CARD_SITE_SIZE}" font-weight="bold" '
         f'fill="{CARD_BLUE}" text-anchor="end">Bundestag-Puls</text>',
         "</svg>",
     ]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import html
 import re
 import sys
 import tempfile
@@ -51,6 +53,23 @@ class DatenPageTests(unittest.TestCase):
             bill_slugs={"bill-vg-1"},
             features=all_selection(),
         )
+
+    # Value: protects=a reader who sees a suffixed revision is told what it means, and a bare one carries no such note; fails_when=-dirty-/-unverified revisions render without an explanation or a clean one gets one; why_new=the suffix was explained only in DATA.md; seam=render_database_page; no_claim=wording
+    def test_a_suffixed_revision_is_explained_next_to_the_commit(self) -> None:
+        def provenance(commit: str) -> str:
+            html = b.render_database_page(
+                dict(self.manifest, commit=commit),
+                data_base_url="data/exports/",
+                mp_lookup=self.lookup,
+                document_numbers=set(),
+                bill_slugs=set(),
+                features=all_selection(),
+            )
+            return re.search(r'<p class="provenance-line">(.*?)</p>', html, re.S).group(1)
+
+        self.assertNotIn("Änderungen", provenance("abc123def456"))
+        self.assertRegex(provenance("abc123def456-dirty-0123abcd"), r"Commit abc123def456-dirty-0123abcd.*Änderungen")
+        self.assertRegex(provenance("abc123def456-unverified-0123abcd"), r"Commit abc123def456-unverified-0123abcd.*nicht prüfen")
 
     def test_no_sample_table_or_search_box(self) -> None:
         # The shared dark-theme stylesheet still lists .sample-table in an
@@ -146,7 +165,86 @@ class DatenPageTests(unittest.TestCase):
     def test_recipe_sql_shown_verbatim(self) -> None:
         for recipe in b.RECIPES:
             with self.subTest(recipe=recipe["id"]):
-                self.assertIn(recipe["sql"].split("\n")[0][:20], self.html)
+                self.assertIn(f"<pre><code>{html.escape(recipe['sql'], quote=True)}</code></pre>", self.html)
+
+    def test_new_artifact_links_use_local_or_remote_generation_and_table_count(self) -> None:
+        self.assertIs(b.validate_manifest(self.manifest, "fixture"), self.manifest)
+        for base in ("data/exports/", "https://example.org/releases/v-test/"):
+            with self.subTest(base=base):
+                page = b.render_database_page(self.manifest, data_base_url=base, is_remote=base.startswith("https"))
+                artifacts = [file for file in self.manifest["files"] if file["kind"] in ("codebook", "recipe_csv")]
+                self.assertEqual(len(artifacts), 7)
+                for file in artifacts:
+                    self.assertIn(f'href="{base}{self.manifest["generation"]}/{file["name"]}"', page)
+                    self.assertTrue((self.tmp / "exports" / self.manifest["generation"] / file["name"]).is_file())
+                table_count = sum(file["kind"] == "table_csv" for file in self.manifest["files"])
+                self.assertIn(f"CSV-Tabellen ({table_count})", page)
+                self.assertEqual(page.count("Ergebnis als CSV"), 6)
+        r5_block = re.search(r'id="recipe-r5-vorgaenge-meiste-reden-title"(.*?)</section>', self.html, re.S).group(1)
+        self.assertEqual(re.findall(r'<th scope="col">(.*?)</th>', r5_block), ["wahlperiode", "title", "typ", "erste_drucksache", "reden", "sitzungen"])
+        self.assertIn("BT-PlPr. 20/100", r5_block)
+
+    def test_manifest_of_another_export_format_is_rejected(self) -> None:
+        # Pre-release: no older manifest shape is rendered (CLAUDE.md).
+        for export_format in (b.EXPORT_FORMAT - 1, b.EXPORT_FORMAT + 1):
+            with self.subTest(export_format=export_format):
+                manifest = dict(copy.deepcopy(self.manifest), export_format=export_format)
+                with self.assertRaisesRegex(RuntimeError, "not the current format"):
+                    b.validate_manifest(manifest, "old")
+
+    def test_non_list_files_fails_with_named_error(self) -> None:
+        manifest = dict(copy.deepcopy(self.manifest), files={"0": self.manifest["files"][0]})
+        with self.assertRaisesRegex(RuntimeError, "files is not list"):
+            b.validate_manifest(manifest, "dict files")
+
+    # Value: protects=a manifest that is not a JSON object is refused naming the --data-manifest source, or the exporter's own subject when it validates its output; fails_when=the subject default drops the flag and source or the object check is removed; why_new=the problem-list errors are pinned but the not-an-object branch was never reached; seam=none; no_claim=the manifest the operator supplied can be read
+    def test_manifest_that_is_not_an_object_names_its_source(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, r"^error: --data-manifest remote\.json is not a JSON object$"):
+            b.validate_manifest([self.manifest], "remote.json")
+        with self.assertRaisesRegex(RuntimeError, r"^error: the export's new datenstand\.json is not a JSON object$"):
+            b.validate_manifest(None, "new export", subject="the export's new datenstand.json")
+
+    # Value: protects=a --data-manifest with a bad sqlite size, repeated recipe id or table CSV list that does not match the tables is refused before rendering links to absent files; fails_when=those inventory checks are dropped; why_new=extends the table of inventory faults, which omitted these branches; seam=none; no_claim=remote fetch
+    def test_new_manifest_rejects_missing_mistyped_or_malformed_inventory(self) -> None:
+        def codebook(manifest):
+            return next(file for file in manifest["files"] if file["kind"] == "codebook")
+
+        def recipe_file(manifest):
+            return next(file for file in manifest["files"] if file["kind"] == "recipe_csv")
+
+        cases = [
+            ("missing codebook", "codebook", lambda m: m["files"].remove(codebook(m))),
+            ("mistyped codebook", "codebook", lambda m: codebook(m).update(kind="table_csv")),
+            ("missing recipe", "recipe_csv reference", lambda m: m["files"].remove(recipe_file(m))),
+            ("mistyped recipe", "recipe_csv reference", lambda m: recipe_file(m).update(kind="table_csv")),
+            ("missing kind", "kind unsupported", lambda m: codebook(m).pop("kind")),
+            ("unsupported kind", "kind unsupported", lambda m: codebook(m).update(kind="html")),
+            ("duplicate filename", "duplicate files name", lambda m: m["files"].append(dict(codebook(m)))),
+            ("dangling reference", "recipe_csv reference", lambda m: m["recipes"][0].update(file="absent.csv")),
+            ("wrong reference kind", "recipe_csv reference", lambda m: m["recipes"][0].update(file="DATA.md")),
+            ("duplicate reference", "duplicate recipe_csv reference", lambda m: m["recipes"][1].update(file=m["recipes"][0]["file"])),
+            ("orphan inventory", "dangling recipe_csv", lambda m: m["files"].append({**recipe_file(m), "name": "extra.csv"})),
+            ("wrong bytes", "bytes must", lambda m: codebook(m).update(bytes=True)),
+            ("negative bytes", "bytes must", lambda m: codebook(m).update(bytes=-1)),
+            ("wrong rows", "rows must", lambda m: recipe_file(m).update(rows=True)),
+            ("wrong hash", "sha256 must", lambda m: codebook(m).update(sha256="invalid")),
+            ("missing table", "table_csv inventory", lambda m: m["files"].remove(next(f for f in m["files"] if f["kind"] == "table_csv"))),
+            ("sqlite must be first", "sqlite, first", lambda m: m["files"].reverse()),
+            ("row count mismatch", "rows mismatch", lambda m: recipe_file(m).update(rows=999)),
+            ("duplicate columns", "unique column", lambda m: m["recipes"][0].update(columns=["id", "id"])),
+            ("bad unpacked bytes", "unpacked_bytes must", lambda m: m["files"][0].update(unpacked_bytes=-1)),
+            ("duplicate recipe id", "duplicate recipe id", lambda m: m["recipes"][1].update(id=m["recipes"][0]["id"])),
+            ("extra table csv", "table_csv inventory", lambda m: m["files"].append({**next(f for f in m["files"] if f["kind"] == "table_csv"), "name": "nosuch-local.csv.gz"})),
+            ("table csv not gzipped", "table_csv inventory", lambda m: next(f for f in m["files"] if f["kind"] == "table_csv").update(name="speeches-local.csv")),
+        ]
+        for bad_name in ("../DATA.md", "sub/DATA.md", "sub\\DATA.md", ".", "..", "", "DATA.md?query", "DATA.md#fragment", "bad\x00.md"):
+            cases.append((bad_name, "plain file name", lambda m, name=bad_name: codebook(m).update(name=name)))
+        for label, error, mutate in cases:
+            with self.subTest(label=label):
+                manifest = copy.deepcopy(self.manifest)
+                mutate(manifest)
+                with self.assertRaisesRegex(RuntimeError, error):
+                    b.validate_manifest(manifest, label)
 
     def test_recipe_copy_button_present_once_per_recipe(self) -> None:
         # Rendered hidden without JS - no dead button when the script did not
