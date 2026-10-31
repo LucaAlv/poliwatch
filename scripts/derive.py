@@ -362,8 +362,12 @@ def trusted_aw_id(profile: Mapping[str, Any] | None, match: Any = None) -> int |
 
 def member_profile_url(member: Mapping[str, Any]) -> str | None:
     """A roll-call member's profile URL: the abgeordnetenwatch profile, else the
-    member's own link; either only when it names a person (``person_profile_url``)."""
-    aw_url = person_profile_url((member.get("abgeordnetenwatch") or {}).get("url"))
+    member's own link; either only when it names a person (``person_profile_url``).
+    The abgeordnetenwatch profile counts only for a trusted match kind
+    (``trusted_aw_id``: found by the Redner-ID); a profile found by name is a
+    guess and stays off a named Abweichler."""
+    aw = member.get("abgeordnetenwatch") or {}
+    aw_url = person_profile_url(aw.get("url")) if trusted_aw_id(aw) is not None else None
     return aw_url or person_profile_url(member.get("profile_url"))
 
 
