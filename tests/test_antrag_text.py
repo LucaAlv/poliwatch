@@ -198,6 +198,40 @@ class DipTextTests(unittest.TestCase):
         self.assertNotIn(" aa) ", forderung.demands[26])
         self.assertTrue(forderung.demands[26].startswith("z) bei der Aushandlung"))
 
+    # Value: protects=a clause between the object and "auf" is bounded: "zum" opens one, but a comma, a full stop or more than 30 words before "auf" is no clause, so no quote; fails_when=the clause pattern may cross punctuation or has no length cap; why_new=the interposed-anchor test pins only accepted forms; seam=none; no_claim=real Drucksachen beyond the measured forms (synthetic openings)
+    def test_an_interposed_clause_is_bounded(self) -> None:
+        def opening(middle: str) -> str | None:
+            text = f"Der Deutsche Bundestag fordert die Bundesregierung {middle},\n1. zu handeln;\n2. zu berichten.\nBerlin, den 9. Januar 2024"
+            forderung = antrag_text.extract_forderung(text)
+            return forderung.opening if forderung else None
+
+        self.assertEqual(opening("zum Schutz der Kinder auf"), "Der Deutsche Bundestag fordert die Bundesregierung zum Schutz der Kinder auf,")
+        self.assertEqual(opening("daher dazu auf"), "Der Deutsche Bundestag fordert die Bundesregierung daher dazu auf,")
+        self.assertIsNotNone(opening("zur " + " ".join(["Prüfung"] * 29) + " auf"))
+        self.assertIsNone(opening("zur " + " ".join(["Prüfung"] * 31) + " auf"))
+        self.assertIsNone(opening("zum Schutz der Kinder, soweit es auf"))
+        self.assertIsNone(opening("zur Vorlage eines Berichts. Das hängt davon auf"))
+
+    # Value: protects=a printer-imprint line "Druck: … GmbH/www." between demands is dropped while a content line that only starts with "Druck:" stays; fails_when=the Druck pattern is removed or matches any "Druck:" line; why_new=the 19/16794 fixture has Gesamtherstellung, Vertrieb and ISSN but no Druck line; seam=none; no_claim=a real Druck imprint (synthetic line)
+    def test_a_druck_imprint_is_dropped_but_a_druck_sentence_is_kept(self) -> None:
+        def demands(line: str) -> tuple[str, ...]:
+            text = "\n".join((OPENING, "1. das Gesetz zu ändern;", line, "2. zu berichten.", "Berlin, den 9. Januar 2024"))
+            return antrag_text.extract_forderung(text).demands
+
+        self.assertEqual(demands("Druck: Musterdruck GmbH, Berlin, www.muster.de"), ("1. das Gesetz zu ändern;", "2. zu berichten."))
+        self.assertEqual(demands("Druck: eine Frage der Haltung")[0], "1. das Gesetz zu ändern; Druck: eine Frage der Haltung")
+
+    # Value: protects=an indented line after an unfinished clause is a wrapped continuation and joins it, and an indented item marker stays an item; fails_when=the dropped-marker refusal fires on any line with leading space, not only after a finished clause; why_new=the 18/3154 test pins only the refusal; seam=none; no_claim=real indentation patterns beyond 18/3154 (synthetic lines)
+    def test_indentation_alone_does_not_refuse_the_quote(self) -> None:
+        def demands(*lines: str) -> tuple[str, ...] | None:
+            forderung = antrag_text.extract_forderung("\n".join((OPENING, *lines, "Berlin, den 9. Januar 2024")))
+            return forderung.demands if forderung else None
+
+        self.assertEqual(demands("1. das Gesetz zu ändern und", "  die Mittel zu erhöhen;", "2. zu berichten."),
+                         ("1. das Gesetz zu ändern und die Mittel zu erhöhen;", "2. zu berichten."))
+        self.assertEqual(demands("1. das Gesetz zu ändern;", "  2. zu berichten."), ("1. das Gesetz zu ändern;", "2. zu berichten."))
+        self.assertIsNone(demands("1. das Gesetz zu ändern;", "  die Mittel zu erhöhen;", "2. zu berichten."))
+
     # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
     def test_a_repeated_page_head_is_dropped(self) -> None:
         forderung = antrag_text.extract_forderung(real_text("dip-2105780.txt"))
