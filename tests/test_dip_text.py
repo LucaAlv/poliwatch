@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import unittest
 
 import _support  # noqa: F401
@@ -36,7 +37,7 @@ class AbstractTextTests(unittest.TestCase):
         cases = [
             ("Vor <![oops]> nach &amp; mehr", "Vor nach & mehr"),
             ("<p>Eins</p> <script>zwei", "Eins\n\nzwei"),
-            # A closed <script> or <style> loses its text, as on the parser's path.
+            # A closed <script> or <style> loses its text; an unclosed one is a plain tag and the text after it stays.
             ("<style>p{}</style>Eins <SCRIPT>x()</script ><![oops]> zwei", "Eins zwei"),
             # A "<" that opens no tag is text, not the start of one.
             ("a < b und c > d <![oops]>", "a < b und c > d"),
@@ -60,8 +61,6 @@ class AbstractTextTests(unittest.TestCase):
 
     # Value: protects=unclosed quotes in tags on the fallback cost linear time, not a hang; fails_when=the tag scan backtracks or restarts at every "<" (a regex took 61 s on 20,000 unclosed tags); why_new=quoted values are new to the fallback; seam=none
     def test_unclosed_quotes_on_the_fallback_return_quickly(self) -> None:
-        import time
-
         for raw in ('<![oops]> <a title="' + "x" * 100_000, "<![oops]> " + '<a title="' * 20_000):
             with self.subTest(size=len(raw)):
                 started = time.perf_counter()
@@ -154,7 +153,7 @@ class AbstractTextTests(unittest.TestCase):
         for raw in ["x </a hr", "x <!x", "x <?pi", "vor <!-- offen", "a <b> c <d e"]:
             with self.subTest(raw=raw):
                 self.assertEqual(abstract_text(raw), raw.replace("<b> ", ""))
-        # A marked section takes the fallback on every Python: older releases raise on it, newer read a comment.
+        # A marked section ("<![...>") ends at its first ">" and reads as a space, the same on every Python.
         self.assertEqual(abstract_text("a<![CDATA[ x ]]>b <p>c"), "a b\n\nc")
         self.assertEqual(abstract_text("x <![CDATA[ y"), "x <![CDATA[ y")
         # A comment ends at its first "-->" on every Python; newer releases also end one at "--!>" or "<!-->".
@@ -185,23 +184,17 @@ class AbstractTextTests(unittest.TestCase):
             with self.subTest(raw=raw_text):
                 self.assertEqual(abstract_text(raw_text), expected)
 
-    # Value: protects=an end tag holding '="' before the cut with a quote after it still ends at its first ">" and the abstract survives the cut; fails_when=the trim reads the quote as a value quote and drops the rest as one tag (6 characters left, main kept 9,987); why_new=B4 review item 19 (2026-10-31); seam=none; no_claim=no reference abstract reaches the cut
-    def test_the_cut_keeps_the_abstract_after_an_end_tag_with_a_quote(self) -> None:
-        prefix = 'Anfang </p class="x>'
-        raw = prefix + " " + "wort " * 3000 + 'ende "> z'
-        self.assertEqual(abstract_text(raw), "Anfang\n\n" + " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
-
-    # Value: protects=the same for a processing instruction; fails_when=a "<?...>" is read to a quote-aware end; why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
-    def test_the_cut_keeps_the_abstract_after_a_processing_instruction_with_a_quote(self) -> None:
-        prefix = 'Anfang <?pi x="y>'
-        raw = prefix + " " + "wort " * 3000 + 'ende "> z'
-        self.assertEqual(abstract_text(raw), "Anfang " + " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
-
-    # Value: protects=the same for a declaration; fails_when=a "<!...>" is read to a quote-aware end; why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
-    def test_the_cut_keeps_the_abstract_after_a_declaration_with_a_quote(self) -> None:
-        prefix = 'Anfang <!x y="z>'
-        raw = prefix + " " + "wort " * 3000 + 'ende "> z'
-        self.assertEqual(abstract_text(raw), "Anfang " + " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
+    # Value: protects=a tag-like construct holding '="' before the cut with a quote after it still ends at its first ">" (end tag, processing instruction, declaration) and the abstract survives the cut; fails_when=the trim reads the quote as a value quote and drops the rest as one tag (end tag: 6 characters left, main kept 9,987); why_new=B4 review item 19 (2026-10-31); seam=none; no_claim=no reference abstract reaches the cut
+    def test_the_cut_keeps_the_abstract_after_a_construct_with_a_quote(self) -> None:
+        cases = [
+            ("end tag", 'Anfang </p class="x>', "Anfang\n\n"),
+            ("processing instruction", 'Anfang <?pi x="y>', "Anfang "),
+            ("declaration", 'Anfang <!x y="z>', "Anfang "),
+        ]
+        for name, prefix, head in cases:
+            with self.subTest(construct=name):
+                raw = prefix + " " + "wort " * 3000 + 'ende "> z'
+                self.assertEqual(abstract_text(raw), head + " ".join(raw[len(prefix) : MAX_ABSTRACT_CHARS].split()))
 
     # Value: protects=a quote after "=" inside an unquoted value opens no quoted value, so the tag ends at its first ">" and the abstract survives; fails_when=the quote pairs with one past the cut (0 characters left, main kept 9,988); why_new=B4 review item 19; seam=none; no_claim=no reference abstract reaches the cut
     def test_the_cut_keeps_the_abstract_after_a_quote_inside_an_unquoted_value(self) -> None:
@@ -226,8 +219,6 @@ class AbstractTextTests(unittest.TestCase):
 
     # Value: protects=the cut scans a bounded window, not the whole raw abstract, so persist and render stay fast on a huge one; fails_when=the tag scan reads every character of a 2-million-character abstract (about 2 s and 16 MB); why_new=B4 review item 19; seam=none
     def test_a_huge_abstract_is_read_in_bounded_time(self) -> None:
-        import time
-
         for raw in ("x " * 1_000_000, '<a title="' * 200_000, "<p>" * 700_000, "&" * 2_000_000):
             with self.subTest(raw=raw[:12]):
                 started = time.perf_counter()
