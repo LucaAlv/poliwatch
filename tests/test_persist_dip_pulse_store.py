@@ -148,6 +148,24 @@ class VoteContextPersistTests(unittest.TestCase):
                     pulse_store.persist_report(conn, report, cache)
                 self.assertEqual(self.rows(conn, "SELECT id, protocol_id, context_state FROM votes"), before)
 
+    # Value: protects=two vote ids equal after cleaning inside one report are one vote and the FIRST copy is stored (before the B4 edge fixes persist kept the last), for TOP votes and sitting_votes, in both orders; fails_when=iter_report_votes dedupes on the raw id again or persist writes every copy; why_new=review of the vote-identity cleaning rule (2026-10-31); seam=none
+    def test_ids_equal_after_cleaning_store_the_first_copy(self):
+        cache = _context_cache({"20/123": []}, {})
+        for where in ("top", "sitting"):
+            for first_raw, second_raw in ((" v1 ", "v1"), ("v1", " v1 ")):
+                with self.subTest(where=where, order=(first_raw, second_raw)):
+                    conn = self.persisted(cache)
+                    report = json.loads((FIXTURES / "report.json").read_text())
+                    template = report["agenda_items"][0]["votes"][0]
+                    copies = [{**template, "id": first_raw, "title": "erste"}, {**template, "id": second_raw, "title": "zweite"}]
+                    if where == "top":
+                        report["agenda_items"][0]["votes"] = copies
+                    else:
+                        report["agenda_items"][0]["votes"] = []
+                        report["sitting_votes"] = copies
+                    pulse_store.persist_report(conn, report, cache)
+                    self.assertEqual(self.rows(conn, "SELECT id, title FROM votes"), [("v1", "erste")])
+
     # Value: protects=a library caller handing persist a report with a TOP's singular "vote" is refused before any write; fails_when=persist reads the TOP as voteless and deletes the sitting's stored vote; why_new=only report loading refused the shape (B4 ship review 2026-10-22); seam=none
     def test_a_singular_vote_is_refused_and_the_store_stays_as_it_was(self):
         cache = _context_cache({"20/123": []}, {})

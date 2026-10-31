@@ -1281,6 +1281,8 @@ class RepersistGuardTests(unittest.TestCase):
                                  "not_fetched" if final_missing else "drucksache")
                 # Within one report ids equal after cleaning are one vote (derive.vote_identity
                 # cleans as persist does), so the first copy decides, here the plain "v1".
+                # The original order (" v1 " first, last copy decides) cannot hold any more: it
+                # is the behaviour change, pinned in test_derive and test_persist_dip_pulse_store.
                 late["sitting_votes"] = late["sitting_votes"] + early["sitting_votes"]
                 if final_missing:
                     with self.assertRaises(build.DatabaseRebuildError):

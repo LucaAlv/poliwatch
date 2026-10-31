@@ -745,7 +745,7 @@
         "profile_url": {
           "meaning": "Personenprofil-URL: bevorzugt abgeordnetenwatch, bei Abstimmungsmitgliedern ersatzweise eine gültige Bundestagsbiografie.",
           "unit": "URL als Text.",
-          "source": "Gemischte Herkunft: abgeordnetenwatch-Profil/API oder profilbezogener Link der Bundestags-Abstimmungsliste; derive.member_profile_url wählt die URL, das Personenregister kann sie bei Konflikten entfernen.",
+          "source": "Gemischte Herkunft: abgeordnetenwatch-Profil/API oder profilbezogener Link der Bundestags-Abstimmungsliste; derive.member_profile_url wählt die URL (das abgeordnetenwatch-Profil nur bei einem Treffer über die Redner-ID, Treffer-Art ext_id; sonst der eigene Link der Abstimmungsliste), das Personenregister kann sie bei Konflikten entfernen.",
           "license": "abgeordnetenwatch-mit-bundestag-fallback"
         },
         "party_id": {

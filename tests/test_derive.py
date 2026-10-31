@@ -122,6 +122,18 @@ class VoteAbweichlerTests(unittest.TestCase):
         self.assertEqual(result["SPD"]["state"], "complete")
         self.assertEqual(self.names(result, "SPD"), ["Cem", "Dora"])
 
+    # Value: protects=within one report, ids equal after cleaning are one vote and the first copy wins, for TOP votes and sitting_votes in both orders, and a TOP's copy beats a later sitting-level one; fails_when=iter_report_votes keys on the raw id; why_new=review of the vote-identity cleaning rule (2026-10-31); seam=none
+    def test_iter_report_votes_keeps_the_first_of_ids_equal_after_cleaning(self) -> None:
+        for first, second in ((" v1 ", "v1"), ("v1", " v1 ")):
+            with self.subTest(order=(first, second)):
+                a, b = {"id": first, "title": "erste"}, {"id": second, "title": "zweite"}
+                top = {"agenda_items": [{"index": 1, "votes": [a, b]}]}
+                self.assertEqual([vote["title"] for _, vote in derive.iter_report_votes(top)], ["erste"])
+                sitting = {"agenda_items": [], "sitting_votes": [a, b]}
+                self.assertEqual([(item, vote["title"]) for item, vote in derive.iter_report_votes(sitting)], [(None, "erste")])
+                both = {"agenda_items": [{"index": 1, "votes": [a]}], "sitting_votes": [b]}
+                self.assertEqual([vote["title"] for _, vote in derive.iter_report_votes(both)], ["erste"])
+
     # Value: protects=a name-guessed abgeordnetenwatch profile never sits beside a named Abweichler, a Redner-ID match does; fails_when=member_profile_url links the aw url whatever its match kind; why_new=B4 review item 8; seam=none
     def test_member_profile_url_links_aw_only_for_a_trusted_match(self) -> None:
         url = "https://www.abgeordnetenwatch.de/profile/cem-celik"
