@@ -647,6 +647,8 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 
 ### A DOI per release and a citation file
 
+**Done (lane/release, 2026-10-31):** `CITATION.cff` at the repository root (CFF 1.2.0, author Luca Veh, title "poliwatch" until the product name is settled, `license: MIT`, the layered data licences of ADR 0003 stated in `message` and `abstract`; CFF allows no free `note:` key). It claims no DOI, version, date or `repository-code` (the repository is private; add `repository-code` and `url` when it is public, and the version DOI once one exists). `tests/test_citation_file.py` guards the required and the allowed top-level keys. **Still open:** the Zenodo upload from the release script (needs a Zenodo account and token), the DOI per release, and the "Zitieren als …" line on the Daten page and in the codebook. There is no `LICENSE` file at the repository root yet (ADR 0003 D3, out of scope here).
+
 **What:** A `CITATION.cff` in the repo and a DOI for every data release. Zenodo's GitHub integration archives the repository's source zip on each GitHub release, not the release's data assets. So archive the data files through Zenodo's upload API from the release script instead, which gives a concept DOI plus one DOI per version. Show "Zitieren als …" with the version DOI on the Daten page and in the codebook.
 
 **Why:** A DOI is what journals and editors accept as a stable reference, and it survives a change of host or name. The product name is still open, which matters little here: the DOI stays.
