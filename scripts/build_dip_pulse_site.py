@@ -6040,11 +6040,14 @@ RADAR_FILTER_SCRIPT = """
           const active = new Set();
           const apply = () => {
             let visible = 0;
+            let last = null;
             rows.forEach(({ row, felder }) => {
               const show = active.size === 0 || felder.some((name) => active.has(name));
               row.hidden = !show;
-              if (show) visible += 1;
+              row.classList.remove('is-last');
+              if (show) { visible += 1; last = row; }
             });
+            if (last) last.classList.add('is-last');
             if (empty) empty.hidden = visible !== 0 || active.size === 0;
             chips.forEach((chip) => {
               const on = active.has(chip.dataset.radarChip);
@@ -6340,7 +6343,7 @@ def render_front_page(
       border-bottom:1px solid var(--line);
       break-inside:avoid;
     }}
-    .radar-row:last-child {{ border-bottom:0; }}
+    .radar-row:last-child, .radar-row.is-last {{ border-bottom:0; }}
     .radar-main {{ display:grid; gap:6px; align-content:start; }}
     .radar-main > .eyebrow {{ display:block; }}
     .radar-title {{ display:block; font-size:16px; font-weight:750; line-height:1.3; overflow-wrap:anywhere; }}
