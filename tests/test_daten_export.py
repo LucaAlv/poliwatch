@@ -1211,6 +1211,11 @@ class ExportDistributionDataTests(unittest.TestCase):
         def tree():
             return {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()} if self.exports_dir.exists() else {}
 
+        def inodes():
+            # Byte-identical regenerated files would pass a content comparison: the
+            # published files themselves, not copies, must be the ones that remain.
+            return {path.relative_to(self.exports_dir): path.stat().st_ino for path in self.exports_dir.rglob("*") if path.is_file()} if self.exports_dir.exists() else {}
+
         real_replace = Path.replace
 
         def failing(step):
@@ -1237,11 +1242,12 @@ class ExportDistributionDataTests(unittest.TestCase):
                 shutil.rmtree(self.exports_dir, ignore_errors=True)
                 if has_previous:
                     self.export()
-                before = tree()
+                before, before_inodes = tree(), inodes()
                 self.assertEqual(bool(before), has_previous)
                 with mock.patch.object(Path, "replace", failing(step)), self.assertRaisesRegex(OSError, f"{step} rename failed"):
                     self.export(**kwargs)
                 self.assertEqual(tree(), before)
+                self.assertEqual(inodes(), before_inodes)
                 self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
                 if has_previous:
                     # the restored publication is still the one the next run reuses
