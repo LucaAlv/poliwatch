@@ -386,8 +386,13 @@ def render_vote_context(
 
 
 def vote_anchor_id(vote: Mapping[str, Any]) -> str:
-    """The HTML id of a vote's first panel on its dossier page (D9)."""
-    return f"vote-{derive.vote_identity(vote)}"
+    """The HTML id of a vote's first panel on its dossier page (D9), and the
+    fragment of the archive link to it. Every character outside ``[A-Za-z0-9-]``
+    (also ``_``) becomes ``_`` plus its code point in hex and ``_``, so the id
+    has no space and needs no URL encoding, and two different vote ids never
+    share an anchor. A numeric id is unchanged."""
+    safe = re.sub(r"[^A-Za-z0-9-]", lambda match: f"_{ord(match.group()):x}_", derive.vote_identity(vote))
+    return f"vote-{safe}"
 
 
 _STATUS_COPY = {

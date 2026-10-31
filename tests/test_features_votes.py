@@ -688,6 +688,30 @@ class VotePanelAnchorTests(unittest.TestCase):
         report = {"agenda_items": [], "sitting_votes": [vote]}
         self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
 
+    # Value: protects=a vote id with a space, slash or umlaut gives an anchor of safe characters only, one per id; fails_when=vote_anchor_id puts the raw id into id="" again; why_new=B4 review item 17; seam=none
+    def test_vote_anchor_id_is_safe_and_injective(self) -> None:
+        import re
+
+        from features.votes import vote_anchor_id
+
+        ids = ["7", "21-84-1", "a b", "a-b", "a_b", "x/y", "ä", "1#2", "a_20_b"]
+        anchors = [vote_anchor_id({"id": raw}) for raw in ids]
+        self.assertEqual(anchors[:2], ["vote-7", "vote-21-84-1"])
+        self.assertEqual(len(set(anchors)), len(ids))
+        for anchor in anchors:
+            self.assertRegex(anchor, re.compile(r"^vote-[A-Za-z0-9_-]+$"))
+        self.assertEqual(vote_anchor_id({"id": " 7 "}), "vote-7")
+
+    # Value: protects=the panel carries the same safe anchor the archive link uses for an odd vote id; fails_when=the panel stops using vote_anchor_id; why_new=B4 review item 17; seam=none
+    def test_panel_id_uses_the_safe_anchor(self) -> None:
+        from features.votes import vote_anchor_id
+
+        vote = _vote(id="a b/1")
+        report = {"agenda_items": [], "sitting_votes": [vote]}
+        markup = vote_summary({"votes": [vote]}, report=report)
+        self.assertIn(f' id="{vote_anchor_id(vote)}"', markup)
+        self.assertNotIn('id="vote-a b', markup)
+
 
 LEAD_TERM = '<a href="../bundestag.html#abstimmen">namentliche Abstimmung</a>'
 
