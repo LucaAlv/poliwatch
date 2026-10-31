@@ -38,7 +38,7 @@ pd.read_sql("SELECT * FROM speeches", conn)
 pd.read_csv("speeches-local.csv.gz", keep_default_na=False, dtype={"mp_id": "string"})
 ```
 
-SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Ein öffentlicher, versionierter Release über GitHub Releases ist geplant (`scripts/publish_dip_pulse_data.sh`, separates PR) und noch nicht verfügbar; die Lizenz-/Nutzungsformulierung steht ebenfalls noch aus (Platzhalter auf der Seite: "siehe Quellen und Methode").
+SQLite ist die maßgebliche Quelle; die CSVs sind ein wörtlicher Export ohne Formel-Escaping (in Tabellenkalkulationen als Text importieren). Einen versionierten Release über GitHub Releases bereitet `scripts/publish_dip_pulse_data.sh` vor (Trockenlauf als Voreinstellung; `--publish` verweigert, solange `LICENSE-DATA.md` im Repository-Wurzelverzeichnis fehlt). Bisher wurde kein Release veröffentlicht, und die Links der Seite setzen die Verzeichnisstruktur des Release-Verzeichnisses voraus, die GitHub-Release-URLs nicht abbilden (offen, TODOS „Site hosting plan“). Die Lizenz-/Nutzungsformulierung steht ebenfalls noch aus (Platzhalter auf der Seite: "siehe Quellen und Methode").
 
 ## 1. Prerequisites
 
@@ -466,4 +466,5 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [docs/design/bundestag-pulse-design.md](docs/design/bundestag-pulse-design.md) — product and design rationale.
 - [docs/designs/](docs/designs/) — per-feature design docs from review sessions, e.g. [puls-wochenradar.md](docs/designs/puls-wochenradar.md) for the `puls.html` week radar or [fakt-der-woche.md](docs/designs/fakt-der-woche.md) for the `fakt/` pages.
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.
+- [docs/data-changelog.md](docs/data-changelog.md) — format of the public per-release data changelog (`CHANGES.md`, `changes.json`) that `scripts/publish_dip_pulse_data.sh` writes. [CITATION.cff](CITATION.cff) — citation metadata (working title; no DOI or version yet).
 - [CHANGELOG.md](CHANGELOG.md) — release history. [TODOS.md](TODOS.md) — tracked follow-up work.
