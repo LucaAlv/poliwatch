@@ -1539,7 +1539,6 @@ def _rebuild_database_from_entries(
     # Every cached role is checked first, so one error lists all of them and
     # nothing is built or replaced (DX-E1).
     derive.check_sprechrollen(entry["report"] for entry in entries)
-    roster_rows = _read_roster_rows(database_path) if preserve_roster else []
 
     # The facts the previous store held, carried into the fresh one. The engine
     # recomputes them right after this and overwrites them if anything moved -
@@ -1577,6 +1576,7 @@ def _rebuild_database_from_entries(
                 registry.copy_previous(previous, store)
             finally:
                 previous.close()
+        roster_rows = _read_roster_rows(database_path) if preserve_roster else []
         for entry in sorted(entries, key=entry_sort_key, reverse=True):
             try:
                 pulse_store.persist_report(store, entry["report"], vorgang_cache)
