@@ -3791,7 +3791,9 @@ def render_html(
     .vote-context-label {{ font-size:13px; font-weight:650; overflow-wrap:anywhere; }}
     .vote-context-teaser, .vote-context-more p {{ margin-top:4px !important; }}
     .vote-context-gap {{ margin-top:4px !important; color:var(--muted); font-size:13px; }}
-    .vote-context-block:has(.vote-context-more[open]) .vote-context-teaser {{ display:none; }}
+    .vote-context .vote-context-more > summary {{ display:block; margin-top:4px; cursor:pointer; font-size:inherit; font-weight:inherit; color:var(--ink); }}
+    .vote-context-more > summary .vote-context-toggle {{ color:var(--blue, #174ea6); font-size:13px; font-weight:650; }}
+    .vote-context-more[open] > summary .vote-context-teaser {{ display:none; }}
     .vote-context-quote {{ margin:4px 0 0; }}
     .vote-context-quote figcaption {{ color:var(--muted); font-size:13px; overflow-wrap:anywhere; }}
     .vote-context-quote blockquote {{ margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); }}

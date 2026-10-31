@@ -122,6 +122,33 @@ class VoteAbweichlerTests(unittest.TestCase):
         self.assertEqual(result["SPD"]["state"], "complete")
         self.assertEqual(self.names(result, "SPD"), ["Cem", "Dora"])
 
+    # Value: protects=within one report, ids equal after cleaning are one vote and the first copy wins, for TOP votes and sitting_votes in both orders, and a TOP's copy beats a later sitting-level one; fails_when=iter_report_votes keys on the raw id; why_new=review of the vote-identity cleaning rule (2026-10-31); seam=none
+    def test_iter_report_votes_keeps_the_first_of_ids_equal_after_cleaning(self) -> None:
+        for first, second in ((" v1 ", "v1"), ("v1", " v1 ")):
+            with self.subTest(order=(first, second)):
+                a, b = {"id": first, "title": "erste"}, {"id": second, "title": "zweite"}
+                top = {"agenda_items": [{"index": 1, "votes": [a, b]}]}
+                self.assertEqual([vote["title"] for _, vote in derive.iter_report_votes(top)], ["erste"])
+                sitting = {"agenda_items": [], "sitting_votes": [a, b]}
+                self.assertEqual([(item, vote["title"]) for item, vote in derive.iter_report_votes(sitting)], [(None, "erste")])
+                both = {"agenda_items": [{"index": 1, "votes": [a]}], "sitting_votes": [b]}
+                self.assertEqual([vote["title"] for _, vote in derive.iter_report_votes(both)], ["erste"])
+
+    # Value: protects=a name-guessed abgeordnetenwatch profile never sits beside a named Abweichler, a Redner-ID match does; fails_when=member_profile_url links the aw url whatever its match kind; why_new=B4 review item 8; seam=none
+    def test_member_profile_url_links_aw_only_for_a_trusted_match(self) -> None:
+        url = "https://www.abgeordnetenwatch.de/profile/cem-celik"
+        own = "https://www.bundestag.de/abgeordnete/biografien/C/celik-1"
+        for aw, expected in (
+            ({"id": 42, "match": "ext_id", "url": url}, url),
+            ({"id": 42, "match": "name", "url": url}, None),
+            ({"id": 42, "url": url}, None),
+            ({"url": url}, None),
+        ):
+            with self.subTest(aw=aw):
+                self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": aw}), expected)
+        # An untrusted aw profile falls back to the member's own link.
+        self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"id": 42, "match": "name", "url": url}, "profile_url": own}), own)
+
     # Value: protects=bundestag.de links an MP without a biography back to the Abstimmung page; that link names nobody, so such MPs stay distinct; fails_when=the Abstimmung URL serves as a profile identity and folds every such MP of a vote into one (63 rows on the reference store); why_new=found while keying the dedupe on identity (2026-10-22); seam=none
     def test_members_linked_to_the_abstimmung_page_stay_distinct(self) -> None:
         page = "https://www.bundestag.de/parlament/plenum/abstimmung/abstimmung?id=853"
@@ -404,7 +431,7 @@ class VoteMemberIdentityTests(unittest.TestCase):
     def test_an_abgeordnetenwatch_url_must_name_a_person_too(self) -> None:
         own = "https://www.bundestag.de/abgeordnete/biografien/A/x-1"
         aw = "https://www.abgeordnetenwatch.de/profile/ada-beispiel"
-        self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": aw}, "profile_url": own}), aw)
+        self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"id": 1, "match": "ext_id", "url": aw}, "profile_url": own}), aw)
         for bad in (
             "https://evil.example/profile/ada",
             "javascript:alert(1)",
@@ -414,7 +441,7 @@ class VoteMemberIdentityTests(unittest.TestCase):
             "https://[invalid",
         ):
             with self.subTest(aw=bad):
-                self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}, "profile_url": own}), own)
+                self.assertEqual(derive.member_profile_url({"abgeordnetenwatch": {"id": 1, "match": "ext_id", "url": bad}, "profile_url": own}), own)
                 self.assertIsNone(derive.member_profile_url({"abgeordnetenwatch": {"url": bad}}))
 
 

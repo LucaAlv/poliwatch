@@ -343,6 +343,8 @@ class AbweichlerPanelTests(unittest.TestCase):
         block = self.abweichler_block(markup)
         self.assertIn(f"{ABWEICHLER_HEADING} (1)", block)
         self.assertIn("<li>Cem</li>", block)
+        # list-style:none/display:inline drops list semantics in Safari/VoiceOver unless the role is explicit.
+        self.assertIn('<ul class="vote-abweichler-list" role="list">', block)
         self.assertNotIn("<details", block)
         self.assertNotIn(NONE_NOTE, markup)
         self.assertNotIn(GAP_NOTE, markup)
@@ -579,6 +581,34 @@ class VoteContextPanelTests(unittest.TestCase):
         self.assertIn('<p class="vote-context-teaser">Kurz.</p>', markup)
         self.assertNotIn("vote-context-more", markup)
 
+    # Value: protects=a Vorgang id that is not digits never reaches the DIP path, the label stays unlinked; fails_when=dip_vorgang_url builds a URL from any id; why_new=B4 review item 10; seam=none
+    def test_a_non_digit_vorgang_id_is_not_linked(self) -> None:
+        from features.votes import dip_vorgang_url
+
+        self.assertEqual(dip_vorgang_url("123"), "https://dip.bundestag.de/vorgang/-/123")
+        for bad in ("", "12 3", "1/../x", "12a", "None"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                dip_vorgang_url(bad)
+        markup = self.panel(["1/x"], "resolved", _context_cache(**{"1/x": {"titel": "T", "abstract": "A."}}))
+        self.assertNotIn("dip.bundestag.de", markup)
+        self.assertIn("T · DIP", markup)
+
+    # Value: protects=derive and persist read one vote id (cleaned), and a missing id raises instead of becoming "None"; fails_when=vote_identity is str(vote["id"]) again; why_new=B4 review items 5 and 10; seam=none
+    def test_vote_identity_cleans_like_persist_and_refuses_no_id(self) -> None:
+        import derive
+        from persist_dip_pulse_store import _vote_id
+
+        for raw, expected in (("7", "7"), (" 7 ", "7"), ("a\xa0 b", "a b"), (7, "7")):
+            with self.subTest(raw=raw):
+                self.assertEqual(derive.vote_identity({"id": raw}), expected)
+                self.assertEqual(_vote_id({"id": raw}), expected)
+        for vote in ({"id": None}, {}, {"id": "  "}):
+            with self.subTest(vote=vote):
+                with self.assertRaises(ValueError):
+                    derive.vote_identity(vote)
+                with self.assertRaises(ValueError):
+                    _vote_id(vote)
+
     # Value: protects=a block without a titel still names its Vorgang; fails_when=the label needs titel; why_new=D12 labels are new; seam=none
     def test_a_block_without_a_titel_is_labelled_by_its_id(self) -> None:
         cache = _context_cache(**{"1": {"vorgangstyp": "Gesetzgebung", "titel": "", "abstract": "A."}})
@@ -593,12 +623,14 @@ class VoteContextPanelTests(unittest.TestCase):
         markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "T", "abstract": raw}}))
         self.assertNotIn("<script", markup)
         self.assertNotIn("<strong>Ziel", markup)
-        self.assertIn('<p class="vote-context-teaser">Ziel &amp; Zweck</p>', markup)
         self.assertIn(
-            '<details class="vote-context-more"><summary>Ganze Beschreibung</summary>'
+            '<details class="vote-context-more"><summary>'
+            '<span class="vote-context-teaser">Ziel &amp; Zweck</span> <span class="vote-context-toggle">Ganze Beschreibung</span></summary>'
             "<p>Ziel &amp; Zweck</p><p>Zweiter &lt;Absatz&gt;</p></details>",
             markup,
         )
+        # One teaser, inside the summary: no second copy outside the details.
+        self.assertEqual(markup.count("vote-context-teaser"), 1)
 
     # Value: protects=the panel never says DIP has nothing when we never asked; fails_when=none and not_fetched share copy; why_new=new states; seam=none
     def test_none_and_not_fetched_read_differently(self) -> None:
@@ -659,6 +691,30 @@ class VotePanelAnchorTests(unittest.TestCase):
         vote = _vote(id=7)
         report = {"agenda_items": [], "sitting_votes": [vote]}
         self.assertIn('id="vote-7"', vote_summary({"votes": [vote]}, report=report))
+
+    # Value: protects=a vote id with a space, slash or umlaut gives an anchor of safe characters only, one per id; fails_when=vote_anchor_id puts the raw id into id="" again; why_new=B4 review item 17; seam=none
+    def test_vote_anchor_id_is_safe_and_injective(self) -> None:
+        import re
+
+        from features.votes import vote_anchor_id
+
+        ids = ["7", "21-84-1", "a b", "a-b", "a_b", "x/y", "ä", "1#2", "a_20_b"]
+        anchors = [vote_anchor_id({"id": raw}) for raw in ids]
+        self.assertEqual(anchors[:2], ["vote-7", "vote-21-84-1"])
+        self.assertEqual(len(set(anchors)), len(ids))
+        for anchor in anchors:
+            self.assertRegex(anchor, re.compile(r"^vote-[A-Za-z0-9_-]+$"))
+        self.assertEqual(vote_anchor_id({"id": " 7 "}), "vote-7")
+
+    # Value: protects=the panel carries the same safe anchor the archive link uses for an odd vote id; fails_when=the panel stops using vote_anchor_id; why_new=B4 review item 17; seam=none
+    def test_panel_id_uses_the_safe_anchor(self) -> None:
+        from features.votes import vote_anchor_id
+
+        vote = _vote(id="a b/1")
+        report = {"agenda_items": [], "sitting_votes": [vote]}
+        markup = vote_summary({"votes": [vote]}, report=report)
+        self.assertIn(f' id="{vote_anchor_id(vote)}"', markup)
+        self.assertNotIn('id="vote-a b', markup)
 
 
 LEAD_TERM = '<a href="../bundestag.html#abstimmen">namentliche Abstimmung</a>'

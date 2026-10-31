@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -178,14 +179,14 @@ def render_abweichler(vote: dict[str, Any], members: list[dict[str, Any]], panel
     inline, rest = items[:ABWEICHLER_INLINE], items[ABWEICHLER_INLINE:]
     more = (
         f'<details class="vote-abweichler-more"><summary>alle {len(items)} anzeigen</summary>'
-        f'<ul class="vote-abweichler-list">{"".join(rest)}</ul></details>'
+        f'<ul class="vote-abweichler-list" role="list">{"".join(rest)}</ul></details>'
         if rest
         else ""
     )
     return (
         '<div class="vote-abweichler">'
         f'<span class="vote-abweichler-label">{html.esc(ABWEICHLER_HEADING)} ({len(items)}):</span>'
-        f'<ul class="vote-abweichler-list">{"".join(inline)}</ul>{more}'
+        f'<ul class="vote-abweichler-list" role="list">{"".join(inline)}</ul>{more}'
         "</div>"
     )
 
@@ -273,7 +274,11 @@ CONTEXT_TEXT_NOT_FETCHED = "Antragstext nicht abgerufen"
 
 
 def dip_vorgang_url(vorgang_id: str) -> str:
-    """DIP's page of a Vorgang; the slug before the id is free text DIP ignores."""
+    """DIP's page of a Vorgang; the slug before the id is free text DIP ignores.
+    A Vorgang id is digits only; anything else would put free text into the DIP
+    path, so it raises ValueError (callers show the label unlinked)."""
+    if not re.fullmatch(r"[0-9]+", str(vorgang_id)):
+        raise ValueError(f"not a DIP Vorgang id: {vorgang_id!r}")
     return f"https://dip.bundestag.de/vorgang/-/{vorgang_id}"
 
 
@@ -364,10 +369,18 @@ def render_vote_context(
             body = _abstractless_body(passages, vorgang_id)
         else:
             teaser, more = dip_text.abstract_teaser(text)
-            body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
             if more:
+                # The teaser sits in the summary and is hidden while the details are
+                # open (CSS on [open], no :has()): the full text then replaces it, in a
+                # browser without :has() too.
                 full = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in text.split("\n\n"))
-                body += f'<details class="vote-context-more"><summary>Ganze Beschreibung</summary>{full}</details>'
+                body = (
+                    '<details class="vote-context-more"><summary>'
+                    f'<span class="vote-context-teaser">{html.esc(teaser)}</span> '
+                    f'<span class="vote-context-toggle">Ganze Beschreibung</span></summary>{full}</details>'
+                )
+            else:
+                body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
         blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
     # A Vorgang without a record already says so in its own block; the note marks
     # what no block shows, a number the cache cannot resolve (D7).
@@ -381,8 +394,13 @@ def render_vote_context(
 
 
 def vote_anchor_id(vote: Mapping[str, Any]) -> str:
-    """The HTML id of a vote's first panel on its dossier page (D9)."""
-    return f"vote-{derive.vote_identity(vote)}"
+    """The HTML id of a vote's first panel on its dossier page (D9), and the
+    fragment of the archive link to it. Every character outside ``[A-Za-z0-9-]``
+    (also ``_``) becomes ``_`` plus its code point in hex and ``_``, so the id
+    has no space and needs no URL encoding, and two different vote ids never
+    share an anchor. A numeric id is unchanged."""
+    safe = re.sub(r"[^A-Za-z0-9-]", lambda match: f"_{ord(match.group()):x}_", derive.vote_identity(vote))
+    return f"vote-{safe}"
 
 
 _STATUS_COPY = {
