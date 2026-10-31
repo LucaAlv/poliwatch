@@ -98,16 +98,10 @@ def _check_authored(authored: Any) -> dict[str, Any]:
                 raise ChangesError(f"changes file: {where}.{field} must be a text, number, true/false or null")
         if entry["old"] == entry["new"] and type(entry["old"]) is type(entry["new"]):
             raise ChangesError(f"changes file: {where} changes nothing (old equals new)")
-        corrections.append(
-            {
-                "table": _text(entry.get("table"), f"{where}.table"),
-                "key": _text(entry.get("key"), f"{where}.key"),
-                "column": _text(entry.get("column"), f"{where}.column"),
-                "old": entry["old"],
-                "new": entry["new"],
-                "reason": _text(entry.get("reason"), f"{where}.reason"),
-            }
-        )
+        # The row is named by table, key and column, in that order.
+        correction = {name: _text(entry.get(name), f"{where}.{name}") for name in ("table", "key", "column")}
+        correction.update(old=entry["old"], new=entry["new"], reason=_text(entry.get("reason"), f"{where}.reason"))
+        corrections.append(correction)
     checked["corrections"] = corrections
     checked["notes"] = [_text(note, f"notes[{index}]") for index, note in enumerate(_list(authored.get("notes", []), "notes"))]
     return checked
