@@ -115,11 +115,26 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
 
 
 class ResolveCommitTests(unittest.TestCase):
-    def test_returns_the_short_sha_on_success(self) -> None:
-        completed = SimpleNamespace(stdout="abc1234\n")
-        with mock.patch.object(b.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(b.resolve_commit(), "abc1234")
-        run.assert_called_once()
+    # Value: protects=the cited build revision is a 12-character commit id, suffixed with a hash of the tracked-file diff when the tree differs and -unverified when git cannot diff; fails_when=the length floats, two different edits share a revision, or a diff failure drops the known commit; why_new=DATA.md and the cache key cite this value; seam=none; no_claim=real git output
+    def test_revision_identifies_the_commit_and_any_local_edit(self) -> None:
+        diff = b"diff --git a/x b/x\n+changed\n"
+        cases = (
+            (b"", "abc1234def56"),
+            (diff, "abc1234def56-dirty-" + b.hashlib.sha256(diff).hexdigest()[:8]),
+            (b.subprocess.TimeoutExpired("git", 30), "abc1234def56-unverified"),
+        )
+        for outcome, expected in cases:
+            with self.subTest(expected=expected):
+                outputs = [SimpleNamespace(stdout=b"abc1234def56\n"), outcome if isinstance(outcome, Exception) else SimpleNamespace(stdout=outcome)]
+                with mock.patch.object(b.subprocess, "run", side_effect=outputs) as run:
+                    self.assertEqual(b.resolve_commit(), expected)
+                self.assertEqual(run.call_args_list[0].args[0], ["git", "--no-optional-locks", "rev-parse", "--short=12", "HEAD"])
+                self.assertEqual(run.call_args_list[1].args[0], ["git", "--no-optional-locks", "diff", "HEAD", "--binary"])
+        other = b"diff --git a/y b/y\n+other\n"
+        with mock.patch.object(b.subprocess, "run", side_effect=[SimpleNamespace(stdout=b"abc1234def56\n"), SimpleNamespace(stdout=other)]):
+            self.assertNotEqual(b.resolve_commit(), cases[1][1])
+        with mock.patch.object(b.subprocess, "run", return_value=SimpleNamespace(stdout=b"\n")):
+            self.assertIsNone(b.resolve_commit())
 
     def test_returns_none_when_git_is_unavailable_or_fails(self) -> None:
         for exc in (FileNotFoundError("no git"), b.subprocess.SubprocessError("boom")):
@@ -329,7 +344,7 @@ class RunDataPipelineTests(unittest.TestCase):
         # tag so the override is recognisable; shape-valid by construction.
         scratch = self.tmp / "scratch-exports"
         exported = b.export_distribution_data(
-            self.database_path, scratch, mp_lookup=self.lookup, tag="override"
+            self.database_path, scratch, mp_lookup=self.lookup, tag="override", commit="0123456789ab"
         )
         exported.update(changes)
         override_path = self.tmp / "override-manifest.json"
@@ -358,6 +373,8 @@ class RunDataPipelineTests(unittest.TestCase):
             "files empty": {"files": []},
             "path in file name": {"files": [{"name": "../x.gz", "bytes": 1, "unpacked_bytes": 1, "sha256": "a"}]},
             "bad generation": {"generation": "../../etc"},
+            # re.match's $ also matches before a final newline, which would split the page's curl line.
+            "generation with trailing newline": {"generation": "g-0123456789ab\n"},
             "not an object": [],
         }
         for label, payload in cases.items():

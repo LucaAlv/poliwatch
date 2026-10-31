@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.24.2.0] - 2026-10-31
+## [0.25.1.0] - 2026-10-31
 
 ### Changed
 
@@ -15,6 +15,23 @@ All notable changes to this project will be documented in this file.
 - A context teaser no longer ends after an abbreviation that follows a bracket or quote, such as „(sog.“ or „(Abs.“; it cuts at the last real sentence end or at a word with „…“. 10 of 3,922 cached teasers change, all of which ended in „(sog.“.
 - An abstract cut at 10,000 characters no longer ends in a fragment of a tag or entity („<a hr“, „&am“) as visible text; only the one tag the cut splits is dropped. No cached abstract reaches the cut (the longest has 5,111 characters), so none changes.
 - An abstract reads the same on every Python patch release. html.parser's 2025 security releases (3.11.13, 3.12.11, 3.13.4) drop a tag that never closes („Ende <a hr“ became „Ende“) and read an unclosed comment to the end; older releases keep both as text. Each comment is now removed and each never-closing „<“ escaped before parsing, so both keep the text, and an abstract with a marked section („<![CDATA[“) always takes the plain-text fallback. 0 of 3,922 cached abstracts change on either release.
+
+## [0.25.0.0] - 2026-10-31
+
+### Added
+
+- Every data export now carries `DATA.md`, a German codebook you can read without the website: what each table and column means, its unit, source and licence layer, the per-Wahlperiode coverage of exactly this SQLite file (sittings, date range, TOPs, Reden, Beiträge, Abstimmungen, Stimmen), the counting rules, the exact SQL of each published recipe, the layered licence terms and how to cite the export. Every definition was checked against the code that writes the column.
+- The six SQL recipes on the Daten page now also ship as result CSVs (`recipe-<id>-<tag>.csv`), with every SQL column in projection order, including the link IDs the page hides, so each result can be reproduced against the export's SQLite file. The Daten page links `DATA.md` in the download panel and each recipe's CSV beside its table.
+
+### Changed
+
+- Export format 10: `datenstand.json` lists every file of a generation with its kind (`sqlite`, `table_csv`, `recipe_csv`, `codebook`), size, SHA-256 and, for CSVs, row count, and each recipe names its CSV. A manifest of another export format is refused; re-export with this version.
+- r3 („Abweichler“) counts per person and Fraktion: someone who switched Fraktion gets one row per Fraktion instead of one row with the label of one of them. On the reference export the top five are unchanged (Bayram 30, Dieren 18, Kraft 13, Koeppen 11, Kubicki 9); 2 of 363 persons now have two rows, both below the cut.
+- The cited build revision is a 12-character commit, with `-dirty-<hash>` when tracked files differ from it and `-unverified` when git cannot tell. A release export needs a clean revision. An export re-runs when the codebook inputs, the revision or the exporter change, and a cached generation whose `DATA.md` or recipe CSVs were altered is written again.
+
+### Fixed
+
+- The licence notice (`docs/data-license.md`) lists every column it gives CC BY 4.0, including `speeches.sprechrolle`, `speeches.unattributed_char_count` and `speech_rule_inputs`, which it previously left under DIP terms.
 
 ## [0.24.1.0] - 2026-10-30
 

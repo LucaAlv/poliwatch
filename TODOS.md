@@ -28,7 +28,7 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 **D. Before anything goes public**
 - Legal and licence: "Impressum, Datenschutz and licence files before the site goes public", "Settle the roll-call source for redistribution", "Tag the abgeordnetenwatch MP columns with their real source".
-- The release: "Write the release script", "Codebook (`DATA.md`) and recipe result CSVs in the release", "Public data changelog per release", "A DOI per release and a citation file".
+- The release: "Write the release script", "Public data changelog per release", "A DOI per release and a citation file". Codebook/recipe-CSV generation is implemented (2026-10-29; see Completed); uploading the artifacts still belongs to the release script.
 - Hosting: "Site hosting plan for the 2.5 GB generated site". WP 18 and 19 make it larger.
 
 **Later:** the LLM-content items (Fraktionsblöcke, deterministic validators, Debattenberichte), Fakt der Woche B/C, and the Puls and copy fixes, which stay at their own priorities. WP 1–17, which have no structured XML in the DIP catalog, come after v1.
@@ -133,14 +133,54 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 **Priority:** P2
 **Depends on:** **Blocked** — first public release (PR2); as of 2026-09-19 no release exists, so the 8-week clock has not started.
 
-### Codebook (`DATA.md`) and recipe result CSVs in the release
+### Make the build revision reproducible before the release script passes a tag
 
-**What:** A codebook (`DATA.md`) in every release: each table and column with its meaning, unit, source (DIP, Plenarprotokoll XML, bundestag.de, abgeordnetenwatch) and licence layer; the counting rules (what counts as a Rede, Sitzung mit Dossier, completeness) quoted from CONTEXT.md and the ADRs; coverage per Wahlperiode; known gaps; how to cite. Also per-recipe result CSVs. Most of the explanatory prose on the Daten page today belongs here, so that it is versioned with the data it describes.
+**What:** `resolve_commit` hashes porcelain `git diff HEAD --binary`, whose bytes depend on the user's git config (`color.ui=always`, `diff.noprefix`, `diff.mnemonicPrefix`, `core.abbrev`, `diff.external`, which also runs that tool) and inherited `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`; a 30 s timeout gives a constant `-unverified`. The release gate in `export_distribution_data` only looks for `-` in the string, lets untracked or modified `CODEBOOK_INPUT_FILES` through, and no production caller passes a tag yet. Fix: `git diff-index -p --binary --full-index --no-ext-diff --no-textconv --no-color --no-renames HEAD` with `-c core.abbrev=40 -c diff.noprefix=false -c diff.mnemonicPrefix=false` and the `GIT_*` variables removed; a timeout fallback that still moves with edits; gate on `re.fullmatch(r"[0-9a-f]{12}", commit)` and tracked, unmodified authored inputs; a test that a `local` export accepts dirty, unverified and `None` revisions; a real-git temporary-repo test; explain the suffix next to "Commit …" on the Daten page; wire the tag through the release script or a `--data-tag` option. Done when the same edit yields the same revision on any machine and a release export from a tree with an untracked authored input fails.
 
-**Why:** A researcher needs the definitions of the release they cite, not of today's site (PRODUCT.md, 2026-09-30). Originally scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decision D6): every gap bites only when a release tag is passed, which nothing does until the release script exists.
 
-**Effort:** S–M
-**Priority:** P2 (raised 2026-09-30: part of a citable release)
+**Effort:** M
+**Priority:** P1
+**Depends on:** Scheduled data-release workflow
+
+### Export robustness gaps found by the codebook review
+
+**What:** (1) The publish step in `export_distribution_data` is not atomic: if renaming `datenstand.json` fails after `gen_dir.replace(published)`, the `finally` deletes the set-aside previous generation and leaves the old manifest over the new files; undo the generation swap on any failure after it and test the five untested cells (fresh and new-generation rename-in failure; fresh, new-generation and forced manifest-rename failure). (2) `validate_public_output` (`scripts/publication_state.py`) scans only HTML and three presentation JSON files, not `data/exports/**/DATA.md` or `datenstand.json`, so a local path pasted into an authored doc would ship with CI green. (3) Smaller: authored-input and licence-layer errors surface only after the store copy and CSV pass (pre-validate the dictionary shape and the licence doc's `## ` section first); `render_daten_recipes` defaults `data_base_url` (make it a required keyword); `_recipes_hash` raises a raw `KeyError` for an old-shape caller recipe; decide whether recipe CSVs keep formula-leading text unchanged now that they are plain double-clickable `.csv`. (4) Found in /ship runs 4 and 5 (2026-10-30/31), none reachable with today's inputs: export `RuntimeError`s (dictionary drift, recipe failure, copy failure) escape `main()` as a traceback after the store was persisted, so no site renders (pre-existing pattern; run the dictionary check against the source schema before the copy and decide whether `main()` turns them into `data_export_error`); recipe definitions are checked one way only (a definition with no SQL column passes); `_protocol_wahlperiode` accepts Unicode digits; `_demote_headings` treats a fence line with an info string inside an open fence as a close, ignores 1–3-space-indented fences and setext headings, and `_license_notice` has the same edges; `_PLACEHOLDER_RE` rejects legitimate text (`XXX-Straße`, `??`) and `_authored_text`'s bare minimum length 8 rejects short units such as „Anzahl“ (name it or drop it); `_write_recipe_csv` writes `str()` of a BLOB (`b'…'`) or float repr, and a recipe with duplicate output column names collapses in `dict(row)`; `_md_cell` leaves `\r` from a CRLF-edited input in a table cell; DATA.md appends „.“ after the `--data-license` text, so the real short string (ending „LICENSE-DATA.md.“) prints „..“, and the line names only `--data-license` when the text came from `$BUNDESTAG_PULSE_DATA_LICENSE`; `_manifest_reusable` keeps an `export_format` parameter that `validate_manifest` overrides with the global; DATA.md's recipe section hard-codes „LIMIT 5“ instead of reading each recipe's limit (D2); `csv.writer(..., lineterminator="\n")` in `_write_csv` and `_write_recipe_csv` may not quote a bare `\r` on Python 3.11/3.12 (3.13 does), against DATA.md's „Zeilenumbrüche bleiben unverändert“; set the quoting explicitly and test it. Done when each item has a fix and a test, or a recorded decision.
+
+**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decisions D4 and D7). (1) predates the branch and the window is narrow; (2) guards a leak that does not exist today. (4) is latent, cosmetic or naming, deferred under the CLAUDE.md fix-now-or-defer rule (2026-10-31).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Recipe SQL disagrees with the site's own counting rules in edge cases
+
+**What:** (1) r4 and r5 take the "first" sitting by lexicographic `MIN(document_number)` ("21/100" < "21/99"); order numerically (D5). (2) r4 ranks by `ABS(yes_count - no_count)` with no guard, and the vote parser stores a block without `data-chart-values` as 0:0:0:0 (`validate_dip_protocol.py` pads with 0, `persist_dip_pulse_store.py` `int(total.get("yes") or 0)`), so such a vote would rank as the narrowest; `facts.py` already guards with `yes_count + no_count > 0`. 0 such votes in reference export g-c1944485a5d4. (3) r3 excludes only `fraktionslos`; the site's Abweichung rule (`derive.vote_abweichler`) also skips the `Unbekannt` group and groups whose member votes do not match the fraction counts (`partial`). (4) Check whether the shared „Unbekannt“ speaker record (`resolve_speaker` for an unnamed Redner) reaches `mp_canonical` and so r1/r2; 0 such rows in the reference export. (5) r6 groups on the raw `origin_json` urheber, while the vote panels (`derive.vote_committees`) strip and de-duplicate each name, and its `LIKE 'Beschlussempfehlung%'` is case-insensitive where the site's `startswith` is not; neither differs on today's DIP strings. Each change moves published figures: report old and new rows per the CLAUDE.md pre-release rule. Done when each recipe matches the site rule or DATA.md names the difference, with old/new figures recorded.
+
+**Why:** Found by the codebook /ship runs 4 and 5 (2026-10-30/31); deferred because each would move recipe figures and needs its own measurement.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Export cache key: too broad with git, too narrow without
+
+**What:** `EXPORTER_SHA256` hashes the whole 13k-line `build_dip_pulse_site.py` and `commit` carries a hash of the whole tracked diff, so any edit forces a full ~290 MB re-export (D4); rewrite only DATA.md when only the revision or unrelated code moved. In the other direction, with no git (`resolve_commit()` is `None`) edits to `facts.py` (`wahlperiode`, `FACTS_TABLES`) or `persist_dip_pulse_store.SCHEMA_VERSION` do not change the key, and DATA.md quotes CONTEXT.md and ADRs 0001/0002 that are not in `codebook_inputs`, so a reused generation can keep a stale DATA.md. Done when the key covers exactly what DATA.md and the CSVs are built from, with a test per input.
+
+**Why:** D4 deferred by the owner on 2026-10-30; the narrow direction was found by the run-5 adversarial review (2026-10-31).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Codebook follow-ups: licence layers and test hygiene
+
+**What:** (1) The CC BY metadata layers (`eigene-metadaten`, `eigene-metadaten-zuordnung`, `eigene-auswertung-uebernommene-quelldaten`) accept `dip`/`bundestag.de` tags, so whether e.g. `mps.identity_key` (built from DIP/XML names) is own metadata rests on authoring judgment; decide per column. (2) Join tables tagged `bundestag.de` may need their own bundestag.de licence layer instead of a DIP one. (3) The Unbekannt party row is not described under `parties.name`. (4) `test_codebook_describes_all_real_columns_and_snapshot_coverage` packs ~40 assertions with negative string pins; `test_codebook_matches_stored_codes_and_period_units` and `test_authored_definitions_distinguish_sources_units_and_exact_quotations` grep German fragments; derive expectations from the store or code where possible (/test-audit). (5) The embedded short string says „Details in LICENSE-DATA.md“, a file only a published release carries; say so in DATA.md or ship the file with every export. (6) DATA.md links into github.com/LucaAlv/poliwatch (the B4 audit link) and names repo paths; check the repo is public before a release cites them. (7) `person_records.home_person_id` can keep a retired person id within one generation (`person_registry.merge` repoints `person_id` but not `home_person_id`), while DATA.md's alias line speaks only of cross-generation joins; latent today (0 merges in `scripts/person_corrections.json`). (8) The audit's "Could not verify" list (docs/research/codebook-dictionary-audit-2026-10-31.md section 3). Done when each has a decision or a fix.
+
+**Why:** Informational findings from the codebook /ship runs 4 and 5, deferred under the CLAUDE.md fix-now-or-defer rule.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Validate final merged A1/A2 before the A3 backfill
@@ -1040,13 +1080,36 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 Done 2026-10-30. The card kept two lines of 76 characters of a caveat, so `knappste-abstimmung` (4 lines) and `meiste-abweichler` (5) showed half a sentence. It now shows up to four lines of 83 characters at 22px (the same line width as 76 at 24px; the widest line measured 869 of 920 px in Chrome), anchored above the footer, and the comparison block moves up only as far as a long caveat needs (`facts.card_lower_layout`). The caveat texts are unchanged, so pages and Methodik read as before. Tests pin every metric's caveat, with A3's longest coverage phrase filled in, to `CARD_CAVEAT_LINES`, the rendered caveat to the whole text, and the blocks to never overlap.
 
-**Completed:** v0.24.2.0 (2026-10-31)
+**Completed:** v0.25.1.0 (2026-10-31)
 
 ### Link the vote panel's "namentlich" wording to `bundestag.html`
 
 Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" to `bundestag.html#abstimmen`, as the week radar's badge does. The link goes through `VotePanelContext.site_prefix` ("../", set beside `mp_prefix`; the only page that renders the lead is the dossier under `protocols/`), and the lead is now built from escaped parts so the link is markup while the subject stays escaped once.
 
-**Completed:** v0.24.2.0 (2026-10-31)
+**Completed:** v0.25.1.0 (2026-10-31)
+
+### Audit every `data_dictionary.json` definition against the code that writes the column
+
+**What:** Before the next /ship of the codebook branch, check each of the 246 column definitions (meaning, unit, source, NULL behaviour) and each recipe `method`/`caveat` against its writer in `scripts/persist_dip_pulse_store.py`, `derive.py`, `facts.py`, `registry.py` and the rebuild path (`rebuild_database_from_entries`: every persisting online build stages a fresh store; `--repersist` keeps the old one when content is unchanged), and against NULL and value counts in a real export. For every column: is it ever NULL, and why; is the value as the source gives it or normalised; is the timestamp's lifetime what the text says. Record the result per table in the plan or a short audit file. Done when every definition has been compared with its writer and the measured counts, and the corrections are committed.
+
+**Why:** /ship run 5 (2026-10-31) ran three adversarial rounds; each found new false statements in DATA.md definitions (licence table missing three derived columns; `created_at` called a first-ingest time; `speeches.mp_id` called nullable though it never is; `fraktion` called "as the protocol names it" though normalised; `vote_members.party_id` called nullable). Each fix used a /ship fix cycle and the run stopped at the three-cycle cap. A one-pass audit replaces that loop.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+**Completed:** v0.25.0.0 (2026-10-31): docs/research/codebook-dictionary-audit-2026-10-31.md found 20 false statements, all corrected; its section 3 lists what could not be verified (see the codebook follow-ups item).
+
+### Codebook (`DATA.md`) and recipe result CSVs in the release
+
+**What:** A codebook (`DATA.md`) in every release: each table and column with its meaning, unit, source (DIP, Plenarprotokoll XML, bundestag.de, abgeordnetenwatch) and licence layer; the counting rules (what counts as a Rede, Sitzung mit Dossier, completeness) quoted from CONTEXT.md and the ADRs; coverage per Wahlperiode; known gaps; how to cite. Also per-recipe result CSVs. Most of the explanatory prose on the Daten page today belongs here, so that it is versioned with the data it describes.
+
+**Why:** A researcher needs the definitions of the release they cite, not of today's site (PRODUCT.md, 2026-09-30). Originally scoped out of PR #59 as an Approach-C follow-up once the data path has real usage. This item used to also cover a "Kopieren" clipboard button on each recipe's SQL block and a "Daten" link in dossier footers; both shipped in v0.6.6.0 (2026-09-26), leaving only the CSV/`DATA.md` half open. The other former part of this item, externalising `data/plenarprotokoll-*.json` links, moved into the site-hosting TODO above.
+
+**Effort:** S–M
+**Priority:** P2 (raised 2026-09-30: part of a citable release)
+**Depends on:** None
+
+**Completed:** 2026-10-29 (implementation; release upload remains separate). Export format 10 (format 9 on this branch until main's Antrag passages took that number) generates German `DATA.md` from an authored 30-table/246-column dictionary and methods/licence inputs, plus all six recipe result CSVs in SQL column order. The typed manifest inventories every asset with size/checksum and recipe references; the Daten page links the codebook and CSVs while preserving HTML column order; manifests of another export format are rejected. Input hashes invalidate stale generations, and staged failures preserve the previous publication. Full suite after the second review round: 1,572 tests, two skipped. Before that round: 347 focused export/page/pipeline tests, browser checks and offline demo checks passed. Fixture smoke verified 36 artifact links, sizes and checksums and replayed all six CSVs. See [implementation plan](docs/plans/d-codebook-recipe-csvs.md). Uploader, redistribution decisions, DOI/citation, changelog, hosting and acquisition work remain open.
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 

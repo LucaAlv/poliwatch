@@ -152,14 +152,14 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
-    "vote_passages": "Anträge, deren Forderungsteil (documents.forderung) eine namentliche Abstimmung zitiert, mit dem DIP-Vorgang ohne Zusammenfassung, für den er steht, und Rang; abgeleitet aus den Drucksachen der Abstimmung.",
+    "vote_passages": "Antrag- und Entschließungsantrag-Drucksachen, die für eine namentliche Abstimmung als Zitatquelle geprüft wurden, mit dem DIP-Vorgang ohne Zusammenfassung, für den sie stehen, und Rang; zitiert wird nur ein Dokument mit documents.forderung_state extracted.",
     "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
     "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
     "vote_fractions": "Summen je Zusammenschluss und namentlicher Abstimmung; leading_vote ist das Mehrheitsvotum, leer bei Gleichstand oder wenn niemand abgestimmt hat.",
     "vote_members": "Einzelne Stimmen von Abgeordneten je namentlicher Abstimmung.",
     "persons": "Dauerhafte Personenkennungen und Reihenfolge ihrer Vergabe.",
-    "person_aliases": "Historische Personenkennungen und ihre gültigen Ziele.",
+    "person_aliases": "Historische Personenkennungen und die Kennung, auf die sie verweisen; ein Ziel kann selbst wieder zurückgezogen sein.",
     "person_records": "Quellenidentitäten mit dauerhafter Personenzuordnung und Abgleichbelegen.",
     "person_bindings": "Dauerhafte Zuordnung einzelner Reden, Beiträge, MdB-Einträge und Abstimmungsmitglieder.",
     "mp_canonical": "Bildet jede mps-Zeile auf die konsolidierte Person ab. Nur in der Verteilkopie.",
@@ -2670,6 +2670,8 @@ _TABLE_SOURCE_DERIVED = (
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
         "vote_proceedings", "vote_passages",
+        # The local store's own schema version counter, not source data.
+        "schema_migrations",
     }
     | set(facts.FACTS_TABLES)
 )
@@ -2680,6 +2682,10 @@ _TABLE_SOURCE_DERIVED = (
 _COLUMN_SOURCE_DERIVED = {
     ("votes", "result_raw"),
     ("votes", "result_source"),
+    # What result_raw refers to, read from the outcome wording or set by rule.
+    ("votes", "result_scope"),
+    # special_majority_procedure's regex over the title and Vorgang context.
+    ("votes", "procedure_type"),
     # Inferred rejection-recommendation semantics and their supporting evidence.
     ("votes", "inverted"),
     ("votes", "inversion_source"),
@@ -2697,6 +2703,9 @@ _COLUMN_SOURCE_DERIVED = {
     ("speeches", "unattributed_char_count"),
     # The kind is decided by the parser from the sitting's wording and structure.
     ("contributions", "kind"),
+    # The person register's own key and its abgeordnetenwatch matching outcome.
+    ("mps", "person_id"),
+    ("mps", "aw_match"),
     ("contributions", "parent_rede_id"),
     ("contributions", "sprechrolle"),
 }
@@ -2712,8 +2721,53 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 9
+# The manifest source tags each licence layer of scripts/data_dictionary.json
+# may carry. The layer is the column's licence (DATA.md); the tag is the coarser
+# origin class. Our own ids and timestamps sit on source tables, so the
+# metadata layers accept those tables' tags.
+LICENSE_LAYER_SOURCES = {
+    "dip": {"dip"},
+    "dip-quellenangabe": {"dip"},
+    "bundestag-abstimmungen": {"bundestag.de"},
+    # Only mps.display_name/party_id use it, and the mps table is tagged dip.
+    "dip-oder-bundestag-abstimmungen": {"dip"},
+    "abgeordnetenwatch": {"abgeordnetenwatch"},
+    "abgeordnetenwatch-mit-bundestag-fallback": {"abgeordnetenwatch"},
+    "eigene-auswertung": {"derived"},
+    "eigene-auswertung-uebernommene-quelldaten": {"derived", "dip"},
+    "eigene-metadaten": {"dip", "bundestag.de"},
+    "eigene-metadaten-zuordnung": {"derived", "dip"},
+}
+
+
+EXPORT_FORMAT = 10
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EXPORTER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+# The authored codebook inputs, by CodebookInputs field, as paths below REPO_ROOT.
+CODEBOOK_INPUT_FILES = {
+    "dictionary": "scripts/data_dictionary.json",
+    "methods": "docs/data-methods.md",
+    "license": "docs/data-license.md",
+}
+# The attribution name docs/data-license.md uses; PRODUCT.md has not settled the product name.
+ATTRIBUTION_NAME = "Bundestag-Puls"
+# Per-Wahlperiode counts in DATA.md, in table order.
+COVERAGE_COUNT_TABLES = ("agenda_items", "speeches", "contributions", "votes", "vote_members")
+# Each counted table's rows joined to their protocol (LEFT: a row without one counts as unbekannt).
+_COVERAGE_SOURCES = {
+    "agenda_items": "agenda_items s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "speeches": "speeches s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "contributions": "contributions s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "votes": "votes s LEFT JOIN protocols p ON p.id = s.protocol_id",
+    "vote_members": "vote_members s JOIN votes v ON v.id = s.vote_id LEFT JOIN protocols p ON p.id = v.protocol_id",
+}
+assert set(_COVERAGE_SOURCES) == set(COVERAGE_COUNT_TABLES)
+# Exported in the SQLite file but not as a CSV extract: an internal version mark.
+TABLES_WITHOUT_CSV = frozenset({"schema_migrations"})
+BAUSTEINE_LABELS = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# A file name in a generation: no path, query or hidden-file syntax.
+EXPORT_FILE_NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
 # All exported primary keys identify stable source rows or issued registry keys.
@@ -2734,15 +2788,23 @@ REPRESENTATIVE_SQL = (
     ")\n"
 )
 
+# Output definitions shared verbatim by r1 and r3, which select the same columns.
+_MP_ID_MEANING = "Konsolidierte Personenkennung (persons.id), im HTML nur Linkschlüssel."
+_DISPLAY_NAME_MEANING = "Anzeigename der repräsentativen Quellaufzeichnung: MdB-Kader vor XML-Redner, dann identity_key."
+
 # The recipes executed at build time against the distribution copy and
 # rendered next to their SQL (design doc appendix, amended per the eng
-# addendum: R1/R3 join mp_canonical and group by the canonical id, so their
-# counts equal the pooled counts on the MP profile pages).
+# addendum: R1/R3 join mp_canonical). R1 groups by the canonical id, so its
+# counts equal the pooled counts on the MP profile pages; R3 groups by the
+# canonical id and Fraktion, so a member who switched Fraktion has one row per
+# Fraktion.
 #
 # Every "hidden" column is selected (it is the link key) but never rendered as
 # its own cell; the "link" on a visible column says which kind of link to try
 # resolving for that row (see resolve_entity_link). "truncate" caps a cell's
-# visible text, keeping the full value in the HTML title attribute.
+# visible text, keeping the full value in the HTML title attribute. "method"
+# (counting rule and row order) and each column's "meaning" are written to
+# DATA.md and the manifest only.
 RECIPES: tuple[dict[str, Any], ...] = (
     {
         "id": "r1-meiste-reden",
@@ -2760,16 +2822,22 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "mp_id", "align": "text", "hidden": True},
-            {"name": "display_name", "align": "text", "link": "mp"},
-            {"name": "fraktion", "align": "text"},
-            {"name": "reden", "align": "num"},
-            {"name": "zeichen", "align": "num"},
+            {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
+            {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
+            {"name": "fraktion", "meaning": "Partei/Fraktion der repräsentativen Quellaufzeichnung (parties.name über mps.party_id); leer ohne Zuordnung, etwa für Sprechrollen.", "align": "text"},
+            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Person über alle ihre Quellaufzeichnungen.", "align": "num"},
+            {"name": "zeichen", "meaning": "Summe von speeches.char_count der erfassten Reden dieser Person; Zeichen, keine Zeit.", "align": "num"},
         ),
         "depends_on": None,
         "caveat": (
-            "Mitglieder der Bundesregierung, Bundesratsmitglieder und weitere Redner in einer Sprechrolle "
-            "erscheinen ohne Fraktion."
+            "Reden in einer Sprechrolle (Bundesregierung, Bundesrat, weitere) zählen für die Person; das "
+            "Fraktionslabel kommt aus der repräsentativen Aufzeichnung und fehlt nur, wenn diese keine Zugehörigkeit trägt."
+        ),
+        "method": (
+            "Gezählt wird je konsolidierter Person (mp_canonical); Reden, deren Redneraufzeichnung keiner Person "
+            "zugeordnet ist, fehlen. Das Fraktionslabel stammt aus der repräsentativen Aufzeichnung, nicht aus den "
+            "einzelnen Reden: für eine zugleich als MdB erfasste Person kann es deren Fraktion zeigen, auch für Reden in "
+            "einer Sprechrolle. Reihenfolge: Reden, dann Zeichen absteigend, dann Kennung."
         ),
     },
     {
@@ -2789,14 +2857,19 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "fraktion", "align": "text"},
-            {"name": "reden", "align": "num"},
-            {"name": "anteil_prozent", "align": "num"},
+            {"name": "fraktion", "meaning": "Gruppe der Rede: Bundesregierung, Bundesrat oder weitere Sprechrolle nach speeches.sprechrolle, sonst speeches.fraktion, ersatzweise die Partei der Redneraufzeichnung.", "align": "text"},
+            {"name": "reden", "meaning": "Anzahl erfasster Reden dieser Gruppe mit Redneraufzeichnung.", "align": "num"},
+            {"name": "anteil_prozent", "meaning": "Zeichenanteil der Gruppe an allen gespeicherten Reden, Prozent mit einer Nachkommastelle; Join und LIMIT begrenzen die Ausgabe.", "align": "num"},
         ),
         "depends_on": None,
         "caveat": (
-            "Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen und zählen im Nenner mit: "
-            "alle Zeilen zusammen ergeben 100 %."
+            "Bundesregierung, Bundesrat und weitere Sprechrollen stehen als eigene Zeilen; der Nenner sind alle "
+            "gespeicherten Reden. Die gezeigten Zeilen ergeben zusammen nicht unbedingt 100 %: Reden ohne "
+            "Redneraufzeichnung fehlen in den Zeilen, und nur die fünf Gruppen mit den meisten Reden erscheinen."
+        ),
+        "method": (
+            "Der Nenner ist SUM(char_count) über alle Zeilen von speeches; die Zeilen selbst setzen eine "
+            "Redneraufzeichnung in mps voraus (innerer Join). Reihenfolge: Reden absteigend, dann Gruppenname."
         ),
     },
     {
@@ -2815,18 +2888,25 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "  AND vf.leading_vote IN ('yes', 'no')\n"
             "  AND vm.vote <> vf.leading_vote\n"
             "  AND p.name <> 'fraktionslos'\n"
-            "GROUP BY mc.canonical_id\n"
-            "ORDER BY abweichungen DESC, m.display_name\n"
+            "GROUP BY mc.canonical_id, p.name\n"
+            "ORDER BY abweichungen DESC, m.display_name, mc.canonical_id, fraktion\n"
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "mp_id", "align": "text", "hidden": True},
-            {"name": "display_name", "align": "text", "link": "mp"},
-            {"name": "fraktion", "align": "text"},
-            {"name": "abweichungen", "align": "num"},
+            {"name": "mp_id", "meaning": _MP_ID_MEANING, "align": "text", "hidden": True},
+            {"name": "display_name", "meaning": _DISPLAY_NAME_MEANING, "align": "text", "link": "mp"},
+            {"name": "fraktion", "meaning": "Fraktion oder Gruppe laut Stimme (vote_members.party_id); Stimmen fraktionsloser Mitglieder sind ausgeschlossen.", "align": "text"},
+            {"name": "abweichungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit eigenem Ja/Nein entgegen dem Ja/Nein-Mehrheitsvotum der eigenen Fraktion oder Gruppe, je Person und Fraktion oder Gruppe.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": None,
+        "method": (
+            "Gezählt werden unterschiedliche Abstimmungen je konsolidierter Person und Fraktion oder Gruppe, nicht einzelne "
+            "Stimmen; wer die Fraktion gewechselt hat, erscheint mit einer Zeile je Fraktion. Stimme und "
+            "Gruppensumme (vote_fractions) müssen beide vorliegen. Enthaltungen, nicht abgegebene Stimmen, Abstimmungen "
+            "ohne Ja/Nein-Mehrheitsvotum und fraktionslose Mitglieder zählen nicht. Reihenfolge: Abweichungen absteigend, "
+            "dann Anzeigename, Personenkennung und Fraktion."
+        ),
     },
     {
         "id": "r4-knappste-abstimmungen",
@@ -2845,15 +2925,19 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "document_number", "align": "text", "hidden": True},
-            {"name": "date", "align": "text"},
-            {"name": "title", "align": "text", "link": "document", "truncate": 90},
-            {"name": "ja", "align": "num"},
-            {"name": "nein", "align": "num"},
-            {"name": "differenz", "align": "num"},
+            {"name": "document_number", "meaning": "Lexikografisch kleinste verknüpfte Protokollnummer, ersatzweise Nummer von votes.protocol_id; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "date", "meaning": "Datum der Abstimmung als ISO-Kalendertag YYYY-MM-DD, ohne Uhrzeit/Zeitzone.", "align": "text"},
+            {"name": "title", "meaning": "Titel der Abstimmung laut Quelle (votes.title).", "align": "text", "link": "document", "truncate": 90},
+            {"name": "ja", "meaning": "Zahl der Ja-Stimmen laut Abstimmungssumme.", "align": "num"},
+            {"name": "nein", "meaning": "Zahl der Nein-Stimmen laut Abstimmungssumme.", "align": "num"},
+            {"name": "differenz", "meaning": "Absoluter Abstand zwischen Ja- und Nein-Stimmen; keine Aussage zum erforderlichen Quorum.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": None,
+        "method": (
+            "Enthält auch Abstimmungen ohne zugeordneten Tagesordnungspunkt; deren Protokoll kommt aus votes.protocol_id. "
+            "Reihenfolge: Differenz aufsteigend, dann Datum absteigend, dann Kennung."
+        ),
     },
     {
         "id": "r5-vorgaenge-meiste-reden",
@@ -2872,15 +2956,19 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "proceeding_id", "align": "text", "hidden": True},
-            {"name": "title", "align": "text", "link": "proceeding", "truncate": 90},
-            {"name": "typ", "align": "text"},
-            {"name": "erste_drucksache", "align": "text"},
-            {"name": "reden", "align": "num"},
-            {"name": "sitzungen", "align": "num"},
+            {"name": "proceeding_id", "meaning": "DIP-Kennung des Vorgangs; im HTML nur Linkschlüssel.", "align": "text", "hidden": True},
+            {"name": "title", "meaning": "Titel des Vorgangs laut DIP (proceedings.title).", "align": "text", "link": "proceeding", "truncate": 90},
+            {"name": "typ", "meaning": "Vorgangstyp gemäß DIP.", "align": "text"},
+            {"name": "erste_drucksache", "meaning": "Trotz des Namens: lexikografisch kleinste Plenarprotokollnummer der verknüpften Sitzungen, keine Drucksache.", "align": "text"},
+            {"name": "reden", "meaning": "Anzahl unterschiedlicher Reden (speeches.id) zu Tagesordnungspunkten dieses Vorgangs.", "align": "num"},
+            {"name": "sitzungen", "meaning": "Anzahl unterschiedlicher Sitzungen mit verknüpftem TOP und mindestens einer Rede zu diesem Vorgang.", "align": "num"},
         ),
         "depends_on": None,
         "caveat": None,
+        "method": (
+            "Nur Verknüpfungen über proceeding_positions und agenda_items zählen. Reihenfolge: Reden, dann Sitzungen "
+            "absteigend, dann Kennung. Die CSV folgt der SQL-Projektion; das HTML zeigt erste_drucksache vor reden und sitzungen."
+        ),
     },
     {
         # The same Beschlussempfehlung urheber the vote panels cite
@@ -2900,14 +2988,18 @@ RECIPES: tuple[dict[str, Any], ...] = (
             "LIMIT 5;"
         ),
         "columns": (
-            {"name": "beschlussempfehlung_urheber", "align": "text"},
-            {"name": "abstimmungen", "align": "num"},
+            {"name": "beschlussempfehlung_urheber", "meaning": "Urheber aus DIP origin_json einer Bundestagsdrucksache vom Typ Beschlussempfehlung; kein Beleg für Federführung.", "align": "text"},
+            {"name": "abstimmungen", "meaning": "Anzahl unterschiedlicher Abstimmungen mit mindestens einer solchen Beschlussempfehlung dieses Urhebers.", "align": "num"},
         ),
         "depends_on": "votes",
         "caveat": (
             "Zählt die Abstimmungen, unter deren Drucksachen eine Beschlussempfehlung dieses Ausschusses ist "
             "(Urheber laut DIP). Das zitiert das Dokument und sagt nicht, dass der Ausschuss federführend war: "
             "Eine Abstimmung über einen Entschließungsantrag nennt oft die Beschlussempfehlung zum Gesetz."
+        ),
+        "method": (
+            "Nur Bundestagsdrucksachen (herausgeber BT), deren Dokumenttyp mit „Beschlussempfehlung“ beginnt. "
+            "Reihenfolge: Abstimmungen absteigend, dann Urheber."
         ),
     },
 )
@@ -2938,8 +3030,22 @@ def _canonical_json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+# Only what the export writes (manifest, CSVs, DATA.md) is hashed: the HTML-only
+# column keys (align, hidden, link, truncate) are rendered from RECIPES at site
+# build time, so changing them must not discard a reusable generation.
 def _recipes_hash(recipes: tuple[dict[str, Any], ...]) -> str:
-    payload = [{"id": recipe["id"], "sql": recipe["sql"]} for recipe in recipes]
+    payload = [
+        {
+            "id": recipe["id"],
+            "title": recipe["title"],
+            "sql": recipe["sql"],
+            "caveat": recipe.get("caveat"),
+            "method": recipe.get("method"),
+            "depends_on": recipe.get("depends_on"),
+            "columns": [{"name": column["name"], "meaning": column["meaning"]} for column in recipe["columns"]],
+        }
+        for recipe in recipes
+    ]
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
@@ -2957,6 +3063,8 @@ def _inputs_hash(
     catalog_count: int = 0,
     dossier_count: int = 0,
     readiness: dict[str, str] | None = None,
+    commit: str | None = None,
+    codebook_sha256: dict[str, str] | None = None,
 ) -> str:
     payload = {
         "source_sha256": source_sha256,
@@ -2967,6 +3075,11 @@ def _inputs_hash(
         "stable_key_policy": "declared-primary-keys",
         "tag": tag,
         "license": license_text,
+        "commit": commit,
+        # The code that writes DATA.md and the CSVs, so an edit re-exports even
+        # where no git revision is available.
+        "exporter_sha256": EXPORTER_SHA256,
+        "codebook_sha256": codebook_sha256,
         "issues_url": issues_url,
         "catalog_count": catalog_count,
         "dossier_count": dossier_count,
@@ -2996,20 +3109,39 @@ def _read_previous_manifest(exports_dir: Path) -> dict[str, Any] | None:
     if not manifest_path.exists():
         return None
     try:
-        return json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
+    # Valid JSON that is not an object cannot be reused either: re-export.
+    return manifest if isinstance(manifest, dict) else None
+
+
+# The small text files (DATA.md, recipe CSVs) are also hashed: DATA.md tells
+# readers to check every file's SHA-256, and these cost nothing to verify.
+_REUSE_HASHED_KINDS = ("codebook", "recipe_csv")
 
 
 # F1.1: a manifest is only reusable when it parses, matches the current
-# export format and inputs, and every file it names still exists at the
-# recorded size. Anything else re-exports rather than trusting stale bytes.
-def _manifest_reusable(manifest: dict[str, Any] | None, exports_dir: Path, *, inputs_hash: str, export_format: int) -> bool:
+# export format and inputs, passes validate_manifest, and every file it names
+# still exists at the recorded size (and hash, for _REUSE_HASHED_KINDS).
+# Anything else re-exports rather than trusting stale bytes.
+def _manifest_reusable(
+    manifest: dict[str, Any] | None,
+    exports_dir: Path,
+    *,
+    inputs_hash: str,
+    export_format: int,
+    recipes: tuple[dict[str, Any], ...] = RECIPES,
+) -> bool:
     if not manifest:
         return False
     if manifest.get("export_format") != export_format:
         return False
     if manifest.get("inputs_hash") != inputs_hash:
+        return False
+    try:
+        validate_manifest(manifest, "cached datenstand.json", recipes=recipes)
+    except RuntimeError:
         return False
     generation = manifest.get("generation")
     if not generation:
@@ -3022,6 +3154,8 @@ def _manifest_reusable(manifest: dict[str, Any] | None, exports_dir: Path, *, in
         try:
             file_path = gen_dir / str(file_info["name"])
             if file_path.stat().st_size != file_info["bytes"]:
+                return False
+            if file_info.get("kind") in _REUSE_HASHED_KINDS and _hash_file(file_path) != file_info["sha256"]:
                 return False
         except (KeyError, OSError, TypeError):
             return False
@@ -3106,8 +3240,8 @@ def _sweep_stale_work(work_dir: Path) -> None:
 
 
 # A lone surrogate (e.g. from surrogateescape-decoded bytes upstream) cannot
-# be encoded as UTF-8; errors="replace" swaps it for U+FFFD when writing the
-# CSV, and this counts how many characters that will happen to (F2.2).
+# be encoded as UTF-8; errors="replace" writes "?" in its place in the CSV,
+# and this counts how many characters that will happen to (F2.2).
 def _surrogate_count(text: str) -> int:
     return sum(1 for ch in text if 0xD800 <= ord(ch) <= 0xDFFF)
 
@@ -3155,6 +3289,312 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
     return row_count, replacements
 
 
+@dataclass(frozen=True)
+class CodebookInputs:
+    """The authored codebook texts as read once per export attempt: the bytes
+    hashed for cache identity are the ones rendered into DATA.md."""
+
+    dictionary: str
+    methods: str
+    license: str
+    sha256: dict[str, str]  # path below REPO_ROOT -> SHA-256 of the bytes read
+
+
+def _read_codebook_inputs() -> CodebookInputs:
+    texts, hashes = {}, {}
+    for field, relative in CODEBOOK_INPUT_FILES.items():
+        path = REPO_ROOT / relative
+        try:
+            content = path.read_bytes()
+            texts[field] = content.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"export: codebook input {path}: {exc}") from exc
+        # An emptied document would drop its whole DATA.md section silently.
+        if not texts[field].strip():
+            raise RuntimeError(f"export: codebook input {path} is empty")
+        hashes[relative] = hashlib.sha256(content).hexdigest()
+    return CodebookInputs(**texts, sha256=hashes)
+
+
+# Authored prose must say something: a marker left in while writing, or a
+# fragment too short to be a definition, is refused rather than published.
+_PLACEHOLDER_RE = re.compile(r"\b(?:TODO|TBD|FIXME|XXX)\b|\?\?")
+
+
+def _authored_text(value: Any, where: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError(f"export: data dictionary missing {where}")
+    if len(value.strip()) < 8 or _PLACEHOLDER_RE.search(value):
+        raise RuntimeError(f"export: data dictionary placeholder text at {where}: {value!r}")
+    return value
+
+
+# Parse the authored dictionary and check it against the snapshot's actual
+# tables: every table and column described, nothing described that the export
+# can never contain, no placeholder or copied meaning. Returns it with each column's
+# licence-layer key replaced by that layer's text from the "licenses" map.
+def _load_data_dictionary(text: str, tables: list[dict[str, Any]]) -> dict[str, Any]:
+    try:
+        payload = json.loads(text)
+    except ValueError as exc:
+        raise RuntimeError(f"export: data dictionary is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("licenses"), dict) or not isinstance(payload.get("tables"), dict):
+        raise RuntimeError('export: data dictionary needs "licenses" and "tables" objects')
+    licenses, dictionary = payload["licenses"], payload["tables"]
+    for layer, notice in licenses.items():
+        _authored_text(notice, f"licenses.{layer}")
+    unmapped = sorted(licenses.keys() - LICENSE_LAYER_SOURCES.keys())
+    if unmapped:
+        raise RuntimeError(f"export: data dictionary licence layers without allowed source tags: {', '.join(unmapped)}")
+    # The facts tables exist only once the facts engine has run on the store.
+    stale = sorted(dictionary.keys() - {table["name"] for table in tables} - set(facts.FACTS_TABLES))
+    if stale:
+        raise RuntimeError(f"export: data dictionary describes tables no export has: {', '.join(stale)}")
+    resolved = {}
+    for table in tables:
+        name = table["name"]
+        entry = dictionary.get(name)
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"export: data dictionary missing {name}")
+        meaning = _authored_text(entry.get("meaning"), f"{name}.meaning")
+        authored = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
+        stale = sorted(authored.keys() - {column["name"] for column in table["columns"]})
+        if stale:
+            raise RuntimeError(f"export: data dictionary describes {name} columns the export lacks: {', '.join(stale)}")
+        columns = {}
+        for column in table["columns"]:
+            where = f"{name}.{column['name']}"
+            meta = authored.get(column["name"])
+            if not isinstance(meta, dict):
+                raise RuntimeError(f"export: data dictionary missing {where}")
+            prose = {field: _authored_text(meta.get(field), f"{where}.{field}") for field in ("meaning", "unit", "source")}
+            layer = meta.get("license")
+            if layer is None:
+                raise RuntimeError(f"export: data dictionary missing {where}.license")
+            if not isinstance(layer, str) or layer not in licenses:
+                raise RuntimeError(f"export: data dictionary unknown licence layer {layer!r} for {where}")
+            columns[column["name"]] = {**prose, "license": licenses[layer], "layer": layer}
+        repeated = [text for text, count in Counter(meta["meaning"] for meta in columns.values()).items() if count > 1]
+        if repeated:
+            raise RuntimeError(f"export: data dictionary gives several {name} columns the same meaning: {repeated[0]!r}")
+        resolved[name] = {"meaning": meaning, "columns": columns}
+    return resolved
+
+
+# Small, already-computed results; staging protects publication on failure.
+# Same cell conventions and surrogate count as _write_csv.
+def _write_recipe_csv(path: Path, columns: list[str], rows: list[dict[str, Any]]) -> int:
+    cells = [["" if row[name] is None else str(row[name]) for name in columns] for row in rows]
+    with path.open("w", encoding="utf-8", errors="replace", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(columns)
+        writer.writerows(cells)
+    return sum(_surrogate_count(cell) for row in cells for cell in row)
+
+
+# Wahlperiode from the protocol number, the rule facts.wahlperiode applies.
+def _protocol_wahlperiode(document_number: Any) -> str:
+    try:
+        return str(facts.wahlperiode(document_number))
+    except facts.FactsError:
+        return "unbekannt"
+
+
+# Per Wahlperiode: sittings, date range and the COVERAGE_COUNT_TABLES counts,
+# numbered periods first and unbekannt last.
+def _snapshot_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    # Grouped by protocol in SQL, so the Wahlperiode rule runs once per protocol.
+    coverage: dict[str, dict[str, Any]] = {}
+    for document_number, sittings, date_from, date_to in conn.execute(
+        "SELECT document_number, COUNT(*), MIN(NULLIF(date, '')), MAX(NULLIF(date, '')) FROM protocols GROUP BY document_number"
+    ):
+        wp = _protocol_wahlperiode(document_number)
+        row = coverage.setdefault(wp, {"wp": wp, "sittings": 0, "date_from": None, "date_to": None})
+        row["sittings"] += sittings
+        if date_from is not None and (row["date_from"] is None or date_from < row["date_from"]):
+            row["date_from"] = date_from
+        if date_to is not None and (row["date_to"] is None or date_to > row["date_to"]):
+            row["date_to"] = date_to
+    for name in COVERAGE_COUNT_TABLES:
+        for document_number, n in conn.execute(f"SELECT p.document_number, COUNT(*) FROM {_COVERAGE_SOURCES[name]} GROUP BY 1"):
+            wp = _protocol_wahlperiode(document_number)
+            row = coverage.setdefault(wp, {"wp": wp, "sittings": 0, "date_from": None, "date_to": None})
+            row[name] = row.get(name, 0) + n
+    return [
+        {**row, **{name: row.get(name, 0) for name in COVERAGE_COUNT_TABLES}}
+        for _, row in sorted(coverage.items(), key=lambda item: (not item[0].isdigit(), int(item[0]) if item[0].isdigit() else 0))
+    ]
+
+
+# Each column's DATA.md licence layer must fit the source tag datenstand.json
+# ships for it, so the two files never give one column different terms.
+def _check_license_layers(manifest_tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> None:
+    for table in manifest_tables:
+        for column in table["columns"]:
+            layer = dictionary[table["name"]]["columns"][column["name"]]["layer"]
+            if column["source"] not in LICENSE_LAYER_SOURCES[layer]:
+                raise RuntimeError(
+                    f"export: data dictionary licence layer {layer} for {table['name']}.{column['name']} "
+                    f"contradicts its manifest source tag {column['source']}"
+                )
+
+
+def _md_cell(value: Any) -> str:
+    return str(value).replace("|", "\\|").replace("\n", "<br>")
+
+
+# An embedded document's headings move down one level so they nest under the
+# codebook's sections and DATA.md keeps a single H1. Lines inside a fenced
+# code block are code, not headings, and stay as written.
+def _demote_headings(text: str) -> str:
+    lines, fence = [], None
+    for line in text.rstrip().split("\n"):
+        marker = re.match(r"^(`{3,}|~{3,})", line)
+        if marker and (fence is None or marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence)):
+            fence = None if fence else marker.group(1)
+        elif fence is None:
+            line = re.sub(r"^(#{1,5}) ", r"#\1 ", line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+# The release-facing part of docs/data-license.md starts at its first "## "
+# heading; the operator notes above it stay out of DATA.md.
+def _license_notice(text: str) -> str:
+    start = re.search(r"^## ", text, flags=re.MULTILINE)
+    if start is None:
+        raise RuntimeError(f"export: {CODEBOOK_INPUT_FILES['license']} has no \"## \" section to embed in DATA.md")
+    return _demote_headings(text[start.start():])
+
+
+def _export_label(manifest: dict[str, Any]) -> str:
+    return "lokaler Export" if manifest["tag"] == "local" else f"Release {manifest['tag']}"
+
+
+def _export_revision(manifest: dict[str, Any]) -> str:
+    return manifest.get("commit") or "unbekannt"
+
+
+# DATA.md names the latest stored sitting, not the build time: the build time
+# lives in datenstand.json, so equal inputs give equal DATA.md bytes.
+def _latest_sitting(manifest: dict[str, Any]) -> str:
+    dates = [row["date_to"] for row in manifest["coverage"]["wahlperioden"] if row["date_to"]]
+    return max(dates) if dates else "unbekannt"
+
+
+def _codebook_header(manifest: dict[str, Any]) -> list[str]:
+    lines = [
+        "# DATA — Datenwörterbuch dieses Exports", "",
+        f"Export: {_export_label(manifest)}; letzte gespeicherte Sitzung: {_latest_sitting(manifest)}. Erzeugungszeitpunkt: `generated_at` in `datenstand.json`.",
+        f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; `-unverified`: ob sie abwichen, ließ sich nicht prüfen).",
+        f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
+        f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
+        f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (--data-license): {' '.join(manifest['license'].split()) or 'keiner; es gelten die geschichteten Quellenbedingungen unten'}.", "",
+        "## Dateien und Verwendung", "",
+        "Alle folgenden Dateien gehören zu dieser Generation. `datenstand.json` liegt eine Ebene darüber und enthält auch den SHA-256 von `DATA.md`. Das Codebook enthält keinen eigenen Hash.",
+        "SQLite ist maßgeblich: CSV bildet NULL und die leere Zeichenfolge beide als leeres Feld ab. UTF-8, Kopfzeile, Komma als Trennzeichen, minimale Anführungszeichen, LF als Zeilenende. Text einschließlich Zeilenumbrüchen und führender Formelzeichen bleibt unverändert; Tabellenkalkulationen als Text importieren. Ein Zeichen, das sich nicht als UTF-8 kodieren lässt (ein einzelnes Surrogat aus der Quelle), steht in der CSV als „?“; die Datei verzeichnet dann im Manifest `replacements` > 0.", "",
+        "| Datei | Art | Zeilen | Bytes | SHA-256 |", "| --- | --- | ---: | ---: | --- |",
+    ]
+    for file in manifest["files"]:
+        lines.append(f"| [{file['name']}]({file['name']}) | {file['kind']} | {file.get('rows', '—')} | {file['bytes']} | `{file['sha256']}` |")
+    lines += ["", "## Eingaben", "", "Die mit diesem Build gelesenen Dateien sind durch ihre Bytes identifiziert:", ""]
+    for path, digest in manifest["codebook_inputs"].items():
+        lines.append(f"- `{path}`: `{digest}`")
+    return lines
+
+
+def _codebook_coverage(coverage: dict[str, Any]) -> list[str]:
+    lines = ["", "## Gespeicherte Abdeckung je Wahlperiode", "",
+             "Beobachtungen aus genau dieser SQLite-Datei; keine Erwerbs- oder Vollständigkeitsbescheinigung. Wahlperiode aus der Protokollnummer, nicht aus dem Datum. Nicht zuordenbare Datensätze stehen unter unbekannt. Erwartete Sitzungszahlen und Erwerbsvollständigkeit je Wahlperiode: **unbekannt**. Fehlende Stimmen beweisen keine abstimmungsfreie Sitzung.", ""]
+    if coverage["wahlperioden"]:
+        lines += ["| WP | Sitzungen | Von | Bis | TOPs | Reden | Weitere Beiträge | Abstimmungen | Stimmen |",
+                  "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |"]
+        for row in coverage["wahlperioden"]:
+            lines.append("| " + " | ".join(str(row[key]) if row[key] is not None else "unbekannt" for key in ("wp", "sittings", "date_from", "date_to", *COVERAGE_COUNT_TABLES)) + " |")
+    else:
+        lines.append("Leerer Datenbestand: keine gespeicherten Sitzungen oder zuordenbaren Datensätze.")
+    bausteine = "; ".join(f"{BAUSTEINE_LABELS[key]} {value}" for key, value in coverage["bausteine"].items()) or "keine"
+    lines += ["", f"Separater Build-Kontext (nicht WP-Abdeckung): Katalog {coverage['catalog_count']}, Dossiers {coverage['dossier_count']}; Bausteine: {_md_cell(bausteine)}.",
+              f"In diesem Snapshot nachgewiesen: {coverage['synthetic_rede_ids']} synthetische Rede-IDs; {coverage['conflicting_votes']} Person/Abstimmung-Paare mit widersprüchlichen Stimmen."]
+    return lines
+
+
+# A column referencing persons.id may hold a key a later generation retired
+# into person_aliases (docs/stable-ids.md); say so per table.
+def _codebook_alias_line(table: dict[str, Any]) -> str:
+    if table["name"] == "person_aliases":
+        return "Aliasauflösung: diese Tabelle ist die Aliasliste; `id` ist eine zurückgezogene Personenkennung, `person_id` ihr Ziel; ist das Ziel selbst zurückgezogen, steht es wieder in `id` (Kette)."
+    if table["name"] == "persons":
+        return ("Aliasauflösung: `id` ist eine ausgestellte Personenkennung; eine zurückgezogene Kennung bleibt hier als Zeile stehen "
+                "und verweist über `person_aliases.id → person_id`, wiederholt bis zu einer Kennung außerhalb von `person_aliases.id`, auf die fortgeführte. Aktuelle Personen sind die Zeilen, deren `id` "
+                "nicht in `person_aliases.id` steht.")
+    person_columns = [column["name"] for column in table["columns"] if column["fk"] == "persons.id"]
+    if not person_columns:
+        return "Aliasauflösung: entfällt, keine Spalte verweist auf `persons.id`."
+    return (f"Aliasauflösung: {', '.join('`' + name + '`' for name in person_columns)} "
+            f"{'verweist' if len(person_columns) == 1 else 'verweisen'} auf `persons.id`; "
+            "früher ausgestellte Kennungen vor generationsübergreifenden Joins über `person_aliases.id → person_id` auflösen, wiederholt, bis die Kennung nicht mehr in `person_aliases.id` steht.")
+
+
+def _codebook_tables(tables: list[dict[str, Any]], dictionary: dict[str, Any]) -> list[str]:
+    lines = ["", "## Tabellen und Spalten", "", "Typen, NOT-NULL-Deklarationen, Primärschlüssel und Fremdschlüssel stammen aus dem tatsächlichen SQLite-Schema. NOT NULL = nein beschreibt die Deklaration, nicht die beobachteten Werte.", ""]
+    for table in tables:
+        entry = dictionary[table["name"]]
+        lines += [f"### `{table['name']}`", "", entry["meaning"], "",
+                  f"Zeilen: {table['rows']}. Deklarierter stabiler Schlüssel: {', '.join('`' + key + '`' for key in table['stable_keys']) or 'keiner'}. {_codebook_alias_line(table)}", "",
+                  "| Spalte | Bedeutung | Einheit / Darstellung | SQLite-Typ | NOT NULL | PK | FK | Quelle im Detail | Lizenzschicht |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for column in table["columns"]:
+            meta = entry["columns"][column["name"]]
+            values = [f"`{column['name']}`", meta["meaning"], meta["unit"], column["type"], "ja" if column["notnull"] else "nein", "ja" if column["pk"] else "nein", column["fk"] or "—", meta["source"], meta["license"]]
+            lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
+        lines.append("")
+    return lines
+
+
+def _codebook_recipes(manifest: dict[str, Any]) -> list[str]:
+    lines = ["", "## Veröffentlichte SQL-Rezepte", "",
+             "Die CSVs sind die begrenzten Ergebnislisten der SQL-Rezepte, keine Rohdatenauszüge. Jede enthält alle SQL-Spalten in Projektionsreihenfolge, auch die nur im HTML versteckten Link-IDs. Alle Abfragen behalten ihr SQL-`LIMIT 5`; eine kurze oder leere CSV belegt deshalb keine Nullwerte in der Gesamtpopulation, und ohne Treffer enthält die Datei dennoch ihre Kopfzeile. Die folgende Spaltenreihenfolge ist die maschinelle.", ""]
+    files = {file["name"]: file for file in manifest["files"]}
+    for recipe in manifest["recipes"]:
+        file = files[recipe["file"]]
+        lines += [f"### {recipe['id']}: {recipe['title']}", "", f"[{file['name']}]({file['name']}): {file['rows']} Zeilen; SHA-256 `{file['sha256']}`.", "",
+                  "Spalten in SQL-Reihenfolge:", ""]
+        for name in recipe["columns"]:
+            lines.append(f"- `{name}`: {recipe['column_definitions'][name]}")
+        if recipe.get("method"):
+            lines += ["", recipe["method"]]
+        if recipe.get("caveat"):
+            lines += ["", recipe["caveat"]]
+        if recipe["empty_reason"]:
+            lines += ["", f"Leeres Ergebnis: {recipe['empty_reason'].rstrip('.')}."]
+        lines += ["", "```sql", recipe["sql"], "```", ""]
+    return lines
+
+
+def _codebook_sources_and_citation(manifest: dict[str, Any], license_doc: str) -> list[str]:
+    path = CODEBOOK_INPUT_FILES["license"]
+    return ["## Quellen, Bedingungen und Transformationen", "",
+            f"Lizenz- und Transformationshinweis aus `{path}` dieser Build-Eingabe (ADR `docs/adr/0003-licences-and-impressum.md`), wörtlich ab seinem ersten Abschnitt („Short string“), Überschriften eine Ebene tiefer; der Kurzstring ist deutsch, die übrigen Abschnitte sind englisch:", "",
+            _license_notice(license_doc), "",
+            "Die Erzeugung dieser Dateien erteilt keine Veröffentlichungserlaubnis; die Weiterverbreitung der namentlichen Abstimmungsdaten bleibt eine offene Frage nach ADR 0003.", "",
+            "## Diesen Export zitieren", "",
+            f"{ATTRIBUTION_NAME} (Arbeitstitel; der Produktname ist nicht festgelegt), {_export_label(manifest)}, Revision {_export_revision(manifest)}, Generation {manifest['generation']}, letzte gespeicherte Sitzung {_latest_sitting(manifest)}. SQLite-Datei und ihren SHA-256 aus der Dateiliste mit angeben.",
+            "Eine unveränderliche Downloadreferenz wurde diesem Export nicht mitgegeben; beim Zitieren die tatsächlich archivierte Release-Referenz ergänzen. Dieser Export besitzt keinen Versions-DOI.", ""]
+
+
+def _render_codebook(manifest: dict[str, Any], dictionary: dict[str, Any], inputs: CodebookInputs) -> str:
+    lines = [
+        *_codebook_header(manifest),
+        *_codebook_coverage(manifest["coverage"]),
+        *_codebook_tables(manifest["tables"], dictionary),
+        _demote_headings(inputs.methods),
+        *_codebook_recipes(manifest),
+        *_codebook_sources_and_citation(manifest, inputs.license),
+    ]
+    return "\n".join(lines)
+
+
 # Build the distribution copy, the CSVs and datenstand.json from the build
 # store. Called once per build, from main(), after the store and the MP
 # identity mapping are final; render_site() and the page never open the build
@@ -3166,6 +3606,8 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 #   g-<inputs_hash[:12]>/    one generation's files, renamed in complete; the
 #                            previous one is deleted only after datenstand.json
 #                            points at the new one
+#     DATA.md               snapshot codebook
+#     recipe-<id>-<tag>.csv  SQL results, including hidden IDs in SQL order
 #   published.json           written by the (separate) publish script; never
 #   LICENSE-DATA.md          touched by this function
 # The lock, the store copies, the temp files and the generation being built
@@ -3190,6 +3632,12 @@ def export_distribution_data(
             f"data export needs SQLite 3.35+ (found {sqlite3.sqlite_version}); "
             "upgrade Python or run the export on another machine"
         )
+    # The tag ends every file name of the generation.
+    if not EXPORT_FILE_NAME_RE.fullmatch(tag):
+        raise RuntimeError(f"export: tag {tag!r} cannot be part of a file name")
+    # A release cites its revision, so it must be one anyone can check out.
+    if tag != "local" and (not commit or "-" in commit):
+        raise RuntimeError(f"export: release {tag} needs a clean, known build revision (got {commit or 'none'})")
 
     source = facts.open_readonly(database_path)
     try:
@@ -3212,6 +3660,7 @@ def export_distribution_data(
         previous = _read_previous_manifest(exports_dir)
         stat = database_path.stat()
         source_sha256 = _source_sha256(database_path, stat, previous)
+        codebook = _read_codebook_inputs()
         recipes_hash = _recipes_hash(recipes)
         inputs_hash = _inputs_hash(
             source_sha256=source_sha256,
@@ -3223,9 +3672,11 @@ def export_distribution_data(
             catalog_count=catalog_count,
             dossier_count=dossier_count,
             readiness=readiness,
+            commit=commit,
+            codebook_sha256=codebook.sha256,
         )
 
-        if not force and _manifest_reusable(previous, exports_dir, inputs_hash=inputs_hash, export_format=EXPORT_FORMAT):
+        if not force and _manifest_reusable(previous, exports_dir, inputs_hash=inputs_hash, export_format=EXPORT_FORMAT, recipes=recipes):
             print("export: reused data/exports (unchanged)", file=sys.stderr)
             return previous  # type: ignore[return-value]
 
@@ -3258,8 +3709,11 @@ def export_distribution_data(
                 recipes_hash=recipes_hash,
                 inputs_hash=inputs_hash,
                 generation=generation,
+                codebook=codebook,
             )
 
+            # Publish only what the site's own validator accepts on the next run.
+            validate_manifest(manifest, "new export", subject="the export's new datenstand.json", recipes=recipes)
             manifest_tmp_path = scratch / "datenstand.json"
             manifest_tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             # A forced re-export of unchanged inputs names the published
@@ -3314,6 +3768,7 @@ def _run_export(
     recipes_hash: str,
     inputs_hash: str,
     generation: str,
+    codebook: CodebookInputs,
 ) -> dict[str, Any]:
     dist_fd, dist_name = tempfile.mkstemp(dir=scratch_dir, prefix="dist-", suffix=".sqlite")
     os.close(dist_fd)
@@ -3385,6 +3840,7 @@ def _run_export(
     snapshot_conn.row_factory = sqlite3.Row
     try:
         tables_info = iter_tables(snapshot_conn)
+        dictionary = _load_data_dictionary(codebook.dictionary, tables_info)
         snapshot_conn.create_function(
             "REGEXP", 2, lambda pattern, value: bool(re.search(pattern, value)) if value is not None else False
         )
@@ -3422,6 +3878,7 @@ def _run_export(
         files: list[dict[str, Any]] = [
             {
                 "name": sqlite_name,
+                "kind": "sqlite",
                 "bytes": sqlite_path.stat().st_size,
                 "unpacked_bytes": unpacked_bytes,
                 "sha256": sqlite_sha256,
@@ -3429,11 +3886,12 @@ def _run_export(
             }
         ]
         for table in tables_info:
-            if table["name"] == "schema_migrations":
+            if table["name"] in TABLES_WITHOUT_CSV:
                 continue
-            if not DATA_TABLE_NAME_RE.match(table["name"]):
-                print(f"export: skipped table {table['name']} (unsafe name)", file=sys.stderr)
-                continue
+            # Every listed table must have its CSV (validate_manifest checks),
+            # so a name that cannot be a file name fails the export.
+            if not DATA_TABLE_NAME_RE.fullmatch(table["name"]):
+                raise RuntimeError(f"export: table {table['name']!r} has no safe CSV file name")
             csv_name = f"{table['name']}-{tag}.csv.gz"
             csv_path = gen_dir / csv_name
             row_count, replacements = _write_csv(snapshot_conn, table["name"], table["columns"], csv_path)
@@ -3447,6 +3905,7 @@ def _run_export(
             files.append(
                 {
                     "name": csv_name,
+                    "kind": "table_csv",
                     "bytes": csv_path.stat().st_size,
                     "rows": row_count,
                     "sha256": _hash_file(csv_path),
@@ -3484,13 +3943,27 @@ def _run_export(
             }
             for table in tables_info
         ]
+        _check_license_layers(manifest_tables, dictionary)
 
         recipe_rows: list[dict[str, Any]] = []
         for recipe in recipes:
             try:
-                rows = [dict(row) for row in snapshot_conn.execute(recipe["sql"]).fetchall()]
+                cursor = snapshot_conn.execute(recipe["sql"])
+                columns = [column[0] for column in cursor.description]
+                rows = [dict(row) for row in cursor.fetchall()]
             except sqlite3.Error as exc:
                 raise RuntimeError(f"export: recipe {recipe['id']} failed: {exc}") from exc
+            definitions = {column["name"]: column["meaning"] for column in recipe["columns"]}
+            missing = set(columns) - definitions.keys()
+            if missing:
+                raise RuntimeError(f"export: recipe {recipe['id']} missing output definitions: {', '.join(sorted(missing))}")
+            csv_name = f"recipe-{recipe['id']}-{tag}.csv"
+            csv_path = gen_dir / csv_name
+            replacements = _write_recipe_csv(csv_path, columns, rows)
+            if replacements:
+                print(f"export: recipe {recipe['id']}: {replacements} values had unencodable characters", file=sys.stderr)
+            files.append({"name": csv_name, "kind": "recipe_csv", "bytes": csv_path.stat().st_size,
+                          "rows": len(rows), "sha256": _hash_file(csv_path), "replacements": replacements})
             empty_reason = None
             if not rows:
                 depends_on = recipe.get("depends_on")
@@ -3506,7 +3979,11 @@ def _run_export(
                     "id": recipe["id"],
                     "title": recipe["title"],
                     "sql": recipe["sql"],
-                    "columns": [column["name"] for column in recipe["columns"]],
+                    "columns": columns,
+                    "column_definitions": {name: definitions[name] for name in columns},
+                    "caveat": recipe.get("caveat"),
+                    "method": recipe.get("method"),
+                    "file": csv_name,
                     "rows": rows,
                     "empty_reason": empty_reason,
                 }
@@ -3523,6 +4000,7 @@ def _run_export(
         vote_members_count = int(snapshot_conn.execute("SELECT COUNT(*) FROM vote_members").fetchone()[0])
         relationships_count = sum(len(table["foreign_keys"]) for table in tables_info)
         total_rows = sum(table["row_count"] for table in tables_info)
+        wahlperioden = _snapshot_coverage(snapshot_conn)
     finally:
         snapshot_conn.close()
     vacuum_path.unlink()
@@ -3530,6 +4008,9 @@ def _run_export(
     coverage_labels = {"ready": "erfasst", "partial": "teilweise erfasst", "unavailable": "nicht erfasst"}
     manifest: dict[str, Any] = {
         "export_format": EXPORT_FORMAT,
+        "store_schema": pulse_store.SCHEMA_VERSION,
+        "key_version": KEY_VERSION,
+        "codebook_inputs": codebook.sha256,
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
         "commit": commit,
         "tag": tag,
@@ -3572,8 +4053,13 @@ def _run_export(
             },
             "synthetic_rede_ids": synthetic_rede_ids,
             "conflicting_votes": conflicting_votes,
+            "wahlperioden": wahlperioden,
         },
     }
+    codebook_path = gen_dir / "DATA.md"
+    codebook_path.write_text(_render_codebook(manifest, dictionary, codebook), encoding="utf-8")
+    files.append({"name": codebook_path.name, "kind": "codebook", "bytes": codebook_path.stat().st_size,
+                  "sha256": _hash_file(codebook_path)})
     return manifest
 
 
@@ -3653,14 +4139,25 @@ def _truncate(text: str, limit: int) -> tuple[str, str | None]:
     return text[: limit - 1].rstrip() + "…", text
 
 
+# The URL of one file of the manifest's generation (unescaped).
+def generation_file_href(manifest: dict[str, Any], data_base_url: str, name: str) -> str:
+    return f"{data_base_url}{manifest['generation']}/{name}"
+
+
+# The manifest was written by export_distribution_data or passed
+# validate_manifest: its files list the sqlite first and exactly one codebook.
 def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_remote: bool) -> str:
     sqlite_file = manifest["files"][0]
-    href = f"{data_base_url}{manifest['generation']}/{sqlite_file['name']}"
-    csv_files = manifest["files"][1:]
+    href = generation_file_href(manifest, data_base_url, sqlite_file["name"])
+    csv_files = [file for file in manifest["files"] if file["kind"] == "table_csv"]
+    (codebook,) = [file for file in manifest["files"] if file["kind"] == "codebook"]
+    codebook_link = (
+        f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, codebook["name"]))}">Datenwörterbuch (DATA.md)</a></p>'
+    )
     csv_rows = "".join(
         f"""
         <li class="file">
-          <a href="{pulse_html.esc(data_base_url)}{pulse_html.esc(manifest['generation'])}/{pulse_html.esc(file['name'])}">{pulse_html.esc(file['name'])}</a>
+          <a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, file['name']))}">{pulse_html.esc(file['name'])}</a>
           <span>{pulse_html.esc(format_size_de(file['bytes']))}</span>
         </li>
         """
@@ -3680,6 +4177,7 @@ def render_daten_downloads(manifest: dict[str, Any], *, data_base_url: str, is_r
         <p class="file-meta">{pulse_html.esc(sqlite_file['name'])} &middot; {pulse_html.esc(format_size_de(sqlite_file['bytes']))} gepackt / {pulse_html.esc(format_size_de(sqlite_file['unpacked_bytes']))} entpackt</p>
         <p class="sha-label">sha256</p>
         <code class="sha">{pulse_html.esc(sqlite_file['sha256'])}</code>
+        {codebook_link}
         <details>
           <summary>CSV-Tabellen ({len(csv_files)})</summary>
           <ul class="file-list">{csv_rows}</ul>
@@ -3705,9 +4203,8 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
         f"{pulse_html.format_int(coverage['dossier_count'])} von {pulse_html.format_int(coverage['catalog_count'])} "
         "Protokollen im Katalog als Dossier erfasst"
     )
-    bausteine_labels = {"votes": "Namentliche Abstimmungen", "aw-profiles": "abgeordnetenwatch-Profile", "mp-roster": "MdB-Kader"}
     bausteine_line = " &middot; ".join(
-        f"{pulse_html.esc(bausteine_labels[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
+        f"{pulse_html.esc(BAUSTEINE_LABELS[key])}: {pulse_html.esc(value)}" for key, value in coverage["bausteine"].items()
     )
     provenance_bits = [f"Exportformat {manifest['export_format']}"]
     if manifest.get("commit"):
@@ -3732,6 +4229,7 @@ def render_daten_recipes(
     mp_lookup: dict[str, str],
     document_numbers: set[str],
     bill_slugs: set[str],
+    data_base_url: str = "data/exports/",
 ) -> str:
     blocks = []
     for recipe_row in manifest["recipes"]:
@@ -3801,6 +4299,9 @@ def render_daten_recipes(
             """
         caveat = f'<p class="caveat">{pulse_html.esc(recipe.get("caveat"))}</p>' if recipe.get("caveat") else ""
         title_id = f"recipe-{pulse_html.esc(recipe_row['id'])}-title"
+        csv_link = (
+            f'<p><a href="{pulse_html.esc(generation_file_href(manifest, data_base_url, recipe_row["file"]))}">Ergebnis als CSV</a></p>'
+        )
         blocks.append(
             f"""
             <section class="recipe" aria-labelledby="{title_id}">
@@ -3811,6 +4312,7 @@ def render_daten_recipes(
               </div>
               <div class="recipe-result">
                 {body}
+                {csv_link}
                 {caveat}
               </div>
             </section>
@@ -4173,7 +4675,8 @@ def render_database_page(
     downloads_html = render_daten_downloads(manifest, data_base_url=data_base_url, is_remote=is_remote)
     datenstand_html = render_daten_datenstand(manifest)
     recipes_html = render_daten_recipes(
-        manifest, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs
+        manifest, mp_lookup=mp_lookup, document_numbers=document_numbers, bill_slugs=bill_slugs,
+        data_base_url=data_base_url,
     )
 
     return f"""<!doctype html>
@@ -10928,7 +11431,7 @@ def build_publication_manifest(
 
     catalog_state = publication.AcquisitionState.COMPLETE if protocols else publication.AcquisitionState.FAILED
     catalog_reasons = () if protocols else ("empty_required_dataset",)
-    version = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
+    version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
     domains = (
         publication.DomainFacts(
             domain="catalog",
@@ -11179,8 +11682,7 @@ def render_site(
     # runs under --no-persist.
     database_href = None
     if manifest is not None:
-        sqlite_file = manifest["files"][0]
-        database_href = f"{data_base_url}{manifest['generation']}/{sqlite_file['name']}"
+        database_href = generation_file_href(manifest, data_base_url, manifest["files"][0]["name"])
     # database.html carries content exactly when a manifest exists (an export
     # from this build, or a --data-manifest override), so that is what the
     # in-page "Daten" links key on.
@@ -11694,8 +12196,9 @@ _MANIFEST_REQUIRED: tuple[tuple[str, type | tuple[type, ...]], ...] = (
 # copying, so an override must carry exactly this build's recipes: the rows
 # came from the manifest's SQL, and showing any other SQL beside them (local or
 # tampered, sqlite3 dot-commands included) would misstate where they came from.
-# Titles are display copy and come from RECIPES, like recipes_hash ignores them.
-def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
+# Titles are display copy the page takes from RECIPES, so they are not compared
+# here (recipes_hash does include them: a title edit re-exports DATA.md).
+def _manifest_recipe_problems(recipes: list[Any], expected_recipes: tuple[dict[str, Any], ...] = RECIPES) -> list[str]:
     if not all(
         isinstance(r, dict)
         and isinstance(r.get("id"), str)
@@ -11706,8 +12209,9 @@ def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
     ):
         return ["recipes[] entries need id, rows (a list of objects) and empty_reason (text or null)"]
     problems = []
+    by_id = {recipe["id"]: recipe for recipe in expected_recipes}
     for index, recipe in enumerate(recipes):
-        local = RECIPES_BY_ID.get(recipe["id"])
+        local = by_id.get(recipe["id"])
         if local is None:
             problems.append(f"recipes[{index}] id {recipe['id']!r} is not a recipe of this build")
         elif recipe.get("sql") != local["sql"]:
@@ -11715,15 +12219,21 @@ def _manifest_recipe_problems(recipes: list[Any]) -> list[str]:
                 f"recipes[{index}] ({recipe['id']}) SQL differs from this build's; export the data with this version of the code"
             )
     ids = [recipe["id"] for recipe in recipes]
-    expected = [recipe["id"] for recipe in RECIPES]
+    expected = [recipe["id"] for recipe in expected_recipes]
     if not problems and ids != expected:
         problems.append(f"recipes ids {ids} differ from this build's {expected}")
     return problems
 
 
-def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
+# `subject` names the manifest in errors; by default it is the --data-manifest
+# argument, the only place an operator supplies one. The exporter passes the
+# recipes it ran, which tests may replace; the page checks against this build's.
+def validate_manifest(
+    manifest: Any, source: str, *, subject: str | None = None, recipes: tuple[dict[str, Any], ...] = RECIPES
+) -> dict[str, Any]:
+    subject = subject or f"--data-manifest {source}"
     if not isinstance(manifest, dict):
-        raise RuntimeError(f"error: --data-manifest {source} is not a JSON object")
+        raise RuntimeError(f"error: {subject} is not a JSON object")
     problems = []
     for key, expected in _MANIFEST_REQUIRED:
         if key not in manifest:
@@ -11744,7 +12254,7 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
         if files and isinstance(files[0], dict) and not all(k in files[0] for k in ("unpacked_bytes", "sha256")):
             problems.append("files[0] needs unpacked_bytes and sha256")
     generation = manifest.get("generation")
-    if isinstance(generation, str) and not re.match(r"^g-[0-9a-f]{12}$", generation):
+    if isinstance(generation, str) and not re.fullmatch(r"g-[0-9a-f]{12}", generation):
         problems.append(f"generation {generation!r} is not g-<12 hex>")
     for key in ("protocols", "votes", "coverage"):
         value = manifest.get(key)
@@ -11761,10 +12271,78 @@ def validate_manifest(manifest: Any, source: str) -> dict[str, Any]:
     ):
         problems.append("tables[] entries need name and columns")
     if isinstance(manifest.get("recipes"), list):
-        problems.extend(_manifest_recipe_problems(manifest["recipes"]))
+        problems.extend(_manifest_recipe_problems(manifest["recipes"], recipes))
+    if manifest.get("export_format") != EXPORT_FORMAT:
+        problems.append(f"export_format {manifest.get('export_format')!r} is not the current format {EXPORT_FORMAT}")
+    elif isinstance(files, list):
+        problems += _manifest_inventory_problems(manifest, files)
     if problems:
-        raise RuntimeError(f"error: --data-manifest {source} is not a usable Daten manifest: " + "; ".join(problems))
+        raise RuntimeError(f"error: {subject} is not a usable Daten manifest: " + "; ".join(problems))
     return manifest
+
+
+# The typed file inventory and the references into it. Every file is named,
+# typed and hashed; the recipes and tables point at exactly the CSVs listed.
+def _manifest_inventory_problems(manifest: dict[str, Any], files: list[Any]) -> list[str]:
+    problems: list[str] = []
+    inventory: dict[str, dict[str, Any]] = {}
+    kinds: dict[str, list[str]] = {"sqlite": [], "table_csv": [], "recipe_csv": [], "codebook": []}
+    for index, entry in enumerate(files):
+        if not isinstance(entry, dict):
+            continue
+        name, kind = entry.get("name"), entry.get("kind")
+        if not isinstance(name, str) or not EXPORT_FILE_NAME_RE.fullmatch(name):
+            problems.append(f"files[{index}].name is not a plain file name")
+            continue
+        if name in inventory:
+            problems.append(f"duplicate files name {name}")
+        inventory[name] = entry
+        if not isinstance(kind, str) or kind not in kinds:
+            problems.append(f"files[{index}].kind unsupported: {kind!r}")
+            continue
+        kinds[kind].append(name)
+        for key in (("bytes", "rows") if kind in ("table_csv", "recipe_csv") else ("bytes",)):
+            if type(entry.get(key)) is not int or entry[key] < 0:
+                problems.append(f"files[{index}].{key} must be a nonnegative integer")
+        if not isinstance(entry.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]):
+            problems.append(f"files[{index}].sha256 must be a SHA-256 hex digest")
+    if len(kinds["sqlite"]) != 1 or not files or not isinstance(files[0], dict) or files[0].get("kind") != "sqlite":
+        problems.append("files needs exactly one sqlite, first")
+    elif type(files[0].get("unpacked_bytes")) is not int or files[0]["unpacked_bytes"] < 0:
+        problems.append("files[0].unpacked_bytes must be a nonnegative integer")
+    if kinds["codebook"] != ["DATA.md"]:
+        problems.append("codebook needs exactly one typed DATA.md")
+    recipe_refs, recipe_ids = set(), set()
+    for index, recipe in enumerate(manifest.get("recipes", []) if isinstance(manifest.get("recipes"), list) else []):
+        if not isinstance(recipe, dict):
+            continue
+        recipe_id, reference = recipe.get("id"), recipe.get("file")
+        if isinstance(recipe_id, str):
+            if recipe_id in recipe_ids:
+                problems.append(f"duplicate recipe id {recipe_id}")
+            recipe_ids.add(recipe_id)
+        if not isinstance(reference, str) or reference not in inventory or inventory[reference].get("kind") != "recipe_csv":
+            problems.append(f"recipes[{index}].file needs a recipe_csv reference")
+        else:
+            if reference in recipe_refs:
+                problems.append(f"duplicate recipe_csv reference {reference}")
+            recipe_refs.add(reference)
+            if isinstance(recipe.get("rows"), list) and inventory[reference].get("rows") != len(recipe["rows"]):
+                problems.append(f"recipes[{index}].file rows mismatch")
+        columns = recipe.get("columns")
+        if not isinstance(columns, list) or not columns or not all(isinstance(name, str) for name in columns) or len(set(columns)) != len(columns):
+            problems.append(f"recipes[{index}].columns needs unique column names")
+    if set(kinds["recipe_csv"]) != recipe_refs:
+        problems.append("dangling recipe_csv inventory entry")
+    tables = manifest.get("tables")
+    if isinstance(tables, list):
+        expected_tables = {table["name"] for table in tables if isinstance(table, dict)
+                           and isinstance(table.get("name"), str) and table["name"] not in TABLES_WITHOUT_CSV}
+        # Release labels can be supplied independently of asset filenames.
+        csv_tables = [name.partition("-")[0] for name in kinds["table_csv"] if name.endswith(".csv.gz")]
+        if set(csv_tables) != expected_tables or len(csv_tables) != len(kinds["table_csv"]) or len(csv_tables) != len(expected_tables):
+            problems.append("table_csv inventory does not match tables")
+    return problems
 
 
 def parse_args() -> argparse.Namespace:
@@ -12110,19 +12688,32 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     return base_url_raw, manifest_raw, license_text, issues_url
 
 
+# The cited build revision: a fixed-length commit id, or
+# <commit>-dirty-<hash of `git diff HEAD`> when tracked files differ from it,
+# so the revision (and with it the export's cache identity) changes with every
+# local edit. Untracked files are not counted. A diff git cannot produce gives
+# <commit>-unverified rather than dropping the known commit.
 def resolve_commit() -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+    def git(*args: str, timeout: int) -> bytes:
+        return subprocess.run(
+            ["git", "--no-optional-locks", *args],
             cwd=Path(__file__).resolve().parent,
             capture_output=True,
-            text=True,
-            timeout=5,
+            timeout=timeout,
             check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
+        ).stdout
+
+    try:
+        commit = git("rev-parse", "--short=12", "HEAD", timeout=5).decode().strip()
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return None
-    return result.stdout.strip() or None
+    if not commit:
+        return None
+    try:
+        diff = git("diff", "HEAD", "--binary", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return f"{commit}-unverified"
+    return f"{commit}-dirty-{hashlib.sha256(diff).hexdigest()[:8]}" if diff else commit
 
 
 # D1A/D3A: the Fakt der Woche engine sits between the finalised store and the
@@ -12297,7 +12888,7 @@ def main() -> int:
         return 1 if failed else 0
 
     # Resolve update-time enrichments before doing any network work.
-    root = Path(__file__).resolve().parents[1]
+    root = REPO_ROOT
     try:
         enrichments = resolve_from_args(args, root=root)
     except FeatureError as exc:

@@ -2,6 +2,10 @@
 
 Nothing is published. No reader, citation, or downstream user depends on any current figure, ranking, URL, export format, or schema. Judge every decision on accuracy and quality alone: a change that shifts figures, renames fields, or reworks a whole feature costs only the work itself. Change things in place and drop the old shape rather than carrying compatibility shims or migration paths. When a fix moves a number, report the old and new values and why the new one is more correct.
 
+## Review findings: fix now or defer
+
+During a review or a /ship run, fix now only correctness defects: a figure or row that is wrong or would move, a false statement or broken link in DATA.md, the site or other user-facing output, or a crash on input the code can actually receive. Record everything else in TODOS.md with enough context to act on later: cosmetic or wording-only output, test hygiene, code comments, latent issues no current input reaches, and defects that predate the change. From the second fix cycle of a /ship run on, defer anything that is not a correctness defect, so the run reaches its PR. The pre-release rule above decides how a fix is made, not whether a non-correctness finding is worth another review round.
+
 ## Skill routing
 
 Route by request type:
