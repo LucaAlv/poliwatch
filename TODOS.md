@@ -145,12 +145,52 @@ The order of work toward the direction in PRODUCT.md (2026-09-30): a citable dat
 
 ### Export robustness gaps found by the codebook review
 
-**What:** (1) The publish step in `export_distribution_data` is not atomic: if renaming `datenstand.json` fails after `gen_dir.replace(published)`, the `finally` deletes the set-aside previous generation and leaves the old manifest over the new files; undo the generation swap on any failure after it and test the five untested cells (fresh and new-generation rename-in failure; fresh, new-generation and forced manifest-rename failure). (2) `validate_public_output` (`scripts/publication_state.py`) scans only HTML and three presentation JSON files, not `data/exports/**/DATA.md` or `datenstand.json`, so a local path pasted into an authored doc would ship with CI green. (3) Smaller: authored-input and licence-layer errors surface only after the store copy and CSV pass (pre-validate the dictionary shape and the licence doc's `## ` section first); `render_daten_recipes` defaults `data_base_url` (make it a required keyword); `_recipes_hash` raises a raw `KeyError` for an old-shape caller recipe; decide whether recipe CSVs keep formula-leading text unchanged now that they are plain double-clickable `.csv`. Done when each item has a fix and a test, or a recorded decision.
+**What:** (1) The publish step in `export_distribution_data` is not atomic: if renaming `datenstand.json` fails after `gen_dir.replace(published)`, the `finally` deletes the set-aside previous generation and leaves the old manifest over the new files; undo the generation swap on any failure after it and test the five untested cells (fresh and new-generation rename-in failure; fresh, new-generation and forced manifest-rename failure). (2) `validate_public_output` (`scripts/publication_state.py`) scans only HTML and three presentation JSON files, not `data/exports/**/DATA.md` or `datenstand.json`, so a local path pasted into an authored doc would ship with CI green. (3) Smaller: authored-input and licence-layer errors surface only after the store copy and CSV pass (pre-validate the dictionary shape and the licence doc's `## ` section first); `render_daten_recipes` defaults `data_base_url` (make it a required keyword); `_recipes_hash` raises a raw `KeyError` for an old-shape caller recipe; decide whether recipe CSVs keep formula-leading text unchanged now that they are plain double-clickable `.csv`. (4) Found in /ship runs 4 and 5 (2026-10-30/31), none reachable with today's inputs: export `RuntimeError`s (dictionary drift, recipe failure, copy failure) escape `main()` as a traceback after the store was persisted, so no site renders (pre-existing pattern; run the dictionary check against the source schema before the copy and decide whether `main()` turns them into `data_export_error`); recipe definitions are checked one way only (a definition with no SQL column passes); `_protocol_wahlperiode` accepts Unicode digits; `_demote_headings` treats a fence line with an info string inside an open fence as a close, ignores 1–3-space-indented fences and setext headings, and `_license_notice` has the same edges; `_PLACEHOLDER_RE` rejects legitimate text (`XXX-Straße`, `??`) and `_authored_text`'s bare minimum length 8 rejects short units such as „Anzahl“ (name it or drop it); `_write_recipe_csv` writes `str()` of a BLOB (`b'…'`) or float repr, and a recipe with duplicate output column names collapses in `dict(row)`; `_md_cell` leaves `\r` from a CRLF-edited input in a table cell; DATA.md appends „.“ after the `--data-license` text, so the real short string (ending „LICENSE-DATA.md.“) prints „..“, and the line names only `--data-license` when the text came from `$BUNDESTAG_PULSE_DATA_LICENSE`; `_manifest_reusable` keeps an `export_format` parameter that `validate_manifest` overrides with the global; DATA.md's recipe section hard-codes „LIMIT 5“ instead of reading each recipe's limit (D2). Done when each item has a fix and a test, or a recorded decision.
 
-**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decisions D4 and D7). (1) predates the branch and the window is narrow; (2) guards a leak that does not exist today.
+**Why:** Deferred by the owner during the codebook /ship (2026-10-30, decisions D4 and D7). (1) predates the branch and the window is narrow; (2) guards a leak that does not exist today. (4) is latent, cosmetic or naming, deferred under the CLAUDE.md fix-now-or-defer rule (2026-10-31).
 
 **Effort:** M
 **Priority:** P2
+**Depends on:** None
+
+### Audit every `data_dictionary.json` definition against the code that writes the column
+
+**What:** Before the next /ship of the codebook branch, check each of the 246 column definitions (meaning, unit, source, NULL behaviour) and each recipe `method`/`caveat` against its writer in `scripts/persist_dip_pulse_store.py`, `derive.py`, `facts.py`, `registry.py` and the rebuild path (`rebuild_database_from_entries`: every persisting online build stages a fresh store; `--repersist` keeps the old one when content is unchanged), and against NULL and value counts in a real export. For every column: is it ever NULL, and why; is the value as the source gives it or normalised; is the timestamp's lifetime what the text says. Record the result per table in the plan or a short audit file. Done when every definition has been compared with its writer and the measured counts, and the corrections are committed.
+
+**Why:** /ship run 5 (2026-10-31) ran three adversarial rounds; each found new false statements in DATA.md definitions (licence table missing three derived columns; `created_at` called a first-ingest time; `speeches.mp_id` called nullable though it never is; `fraktion` called "as the protocol names it" though normalised; `vote_members.party_id` called nullable). Each fix used a /ship fix cycle and the run stopped at the three-cycle cap. A one-pass audit replaces that loop.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** None
+
+### Recipe SQL disagrees with the site's own counting rules in edge cases
+
+**What:** (1) r4 and r5 take the "first" sitting by lexicographic `MIN(document_number)` ("21/100" < "21/99"); order numerically (D5). (2) r4 ranks by `ABS(yes_count - no_count)` with no guard, and the vote parser stores a block without `data-chart-values` as 0:0:0:0 (`validate_dip_protocol.py` pads with 0, `persist_dip_pulse_store.py` `int(total.get("yes") or 0)`), so such a vote would rank as the narrowest; `facts.py` already guards with `yes_count + no_count > 0`. 0 such votes in reference export g-c1944485a5d4. (3) r3 excludes only `fraktionslos`; the site's Abweichung rule (`derive.vote_abweichler`) also skips the `Unbekannt` group and groups whose member votes do not match the fraction counts (`partial`). (4) Check whether the shared „Unbekannt“ speaker record (`resolve_speaker` for an unnamed Redner) reaches `mp_canonical` and so r1/r2; 0 such rows in the reference export. Each change moves published figures: report old and new rows per the CLAUDE.md pre-release rule. Done when each recipe matches the site rule or DATA.md names the difference, with old/new figures recorded.
+
+**Why:** Found by the codebook /ship runs 4 and 5 (2026-10-30/31); deferred because each would move recipe figures and needs its own measurement.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Export cache key: too broad with git, too narrow without
+
+**What:** `EXPORTER_SHA256` hashes the whole 13k-line `build_dip_pulse_site.py` and `commit` carries a hash of the whole tracked diff, so any edit forces a full ~290 MB re-export (D4); rewrite only DATA.md when only the revision or unrelated code moved. In the other direction, with no git (`resolve_commit()` is `None`) edits to `facts.py` (`wahlperiode`, `FACTS_TABLES`) or `persist_dip_pulse_store.SCHEMA_VERSION` do not change the key, and DATA.md quotes CONTEXT.md and ADRs 0001/0002 that are not in `codebook_inputs`, so a reused generation can keep a stale DATA.md. Done when the key covers exactly what DATA.md and the CSVs are built from, with a test per input.
+
+**Why:** D4 deferred by the owner on 2026-10-30; the narrow direction was found by the run-5 adversarial review (2026-10-31).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Codebook follow-ups: licence layers and test hygiene
+
+**What:** (1) The CC BY metadata layers (`eigene-metadaten`, `eigene-metadaten-zuordnung`, `eigene-auswertung-uebernommene-quelldaten`) accept `dip`/`bundestag.de` tags, so whether e.g. `mps.identity_key` (built from DIP/XML names) is own metadata rests on authoring judgment; decide per column. (2) Join tables tagged `bundestag.de` may need their own bundestag.de licence layer instead of a DIP one. (3) The Unbekannt party row is not described under `parties.name`. (4) `test_codebook_describes_all_real_columns_and_snapshot_coverage` packs ~40 assertions with negative string pins; `test_codebook_matches_stored_codes_and_period_units` and `test_authored_definitions_distinguish_sources_units_and_exact_quotations` grep German fragments; derive expectations from the store or code where possible (/test-audit). Done when each has a decision or a fix.
+
+**Why:** Informational findings from the codebook /ship runs 4 and 5, deferred under the CLAUDE.md fix-now-or-defer rule.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ### Validate final merged A1/A2 before the A3 backfill
