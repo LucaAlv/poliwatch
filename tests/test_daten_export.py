@@ -19,6 +19,7 @@ from unittest import mock
 import _support  # noqa: F401
 import antrag_text
 import person_registry
+import publication_state as publication
 import _daten_fixture
 import build_dip_pulse_site as b
 import facts
@@ -200,6 +201,13 @@ class ExportDistributionDataTests(unittest.TestCase):
         )
         kwargs.update(overrides)
         return b.export_distribution_data(self.db_path, self.exports_dir, **kwargs)
+
+    # Value: protects=a real export (DATA.md with the authored inputs, datenstand.json) passes the public-output validator that now scans both; fails_when=authored text or the manifest holds a denylisted pattern, which would turn CI red on every build; why_new=validate_public_output started scanning data/exports documents; seam=none; no_claim=other surfaces
+    def test_a_real_export_passes_the_public_output_validator(self) -> None:
+        self.exports_dir = self.tmp / "site" / "data" / "exports"
+        self.export()
+        self.assertTrue((self.exports_dir / "datenstand.json").is_file())
+        self.assertEqual(publication.validate_public_output(self.tmp / "site"), [])
 
     def test_every_recipe_has_at_least_one_row_on_the_fixture(self) -> None:
         manifest = self.export()
@@ -1197,6 +1205,47 @@ class ExportDistributionDataTests(unittest.TestCase):
         with mock.patch.object(Path, "replace", failing_rename_in), self.assertRaises(OSError):
             self.export(force=True)
         self.assertEqual(tree(), before)
+
+    # Value: protects=a rename that fails while the export is being published (the generation going in, or datenstand.json after it) leaves the published tree byte-for-byte as it was: nothing at all for a first export, the previous generation and manifest otherwise; fails_when=the set-aside generation is deleted, the new generation stays beside the old manifest, or the old manifest sits over new files; why_new=the five cells (first and new-generation rename-in, first/new-generation/forced manifest rename) were untested and the manifest-rename ones lost the previous generation; seam=none; no_claim=failures of the validator or the file writes
+    def test_a_rename_failure_while_publishing_restores_the_published_tree(self) -> None:
+        def tree():
+            return {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()} if self.exports_dir.exists() else {}
+
+        real_replace = Path.replace
+
+        def failing(step):
+            def replace(path, target):
+                target = Path(target)
+                into_tree = target.parent == self.exports_dir
+                generation_in = into_tree and target.name.startswith("g-") and path.name.startswith("g-") and path.parent.name.startswith("export-")
+                manifest_in = into_tree and target.name == "datenstand.json"
+                if (step == "generation" and generation_in) or (step == "manifest" and manifest_in):
+                    raise OSError(f"{step} rename failed")
+                return real_replace(path, target)
+            return replace
+
+        changed = _r2_limited_to_4()
+        cases = (
+            ("first export, generation rename", "generation", False, {}),
+            ("first export, manifest rename", "manifest", False, {}),
+            ("new generation, generation rename", "generation", True, {"recipes": changed}),
+            ("new generation, manifest rename", "manifest", True, {"recipes": changed}),
+            ("forced re-export, manifest rename", "manifest", True, {"force": True}),
+        )
+        for label, step, has_previous, kwargs in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.exports_dir, ignore_errors=True)
+                if has_previous:
+                    self.export()
+                before = tree()
+                self.assertEqual(bool(before), has_previous)
+                with mock.patch.object(Path, "replace", failing(step)), self.assertRaisesRegex(OSError, f"{step} rename failed"):
+                    self.export(**kwargs)
+                self.assertEqual(tree(), before)
+                self.assertEqual(list(b.export_work_dir(self.exports_dir).iterdir()), [])
+                if has_previous:
+                    # the restored publication is still the one the next run reuses
+                    self.assertEqual(self.export()["generation"], json.loads((self.exports_dir / "datenstand.json").read_text())["generation"])
 
     def test_force_reexports_even_when_unchanged(self) -> None:
         first = self.export()

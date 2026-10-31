@@ -3704,6 +3704,7 @@ def export_distribution_data(
         gen_dir.mkdir()
         published = exports_dir / generation
         aside = scratch / "replaced"
+        swapped = committed = False
         try:
             manifest = _run_export(
                 database_path=database_path,
@@ -3736,13 +3737,20 @@ def export_distribution_data(
             if published.exists():
                 published.replace(aside)
             gen_dir.replace(published)
+            swapped = True
             manifest_tmp_path.replace(exports_dir / "datenstand.json")
+            committed = True
         except sqlite3.Error as exc:
             # backup()/DROP COLUMN/VACUUM INTO fail with sqlite3 errors on a
             # locked or corrupt store or a full disk; surface them through the
             # CLI's clean "error:" path instead of a traceback.
             raise RuntimeError(f"export: distribution copy failed: {exc}") from exc
         finally:
+            if swapped and not committed:
+                # The new generation is in place but the manifest still names
+                # the previous one: take the new generation out again, so the
+                # old manifest never sits over new files.
+                shutil.rmtree(published, ignore_errors=True)
             if aside.exists() and not published.exists():
                 aside.replace(published)
             shutil.rmtree(scratch, ignore_errors=True)
