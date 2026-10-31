@@ -134,6 +134,44 @@ class ExportHelpersTests(unittest.TestCase):
             self.assertEqual(b._write_recipe_csv(path, ["a", "b"], [{"a": "x\udc80", "b": None}, {"a": 1, "b": "ok"}]), 1)
             self.assertEqual(path.read_text(encoding="utf-8"), "a,b\nx?,\n1,ok\n")
 
+    # Value: protects=a bare CR in a CSV cell is quoted so a reader does not see a row break, on every Python patch level; fails_when=_write_csv_row stops quoting rows that hold a CR or csv.writer's own quoting is relied on for it; why_new=csv.writer with lineterminator LF quotes CR only on newer Python patch levels, and DATA.md promises line breaks stay unchanged; seam=none; no_claim=other cell conventions
+    def test_csv_writers_quote_a_bare_carriage_return_on_every_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recipe.csv"
+            rows = [{"a": "x\ry", "b": 'q"\r\n'}, {"a": "plain", "b": "1,2"}]
+            b._write_recipe_csv(path, ["a", "b"], rows)
+            raw = path.read_bytes().decode("utf-8")
+            self.assertEqual(raw, 'a,b\n"x\ry","q""\r\n"\nplain,"1,2"\n')
+            back = list(csv.reader(io.StringIO(raw, newline="")))
+            self.assertEqual(back, [["a", "b"], ["x\ry", 'q"\r\n'], ["plain", "1,2"]])
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(":memory:")
+            conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+            conn.execute("INSERT INTO t VALUES (1, ?)", ("a\rb",))
+            path = Path(tmp) / "t.csv.gz"
+            columns = [{"name": "id", "pk": 1}, {"name": "v", "pk": 0}]
+            b._write_csv(conn, "t", columns, path)
+            text = gzip.decompress(path.read_bytes()).decode("utf-8")
+            self.assertEqual(text, 'id,v\n1,"a\rb"\n')
+
+    # Value: protects=a BLOB or a repeated recipe output name stops the export instead of writing b'...' text or one value in two columns; fails_when=_csv_cell_text or the duplicate-name check in _write_recipe_csv is removed; why_new=both were silent wrong output, though no stored column or recipe triggers them today; seam=none; no_claim=where main() reports the error
+    def test_recipe_csv_refuses_blobs_and_repeated_column_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recipe.csv"
+            with self.assertRaisesRegex(RuntimeError, "BLOB"):
+                b._write_recipe_csv(path, ["a"], [{"a": b"\x00"}])
+            with self.assertRaisesRegex(RuntimeError, "repeats the column name 'a'"):
+                b._write_recipe_csv(path, ["a", "a"], [{"a": 1}])
+
+    # Value: protects=a CR or CRLF from an edited input stays inside its DATA.md table cell; fails_when=_md_cell escapes only LF, leaving a CR that ends the table row in some renderers; why_new=only LF and the pipe were tested; seam=none; no_claim=other markdown escaping
+    def test_md_cell_turns_every_line_break_form_into_br(self) -> None:
+        self.assertEqual(b._md_cell("a|b\r\nc\rd\ne"), "a\\|b<br>c<br>d<br>e")
+
+    # Value: protects=DATA.md's licence line prints one full stop after the operator text, also when the text already ends in one; fails_when=_license_line_text appends a stop unconditionally, printing two dots after the real short string; why_new=the real string ends in a stop and printed two; seam=none; no_claim=the licence wording
+    def test_licence_line_ends_in_exactly_one_full_stop(self) -> None:
+        self.assertEqual(b._license_line_text("CC BY 4.0. Details in LICENSE-DATA.md."), "CC BY 4.0. Details in LICENSE-DATA.md.")
+        self.assertEqual(b._license_line_text("CC BY 4.0"), "CC BY 4.0.")
+
     def test_recipe_output_definitions_name_no_other_recipe(self) -> None:
         for recipe in b.RECIPES:
             for column in recipe["columns"]:
@@ -489,13 +527,15 @@ class ExportDistributionDataTests(unittest.TestCase):
         first = self.export(commit=None)
         # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
         first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
-        self.assertIn("(--data-license): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("(`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("beim bloßen Öffnen per Doppelklick", first_codebook)
+        self.assertIn("entschärfen solchen Quelltext nicht", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
             second = self.export(commit=None)
         self.assertNotEqual(first["generation"], second["generation"])
         manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (--data-license): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired

@@ -832,7 +832,7 @@
           "license": "eigene-metadaten"
         },
         "name": {
-          "meaning": "Anzeigename des parlamentarischen Zusammenschlusses.",
+          "meaning": "Anzeigename des parlamentarischen Zusammenschlusses. Die Zeile „Unbekannt“ ist kein Zusammenschluss der Quellen, sondern der Platzhalter des Projekts für ein abstimmendes Mitglied, dessen Abstimmungsliste keinen erkennbaren Zusammenschluss nennt.",
           "unit": "Zusammenschlussname als Text; enthält vereinzelt Parserfehler aus dem Protokoll, etwa 'Bremen' oder einen Zwischenrufsatz.",
           "source": "Projektseitig normalisierter Zusammenschlussname aus DIP-Roster-/Protokollschreibweisen.",
           "license": "dip"
