@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import html as html_module
 import re
-from html.parser import HTMLParser
 from typing import Any
 
 
@@ -24,201 +23,156 @@ _ABBREVIATIONS = frozenset(
 _SENTENCE_END = re.compile(r"[.!?](?=\s)")
 # Stripped off a token before the abbreviation test: "(Abs." is "Abs.".
 _OPENERS = "([„\"‚'"
-# The fallback for markup html.parser cannot read: a "<" that opens no tag stays text,
-# and a closed <script> or <style> goes with its text, as on the parser's path. A
-# comment goes first, to its "-->" or, unclosed, to the end.
-_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
-_TAG_START = frozenset("!/?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-_SKIPPED_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
-#: Raw abstract characters read; the longest on the reference cache has 5,111. Both
-#: html.parser and the fallback slow down quadratically on some malformed markup.
+#: Raw abstract characters read; the longest on the reference cache has 5,111.
 MAX_ABSTRACT_CHARS = 10_000
+#: How far past the cut a tag, comment or character reference is followed to see
+#: where it ends, and how far before the cut a tag with no end in sight still
+#: counts as one the cut splits.
+CUT_LOOKAHEAD = 2_000
 # A numeric character reference past U+10FFFF names no character; with more than
 # 4,300 digits html.unescape raises instead of reading it as U+FFFD; int() counts
 # leading zeros as digits, so they go first: "&#x0000041;" is "A".
 _CHARREF_ZEROS = re.compile(r"&#(?:([xX])0+(?=[0-9a-fA-F])|0+(?=[0-9]))")
 _OVERLONG_CHARREF = re.compile(r"&#(?:[xX][0-9a-fA-F]{7,}|[0-9]{8,});?")
 _PARTIAL_CHARREF = re.compile(r"&#?[0-9A-Za-z]*\Z")
+_CHARREF_AT = re.compile(r"&#?[0-9A-Za-z]*;?")
+# Markup: "<" and a letter, "!", "/" or "?".
+_MARKUP_OPEN = re.compile(r"<[!/?A-Za-z]")
+_TAG_NAME = re.compile(r"[A-Za-z][^\t\n\r\f />\x00]*")
+_SKIPPED_CLOSE = re.compile(r"</(?:script|style)[\t\n\r\f />]", re.IGNORECASE)
+#: A ``<br>`` or a block element, opened or closed, ends a paragraph.
+_BREAKS = frozenset({"br", "p", "div", "li", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6"})
+#: ``<script>`` and ``<style>`` go with their text.
+_SKIPPED = frozenset({"script", "style"})
+_SPACE = " \t\n\r\f"
 
 
-def _after_equals(text: str, i: int) -> bool:
-    """Whether ``text[i]`` follows "=" and nothing but whitespace."""
-    j = i - 1
-    while j >= 0 and text[j].isspace():
-        j -= 1
-    return j >= 0 and text[j] == "="
-
-
-def _tag_closes(text: str) -> list[int]:
-    """closes[i]: where a tag still open at i, outside quotes, ends; -1 if never.
-    A quote counts only as an attribute value, after "=", as html.parser reads
-    it: the apostrophe in ``<b it's>`` is part of a name and the tag ends at its ">"."""
-    closes = [-1] * (len(text) + 1)
-    for i in range(len(text) - 1, -1, -1):
+def _tag_ends(text: str) -> list[int]:
+    """ends[i]: where the start tag whose name begins at ``text[i]`` ends (just past
+    its ">"); -1 if it never ends. One right-to-left pass, so linear however many
+    quotes or "<" the text holds. Attributes read as html.parser's current releases
+    read them, so every Python agrees: a quote opens a value only as the first
+    character after "=" and spaces; an unquoted value runs to a space or ">" and
+    holds any "=" or quote ("<b data=x=\\">" ends at its first ">"); a quote in a
+    name ("<b it's>") is a letter."""
+    size = len(text)
+    # Four states a character can find the tag in: name, between attributes,
+    # after "=", inside an unquoted value.
+    name, attr, value, bare = ([-1] * (size + 1) for _ in range(4))
+    for i in range(size - 1, -1, -1):
         char = text[i]
         if char == ">":
-            closes[i] = i
-        elif char in "\"'" and _after_equals(text, i):
+            name[i] = attr[i] = value[i] = bare[i] = i + 1
+            continue
+        space = char in _SPACE
+        name[i] = attr[i + 1] if space or char == "/" else name[i + 1]
+        attr[i] = value[i + 1] if char == "=" else attr[i + 1]
+        if space or char == "=":
+            value[i] = value[i + 1]
+        elif char in "\"'":
             quote_end = text.find(char, i + 1)
-            closes[i] = closes[quote_end + 1] if quote_end != -1 else -1
+            value[i] = attr[quote_end + 1] if quote_end != -1 else -1
         else:
-            closes[i] = closes[i + 1]
-    return closes
+            value[i] = bare[i + 1]
+        bare[i] = attr[i + 1] if space else bare[i + 1]
+    return name
 
 
-def _strip_tags(text: str) -> str:
-    """Each tag in ``text`` replaced by a space: ``<`` and a letter, ``!``, ``/``
-    or ``?``, up to the first ``>`` outside a quoted attribute value. A ``<``
-    whose tag never closes stays text. Linear time: a regex retried at every
-    ``<`` rescans to the end for each unclosed quote."""
-    closes = _tag_closes(text)
-    parts: list[str] = []
-    start = i = 0
-    while i < len(text) - 1:
-        if text[i] == "<" and text[i + 1] in _TAG_START and closes[i + 1] != -1:
-            parts.append(text[start:i])
-            parts.append(" ")
-            start = i = closes[i + 1] + 1
-        else:
-            i += 1
-    parts.append(text[start:])
-    return "".join(parts)
+def _read_text(run: str) -> str:
+    """One run of text between markup, character references read."""
+    run = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), run)
+    return html_module.unescape(_OVERLONG_CHARREF.sub("�", run))
 
 
-def _drop_cut_markup(kept: str, rest: str) -> str:
-    """``kept`` without the character reference or tag the cut before ``rest``
-    splits, which the parser would hand back as text ("&am", "<a hr"). Tags
-    are read over the whole raw text as ``_strip_tags`` reads them: a tag that
-    closes before the cut is passed over whole, a "<" inside its quoted
-    attribute included; a "<" whose tag never closes stays text, as it does
-    in an abstract that fits; the one tag that closes after the cut goes.
-    A comment runs to its first "-->", as ``_parser_input`` reads it; the
-    "<!--" of one that never closes is text."""
-    text = kept + rest
-    closes = _tag_closes(text)
-    i = 0
-    while i < len(kept):
-        if text.startswith("<!--", i):
-            end = text.find("-->", i + 4)
-            if end == -1:
-                i += 1
-                continue
-            if end + 3 > len(kept):
-                kept = kept[:i]
-                break
-            i = end + 3
-        elif text[i] == "<" and text[i + 1 : i + 2] in _TAG_START and closes[i + 1] != -1:
-            if closes[i + 1] >= len(kept):
-                kept = kept[:i]
-                break
-            i = closes[i + 1] + 1
-        else:
-            i += 1
-    partial = _PARTIAL_CHARREF.search(kept)
-    follower = text[len(kept) : len(kept) + 1]
-    if partial and follower and (follower.isalnum() or follower in "#;"):
-        kept = kept[: partial.start()]
-    return kept
+def _cut_run(text: str, start: int, cut: int) -> str:
+    """The text run ``text[start:cut]`` read, less a character reference the cut
+    splits ("&am" before "p;"). A trailing "&" and name characters stay when read
+    whole they are no reference (``GmbH&Co.``)."""
+    run = text[start:cut]
+    partial = _PARTIAL_CHARREF.search(run)
+    if partial:
+        whole = _CHARREF_AT.match(text, start + partial.start()).group()
+        if not _read_text(whole).startswith(_read_text(partial.group())):
+            run = run[: partial.start()]
+    return _read_text(run)
 
 
-def _parser_input(text: str) -> str:
-    """``text`` as every html.parser release reads it alike: each comment, ended
-    at its first "-->", emptied to "<!---->" (it still parts the text around it,
-    so "&am<!-- -->p;" stays two runs), and each "<" that opens a tag or comment that never
-    closes written as "&lt;", so it reads as text. The 2025 security releases
-    (3.11.13, 3.12.11, 3.13.4) changed both: older releases hand an unclosed
-    "<a hr" or "<!-- x" back as text, newer ones drop the tag and read the
-    comment to the end, and end a comment at "--!>" or "<!-->" too. Tags close
-    as ``_strip_tags`` reads them and are passed over whole."""
-    closes = _tag_closes(text)
-    parts: list[str] = []
-    start = i = 0
-    while i < len(text) - 1:
-        if text.startswith("<!--", i):
-            end = text.find("-->", i + 4)
-            if end != -1:
-                parts.append(text[start:i])
-                parts.append("<!---->")
-                start = i = end + 3
-                continue
-        elif text[i] == "<" and text[i + 1] in _TAG_START and closes[i + 1] != -1:
-            i = closes[i + 1] + 1
+def _markup_end(text: str, i: int, ends: list[int]) -> tuple[int, str | None, str]:
+    """(end, name, kind) of the markup opening at ``text[i]``, end just past it, or
+    end -1 if it never ends and so stays text. kind is "tag", "end" (end tag),
+    "comment" or "other"; name is a tag's lowercased name. A comment ends at its
+    first "-->" on every Python (newer releases also end one at "--!>" or "<!-->");
+    an end tag, "<?...>" and "<!...>" at their first ">"; a start tag as
+    ``_tag_ends`` reads it."""
+    if text.startswith("<!--", i):
+        end = text.find("-->", i + 4)
+        if end != -1:
+            return end + 3, None, "comment"
+    if text[i + 1] in "!/?":
+        end = text.find(">", i)
+        if end == -1:
+            return -1, None, "other"
+        match = _TAG_NAME.match(text, i + 2) if text[i + 1] == "/" else None
+        return end + 1, match.group().lower() if match else None, "end" if match else "other"
+    end = ends[i + 1]
+    match = _TAG_NAME.match(text, i + 1)
+    return end, match.group().lower(), "tag"
+
+
+def _paragraphs(text: str, cut: int, truncated: bool) -> list[list[str]]:
+    """The paragraphs of ``text[:cut]`` as runs of read text. ``text`` is the
+    abstract, or when ``truncated`` its first ``cut`` + ``CUT_LOOKAHEAD``
+    characters: a tag, comment or ``<script>`` block that starts before the cut and
+    ends after it is dropped; so is one with no end in the text that starts
+    within ``CUT_LOOKAHEAD`` before the cut, which may end beyond it."""
+    paragraphs: list[list[str]] = [[]]
+    ends = _tag_ends(text)
+    pos = 0
+    for match in _MARKUP_OPEN.finditer(text):
+        i = match.start()
+        if i < pos:
             continue
-        elif text[i] != "<" or text[i + 1] not in _TAG_START:
-            i += 1
-            continue
-        parts.append(text[start:i])
-        parts.append("&lt;")
-        start = i = i + 1
-    parts.append(text[start:])
-    return "".join(parts)
-
-
-class _AbstractParser(HTMLParser):
-    """Collects the text of a DIP abstract: a ``<br>`` or a block element ends a
-    paragraph, every other tag is dropped with its text kept, ``<script>`` and
-    ``<style>`` are dropped with their text."""
-
-    BREAKS = frozenset({"br", "p", "div", "li", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6"})
-    SKIPPED = frozenset({"script", "style"})
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.paragraphs: list[list[str]] = [[]]
-        self.skipping = 0
-
-    def handle_starttag(self, tag: str, attrs: Any) -> None:
-        if tag in self.SKIPPED:
-            self.skipping += 1
-        elif tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_startendtag(self, tag: str, attrs: Any) -> None:
-        if tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self.SKIPPED:
-            self.skipping = max(0, self.skipping - 1)
-        elif tag in self.BREAKS:
-            self.paragraphs.append([])
-
-    def handle_data(self, data: str) -> None:
-        if not self.skipping:
-            self.paragraphs[-1].append(data)
+        if i >= cut:
+            break
+        end, name, kind = _markup_end(text, i, ends)
+        if kind == "tag" and name in _SKIPPED and end != -1 and text[end - 2] != "/":
+            close = _SKIPPED_CLOSE.search(text, end)
+            close_end = text.find(">", close.end() - 1) if close else -1
+            # An unclosed <script> is a plain tag: the rest stays text.
+            kind, end = ("block", close_end + 1) if close_end != -1 else (kind, end)
+        if end == -1:
+            if not truncated or i < cut - CUT_LOOKAHEAD:
+                continue  # "<" that opens nothing: text
+            end = len(text) + 1  # may end past the window, so past the cut
+        paragraphs[-1].append(_read_text(text[pos:i]))
+        if end > cut:
+            return paragraphs
+        if (kind in ("tag", "end") and name in _BREAKS):
+            paragraphs.append([])
+        elif text.startswith("<![", i):
+            paragraphs[-1].append(" ")
+        pos = end
+    paragraphs[-1].append(_cut_run(text, pos, cut) if truncated else _read_text(text[pos:cut]))
+    return paragraphs
 
 
 def abstract_text(raw: Any) -> str:
     """A DIP abstract as plain text: paragraphs separated by a blank line (``\n\n``),
     whitespace inside a paragraph collapsed to single spaces, entities unescaped,
     markup gone. The caller escapes the result; the raw text stays in the cache.
-    Only the first ``MAX_ABSTRACT_CHARS`` characters are kept, less a tag or
-    character reference the cut splits; finding that tag scans the rest."""
+    Read by this module's own scanner, not html.parser, whose treatment of
+    malformed markup changed in 2025 (3.11.13, 3.12.11, 3.13.4): the same text
+    reads alike on every Python. A "<" whose markup never ends stays text; a
+    ``<script>`` or ``<style>`` that never closes is dropped as a tag only.
+    Only the first ``MAX_ABSTRACT_CHARS`` characters are read, less a tag,
+    comment or character reference the cut splits."""
     if not raw:
         return ""
     raw = str(raw)
-    if len(raw) > MAX_ABSTRACT_CHARS:
-        raw = _drop_cut_markup(raw[:MAX_ABSTRACT_CHARS], raw[MAX_ABSTRACT_CHARS:])
-    raw = _CHARREF_ZEROS.sub(lambda match: "&#" + (match.group(1) or ""), raw)
-    raw = _OVERLONG_CHARREF.sub("\ufffd", raw)
-    parser = _AbstractParser()
-    # A marked section ("<![CDATA[", "<![oops]>") outside a comment goes to the fallback
-    # unread: html.parser before the 2025 security releases raises on most of them,
-    # later ones read a comment. Word's "<!--[if mso]>…<![endif]-->" is a comment.
-    parser_input = _parser_input(raw)
-    malformed = "<![" in parser_input
-    if not malformed:
-        try:
-            parser.feed(parser_input)
-            parser.close()
-            malformed = parser.skipping > 0  # an unclosed <script> or <style> would swallow the rest
-        except AssertionError:  # html.parser's answer to other markup it cannot read
-            malformed = True
-    if malformed:
-        # Keep the words rather than lose them: tags out, entities read, one paragraph.
-        text = _strip_tags(_SKIPPED_BLOCK.sub(" ", _COMMENT.sub(" ", raw)))
-        return " ".join(html_module.unescape(text).split())
-    paragraphs = (" ".join("".join(parts).split()) for parts in parser.paragraphs)
+    truncated = len(raw) > MAX_ABSTRACT_CHARS
+    text = raw[: MAX_ABSTRACT_CHARS + CUT_LOOKAHEAD] if truncated else raw
+    cut = MAX_ABSTRACT_CHARS if truncated else len(text)
+    paragraphs = (" ".join("".join(parts).split()) for parts in _paragraphs(text, cut, truncated))
     return "\n\n".join(p for p in paragraphs if p)
 
 
