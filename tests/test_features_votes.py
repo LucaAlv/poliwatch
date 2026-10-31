@@ -579,6 +579,34 @@ class VoteContextPanelTests(unittest.TestCase):
         self.assertIn('<p class="vote-context-teaser">Kurz.</p>', markup)
         self.assertNotIn("vote-context-more", markup)
 
+    # Value: protects=a Vorgang id that is not digits never reaches the DIP path, the label stays unlinked; fails_when=dip_vorgang_url builds a URL from any id; why_new=B4 review item 10; seam=none
+    def test_a_non_digit_vorgang_id_is_not_linked(self) -> None:
+        from features.votes import dip_vorgang_url
+
+        self.assertEqual(dip_vorgang_url("123"), "https://dip.bundestag.de/vorgang/-/123")
+        for bad in ("", "12 3", "1/../x", "12a", "None"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                dip_vorgang_url(bad)
+        markup = self.panel(["1/x"], "resolved", _context_cache(**{"1/x": {"titel": "T", "abstract": "A."}}))
+        self.assertNotIn("dip.bundestag.de", markup)
+        self.assertIn("T · DIP", markup)
+
+    # Value: protects=derive and persist read one vote id (cleaned), and a missing id raises instead of becoming "None"; fails_when=vote_identity is str(vote["id"]) again; why_new=B4 review items 5 and 10; seam=none
+    def test_vote_identity_cleans_like_persist_and_refuses_no_id(self) -> None:
+        import derive
+        from persist_dip_pulse_store import _vote_id
+
+        for raw, expected in (("7", "7"), (" 7 ", "7"), ("a\xa0 b", "a b"), (7, "7")):
+            with self.subTest(raw=raw):
+                self.assertEqual(derive.vote_identity({"id": raw}), expected)
+                self.assertEqual(_vote_id({"id": raw}), expected)
+        for vote in ({"id": None}, {}, {"id": "  "}):
+            with self.subTest(vote=vote):
+                with self.assertRaises(ValueError):
+                    derive.vote_identity(vote)
+                with self.assertRaises(ValueError):
+                    _vote_id(vote)
+
     # Value: protects=a block without a titel still names its Vorgang; fails_when=the label needs titel; why_new=D12 labels are new; seam=none
     def test_a_block_without_a_titel_is_labelled_by_its_id(self) -> None:
         cache = _context_cache(**{"1": {"vorgangstyp": "Gesetzgebung", "titel": "", "abstract": "A."}})

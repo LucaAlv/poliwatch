@@ -1279,8 +1279,9 @@ class RepersistGuardTests(unittest.TestCase):
                     pulse_store.persist_politikfelder(conn, entry["report"], {}, cache)
                 self.assertEqual(conn.execute("SELECT source FROM vote_politikfelder WHERE vote_id='v1'").fetchone()[0],
                                  "not_fetched" if final_missing else "drucksache")
-                # Also exercise overwrite order within a single report.
-                late["sitting_votes"] = early["sitting_votes"] + late["sitting_votes"]
+                # Within one report ids equal after cleaning are one vote (derive.vote_identity
+                # cleans as persist does), so the first copy decides, here the plain "v1".
+                late["sitting_votes"] = late["sitting_votes"] + early["sitting_votes"]
                 if final_missing:
                     with self.assertRaises(build.DatabaseRebuildError):
                         build.require_vorgang_cache_for_tags(path, cache, path.parent.parent, [{"report": late}])

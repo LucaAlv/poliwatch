@@ -444,9 +444,14 @@ def require_vote_shape(report: Mapping[str, Any]) -> None:
 
 
 def vote_identity(vote: Mapping[str, Any]) -> str:
-    """A vote's identity within a sitting: its id. The scraper always sets one,
-    and ``require_vote_shape`` refuses a vote without it."""
-    return str(vote["id"])
+    """A vote's identity within a sitting: its id, cleaned as persist cleans it
+    (``_clean``: whitespace collapsed). The scraper always sets one and
+    ``require_vote_shape`` refuses a vote without it; a missing or blank id
+    raises here too, so ``None`` never becomes the identity ``"None"``."""
+    vote_id = _clean(vote.get("id"))
+    if not vote_id:
+        raise ValueError("a roll-call vote has no id")
+    return vote_id
 
 
 def iter_report_votes(report: Mapping[str, Any]):

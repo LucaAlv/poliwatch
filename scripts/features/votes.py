@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -273,7 +274,11 @@ CONTEXT_TEXT_NOT_FETCHED = "Antragstext nicht abgerufen"
 
 
 def dip_vorgang_url(vorgang_id: str) -> str:
-    """DIP's page of a Vorgang; the slug before the id is free text DIP ignores."""
+    """DIP's page of a Vorgang; the slug before the id is free text DIP ignores.
+    A Vorgang id is digits only; anything else would put free text into the DIP
+    path, so it raises ValueError (callers show the label unlinked)."""
+    if not re.fullmatch(r"[0-9]+", str(vorgang_id)):
+        raise ValueError(f"not a DIP Vorgang id: {vorgang_id!r}")
     return f"https://dip.bundestag.de/vorgang/-/{vorgang_id}"
 
 
