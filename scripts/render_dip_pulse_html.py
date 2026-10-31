@@ -1239,7 +1239,7 @@ def page_scripts(selection: Selection | None = None) -> str:
     return ai_summary_runtime_script() + theme_runtime_script() + navigation_runtime_script()
 
 
-def render_global_header(*, depth: int = 0, active: str | None = None, features: Selection | None = None) -> str:
+def render_global_header(*, depth: int = 0, active: str | None = None) -> str:
     prefix = "../" * depth
     brand_href = f"{prefix}index.html"
     links = []

@@ -4764,7 +4764,7 @@ def render_database_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="database", features=features)}
+    {pulse_html.render_global_header(active="database")}
     <main>
       <header class="page-header">
         <div>
@@ -4856,7 +4856,7 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="database", features=features)}
+    {pulse_html.render_global_header(active="database")}
     <main class="panel">
       <span class="eyebrow">Primärquellen</span>
       <h1>Daten nicht erzeugt</h1>
@@ -4984,7 +4984,7 @@ def render_landing_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(features=features)}
+    {pulse_html.render_global_header()}
     <main>
       <header class="home-intro">
         <h1>Debatten und Entscheidungen im Bundestag</h1>
@@ -5254,7 +5254,7 @@ def render_votes_archive_index(rows: list[dict[str, Any]], features: Selection |
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="votes", features=features)}
+    {pulse_html.render_global_header(depth=1, active="votes")}
     <header class="page-header">
       <div>
         <h1>Abstimmungen</h1>
@@ -5808,7 +5808,7 @@ def render_pulse_shell(features: Selection, message: str) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(features=features)}
+    {pulse_html.render_global_header()}
     <header class="page-header">
       <h1>Bundestag-Puls</h1>
       <p>{pulse_html.esc(message)}</p>
@@ -6081,11 +6081,14 @@ RADAR_FILTER_SCRIPT = """
           const active = new Set();
           const apply = () => {
             let visible = 0;
+            let last = null;
             rows.forEach(({ row, felder }) => {
               const show = active.size === 0 || felder.some((name) => active.has(name));
               row.hidden = !show;
-              if (show) visible += 1;
+              row.classList.remove('is-last');
+              if (show) { visible += 1; last = row; }
             });
+            if (last) last.classList.add('is-last');
             if (empty) empty.hidden = visible !== 0 || active.size === 0;
             chips.forEach((chip) => {
               const on = active.has(chip.dataset.radarChip);
@@ -6381,7 +6384,7 @@ def render_front_page(
       border-bottom:1px solid var(--line);
       break-inside:avoid;
     }}
-    .radar-row:last-child {{ border-bottom:0; }}
+    .radar-row:last-child, .radar-row.is-last {{ border-bottom:0; }}
     .radar-main {{ display:grid; gap:6px; align-content:start; }}
     .radar-main > .eyebrow {{ display:block; }}
     .radar-title {{ display:block; font-size:16px; font-weight:750; line-height:1.3; overflow-wrap:anywhere; }}
@@ -6697,7 +6700,7 @@ def render_front_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="pulse", features=features)}
+    {pulse_html.render_global_header(active="pulse")}
     <header class="page-header">
       <div>
         <span class="eyebrow">{header["eyebrow"]}</span>
@@ -7730,7 +7733,7 @@ def render_bills_index(bills: list[dict[str, Any]], features: Selection | None =
 </head>
 <body class="bill-page">
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
+    {pulse_html.render_global_header(depth=1, active="bills")}
     <header class="page-header"><div><h1>Gesetzesvorhaben</h1>
       <p>Finde Gesetzesvorhaben und lies nach, wie sie im Bundestag beraten wurden.</p></div></header>
     <main data-bills-index>{controls}{results}</main>
@@ -7906,7 +7909,7 @@ def render_bill_detail(
 </head>
 <body class="bill-page">
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="bills", features=features)}
+    {pulse_html.render_global_header(depth=1, active="bills")}
     <header class="page-header"><div>
       <nav class="local-nav" aria-label="Gesetzesvorhaben-Navigation"><a href="index.html">Alle Gesetzesvorhaben</a></nav>
       <span class="eyebrow">Gesetzesvorhaben</span><h1>{pulse_html.esc(bill.get('title') or 'Unbenanntes Gesetzesvorhaben')}</h1>
@@ -8615,7 +8618,7 @@ def render_abgeordnete_index(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete")}
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
@@ -8813,7 +8816,7 @@ def render_abgeordnete_detail(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="abgeordnete", features=features)}
+    {pulse_html.render_global_header(depth=1, active="abgeordnete")}
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
@@ -9495,7 +9498,7 @@ def render_facts_archive(all_facts: list[dict[str, Any]], features: Selection | 
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <h1>Fakt der Woche</h1>
       <p class="lead">Ein automatisch berechneter, ungewöhnlicher Wert je Woche mit Sitzung und je Monat
@@ -9578,7 +9581,7 @@ def render_facts_week(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>{pulse_html.esc(period_text)}</h1>
@@ -9631,7 +9634,7 @@ def render_facts_methodik(features: Selection | None = None) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(depth=1, active="fakten", features=features)}
+    {pulse_html.render_global_header(depth=1, active="fakten")}
     <header>
       <span class="eyebrow"><a href="index.html">Fakt der Woche</a></span>
       <h1>Wie „Fakt der Woche“ berechnet wird</h1>
@@ -10144,7 +10147,7 @@ def render_overview(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="overview", features=features)}
+    {pulse_html.render_global_header(active="overview")}
     <header class="page-header">
       <div>
         <h1>Bundestag-Puls</h1>
@@ -10671,7 +10674,7 @@ def render_catalog_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="catalog", features=features)}
+    {pulse_html.render_global_header(active="catalog")}
     <header class="page-header">
       <div>
         <h1>Alle API-Sitzungen</h1>
@@ -10859,7 +10862,7 @@ def render_bundestag_page(features: Selection | None = None) -> str:
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="bundestag", features=features)}
+    {pulse_html.render_global_header(active="bundestag")}
     <header class="page-header">
       <div>
         <h1>So arbeitet der Bundestag</h1>
@@ -11195,7 +11198,7 @@ def render_sources_page(
 </head>
 <body>
   <div class="shell">
-    {pulse_html.render_global_header(active="sources", features=features)}
+    {pulse_html.render_global_header(active="sources")}
     <header class="page-header">
       <div>
         <h1>Quellen</h1>

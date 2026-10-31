@@ -448,20 +448,6 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
 **Priority:** P3
 **Depends on:** A concrete deployment/serving lifecycle
 
-### Global header nav links to a page a build didn't write when its feature is off
-
-**Update 2026-10-03:** superseded if "Delete the feature-selection axis" (Architektur) lands. Without a feature to switch off, there is no dead link to filter.
-
-**What:** `render_global_header` (`scripts/render_dip_pulse_html.py`) accepts a `features: Selection` parameter but never uses it to filter `NAV_ITEMS` — every nav item renders unconditionally. `bills`, `abgeordnete`/`mp-pages`, `fakten`/`facts`, `database`/`store`, and now `votes` all skip writing their page when their feature is deselected (`write_pages`/`write_*_pages` returning early), so a build that deselects any of them still links every page's header to a file that was never written — a sitewide dead link for that nav entry.
-
-**Why:** Found by Claude's adversarial `/ship` review (2026-09-27) while checking the `votes` nav entry this branch adds; the same gap already existed for the other four items before this diff, so this is a pre-existing pattern the branch extended consistently rather than introduced. The real published site always builds with every feature enabled (`publication_selection() = all_selection()`), so this has never actually produced a dead link in production.
-
-**Context:** Fix once for all five items: filter `NAV_ITEMS` by a nav-key → component-id map (`votes`→`votes`, `bills`→`bills`, `abgeordnete`→`mp-pages`, `fakten`→`facts`, `database`→`store`) and call `features.enabled(component_id)` per item before rendering.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Community
 
 ### Contribution governance: SECURITY.md, conduct rules, issue forms, contact channels
@@ -871,7 +857,7 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 2. A non-empty Sachgebiet or resolved number is never refreshed, so a changed DIP label never reaches the tags. Use `aktualisiert` (already cached) to refetch Vorgänge DIP has updated.
 3. Pages derive the tags from the cache file at render time, the Daten tables hold the snapshot of the last persist. A plain `--offline` build after the cache changed shows different tags than it exports. Since B4 the same holds for the vote panels' DIP abstracts and their Vorgang selection (`proceedings.abstract`, `vote_proceedings`, `votes.context_state`). Put a cache digest into `datenstand`, or render from the store; one fix covers all three.
 4. The cache sits in the published `data/` directory and holds DIP `abstract` and `titel` text, which the vote panels now show (B4), so dropping it is no longer an option. Settle with "Site hosting plan" whether `data/` is deployed wholesale; if so, hosting must exclude `data/dip-vorgang-cache.json` or the cache moves out of `data/`.
-5. The inline filter scripts on `votes/index.html` and the week radar are checked only by a headless-Chromium probe run by hand (2026-10-09), not by the suite. Add a browser test when the suite has one.
+5. The week radar's inline filter script is now checked by `tests/radar_browser_check.js` (run by `node tests/run_bills_browser_check.mjs`, 2026-10-31). Still open: the inline filter script on `votes/index.html` is checked only by a headless-Chromium probe run by hand (2026-10-09); add a browser check for it the same way.
 6. A Vorgang DIP does not return, or a number it resolves to nothing, is stored as "fetched, nothing known" and counted as fetched, so an offline repersist stores `untagged`, not `not_fetched`, until the next online build. Empty Sachgebiet records (4,086 of 7,511 cached Vorgänge, most pulled in by numbers with a huge fan-out) and empty lookups are asked again on every online build, about 40 batches and a pause each; bound that with `aktualisiert` or a fetched-at date.
 7. A Sachgebiet label the mapping does not know is skipped at tag time, so tagging can fall through to a weaker source; the build summary names the label afterwards. Consider a `not_fetched`-like source for an unmapped label.
 8. A TOP that names many specific Drucksachen (a bundled Beratung) is tagged with the three most frequent of up to eight fields, in first-seen order on ties: the plan's cap of 3, not a measure of what the TOP is about (65 of 207 TOPs tagged through their Drucksachen carry more than 3 fields). Decide whether a TOP over some breadth should stay untagged.
@@ -881,7 +867,7 @@ Found by the five-more-todos-3 `/ship` review (2026-10-31: red team, Codex adver
 11. The fetch breaker counts any five failed calls in a row, so five permanently failing numbers in a row (a 4xx, an odd body) stop the number pass on every build and leave the rest `not_fetched`; remember per-number failures with a date, or trip only on challenge-like errors (`refresh_vorgang_cache.resolve_numbers`).
 12. A non-JSON 200 is retried three times per call (`validate_dip_protocol.ApiClient.get_json`), about 15 extra requests during a bot challenge before the breaker trips.
 13. The online rebuild has no guard against storing more `not_fetched` rows than the previous store (an outage during a first fill); only `--offline --repersist` has one (`require_vorgang_cache_for_tags`).
-14. When the radar filter hides the last row, the last visible row keeps its bottom border (`.radar-row:last-child` matches by position).
+14. Fixed (2026-10-31): the filter script marks the last visible row `is-last`, which drops its bottom border; `tests/radar_browser_check.js` covers it.
 
 **Why:** None of them changes a number in the real store today (0 not_fetched, 0 partial, one empty lookup), and each needs a decision beyond B3's plan. Items 10–14 were deferred in the v0.20.0.0 ship review (2026-10-19).
 
@@ -1090,7 +1076,7 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 
 **Why:** It is a seam with only one adapter: nothing varies across it, and every signature pays for it. CLAUDE.md's pre-release rule says to drop compatibility shims rather than carry them.
 
-**Context:** Found by the architecture review of 2026-10-03. This makes "Global header nav links to a page a build didn't write when its feature is off" (Publication) moot: there will be no feature to switch off. Close it when this lands. Also check the `AbgeordneteComponent.after_persist` path that "A.2 second-round review leftovers" (3) proposes to drop.
+**Context:** Found by the architecture review of 2026-10-03. ("Global header nav links to a page a build didn't write when its feature is off" is already closed as moot, see Completed.) Several `render_*` functions in `build_dip_pulse_site.py` still take a `features` parameter they no longer pass to `render_global_header` (some still use it for `page_head`/`page_scripts`); remove it with this item. Also check the `AbgeordneteComponent.after_persist` path that "A.2 second-round review leftovers" (3) proposes to drop.
 
 **Effort:** S
 **Priority:** P3
@@ -1113,6 +1099,22 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Global header nav links to a page a build didn't write when its feature is off
+
+**Done (2026-10-31):** moot. `render_global_header` never used its `features` argument, and `publication_selection()` returns `all_selection()`, so every build writes every nav target. The unused `features` parameter and its 17 call arguments are removed; the nav stays unconditional.
+
+**Update 2026-10-03:** superseded if "Delete the feature-selection axis" (Architektur) lands. Without a feature to switch off, there is no dead link to filter.
+
+**What:** `render_global_header` (`scripts/render_dip_pulse_html.py`) accepts a `features: Selection` parameter but never uses it to filter `NAV_ITEMS` — every nav item renders unconditionally. `bills`, `abgeordnete`/`mp-pages`, `fakten`/`facts`, `database`/`store`, and now `votes` all skip writing their page when their feature is deselected (`write_pages`/`write_*_pages` returning early), so a build that deselects any of them still links every page's header to a file that was never written — a sitewide dead link for that nav entry.
+
+**Why:** Found by Claude's adversarial `/ship` review (2026-09-27) while checking the `votes` nav entry this branch adds; the same gap already existed for the other four items before this diff, so this is a pre-existing pattern the branch extended consistently rather than introduced. The real published site always builds with every feature enabled (`publication_selection() = all_selection()`), so this has never actually produced a dead link in production.
+
+**Context (superseded, the item was moot, see Done above):** Fix once for all five items: filter `NAV_ITEMS` by a nav-key → component-id map (`votes`→`votes`, `bills`→`bills`, `abgeordnete`→`mp-pages`, `fakten`→`facts`, `database`→`store`) and call `features.enabled(component_id)` per item before rendering.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
 
 ### Make the build revision reproducible before the release script passes a tag
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import contextlib
 import copy
 import io
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 import time
 import unittest
@@ -1057,6 +1059,29 @@ def fixture_report() -> dict[str, Any]:
     return json.loads((FIXTURES / "report.json").read_text(encoding="utf-8"))
 
 
+def write_radar_browser_fixture(output: Path) -> None:
+    """A week page whose radar has three rows (Verkehr, Gesundheit, Verkehr) for tests/radar_browser_check.js."""
+    report = fixture_report()
+    report["protocol"]["datum"] = "2024-05-15"
+    items = []
+    for number in (1, 2, 3):
+        top = copy.deepcopy(report["agenda_items"][0])
+        top["index"] = number
+        top["top_id"] = f"TOP {number}"
+        top["heading"] = f"TOP {number} Beratung Testgesetz {number}"
+        top["api"]["positions"] = [position(f"v{number}", "Gesetzgebung")]
+        for speech_number, speech in enumerate(top["xml_speakers"]):
+            speech["rede_id"] = f"r{number}-{speech_number}"
+        items.append(top)
+    report["agenda_items"] = items
+    cache = cache_of({"v1": vorgang("Verkehr"), "v2": vorgang("Gesundheit"), "v3": vorgang("Verkehr")})
+    entry = {"report": report, "page_path": Path("plenarprotokoll-20-999.html"), "report_path": Path("x.json"), "slug": "x"}
+    output.mkdir(parents=True, exist_ok=True)
+    with contextlib.redirect_stderr(io.StringIO()):
+        markup = build.render_front_page([entry], today=date(2024, 5, 20), vorgang_cache=cache)
+    (output / "radar.html").write_text(markup, encoding="utf-8")
+
+
 class PersistTests(unittest.TestCase):
     def persisted(self, cache: dict[str, Any] | None):
         tmp = tempfile.TemporaryDirectory()
@@ -1468,6 +1493,18 @@ class RenderTests(unittest.TestCase):
         self.assertIn("data-politikfelder='[&quot;Verkehr&quot;]'", markup)
         self.assertIn('<ul class="radar-list">', markup)
 
+    def test_the_browser_fixture_has_three_tagged_radar_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            write_radar_browser_fixture(Path(tmp))
+            markup = (Path(tmp) / "radar.html").read_text(encoding="utf-8")
+        self.assertEqual(markup.count('<li class="radar-row"'), 3)
+        self.assertEqual(markup.count("data-radar-chip="), 2)
+
 
 if __name__ == "__main__":
-    unittest.main()
+    if "--browser-fixture" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--browser-fixture", type=Path, required=True)
+        write_radar_browser_fixture(parser.parse_args().browser_fixture)
+    else:
+        unittest.main()
