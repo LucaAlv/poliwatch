@@ -124,6 +124,8 @@ def verify_export(exports_dir: Path, repo_root: Path) -> tuple[dict[str, Any], s
         raise ReleaseError(f"{generation} does not match the manifest: {', '.join(problems)}")
     for name, entry in sorted(listed.items()):
         path = generation / name
+        if not path.is_file():
+            raise ReleaseError(f"{path} is not a regular file")
         if path.stat().st_size != entry["bytes"] or _sha256(path) != entry.get("sha256"):
             raise ReleaseError(f"{path} does not match the manifest (size or sha256)")
     return manifest, version, full
@@ -215,6 +217,8 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
     if args.initial and known:
         raise ReleaseError(f"--initial, but data releases already exist ({', '.join(sorted(known, key=release_version.version_key))}); give --previous-manifest instead")
     previous = _read_json(args.previous_manifest, "previous manifest") if args.previous_manifest else None
+    if previous is not None and not isinstance(previous, dict):
+        raise ReleaseError(f"the previous manifest {args.previous_manifest} is not a datenstand.json (a JSON object)")
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
     release_dir = build_release_directory(
@@ -260,7 +264,9 @@ def main(argv: list[str] | None = None, *, repo_root: Path = REPO_ROOT, run: Cal
             print(release_version.next_version(today, local_versions(repo_root, run)))
             return 0
         run_release(args, repo_root=repo_root, run=run, out=print, today=today)
-    except (ReleaseError, release_changes.ChangesError, RuntimeError) as exc:
+    except (ReleaseError, release_changes.ChangesError, RuntimeError, OSError) as exc:
+        # OSError: git or gh not installed, a full disk; the release directory
+        # was already rolled back by build_release_directory.
         message = str(exc)
         print(message if message.startswith("error: ") else f"error: {message}", file=sys.stderr)
         return 1

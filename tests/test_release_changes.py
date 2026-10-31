@@ -141,6 +141,21 @@ class LaterReleaseTests(unittest.TestCase):
             self.assemble(old={**manifest(), "tag": "local"})
 
 
+class SchemaChangeWithoutManifestDeltaTests(unittest.TestCase):
+    # Value: protects=an authored schema change that moved no manifest field (a change of meaning) renders without a dangling "Geändert laut Manifest: ." sentence in the public CHANGES.md; fails_when=the manifest sentence is printed whenever schema_changes is non-empty; why_new=/ship review 2026-10-31 (QA probes 004/005) reproduced the broken line; seam=none; no_claim=wording of the other sections
+    def test_a_change_of_meaning_renders_no_empty_manifest_sentence(self) -> None:
+        changes = rc.assemble(
+            version="2026.11.08",
+            released=date(2026, 11, 8),
+            manifest=manifest(),
+            previous_manifest={**manifest(), "tag": "2026.11.01"},
+            authored={**AUTHORED, "schema_changes": [{"table": "votes", "column": None, "change": "meaning", "description": "Zählt jetzt nur endgültige Ergebnisse"}]},
+        )
+        text = rc.render_markdown(changes)
+        self.assertIn("- `votes` (meaning): Zählt jetzt nur endgültige Ergebnisse", text)
+        self.assertNotIn("Geändert laut Manifest", text)
+
+
 class RenderTests(unittest.TestCase):
     def changes(self):
         return rc.assemble(

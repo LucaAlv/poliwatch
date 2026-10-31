@@ -103,6 +103,44 @@ class ResolveCommitTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertNotEqual(clean, first)
 
+    # Value: protects=deleting a tracked file makes the revision dirty (differently from an edit) and blocks the input gate, and when git cannot diff, the unverified fallback skips the deleted file and still moves; fails_when=a deletion leaves the revision clean, or the fallback crashes on or ignores a tracked file missing from the tree; why_new=only edits were tried, and _stat_digest's deleted-file branch and its no-git result were never reached; seam=resolve_commit; no_claim=renames or untracked files
+    def test_a_deleted_tracked_file_is_an_edit_and_the_fallback_survives_it(self) -> None:
+        head = git(self.repo, "rev-parse", "HEAD")[:12]
+        (self.repo / "a.txt").write_text("one\nTWO\nthree\n", encoding="utf-8")
+        edited = rev.resolve_commit(self.repo)
+        git(self.repo, "checkout", "--", "a.txt")
+        (self.repo / "docs/b.md").unlink()
+        deleted = rev.resolve_commit(self.repo)
+        self.assertRegex(deleted, rf"^{head}-dirty-[0-9a-f]{{8}}$")
+        self.assertNotEqual(deleted, edited)
+        git(self.repo, "checkout", "--", "docs/b.md")
+        # the release input gate is the same: a deleted input blocks, it is not skipped
+        (self.repo / "docs/b.md").unlink()
+        self.assertRegex(rev.authored_inputs_problem(self.repo, ("a.txt", "docs/b.md")), r"^differ from HEAD: docs/b\.md$")
+        (self.repo / "docs/b.md").unlink(missing_ok=True)
+        real_run = subprocess.run
+
+        def no_diff(command, *args, **kwargs):
+            if "diff-index" in command:
+                raise subprocess.TimeoutExpired(command, 30)
+            return real_run(command, *args, **kwargs)
+
+        def no_diff_no_listing(command, *args, **kwargs):
+            if "ls-files" in command:
+                raise subprocess.TimeoutExpired(command, 10)
+            return no_diff(command, *args, **kwargs)
+
+        with mock.patch.object(rev.subprocess, "run", side_effect=no_diff):
+            gone = rev.resolve_commit(self.repo)
+            (self.repo / "docs/b.md").write_text("text\n", encoding="utf-8")
+            os.utime(self.repo / "docs/b.md", (1, 1))
+            back = rev.resolve_commit(self.repo)
+        self.assertRegex(gone, rf"^{head}-unverified-[0-9a-f]{{8}}$")
+        self.assertNotEqual(gone, back)
+        with mock.patch.object(rev.subprocess, "run", side_effect=no_diff_no_listing):
+            self.assertEqual(rev.resolve_commit(self.repo), f"{head}-unverified")
+        self.assertFalse(rev.is_release_revision(f"{head}-unverified"))
+
     # Value: protects=no usable git means no revision, not a crash; fails_when=a non-repository directory or a missing git binary raises; why_new=local builds run from source archives; seam=resolve_commit; no_claim=message text
     def test_no_repository_or_no_git_gives_none(self) -> None:
         plain = Path(tempfile.mkdtemp())

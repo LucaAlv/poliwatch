@@ -209,7 +209,9 @@ def render_markdown(changes: dict[str, Any]) -> str:
         for entry in changes["schema_changes"]:
             target = f"`{entry['table']}.{entry['column']}`" if entry["column"] else f"`{entry['table']}`"
             lines.append(f"- {target} ({entry['change']}): {_cell(entry['description'])}")
-        lines += ["", "Geändert laut Manifest: " + ", ".join(f"{name} ({_change(delta)})" for name, delta in changes["detected"].items()) + "."]
+        # A change of meaning moves no manifest field; then there is nothing to cite.
+        if changes["detected"]:
+            lines += ["", "Geändert laut Manifest: " + ", ".join(f"{name} ({_change(delta)})" for name, delta in changes["detected"].items()) + "."]
     else:
         lines.append("Keine Schemaänderungen.")
     lines += ["", "## Abdeckung", ""]

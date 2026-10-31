@@ -12,6 +12,7 @@ manifest=None branch).
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -216,6 +217,16 @@ class ParseArgsValidationTests(unittest.TestCase):
             self.assertEqual(b.parse_args().data_tag, "2026.11.01")
         with mock.patch.object(sys, "argv", ["build"]):
             self.assertIsNone(b.parse_args().data_tag)
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "local"]):
+            self.assertEqual(b.parse_args().data_tag, "local")
+
+    # Value: protects=--data-tag takes only "local" or a release version, so the site and DATA.md never say "Release <typo>"; fails_when=any file-name-safe token passes as a release tag; why_new=/ship red team 2026-10-31: --data-tag draft labelled the export "Release draft"; seam=none; no_claim=export content
+    def test_data_tag_must_be_local_or_a_release_version(self) -> None:
+        for bad in ("draft", "v1", "2026.13.01", "2026.11.1"):
+            with self.subTest(tag=bad), mock.patch.object(sys, "argv", ["build", "--data-tag", bad]), contextlib.redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(SystemExit):
+                    b.parse_args()
+                self.assertIn("--data-tag", err.getvalue())
 
     def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
         with (

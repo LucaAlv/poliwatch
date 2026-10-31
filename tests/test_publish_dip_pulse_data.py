@@ -39,21 +39,32 @@ def git(repo: Path, *args: str) -> str:
 class Runner:
     """Runs git for real in the temporary repository, answers gh from a script, and records everything."""
 
-    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=()):
+    def __init__(self, gh_tags=(), gh_list_fails=False, gh_view_exists=(), gh_list_stdout=None, gh_create_fails=False, git_tag_fails=False, missing=()):
         self.calls: list[list[str]] = []
+        self.missing = tuple(missing)
         self.gh_tags = list(gh_tags)
         self.gh_list_fails = gh_list_fails
+        self.gh_list_stdout = gh_list_stdout
+        self.gh_create_fails = gh_create_fails
+        self.git_tag_fails = git_tag_fails
 
     def __call__(self, command, **kwargs):
         self.calls.append(list(command))
+        if command[0] in self.missing:
+            raise FileNotFoundError(2, "No such file or directory", command[0])
         if command[0] == "gh":
             if command[1:3] == ["release", "list"]:
                 if self.gh_list_fails:
                     return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 401")
-                return SimpleNamespace(returncode=0, stdout=json.dumps([{"tagName": tag} for tag in self.gh_tags]), stderr="")
+                stdout = self.gh_list_stdout if self.gh_list_stdout is not None else json.dumps([{"tagName": tag} for tag in self.gh_tags])
+                return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
             if command[1:3] == ["release", "create"]:
+                if self.gh_create_fails:
+                    return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 422: Validation Failed")
                 return SimpleNamespace(returncode=0, stdout="https://example.invalid/release", stderr="")
             raise AssertionError(f"unexpected gh call {command}")
+        if self.git_tag_fails and command[:2] == ["git", "tag"]:
+            return SimpleNamespace(returncode=128, stdout="", stderr="fatal: not a git repository")
         return subprocess.run(command, **{**kwargs, "capture_output": True, "text": True})
 
     def gh(self, *prefix):
@@ -271,6 +282,66 @@ class RefusalTests(ReleaseTestCase):
         self.assert_refused(code, stderr, "--initial", "2026.10.01")
 
 
+    # Value: protects=missing arguments, a bad base URL, an unreadable manifest or previous manifest, and a failing git tag listing each refuse with exit 1 and one message, leaving no release directory and running no gh call; fails_when=any of them is read as an empty value, raises a traceback, or lets the release continue; why_new=the existing refusals cover the export's content, not the script's own inputs; seam=main (git tag via a recorded runner); no_claim=message wording beyond the quoted fragment
+    def test_unusable_script_inputs_are_refused_cleanly(self) -> None:
+        manifest_path = self.exports_copy / "datenstand.json"
+        previous_missing = str(self.work / "no-such-previous.json")
+        garbage = self.work / "garbage.json"
+        garbage.write_text("{nope", encoding="utf-8")
+        not_an_object = self.work / "list.json"
+        not_an_object.write_text("[1, 2]", encoding="utf-8")
+
+        def directory_in_place_of_a_file() -> None:
+            listed = json.loads(manifest_path.read_text(encoding="utf-8"))
+            target = self.exports_copy / listed["generation"] / listed["files"][0]["name"]
+            target.unlink()
+            target.mkdir()
+
+        cases = [
+            ("missing --exports-dir", lambda: None, ["--initial"], "--exports-dir and --output-dir are required", None, True),
+            ("unsupported base-url scheme", lambda: None, ["--initial", "--base-url", "ftp://host/x/"], "unsupported scheme", None, False),
+            ("manifest absent", manifest_path.unlink, ["--initial"], "cannot read manifest", None, False),
+            ("manifest not JSON", lambda: manifest_path.write_text("{nope", encoding="utf-8"), ["--initial"], "cannot read manifest", None, False),
+            ("previous manifest absent", lambda: None, ["--previous-manifest", previous_missing], "cannot read previous manifest", None, False),
+            ("previous manifest not JSON", lambda: None, ["--previous-manifest", str(garbage)], "cannot read previous manifest", None, False),
+            ("git tag listing fails", lambda: None, ["--initial"], "git tag --list failed", Runner(git_tag_fails=True), False),
+            # /ship review 2026-10-31: these three ended in a traceback.
+            ("previous manifest not an object", lambda: None, ["--previous-manifest", str(not_an_object)], "previous manifest", None, False),
+            ("a directory where a listed file belongs", directory_in_place_of_a_file, ["--initial"], "is not a regular file", None, False),
+            ("git not installed", lambda: None, ["--initial"], "git", Runner(missing=("git",)), False),
+        ]
+        for label, tamper, extra, fragment, runner, no_dirs in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.exports_copy)
+                shutil.copytree(self.exports, self.exports_copy)
+                shutil.rmtree(self.out, ignore_errors=True)
+                tamper()
+                runner = runner or Runner()
+                argv = list(extra) if no_dirs else ["--exports-dir", str(self.exports_copy), "--output-dir", str(self.out), *extra]
+                if not no_dirs and "--base-url" not in extra:
+                    argv += ["--base-url", BASE_URL]
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = publish.main(argv, repo_root=self.repo, run=runner, today=TODAY)
+                err = stderr.getvalue()
+                self.assert_refused(code, err, fragment)
+                self.assertTrue(err.startswith("error: ") and "error: error:" not in err, err)
+                self.assertEqual(runner.gh(), [])
+
+    # Value: protects=a release build that fails part-way (here: writing CHANGES.md) exits 1 with one "error:" line, leaves no .building-* staging directory and no data-<version> directory, and the same command succeeds afterwards; fails_when=the staging directory or a half-written release stays behind, the OS error escapes as a traceback, or blocks the retry as "already exists"; why_new=build_release_directory's rollback was never triggered; seam=main with release_changes.render_markdown failing; no_claim=other failure points or a killed process
+    def test_a_failed_release_build_leaves_nothing_behind(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.object(publish.release_changes, "render_markdown", side_effect=OSError("disk full")):
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = publish.main(["--exports-dir", str(self.exports_copy), "--output-dir", str(self.out), "--initial"], repo_root=self.repo, run=self.runner, today=TODAY)
+        self.assertEqual(code, 1)
+        self.assertTrue(stderr.getvalue().startswith("error: ") and "disk full" in stderr.getvalue(), stderr.getvalue())
+        self.assertEqual(list(self.out.iterdir()), [])
+        code, _, stderr = self.run_script("--initial")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"])
+
+
 class PublishTests(ReleaseTestCase):
     # Value: protects=--publish refuses while LICENSE-DATA.md is missing (ADR 0003 not implemented), before any gh call and before writing anything; fails_when=a release can be created without the data licence file, or a gh call precedes the refusal; why_new=nothing may be published without the licence layers in the release; seam=main; no_claim=licence content
     def test_publish_refuses_without_license_data_before_any_gh_call(self) -> None:
@@ -308,6 +379,25 @@ class PublishTests(ReleaseTestCase):
         for call in self.runner.calls:
             self.assertNotEqual(call[:2], ["git", "push"])
 
+    # Value: protects=a failing gh release create exits 1 with gh's message, keeps the finished release directory, and a retry is refused rather than overwriting it; fails_when=the failure is reported as success, the directory is deleted or half-written, or the retry overwrites it; why_new=only the successful create was exercised; seam=main with a recorded gh; no_claim=gh's real failure modes (mocked)
+    def test_a_failed_gh_create_keeps_the_release_directory_and_the_retry_is_refused(self) -> None:
+        repo = self.licensed_repo()
+        runner = Runner(gh_create_fails=True)
+        code, stdout, stderr = self.run_script("--initial", "--publish", repo_root=repo, runner=runner)
+        self.assertEqual(code, 1)
+        self.assertIn("gh release create failed", stderr)
+        self.assertIn("HTTP 422", stderr)
+        self.assertNotIn("published:", stdout)
+        release = self.out / f"data-{VERSION}"
+        self.assertIn(str(release), stderr)
+        self.assertTrue((release / "SHA256SUMS").is_file() and (release / "LICENSE-DATA.md").is_file())
+        self.assertEqual(len(runner.gh("release", "create")), 1)
+        before = sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file())
+        code, _, stderr = self.run_script("--initial", "--publish", repo_root=repo, runner=Runner())
+        self.assertEqual(code, 1)
+        self.assertIn("already exists", stderr)
+        self.assertEqual(sorted(path.relative_to(release).as_posix() for path in release.rglob("*") if path.is_file()), before)
+
     # Value: protects=--publish refuses an export built without a licence string even when LICENSE-DATA.md exists; fails_when=an empty manifest licence passes; why_new=docs/data-license.md promises the publish step refuses on an empty string; seam=main; no_claim=string content
     def test_publish_refuses_an_export_without_a_licence_string(self) -> None:
         repo = self.licensed_repo()
@@ -323,6 +413,8 @@ class PublishTests(ReleaseTestCase):
             "version exists": (Runner(gh_tags=[f"data-{VERSION}"]), "already exists"),
             "initial but releases exist": (Runner(gh_tags=["data-2026.10.01"]), "--initial"),
             "gh fails": (Runner(gh_list_fails=True), "gh release list"),
+            "gh output unreadable": (Runner(gh_list_stdout="<html>rate limited</html>"), "unreadable"),
+            "gh output not a list of releases": (Runner(gh_list_stdout='{"tagName": "data-2026.10.01"}'), "unreadable"),
         }
         for label, (runner, fragment) in cases.items():
             with self.subTest(label):

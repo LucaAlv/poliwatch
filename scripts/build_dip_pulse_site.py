@@ -115,6 +115,7 @@ import politikfelder
 import antrag_text
 import person_registry as registry
 import build_revision
+import release_version
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
     speech_rede_id,
@@ -12659,6 +12660,9 @@ def parse_args() -> argparse.Namespace:
         help="Optional URL for a 'Fragen und Fehler' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only.",
     )
     args = parser.parse_args()
+    # The tag ends every export file name and is shown as "Release <tag>".
+    if args.data_tag is not None and args.data_tag != "local" and not release_version.is_version(args.data_tag):
+        parser.error(f"--data-tag {args.data_tag!r} is neither 'local' nor a release version (YYYY.MM.DD[.N]; scripts/publish_dip_pulse_data.sh --next-version)")
     if args.force_export and args.no_persist:
         parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
     if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
