@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.1.0] - 2026-11-01
+
+### Changed
+
+- DIP abstracts on the vote panels and in the export are read by the project's own markup scanner instead of Python's html.parser. The same abstract now reads the same on every Python patch level. The 2025 html.parser changes no longer reach it. An abstract over the 10,000-character limit keeps its text up to the cut, instead of losing all of it on some tag shapes. Measured on the 3,922 cached abstracts: 0 change. Broken markup that no cached abstract contains reads slightly differently. An unclosed `<script>` no longer adds a space, and a `<![…]>` section reads as a space.
+- On a vote panel, a long description's teaser now sits inside the "Ganze Beschreibung" toggle. Opening the toggle replaces the teaser with the full text, also in browsers without `:has()`. The Abweichler lists keep their list semantics in Safari and VoiceOver.
+- A roll-call member links to an abgeordnetenwatch profile only when the match came from the Redner-ID. A profile found by name alone was a guess, and the member's own link is used instead. On the reference data, 0 of 173,407 Einzelstimmen rows change.
+- DATA.md names both sources of the licence note (`--data-license` or `$BUNDESTAG_PULSE_DATA_LICENSE`). It warns that opening a CSV by double-click lets a spreadsheet evaluate cells that start with `=`, `+`, `-` or `@`, such as DIP titles starting with „- “. Cell values stay unchanged. The data dictionary now describes the „Unbekannt“ party row.
+
+### Fixed
+
+- A vote id with spaces or other unsafe characters gave an invalid anchor and an archive link that did not scroll. Anchors now use only safe characters, one per vote id. A vote id is cleaned the same way on the page and in the store. A missing id is refused instead of becoming `"None"`. A Vorgang id that is not all digits no longer goes into a DIP link. No reference vote or link changes.
+- A CSV cell holding a bare carriage return is always quoted, so it cannot read back as a row break on Python 3.11 or 3.12. A BLOB value or a repeated recipe column name stops the export instead of writing `b'…'` or a wrong column. DATA.md no longer prints „..“ after a licence note that ends in a full stop. Carriage returns in DATA.md table cells become line breaks. No CSV value in the reference store changes.
+- When the week radar's topic filter hid the last row, the last visible row kept its bottom border. A browser check now covers the radar filter at desktop and mobile widths.
+
 ## [0.26.0.0] - 2026-10-31
 
 ### Added
