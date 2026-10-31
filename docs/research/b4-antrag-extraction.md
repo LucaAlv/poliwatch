@@ -192,7 +192,7 @@ Offline replay of `extract_forderung` over the cached texts of the saved 91-docu
 |---|---|---|
 | 18/2742 | `jesidisch-` + `kurdischen` joined to `jesidischkurdischen` | `no_passage`: a lowercase line-end hyphen after a part of 5+ letters that the text also uses as a word (`jesidischen`) is a break only where the text spells the joined word |
 | 18/3154 | nine bullet markers lost, list flattened | `no_passage`: an item line opening with a bare space after a finished clause is a dropped marker; none is reconstructed |
-| 19/16794 | printer imprint (`Gesamtherstellung`, `Vertrieb`, `ISSN`) between demands 3 and 4 | quoted without the imprint (295 characters fewer, otherwise identical); imprint lines are dropped like running heads |
+| 19/16794 | printer imprint (`Gesamtherstellung`, `Vertrieb`, `ISSN`) between demands 3 and 4 | quoted without the imprint (295 characters fewer, otherwise identical); the single-line imprint shapes (`Gesamtherstellung: …`, `Druck: …` with GmbH or www., `Vertrieb: … Verlag …`, `ISSN nnnn-nnnn`) are dropped like running heads, a wrapped or differently worded imprint is not (deferred in TODOS.md, B4 review findings) |
 
 Over the 91 documents, 66 to 64 extracted; the only changes are these three. Incorrect accepted passages 3 to 0. Trade-off, measured: the hyphen rule refuses only 18/2742 here (one further lowercase join without evidence in the corpus, a URL slug in 19/17515, stays quoted, already audited correct, because its left part is no word); on text with more unattested compounds it will refuse more.
 
