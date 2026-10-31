@@ -134,6 +134,42 @@ class ExportHelpersTests(unittest.TestCase):
             self.assertEqual(b._write_recipe_csv(path, ["a", "b"], [{"a": "x\udc80", "b": None}, {"a": 1, "b": "ok"}]), 1)
             self.assertEqual(path.read_text(encoding="utf-8"), "a,b\nx?,\n1,ok\n")
 
+    def test_csv_writers_quote_a_bare_carriage_return_on_every_python(self) -> None:
+        import csv as csv_module
+        import io
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recipe.csv"
+            rows = [{"a": "x\ry", "b": 'q"\r\n'}, {"a": "plain", "b": "1,2"}]
+            b._write_recipe_csv(path, ["a", "b"], rows)
+            raw = path.read_bytes().decode("utf-8")
+            self.assertEqual(raw, 'a,b\n"x\ry","q""\r\n"\nplain,"1,2"\n')
+            back = list(csv_module.reader(io.StringIO(raw, newline="")))
+            self.assertEqual(back, [["a", "b"], ["x\ry", 'q"\r\n'], ["plain", "1,2"]])
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(":memory:")
+            conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+            conn.execute("INSERT INTO t VALUES (1, ?)", ("a\rb",))
+            path = Path(tmp) / "t.csv.gz"
+            columns = [{"name": "id", "pk": 1}, {"name": "v", "pk": 0}]
+            b._write_csv(conn, "t", columns, path)
+            text = gzip.decompress(path.read_bytes()).decode("utf-8")
+            self.assertEqual(text, 'id,v\n1,"a\rb"\n')
+
+    def test_recipe_csv_refuses_blobs_and_repeated_column_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "recipe.csv"
+            with self.assertRaisesRegex(RuntimeError, "BLOB"):
+                b._write_recipe_csv(path, ["a"], [{"a": b"\x00"}])
+            with self.assertRaisesRegex(RuntimeError, "repeats the column name 'a'"):
+                b._write_recipe_csv(path, ["a", "a"], [{"a": 1}])
+
+    def test_md_cell_turns_every_line_break_form_into_br(self) -> None:
+        self.assertEqual(b._md_cell("a|b\r\nc\rd\ne"), "a\\|b<br>c<br>d<br>e")
+
+    def test_licence_line_ends_in_exactly_one_full_stop(self) -> None:
+        self.assertEqual(b._license_line_text("CC BY 4.0. Details in LICENSE-DATA.md."), "CC BY 4.0. Details in LICENSE-DATA.md.")
+        self.assertEqual(b._license_line_text("CC BY 4.0"), "CC BY 4.0.")
+
     def test_recipe_output_definitions_name_no_other_recipe(self) -> None:
         for recipe in b.RECIPES:
             for column in recipe["columns"]:
@@ -489,13 +525,13 @@ class ExportDistributionDataTests(unittest.TestCase):
         first = self.export(commit=None)
         # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
         first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
-        self.assertIn("(--data-license): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("(`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
             second = self.export(commit=None)
         self.assertNotEqual(first["generation"], second["generation"])
         manifest = self.export(commit=None, license_text="CC BY 4.0\n## Gefälschter Abschnitt\n")
         codebook = (self.exports_dir / manifest["generation"] / "DATA.md").read_text()
-        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (--data-license): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
+        self.assertIn("Vom Betreiber übergebener Lizenzhinweis (`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): CC BY 4.0 ## Gefälschter Abschnitt.", codebook)
         self.assertNotIn("\n## Gefälschter Abschnitt", codebook)
 
     # Value: protects=a published datenstand.json the validator now rejects is rebuilt, not reused; fails_when=_manifest_reusable stops calling validate_manifest; why_new=the truncated-asset test covers only file sizes; seam=none; no_claim=which validator rule fired
