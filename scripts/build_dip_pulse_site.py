@@ -1258,6 +1258,11 @@ def _rebuild_database_from_entries(
             probe = facts.open_readonly(database_path)
             try:
                 probe.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+                # A downloaded release given as --database-path is refused here,
+                # before anything is staged; the swap below would replace it.
+                pulse_store.require_build_store(probe, database_path)
+            except RuntimeError as exc:
+                raise DatabaseRebuildError(str(exc)) from exc
             finally:
                 probe.close()
         except sqlite3.Error as exc:

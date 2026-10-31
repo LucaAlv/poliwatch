@@ -122,8 +122,9 @@ def source_page_ref(page: dict[str, Any] | None) -> tuple[int | None, str | None
 
 def require_build_store(conn: sqlite3.Connection, db_path: Path) -> None:
     """Refuse an exported distribution SQLite (nonzero user_version or a
-    datenstand table) as the build store. Every path that computes into or
-    writes a store checks this, not only ``connect``."""
+    datenstand table) as the build store. ``connect``, the facts engine
+    (``run_facts_engine``) and the rebuild (``_rebuild_database_from_entries``)
+    check this before they compute into or replace a store."""
     user_version = conn.execute("PRAGMA user_version").fetchone()[0]
     has_datenstand = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'datenstand'"

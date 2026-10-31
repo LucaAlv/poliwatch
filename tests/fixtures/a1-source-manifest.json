@@ -147,6 +147,6 @@
     "fixture": "antrag-text/dip-2013415.txt",
     "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/276660",
     "source_sha256": "0d6db79ab2a42f0e0b315f8b9f850b67ba88cff52f5957a73ef8be8b02304b7d",
-    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 276661 (Drucksache 20/13415), fetched 2026-10-29: lines 38-248 (the operative part's anchor line to the end of demand 1, item list a) to z) and aa) to gg)) plus the date line 341, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: a lettered list that runs past z) into aa)."
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 276660 (Drucksache 20/13415), fetched 2026-10-29: lines 38-248 (the operative part's anchor line to the end of demand 1, item list a) to z) and aa) to gg)) plus the date line 341, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). Kept for: a lettered list that runs past z) into aa)."
   }
 ]
