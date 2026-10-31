@@ -526,6 +526,8 @@ class ExportDistributionDataTests(unittest.TestCase):
         # No operator licence text (the default): DATA.md says so instead of leaving the line blank.
         first_codebook = (self.exports_dir / first["generation"] / "DATA.md").read_text()
         self.assertIn("(`--data-license` oder `$BUNDESTAG_PULSE_DATA_LICENSE`): keiner; es gelten die geschichteten Quellenbedingungen unten.", first_codebook)
+        self.assertIn("beim bloßen Öffnen per Doppelklick", first_codebook)
+        self.assertIn("entschärfen solchen Quelltext nicht", first_codebook)
         with mock.patch.object(b, "EXPORTER_SHA256", "0" * 64):
             second = self.export(commit=None)
         self.assertNotEqual(first["generation"], second["generation"])
