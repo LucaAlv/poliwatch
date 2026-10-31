@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 8
+EXTRACTOR_VERSION = 9
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_NAMESPACE = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -159,12 +159,22 @@ def _words(*words: str) -> str:
 # The adverb can stand before or after the object: "fordert daher die
 # Bundesregierung auf" (18/12797), "fordert die Bundesregierung daher auf".
 _ADVERB = r"(?:(?:daher|deshalb|darüber[ \t\n]+hinaus|insbesondere|ferner)[ \t\n]+)?"
+# A clause may stand between the object and "auf", on the measured forms: "im Rahmen der
+# verfügbaren Haushaltsmittel (daher) auf," (20/6712, 20/10050, 20/1336, …), "unter
+# Einhaltung der haushälterischen Vorgaben auf," (20/10375), "zur Aufrechterhaltung …
+# im Sinne von Artikel 72 AEUV auf," (20/13417), and "dazu auf," (20/6708). The clause
+# has no punctuation of its own and ends at "auf" before a comma or colon, so it is part
+# of the one sentence the opening quotes whole.
+_INTERPOSED = (
+    r"(?:im[ \t\n]+Rahmen|unter[ \t\n]+Einhaltung|zur|zum)"
+    r"(?:[ \t\n]+[^\s.;:,!?]+){0,30}?[ \t\n]+auf(?=[ \t]*[,:])"
+)
 _ANCHOR = re.compile(
     r"(?:^|\n)[ \t]*(?:[IVX]{1,4}\.[ \t]*)?("
     + _words("Der") + r"[ \t\n]+(?:" + _words("Deutsche") + r"[ \t\n]+)?"
     + _words("Bundestag", "fordert") + r"[ \t\n]+" + _ADVERB
     + _words("die", "Bundesregierung")
-    + r"[ \t\n]+" + _ADVERB + r"auf\b)"
+    + r"[ \t\n]+(?:" + _ADVERB + r"(?:dazu[ \t\n]+)?auf\b|" + _ADVERB + _INTERPOSED + r"))"
 )
 # Where the operative part may end: the date line, the Begründung, or the next
 # section ("III. Der Bundestag …" or "III." on its own line). A candidate counts
@@ -202,7 +212,9 @@ def _end_of(text: str, start: int) -> int:
 
 
 def _successor(label: str) -> str:
-    """The list label after ``label``: "b" after "a", "bb" after "aa"."""
+    """The list label after ``label``: "b" after "a", "bb" after "aa", "aa" after "z"."""
+    if label == "z":
+        return "aa"
     return chr(ord(label[0]) + 1) * len(label)
 
 
@@ -365,6 +377,14 @@ _FOOTNOTE = re.compile(
 )
 
 
+# DIP's text can drop the hyphen of a truncated compound at a line end and glue the
+# conjunction to it: the PDF's "Über-" + "oder Unterforderung" reads "Überoder
+# Unterforderung" (20/2345). No German word ends in "oder" after a capital and two
+# more letters, so such a token is that defect and the passage is not quoted. ("und"
+# cannot be told apart this way: Bund, Grund, Hintergrund.)
+_GLUED_ODER = re.compile(r"\b[A-ZÄÖÜ][a-zäöüß]{2,}oder\b")
+
+
 def _extract(text: str) -> Forderung | None:
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
     text = _WATERMARK.sub("\n", text)
@@ -375,7 +395,7 @@ def _extract(text: str) -> Forderung | None:
     if anchor is None:
         return None
     body = text[anchor.start(1): _end_of(text, anchor.end())]
-    if _FOOTNOTE.search(body):
+    if _FOOTNOTE.search(body) or _GLUED_ODER.search(body):
         return None
     try:
         paragraphs = _paragraphs(body, _lexicon(text))

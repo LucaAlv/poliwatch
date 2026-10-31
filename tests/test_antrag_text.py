@@ -159,6 +159,45 @@ class DipTextTests(unittest.TestCase):
         self.assertTrue(forderung.demands[2].endswith("erhalten werden;"))
         self.assertTrue(forderung.demands[3].startswith("4. konkrete eigene Initiativen"))
 
+    # Value: protects=an operative sentence with a clause between the object and "auf" ("im Rahmen der verfügbaren Haushaltsmittel", "unter Einhaltung …", "zur Aufrechterhaltung … auf", "dazu auf") is quoted from its first word, so the opening is the whole sentence; fails_when=the anchor accepts only "die Bundesregierung (adverb) auf" again, or the opening starts at the clause; why_new=local audit 2026-10-29: ten interposed-anchor misses and one "dazu" in the reference cohort; seam=extract_forderung
+    def test_a_clause_between_the_object_and_auf_keeps_the_whole_opening(self) -> None:
+        for name, opening, first_demand, last_end in (
+            ("dip-2006708.txt", "Der Deutsche Bundestag fordert die Bundesregierung dazu auf,", "1. einen Gesetzentwurf zur Ergänzung", "durchführen zu können."),
+            ("dip-2006712.txt", "Der Deutsche Bundestag fordert die Bundesregierung daher im Rahmen der verfügbaren Haushaltsmittel auf,", "1. danach zu streben", None),
+            ("dip-2010375.txt", "Der Deutsche Bundestag fordert die Bundesregierung unter Einhaltung der haushälterischen Vorgaben auf,", "1. dem Versprechen der unverbrüchlichen", None),
+        ):
+            with self.subTest(name=name):
+                forderung = antrag_text.extract_forderung(real_text(name))
+                self.assertIsNotNone(forderung)
+                self.assertEqual(forderung.opening, opening)
+                self.assertTrue(forderung.demands[0].startswith(first_demand))
+                if last_end:
+                    self.assertTrue(forderung.demands[-1].endswith(last_end))
+        single = antrag_text.extract_forderung(real_text("dip-2013417.txt"))
+        self.assertTrue(single.opening.startswith("Der Deutsche Bundestag fordert die Bundesregierung daher zur Aufrechterhaltung der öffentlichen Ordnung"))
+        self.assertTrue(single.text().endswith("Einreise vorzunehmen."))
+        # A sentence that only mentions the Bundesregierung is not an anchor.
+        self.assertIsNone(antrag_text.extract_forderung("Der Deutsche Bundestag fordert die Bundesregierung. Das ist lang genug, aber kein Aufruf. Es geht um etwas anderes auf der Welt, und so weiter bis zum Ende dieses Satzes.\nBerlin, den 1. Januar 2024\n"))
+
+    # Value: protects=a truncated compound whose hyphen DIP's text dropped before "oder" ("Über-" + "oder Unterforderung" reads "Überoder") is not quoted; fails_when=the glued word is quoted as the Drucksache's wording; why_new=checking the 11 quotes the interposed-clause anchor adds, 20/2345; seam=extract_forderung
+    def test_a_conjunction_glued_to_a_truncated_compound_is_not_quoted(self) -> None:
+        text = real_text("dip-2002345.txt")
+        self.assertIn("Überoder Unterforderung", text)
+        self.assertIsNone(antrag_text.extract_forderung(text))
+        self.assertIsNotNone(antrag_text.extract_forderung(text.replace("Überoder", "Über- oder")))
+        # Real words that end in "oder" or "und" are no gluing.
+        self.assertIsNotNone(antrag_text.extract_forderung(text.replace("Überoder", "Hintergrund oder")))
+
+    # Value: protects=a lettered list that runs past "z)" continues with "aa)", "bb)" as items of their own, so the quote does not fold them into demand z); fails_when=_successor("z") stays "{" and aa) joins the paragraph before it; why_new=checking the 11 quotes the interposed-clause anchor adds, 20/13415 has a) to z) and aa) to gg); seam=extract_forderung
+    def test_a_lettered_list_continues_past_z(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-2013415.txt"))
+        labels = [d.split(" ", 1)[0] for d in forderung.demands]
+        self.assertEqual(labels[:3], ["1.", "a)", "b)"])
+        self.assertEqual([label for label in labels if label.endswith(")")][-8:], ["z)", "aa)", "bb)", "cc)", "dd)", "ee)", "ff)", "gg)"])
+        self.assertEqual(labels[-1], "•")
+        self.assertNotIn(" aa) ", forderung.demands[26])
+        self.assertTrue(forderung.demands[26].startswith("z) bei der Aushandlung"))
+
     # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
     def test_a_repeated_page_head_is_dropped(self) -> None:
         forderung = antrag_text.extract_forderung(real_text("dip-2105780.txt"))
