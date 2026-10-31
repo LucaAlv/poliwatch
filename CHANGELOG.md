@@ -31,6 +31,22 @@ All notable changes to this project will be documented in this file.
 
 - An export that fails after swapping in its new generation puts the previous generation back. Before, the old manifest could be left pointing at the new files.
 
+## [0.25.2.0] - 2026-10-31
+
+### Changed
+
+- A vote panel can now quote an Antrag whose demand sentence puts a clause between „die Bundesregierung“ and „auf“: „im Rahmen der verfügbaren Haushaltsmittel auf“, „unter Einhaltung der haushälterischen Vorgaben auf“, „zur … auf“, „zum … auf“ and „dazu auf“. The opening quotes the whole sentence. On the saved 91-document corpus, ten more Drucksachen are quoted, each checked word for word against the PDF: quoted documents 64 → 74 of 91, reference cohort 50/71 → 60/71 (84.5 %). Derived but not measured on a site build: vote panels with a description 196/217 → 206/217. A store persisted with the previous extractor is refused until it is re-persisted with `--offline --repersist`.
+
+### Fixed
+
+- An Antrag is quoted only where its text proves the structure, so no quote on the saved corpus is wrong any more. Incorrect quotes went from 3 to 0:
+  - 18/2742 joined „jesidisch-“ and „kurdischen“ into „jesidischkurdischen“ and is now not quoted.
+  - 18/3154 lost its nine bullet markers and is now not quoted, instead of showing a flattened list.
+  - 19/16794 carried the printer's imprint (Gesamtherstellung, Vertrieb, ISSN) between two demands and is now quoted without it.
+- A lettered list that runs past z) into aa) to gg) keeps every item. 20/13415 folded aa) to ff) into demand z).
+- An Antrag whose source text glues a dropped hyphen to „oder“ („Überoder Unterforderung“, 20/2345) is not quoted.
+- The facts engine and the rebuild refuse a downloaded release SQLite given as `--database-path` and leave the file byte for byte as it was. Before, the facts engine could write into it and a rebuild replaced it with a fresh build store.
+
 ## [0.25.1.0] - 2026-10-31
 
 ### Changed

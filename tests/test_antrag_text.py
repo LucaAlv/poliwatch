@@ -136,6 +136,102 @@ class DipTextTests(unittest.TestCase):
         self.assertEqual(len(forderung.demands), 10)
         self.assertEqual(antrag_text._join("ein Einschub -", "bleibt getrennt"), "ein Einschub - bleibt getrennt")
 
+    # Value: protects=a lowercase line-end hyphen that the text spells nowhere else is not guessed to be a break hyphen: "jesidisch-" + "kurdischen" is a compound, so the passage is not quoted as "jesidischkurdischen"; fails_when=_join drops a lowercase hyphen without evidence in the text again; why_new=local audit 2026-10-29, 18/2742 demand 9; seam=extract_forderung
+    def test_a_lost_hard_hyphen_is_not_quoted(self) -> None:
+        text = real_text("dip-1802742.txt")
+        self.assertIn("jesidisch-\nkurdischen", text)
+        self.assertIsNone(antrag_text.extract_forderung(text))
+        # The same break is a break hyphen once the text spells the word whole.
+        spelled = text + "\nDie jesidischkurdischen Dörfer\n"
+        self.assertIn("jesidischkurdischen Dörfern", antrag_text.extract_forderung(spelled).demands[8])
+
+    # Value: protects=a list whose bullet markers the text layer dropped (each item line starts with a bare space) is not quoted as one flattened paragraph; fails_when=a body line with leading whitespace is joined into its predecessor again; why_new=local audit 2026-10-29, 18/3154 lost nine bullet markers; seam=extract_forderung
+    def test_a_list_that_lost_its_bullet_markers_is_not_quoted(self) -> None:
+        self.assertIsNone(antrag_text.extract_forderung(real_text("dip-1803154.txt")))
+
+    # Value: protects=the printer imprint (Gesamtherstellung, Vertrieb, ISSN) a page break sets between two demands is dropped and the demands stay in order; fails_when=the imprint is quoted as part of demand 3; why_new=local audit 2026-10-29, 19/16794; seam=extract_forderung
+    def test_a_printer_imprint_between_demands_is_dropped(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-1916794.txt"))
+        self.assertNotIn("Gesamtherstellung", forderung.text())
+        self.assertNotIn("Bundesanzeiger", forderung.text())
+        self.assertNotIn("ISSN", forderung.text())
+        self.assertEqual([d.split(" ", 1)[0] for d in forderung.demands], [f"{n}." for n in range(1, len(forderung.demands) + 1)])
+        self.assertTrue(forderung.demands[2].endswith("erhalten werden;"))
+        self.assertTrue(forderung.demands[3].startswith("4. konkrete eigene Initiativen"))
+
+    # Value: protects=an operative sentence with a clause between the object and "auf" ("im Rahmen der verfügbaren Haushaltsmittel", "unter Einhaltung …", "zur Aufrechterhaltung … auf", "dazu auf") is quoted from its first word, so the opening is the whole sentence; fails_when=the anchor accepts only "die Bundesregierung (adverb) auf" again, or the opening starts at the clause; why_new=local audit 2026-10-29: ten interposed-anchor misses and one "dazu" in the reference cohort; seam=extract_forderung
+    def test_a_clause_between_the_object_and_auf_keeps_the_whole_opening(self) -> None:
+        for name, opening, first_demand, last_end in (
+            ("dip-2006708.txt", "Der Deutsche Bundestag fordert die Bundesregierung dazu auf,", "1. einen Gesetzentwurf zur Ergänzung", "durchführen zu können."),
+            ("dip-2006712.txt", "Der Deutsche Bundestag fordert die Bundesregierung daher im Rahmen der verfügbaren Haushaltsmittel auf,", "1. danach zu streben", None),
+            ("dip-2010375.txt", "Der Deutsche Bundestag fordert die Bundesregierung unter Einhaltung der haushälterischen Vorgaben auf,", "1. dem Versprechen der unverbrüchlichen", None),
+        ):
+            with self.subTest(name=name):
+                forderung = antrag_text.extract_forderung(real_text(name))
+                self.assertIsNotNone(forderung)
+                self.assertEqual(forderung.opening, opening)
+                self.assertTrue(forderung.demands[0].startswith(first_demand))
+                if last_end:
+                    self.assertTrue(forderung.demands[-1].endswith(last_end))
+        single = antrag_text.extract_forderung(real_text("dip-2013417.txt"))
+        self.assertTrue(single.opening.startswith("Der Deutsche Bundestag fordert die Bundesregierung daher zur Aufrechterhaltung der öffentlichen Ordnung"))
+        self.assertTrue(single.text().endswith("Einreise vorzunehmen."))
+        # A sentence that only mentions the Bundesregierung is not an anchor.
+        self.assertIsNone(antrag_text.extract_forderung("Der Deutsche Bundestag fordert die Bundesregierung. Das ist lang genug, aber kein Aufruf. Es geht um etwas anderes auf der Welt, und so weiter bis zum Ende dieses Satzes.\nBerlin, den 1. Januar 2024\n"))
+
+    # Value: protects=a truncated compound whose hyphen DIP's text dropped before "oder" ("Über-" + "oder Unterforderung" reads "Überoder") is not quoted; fails_when=the glued word is quoted as the Drucksache's wording; why_new=checking the 11 quotes the interposed-clause anchor adds, 20/2345; seam=extract_forderung
+    def test_a_conjunction_glued_to_a_truncated_compound_is_not_quoted(self) -> None:
+        text = real_text("dip-2002345.txt")
+        self.assertIn("Überoder Unterforderung", text)
+        self.assertIsNone(antrag_text.extract_forderung(text))
+        self.assertIsNotNone(antrag_text.extract_forderung(text.replace("Überoder", "Über- oder")))
+        # Real words that end in "oder" or "und" are no gluing.
+        self.assertIsNotNone(antrag_text.extract_forderung(text.replace("Überoder", "Hintergrund oder")))
+
+    # Value: protects=a lettered list that runs past "z)" continues with "aa)", "bb)" as items of their own, so the quote does not fold them into demand z); fails_when=_successor("z") stays "{" and aa) joins the paragraph before it; why_new=checking the 11 quotes the interposed-clause anchor adds, 20/13415 has a) to z) and aa) to gg); seam=extract_forderung
+    def test_a_lettered_list_continues_past_z(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-2013415.txt"))
+        labels = [d.split(" ", 1)[0] for d in forderung.demands]
+        self.assertEqual(labels[:3], ["1.", "a)", "b)"])
+        self.assertEqual([label for label in labels if label.endswith(")")][-8:], ["z)", "aa)", "bb)", "cc)", "dd)", "ee)", "ff)", "gg)"])
+        self.assertEqual(labels[-1], "•")
+        self.assertNotIn(" aa) ", forderung.demands[26])
+        self.assertTrue(forderung.demands[26].startswith("z) bei der Aushandlung"))
+
+    # Value: protects=a clause between the object and "auf" is bounded: "zum" opens one, but a comma, a full stop or more than 30 words before "auf" is no clause, so no quote; fails_when=the clause pattern may cross punctuation or has no length cap; why_new=the interposed-anchor test pins only accepted forms; seam=none; no_claim=real Drucksachen beyond the measured forms (synthetic openings)
+    def test_an_interposed_clause_is_bounded(self) -> None:
+        def opening(middle: str) -> str | None:
+            text = f"Der Deutsche Bundestag fordert die Bundesregierung {middle},\n1. zu handeln;\n2. zu berichten.\nBerlin, den 9. Januar 2024"
+            forderung = antrag_text.extract_forderung(text)
+            return forderung.opening if forderung else None
+
+        self.assertEqual(opening("zum Schutz der Kinder auf"), "Der Deutsche Bundestag fordert die Bundesregierung zum Schutz der Kinder auf,")
+        self.assertEqual(opening("daher dazu auf"), "Der Deutsche Bundestag fordert die Bundesregierung daher dazu auf,")
+        self.assertIsNotNone(opening("zur " + " ".join(["Prüfung"] * 29) + " auf"))
+        self.assertIsNone(opening("zur " + " ".join(["Prüfung"] * 31) + " auf"))
+        self.assertIsNone(opening("zum Schutz der Kinder, soweit es auf"))
+        self.assertIsNone(opening("zur Vorlage eines Berichts. Das hängt davon auf"))
+
+    # Value: protects=a printer-imprint line "Druck: … GmbH/www." between demands is dropped while a content line that only starts with "Druck:" stays; fails_when=the Druck pattern is removed or matches any "Druck:" line; why_new=the 19/16794 fixture has Gesamtherstellung, Vertrieb and ISSN but no Druck line; seam=none; no_claim=a real Druck imprint (synthetic line)
+    def test_a_druck_imprint_is_dropped_but_a_druck_sentence_is_kept(self) -> None:
+        def demands(line: str) -> tuple[str, ...]:
+            text = "\n".join((OPENING, "1. das Gesetz zu ändern;", line, "2. zu berichten.", "Berlin, den 9. Januar 2024"))
+            return antrag_text.extract_forderung(text).demands
+
+        self.assertEqual(demands("Druck: Musterdruck GmbH, Berlin, www.muster.de"), ("1. das Gesetz zu ändern;", "2. zu berichten."))
+        self.assertEqual(demands("Druck: eine Frage der Haltung")[0], "1. das Gesetz zu ändern; Druck: eine Frage der Haltung")
+
+    # Value: protects=an indented line after an unfinished clause is a wrapped continuation and joins it, and an indented item marker stays an item; fails_when=the dropped-marker refusal fires on any line with leading space, not only after a finished clause; why_new=the 18/3154 test pins only the refusal; seam=none; no_claim=real indentation patterns beyond 18/3154 (synthetic lines)
+    def test_indentation_alone_does_not_refuse_the_quote(self) -> None:
+        def demands(*lines: str) -> tuple[str, ...] | None:
+            forderung = antrag_text.extract_forderung("\n".join((OPENING, *lines, "Berlin, den 9. Januar 2024")))
+            return forderung.demands if forderung else None
+
+        self.assertEqual(demands("1. das Gesetz zu ändern und", "  die Mittel zu erhöhen;", "2. zu berichten."),
+                         ("1. das Gesetz zu ändern und die Mittel zu erhöhen;", "2. zu berichten."))
+        self.assertEqual(demands("1. das Gesetz zu ändern;", "  2. zu berichten."), ("1. das Gesetz zu ändern;", "2. zu berichten."))
+        self.assertIsNone(demands("1. das Gesetz zu ändern;", "  die Mittel zu erhöhen;", "2. zu berichten."))
+
     # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
     def test_a_repeated_page_head_is_dropped(self) -> None:
         forderung = antrag_text.extract_forderung(real_text("dip-2105780.txt"))
@@ -217,6 +313,15 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(self._with_wrapped("Know-\nhow", "Das Know-how fehlt."), "1. die Know-how-Regeln umzusetzen;")
         self.assertEqual(self._with_wrapped("Bundesre-\ngierungs"), "1. die Bundesregierungs-Regeln umzusetzen;")
         self.assertIsNone(self._with_wrapped("EU-\nweiten"))
+
+    # Value: protects=a line-end hyphen after a part of under five letters ("um-" + "zusetzen"), or after a part the text never uses as a word, is a break hyphen even when the text prints that part elsewhere, while a five-letter part the text spells with an inflection ending ("jesidisch-" beside "jesidischen") leaves the passage unquoted; fails_when=the length floor or the ending list in _join is removed or loosened; why_new=the 18/2742 fixture pins only the long-part refusal; seam=none; no_claim=real DIP breaks beyond 18/2742 (synthetic words)
+    def test_a_short_part_before_a_line_end_hyphen_is_a_break(self) -> None:
+        self.assertEqual(self._with_wrapped("um-\nzusetzen", "Wir gehen um die Ecke."), "1. die umzusetzen-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Rand-\nstreifen", "Am Rand der Stadt."), "1. die Randstreifen-Regeln umzusetzen;")
+        self.assertEqual(self._with_wrapped("Leis-\ntung", "Die Leistung zählt."), "1. die Leistung-Regeln umzusetzen;")
+        self.assertIsNone(self._with_wrapped("Haupt-\nstraßen", "Die Haupt Seite."))
+        self.assertIsNone(self._with_wrapped("jesidisch-\nkurdischen", "Die jesidischen Dörfer."))
+        self.assertEqual(self._with_wrapped("jesidisch-\nkurdischen", "Die jesidischkurdischen Dörfer."), "1. die jesidischkurdischen-Regeln umzusetzen;")
 
     def test_the_teaser_keeps_whole_demands(self) -> None:
         long_demand = "1. " + "sehr " * 100 + "lange Forderung;"

@@ -120,21 +120,32 @@ def source_page_ref(page: dict[str, Any] | None) -> tuple[int | None, str | None
     return page_number(page), clean(page.get("quadrant"))
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+def require_build_store(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Refuse an exported distribution SQLite (nonzero user_version or a
+    datenstand table) as the build store. ``connect``, the facts engine
+    (``run_facts_engine``) and the rebuild (``_rebuild_database_from_entries``)
+    check this before they compute into or replace a store."""
     user_version = conn.execute("PRAGMA user_version").fetchone()[0]
     has_datenstand = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'datenstand'"
     ).fetchone()
     if user_version or has_datenstand:
-        conn.close()
         raise RuntimeError(
             f"error: {db_path} is a distribution copy (user_version={user_version}); "
             "it cannot be used as the build store"
         )
+
+
+def connect(db_path: Path) -> sqlite3.Connection:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        require_build_store(conn, db_path)
+    except RuntimeError:
+        conn.close()
+        raise
     return conn
 
 
