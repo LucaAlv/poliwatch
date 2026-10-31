@@ -94,5 +94,23 @@
     "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/279507",
     "source_sha256": "04eee67affcbfc889945396feb6ba9da12dfb0a328a7034e0c39f952acee079c",
     "editing": "Unedited text field of DIP Drucksache 21/224, fetched 2026-10-29. Verified against https://dserver.bundestag.de/btd/21/002/2100224.pdf, page 3; a leading elision hyphen is stranded after und at a DIP line end."
+  },
+  {
+    "fixture": "antrag-text/dip-1802742.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/51874",
+    "source_sha256": "283521b5414104fe4979c4dde496d06f9b7e542660ea4f71af586e03555f0de3",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 51874 (Drucksache 18/2742), fetched 2026-10-29: lines 33-70, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/18/027/1802742.pdf compared 2026-10-29. Kept for: hard hyphen in 'jesidisch-' + 'kurdischen' at a DIP line end (lowercase both sides, spelled nowhere else)."
+  },
+  {
+    "fixture": "antrag-text/dip-1803154.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/52479",
+    "source_sha256": "b1191ebc6793d7f7c53884543dfcf85ff15d97c0731c4a79e24c0fb9fb336522",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 52479 (Drucksache 18/3154), fetched 2026-10-29: lines 62-102, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/18/031/1803154.pdf compared 2026-10-29. Kept for: dash bullet markers dropped, each item line starts with a bare space."
+  },
+  {
+    "fixture": "antrag-text/dip-1916794.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/238181",
+    "source_sha256": "45829980b58c22d062c7e535d90a752e9ce2f38bb0bff8c3fd8c254bbccd676b",
+    "editing": "Excerpt of the `text` field of the DIP drucksache-text record 238181 (Drucksache 19/16794), fetched 2026-10-29: lines 120-182, from the operative part's anchor line to the date line, otherwise unedited; the sha256 is of the whole saved body in UTF-8 (docs/research/b4-local-audit-2026-10-29.csv, dip_sha256). PDF https://dserver.bundestag.de/btd/19/167/1916794.pdf compared 2026-10-29. Kept for: printer imprint (Gesamtherstellung, Vertrieb, ISSN) between demands 3 and 4."
   }
 ]

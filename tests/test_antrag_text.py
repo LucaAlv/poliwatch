@@ -136,6 +136,29 @@ class DipTextTests(unittest.TestCase):
         self.assertEqual(len(forderung.demands), 10)
         self.assertEqual(antrag_text._join("ein Einschub -", "bleibt getrennt"), "ein Einschub - bleibt getrennt")
 
+    # Value: protects=a lowercase line-end hyphen that the text spells nowhere else is not guessed to be a break hyphen: "jesidisch-" + "kurdischen" is a compound, so the passage is not quoted as "jesidischkurdischen"; fails_when=_join drops a lowercase hyphen without evidence in the text again; why_new=local audit 2026-10-29, 18/2742 demand 9; seam=extract_forderung
+    def test_a_lost_hard_hyphen_is_not_quoted(self) -> None:
+        text = real_text("dip-1802742.txt")
+        self.assertIn("jesidisch-\nkurdischen", text)
+        self.assertIsNone(antrag_text.extract_forderung(text))
+        # The same break is a break hyphen once the text spells the word whole.
+        spelled = text + "\nDie jesidischkurdischen Dörfer\n"
+        self.assertIn("jesidischkurdischen Dörfern", antrag_text.extract_forderung(spelled).demands[8])
+
+    # Value: protects=a list whose bullet markers the text layer dropped (each item line starts with a bare space) is not quoted as one flattened paragraph; fails_when=a body line with leading whitespace is joined into its predecessor again; why_new=local audit 2026-10-29, 18/3154 lost nine bullet markers; seam=extract_forderung
+    def test_a_list_that_lost_its_bullet_markers_is_not_quoted(self) -> None:
+        self.assertIsNone(antrag_text.extract_forderung(real_text("dip-1803154.txt")))
+
+    # Value: protects=the printer imprint (Gesamtherstellung, Vertrieb, ISSN) a page break sets between two demands is dropped and the demands stay in order; fails_when=the imprint is quoted as part of demand 3; why_new=local audit 2026-10-29, 19/16794; seam=extract_forderung
+    def test_a_printer_imprint_between_demands_is_dropped(self) -> None:
+        forderung = antrag_text.extract_forderung(real_text("dip-1916794.txt"))
+        self.assertNotIn("Gesamtherstellung", forderung.text())
+        self.assertNotIn("Bundesanzeiger", forderung.text())
+        self.assertNotIn("ISSN", forderung.text())
+        self.assertEqual([d.split(" ", 1)[0] for d in forderung.demands], [f"{n}." for n in range(1, len(forderung.demands) + 1)])
+        self.assertTrue(forderung.demands[2].endswith("erhalten werden;"))
+        self.assertTrue(forderung.demands[3].startswith("4. konkrete eigene Initiativen"))
+
     # Value: protects=the first-page head DIP repeats at a page break never lands in a demand; fails_when=only the PDF running-head forms are dropped; why_new=found in DIP text of 21/5780; seam=none
     def test_a_repeated_page_head_is_dropped(self) -> None:
         forderung = antrag_text.extract_forderung(real_text("dip-2105780.txt"))

@@ -35,7 +35,7 @@ import politikfelder
 
 #: Bump when a change to ``extract_forderung`` can change a stored passage; a
 #: store persisted by another version is refused until it is re-persisted.
-EXTRACTOR_VERSION = 7
+EXTRACTOR_VERSION = 8
 #: Where the Drucksache cache sits in the in-memory Vorgang cache.
 CACHE_NAMESPACE = "drucksachen"
 CACHE_FILENAME = "dip-drucksache-text-cache.json.gz"
@@ -116,6 +116,13 @@ _LAYOUT_LINE = re.compile(
     r"|Deutscher\s+Bundestag\s+Drucksache\s+\d{1,2}/\d{1,6}"
     r"|\d{1,2}\.\s*Wahlperiode(?:\s+\d{2}\.\d{2}\.\d{4})?"
     r"|Vorabfassung\s*[–-]\s*wird\s+durch\s+die\s+lektorierte\s+Fassung\s+ersetzt\.?"
+    # The printer's imprint at a page foot, which DIP's text can set between two
+    # demands (19/16794): "Gesamtherstellung: H. Heenemann GmbH & Co. KG, Buch- und
+    # Offsetdruckerei, …" (or "Druck: …"), "Vertrieb: Bundesanzeiger Verlag …", "ISSN 0722-8333".
+    r"|Gesamtherstellung:[ \t].*[Dd]ruck.*"
+    r"|Druck:[ \t].*(?:GmbH|www\.).*"
+    r"|Vertrieb:[ \t].*Verlag.*"
+    r"|ISSN[ \t]+\d{4}-\d{3}[\dX]"
     r")\s*$"
 )
 _NUMBER = re.compile(r"Drucksache\s+(\d{1,2})/(\d{1,6})")
@@ -169,6 +176,12 @@ _END = re.compile(
 # A list item at the start of a line: "1.", "12.", "a)", "aa)", "a.", "–", "-", "•".
 _ITEM = re.compile(r"^(?:(\d{1,2})\.|([a-z]{1,2})[.)]|[–•-])[ \t]+\S")
 # A word a line-end hyphen leaves standing ("Bundes- und Landesrecht").
+# The endings that make the text's other forms of a word before a line-end hyphen
+# ("jesidisch-" beside "jesidischen"): the word is then whole, so the hyphen may be its own.
+_WORD_ENDINGS = ("", "e", "en", "er", "es", "em", "s")
+# A shorter part ("an-zuheben", "um-zusetzen") is a verb prefix or a syllable, the seam of
+# a break far more often than half of a compound, and a short word occurs everywhere.
+_WHOLE_WORD_LENGTH = 5
 _KEEPS_HYPHEN = frozenset({"und", "oder", "bzw.", "sowie", "bis", "als", "noch", "wie"})
 # What may close a clause, and what may stand after its full stop.
 _CLAUSE_ENDS = (".", ";", ":", "!", "?")
@@ -213,10 +226,12 @@ def _join(previous: str, line: str, lexicon: frozenset[str] = frozenset()) -> st
 
     A line-end hyphen before a lower-case word is a break hyphen and goes, unless
     the word is one a truncated compound stands before ("Bundes- und"), or the text
-    prints the hyphenated word whole elsewhere. After a capital the hyphen is as
-    often the word's own ("NATO-geführten") as a break ("BA-föG", 21/8385): the
-    text's own spelling decides, and without one the passage is not quoted
-    (``_Uncertain``). A number is never hyphenated, so after a digit, and before a
+    prints the hyphenated word whole elsewhere. The hyphen is as often the word's
+    own as a break when the part before it is itself a word the text uses
+    ("jesidisch-kurdischen", 18/2742, beside "jesidischen"), and after a capital
+    ("NATO-geführten", or "BA-föG", 21/8385): the text's own spelling decides, and
+    without one the passage is not quoted (``_Uncertain``). A part that is no word
+    ("Leis-tung") or a short one ("an-zuheben") is a break. A number is never hyphenated, so after a digit, and before a
     capital or a digit, the hyphen is part of the word and the lines join without a
     space (E-Mobilität, CO2-neutral, 49-Euro-Ticket)."""
     # A leading elision hyphen can be stranded after a conjunction (21/224).
@@ -234,7 +249,10 @@ def _join(previous: str, line: str, lexicon: frozenset[str] = frozenset()) -> st
             head = right.split("-", 1)[0]
             if f"{left}-{right}" in lexicon or f"{left}-{head}" in lexicon:
                 return previous + line
-            if previous[-2].isupper() and f"{left}{right}" not in lexicon and f"{left}{head}" not in lexicon:
+            if f"{left}{right}" not in lexicon and f"{left}{head}" not in lexicon and (
+                previous[-2].isupper()
+                or (len(left) >= _WHOLE_WORD_LENGTH and any(f"{left}{ending}" in lexicon for ending in _WORD_ENDINGS))
+            ):
                 raise _Uncertain(f"{left}-{right}")
             return previous[:-1] + line
         if word[:1].isupper() or word[:1].isdigit():
@@ -258,6 +276,13 @@ def _lines(body: str) -> list[str] | None:
         line = " ".join(raw.split())
         if not line:
             continue
+        # An item line that opens with a bare space after a finished clause is a
+        # list item whose marker the text layer dropped (18/3154: nine bullets);
+        # joined to its predecessor it would flatten the list, and a marker is
+        # never reconstructed.
+        if lines and raw[:1] in (" ", "\t") and not _ITEM.match(line) and not _BARE_MARKER.match(line) \
+                and _ends_clause(lines[-1], (".", ";")):
+            return None
         if _BARE_MARKER.match(line):
             if pending is not None:
                 return None
