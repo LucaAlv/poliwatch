@@ -54,6 +54,23 @@ class DatenPageTests(unittest.TestCase):
             features=all_selection(),
         )
 
+    # Value: protects=a reader who sees a suffixed revision is told what it means, and a bare one carries no such note; fails_when=-dirty-/-unverified revisions render without an explanation or a clean one gets one; why_new=the suffix was explained only in DATA.md; seam=render_database_page; no_claim=wording
+    def test_a_suffixed_revision_is_explained_next_to_the_commit(self) -> None:
+        def provenance(commit: str) -> str:
+            html = b.render_database_page(
+                dict(self.manifest, commit=commit),
+                data_base_url="data/exports/",
+                mp_lookup=self.lookup,
+                document_numbers=set(),
+                bill_slugs=set(),
+                features=all_selection(),
+            )
+            return re.search(r'<p class="provenance-line">(.*?)</p>', html, re.S).group(1)
+
+        self.assertNotIn("Änderungen", provenance("abc123def456"))
+        self.assertRegex(provenance("abc123def456-dirty-0123abcd"), r"Commit abc123def456-dirty-0123abcd.*Änderungen")
+        self.assertRegex(provenance("abc123def456-unverified-0123abcd"), r"Commit abc123def456-unverified-0123abcd.*nicht prüfen")
+
     def test_no_sample_table_or_search_box(self) -> None:
         # The shared dark-theme stylesheet still lists .sample-table in an
         # unrelated selector (harmless, unrelated to this page); this page

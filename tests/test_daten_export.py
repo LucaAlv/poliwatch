@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -182,6 +183,11 @@ class ExportDistributionDataTests(unittest.TestCase):
             self.mps, self.lookup = b.collect_abgeordnete(conn)
         finally:
             conn.close()
+        # A release export checks the real checkout's authored inputs; these tests
+        # do not depend on whether the developer has committed them.
+        patcher = mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def export(self, **overrides):
         kwargs = dict(
@@ -202,7 +208,7 @@ class ExportDistributionDataTests(unittest.TestCase):
                 self.assertGreaterEqual(len(recipe["rows"]), 1, recipe["empty_reason"])
 
     def test_recipe_csvs_replay_the_distribution_snapshot_in_sql_order(self) -> None:
-        manifest = self.export(tag="v-test")
+        manifest = self.export(tag="v-test", commit="abc123def456")
         gen_dir = self.exports_dir / manifest["generation"]
         snapshot = self.tmp / "recipe-replay.sqlite"
         snapshot.write_bytes(gzip.decompress((gen_dir / manifest["files"][0]["name"]).read_bytes()))
@@ -280,11 +286,11 @@ class ExportDistributionDataTests(unittest.TestCase):
             conn.execute("UPDATE protocols SET document_number = '21/101', date = '2025-05-22' WHERE id = '5802'")
             conn.execute("UPDATE votes SET protocol_id = CASE id WHEN 'v1' THEN '5801' ELSE '5802' END")
         b.run_facts_engine(self.db_path, self.FACTS_ENTRIES, self.facts_catalog())
-        manifest = self.export(tag="v-test", catalog_count=100, dossier_count=2)
+        manifest = self.export(tag="v-test", commit="abc123def456", catalog_count=100, dossier_count=2)
         codebook_path = self.exports_dir / manifest["generation"] / "DATA.md"
         codebook = codebook_path.read_text()
         self.assertIn("Release v-test", codebook)
-        self.assertIn("`abc123`", codebook)
+        self.assertIn("`abc123def456`", codebook)
         self.assertIn(f"Store-Schema: {pulse_store.SCHEMA_VERSION}", codebook)
         self.assertIn(f"Schlüsselversion: {b.KEY_VERSION}", codebook)
         payload = json.loads(authored("dictionary").read_text())
@@ -501,10 +507,16 @@ class ExportDistributionDataTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaisesRegex(RuntimeError, "cannot be part of a file name"):
                 self.export(tag=tag)
         self.assertFalse(self.exports_dir.exists())
-        for commit in ("abc123def456-dirty-0123abcd", "abc123def456-unverified", None):
+        for commit in ("abc123def456-dirty-0123abcd", "abc123def456-unverified", "abc123def456-unverified-0123abcd", "abc123", None):
             with self.subTest(commit=commit), self.assertRaisesRegex(RuntimeError, "needs a clean, known build revision"):
                 self.export(tag="v-test", commit=commit)
         self.assertFalse(self.exports_dir.exists())
+        with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value="not tracked by git: docs/data-methods.md"):
+            with self.assertRaisesRegex(RuntimeError, "authored input.*not tracked by git: docs/data-methods.md"):
+                self.export(tag="v-test", commit="abc123def456")
+            self.assertFalse(self.exports_dir.exists())
+            self.export(tag="local", commit=None)  # a local export never asks
+        shutil.rmtree(self.exports_dir)
         self.export()
         before = {path.relative_to(self.exports_dir): path.read_bytes() for path in self.exports_dir.rglob("*") if path.is_file()}
         # A real validator rule: the new manifest's recipe CSV rows disagree with the file.
@@ -1309,7 +1321,7 @@ class ExportDistributionDataTests(unittest.TestCase):
         first = self.export()
         self.assertEqual(self.export()["generation"], first["generation"])
         changes = {
-            "tag": {"tag": "v1"},
+            "tag": {"tag": "v1", "commit": "abc123def456"},
             "license": {"license_text": "CC BY 4.0"},
             "catalog_count": {"catalog_count": 3},
             "dossier_count": {"dossier_count": 3},

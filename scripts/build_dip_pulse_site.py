@@ -114,6 +114,7 @@ import facts
 import politikfelder
 import antrag_text
 import person_registry as registry
+import build_revision
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
     speech_rede_id,
@@ -3471,6 +3472,13 @@ def _export_label(manifest: dict[str, Any]) -> str:
     return "lokaler Export" if manifest["tag"] == "local" else f"Release {manifest['tag']}"
 
 
+# What a suffix on the cited revision means (DATA.md and the Daten page).
+REVISION_SUFFIX_NOTE = (
+    "Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; "
+    "Zusatz `-unverified`: ob sie abwichen, ließ sich nicht prüfen. Ein Release trägt immer die reine Commit-ID"
+)
+
+
 def _export_revision(manifest: dict[str, Any]) -> str:
     return manifest.get("commit") or "unbekannt"
 
@@ -3486,7 +3494,7 @@ def _codebook_header(manifest: dict[str, Any]) -> list[str]:
     lines = [
         "# DATA — Datenwörterbuch dieses Exports", "",
         f"Export: {_export_label(manifest)}; letzte gespeicherte Sitzung: {_latest_sitting(manifest)}. Erzeugungszeitpunkt: `generated_at` in `datenstand.json`.",
-        f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` (Zusatz `-dirty-<Hash>`: versionierte Dateien wichen vom Commit ab, der Hash bezeichnet diese Änderungen; `-unverified`: ob sie abwichen, ließ sich nicht prüfen).",
+        f"Build-Revision und Quellenrevision der beigefügten Methoden: `{_export_revision(manifest)}` ({REVISION_SUFFIX_NOTE}).",
         f"Exportformat: {manifest['export_format']}; Store-Schema: {manifest['store_schema']}; Schlüsselversion: {manifest['key_version']}.",
         f"Generation: `{manifest['generation']}`; Eingabehash: `{manifest['inputs_hash']}`; Quell-SHA-256: `{manifest['source_sha256']}`.", "",
         f"Schema-SHA-256: `{manifest['schema_hash']}`. Vom Betreiber übergebener Lizenzhinweis (--data-license): {' '.join(manifest['license'].split()) or 'keiner; es gelten die geschichteten Quellenbedingungen unten'}.", "",
@@ -3635,9 +3643,15 @@ def export_distribution_data(
     # The tag ends every file name of the generation.
     if not EXPORT_FILE_NAME_RE.fullmatch(tag):
         raise RuntimeError(f"export: tag {tag!r} cannot be part of a file name")
-    # A release cites its revision, so it must be one anyone can check out.
-    if tag != "local" and (not commit or "-" in commit):
-        raise RuntimeError(f"export: release {tag} needs a clean, known build revision (got {commit or 'none'})")
+    # A release cites its revision, so it must be one anyone can check out: a
+    # bare commit id, and the authored inputs (untracked files do not move the
+    # revision) tracked and equal to that commit.
+    if tag != "local":
+        if not build_revision.is_release_revision(commit):
+            raise RuntimeError(f"export: release {tag} needs a clean, known build revision (got {commit or 'none'})")
+        problem = build_revision.authored_inputs_problem(REPO_ROOT, tuple(CODEBOOK_INPUT_FILES.values()))
+        if problem:
+            raise RuntimeError(f"export: release {tag} needs its authored inputs committed: {problem}")
 
     source = facts.open_readonly(database_path)
     try:
@@ -4209,6 +4223,8 @@ def render_daten_datenstand(manifest: dict[str, Any]) -> str:
     provenance_bits = [f"Exportformat {manifest['export_format']}"]
     if manifest.get("commit"):
         provenance_bits.append(f"Commit {manifest['commit']}")
+        if "-" in manifest["commit"]:
+            provenance_bits.append(REVISION_SUFFIX_NOTE.replace("`", ""))
     provenance_line = " &middot; ".join(pulse_html.esc(bit) for bit in provenance_bits)
     return f"""
     <section class="summary-band">
@@ -12617,6 +12633,14 @@ def parse_args() -> argparse.Namespace:
         help="Re-run the Daten export even when its inputs are unchanged, or when --data-manifest would skip it.",
     )
     parser.add_argument(
+        "--data-tag",
+        default=None,
+        help=(
+            "Tag of the Daten export, which ends every file name of it (default: local). A release tag "
+            "(scripts/publish_dip_pulse_data.py passes it) also requires a clean, committed checkout."
+        ),
+    )
+    parser.add_argument(
         "--data-license",
         default=None,
         help="Licence string recorded in the Daten manifest (or $BUNDESTAG_PULSE_DATA_LICENSE).",
@@ -12688,32 +12712,12 @@ def resolve_data_export_options(args: argparse.Namespace) -> tuple[str, str | No
     return base_url_raw, manifest_raw, license_text, issues_url
 
 
-# The cited build revision: a fixed-length commit id, or
-# <commit>-dirty-<hash of `git diff HEAD`> when tracked files differ from it,
-# so the revision (and with it the export's cache identity) changes with every
-# local edit. Untracked files are not counted. A diff git cannot produce gives
-# <commit>-unverified rather than dropping the known commit.
+# The cited build revision of this checkout (scripts/build_revision.py): a
+# 12-digit commit id, <commit>-dirty-<hash> when tracked files differ from it,
+# <commit>-unverified[-<hash>] when git could not say. Untracked files are not
+# counted; a release export checks its authored inputs separately.
 def resolve_commit() -> str | None:
-    def git(*args: str, timeout: int) -> bytes:
-        return subprocess.run(
-            ["git", "--no-optional-locks", *args],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            timeout=timeout,
-            check=True,
-        ).stdout
-
-    try:
-        commit = git("rev-parse", "--short=12", "HEAD", timeout=5).decode().strip()
-    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
-        return None
-    if not commit:
-        return None
-    try:
-        diff = git("diff", "HEAD", "--binary", timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return f"{commit}-unverified"
-    return f"{commit}-dirty-{hashlib.sha256(diff).hexdigest()[:8]}" if diff else commit
+    return build_revision.resolve_commit(REPO_ROOT)
 
 
 # D1A/D3A: the Fakt der Woche engine sits between the finalised store and the
@@ -12835,6 +12839,7 @@ def run_data_pipeline(
                 dossier_count=len(entries),
                 license_text=license_text,
                 issues_url=issues_url,
+                tag=getattr(args, "data_tag", None) or "local",
                 commit=resolve_commit(),
                 force=force_export,
             )

@@ -115,32 +115,11 @@ class ResolveDataExportOptionsTests(unittest.TestCase):
 
 
 class ResolveCommitTests(unittest.TestCase):
-    # Value: protects=the cited build revision is a 12-character commit id, suffixed with a hash of the tracked-file diff when the tree differs and -unverified when git cannot diff; fails_when=the length floats, two different edits share a revision, or a diff failure drops the known commit; why_new=DATA.md and the cache key cite this value; seam=none; no_claim=real git output
-    def test_revision_identifies_the_commit_and_any_local_edit(self) -> None:
-        diff = b"diff --git a/x b/x\n+changed\n"
-        cases = (
-            (b"", "abc1234def56"),
-            (diff, "abc1234def56-dirty-" + b.hashlib.sha256(diff).hexdigest()[:8]),
-            (b.subprocess.TimeoutExpired("git", 30), "abc1234def56-unverified"),
-        )
-        for outcome, expected in cases:
-            with self.subTest(expected=expected):
-                outputs = [SimpleNamespace(stdout=b"abc1234def56\n"), outcome if isinstance(outcome, Exception) else SimpleNamespace(stdout=outcome)]
-                with mock.patch.object(b.subprocess, "run", side_effect=outputs) as run:
-                    self.assertEqual(b.resolve_commit(), expected)
-                self.assertEqual(run.call_args_list[0].args[0], ["git", "--no-optional-locks", "rev-parse", "--short=12", "HEAD"])
-                self.assertEqual(run.call_args_list[1].args[0], ["git", "--no-optional-locks", "diff", "HEAD", "--binary"])
-        other = b"diff --git a/y b/y\n+other\n"
-        with mock.patch.object(b.subprocess, "run", side_effect=[SimpleNamespace(stdout=b"abc1234def56\n"), SimpleNamespace(stdout=other)]):
-            self.assertNotEqual(b.resolve_commit(), cases[1][1])
-        with mock.patch.object(b.subprocess, "run", return_value=SimpleNamespace(stdout=b"\n")):
-            self.assertIsNone(b.resolve_commit())
-
-    def test_returns_none_when_git_is_unavailable_or_fails(self) -> None:
-        for exc in (FileNotFoundError("no git"), b.subprocess.SubprocessError("boom")):
-            with self.subTest(exc=type(exc).__name__):
-                with mock.patch.object(b.subprocess, "run", side_effect=exc):
-                    self.assertIsNone(b.resolve_commit())
+    # Value: protects=the site build cites the revision of its own checkout through build_revision; fails_when=resolve_commit stops delegating or points at another directory; why_new=the git logic moved to scripts/build_revision.py (tested there against real git); seam=none; no_claim=git behaviour
+    def test_delegates_to_build_revision_for_this_checkout(self) -> None:
+        with mock.patch.object(b.build_revision, "resolve_commit", return_value="0123456789ab") as resolve:
+            self.assertEqual(b.resolve_commit(), "0123456789ab")
+        resolve.assert_called_once_with(b.REPO_ROOT)
 
 
 class LoadRemoteManifestTests(unittest.TestCase):
@@ -231,6 +210,12 @@ class ParseArgsValidationTests(unittest.TestCase):
         with mock.patch.object(sys, "argv", ["build", "--offline", "--data-manifest", "local/datenstand.json"]):
             args = b.parse_args()
         self.assertEqual(args.data_manifest, "local/datenstand.json")
+
+    def test_data_tag_flag_is_parsed(self) -> None:
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "2026.11.01"]):
+            self.assertEqual(b.parse_args().data_tag, "2026.11.01")
+        with mock.patch.object(sys, "argv", ["build"]):
+            self.assertIsNone(b.parse_args().data_tag)
 
     def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
         with (
@@ -343,9 +328,10 @@ class RunDataPipelineTests(unittest.TestCase):
         # A real manifest (exported once into a scratch dir) with a distinct
         # tag so the override is recognisable; shape-valid by construction.
         scratch = self.tmp / "scratch-exports"
-        exported = b.export_distribution_data(
-            self.database_path, scratch, mp_lookup=self.lookup, tag="override", commit="0123456789ab"
-        )
+        with mock.patch.object(b.build_revision, "authored_inputs_problem", return_value=None):
+            exported = b.export_distribution_data(
+                self.database_path, scratch, mp_lookup=self.lookup, tag="override", commit="0123456789ab"
+            )
         exported.update(changes)
         override_path = self.tmp / "override-manifest.json"
         override_path.write_text(json.dumps(exported), encoding="utf-8")
@@ -358,6 +344,14 @@ class RunDataPipelineTests(unittest.TestCase):
         export_mock.assert_not_called()
         self.assertEqual(manifest["tag"], "override")
         self.assertFalse(is_remote)
+
+    # Value: protects=--data-tag reaches the export as its tag and --data-tag-less builds stay local; fails_when=the tag is dropped, or a release tag is exported with a revision other than resolve_commit's; why_new=no production caller passed a tag before the release script; seam=none; no_claim=export content
+    def test_data_tag_becomes_the_export_tag_and_defaults_to_local(self) -> None:
+        for given, expected in ((None, "local"), ("2026.11.01", "2026.11.01")):
+            with self.subTest(tag=given), mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("stop")) as export_mock, mock.patch.object(b, "resolve_commit", return_value="0123456789ab"):
+                self._run(data_tag=given)
+            self.assertEqual(export_mock.call_args.kwargs["tag"], expected)
+            self.assertEqual(export_mock.call_args.kwargs["commit"], "0123456789ab")
 
     def test_force_export_still_exports_under_a_data_manifest_override(self) -> None:
         override_path = self._override_manifest()
