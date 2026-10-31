@@ -129,25 +129,25 @@
         "page_start": {
           "meaning": "Kleinste im XML für native Wortmeldungen dieses TOPs gefundene Quellseite; keine vollständige inhaltliche TOP-Grenze.",
           "unit": "Gedruckte Seitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML: Seitenmarkierung am Anfang des Tagesordnungspunkts.",
+          "source": "Plenarprotokoll-XML: kleinste Seite der Seitenverweise der Reden dieses TOPs im Inhaltsverzeichnis.",
           "license": "dip"
         },
         "page_start_quadrant": {
           "meaning": "Quadrant der ersten Protokollseite des Tagesordnungspunkts, sofern das XML ihn markiert.",
           "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
-          "source": "Plenarprotokoll-XML: Quadrant der Startseite.",
+          "source": "Plenarprotokoll-XML: Quadrant des Seitenverweises, der page_start liefert.",
           "license": "dip"
         },
         "page_end": {
           "meaning": "Größte im XML für native Wortmeldungen dieses TOPs gefundene Quellseite; ohne Seitenbeleg NULL.",
           "unit": "Gedruckte Seitenzahl als Ganzzahl oder NULL.",
-          "source": "Plenarprotokoll-XML: Seitenmarkierung am Ende des Tagesordnungspunkts.",
+          "source": "Plenarprotokoll-XML: größte Seite der Seitenverweise der Reden dieses TOPs im Inhaltsverzeichnis.",
           "license": "dip"
         },
         "page_end_quadrant": {
           "meaning": "Quadrant der letzten Protokollseite des Tagesordnungspunkts, sofern das XML ihn markiert.",
           "unit": "Seitenquadrant A, B, C oder D als Textcode oder NULL; vereinzelt Parserreste wie 'S' oder '4038'.",
-          "source": "Plenarprotokoll-XML: Quadrant der Endseite.",
+          "source": "Plenarprotokoll-XML: Quadrant des Seitenverweises, der page_end liefert.",
           "license": "dip"
         },
         "created_at": {
@@ -312,24 +312,24 @@
         "herausgeber": {
           "meaning": "Herausgeberkürzel des Dokuments: BT oder BR.",
           "unit": "Zweiwertiger Herausgebercode BT oder BR.",
-          "source": "DIP-API: herausgeber aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
+          "source": "DIP-API: herausgeber des Dokuments; für Nummern, die nur das Protokoll-XML oder eine Abstimmungsliste nennt, aus dem URL-Pfad (/brd/ ergibt BR), sonst als BT gesetzt.",
           "license": "dip"
         },
         "document_number": {
           "meaning": "Normalisierte Drucksachennummer, zusammen mit herausgeber eindeutig; BT etwa 20/123, BR etwa 123/20.",
           "unit": "Drucksachennummer als Text, Format abhängig von Wahlperiode und Herausgeber.",
-          "source": "DIP-API: document_number aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
+          "source": "DIP-API: document_number aus dem Vorgangs-/Dokumentdatensatz; für nur im Protokoll-XML oder in einer Abstimmungsliste genannte Drucksachen aus dieser Quelle.",
           "license": "dip"
         },
         "url": {
           "meaning": "URL der Dokumentquelle.",
           "unit": "Dokument-URL als Text; leerer Text, wenn keine URL bekannt ist.",
-          "source": "DIP-API: url aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
+          "source": "DIP-API: url aus dem Vorgangs-/Dokumentdatensatz; für nur im Protokoll-XML oder in einer Abstimmungsliste genannte Drucksachen aus dieser Quelle.",
           "license": "dip"
         },
         "document_type": {
-          "meaning": "DIP-Dokumenttyp, etwa Drucksache oder Beschlussempfehlung.",
-          "unit": "DIP-Dokumentart als Text/Code.",
+          "meaning": "Drucksachentyp laut DIP, etwa Antrag, Gesetzentwurf oder Beschlussempfehlung; NULL bei nur aus Protokoll-XML oder Abstimmungsliste bekannten Nummern.",
+          "unit": "DIP-Drucksachentyp als Text.",
           "source": "DIP-API: document_type aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
@@ -495,7 +495,7 @@
         },
         "rede_id": {
           "meaning": "Protokollinterne Rede-ID der Belegstelle, sofern der Beleg eine Rede ist.",
-          "unit": "Protokollinterne Rede-/Markerkennung als Text; synthetische Kennungen sind möglich; NULL, wenn der Beleg keine Rede ist.",
+          "unit": "Protokollinterne Rede-Kennung als Text; NULL, wenn der Beleg keine Rede ist oder die Rede keine Quellkennung hat (dann nennen page und page_quadrant die Belegstelle, soweit bekannt); synthetische Kennungen stehen hier nie.",
           "source": "scripts/facts.py: Belegzeile aus den Entitäten, die die zugehörige Kennzahlbeobachtung stützen.",
           "license": "eigene-auswertung"
         },
@@ -571,7 +571,7 @@
           "license": "eigene-auswertung"
         },
         "wahlperiode": {
-          "meaning": "Wahlperiodennummer, deren historische Vergleichsbasis bei dieser Beobachtung verwendet wird.",
+          "meaning": "Wahlperiode der Periode (bei Monaten die der meisten Sitzungen); nur bei baseline_kind = wp ist es auch die Wahlperiode der Vergleichsbasis.",
           "unit": "Nummer der Wahlperiode als Ganzzahl.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
@@ -589,7 +589,7 @@
           "license": "eigene-auswertung"
         },
         "value": {
-          "meaning": "Von der Kennzahl-SQL berechneter Beobachtungswert in der fachlichen Einheit aus fact_metrics.unit.",
+          "meaning": "Beobachtungswert in der fachlichen Einheit aus fact_metrics.unit: bei Extremwert-Kennzahlen der Wert der gewählten Zeile der Kennzahl-SQL, bei Zähl- und Gruppenkennzahlen die in scripts/facts.py aus den Zeilen der Kennzahl-SQL gezählte bzw. je Gruppe summierte Zahl.",
           "unit": "Zahl (REAL); Interpretation/Einheit durch Kennzahlregister, kann auch Anteil sein.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
@@ -602,13 +602,13 @@
         },
         "baseline_kind": {
           "meaning": "Art des Vergleichsraums: Historie der eigenen Wahlperiode oder Gesamtarchiv-Fallback.",
-          "unit": "Textcode wp (eigene Wahlperiode) oder all (gesamte Abdeckung); NULL ohne Vergleichsbasis.",
+          "unit": "Textcode wp (eigene Wahlperiode) oder all (gesamte Abdeckung); ohne frühere Perioden steht all; NULL nur, wenn die Beobachtung keinen Wert hat.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
         "baseline_count": {
           "meaning": "Anzahl der Vergleichsbeobachtungen im Maßstab.",
-          "unit": "Anzahl historischer Beobachtungen als Ganzzahl oder NULL ohne Vergleichsbasis.",
+          "unit": "Anzahl historischer Beobachtungen als Ganzzahl (0 ohne frühere Perioden); NULL nur, wenn die Beobachtung keinen Wert hat.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -626,7 +626,7 @@
         },
         "baseline_label": {
           "meaning": "Lesbare Kennzeichnung des Vergleichsfensters (Wahlperiodenhistorie oder Gesamtarchiv).",
-          "unit": "Anzeigetext des Vergleichszeitraums oder NULL ohne Vergleichsbasis.",
+          "unit": "Anzeigetext des Vergleichszeitraums; NULL nur, wenn die Beobachtung keinen Wert hat.",
           "source": "scripts/facts.py: aus Build-Store-Belegen berechnete Kennzahlbeobachtung; Vergleichs-/Veröffentlichungsangaben folgen der Metrikdefinition und Periodenprüfung.",
           "license": "eigene-auswertung"
         },
@@ -707,9 +707,9 @@
           "license": "eigene-auswertung"
         },
         "dip_person_id": {
-          "meaning": "Personenkennung, die DIP dem Abgeordneten-Roster-Eintrag zuweist.",
+          "meaning": "Personenkennung, die DIP der Person zuweist (MdB-Kader oder in einer Sitzung genannte DIP-Person, auch Regierungs- und Bundesratsmitglieder).",
           "unit": "DIP-Personenkennung als Text.",
-          "source": "DIP-API-Rosterkennung der Person.",
+          "source": "DIP-API: Personenkennung aus dem MdB-Kader oder den in einer Sitzung genannten Personen.",
           "license": "dip"
         },
         "xml_redner_id": {
@@ -726,7 +726,7 @@
         },
         "title": {
           "meaning": "DIP-Titelzeile der Person aus dem Roster: Name mit Amts- und Fraktionsangabe, kein akademischer Titel allein.",
-          "unit": "Titelzeile als Text, z. B. 'Marc Bernhard, MdB, AfD'; NULL ohne DIP-Rostereintrag.",
+          "unit": "Titelzeile als Text, z. B. 'Marc Bernhard, MdB, AfD'; NULL ohne DIP-Personeneintrag (MdB-Kader oder in einer Sitzung genannte DIP-Person).",
           "source": "DIP-Roster-Titel/Anrede.",
           "license": "dip"
         },
@@ -785,13 +785,13 @@
           "license": "abgeordnetenwatch"
         },
         "aw_politician_id": {
-          "meaning": "Politikerkennung des abgeordnetenwatch-Profils; Profilattribut, kein eigenständiger projektweiter Identitätsbeweis.",
+          "meaning": "Politikerkennung des abgeordnetenwatch-Profils; bei Treffern über die Redner-ID (aw_match = ext_id) dient sie als Identitätsschlüssel (identity_key aw:<id>), bei Namenstreffern nur als Hinweis.",
           "unit": "Abgeordnetenwatch-Kennung als Ganzzahl oder NULL.",
           "source": "abgeordnetenwatch.de-Profil/API: aw_politician_id als Profildatum; bei geteilten oder mehrdeutigen Identitäten gelten die dokumentierten Registerregeln.",
           "license": "abgeordnetenwatch"
         },
         "aw_match": {
-          "meaning": "Ergebnis/Art des abgeordnetenwatch-Abgleichs für diese Personenaufzeichnung; Werte wie partitioned/conflicting markieren Sonderfälle.",
+          "meaning": "Art des abgeordnetenwatch-Abgleichs für diese Personenaufzeichnung: ext_id (über die Redner-ID gefunden) oder name (über den Namen gefunden); partitioned markiert den Profilinhaber einer geprüften Aufteilung. NULL ohne Profil, auch wenn die Registry ein Profil als widersprüchlich oder gesperrt behandelt.",
           "unit": "Abgleichstatuscode als Text oder NULL.",
           "source": "Projektableitung des Personenregisters aus DIP-Roster, Protokoll-Rednerkennungen, abgeordnetenwatch-Profilzuordnung und geprüften Korrekturen; unsichere Fälle bleiben getrennt.",
           "license": "eigene-auswertung"
@@ -803,7 +803,7 @@
           "license": "dip"
         },
         "is_mdb": {
-          "meaning": "1, wenn eine DIP-Funktionsangabe der Person genau „MdB“ lautet (derive.is_mdb_funktion; MdBR und Stellv. MdBR zählen nicht); sonst 0. DIP nennt nur das aktuelle Amt, ein MdB in einem Regierungsamt kann 0 haben.",
+          "meaning": "1 für Aufzeichnungen aus dem geladenen MdB-Kader (DIP-Roster einer Wahlperiode), deren DIP-Funktionsangabe genau „MdB“ lautet (derive.is_mdb_funktion; MdBR und Stellv. MdBR zählen nicht); sonst 0, auch für in einer Sitzung genannte DIP-Personen mit Funktion MdB, die nicht im geladenen Kader stehen. DIP nennt nur das aktuelle Amt, ein MdB in einem Regierungsamt kann 0 haben.",
           "unit": "0 oder 1. Ein vor dieser Regel gebauter Store kann Bundesratsmitglieder noch mit 1 führen.",
           "source": "Mitgliedskennzeichen aus dem DIP-Roster.",
           "license": "dip"
@@ -965,7 +965,7 @@
           "license": "dip"
         },
         "agenda_item_id": {
-          "meaning": "Kennung des Tagesordnungspunkts, auf dem diese Vorgangsposition behandelt wurde; NULL, wenn nicht verknüpft.",
+          "meaning": "Kennung des Tagesordnungspunkts, auf dem diese Vorgangsposition behandelt wurde; wird beim Speichern immer gesetzt.",
           "unit": "Projektkennung des Tagesordnungspunkts als Text.",
           "source": "Projektschlüssel des über Dokumentnummer und Vorgang zugeordneten Tagesordnungspunkts (agenda_items.id); keine DIP-Angabe.",
           "license": "eigene-metadaten-zuordnung"
@@ -983,8 +983,8 @@
           "license": "dip"
         },
         "title": {
-          "meaning": "Titel des Dokuments bzw. der Aktivität, die diese DIP-Position im Vorgang beschreibt.",
-          "unit": "Positions-/Dokumenttitel als Text oder NULL.",
+          "meaning": "Vorgangstitel laut DIP-Positionsdatensatz (derselbe DIP-Wert fließt in proceedings.title ein).",
+          "unit": "Vorgangstitel als Text oder NULL.",
           "source": "DIP-API: title aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
@@ -1002,7 +1002,7 @@
         },
         "document_number": {
           "meaning": "Im Bundestag/DIP verwendete Drucksachen- oder Protokollnummer.",
-          "unit": "Drucksachennummer als Text oder NULL.",
+          "unit": "Plenarprotokollnummer der Fundstelle als Text, z. B. 21/91, oder NULL.",
           "source": "DIP-API: document_number aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
         },
@@ -1078,7 +1078,7 @@
           "license": "dip"
         },
         "sachgebiet": {
-          "meaning": "Unveränderte DIP-Sachgebietsliste aus dem zwischengespeicherten Vorgang; NULL ohne Cacheeintrag, leere JSON-Liste bei bekanntem Vorgang ohne Sachgebiet.",
+          "meaning": "Unveränderte DIP-Sachgebietsliste aus dem zwischengespeicherten Vorgang, nur für Vorgänge mit einer Position in einem gespeicherten Tagesordnungspunkt; leere JSON-Liste, wenn der Cache für diesen Vorgang kein Sachgebiet hat; NULL, wenn der Vorgang nicht im Cache steht oder nur über eine Abstimmung oder eine verknüpfte Drucksache in den Store kam.",
           "unit": "JSON-Text einer Liste von Sachgebietsbezeichnungen oder NULL.",
           "source": "DIP-API: sachgebiet aus dem Vorgangs-/Dokumentdatensatz; Textbereinigung bzw. Beziehungen werden projektseitig nach der Methodenbeschreibung erstellt.",
           "license": "dip"
@@ -1121,11 +1121,11 @@
         "date": {
           "meaning": "Sitzungsdatum laut DIP-Protokolldatensatz; Kalendertag ohne Uhrzeit oder Zeitzone.",
           "unit": "Kalenderdatum YYYY-MM-DD.",
-          "source": "DIP-Katalogdatum der Sitzung; Protokollkopf im XML ist Gegenprüfung.",
+          "source": "DIP-Katalogdatum der Sitzung; das Datum im Protokollkopf (xml_header_json) wird nicht mit diesem Feld abgeglichen, geprüft werden nur Wahlperiode und Sitzungsnummer.",
           "license": "dip"
         },
         "title": {
-          "meaning": "Offizieller Titel/name der Plenarsitzung aus DIP-Protokolldatensatz und Protokollkopf.",
+          "meaning": "Offizieller Titel der Plenarsitzung aus dem DIP-Protokolldatensatz.",
           "unit": "Protokolltitel als Text oder NULL.",
           "source": "DIP-Protokolltitel; XML-Kopfdaten werden separat erhalten.",
           "license": "dip"
@@ -1332,13 +1332,13 @@
         "vote_id": {
           "meaning": "Kennung der namentlichen Abstimmung, deren Stimmen je Zusammenschluss aggregiert werden.",
           "unit": "Kennung der Abstimmung als Text.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: die Stimmen der MdB werden je Zusammenschluss summiert.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
           "meaning": "Kennung des Zusammenschlusses, dessen Stimmen summiert sind.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: die Stimmen der MdB werden je Zusammenschluss summiert.",
+          "source": "bundestag.de, Detailseite der namentlichen Abstimmung: Ja, Nein, Enthaltung und nicht abgegeben je Fraktion oder Gruppe aus den Diagrammwerten der Seite, nicht aus den Stimmen der einzelnen Mitglieder gebildet.",
           "license": "bundestag-abstimmungen"
         },
         "yes_count": {
@@ -1385,25 +1385,25 @@
         "vote_id": {
           "meaning": "Kennung der namentlichen Abstimmung, in der dieses Einzelvotum abgegeben wurde.",
           "unit": "Kennung der Abstimmung als Text.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         },
         "mp_id": {
           "meaning": "Kennung der Personenaufzeichnung des abstimmenden Mitglieds.",
           "unit": "Kennung der Personenaufzeichnung als Text.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         },
         "party_id": {
           "meaning": "Zusammenschluss, dem das Mitglied in der Abstimmungsquelle zugeordnet ist; immer gesetzt: ohne erkennbaren Zusammenschluss steht die Partei „Unbekannt“.",
           "unit": "Projektkennung des Zusammenschlusses als Text.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         },
         "vote": {
           "meaning": "Einzelvotum des Mitglieds: yes, no, abstain, absent; unknown als Fallback, wenn das Quellvotum fehlt.",
           "unit": "Textcode yes, no, abstain, absent oder unknown.",
-          "source": "Bundestags-XLSX der namentlichen Abstimmung: veröffentlichtes Einzelvotum und Mitgliederangabe.",
+          "source": "bundestag.de, Namensliste der namentlichen Abstimmung (HTML-Liste, nicht die XLSX-Datei): veröffentlichtes Einzelvotum und Mitgliederangabe.",
           "license": "bundestag-abstimmungen"
         }
       }
@@ -1466,11 +1466,11 @@
         "id": {
           "meaning": "Kennung der namentlichen Abstimmung aus der Bundestagsquelle.",
           "unit": "Projekt- oder Quellkennung als Text (Bedeutung des konkreten Schlüssels siehe Feldbeschreibung).",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "protocol_id": {
-          "meaning": "Kennung des Plenarprotokolls, in dem die Abstimmung stattfand; NULL, wenn nicht belegt.",
+          "meaning": "Kennung des Plenarprotokolls, in dem die Abstimmung stattfand; wird beim Speichern immer gesetzt.",
           "unit": "DIP-Protokollkennung als Text.",
           "source": "Projektseitige Sitzungszuordnung der Bundestags-Abstimmung zur DIP-API-Protokollkennung, auch ohne zugeordneten TOP.",
           "license": "bundestag-abstimmungen"
@@ -1478,73 +1478,73 @@
         "date": {
           "meaning": "Datum der namentlichen Abstimmung laut Bundestags-Abstimmungsquelle, ohne Uhrzeit oder Zeitzone.",
           "unit": "Kalenderdatum YYYY-MM-DD.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "topic": {
           "meaning": "Thema der Abstimmung laut Abstimmungsquelle.",
           "unit": "Abstimmungsthema als Text oder NULL.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "title": {
           "meaning": "Titel des Vorschlags/Abstimmungsgegenstands laut Bundestagsquelle.",
           "unit": "Abstimmungsgegenstand als Text oder NULL.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "description": {
           "meaning": "Begleitende Beschreibung der Abstimmung laut Bundestagsquelle.",
           "unit": "Abstimmungsbeschreibung als Text oder NULL.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "detail_url": {
           "meaning": "URL zur Detailseite der Abstimmung.",
           "unit": "URL als Text.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "yes_count": {
           "meaning": "Anzahl der Ja-Stimmen.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "no_count": {
           "meaning": "Anzahl der Nein-Stimmen.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "abstain_count": {
           "meaning": "Anzahl der Enthaltungen.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "absent_count": {
           "meaning": "Anzahl der nicht abgegebenen Stimmen bzw. Abwesenden laut Abstimmungsergebnis.",
           "unit": "Stimmenzahl als Ganzzahl.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "result_raw": {
           "meaning": "Abstimmungsausgang accepted oder rejected, amtlich übernommen oder aus Ja-/Nein-Zahlen abgeleitet; NULL, wenn das Verfahren ohne Ergebnis bleibt.",
           "unit": "Ergebniscodes accepted/rejected als Text oder NULL.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "result_source": {
           "meaning": "Kennzeichnet den Abstimmungsausgang als official oder derived; NULL, wenn keine Ergebnisbestimmung möglich ist.",
           "unit": "Quellcode official/derived oder NULL.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "result_scope": {
           "meaning": "Worauf sich das gespeicherte Ergebnis (result_raw) bezieht: application, wenn der Beschlusstext den Antrag selbst als angenommen oder abgelehnt nennt; proposition, wenn er die Beschlussempfehlung oder eine Vorlage meint. Abgeleitete Ergebnisse tragen immer proposition.",
           "unit": "Textcode application oder proposition; NULL nur in Zeilen aus Berichten, die vor Einführung des Felds gespeichert wurden.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "procedure_type": {
@@ -1556,37 +1556,37 @@
         "inverted": {
           "meaning": "1, wenn die Projektregel feststellt, dass die Beschlussempfehlung die Ablehnung des zugrunde liegenden Antrags empfiehlt; NULL, wenn sie das nicht feststellt (kein Beleg, Abstimmung über die Vorlage selbst oder widersprüchliche Evidenz). Der Wert 0 wird nicht geschrieben.",
           "unit": "1 oder NULL; NULL heißt nicht festgestellt, nicht bestätigt nicht umgekehrt.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "inversion_source": {
           "meaning": "Art der Quelle/Evidenz, mit der die Ablehnungsempfehlung festgestellt wurde.",
           "unit": "Evidenztyp der Umkehrung als Code/Text oder NULL.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "inversion_excerpt": {
           "meaning": "Quellenausschnitt, der die erkannte Ablehnungsempfehlung belegt.",
-          "unit": "Kurzer wörtlicher Belegausschnitt als Text oder NULL.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "unit": "Belegausschnitt als Text oder NULL: bei Protokollbeleg die Klausel der Ansage (Leerraum normalisiert, auf 300 Zeichen mit „…“ gekürzt), sonst der ganze Titel, die Beschreibung oder der DIP-Drucksachentitel, der die Ablehnungsempfehlung enthält.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "xlsx_url": {
           "meaning": "URL zur Bundestags-XLSX-Datei mit namentlicher Stimmenliste.",
           "unit": "URL als Text oder NULL (nur für Abstimmungen mit veröffentlichter XLSX-Datei).",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Namenslisten-Seite auf bundestag.de: der Link zur XLSX-Datei; die Datei selbst wird nicht gelesen.",
           "license": "bundestag-abstimmungen"
         },
         "debate_url": {
           "meaning": "URL zum Bundestagsbericht der Debatte, sofern der Debattenbereich der Abstimmung eine auslesbare Verknüpfung enthält.",
           "unit": "URL als Text.",
-          "source": "Bundestagsquelle zur namentlichen Abstimmung (Detailseite/XLSX); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
+          "source": "Bundestagsquelle zur namentlichen Abstimmung (Abstimmungsliste und Detailseite auf bundestag.de); abgeleitete Werte werden gesondert als Projektregel bezeichnet.",
           "license": "bundestag-abstimmungen"
         },
         "context_state": {
           "meaning": "Ergebnis der festen Zuordnungsregel zu DIP-Vorgängen: Kontext gefunden, kein einzelner Vorgang gefunden oder DIP-Kontextdaten fehlen.",
-          "unit": "Projektstatuscode für Kontextzuordnung oder NULL.",
-          "source": "Projektableitung aus der Bundestags-Abstimmungsseite/XLSX und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
+          "unit": "Textcode resolved, none oder not_fetched; wird für jede gespeicherte Abstimmung gesetzt.",
+          "source": "Projektableitung aus den Bundestags-Abstimmungsseiten und – für Vorgangskontext – den verknüpften DIP-Drucksachen; siehe genaue Feldbedeutung.",
           "license": "eigene-auswertung"
         },
         "created_at": {

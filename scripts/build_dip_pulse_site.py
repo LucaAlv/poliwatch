@@ -2830,8 +2830,8 @@ RECIPES: tuple[dict[str, Any], ...] = (
         ),
         "depends_on": None,
         "caveat": (
-            "Mitglieder der Bundesregierung, Bundesratsmitglieder und weitere Redner in einer Sprechrolle "
-            "erscheinen ohne Fraktion."
+            "Reden in einer Sprechrolle (Bundesregierung, Bundesrat, weitere) zählen für die Person; das "
+            "Fraktionslabel kommt aus der repräsentativen Aufzeichnung und fehlt nur, wenn diese keine Zugehörigkeit trägt."
         ),
         "method": (
             "Gezählt wird je konsolidierter Person (mp_canonical); Reden, deren Redneraufzeichnung keiner Person "
