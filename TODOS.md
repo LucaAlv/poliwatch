@@ -645,26 +645,6 @@ When the first release goes out, the "Project stage: pre-release" section of CLA
 **Priority:** P1
 **Depends on:** None
 
-### Write the release script: versioned, immutable data releases
-
-**What:** `scripts/publish_dip_pulse_data.sh`, referenced as "PR2" since the Daten page (#59) but never written. It publishes the export (SQLite, CSVs, manifest, checksums) as an immutable, dated release with a version number, and the site's `--data-base-url` then points at that release. Decide the version scheme: a date, or semver where a schema change bumps the major version.
-
-**Why:** Without a release, "the dataset" is whatever the last local build produced. Nothing can be cited or downloaded twice with the same result. "Scheduled data-release workflow" and the Daten items are blocked on this.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** Stable ids; licence files (ADR 0003); settle the roll-call source before releasing votes
-
-### Public data changelog per release
-
-**What:** Each release carries a `CHANGES.md` (in the release and on the Daten page) listing what changed in the data since the previous release: schema changes, coverage added, and every correction that moved a published figure, with old value, new value and reason. That is the old/new report the project already writes into commit messages (CLAUDE.md), made public and tied to a release. Keep a machine-readable twin (`changes.json`) so a researcher can check whether a figure they cited was affected.
-
-**Why:** A researcher who cited version N must be able to see whether a later fix touched their numbers. The Fakt der Woche publication ledger covers cards only, and CHANGELOG.md covers code.
-
-**Effort:** S per release once the format exists
-**Priority:** P2
-**Depends on:** The release script
-
 ### A DOI per release and a citation file
 
 **What:** A `CITATION.cff` in the repo and a DOI for every data release. Zenodo's GitHub integration archives the repository's source zip on each GitHub release, not the release's data assets. So archive the data files through Zenodo's upload API from the release script instead, which gives a concept DOI plus one DOI per version. Show "Zitieren als …" with the version DOI on the Daten page and in the codebook.
@@ -1067,6 +1047,28 @@ Done when the backfill decision, the Completeness basis and the manifest consume
 **Depends on:** Best after the store and feature-axis items above
 
 ## Completed
+
+### Public data changelog per release
+
+**What:** Each release carries a `CHANGES.md` (in the release and on the Daten page) listing what changed in the data since the previous release: schema changes, coverage added, and every correction that moved a published figure, with old value, new value and reason. That is the old/new report the project already writes into commit messages (CLAUDE.md), made public and tied to a release. Keep a machine-readable twin (`changes.json`) so a researcher can check whether a figure they cited was affected.
+
+**Why:** A researcher who cited version N must be able to see whether a later fix touched their numbers. The Fakt der Woche publication ledger covers cards only, and CHANGELOG.md covers code.
+
+**Effort:** S per release once the format exists
+**Priority:** P2
+**Depends on:** The release script
+**Completed:** lane/release (2026-10-31, version assigned at integration). `CHANGES.md` and `changes.json` per release, format in [docs/data-changelog.md](docs/data-changelog.md): derived from the two manifests (previous version, export format / store schema / key version / schema hash that moved, old and new protocol, vote and row counts) plus an authored file (summary, schema_changes, coverage_added, corrections with table, key, column, old value, new value, reason). A detected schema change without authored schema_changes refuses the release; the first release is "Erste Veröffentlichung.". The release script writes both files into the release directory and the checksums. Still open: showing CHANGES.md on the Daten page (the release script does not render it there), and the corrections themselves, which a person has to write for each release.
+
+### Write the release script: versioned, immutable data releases
+
+**What:** `scripts/publish_dip_pulse_data.sh`, referenced as "PR2" since the Daten page (#59) but never written. It publishes the export (SQLite, CSVs, manifest, checksums) as an immutable, dated release with a version number, and the site's `--data-base-url` then points at that release. Decide the version scheme: a date, or semver where a schema change bumps the major version.
+
+**Why:** Without a release, "the dataset" is whatever the last local build produced. Nothing can be cited or downloaded twice with the same result. "Scheduled data-release workflow" and the Daten items are blocked on this.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** Stable ids; licence files (ADR 0003); settle the roll-call source before releasing votes
+**Completed:** lane/release (2026-10-31, version assigned at integration; the real upload stays blocked). `scripts/publish_dip_pulse_data.py` (thin `.sh` wrapper) builds `<output>/data-<version>/` from an existing export: `datenstand.json`, the generation directory (SQLite, CSVs, DATA.md), `CHANGES.md`, `changes.json`, `SHA256SUMS` (and `LICENSE-DATA.md` when the repository root has it). Version scheme (one module, `scripts/release_version.py`): calendar version `YYYY.MM.DD`, `.2`/`.3` for further releases of a day, git tag `data-<version>`, the export built with `--data-tag <version>` (`--next-version` prints it); the export format is recorded in the manifest and the changelog, and a schema change is called out there. Refuses: an export not built with a release tag, a revision that is not a bare 12-digit commit of this repository, authored inputs that differ from that commit, any file that does not match the manifest, an existing tag or output directory, a missing `--initial`/`--previous-manifest`. `--publish` refuses before any gh call unless `LICENSE-DATA.md` exists at the repository root (ADR 0003; today it does not) and the export carries a licence string; it asks gh for existing releases, then runs one `gh release create ... --target <full commit>`. Never run for real in this lane; tests use a temporary repository and a recorded runner. Prints the full site-build flags (`--offline --data-manifest <dir>/datenstand.json --data-base-url <base>`). **Open owner decisions:** (a) the version scheme is a default, change `release_version.py` to switch to semver; (b) hosting layout: GitHub release assets are flat but the site links `<base><generation>/<file>`, so no GitHub release URL works as `--base-url` until the site's link scheme (`generation_file_href`) or the host changes; the dry run says so (see also "Site hosting plan for the 2.5 GB generated site"); (c) `docs/designs/daten-page.md` planned `gh release upload --clobber` (mutable); this script creates each version once and never overwrites.
 
 ### Make the build revision reproducible before the release script passes a tag
 

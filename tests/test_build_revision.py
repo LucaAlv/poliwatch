@@ -120,6 +120,23 @@ class ResolveCommitTests(unittest.TestCase):
                 self.assertFalse(rev.is_release_revision(bad))
 
 
+class CommitLookupTests(unittest.TestCase):
+    # Value: protects=a release names its commit in full and checks file content as that commit holds it; fails_when=a short id that names no commit, a non-hex string or a missing path is accepted; why_new=the release script targets the manifest's commit, not HEAD; seam=full_commit and blob_sha256; no_claim=ambiguous prefixes
+    def test_full_commit_and_blob_hash(self) -> None:
+        import hashlib
+
+        repo = make_repo({"a.txt": "one\n"})
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        head = git(repo, "rev-parse", "HEAD")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")  # the working file moves on; the commit does not
+        self.assertEqual(rev.full_commit(repo, head[:12]), head)
+        self.assertIsNone(rev.full_commit(repo, "0123456789ab"))
+        self.assertIsNone(rev.full_commit(repo, "HEAD"))
+        self.assertIsNone(rev.full_commit(repo, head[:12] + "-dirty-01234567"))
+        self.assertEqual(rev.blob_sha256(repo, head, "a.txt"), hashlib.sha256(b"one\n").hexdigest())
+        self.assertIsNone(rev.blob_sha256(repo, head, "missing.txt"))
+
+
 class AuthoredInputsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo = make_repo({"docs/m.md": "m\n", "d.json": "{}\n"})

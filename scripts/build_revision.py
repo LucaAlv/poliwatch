@@ -49,7 +49,7 @@ _DIFF_FLAGS = (
 )
 
 
-def _clean_env() -> dict[str, str]:
+def clean_env() -> dict[str, str]:
     """The environment without GIT_*: GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE
     would point git at another repository, and GIT_EXTERNAL_DIFF and
     GIT_DIFF_OPTS would change the patch."""
@@ -63,7 +63,7 @@ def _git(repo_root: Path, *args: str, timeout: int) -> bytes:
     return subprocess.run(
         [*command, *args],
         cwd=repo_root,
-        env=_clean_env(),
+        env=clean_env(),
         capture_output=True,
         timeout=timeout,
         check=True,
@@ -129,3 +129,23 @@ def authored_inputs_problem(repo_root: Path, relative_paths: Sequence[str]) -> s
         changed = sorted({os.fsdecode(m) for m in re.findall(rb"^diff --git a/(.+?) b/", patch, re.M)})
         return f"differ from HEAD: {', '.join(changed) or ', '.join(relative_paths)}"
     return None
+
+
+def full_commit(repo_root: Path, commit: str) -> str | None:
+    """The 40-digit id of ``commit`` when it names a commit of this repository."""
+    if not is_release_revision(commit):
+        return None
+    try:
+        full = _git(repo_root, "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}", timeout=5).decode("ascii").strip()
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+    return full if re.fullmatch(r"[0-9a-f]{40}", full) else None
+
+
+def blob_sha256(repo_root: Path, commit: str, relative_path: str) -> str | None:
+    """SHA-256 of the file as ``commit`` holds it, or None when it holds none."""
+    try:
+        content = _git(repo_root, "show", f"{commit}:{relative_path}", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return hashlib.sha256(content).hexdigest()
