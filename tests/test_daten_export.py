@@ -74,11 +74,18 @@ class ExportHelpersTests(unittest.TestCase):
     # Value: protects=definitions corrected against the real store (source kind, unit, created_at semantics) and the methods doc quoting CONTEXT.md/ADRs verbatim; fails_when=a correction is reverted (e.g. created_at of re-persisted tables called a first-ingest time) or a quotation drifts from its source; why_new=completeness checks cannot see wrong content; seam=none; no_claim=every other definition is true
     def test_authored_definitions_distinguish_sources_units_and_exact_quotations(self) -> None:
         dictionary = json.loads(authored("dictionary").read_text())["tables"]
-        # replace_protocol deletes and re-inserts a sitting's rows; upserted tables keep their first created_at.
+        # replace_protocol deletes and re-inserts a sitting's rows; and every
+        # store rebuild (online build, --repersist) stages a fresh store, so no
+        # created_at is a first-ingest time.
         for table in ("agenda_items", "speeches", "contributions"):
             self.assertIn("gleich updated_at", dictionary[table]["columns"]["created_at"]["meaning"])
-            self.assertNotIn("erstmals", dictionary[table]["columns"]["created_at"]["meaning"])
-        self.assertIn("erstmals", dictionary["protocols"]["columns"]["created_at"]["meaning"])
+        created = {name: entry["columns"]["created_at"]["meaning"] for name, entry in dictionary.items() if "created_at" in entry["columns"]}
+        self.assertGreaterEqual(len(created), 10)
+        for table, meaning in created.items():
+            with self.subTest(table=table):
+                self.assertNotIn("erstmals", meaning)
+                self.assertIn("kein Zeitpunkt der ersten Erfassung", meaning)
+        self.assertIn("neu auf", created["protocols"])
         self.assertIn("DIP-API", dictionary["proceedings"]["columns"]["title"]["source"])
         self.assertIn("XML", dictionary["speeches"]["columns"]["text"]["source"])
         self.assertIn("UTC", dictionary["speeches"]["columns"]["created_at"]["unit"])
