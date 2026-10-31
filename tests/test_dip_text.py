@@ -179,6 +179,7 @@ class AbstractTextTests(unittest.TestCase):
             ("x<style>a>b{}</STYLE\n>z", "xz"),
             ("x GmbH&C", "x GmbH&C"),
             ("x<br/>y<br class='a'/>z", "x\n\ny\n\nz"),
+            ("x<script/>y</script>z", "xyz"),  # a self-closing <script/> opens no block; the later </script> is a stray end tag
         ]
         for raw_text, expected in cases:
             with self.subTest(raw=raw_text):

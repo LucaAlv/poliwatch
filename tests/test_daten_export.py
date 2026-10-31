@@ -162,6 +162,12 @@ class ExportHelpersTests(unittest.TestCase):
                 b._write_recipe_csv(path, ["a"], [{"a": b"\x00"}])
             with self.assertRaisesRegex(RuntimeError, "repeats the column name 'a'"):
                 b._write_recipe_csv(path, ["a", "a"], [{"a": 1}])
+            # The stored-table writer refuses a BLOB the same way (no b'...' repr in a CSV).
+            conn = sqlite3.connect(":memory:")
+            conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
+            conn.execute("INSERT INTO t VALUES (1, ?)", (b"\x00",))
+            with self.assertRaisesRegex(RuntimeError, "BLOB"):
+                b._write_csv(conn, "t", [{"name": "id", "pk": 1}, {"name": "v", "pk": 0}], Path(tmp) / "t.csv.gz")
 
     # Value: protects=a CR or CRLF from an edited input stays inside its DATA.md table cell; fails_when=_md_cell escapes only LF, leaving a CR that ends the table row in some renderers; why_new=only LF and the pipe were tested; seam=none; no_claim=other markdown escaping
     def test_md_cell_turns_every_line_break_form_into_br(self) -> None:

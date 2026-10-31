@@ -1499,6 +1499,11 @@ class RenderTests(unittest.TestCase):
             markup = (Path(tmp) / "radar.html").read_text(encoding="utf-8")
         self.assertEqual(markup.count('<li class="radar-row"'), 3)
         self.assertEqual(markup.count("data-radar-chip="), 2)
+        # The browser check addresses the chips by name; keep both sides in step.
+        check = (Path(__file__).resolve().parent.parent / "tests/radar_browser_check.js").read_text(encoding="utf-8")
+        for name in ("Verkehr", "Gesundheit"):
+            self.assertIn(f"chip('{name}')", check)
+            self.assertIn(f'data-radar-chip="{name}"', markup)
 
 
 if __name__ == "__main__":
