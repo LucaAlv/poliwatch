@@ -343,6 +343,8 @@ class AbweichlerPanelTests(unittest.TestCase):
         block = self.abweichler_block(markup)
         self.assertIn(f"{ABWEICHLER_HEADING} (1)", block)
         self.assertIn("<li>Cem</li>", block)
+        # list-style:none/display:inline drops list semantics in Safari/VoiceOver unless the role is explicit.
+        self.assertIn('<ul class="vote-abweichler-list" role="list">', block)
         self.assertNotIn("<details", block)
         self.assertNotIn(NONE_NOTE, markup)
         self.assertNotIn(GAP_NOTE, markup)
@@ -621,12 +623,14 @@ class VoteContextPanelTests(unittest.TestCase):
         markup = self.panel(["1"], "resolved", _context_cache(**{"1": {"titel": "T", "abstract": raw}}))
         self.assertNotIn("<script", markup)
         self.assertNotIn("<strong>Ziel", markup)
-        self.assertIn('<p class="vote-context-teaser">Ziel &amp; Zweck</p>', markup)
         self.assertIn(
-            '<details class="vote-context-more"><summary>Ganze Beschreibung</summary>'
+            '<details class="vote-context-more"><summary>'
+            '<span class="vote-context-teaser">Ziel &amp; Zweck</span> <span class="vote-context-toggle">Ganze Beschreibung</span></summary>'
             "<p>Ziel &amp; Zweck</p><p>Zweiter &lt;Absatz&gt;</p></details>",
             markup,
         )
+        # One teaser, inside the summary: no second copy outside the details.
+        self.assertEqual(markup.count("vote-context-teaser"), 1)
 
     # Value: protects=the panel never says DIP has nothing when we never asked; fails_when=none and not_fetched share copy; why_new=new states; seam=none
     def test_none_and_not_fetched_read_differently(self) -> None:

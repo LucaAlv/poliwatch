@@ -179,14 +179,14 @@ def render_abweichler(vote: dict[str, Any], members: list[dict[str, Any]], panel
     inline, rest = items[:ABWEICHLER_INLINE], items[ABWEICHLER_INLINE:]
     more = (
         f'<details class="vote-abweichler-more"><summary>alle {len(items)} anzeigen</summary>'
-        f'<ul class="vote-abweichler-list">{"".join(rest)}</ul></details>'
+        f'<ul class="vote-abweichler-list" role="list">{"".join(rest)}</ul></details>'
         if rest
         else ""
     )
     return (
         '<div class="vote-abweichler">'
         f'<span class="vote-abweichler-label">{html.esc(ABWEICHLER_HEADING)} ({len(items)}):</span>'
-        f'<ul class="vote-abweichler-list">{"".join(inline)}</ul>{more}'
+        f'<ul class="vote-abweichler-list" role="list">{"".join(inline)}</ul>{more}'
         "</div>"
     )
 
@@ -369,10 +369,18 @@ def render_vote_context(
             body = _abstractless_body(passages, vorgang_id)
         else:
             teaser, more = dip_text.abstract_teaser(text)
-            body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
             if more:
+                # The teaser sits in the summary and is hidden while the details are
+                # open (CSS on [open], no :has()): the full text then replaces it, in a
+                # browser without :has() too.
                 full = "".join(f"<p>{html.esc(paragraph)}</p>" for paragraph in text.split("\n\n"))
-                body += f'<details class="vote-context-more"><summary>Ganze Beschreibung</summary>{full}</details>'
+                body = (
+                    '<details class="vote-context-more"><summary>'
+                    f'<span class="vote-context-teaser">{html.esc(teaser)}</span> '
+                    f'<span class="vote-context-toggle">Ganze Beschreibung</span></summary>{full}</details>'
+                )
+            else:
+                body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
         blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
     # A Vorgang without a record already says so in its own block; the note marks
     # what no block shows, a number the cache cannot resolve (D7).
