@@ -52,5 +52,77 @@
     "url": "https://dserver.bundestag.de/btp/18/18071.xml",
     "source_sha256": "bc9f3a72b9adce47aead0f2b7eacb8918b77372ff4fc59f66562f28167ca5a96",
     "editing": "A3 rule 5 (WP 18/19): only the TOP with the blocker, and in it only the <rede> ID1807101000; J paragraphs without markup truncated to 300 characters."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2102234.txt",
+    "url": "https://dserver.bundestag.de/btd/21/022/2102234.pdf",
+    "source_sha256": "0ff58702fe719cd8c9242a64753ac6f370d0fbd0302c450e619f8ce31476904b",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2104466.txt",
+    "url": "https://dserver.bundestag.de/btd/21/044/2104466.pdf",
+    "source_sha256": "e52e482e355adc478e4514414e4da46d22305adeb0d2069eb36ad82a09add79c",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2105780.txt",
+    "url": "https://dserver.bundestag.de/btd/21/057/2105780.pdf",
+    "source_sha256": "bba265e3e067b66b66a3d33dafaf5d9a48700eda6f3076f0560a6b3d9d87dce4",
+    "editing": "Unedited pdftotext 24.02.0 output (reading order, UTF-8) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2105780.layout.txt",
+    "url": "https://dserver.bundestag.de/btd/21/057/2105780.pdf",
+    "source_sha256": "bba265e3e067b66b66a3d33dafaf5d9a48700eda6f3076f0560a6b3d9d87dce4",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, -layout) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-1907398.txt",
+    "url": "https://dserver.bundestag.de/btd/19/073/1907398.pdf",
+    "source_sha256": "3bb5f82d712f0c5891e21f7ad2fbba176da9fc1077f09139ed1f17a57d11d283",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, reading order) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-1907398.layout.txt",
+    "url": "https://dserver.bundestag.de/btd/19/073/1907398.pdf",
+    "source_sha256": "3bb5f82d712f0c5891e21f7ad2fbba176da9fc1077f09139ed1f17a57d11d283",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, -layout) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/drucksache-2013902.txt",
+    "url": "https://dserver.bundestag.de/btd/20/139/2013902.pdf",
+    "source_sha256": "04b80c666b312046949c76e4a93da4a7ca104048805fe1dbd330ed9ef0c8e78a",
+    "editing": "Unedited pdftotext 24.02.0 output (UTF-8, reading order) of the PDF, fetched 2026-10-28; a stand-in for the DIP drucksache-text body, which was not reachable."
+  },
+  {
+    "fixture": "antrag-text/dip-2105780.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/287579",
+    "source_sha256": "d3705c5e23295d2f8c2b55d36c12501db6c6ca3c01777a95e85a8900e9ae7df2",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 287579 (Drucksache 21/5780), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: page head repeated mid-text."
+  },
+  {
+    "fixture": "antrag-text/dip-2108568.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/291631",
+    "source_sha256": "ea5a3a193ee94d37483ba4cca84ac68cd6d0dfe6c5812c0c4d27137feaea8f20",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 291631 (Drucksache 21/8568), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: advance-copy watermark mid-sentence."
+  },
+  {
+    "fixture": "antrag-text/dip-2108385.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/291403",
+    "source_sha256": "4559bc8390df79b84cb11a05ac60e07c00df08dd6575865cb0b06266ceec7dcf",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 291403 (Drucksache 21/8385), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: footnote inside the operative part."
+  },
+  {
+    "fixture": "antrag-text/dip-1812797.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/67431",
+    "source_sha256": "39143c1dfd0a66cbc0a38e18c98c189dbeeae54a56dfde758a195e7beab26252",
+    "editing": "Unedited `text` field of the DIP drucksache-text record 67431 (Drucksache 18/12797), fetched 2026-10-29; the sha256 is of that text in UTF-8. Kept for: adverb before the object."
+  },
+  {
+    "fixture": "antrag-text/dip-2100224.txt",
+    "url": "https://search.dip.bundestag.de/api/v1/drucksache-text/279507",
+    "source_sha256": "04eee67affcbfc889945396feb6ba9da12dfb0a328a7034e0c39f952acee079c",
+    "editing": "Unedited text field of DIP Drucksache 21/224, fetched 2026-10-29. Verified against https://dserver.bundestag.de/btd/21/002/2100224.pdf, page 3; a leading elision hyphen is stranded after und at a DIP line end."
   }
 ]

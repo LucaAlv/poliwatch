@@ -350,6 +350,12 @@ class VoteMemberIdentityTests(unittest.TestCase):
             ("https://www.bundestag.de:99999/abgeordnete/x", False),
             ("https://www.bundestag.de/abgeordnete/x\ty", False),
             ("https://www.abgeordnetenwatch.de/profile/ada beispiel", False),
+            # A dot segment leaves the person path once a browser resolves it.
+            ("https://www.bundestag.de/abgeordnete/../apps/na/x", False),
+            ("https://www.bundestag.de/abgeordnete/%2E%2e/parlament/plenum/abstimmung/abstimmung?id=853", False),
+            ("https://www.bundestag.de/abgeordnete/./x", False),
+            ("https://www.abgeordnetenwatch.de/profile/..", False),
+            ("https://www.bundestag.de/abgeordnete/biografien/A/a..b-1", True),
             ("https://[invalid", False),
             (None, False),
         ):

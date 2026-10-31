@@ -9,7 +9,7 @@ from features import loader
 
 
 class FixedPresentationTests(unittest.TestCase):
-    def test_navigation_is_the_fixed_eight_destination_product(self) -> None:
+    def test_navigation_is_the_fixed_nine_destination_product(self) -> None:
         self.assertEqual(
             [(item.key, item.label, item.path) for item in NAV_ITEMS],
             [
@@ -21,6 +21,7 @@ class FixedPresentationTests(unittest.TestCase):
                 ("fakten", "Fakten", "fakt/index.html"),
                 ("database", "Daten", "database.html"),
                 ("sources", "Quellen", "sources.html"),
+                ("bundestag", "So arbeitet der Bundestag", "bundestag.html"),
             ],
         )
         markup = pulse_html.render_global_header(active="overview")

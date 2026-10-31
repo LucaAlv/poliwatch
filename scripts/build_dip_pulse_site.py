@@ -38,6 +38,7 @@
 #   overview.html        ``render_overview``         dossier cards + catalog teaser
 #   api-sitzungen.html   ``render_catalog_page``     searchable full DIP catalog
 #   sources.html         ``render_sources_page``     sources and method transparency
+#   bundestag.html       ``render_bundestag_page``   how the Bundestag works (GG, GOBT)
 #   database.html        ``render_database_page``    Daten: downloads, Datenstand, Rezepte, Schema
 #   settings.html        ``render_settings_page``    0.5.x compatibility notice
 #   protocols/*.html     ``render_dip_pulse_html``   per-sitting dossier (own module)
@@ -112,6 +113,7 @@ import speech_kinds
 import publication_state as publication
 import facts
 import politikfelder
+import antrag_text
 import person_registry as registry
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
@@ -143,14 +145,15 @@ DATABASE_TABLE_DESCRIPTIONS = {
     "agenda_items": "Tagesordnungspunkte je Protokoll. Sie bilden die Themen-Grenze der aktuellen Pulse-Ansicht.",
     "proceedings": "DIP-Vorgänge, etwa Gesetzgebungsverfahren, die mit Tagesordnungspunkten oder namentlichen Abstimmungen verbunden werden; abstract ist die DIP-Zusammenfassung als Klartext (HTML entfernt, Leerraum normalisiert).",
     "proceeding_positions": "DIP-Vorgangspositionen mit Dokument- und Seitenangaben aus der offiziellen API.",
-    "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden.",
+    "documents": "Drucksachen und andere Dokumente, die aus XML, DIP oder Abstimmungen referenziert werden; forderung ist bei Anträgen, die eine namentliche Abstimmung ohne DIP-Zusammenfassung betreffen, der wörtliche Forderungsteil aus dem DIP-Volltext der Drucksache (nur Layout bereinigt), forderung_state sagt, ob er gefunden wurde (extracted), fehlt (no_passage) oder der Text nicht abgerufen ist (not_fetched), forderung_version ist die Version der Extraktionsregel.",
     "agenda_item_documents": "Verknüpfung zwischen Tagesordnungspunkten und Dokumenten, inklusive Quelle xml/api.",
     "speeches": "Extrahierte Reden mit Redner, Seite, Textumfang (nur die Worte des Redners), Snippet, optionalem Volltext und der Sprechrolle (bundesregierung, bundesrat, weitere). Nur Reden: Kurzinterventionen, Erwiderungen sowie Fragen und Antworten stehen in contributions.",
     "speech_rule_inputs": "Tatsächlich persistierte Zählregel je Plenarprotokoll; fehlende oder alte Version verlangt einen expliziten XML-Replay.",
     "contributions": "Beiträge, die keine Rede sind: Zwischenfrage, schriftlicher Beitrag (zu_protokoll), Kurzintervention, Erwiderung, Frage und Antwort der Befragung der Bundesregierung und der Fragestunde, je mit kind, Redner, Textumfang und Volltext. Ohne Seitenangabe bei Fragestunde-Beiträgen; Ein vorgelesener Fragesteller erhält mp_id nur bei eindeutiger Quellevidenz.",
-    "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings).",
+    "votes": "Namentliche Abstimmungen mit Summen, Bundestag-Detailseite und optionalem debate_url zum zugeordneten Bundestagsbericht (aus der Debatte-Zuordnung auf bundestag.de ermittelt); context_state sagt, ob ihr DIP-Vorgang ermittelt wurde (resolved), keiner zu ermitteln ist (none) oder die Angaben nicht abgerufen wurden (not_fetched: ein ermittelter Vorgang oder eine Drucksache der Abstimmung fehlt im Cache; bekannte Zeilen stehen trotzdem in vote_proceedings); passage_state sagt, ob für einen Vorgang ohne DIP-Zusammenfassung der Forderungsteil eines Antrags zitiert wird (extracted, siehe vote_passages), der Antrag keinen hat (no_passage), sein Text nicht abgerufen ist (not_fetched) oder kein Zitat infrage kommt (not_applicable).",
     "agenda_item_votes": "Zuordnung von namentlichen Abstimmungen zu Tagesordnungspunkten.",
     "vote_documents": "Drucksachen, die bei namentlichen Abstimmungen referenziert wurden.",
+    "vote_passages": "Anträge, deren Forderungsteil (documents.forderung) eine namentliche Abstimmung zitiert, mit dem DIP-Vorgang ohne Zusammenfassung, für den er steht, und Rang; abgeleitet aus den Drucksachen der Abstimmung.",
     "vote_proceedings": "DIP-Vorgänge, um die es bei einer namentlichen Abstimmung geht, mit Rang; abgeleitet aus ihren Drucksachen, die höchstens zwei Vorgänge nennen, eingeschränkt auf die Vorgänge ihres Tagesordnungspunkts, wo sie sich überschneiden. Keine Zeile oder unvollständig: siehe votes.context_state (not_fetched: ein Vorgang oder eine Drucksache fehlt im Cache; bekannte Zeilen stehen trotzdem hier).",
     "agenda_item_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je Tagesordnungspunkt, abgeleitet aus dem DIP-Sachgebiet der Vorgänge des Tagesordnungspunkts (siehe proceedings.sachgebiet), bei Bedarf über seine Drucksachen; Rang und Herkunft stehen in der Zeile.",
     "vote_politikfelder": "Politikfelder (1 bis 3 von 13, sonst untagged) je namentlicher Abstimmung, abgeleitet aus dem DIP-Sachgebiet ihrer Drucksachen oder ihrer Tagesordnungspunkte; Rang und Herkunft stehen in der Zeile.",
@@ -1630,7 +1633,7 @@ def _rebuild_database_from_entries(
                         aw_politician_id=row.get("aw_politician_id"),
                         aw_match=row.get("aw_match"),
                         person_roles_json=row.get("person_roles_json"),
-                        is_mdb=not roles or _has_mdb_funktion(roles),
+                        is_mdb=not roles or derive.is_mdb_funktion(roles),
                     )
                     # Preserved biographies are not fresh source evidence for matching.
                     if record_id not in live_records:
@@ -1865,7 +1868,8 @@ def refresh_vorgang_cache(
     build warns and goes on. Returns the fetch counts.
     """
     reports = [entry["report"] for entry in entries]
-    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0}
+    stats = {"vorgaenge": 0, "vorgaenge_failed": 0, "nummern": 0, "nummern_failed": 0, "shape_errors": 0,
+             "drucksachen": 0, "drucksachen_failed": 0, "texte": 0, "texte_failed": 0}
 
     def shape_error(exc: dip.DipShapeError) -> None:
         stats["shape_errors"] += 1
@@ -1904,10 +1908,11 @@ def refresh_vorgang_cache(
                     return True
         return False
 
-    def resolve_numbers(numbers: list[str]) -> None:
+    def resolve_numbers(numbers: list[str]) -> bool:
         """Resolve numbers one call each, saving the cache every CACHE_SAVE_EVERY
         lookups so an interrupted first fill keeps its progress; stops after
-        VORGANG_FETCH_MAX_FAILURES failures in a row."""
+        VORGANG_FETCH_MAX_FAILURES failures in a row and then returns True (the API
+        looks down)."""
         failures = 0
         try:
             for position, number in enumerate(numbers):
@@ -1925,7 +1930,7 @@ def refresh_vorgang_cache(
                     print(f"warning: could not resolve Drucksache {number}: {exc}", file=sys.stderr)
                     if failures >= VORGANG_FETCH_MAX_FAILURES:
                         stats["nummern_failed"] += len(numbers) - position - 1
-                        return
+                        return True
                     continue
                 failures = 0
                 ids: list[str] = []
@@ -1951,6 +1956,7 @@ def refresh_vorgang_cache(
                     save()
         finally:
             save()
+        return False
 
     ids, numbers = politikfelder.fetch_targets(reports, cache)
     try:
@@ -1959,15 +1965,92 @@ def refresh_vorgang_cache(
         save()
 
     # A lookup returns its Vorgang records inline, so no further id pass is needed.
-    if not down:
-        resolve_numbers(numbers)
+    # Either pass showing the API down skips the later ones.
+    if not down and not resolve_numbers(numbers):
+        refresh_drucksache_texts(client, reports, cache, output_dir, stats)
     print(
         f"politikfelder: fetched {stats['vorgaenge']} Vorgänge and {stats['nummern']} Drucksache numbers "
         f"({stats['vorgaenge_failed']} Vorgänge and {stats['nummern_failed']} numbers failed, left retryable; "
         f"{stats['shape_errors']} validation errors)",
         file=sys.stderr,
     )
+    print(
+        f"antrag_text: fetched metadata of {stats['drucksachen']} Drucksache numbers and {stats['texte']} Antrag texts "
+        f"({stats['drucksachen_failed']} numbers and {stats['texte_failed']} texts failed, left retryable)",
+        file=sys.stderr,
+    )
     return stats
+
+
+def refresh_drucksache_texts(
+    client: Any, reports: list[dict[str, Any]], cache: dict[str, Any], output_dir: Path, stats: dict[str, int]
+) -> None:
+    """Stage 3 of ``refresh_vorgang_cache``: the Antrag texts a vote without a DIP
+    abstract quotes (``antrag_text``). First the DIP metadata of the votes'
+    Drucksache numbers, which says which are Anträge of the vote's Vorgang, then
+    the texts of only those. Only cache misses are fetched; a failed batch is left
+    a miss and the stage stops after VORGANG_FETCH_MAX_FAILURES in a row. The
+    cache file is written only when something was fetched."""
+    # Read from disk if the caller's cache came without it, so a save never drops entries.
+    if antrag_text.CACHE_NAMESPACE not in cache:
+        cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
+    texts_cache = cache[antrag_text.CACHE_NAMESPACE]
+    changed = False
+
+    def save() -> None:
+        try:
+            antrag_text.save_cache(output_dir, texts_cache)
+        except OSError as exc:
+            print(f"warning: could not save the Drucksache text cache: {exc}", file=sys.stderr)
+
+    def run(items: list[str], batch: int, fetch: Callable[[list[str]], int], failed: str) -> bool:
+        failures = 0
+        for start in range(0, len(items), batch):
+            time.sleep(NUMBER_LOOKUP_PAUSE)
+            part = items[start : start + batch]
+            try:
+                fetch(part)
+                failures = 0
+            except dip.DipError as exc:
+                stats[failed] = stats.get(failed, 0) + len(part)
+                failures += 1
+                print(f"warning: Drucksache fetch failed for {len(part)} entries: {exc}", file=sys.stderr)
+                if failures >= VORGANG_FETCH_MAX_FAILURES:
+                    stats[failed] += len(items) - start - len(part)  # never tried
+                    return True
+        return False
+
+    def fetch_numbers(part: list[str]) -> int:
+        nonlocal changed
+        found = dip.fetch_drucksache_metadata(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
+        for number, documents in found.items():
+            records = [record for record in map(antrag_text.drucksache_record, documents) if record is not None]
+            # An answer asked again (antrag_text._wants_metadata) is often the same.
+            changed = changed or texts_cache["nummern"].get(number) != records
+            texts_cache["nummern"][number] = records
+        stats["drucksachen"] += len(found)
+        stats["drucksachen_failed"] = stats.get("drucksachen_failed", 0) + len(part) - len(found)
+        return len(found)
+
+    def fetch_texts(part: list[str]) -> int:
+        nonlocal changed
+        found = dip.fetch_drucksache_texts(client, part, page_pause=NUMBER_LOOKUP_PAUSE)
+        for drucksache_id, text in found.items():
+            texts_cache["texte"][drucksache_id] = {"text": text}
+        stats["texte"] += len(found)
+        stats["texte_failed"] += len(part) - len(found)
+        changed = changed or bool(found)  # only misses are asked, so anything found is new
+        return len(found)
+
+    try:
+        numbers, _ids = antrag_text.fetch_targets(reports, cache)
+        if run(numbers, dip.DRUCKSACHE_BATCH, fetch_numbers, "drucksachen_failed"):
+            return
+        _numbers, ids = antrag_text.fetch_targets(reports, cache)
+        run(ids, dip.DRUCKSACHE_TEXT_BATCH, fetch_texts, "texte_failed")
+    finally:
+        if changed:
+            save()
 
 
 def log_politikfelder_summary(database_path: Path, cache: dict[str, Any]) -> None:
@@ -2013,7 +2096,8 @@ def require_vorgang_cache_for_tags(
 ) -> None:
     """Refuse replay when a previously known TOP or vote becomes not_fetched, or a
     vote whose context (``votes.context_state``) was known, resolved or none, would
-    become not_fetched.
+    become not_fetched, or a vote whose Antrag passage (``votes.passage_state``) was
+    known, extracted or no_passage, would (a lost Drucksache text cache).
     Only an absent store or both absent legacy tag tables bypass this check."""
     if not database_path.exists():
         return
@@ -2042,6 +2126,15 @@ def require_vorgang_cache_for_tags(
                 dict(conn.execute("SELECT id, context_state FROM votes WHERE context_state IN ('resolved', 'none')"))
                 if "context_state" in vote_columns else {}
             )
+            # Per vote and Drucksache: a vote quoting two Anträge can lose one text
+            # while the other keeps the vote's state at extracted.
+            known_passages = (
+                {tuple(row) for row in conn.execute(
+                    "SELECT vp.vote_id, d.document_number FROM vote_passages vp JOIN documents d ON d.id = vp.document_id "
+                    "WHERE d.forderung_state IN ('extracted', 'no_passage')"
+                )}
+                if "passage_state" in vote_columns else set()
+            )
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -2053,10 +2146,12 @@ def require_vorgang_cache_for_tags(
     missing_tops: set[str] = set()
     vote_sources: dict[str, str] = {}
     context_states: dict[str, str] = {}
+    passage_answers: dict[str, antrag_text.VotePassages] = {}
     for entry in sorted(entries, key=entry_sort_key, reverse=True):
         report = entry["report"]
         item_tags, vote_tags = politikfelder.report_politikfelder(report, cache)
         contexts = politikfelder.report_vote_vorgaenge(report, cache)
+        passages = antrag_text.report_vote_passages(report, cache, contexts)
         protocol_id = pulse_store.clean((report.get("protocol") or {}).get("id"))
         for item, (_tags, source) in zip(report.get("agenda_items") or [], item_tags):
             if source == "not_fetched":
@@ -2067,6 +2162,7 @@ def require_vorgang_cache_for_tags(
                 # Match persistence's final overwrite for normalized duplicate IDs.
                 vote_sources[vote_id] = vote_tags[politikfelder.vote_key(vote)][1]
                 context_states[vote_id] = contexts[politikfelder.vote_key(vote)].state
+                passage_answers[vote_id] = passages[politikfelder.vote_key(vote)]
     regressed_tops = missing_tops & known_tops
     regressed_votes = {key for key, source in vote_sources.items() if source == "not_fetched"} & known_votes
     regressed_contexts = {key for key, state in context_states.items() if state == "not_fetched"} & known_contexts.keys()
@@ -2079,6 +2175,24 @@ def require_vorgang_cache_for_tags(
             f"({len(regressed_contexts) - regressed_none} resolved, {regressed_none} none) "
             f"(TOP examples: {sorted(regressed_tops)[:3]}; vote examples: {sorted(regressed_votes)[:3]}; "
             f"context examples: {sorted(regressed_contexts)[:3]}). "
+            "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
+        )
+    # A known passage is lost when its text left the cache, or when it is gone
+    # because the cache lost its number's metadata. A vote that now has an abstract
+    # (not_applicable) is DIP writing one later, not a loss.
+    regressed_passages = set()
+    for vote_id, number in known_passages:
+        answer = passage_answers.get(vote_id)
+        if answer is None or answer.state == "not_applicable":
+            continue
+        states = {p.number: p.state for group in answer.by_vorgang.values() for p in group}
+        if states.get(number) == "not_fetched" or (number not in states and answer.metadata_missing):
+            regressed_passages.add((vote_id, number))
+    if regressed_passages:
+        raise DatabaseRebuildError(
+            f"with the Drucksache text cache {antrag_text.cache_path(output_dir)} as it is, a re-persist would leave "
+            f"{len(regressed_passages)} known Antrag passages of votes not_fetched "
+            f"(examples: {sorted(regressed_passages)[:3]}). "
             "Fix: run an online update (it refills the cache) or restore the cache file, then re-run"
         )
 
@@ -2844,7 +2958,7 @@ _TABLE_SOURCE_DERIVED = (
     set(registry.REGISTRY_TABLES)
     | {
         "mp_canonical", "datenstand", "speech_rule_inputs", "agenda_item_politikfelder", "vote_politikfelder",
-        "vote_proceedings",
+        "vote_proceedings", "vote_passages",
     }
     | set(facts.FACTS_TABLES)
 )
@@ -2861,6 +2975,11 @@ _COLUMN_SOURCE_DERIVED = {
     ("votes", "inversion_excerpt"),
     # Whether vote_proceedings found the vote's Vorgang (politikfelder.CONTEXT_STATES).
     ("votes", "context_state"),
+    # The Antrag passage and its state (antrag_text), extracted from the DIP text.
+    ("votes", "passage_state"),
+    ("documents", "forderung"),
+    ("documents", "forderung_state"),
+    ("documents", "forderung_version"),
     # Computed from the counts / the speaker's role when persisting, not read.
     ("vote_fractions", "leading_vote"),
     ("speeches", "sprechrolle"),
@@ -2882,7 +3001,7 @@ def column_source(table: str, column: str) -> str:
     return "dip"
 
 
-EXPORT_FORMAT = 9
+EXPORT_FORMAT = 10
 DATA_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SYNTHETIC_REDE_ID_RE = re.compile(r"^[0-9]+:[0-9]+:[0-9]+$")
 
@@ -5669,7 +5788,7 @@ def render_radar_row(
 
     badge_html = ""
     if row["has_votes"]:
-        badge_html = '<span class="badge radar-badge">namentlich abgestimmt</span>'
+        badge_html = '<a class="badge radar-badge" href="bundestag.html#abstimmen">namentlich abgestimmt</a>'
 
     foot_parts = [pulse_html.format_sitting_date(row["datum"]), f"Tagesordnungspunkt {row['index']}", "Debatte im Protokoll öffnen"]
     foot_html = f'<p class="radar-open"><a href="{href}">{" · ".join(esc(part) for part in foot_parts if part)}</a></p>'
@@ -6069,6 +6188,7 @@ def render_front_page(
       color:var(--ink);
     }}
     .radar-badge {{ justify-self:start; color:var(--amber); border-color:var(--amber); }}
+    .radar-badge:visited {{ color:var(--amber); }}
     .radar-open {{ margin:2px 0 0; font-size:13px; }}
     .radar-share {{ display:grid; gap:3px; align-content:start; padding-top:2px; }}
     .radar-share strong {{ font-size:18px; font-weight:750; font-variant-numeric:tabular-nums; line-height:1.2; }}
@@ -7657,12 +7777,6 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
-# DIP marks a person's roles in "funktion"; a Bundestag member has one that
-# is exactly "MdB".
-def _has_mdb_funktion(funktion: Any) -> bool:
-    return any(str(value).strip().casefold() == "mdb" for value in (funktion or []))
-
-
 def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
@@ -7689,7 +7803,8 @@ def ingest_mdb_roster(
         stats["fetched"] += len(persons)
         for person in persons:
             compact = dip.compact_person(person)
-            if not _has_mdb_funktion(compact.get("funktion") or []):
+            funktion = compact.get("funktion") or []
+            if not derive.is_mdb_funktion(funktion):
                 continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
@@ -7837,6 +7952,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
     for row in conn.execute(
         """
         SELECT s.mp_id, s.rede_id, s.page, s.char_count, s.snippet, s.sequence,
+               s.fraktion, s.sprechrolle,
                p.document_number, p.date AS protocol_date,
                ai.heading, ai.item_index
         FROM speeches s
@@ -7856,6 +7972,8 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
                 "date": row["protocol_date"],
                 "heading": row["heading"],
                 "item_index": row["item_index"],
+                "fraktion": row["fraktion"],
+                "sprechrolle": row["sprechrolle"],
             }
         )
 
@@ -7869,7 +7987,7 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
 
     contribution_links_by_mp: dict[str, list[dict[str, Any]]] = {}
     for row in conn.execute(
-        "SELECT c.id, c.mp_id, c.kind, p.document_number, p.date "
+        "SELECT c.id, c.mp_id, c.kind, c.fraktion, c.sprechrolle, p.document_number, p.date "
         "FROM contributions c JOIN protocols p ON p.id=c.protocol_id "
         "WHERE c.mp_id IS NOT NULL ORDER BY p.date DESC, c.sequence, c.id"
     ):
@@ -7969,9 +8087,26 @@ def collect_abgeordnete(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]],
             if key in tally:
                 tally[key] += 1
 
+        # The sides a Person spoke for in Reden and Beiträge, most first (a
+        # Bundesminister: Bundesregierung), and whether the protocols record a
+        # Mandat: a Rede or Beitrag that counts for a Zusammenschluss (ADR 0001,
+        # derive.ZUSAMMENSCHLUSS_SQL: no Sprechrolle, the Fraktion, else the
+        # party of the record) or a namentliche Abstimmung, which only MdBs cast.
+        spoken = [
+            (unit, r)
+            for r in members
+            for unit in (*speeches_by_mp.get(r["id"], []), *contribution_links_by_mp.get(r["id"], []))
+        ]
+        sprechrollen = Counter(unit["sprechrolle"] for unit, _ in spoken if unit.get("sprechrolle"))
+        counted_for = {
+            None if unit.get("sprechrolle") else (unit.get("fraktion") or r.get("party"))
+            for unit, r in spoken
+        }
         mp = {
             "id": cid,
             "has_page": cid in page_eligible,
+            "sprechrollen": [derive.SPRECHROLLE_LABELS.get(side, side) for side, _ in sprechrollen.most_common()],
+            "mandat_in_protocols": bool(merged_votes) or bool(counted_for - {None, "Unbekannt"}),
             "name": registry.clean_mp_name(first("display_name")),
             "party": first("party"),
             "title": first("title"),
@@ -8092,6 +8227,9 @@ def abgeordnete_styles() -> str:
     }
     .party-chip.is-active { border-color:var(--blue); background:#eef5ff; color:var(--blue); }
     .mp-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+    .redner-group { margin-top:32px; }
+    .redner-group h2 { margin:0 0 6px; font-size:20px; }
+    .redner-group p { margin:0; color:var(--muted); }
     .mp-table th, .mp-table td {
       text-align:left;
       padding:9px 10px;
@@ -8136,6 +8274,8 @@ def render_abgeordnete_script() -> str:
     (() => {
       const search = document.querySelector("[data-mp-search]");
       const rows = Array.from(document.querySelectorAll("[data-mp-row]"));
+      const rednerRows = Array.from(document.querySelectorAll("[data-redner-row]"));
+      const rednerEmpty = document.querySelector("[data-redner-empty]");
       const partyButtons = Array.from(document.querySelectorAll("[data-party-filter]"));
       const counter = document.querySelector("[data-mp-count]");
       let activeParty = "";
@@ -8149,7 +8289,16 @@ def render_abgeordnete_script() -> str:
           row.hidden = !show;
           if (show) visible += 1;
         });
-        if (counter) counter.textContent = String(visible);
+        // The Fraktion filter narrows the Abgeordnete list only: Redner outside
+        // it are listed without one, so the search alone filters them.
+        let rednerVisible = 0;
+        rednerRows.forEach((row) => {
+          const show = !q || row.dataset.search.includes(q);
+          row.hidden = !show;
+          if (show) rednerVisible += 1;
+        });
+        if (rednerEmpty && rednerRows.length) rednerEmpty.hidden = rednerVisible > 0;
+        if (counter) counter.textContent = String(visible + rednerVisible);
       };
       if (search) search.addEventListener("input", apply);
       partyButtons.forEach((btn) => {
@@ -8241,6 +8390,41 @@ def render_abgeordnete_index(
             """
         )
 
+    # Persons who spoke but are no MdB of the roster's Wahlperiode: members of
+    # the Bundesregierung or the Bundesrat without a Mandat, earlier MdBs. Listed
+    # apart so their pages are reachable without calling them Abgeordnete. A page
+    # kept only by registry evidence (no Rede, no Beitrag) is not listed.
+    redner = sorted(
+        (mp for mp in mps if not mp.get("is_mdb") and has_spoken(mp)),
+        key=lambda mp: (-(mp.get("speech_count") or 0), str(mp.get("name") or "").casefold()),
+    )
+    redner_rows = []
+    for mp in redner:
+        label = " · ".join(redner_details(mp)) or "—"
+        search_key = " ".join(str(value).lower() for value in (mp.get("name"), label) if value)
+        redner_rows.append(
+            f"""
+            <tr data-redner-row data-party="" data-search="{pulse_html.esc(search_key)}">
+              <td><a href="{mp['id']}.html">{pulse_html.esc(mp.get('name'))}</a></td>
+              <td>{pulse_html.esc(label)}</td>
+              <td class="num">{pulse_html.esc(mp.get('speech_count') or 0)}</td>
+            </tr>
+            """
+        )
+    redner_section = (
+        '<section class="redner-group" id="weitere-redner">'
+        "<h2>Weitere Rednerinnen und Redner</h2>"
+        "<p>Personen, die im Plenum gesprochen haben und nicht in der Liste oben stehen: etwa für die Bundesregierung "
+        "oder den Bundesrat, oder als Mitglied des Bundestages einer früheren Wahlperiode. Mitglieder des Bundestages, "
+        "die ein Regierungsamt haben, führt DIP ohne die Funktion MdB; sie stehen bis auf Weiteres hier.</p>"
+        '<table class="mp-table"><thead><tr><th>Name</th><th>Sprechrolle</th><th class="num">Reden</th></tr></thead><tbody>'
+        + "".join(redner_rows)
+        + "</tbody></table>"
+        + f'<p class="mp-empty" data-redner-empty{"" if not redner_rows else " hidden"}>'
+        + ("Keine Treffer." if redner_rows else "In den erfassten Plenarprotokollen sprach niemand außerhalb der Liste.")
+        + "</p></section>"
+    )
+
     with_speeches = sum(1 for mp in listed if (mp.get("speech_count") or 0) > 0)
     total_speeches = sum(mp.get("speech_count") or 0 for mp in listed)
     domains = publication_domains or {}
@@ -8265,11 +8449,11 @@ def render_abgeordnete_index(
     <header class="page-header">
       <div>
         <h1>Abgeordnete</h1>
-        <p>Vollständige Liste der Mitglieder des Bundestages der laufenden Wahlperiode aus den DIP-Personendaten, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion.</p>
+        <p>Die Mitglieder des Bundestages der laufenden Wahlperiode laut DIP-Personendaten, einschließlich ausgeschiedener, ergänzt um abgeordnetenwatch.de-Profile. Filtern nach Name oder Fraktion. Wer im Plenum sprach und nicht in dieser Liste steht, folgt unter <a href="#weitere-redner">Weitere Rednerinnen und Redner</a>.</p>
       </div>
       <div class="follow-summary">
         <span class="eyebrow">Angezeigt</span>
-        <strong data-mp-count>{pulse_html.esc(len(listed))}</strong>
+        <strong data-mp-count>{pulse_html.esc(len(listed) + len(redner))}</strong>
       </div>
     </header>
     <section class="summary-grid">
@@ -8285,6 +8469,7 @@ def render_abgeordnete_index(
     </div>
     {'<table class="mp-table"><thead><tr><th>Name</th><th>Fraktion</th><th>Wahlkreis / Bundesland</th><th class="num">Reden</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' if rows else '<p class="mp-empty">Noch keine Abgeordnetendaten veröffentlicht. Bei einem kontrollierten Update kann der vollständige DIP-Kader mit <code>--enrich mp-roster</code> ergänzt werden.</p>'}
     {former_section}
+    {redner_section}
     <footer>Personenstammdaten aus der DIP-API; Wahlkreis, Bundesland, Geburtsjahr und Beruf von abgeordnetenwatch.de (CC0). <a href="../sources.html">Quellen und Methode</a></footer>
   </div>
   {render_abgeordnete_script()}
@@ -8292,6 +8477,32 @@ def render_abgeordnete_index(
 </body>
 </html>
 """
+
+
+def has_spoken(mp: dict[str, Any]) -> bool:
+    """A Redner (CONTEXT.md): at least one Rede or Beitrag."""
+    return bool((mp.get("speech_count") or 0) or (mp.get("contribution_count") or 0))
+
+
+def redner_details(mp: dict[str, Any]) -> list[str]:
+    """What the protocols say about a Person outside the roster: the
+    Sprechrollen they spoke in, and "Mitglied des Bundestages laut
+    Plenarprotokoll" when a Rede, Beitrag or namentliche Abstimmung records a
+    Mandat. Not "früheres": an MdB in a government office is not in the roster
+    yet (TODOS.md), and without a roster nobody is. The registry's ever_mdb
+    evidence is not used: it was set for Bundesrat members before the exact
+    MdB rule."""
+    details = list(mp.get("sprechrollen") or [])
+    if mp.get("mandat_in_protocols"):
+        details.append("Mitglied des Bundestages laut Plenarprotokoll")
+    return details
+
+
+def redner_label(mp: dict[str, Any]) -> str:
+    """The eyebrow of a Personenseite outside the roster. A page kept only by
+    registry evidence (no Rede, no Beitrag) does not call its Person a Redner."""
+    parts = (["Redner"] if has_spoken(mp) else []) + redner_details(mp)
+    return " · ".join(parts) or "Keine Reden erfasst"
 
 
 # PAGE: abgeordnete/<id>.html - one MP profile.
@@ -8395,6 +8606,26 @@ def render_abgeordnete_detail(
 
     tally = mp.get("vote_tally") or {}
     participation = tally.get("yes", 0) + tally.get("no", 0) + tally.get("abstain", 0)
+    # Only an MdB is shown as one (CONTEXT.md, Personenseite); everyone else is a
+    # Redner with the Sprechrolle they spoke in.
+    if mp.get("is_mdb"):
+        eyebrow = mp.get("party") or "Fraktion unbekannt"
+        role_metrics = (
+            f'<div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get("party") or "—")}</strong></div>'
+            f'<div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get("wahlkreis") or "—")}</strong></div>'
+        )
+        back_links = '<a href="index.html">Alle Abgeordnete</a>'
+    else:
+        eyebrow = redner_label(mp)
+        role_metrics = ""
+        # The Fraktion the protocols record, so a build without the roster still shows it.
+        if mp.get("mandat_in_protocols") and mp.get("party"):
+            role_metrics += f'<div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp["party"])}</strong></div>'
+        if mp.get("sprechrollen"):
+            role_metrics += f'<div class="metric"><span>Sprechrolle</span><strong>{pulse_html.esc(", ".join(mp["sprechrollen"]))}</strong></div>'
+        back_links = (
+            '<a href="index.html#weitere-redner">Weitere Rednerinnen und Redner</a>' if has_spoken(mp) else ""
+        ) + '<a href="index.html">Alle Abgeordnete</a>'
     domains = publication_domains or {}
     notices = "".join(
         (
@@ -8417,17 +8648,16 @@ def render_abgeordnete_detail(
     <header class="page-header">
       <div>
         <nav class="local-nav" aria-label="Abgeordneten-Navigation">
-          <a href="index.html">Alle Abgeordnete</a>
+          {back_links}
         </nav>
-        <span class="eyebrow">{pulse_html.esc(mp.get('party') or 'Fraktion unbekannt')}</span>
+        <span class="eyebrow">{pulse_html.esc(eyebrow)}</span>
         <h1>{pulse_html.esc(mp.get('name'))}</h1>
         <p>Stammdaten aus der DIP-API und abgeordnetenwatch.de sowie alle in den erfassten Plenarprotokollen erkannten Reden.</p>
       </div>
       <div class="actions">{profile_link}</div>
     </header>
     <section class="summary-grid">
-      <div class="metric"><span>Fraktion</span><strong>{pulse_html.esc(mp.get('party') or '—')}</strong></div>
-      <div class="metric"><span>Wahlkreis</span><strong>{pulse_html.esc(mp.get('wahlkreis') or '—')}</strong></div>
+      {role_metrics}
       <div class="metric"><span>Reden</span><strong>{pulse_html.esc(mp.get('speech_count') or 0)}</strong></div>
       <div class="metric"><span>Namentliche Abstimmungen</span><strong>{pulse_html.esc(participation)}</strong></div>
     </section>
@@ -8608,7 +8838,7 @@ def _facts_page_style() -> str:
 
 
 def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
-    """Materialize LEAD_POSITION_CTE/LEAD_PROCEEDING_CTE once per connection.
+    """Materialize LEAD_POSITION_CTE/SINGLE_VORGANG_CTE once per connection.
 
     _fact_speech_citation/_fact_agenda_item_citation/_fact_proceeding_citation
     are each called once per receipt (a monthly grouped_extreme fact can cite
@@ -8626,12 +8856,12 @@ def _ensure_lead_position_tables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_lead_position_topic ON _lead_position_topic(agenda_item_id)"
     )
     conn.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS _lead_position_proceeding AS\n"
-        + facts.LEAD_PROCEEDING_CTE
-        + "SELECT agenda_item_id, proceeding_id FROM lead_position"
+        "CREATE TEMP TABLE IF NOT EXISTS _single_vorgang AS\n"
+        + facts.SINGLE_VORGANG_CTE
+        + "SELECT agenda_item_id, proceeding_id, title, proceeding_type FROM single_vorgang"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lead_position_proceeding ON _lead_position_proceeding(agenda_item_id)"
+        "CREATE INDEX IF NOT EXISTS idx_single_vorgang ON _single_vorgang(agenda_item_id)"
     )
 
 
@@ -8696,15 +8926,15 @@ def _fact_proceeding_citation(
     conn: sqlite3.Connection, document_number: Any, page: Any, page_quadrant: Any
 ) -> dict[str, Any] | None:
     """(document_number, page, page_quadrant) against the agenda item's
-    page_start, resolved through its lead position to the Vorgang
-    (proceedings.id) it belongs to -- meistdiskutierter-vorgang's receipt."""
+    page_start, resolved to the one Vorgang (proceedings.id) the item deals
+    with -- meistdiskutierter-vorgang's receipt, by the metric's own rule
+    (facts.SINGLE_VORGANG_CTE)."""
     row = conn.execute(
         """
-        SELECT ai.id, lp.proceeding_id, pr.title, pr.proceeding_type, p.document_number
+        SELECT ai.id, lp.proceeding_id, lp.title, lp.proceeding_type, p.document_number
         FROM agenda_items ai
         JOIN protocols p ON p.id = ai.protocol_id
-        JOIN _lead_position_proceeding lp ON lp.agenda_item_id = ai.id
-        JOIN proceedings pr ON pr.id = lp.proceeding_id
+        JOIN _single_vorgang lp ON lp.agenda_item_id = ai.id
         WHERE p.document_number = ? AND ai.page_start = ? AND ai.page_start_quadrant IS ?
         """,
         (str(document_number), page, page_quadrant),
@@ -10351,6 +10581,144 @@ def render_catalog_page(
 
 
 # ---------------------------------------------------------------------------
+# PAGE: bundestag.html - "So arbeitet der Bundestag"
+#
+# Static prose: who brings in Vorlagen, when the Bundestag sits, how it votes,
+# the freies Mandat and the way from Gesetzentwurf to Gesetz. Every statement
+# cites the Grundgesetz or the Geschäftsordnung (GOBT), checked against the
+# official texts on 2026-10-30; nothing here is derived from the data.
+# ---------------------------------------------------------------------------
+
+GOBT_URL = "https://www.bundestag.de/parlament/aufgaben/rechtsgrundlagen/go_btg"
+
+
+def _gg(article: str, label: str) -> str:
+    """A link to one Grundgesetz article on gesetze-im-internet.de."""
+    href = pulse_html.source_url(f"https://www.gesetze-im-internet.de/gg/art_{article}.html", "gesetze-im-internet")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def _gobt(label: str) -> str:
+    """A link to the Geschäftsordnung des Deutschen Bundestages on bundestag.de."""
+    href = pulse_html.source_url(GOBT_URL, "bundestag-dip")
+    return f'<a href="{pulse_html.esc(href)}">{pulse_html.esc(label)}</a>'
+
+
+def render_bundestag_page(features: Selection | None = None) -> str:
+    features = features or publication_selection()
+    sections = (
+        (
+            "vorlagen",
+            "Wer Vorlagen einbringt",
+            "<p>Gesetzentwürfe bringen die Bundesregierung, der Bundesrat oder Abgeordnete „aus der Mitte des "
+            "Bundestages“ ein. Vorlagen der Bundesregierung gehen zuerst an den Bundesrat, der dazu Stellung "
+            "nehmen kann.</p>"
+            "<p>Eine Vorlage aus der Mitte des Bundestages, etwa ein Gesetzentwurf oder ein Antrag, muss von "
+            "einer Fraktion oder von fünf Prozent der Mitglieder des Bundestages unterzeichnet sein. Welche "
+            "Vorlagen auf die Tagesordnung kommen können, zählt die Geschäftsordnung auf: unter anderem "
+            "Gesetzentwürfe, Anträge, Unterrichtungen und Große Anfragen. Was die Vorgangstypen im DIP "
+            f'bedeuten, erklärt das <a href="sources.html#{pulse_html.VORGANGSTYP_GLOSSARY_ANCHOR}">Glossar der '
+            "Vorgangstypen</a>.</p>",
+            f'{_gg("76", "Art. 76 Abs. 1 und 2 GG")} · {_gobt("§§ 75, 76 Abs. 1 GOBT")}',
+        ),
+        (
+            "sitzungen",
+            "Wann der Bundestag tagt",
+            "<p>Der Bundestag bestimmt selbst, wann seine Sitzungen schließen und wieder beginnen. In welchen "
+            "Wochen er sitzt, legt der Sitzungskalender fest; über diesen Arbeitsplan verständigen sich die "
+            "Fraktionen im Ältestenrat, und dort werden auch Termin und Tagesordnung jeder Sitzung "
+            "vereinbart.</p>"
+            "<p>Verlangen ein Drittel der Mitglieder, der Bundespräsident oder der Bundeskanzler eine Sitzung, "
+            "muss die Präsidentin oder der Präsident des Bundestages sie einberufen. Eine solche Sondersitzung "
+            "kann außerhalb jeder Sitzungswoche liegen.</p>",
+            f'{_gg("39", "Art. 39 Abs. 3 GG")} · {_gobt("§ 6 Abs. 2, §§ 20, 21 Abs. 2 GOBT")}',
+        ),
+        (
+            "abstimmen",
+            "Wie abgestimmt wird",
+            "<p>Abgestimmt wird durch Handzeichen oder durch Aufstehen oder Sitzenbleiben, die "
+            "Schlussabstimmung über einen Gesetzentwurf immer durch Aufstehen oder Sitzenbleiben. Ist sich der "
+            "Sitzungsvorstand über das Ergebnis auch nach der Gegenprobe nicht einig, werden die Stimmen "
+            "gezählt, auf seine Anordnung im sogenannten Hammelsprung: Alle verlassen den Saal und kommen "
+            "durch die Tür „Ja“, „Nein“ oder „Enthaltung“ zurück.</p>"
+            "<p>Eine namentliche Abstimmung findet statt, wenn eine Fraktion oder fünf Prozent der anwesenden "
+            "Mitglieder sie bis zum Beginn der Sitzung verlangen. Jedes Mitglied gibt dann eine "
+            "Abstimmungskarte mit seinem Namen ab. Nur bei ihr ist festgehalten, wie jedes einzelne Mitglied "
+            "gestimmt hat; Bundestag-Puls zeigt Einzelstimmen deshalb nur für "
+            '<a href="votes/index.html">namentliche Abstimmungen</a>.</p>'
+            "<p>Beschlossen ist, wofür die Mehrheit der abgegebenen Stimmen stimmt, soweit das Grundgesetz "
+            "nichts anderes bestimmt. Stimmengleichheit verneint die Frage, Enthaltungen zählen für die "
+            "Mehrheit nicht mit. Manche Beschlüsse brauchen mehr: Eine Änderung des Grundgesetzes etwa "
+            "braucht zwei Drittel der Mitglieder des Bundestages und zwei Drittel der Stimmen des "
+            "Bundesrates.</p>",
+            f'{_gg("42", "Art. 42 Abs. 2 GG")} · {_gg("79", "Art. 79 Abs. 2 GG")} · '
+            f'{_gobt("§§ 48, 51, 52 GOBT")}',
+        ),
+        (
+            "mandat",
+            "Freies Mandat",
+            "<p>Die Abgeordneten sind „Vertreter des ganzen Volkes, an Aufträge und Weisungen nicht gebunden "
+            "und nur ihrem Gewissen unterworfen“. Eine Stimme gegen das Mehrheitsvotum des eigenen "
+            "Zusammenschlusses verstößt gegen keine Regel. Bundestag-Puls nennt sie Abweichung und zählt sie, "
+            "ohne sie zu bewerten.</p>",
+            _gg("38", "Art. 38 Abs. 1 Satz 2 GG"),
+        ),
+        (
+            "gesetzgebung",
+            "Vom Gesetzentwurf zum Gesetz",
+            "<p>Gesetzentwürfe berät der Bundestag in drei Beratungen, die meisten anderen Vorlagen in einer. "
+            "Nach der ersten Beratung wird ein Gesetzentwurf in der Regel an einen Ausschuss überwiesen; "
+            "dessen Beschlussempfehlung und Bericht sind die Grundlage der zweiten Beratung. Nach der dritten "
+            "Beratung folgt die Schlussabstimmung.</p>"
+            "<p>Den Gesetzesbeschluss leitet die Präsidentin oder der Präsident des Bundestages dem Bundesrat "
+            "zu. Der Bundesrat kann den Vermittlungsausschuss anrufen. Braucht das Gesetz seine Zustimmung, "
+            "muss er zustimmen; sonst kann er Einspruch einlegen, den der Bundestag zurückweisen kann. Ein "
+            "zustande gekommenes Gesetz fertigt der Bundespräsident nach Gegenzeichnung aus und verkündet es "
+            "im Bundesgesetzblatt.</p>",
+            f'{_gobt("§§ 78, 80, 81, 84, 86 GOBT")} · {_gg("77", "Art. 77 GG")} · {_gg("78", "Art. 78 GG")} · '
+            f'{_gg("82", "Art. 82 Abs. 1 GG")}',
+        ),
+    )
+    toc = "".join(f'<li><a href="#{key}">{pulse_html.esc(title)}</a></li>' for key, title, _, _ in sections)
+    body = "".join(
+        f'<section class="panel explainer-section" id="{key}"><h2>{pulse_html.esc(title)}</h2>{prose}'
+        f'<p class="explainer-cite">Rechtsgrundlage: {cite}</p></section>'
+        for key, title, prose, cite in sections
+    )
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundestag-Puls · So arbeitet der Bundestag</title>
+  {pulse_html.page_head(features)}
+  <style>{bill_styles()}
+    .explainer {{ display:grid; gap:16px; max-width:860px; margin-top:18px; }}
+    .explainer-section p {{ line-height:1.6; }}
+    .explainer-cite {{ color:var(--muted); font-size:14px; }}
+    .explainer-toc {{ display:flex; flex-wrap:wrap; gap:6px 18px; padding:0; margin:12px 0 0; list-style:none; }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    {pulse_html.render_global_header(active="bundestag", features=features)}
+    <header class="page-header">
+      <div>
+        <h1>So arbeitet der Bundestag</h1>
+        <p>Die Regeln hinter den Sitzungen, Reden und Abstimmungen auf dieser Website, aus dem Grundgesetz und der Geschäftsordnung des Deutschen Bundestages (GOBT). Jeder Abschnitt nennt seine Rechtsgrundlage.</p>
+        <ul class="explainer-toc">{toc}</ul>
+      </div>
+    </header>
+    <main class="explainer">{body}</main>
+    <footer>Grundgesetz nach gesetze-im-internet.de, Geschäftsordnung nach bundestag.de, beide abgerufen am 30.10.2026. <a href="sources.html">Quellen und Methode</a></footer>
+  </div>
+  {pulse_html.page_scripts(features)}
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
 # PAGE: sources.html - "Quellen und Methode"
 #
 # The transparency page: which official sources are used, how each visible
@@ -10744,11 +11112,13 @@ def render_sources_page(
         <ul class="method-list glossary">
           {vorgangstyp_items}
         </ul>
+        <p>Wer welche Vorlagen einbringen kann und wie sie beraten werden: <a href="bundestag.html#vorlagen">So arbeitet der Bundestag</a>.</p>
       </section>
       <section class="panel" id="parlamentarische-begriffe">
         <h2>Parlamentarische Begriffe</h2>
         <p>Kurze Erläuterungen zu Dokumenten, Beratungen und Beteiligten. Die Links führen zu den offiziellen Quellen des Deutschen Bundestages.</p>
         <ul class="method-list glossary">{parliamentary_items}</ul>
+        <p>Wie der Bundestag Vorlagen berät und abstimmt, mit den Artikeln des Grundgesetzes und den Paragrafen der Geschäftsordnung: <a href="bundestag.html">So arbeitet der Bundestag</a>.</p>
       </section>
       <section class="panel note">
         <h2>Was nicht genutzt wird</h2>
@@ -11310,6 +11680,7 @@ def render_site(
     overview_path = output_dir / "overview.html"
     catalog_page_path = output_dir / "api-sitzungen.html"
     sources_path = output_dir / "sources.html"
+    bundestag_path = output_dir / "bundestag.html"
     database_page_path = output_dir / "database.html"
     settings_path = output_dir / "settings.html"
     feature_manifest_path = output_dir / "data" / "features.json"
@@ -11356,6 +11727,7 @@ def render_site(
         ),
         encoding="utf-8",
     )
+    bundestag_path.write_text(render_bundestag_page(features=features), encoding="utf-8")
     sources_path.write_text(
         render_sources_page(
             entries,
@@ -12447,6 +12819,8 @@ def main() -> int:
     # build; an online build fills it before it persists.
     try:
         vorgang_cache = politikfelder.load_cache(output_dir)
+        # The Antrag texts a vote's "Worum es geht" quotes ride along in memory.
+        vorgang_cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
     except politikfelder.CacheLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

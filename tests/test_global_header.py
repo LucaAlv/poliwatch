@@ -44,25 +44,25 @@ class GlobalHeaderTests(unittest.TestCase):
         self.assertIn('href="../abgeordnete/index.html"', markup)
         self.assertNotIn("bills/abgeordnete", markup)
         nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup, re.S).group(1)
-        self.assertEqual(nav.count("<a "), 8)
-        for label in ("Wochenübersicht", "Sitzungen", "Gesetzesvorhaben", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen"):
+        self.assertEqual(nav.count("<a "), 9)
+        for label in ("Wochenübersicht", "Sitzungen", "Gesetzesvorhaben", "Abgeordnete", "Abstimmungen", "Fakten", "Daten", "Quellen", "So arbeitet der Bundestag"):
             self.assertIn(label, nav)
         for retired in ("api-sitzungen.html", "settings.html", "data-feature"):
             self.assertNotIn(retired, markup)
 
     def test_one_registry_link_set_with_native_secondary_group(self) -> None:
         for depth in (0, 1, 2):
-            for active in ("pulse", "overview", "bills", "votes", "sources"):
+            for active in ("pulse", "overview", "bills", "votes", "sources", "bundestag"):
                 with self.subTest(depth=depth, active=active):
                     markup = pulse_html.render_global_header(depth=depth, active=active)
                     self.assertEqual(markup.count("<nav "), 1)
                     nav = re.search(r'<nav[^>]*>(.*?)</nav>', markup, re.S).group(1)
                     hrefs = re.findall(r'href="([^"]+)"', nav)
                     self.assertEqual(hrefs, ["../" * depth + item.path for item in pulse_html.NAV_ITEMS])
-                    self.assertEqual(len(set(hrefs)), 8)
+                    self.assertEqual(len(set(hrefs)), 9)
                     primary, secondary = nav.split("<details", 1)
                     self.assertEqual(primary.count("<a "), 2)
-                    self.assertEqual(secondary.count("<a "), 6)
+                    self.assertEqual(secondary.count("<a "), 7)
                     self.assertIn("<summary>Weitere Bereiche</summary>", secondary)
                     self.assertNotRegex(secondary.split(">", 1)[0], r"\bopen\b")
                     self.assertEqual(nav.count('aria-current="page"'), 1)

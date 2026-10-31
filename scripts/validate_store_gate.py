@@ -243,12 +243,15 @@ def persist_only(output_dir: Path, today: str) -> None:
     """The database half of ``--offline --repersist``, without the render or the
     export: what the order-independence clones need."""
     import build_dip_pulse_site as site
+    import antrag_text
     import politikfelder
 
     database_path = output_dir / STORE
+    vorgang_cache = politikfelder.load_cache(output_dir)
+    vorgang_cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(output_dir)
     site.repersist_cached_reports(
         output_dir, database_path, site.load_cached_protocols(output_dir), preserve_roster=True,
-        today=date.fromisoformat(today), vorgang_cache=politikfelder.load_cache(output_dir),
+        today=date.fromisoformat(today), vorgang_cache=vorgang_cache,
     )
 
 

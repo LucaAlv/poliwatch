@@ -99,8 +99,10 @@ WITHHELD_BELOW_MIN_VALUE = "below_min_value"
 WITHHELD_NO_TOPIC = "no_topic"
 WITHHELD_BELOW_FLOOR = "below_floor"
 
-# The lead proceeding of an agenda item, by the same rule topic_identity uses:
-# a Gesetzgebung position first, then the lowest proceeding_positions.id. Shared
+# The lead proceeding of an agenda item: a Gesetzgebung position first, then the
+# lowest proceeding_positions.id. A simplified form of topic_identity's rule (it
+# reads no ``mitberaten`` twins and has no equal_weight case; TODOS.md, "One
+# rule for a Tagesordnungspunkt's Thema"), so the two can name different Themen. Shared
 # verbatim by the two metrics that name a topic; each metric's ``sql`` stays a
 # complete, runnable statement because it is what the week page shows.
 LEAD_POSITION_CTE = (
@@ -116,24 +118,46 @@ LEAD_POSITION_CTE = (
     ")\n"
 )
 
-# The same lead-position rule, but keeping the Vorgang (proceedings.id) the
-# title belongs to rather than just the title text -- meistdiskutierter-vorgang
-# groups an agenda item's speeches by that id, across every protocol occurrence
-# in the month, not by the agenda item alone. A separate constant from
-# LEAD_POSITION_CTE (not an added column on it) because it filters out
-# proceeding_positions rows with no proceeding_id at all, which the two
-# metrics reusing LEAD_POSITION_CTE for a topic string must not lose.
-LEAD_PROCEEDING_CTE = (
-    "WITH ranked_positions AS (\n"
-    "  SELECT pp.agenda_item_id AS agenda_item_id, pp.title AS title, pp.proceeding_id AS proceeding_id,\n"
-    "         (CASE WHEN pp.proceeding_type = 'Gesetzgebung' THEN 0 ELSE 1 END) * 100000000000\n"
-    "           + CAST(pp.id AS INTEGER) AS ord\n"
+# The agenda items that debate exactly one Vorgang, and that Vorgang
+# (proceedings.id) -- meistdiskutierter-vorgang credits a Rede only through
+# these. A Rede addresses its Tagesordnungspunkt (CONTEXT.md, Vorgang): under a
+# verbundene Beratung of several Vorgänge no single one of them was debated,
+# so such an item counts for none. The Vorgang set is derive.agenda_procedures'
+# set (each position's Vorgang plus its ``mitberaten`` twins, by id), where an
+# Entschließungsantrag, an unselbständige Vorlage (§ 75 Abs. 2 GOBT), counts
+# only when nothing else is there: derive.debated_vorgang is the same rule.
+SINGLE_VORGANG_CTE = (
+    "WITH item_vorgaenge AS (\n"
+    "  SELECT pp.agenda_item_id AS agenda_item_id, pp.proceeding_id AS vorgang_id,\n"
+    "         pp.title AS title, pp.proceeding_type AS proceeding_type\n"
     "  FROM proceeding_positions pp\n"
-    "  WHERE pp.agenda_item_id IS NOT NULL AND TRIM(COALESCE(pp.title, '')) <> ''\n"
-    "    AND pp.proceeding_id IS NOT NULL\n"
+    "  WHERE pp.agenda_item_id IS NOT NULL AND pp.proceeding_id IS NOT NULL\n"
+    "  UNION\n"
+    "  SELECT pp.agenda_item_id, CAST(json_extract(twin.value, '$.id') AS TEXT),\n"
+    "         json_extract(twin.value, '$.titel'), json_extract(twin.value, '$.vorgangstyp')\n"
+    "  FROM proceeding_positions pp, json_each(pp.mitberaten_json) twin\n"
+    "  WHERE pp.agenda_item_id IS NOT NULL\n"
+    "    AND TRIM(COALESCE(CAST(json_extract(twin.value, '$.id') AS TEXT), '')) <> ''\n"
     "),\n"
-    "lead_position AS (\n"
-    "  SELECT agenda_item_id, title, proceeding_id, MIN(ord) AS ord FROM ranked_positions GROUP BY agenda_item_id\n"
+    "item_counts AS (\n"
+    "  SELECT agenda_item_id,\n"
+    f"         COUNT(DISTINCT CASE WHEN COALESCE(proceeding_type, '') <> '{derive.ENTSCHLIESSUNGSANTRAG}' THEN vorgang_id END) AS main_n,\n"
+    f"         MIN(CASE WHEN COALESCE(proceeding_type, '') <> '{derive.ENTSCHLIESSUNGSANTRAG}' THEN vorgang_id END) AS main_id,\n"
+    "         COUNT(DISTINCT vorgang_id) AS all_n, MIN(vorgang_id) AS any_id\n"
+    "  FROM item_vorgaenge GROUP BY agenda_item_id\n"
+    "),\n"
+    "single_ids AS (\n"
+    "  SELECT agenda_item_id, CASE WHEN main_n = 1 THEN main_id ELSE any_id END AS proceeding_id\n"
+    "  FROM item_counts WHERE main_n = 1 OR (main_n = 0 AND all_n = 1)\n"
+    "),\n"
+    # Title and type come from the position or the twin itself: a twin has no
+    # proceedings row (persist stores a position's own Vorgang only).
+    "single_vorgang AS (\n"
+    "  SELECT si.agenda_item_id, si.proceeding_id,\n"
+    "         MIN(NULLIF(TRIM(iv.title), '')) AS title, MIN(iv.proceeding_type) AS proceeding_type\n"
+    "  FROM single_ids si\n"
+    "  JOIN item_vorgaenge iv ON iv.agenda_item_id = si.agenda_item_id AND iv.vorgang_id = si.proceeding_id\n"
+    "  GROUP BY si.agenda_item_id, si.proceeding_id\n"
     ")\n"
 )
 
@@ -473,7 +497,9 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "meistdiskutierter-vorgang",
-        "version": 2,
+        # Version 3 (2026-10-30): only Tagesordnungspunkte about one Vorgang
+        # count; v2 credited a bundled item's Reden to its lead Vorgang.
+        "version": 3,
         "title": "Der meistdiskutierte Vorgang des Monats",
         "unit": "Reden",
         "direction": "max",
@@ -486,21 +512,21 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         # falls to the lowest proceedings.id, the same default every other
         # metric's row-level tie uses.
         "sql": (
-            LEAD_PROCEEDING_CTE
+            SINGLE_VORGANG_CTE
             # MIN(item_index) makes SQLite take the bare columns (the receipt's agenda
             # item and its page) from the Vorgang's first agenda item in the protocol.
-            + "SELECT lp.proceeding_id AS id, lp.proceeding_id AS group_id, ai.id AS source_entity_id,\n"
+            + "SELECT sv.proceeding_id AS id, sv.proceeding_id AS group_id, ai.id AS source_entity_id,\n"
             "       MIN(ai.item_index) AS first_item_index,\n"
             "       COUNT(DISTINCT s.id) AS value,\n"
-            "       pr.title, pr.proceeding_type,\n"
+            "       sv.title, sv.proceeding_type,\n"
             "       ai.page_start AS page, ai.page_start_quadrant AS page_quadrant,\n"
             "       p.id AS protocol_id, p.document_number, p.pdf_url\n"
-            "FROM lead_position lp\n"
-            "JOIN agenda_items ai ON ai.id = lp.agenda_item_id\n"
+            "FROM single_vorgang sv\n"
+            "JOIN agenda_items ai ON ai.id = sv.agenda_item_id\n"
             "JOIN speeches s ON s.agenda_item_id = ai.id\n"
             "JOIN protocols p ON p.id = ai.protocol_id\n"
-            "JOIN proceedings pr ON pr.id = lp.proceeding_id\n"
-            "GROUP BY lp.proceeding_id, p.id"
+            "WHERE sv.title IS NOT NULL\n"
+            "GROUP BY sv.proceeding_id, p.id"
         ),
         "min_history_weeks": MIN_HISTORY_MONTHS,
         "tie_rank": 8,
@@ -514,7 +540,10 @@ MONTHLY_REGISTRY: tuple[dict[str, Any], ...] = (
         "receipt": "proceeding",
         "min_value": None,
         "requires_topic": False,
-        "caveat": None,
+        "caveat": (
+            "Reden einer verbundenen Beratung mehrerer Vorgänge zählen für keinen; ein "
+            "Entschließungsantrag zählt dabei nicht als weiterer Vorgang."
+        ),
     },
 )
 

@@ -346,6 +346,45 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual([row[0] for row in roster.execute("SELECT identity_key FROM person_records")], ["dip:dip-9"])
         self.assertIn("2 DIP persons with an MdB function have no id and were skipped", stderr.getvalue())
 
+    # Value: protects=the roster takes "MdB" as an exact funktion and never a Bundesrat member; fails_when=the substring test lets "MdBR"/"Stellv. MdBR" in again; why_new=on DIP WP 21 (2026-10-30) the substring test listed 151 Bundesrat members, 740 listed instead of 589; seam=none
+    def test_only_mdbs_enter_the_roster(self):
+        def person(pid, name, funktion, fraktion=()):
+            first, last = name.split()
+            return {"id": pid, "titel": name, "vorname": first, "nachname": last, "fraktion": list(fraktion),
+                    "funktion": [funktion], "wahlperiode": [21]}
+        client = mock.Mock()
+        client.list_all.return_value = [
+            person("dip-1", "Ada Example", "MdB", fraktion=["SPD"]),
+            person("dip-2", "Bea Land", "MdBR"),
+            person("dip-3", "Cem Land", "Stellv. MdBR"),
+            person("dip-4", "Dora Rat", "Bundesratspräs."),
+        ]
+        roster = self.open_store("roster.sqlite")
+        stats = build.ingest_mdb_roster(client, roster, wahlperioden=[21])
+        self.assertEqual((stats["fetched"], stats["mdb"]), (4, 1))
+        self.assertEqual([r[0] for r in roster.execute("SELECT dip_person_id FROM mps WHERE is_mdb = 1")], ["dip-1"])
+
+    # Value: protects=a Personenseite takes its Sprechrollen from Reden and Beiträge, and records a Mandat only for a Rede or Beitrag that counts for a Zusammenschluss (ADR 0001: none in a Sprechrolle) or a namentliche Abstimmung; fails_when=Beiträge are ignored again, or a Rede in a Sprechrolle that also names a Fraktion reads as a Mandat; why_new=review 2026-10-30: a Parl. Staatssekretär who only answers in the Fragestunde showed Sprechrolle "—"; seam=none
+    def test_redner_details_come_from_reden_and_beitraege(self):
+        r = report("s1", names=("Ada Example",))
+        minister = {"display_name": "Bea Minister", "xml_redner_id": "77", "fraktion": "SPD",
+                    "role": "Bundesministerin für Beispiele"}
+        r["agenda_items"][0]["xml_speakers"].append(
+            {"rede_id": "s1-r9", "speaker": minister, "char_count": 20, "text": "Eine Regierungsrede."})
+        r["agenda_items"].append({"index": 2, "heading": "Fragestunde", "xml_speakers": [], "xml_contributions": [
+            {"kind": "fragestunde_antwort", "sequence": 1, "rede_id": "s1-a1", "char_count": 10, "text": "Antwort.",
+             "speaker": {"display_name": "Cem Antwort", "xml_redner_id": "78", "role": "Parl. Staatssekretär bei der Bundesministerin für Beispiele"}},
+        ]})
+        self.rebuild([r], preserve_roster=False)
+        with sqlite3.connect(self.db) as conn:
+            conn.row_factory = sqlite3.Row
+            mps, _ = build.collect_abgeordnete(conn)
+        by_name = {mp["name"]: mp for mp in mps}
+        self.assertEqual(by_name["Bea Minister"]["sprechrollen"], ["Bundesregierung"])
+        self.assertFalse(by_name["Bea Minister"]["mandat_in_protocols"])  # her Rede counts for the Bundesregierung
+        self.assertEqual(by_name["Cem Antwort"]["sprechrollen"], ["Bundesregierung"])
+        self.assertTrue(by_name["Ada Example"]["mandat_in_protocols"])
+
     # Value: protects=a preserved roster row without a DIP id is skipped with a warning on the next rebuild instead of becoming a name-party record; fails_when=the preserved-roster replay persists it under mp_identity(display_name, party); why_new=third ship round (4): the preserved path built the identity from name and party; seam=none
     def test_a_preserved_roster_row_without_a_dip_id_is_skipped_with_a_warning(self):
         def ingest(staged):

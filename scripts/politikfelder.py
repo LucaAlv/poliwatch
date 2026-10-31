@@ -250,22 +250,7 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
             "Fix: restore read access or restore the cache; the file is untouched"
         ) from exc
     except (ValueError, KeyError, TypeError, RecursionError) as exc:
-        note = "left in place"
-        for directory in (registry.private_dir(path), path.parent):
-            kept = None
-            try:
-                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
-                    kept = Path(handle.name)
-                path.replace(kept)
-                note = f"moved to {kept}"
-                break
-            except OSError:
-                if kept is not None:
-                    try:
-                        kept.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+        note = preserve_corrupt(path)
         print(
             f"warning: unreadable {path}: {exc} ({note}); Politikfelder fall back to not_fetched "
             "until an online build refills it.",
@@ -293,6 +278,27 @@ def load_cache(output_dir: Path | str) -> dict[str, Any]:
     return {"version": 1, "vorgaenge": vorgaenge, "dokumentnummern": canonical}
 
 
+def preserve_corrupt(path: Path) -> str:
+    """Move a corrupt cache file out of the way to a uniquely named ``.corrupt``
+    file, preferably in the private directory, so a later save cannot overwrite
+    what it held. Returns a note for the warning."""
+    for directory in (registry.private_dir(path), path.parent):
+        kept = None
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=directory, prefix=path.name + ".", suffix=".corrupt", delete=False) as handle:
+                kept = Path(handle.name)
+            path.replace(kept)
+            return f"moved to {kept}"
+        except OSError:
+            if kept is not None:
+                try:
+                    kept.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    return "left in place"
+
+
 #: Age after which a temporary cache file in the private directory counts as a
 #: killed save's leftover (a full save takes well under a second).
 STALE_TEMP_SECONDS = 3600
@@ -303,7 +309,16 @@ def cache_path(output_dir: Path | str) -> Path:
 
 
 def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
-    """Write the cache atomically. The temporary file is staged in the private
+    """Write the cache atomically (``write_atomic``). Only the Vorgang cache's own
+    keys are written: the Drucksache texts that ride along in memory
+    (``antrag_text.CACHE_NAMESPACE``) have their own file."""
+    own = {key: cache[key] for key in ("version", "vorgaenge", "dokumentnummern") if key in cache}
+    text = json.dumps(own, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
+    write_atomic(cache_path(output_dir), text.encode("utf-8"))
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically. The temporary file is staged in the private
     directory beside the published tree (``person_registry.private_dir``), so a
     killed build leaves nothing half-written in ``data/``. Only when that
     directory cannot be made or written (a read-only parent of OUTPUT, a directory
@@ -311,7 +326,6 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
     atomic, is it staged next to the cache. A temporary file a killed save left in
     either place is removed once it is older than STALE_TEMP_SECONDS (a younger one
     may be a running build's)."""
-    path = cache_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     candidates = [path.parent]
     try:
@@ -329,19 +343,18 @@ def save_cache(output_dir: Path | str, cache: Mapping[str, Any]) -> None:
                     stale.unlink(missing_ok=True)
             except OSError:
                 pass  # another build's save took it first
-    text = json.dumps(cache, ensure_ascii=False, sort_keys=True, indent=1) + "\n"
     for staging in candidates:
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
+                "wb", dir=staging, prefix=f".{path.name}.", suffix=".tmp", delete=False
             ) as handle:
                 temporary = Path(handle.name)
-                handle.write(text)
+                handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
                 try:
-                    temporary.chmod(0o644)  # the published cache is world-readable
+                    temporary.chmod(0o644)  # the published caches are world-readable
                 except OSError:
                     pass
             temporary.replace(path)

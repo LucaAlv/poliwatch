@@ -195,29 +195,38 @@ def seed_weeks(
                         # way meistdiskutierter-vorgang sums a proceeding's
                         # speeches across every protocol it recurs in that
                         # month; the default is unique per item, as before.
-                        proceeding_id = item.get("proceeding_id") or f"{protocol_id}-v{item_index}"
+                        # "more_proceedings" adds further (id, title) positions to
+                        # the item (a verbundene Beratung); "mitberaten" the twins
+                        # DIP lists on the first position.
+                        positions = [(
+                            item.get("proceeding_id") or f"{protocol_id}-v{item_index}",
+                            item["proceeding_title"],
+                        ), *item.get("more_proceedings", ())]
                         proceeding_type = item.get("proceeding_type", "Gesetzgebung")
-                        conn.execute(
-                            "INSERT OR IGNORE INTO proceedings(id, title, proceeding_type, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            (proceeding_id, item["proceeding_title"], proceeding_type, now, now),
-                        )
-                        conn.execute(
-                            """
-                            INSERT INTO proceeding_positions(id, proceeding_id, agenda_item_id,
-                                                             proceeding_type, title, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                str(900000 + index * 100 + item_index),
-                                proceeding_id,
-                                agenda_item_id,
-                                proceeding_type,
-                                item["proceeding_title"],
-                                now,
-                                now,
-                            ),
-                        )
+                        for offset, (proceeding_id, title) in enumerate(positions):
+                            conn.execute(
+                                "INSERT OR IGNORE INTO proceedings(id, title, proceeding_type, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?)",
+                                (proceeding_id, title, proceeding_type, now, now),
+                            )
+                            conn.execute(
+                                """
+                                INSERT INTO proceeding_positions(id, proceeding_id, agenda_item_id,
+                                                                 proceeding_type, title, mitberaten_json,
+                                                                 created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    str(9000000 + index * 10000 + item_index * 10 + offset),
+                                    proceeding_id,
+                                    agenda_item_id,
+                                    proceeding_type,
+                                    title,
+                                    json.dumps(item.get("mitberaten", []) if offset == 0 else []),
+                                    now,
+                                    now,
+                                ),
+                            )
 
                 speaker = spec.get("speaker", DEFAULT_SPEAKER)
                 party = spec.get("party", DEFAULT_PARTY)

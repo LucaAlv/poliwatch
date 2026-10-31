@@ -5,12 +5,17 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
 import _support  # noqa: F401
+import antrag_text
 import build_dip_pulse_site as site
+import politikfelder
+import speech_kinds
 import validate_store_gate as gate
+from test_antrag_text import DEMANDS, OPENING, cache as antrag_cache, report as antrag_report
 
 
 def _store(path: Path, bindings: list[tuple[str, str]]) -> Path:
@@ -23,6 +28,46 @@ def _store(path: Path, bindings: list[tuple[str, str]]) -> Path:
     conn.commit()
     conn.close()
     return path
+
+
+class PersistOnlyAntragCacheTests(unittest.TestCase):
+    # Value: protects=the gate's fresh and half-store persistence keeps extracted Antrag passages and state; fails_when=persist_only omits the separate Drucksache text cache; why_new=the gate loader previously passed only the Vorgang cache; seam=none; no_claim=local fixture report and cache, no live DIP source
+    def test_persist_only_loads_antrag_cache_like_normal_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = antrag_report()
+            report["validation_summary"] = {"speech_kinds_version": speech_kinds.VERSION}
+            cache = antrag_cache()
+            outputs = [root / "gate", root / "normal"]
+            for output in outputs:
+                report_path, _, _ = site.report_paths(output, report["protocol"]["dokumentnummer"])
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(json.dumps(report), encoding="utf-8")
+                politikfelder.save_cache(output, cache)
+                antrag_text.save_cache(output, cache[antrag_text.CACHE_NAMESPACE])
+
+            gate.persist_only(outputs[0], "2024-05-15")
+            normal_cache = politikfelder.load_cache(outputs[1])
+            normal_cache[antrag_text.CACHE_NAMESPACE] = antrag_text.load_cache(outputs[1])
+            site.repersist_cached_reports(
+                outputs[1], outputs[1] / "data" / "bundestag-pulse.sqlite",
+                site.load_cached_protocols(outputs[1]), today=date(2024, 5, 15),
+                vorgang_cache=normal_cache,
+            )
+
+            def stored(output: Path) -> tuple[object, ...]:
+                with sqlite3.connect(output / "data" / "bundestag-pulse.sqlite") as conn:
+                    vote = conn.execute("SELECT passage_state FROM votes WHERE id='12345'").fetchone()
+                    passage = conn.execute(
+                        "SELECT d.document_number, d.forderung, d.forderung_state "
+                        "FROM vote_passages vp JOIN documents d ON d.id=vp.document_id "
+                        "WHERE vp.vote_id='12345'"
+                    ).fetchone()
+                return (vote[0] if vote else None, *(passage or (None, None, None)))
+
+            expected = ("extracted", "20/123", "\n\n".join((OPENING, *DEMANDS)), "extracted")
+            self.assertEqual(stored(outputs[0]), expected)
+            self.assertEqual(stored(outputs[0]), stored(outputs[1]))
 
 
 class GroupingFingerprintTest(unittest.TestCase):
