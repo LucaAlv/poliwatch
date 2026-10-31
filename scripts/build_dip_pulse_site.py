@@ -3266,6 +3266,8 @@ def _csv_cell_text(value: Any) -> str:
 # a bare "\r" stays unquoted (3.13 quotes it). A lone "\r" would read back as a
 # row break, so a row holding one is written here with the quoting rule 3.13
 # applies; every other row goes through csv.writer unchanged.
+# The hand quoting exists because csv.writer has no per-field way to force
+# quoting of one character; a QUOTE_ALL writer would change every cell of the row.
 def _write_csv_row(writer: Any, handle: Any, cells: list[str]) -> None:
     if not any("\r" in cell for cell in cells):
         writer.writerow(cells)
