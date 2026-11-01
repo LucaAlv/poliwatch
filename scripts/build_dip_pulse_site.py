@@ -3737,14 +3737,16 @@ def _read_codebook_inputs() -> CodebookInputs:
     for field, relative in CODEBOOK_INPUT_FILES.items():
         path = REPO_ROOT / relative
         try:
-            content = path.read_bytes()
+            # LF, as the commit holds it: a core.autocrlf=true checkout has CRLF
+            # here, and the release script hashes the committed blob.
+            content = path.read_bytes().replace(b"\r\n", b"\n")
             texts[field] = content.decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError(f"export: codebook input {path}: {exc}") from exc
         # An emptied document would drop its whole DATA.md section silently.
         if not texts[field].strip():
             raise RuntimeError(f"export: codebook input {path} is empty")
-        hashes[relative] = hashlib.sha256(content).hexdigest()
+        hashes[relative] = build_revision.text_sha256(content)
     return CodebookInputs(**texts, sha256=hashes)
 
 
@@ -13318,6 +13320,14 @@ def parse_args() -> argparse.Namespace:
     # The tag ends every export file name and is shown as "Release <tag>".
     if args.data_tag is not None and args.data_tag != "local" and not release_version.is_version(args.data_tag):
         parser.error(f"--data-tag {args.data_tag!r} is neither 'local' nor a release version (YYYY.MM.DD[.N]; scripts/publish_dip_pulse_data.sh --next-version)")
+    # A release tag means "export this release": without a store, or with
+    # another manifest rendered instead, nothing carries the tag, and an older
+    # release-tagged export left in OUTPUT_DIR would pass as this one.
+    if args.data_tag not in (None, "local"):
+        if args.no_persist:
+            parser.error(f"--data-tag {args.data_tag} exports a release from the store; it cannot be combined with --no-persist")
+        if args.data_manifest:
+            parser.error(f"--data-tag {args.data_tag} exports a release; it cannot be combined with --data-manifest, which skips the export")
     if args.force_export and args.no_persist:
         parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
     if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
@@ -13498,6 +13508,9 @@ def run_data_pipeline(
     manifest: dict[str, Any] | None = None
     data_export_error: str | None = None
     force_export = bool(getattr(args, "force_export", False))
+    tag = getattr(args, "data_tag", None) or "local"
+    if tag != "local" and manifest_raw:
+        raise RuntimeError(f"--data-tag {tag} exports a release, but $BUNDESTAG_PULSE_DATA_MANIFEST skips the export; unset it")
     # A --data-manifest override replaces whatever this build would export, so
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
@@ -13515,13 +13528,17 @@ def run_data_pipeline(
                 excluded_sittings=[entry["document_number"] for entry in load_coverage_exclusions(output_dir)],
                 license_text=license_text,
                 issues_url=issues_url,
-                tag=getattr(args, "data_tag", None) or "local",
+                tag=tag,
                 commit=resolve_commit(),
                 force=force_export,
             )
         except DataExportUnavailable as exc:
+            if tag != "local":
+                raise RuntimeError(f"release {tag} was not exported: {exc}") from exc
             data_export_error = str(exc)
             print(f"error: {exc}", file=sys.stderr)
+    elif tag != "local":
+        raise RuntimeError(f"release {tag} was not exported: there is no store at {database_path}")
 
     is_remote_manifest = False
     if manifest_raw:

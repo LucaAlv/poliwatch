@@ -228,6 +228,17 @@ class ParseArgsValidationTests(unittest.TestCase):
                     b.parse_args()
                 self.assertIn("--data-tag", err.getvalue())
 
+    # Value: protects=a release --data-tag cannot be combined with --no-persist or --data-manifest, which skip the export; fails_when=the build accepts them and exits 0 with no export carrying the tag; why_new=release item 10c (P1); seam=parse_args; no_claim=the local tag
+    def test_a_release_tag_refuses_the_flags_that_skip_the_export(self) -> None:
+        for extra in (["--no-persist"], ["--data-manifest", "elsewhere/datenstand.json"]):
+            argv = ["build", "--data-tag", "2026.11.01", *extra]
+            with self.subTest(extra=extra[0]), mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(SystemExit):
+                    b.parse_args()
+                self.assertIn(extra[0], err.getvalue())
+        with mock.patch.object(sys, "argv", ["build", "--data-tag", "local", "--no-persist"]), contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(b.parse_args().no_persist)
+
     def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
         with (
             mock.patch.object(sys, "argv", ["build", "--no-persist", "--data-base-url", "https://cdn.example/"]),
@@ -360,9 +371,30 @@ class RunDataPipelineTests(unittest.TestCase):
     def test_data_tag_becomes_the_export_tag_and_defaults_to_local(self) -> None:
         for given, expected in ((None, "local"), ("2026.11.01", "2026.11.01")):
             with self.subTest(tag=given), mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("stop")) as export_mock, mock.patch.object(b, "resolve_commit", return_value="0123456789ab"):
-                self._run(data_tag=given)
+                if given is None:
+                    self._run(data_tag=given)
+                else:
+                    with self.assertRaises(RuntimeError):
+                        self._run(data_tag=given)
             self.assertEqual(export_mock.call_args.kwargs["tag"], expected)
             self.assertEqual(export_mock.call_args.kwargs["commit"], "0123456789ab")
+
+    # Value: protects=a release --data-tag that exports nothing (store missing, old SQLite, a $BUNDESTAG_PULSE_DATA_MANIFEST override) stops the build instead of exiting 0 beside an older release-tagged export; fails_when=any of the three is reported as a warning and the build succeeds; why_new=release item 10c (P1), reachable once --publish opens; seam=run_data_pipeline; no_claim=the local tag (unchanged: a warning)
+    def test_a_release_tag_that_exports_nothing_stops_the_build(self) -> None:
+        missing_db = self.output_dir / "data" / "does-not-exist.sqlite"
+        with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: there is no store"):
+            b.run_data_pipeline(
+                args=_pipeline_args(data_tag="2026.11.01"), output_dir=self.output_dir, database_path=missing_db,
+                entries=[], protocols=[], abg_mps=self.mps, mp_lookup=self.lookup, catalog=None,
+            )
+        with mock.patch.object(b, "export_distribution_data", side_effect=b.DataExportUnavailable("SQLite too old")):
+            with self.assertRaisesRegex(RuntimeError, "release 2026.11.01 was not exported: SQLite too old"):
+                self._run(data_tag="2026.11.01")
+        override_path = self._override_manifest()
+        with mock.patch.dict(os.environ, {"BUNDESTAG_PULSE_DATA_MANIFEST": str(override_path)}), mock.patch.object(b, "export_distribution_data") as export_mock:
+            with self.assertRaisesRegex(RuntimeError, "BUNDESTAG_PULSE_DATA_MANIFEST"):
+                self._run(data_tag="2026.11.01")
+        export_mock.assert_not_called()
 
     def test_force_export_still_exports_under_a_data_manifest_override(self) -> None:
         override_path = self._override_manifest()

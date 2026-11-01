@@ -74,6 +74,22 @@ def _read_json(path: Path, what: str) -> Any:
         raise ReleaseError(f"cannot read {what} {path}: {exc}") from exc
 
 
+def previous_manifest_problem(previous: Any) -> str | None:
+    """Why a --previous-manifest cannot head the changelog, or None. Not the
+    site's validate_manifest: that refuses every export format but the current
+    one, and the release after a format bump is the one whose changelog must
+    report it. This checks the fields release_changes reads."""
+    if not isinstance(previous, dict):
+        return "is not a datenstand.json (a JSON object)"
+    problems = [f"missing {field}" for field in release_changes.SCHEMA_FIELDS if field not in previous]
+    for key, fields in (("protocols", ("count",)), ("votes", ("count", "members"))):
+        if not isinstance(previous.get(key), dict) or not all(field in previous[key] for field in fields):
+            problems.append(f"{key} needs {'/'.join(fields)}")
+    if type(previous.get("total_rows")) is not int:
+        problems.append("total_rows is not an integer")
+    return f"is not a usable datenstand.json: {'; '.join(problems)}" if problems else None
+
+
 def local_versions(repo_root: Path, run: Callable[..., Any]) -> set[str]:
     """Versions of the data-* tags this clone knows (a clone that has not fetched misses remote ones)."""
     result = run(["git", "tag", "--list", f"{release_version.TAG_PREFIX}*"], cwd=repo_root, env=build_revision.clean_env(), capture_output=True, text=True)
@@ -190,6 +206,11 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError("--exports-dir and --output-dir are required")
     if args.initial == bool(args.previous_manifest):
         raise ReleaseError("say which release this is: --initial (the first) or --previous-manifest <datenstand.json> (not both)")
+    # gh runs with cwd=repo_root and reads "path#label" as an asset label, so
+    # every path it is given must be absolute and free of "#".
+    args.exports_dir, args.output_dir = args.exports_dir.resolve(), args.output_dir.resolve()
+    if "#" in str(args.output_dir):
+        raise ReleaseError(f"--output-dir {args.output_dir} contains '#', which gh reads as an asset label separator; choose another directory")
     license_file = repo_root / LICENSE_FILE
     if args.publish and not license_file.is_file():
         raise ReleaseError(
@@ -216,9 +237,13 @@ def run_release(args: argparse.Namespace, *, repo_root: Path, run: Callable[...,
         raise ReleaseError(f"release {tag} already exists; releases are immutable, build a new version (--next-version)")
     if args.initial and known:
         raise ReleaseError(f"--initial, but data releases already exist ({', '.join(sorted(known, key=release_version.version_key))}); give --previous-manifest instead")
-    previous = _read_json(args.previous_manifest, "previous manifest") if args.previous_manifest else None
-    if previous is not None and not isinstance(previous, dict):
-        raise ReleaseError(f"the previous manifest {args.previous_manifest} is not a datenstand.json (a JSON object)")
+    previous = None
+    if args.previous_manifest:
+        # JSON null too: read as None it would label this release the first one.
+        previous = _read_json(args.previous_manifest, "previous manifest")
+        problem = previous_manifest_problem(previous)
+        if problem:
+            raise ReleaseError(f"the previous manifest {args.previous_manifest} {problem}")
     authored = release_changes.load_authored(args.changes) if args.changes else None
     changes = release_changes.assemble(version=version, released=today, manifest=manifest, previous_manifest=previous, authored=authored)
     release_dir = build_release_directory(

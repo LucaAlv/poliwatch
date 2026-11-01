@@ -142,10 +142,17 @@ def full_commit(repo_root: Path, commit: str) -> str | None:
     return full if re.fullmatch(r"[0-9a-f]{40}", full) else None
 
 
+def text_sha256(content: bytes) -> str:
+    """SHA-256 of an authored text file with CRLF read as LF. Under
+    ``core.autocrlf=true`` the working tree holds CRLF while the commit holds
+    LF, so the exporter and the release check both hash this form."""
+    return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def blob_sha256(repo_root: Path, commit: str, relative_path: str) -> str | None:
-    """SHA-256 of the file as ``commit`` holds it, or None when it holds none."""
+    """``text_sha256`` of the file as ``commit`` holds it, or None when it holds none."""
     try:
         content = _git(repo_root, "show", f"{commit}:{relative_path}", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
-    return hashlib.sha256(content).hexdigest()
+    return text_sha256(content)

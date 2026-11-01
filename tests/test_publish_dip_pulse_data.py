@@ -74,7 +74,7 @@ class Runner:
 class ReleaseTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.root = Path(tempfile.mkdtemp())
+        cls.root = Path(tempfile.mkdtemp()).resolve()
         cls.repo = cls.root / "repo"
         cls.repo.mkdir()
         git(cls.repo, "init", "-q")
@@ -105,7 +105,7 @@ class ReleaseTestCase(unittest.TestCase):
         shutil.rmtree(cls.root, ignore_errors=True)
 
     def setUp(self) -> None:
-        self.work = Path(tempfile.mkdtemp())
+        self.work = Path(tempfile.mkdtemp()).resolve()  # the script resolves its directories
         self.addCleanup(shutil.rmtree, self.work, ignore_errors=True)
         self.out = self.work / "out"
         self.exports_copy = self.work / "exports"
@@ -290,6 +290,13 @@ class RefusalTests(ReleaseTestCase):
         garbage.write_text("{nope", encoding="utf-8")
         not_an_object = self.work / "list.json"
         not_an_object.write_text("[1, 2]", encoding="utf-8")
+        # Item 10a: JSON null read as None labelled a follow-up release the first one.
+        null_previous = self.work / "null.json"
+        null_previous.write_text("null", encoding="utf-8")
+        number_previous = self.work / "number.json"
+        number_previous.write_text("7", encoding="utf-8")
+        shapeless_previous = self.work / "shapeless.json"
+        shapeless_previous.write_text(json.dumps({"tag": "2026.10.01", "protocols": [], "votes": {"count": 1}}), encoding="utf-8")
 
         def directory_in_place_of_a_file() -> None:
             listed = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -307,6 +314,9 @@ class RefusalTests(ReleaseTestCase):
             ("git tag listing fails", lambda: None, ["--initial"], "git tag --list failed", Runner(git_tag_fails=True), False),
             # /ship review 2026-10-31: these three ended in a traceback.
             ("previous manifest not an object", lambda: None, ["--previous-manifest", str(not_an_object)], "previous manifest", None, False),
+            ("previous manifest null", lambda: None, ["--previous-manifest", str(null_previous)], "is not a datenstand.json (a JSON object)", None, False),
+            ("previous manifest a number", lambda: None, ["--previous-manifest", str(number_previous)], "is not a datenstand.json (a JSON object)", None, False),
+            ("previous manifest without the changelog fields", lambda: None, ["--previous-manifest", str(shapeless_previous)], "missing export_format", None, False),
             ("a directory where a listed file belongs", directory_in_place_of_a_file, ["--initial"], "is not a regular file", None, False),
             ("git not installed", lambda: None, ["--initial"], "git", Runner(missing=("git",)), False),
         ]
@@ -340,6 +350,63 @@ class RefusalTests(ReleaseTestCase):
         code, _, stderr = self.run_script("--initial")
         self.assertEqual(code, 0, stderr)
         self.assertEqual([path.name for path in self.out.iterdir()], [f"data-{VERSION}"])
+
+
+    # Value: protects=relative --output-dir/--exports-dir run from outside the repository reach gh as absolute paths, and an output path with "#" is refused before anything is written; fails_when=gh (run with cwd=repo_root) is handed a relative asset path that resolves elsewhere, or "#" splits a path into an asset label; why_new=release item 10b (P1), reachable once --publish opens; seam=main from another cwd; no_claim=gh's own path handling (mocked)
+    def test_relative_directories_reach_gh_as_absolute_paths_and_a_hash_is_refused(self) -> None:
+        import os
+
+        previous_cwd = os.getcwd()
+        os.chdir(self.work)
+        self.addCleanup(os.chdir, previous_cwd)
+        argv = ["--exports-dir", "exports", "--output-dir", "out", "--base-url", BASE_URL, "--initial"]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = publish.main(argv, repo_root=self.repo, run=self.runner, today=TODAY)
+        self.assertEqual(code, 0, stderr.getvalue())
+        create = shlex.split(next(line for line in stdout.getvalue().splitlines() if line.startswith("gh release create")))
+        paths = create[4 : create.index("--title")] + [create[create.index("--notes-file") + 1]]
+        release = (self.work / "out" / f"data-{VERSION}").resolve()
+        for path in paths:
+            self.assertTrue(Path(path).is_absolute(), path)
+            self.assertTrue(Path(path).is_relative_to(release), path)
+        hashed = self.work / "rel#1"
+        argv = ["--exports-dir", str(self.exports_copy), "--output-dir", str(hashed), "--base-url", BASE_URL, "--initial"]
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            code = publish.main(argv, repo_root=self.repo, run=Runner(), today=TODAY)
+        self.assertEqual(code, 1)
+        self.assertIn("'#'", stderr.getvalue())
+        self.assertFalse(hashed.exists())
+
+
+class LineEndingTests(unittest.TestCase):
+    # Value: protects=a core.autocrlf=true checkout (CRLF working tree, LF commit) hashes its authored inputs exactly as the release script hashes the committed blobs; fails_when=the exporter hashes CRLF bytes, so a clean checkout builds an export the release script refuses as "differs from commit"; why_new=release item 10d (P1); seam=_read_codebook_inputs vs build_revision.blob_sha256; no_claim=other git filters (eol attributes, smudge)
+    def test_autocrlf_checkout_hashes_the_inputs_like_the_committed_blobs(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        repo = root / "repo"
+        repo.mkdir()
+        git(repo, "init", "-q")
+        git(repo, "config", "user.email", "t@example.org")
+        git(repo, "config", "user.name", "t")
+        git(repo, "config", "core.autocrlf", "true")
+        for relative in b.CODEBOOK_INPUT_FILES.values():
+            target = repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(b.REPO_ROOT / relative, target)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "inputs")
+        for relative in b.CODEBOOK_INPUT_FILES.values():
+            (repo / relative).unlink()
+        git(repo, "checkout", "--", ".")
+        head = git(repo, "rev-parse", "HEAD")
+        some = repo / b.CODEBOOK_INPUT_FILES["methods"]
+        self.assertIn(b"\r\n", some.read_bytes(), "the checkout must hold CRLF for this test to mean anything")
+        with mock.patch.object(b, "REPO_ROOT", repo):
+            inputs = b._read_codebook_inputs()
+        self.assertEqual(inputs.sha256, {relative: b.build_revision.blob_sha256(repo, head, relative) for relative in b.CODEBOOK_INPUT_FILES.values()})
+        self.assertNotIn("\r", inputs.methods)
 
 
 class PublishTests(ReleaseTestCase):
