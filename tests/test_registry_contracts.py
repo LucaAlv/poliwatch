@@ -194,6 +194,31 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
     #   fails_when=the roster union drops leavers or the former header says Fraktion (zuletzt);
     #   why_new=prior assertions checked membership and rows but not that header; seam=none;
     #   no_claim=source Fraktion history beyond stored rows
+    # Value: protects=a Wahlperiode in which DIP records only a Land-government office does not
+    # count as an MdB period (Scholz WP 18/19, Högl WP 21 on the A3 store); fails_when=the roster
+    # takes every period DIP lists a person under because the latest funktion is MdB; why_new=the
+    # union test's persons carry no person_roles; seam=none; no_claim=non-Land offices such as
+    # Wehrbeauftragte, which DIP gives no bundesland
+    def test_a_land_office_period_is_no_mdb_period(self):
+        land = {"funktionszusatz": "Erster Bürgermeister", "bundesland": "Hamburg", "wahlperiode_nummer": [18, 19]}
+        olaf = {"id": "dip-3", "titel": "Olaf Mayor", "vorname": "Olaf", "nachname": "Mayor", "fraktion": ["SPD"],
+                "funktion": ["MdB"], "wahlperiode": 21,
+                "person_roles": [land, {"fraktion": "SPD", "wahlperiode_nummer": [20]}]}
+        senator = {"id": "dip-4", "titel": "Eva Senator", "vorname": "Eva", "nachname": "Senator", "fraktion": ["SPD"],
+                   "funktion": ["MdB"], "wahlperiode": 21,
+                   "person_roles": [{"funktionszusatz": "Senatorin", "bundesland": "Bremen", "wahlperiode_nummer": [21]}]}
+        both = {"id": "dip-5", "titel": "Ben Both", "vorname": "Ben", "nachname": "Both", "fraktion": ["CDU/CSU"],
+                "funktion": ["MdB"], "wahlperiode": 19,
+                "person_roles": [{"bundesland": "Berlin", "wahlperiode_nummer": [19]},
+                                 {"fraktion": "CDU/CSU", "wahlperiode_nummer": [19]}]}
+        by_wahlperiode = {18: [olaf], 19: [olaf, both], 20: [olaf, senator], 21: [olaf, senator]}
+        client = mock.Mock()
+        client.list_all.side_effect = lambda _path, params: by_wahlperiode.get(params["f.wahlperiode"], [])
+        self.rebuild([report()], preserve_roster=False,
+                     roster_ingest=lambda staged: build.ingest_mdb_roster(client, staged, wahlperioden=[18, 19, 20, 21]))
+        roster = {m["dip_person_id"]: json.loads(m["wahlperiode"]) for m in self.rows("mps") if m["is_mdb"]}
+        self.assertEqual(roster, {"dip-3": [20, 21], "dip-4": [20], "dip-5": [19]})
+
     def test_the_roster_unions_its_wahlperioden_and_keeps_former_members(self):
         lea = {"id": "dip-1", "titel": "Lea Former", "vorname": "Lea", "nachname": "Former",
                "fraktion": ["FDP"], "funktion": ["MdB"], "wahlperiode": 18}

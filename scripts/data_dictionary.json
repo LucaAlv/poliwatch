@@ -739,7 +739,7 @@
         "wahlperiode": {
           "meaning": "Wahlperiodenangabe, der der Quellenpersonendatensatz zugeordnet ist.",
           "unit": "Liste der Wahlperiodennummern als Text, z. B. [19, 20, 21], oder NULL; keine einzelne Ganzzahl.",
-          "source": "Zeilen der Abgeordnetenliste: die Wahlperioden ab der 18., für deren DIP-Personenliste (Funktion MdB) die Person geladen wurde; andere Zeilen: das Wahlperiodenfeld des DIP-Personendatensatzes.",
+          "source": "Zeilen der Abgeordnetenliste: die Wahlperioden ab der 18., für deren DIP-Personenliste (Funktion MdB) die Person geladen wurde, ohne die, in denen DIP für sie nur ein Amt in einer Landesregierung führt; andere Zeilen: das Wahlperiodenfeld des DIP-Personendatensatzes.",
           "license": "dip"
         },
         "profile_url": {

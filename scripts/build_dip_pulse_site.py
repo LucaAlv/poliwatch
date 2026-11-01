@@ -93,7 +93,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable, Collection, Sequence
+from typing import Any, Callable, Collection, Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Sibling scripts, imported as plain modules (scripts/ is on sys.path when this
@@ -8378,6 +8378,27 @@ def write_bill_pages(
 # ---------------------------------------------------------------------------
 
 
+def land_office_wahlperioden(person: Mapping[str, Any]) -> set[int]:
+    """Wahlperioden in which DIP records the person only in a Land-government
+    office: a ``person_roles`` entry with a ``bundesland`` and no Fraktion, and no
+    Fraktion role in the same Wahlperiode. DIP lists a person under every
+    Wahlperiode of any office while ``funktion`` names only the latest one, so
+    Olaf Scholz (Erster Bürgermeister in Hamburg in WP 18/19) is listed for WP 18
+    with ``funktion`` MdB. A Land office excludes a Bundestag seat; a federal
+    minister's role has no ``bundesland`` and is left alone."""
+    land: set[int] = set()
+    fraktion: set[int] = set()
+    for role in person.get("person_roles") or []:
+        if not isinstance(role, Mapping):
+            continue
+        numbers = {int(n) for n in role.get("wahlperiode_nummer") or [] if str(n).isdigit()}
+        if role.get("fraktion"):
+            fraktion |= numbers
+        elif role.get("bundesland"):
+            land |= numbers
+    return land - fraktion
+
+
 def ingest_mdb_roster(
     client: dip.ApiClient,
     store: Any,
@@ -8406,6 +8427,8 @@ def ingest_mdb_roster(
             compact = dip.compact_person(person)
             funktion = compact.get("funktion") or []
             if not derive.is_mdb_funktion(funktion):
+                continue
+            if wahlperiode in land_office_wahlperioden(person):
                 continue
             if not canonical_dip_person_id(compact.get("id")):
                 # A DIP person is identified by its id alone; without one, every
