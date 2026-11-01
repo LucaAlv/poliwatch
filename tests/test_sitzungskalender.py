@@ -103,6 +103,7 @@ class ParseIcsTests(unittest.TestCase):
             event("2026-01-12", "20260117"),
             event("20260110", "20260112"),  # a Saturday
             event("20260117", "20260112"),  # ends before it starts
+            event("20260112", "00010101"),  # ends on date.min: no OverflowError past refresh_if_due
             event("20260112", "20260112"),
             event("20260112", "20260124"),  # two ISO weeks
         ):

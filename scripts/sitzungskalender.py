@@ -154,9 +154,9 @@ def _week_from_event(event: dict[str, str]) -> tuple[date, date]:
         raise CalendarParseError("Sitzungswoche event without DTSTART or DTEND")
     start = _ics_date(event["DTSTART"], "DTSTART")
     end = _ics_date(event["DTEND"], "DTEND")
-    last = end - timedelta(days=1)
     if end <= start:
         raise CalendarParseError(f"Sitzungswoche ends before it starts: {start} to {end}")
+    last = end - timedelta(days=1)
     if start.weekday() > 4:
         raise CalendarParseError(f"Sitzungswoche starts on a weekend: {start}")
     if start.isocalendar()[:2] != last.isocalendar()[:2]:
