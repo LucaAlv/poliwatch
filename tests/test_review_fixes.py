@@ -544,7 +544,7 @@ class PeriodBoundaryTests(StoreCase):
         self.assertIn("Datum laut DIP geändert", note)
 
     def test_the_facts_engine_uses_the_build_date_not_the_wall_clock(self) -> None:
-        args = SimpleNamespace(no_persist=False, vote_scan_pages=30, data_base_url=None, data_manifest=None,
+        args = SimpleNamespace(vote_scan_pages=30, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False,
                                today=facts.date(2026, 7, 1))
         self.seed(week_specs(3))

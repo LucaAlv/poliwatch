@@ -102,7 +102,6 @@ def build_demo(
     index_path = site.render_site(
         output_dir=output_dir,
         database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-        no_persist=True,
         protocols=[protocol],
         entries=[entry],
         abg_mps=[],

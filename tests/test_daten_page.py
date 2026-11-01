@@ -405,14 +405,15 @@ class DatenPageTests(unittest.TestCase):
 
 
 class DatenUnavailablePageTests(unittest.TestCase):
-    def test_no_persist_fallback_mentions_the_flag(self) -> None:
+    def test_default_fallback_says_no_export_ran_and_names_no_removed_flag(self) -> None:
         html = b.render_database_unavailable_page(all_selection())
-        self.assertIn("--no-persist", html)
+        self.assertIn("keine SQLite-Datei exportiert", html)
+        self.assertNotIn("--no-persist", html)
 
     def test_sqlite_too_old_reason_is_shown_instead_of_the_default(self) -> None:
         html = b.render_database_unavailable_page(all_selection(), reason="data export needs SQLite 3.35+ (found 3.30.0)")
         self.assertIn("SQLite 3.35", html)
-        self.assertNotIn("--no-persist</code> gerendert", html)
+        self.assertNotIn("keine SQLite-Datei exportiert", html)
 
 
 class RenderSiteDatenWiringTests(unittest.TestCase):
@@ -427,7 +428,6 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             b.render_site(
                 output_dir=output_dir,
                 database_path=database_path,
-                no_persist=False,
                 protocols=[],
                 entries=[],
                 abg_mps=[],
@@ -450,7 +450,7 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             (output_dir / "data").mkdir(parents=True)
             manifest, lookup = build_manifest(tmp_path)
             b.render_site(
-                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", no_persist=False, protocols=[], entries=[],
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", protocols=[], entries=[],
                 abg_mps=[], mp_lookup=lookup, manifest=manifest, data_base_url="https://cdn.example.net/releases/",
                 operator={"name": "Erika Muster", "email": "impressum@example.org"},
             )
@@ -465,14 +465,14 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
         self.assertIn('<a href="mailto:impressum@example.org">', impressum)
         self.assertNotIn('data-operator-missing="name"', impressum)
 
-    # Value: protects=a build without a manifest (--no-persist, a failed export) offers no downloads, so datenschutz.html names no download host even for a remote --data-base-url; fails_when=render_site hands the base to the privacy page unconditionally and it describes downloads that do not exist; why_new=/ship red-team review 2026-11-01, the manifest test above only covers a build with downloads; seam=render_site; no_claim=the Daten unavailable page's own text
+    # Value: protects=a build without a manifest (no store, a failed export) offers no downloads, so datenschutz.html names no download host even for a remote --data-base-url; fails_when=render_site hands the base to the privacy page unconditionally and it describes downloads that do not exist; why_new=/ship red-team review 2026-11-01, the manifest test above only covers a build with downloads; seam=render_site; no_claim=the Daten unavailable page's own text
     def test_without_a_manifest_the_privacy_page_names_no_download_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             output_dir = tmp_path / "site"
             (output_dir / "data").mkdir(parents=True)
             b.render_site(
-                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", no_persist=True, protocols=[], entries=[],
+                output_dir=output_dir, database_path=tmp_path / "pulse.sqlite", protocols=[], entries=[],
                 abg_mps=[], mp_lookup={}, manifest=None, data_base_url="https://cdn.example.net/releases/",
                 data_export_error="no store",
             )

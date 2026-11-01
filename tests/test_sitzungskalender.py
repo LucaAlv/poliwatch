@@ -498,7 +498,7 @@ class RenderSiteWiringTests(unittest.TestCase):
 
 
 class MainWiringTests(unittest.TestCase):
-    """Only an online build that persists may refresh the calendar."""
+    """Only an online build may refresh the calendar."""
 
     def _run(self, argv_extra: list[str], *, offline: bool) -> tuple[mock.MagicMock, Path]:
         entry = page_tests.SittingWeekComparisonTests._entry(
@@ -515,7 +515,7 @@ class MainWiringTests(unittest.TestCase):
             ]
             if offline:
                 args = SimpleNamespace(
-                    output_dir=output_dir, database_path=None, offline=True, no_persist=False, week=None, today=date(2026, 9, 15)
+                    output_dir=output_dir, database_path=None, offline=True, week=None, today=date(2026, 9, 15)
                 )
                 patches += [
                     mock.patch.object(build_dip_pulse_site, "parse_args", return_value=args),
@@ -539,6 +539,7 @@ class MainWiringTests(unittest.TestCase):
                     mock.patch.object(build_dip_pulse_site, "rebuild_database_from_entries", return_value=SimpleNamespace(facts_report={})),
                     mock.patch.object(build_dip_pulse_site.facts, "open_readonly"),
                     mock.patch.object(build_dip_pulse_site.pulse_store, "require_current_schema"),
+                    mock.patch.object(build_dip_pulse_site, "store_coverage_gap", return_value=None),
                     mock.patch.object(build_dip_pulse_site, "collect_abgeordnete", return_value=([], {})),
                     mock.patch.object(build_dip_pulse_site, "write_report_files", return_value=entry),
                 ]
@@ -550,13 +551,12 @@ class MainWiringTests(unittest.TestCase):
                 build_dip_pulse_site.main()
             return refresh_mock, output_dir
 
-    # Value: protects=--offline and an online --no-persist build never reach bundestag.de for the calendar; fails_when=either path calls refresh_if_due; why_new=the new hook sits in main(), and CI must stay off the network; seam=main; no_claim=the store pipeline (stubbed)
-    def test_offline_and_no_persist_never_refresh(self) -> None:
+    # Value: protects=--offline never reaches bundestag.de for the calendar; fails_when=the offline path calls refresh_if_due; why_new=the new hook sits in main(), and CI must stay off the network; seam=main; no_claim=the store pipeline (stubbed)
+    def test_offline_never_refreshes(self) -> None:
         self.assertEqual(self._run([], offline=True)[0].call_count, 0)
-        self.assertEqual(self._run(["--no-persist"], offline=False)[0].call_count, 0)
 
-    # Value: protects=an online build that persists refreshes the calendar exactly once, into the output directory; fails_when=the hook is removed, moved behind --no-persist's guard the wrong way or called twice; why_new=positive control for the negative test above, so it cannot pass because main() exits early; seam=main; no_claim=the store pipeline (stubbed)
-    def test_online_persisting_build_refreshes_once(self) -> None:
+    # Value: protects=an online build refreshes the calendar exactly once, into the output directory; fails_when=the hook is removed, moved behind the offline branch or called twice; why_new=positive control for the negative test above, so it cannot pass because main() exits early; seam=main; no_claim=the store pipeline (stubbed)
+    def test_online_build_refreshes_once(self) -> None:
         refresh_mock, output_dir = self._run([], offline=False)
         refresh_mock.assert_called_once_with(output_dir)
 
