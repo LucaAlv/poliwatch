@@ -1,0 +1,29 @@
+name: Fehler auf der Seite
+description: "Die Seite selbst funktioniert nicht: Darstellung, Links, Suche oder Bedienung."
+title: "Seitenfehler: "
+labels: ["needs-triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Stimmt eine Zahl oder ein Name nicht mit der Quelle überein, ist das ein Datenfehler: [Formular „Datenfehler"](https://github.com/LucaAlv/poliwatch/issues/new?template=datenfehler.yml).
+        Bitte nur Daten, Methode und Code, keine Bewertung von Parteien oder Personen: [Regeln für Beiträge](https://github.com/LucaAlv/poliwatch/blob/main/CODE_OF_CONDUCT.md).
+        Bestätigte Fehler werden korrigiert und das Issue geschlossen; eine persönliche Antwort ist nicht garantiert.
+  - type: input
+    id: seite
+    attributes:
+      label: Seite
+      description: Adresse aus der Adresszeile des Browsers.
+    validations:
+      required: true
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: Was passiert, und was wäre richtig?
+    validations:
+      required: true
+  - type: input
+    id: umgebung
+    attributes:
+      label: Browser und Gerät (optional)
+      placeholder: z. B. Firefox 132, Android

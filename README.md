@@ -432,6 +432,12 @@ Calling the builder directly instead of the preview script keeps the deploy buil
 
 Note that `data/` ships alongside the pages and contains the cached DIP JSON and the SQLite store — that is intentional (the database explorer and dev views read them), but it means the whole cache becomes public.
 
+`feeds/` ships beside the pages as well and is the stable place for machine-readable output of the week radar:
+
+- `feeds/week-radar.json` is written on every build: the newest 12 weeks with a Sitzung (the shown week and the 11 before it), newest first, with the ranked rows, the Redeanteil as `fraktion`/`sprechrolle` counts, and links relative to the site root. `sprechrolle` holds the release's codes (`bundesregierung`, `bundesrat`, `weitere`, as in `speeches.sprechrolle`), for example `{"fraktion": null, "sprechrolle": "bundesregierung", "speech_count": 3}`. A Rede in a Sprechrolle is counted on that side only, so a row need not equal `GROUP BY fraktion, sprechrolle` on the release (the store also tags some role speeches with the speaker's fraktion). Schema 1: fields are only added; a rename or removal raises `schema_version`.
+- `feeds/week-radar.xml` (RSS 2.0, one item per finished week, GUID like `2026-W43`) needs absolute links, so it is written only when `BUNDESTAG_PULSE_SITE_URL` is set to an absolute `https://` URL ending in `/` (for example `https://example.org/puls/`). Without it, or with an invalid value, the build writes no feed and deletes an older one, so a stale feed is never deployed.
+- `data/sitzungskalender.json` caches the Bundestag's planned Sitzungswochen for the "Nächste Sitzungswoche" line of `puls.html`. An online build that persists refreshes it when it is more than 7 days old, and from October on daily until next year's calendar is listed (one request for the calendar page and one per `.ics` file) and never fails because of it: an error leaves the old cache in place with a warning. `--offline` and `--no-persist` never fetch. Without the file the line is left out.
+
 ## 8. Troubleshooting
 
 | Symptom | Cause and fix |
@@ -477,3 +483,4 @@ A role no rule maps stops the persist step (`ERROR [sprechrolle]`), so a new tit
 - [docs/data-license.md](docs/data-license.md) — long-form licence/provenance notes for the published data, including which SQLite columns are DIP-sourced vs. derived.
 - [docs/data-changelog.md](docs/data-changelog.md) — format of the public per-release data changelog (`CHANGES.md`, `changes.json`) that `scripts/publish_dip_pulse_data.sh` writes. [CITATION.cff](CITATION.cff) — citation metadata (working title; no DOI or version yet).
 - [CHANGELOG.md](CHANGELOG.md) — release history. [TODOS.md](TODOS.md) — tracked follow-up work.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development checks and how to report errors; [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — rules for issues and pull requests; [SECURITY.md](SECURITY.md) — how to report a vulnerability privately.

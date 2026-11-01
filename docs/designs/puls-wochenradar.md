@@ -188,6 +188,21 @@ Page anatomy, top to bottom (wireframe: docs/designs/puls-wochenradar-sketch.png
    premise 2). Page actions: "Wochenvergleich", "Neuestes Protokoll". The old subtitle
    paragraph, the hero paragraph, the four fact tiles and the "Quellen" row are gone
    (raw XML/PDF/JSON links live on each dossier; the chips are the receipts).
+   **Amendment (batch 7): the "Nächste Sitzungswoche" line.** One more muted sentence
+   under the facts line, only when `data/sitzungskalender.json` holds a planned
+   Sitzungswoche from the shown week on (no cache: no line, no script, the page is
+   byte-identical). Date range first, KW in parentheses, one link to the Bundestag's
+   Sitzungskalender: "Nächste Sitzungswoche: 2.–6. November 2026 (KW 45), laut
+   Sitzungskalender", or "Sitzungswoche läuft: …" inside a planned week the page does not
+   show. Past the shown week, a second sentence counts the planned weeks the page has not
+   evaluated: "Seit KW 43 lagen laut Sitzungskalender 2 weitere Sitzungswochen; sie sind
+   hier noch nicht ausgewertet." The line is hidden when the shown week is the running
+   Sitzungswoche, and when no planned week ends on or after the reader's date (past the last
+   listed week). It is the one part of the header that follows
+   the reader's date (Europe/Berlin, a tiny inline script); the no-script text is computed
+   for the build date. Not amber and not a chip: the amber flag stays reserved for "Nicht
+   aktuell". The rest of the page keeps "Woche mit Sitzung"; "Sitzungswoche" is right here
+   because the calendar plans whole weeks, not sitting days. Code: `scripts/sitzungskalender.py`.
 3. **Themen der Woche** (full width). Eyebrow + h2 "Worüber am meisten gesprochen wurde"
    + one-line method note. Rows ranked by speech count across every sitting of the
    week, zero-speech and question-format TOPs excluded from the ranking; no rank

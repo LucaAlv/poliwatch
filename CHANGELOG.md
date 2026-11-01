@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0.0] - 2026-11-01
+
+### Added
+
+- **"Nächste Sitzungswoche" on puls.html.** The header names the next planned Sitzungswoche from the Bundestag's Sitzungskalender, for example "Nächste Sitzungswoche: 5.–9. Oktober 2026 (KW 41), laut Sitzungskalender". While a planned week is running it says "Sitzungswoche läuft". When planned weeks after the shown week have passed, it adds how many and that they are not evaluated yet. A small script picks the line for the reader's date (Europe/Berlin), and the build date's text is the fallback. The calendar is cached in `data/sitzungskalender.json`. An online build that persists refreshes it when it is more than 7 days old, and from October on daily until next year's calendar is listed. A failed fetch keeps the old cache with a warning. `--offline` and `--no-persist` never fetch, and without the cache puls.html is byte-identical to before.
+- **The week radar as data.** Every build writes `feeds/week-radar.json`, with the radar rows of the last 12 weeks with a Sitzung: titles, shares, the Redeanteil per Fraktion or Sprechrolle (with the release's codes) and links. With `BUNDESTAG_PULSE_SITE_URL` set (https, ending in `/`), it also writes `feeds/week-radar.xml`, an RSS feed with one item per finished week. Without it, an old RSS file is removed. The publication check scans both files.
+- **Reporting data errors.** Two GitHub issue forms ("Datenfehler" and "Fehler auf der Seite") apply triage labels, and blank issues are off. `SECURITY.md` explains how to report a vulnerability privately, and `CODE_OF_CONDUCT.md` sets short German conduct rules (no party politics, no disparaging statements about people). The Daten page footer link reads "Datenfehler melden (GitHub)". `docs/project-documentation.md` gives the form URL that pre-fills the page.
+
+### Changed
+
+- **Long "Worum es geht" lists fold.** A vote panel shows the first 3 Vorgang blocks and folds the rest behind "N weitere Vorgänge anzeigen" when 2 or more would be hidden. The note about a Vorgang whose record was not fetched stays outside the fold. The panel's three toggles show a ▸/▾ marker again. No current panel has more than 3 Vorgänge, so none changes.
+
+### Fixed
+
+- **A rebuild keeps the store's group.** A store chgrp'ed to the web server's group stayed readable only until the next rebuild or facts write. Now the staged copy gets the store's group before anything is persisted, and a group the builder cannot set stops the write with a message.
+- **The private staging directory is checked before it is used.** A symlink, a non-directory or a directory owned by another user is refused before anything is written or swept. A group-writable one is repaired to 0700. The sweep removes only this store's own staged copies, not a similarly named store's. A store in a `data` directory directly under the filesystem root keeps its private directory beside itself.
+- **Daten export CSV files are world-readable (0644).** They were written 0600, so a web server running as another user could not serve them.
+- **An abstract's script or style block is dropped even when its close tag lies past the 12,000-character window.** Before, its body could show as text in an over-long abstract. 0 of 8,737 cached abstracts change.
+
+### For contributors
+
+- The browser checks now cover the votes archive filter and the next-Sitzungswoche line (`node tests/run_bills_browser_check.mjs <python>`).
+
 ## [0.27.0.0] - 2026-11-01
 
 ### Added

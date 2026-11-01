@@ -169,6 +169,11 @@ ABWEICHLER_NONE = (
 )
 #: Names shown before the rest of a group's Abweichler fold away (D6).
 ABWEICHLER_INLINE = 10
+#: Vorgang blocks shown open under "Worum es geht"; the rest fold away (best first,
+#: the order of ``politikfelder.vote_vorgang_ids``). No reference vote has more
+#: than 3 (556 of 556 on a3/full), so this only guards the shape. The fold hides at
+#: least two blocks (``render_vote_context``): a fold of one saves no space.
+CONTEXT_INLINE = 3
 ABWEICHLER_GAP_HTML = f'<p class="vote-state-note vote-abweichler-gap">{html.esc(ABWEICHLER_GAP)}</p>'
 
 
@@ -382,9 +387,23 @@ def render_vote_context(
             else:
                 body = f'<p class="vote-context-teaser">{html.esc(teaser)}</p>'
         blocks.append(f'<div class="vote-context-block"><p class="vote-context-label">{label}</p>{body}</div>')
-    # A Vorgang without a record already says so in its own block; the note marks
-    # what no block shows, a number the cache cannot resolve (D7).
-    if vorgang_ids and state == "not_fetched" and all(vorgang_id in records for vorgang_id in vorgang_ids):
+    # Past the cap the blocks fold, unless the fold would hide a single block. The
+    # summary counts the hidden blocks and says nothing else about the Vorgänge.
+    folded_ids: list[str] = []
+    if len(vorgang_ids) > CONTEXT_INLINE + 1:
+        folded_ids = vorgang_ids[CONTEXT_INLINE:]
+        hidden = blocks[CONTEXT_INLINE:]
+        blocks = blocks[:CONTEXT_INLINE] + [
+            f'<details class="vote-context-overflow"><summary>{html.format_int(len(hidden))} weitere Vorgänge anzeigen</summary>'
+            f'{"".join(hidden)}</details>'
+        ]
+    # An open Vorgang without a record already says so in its own block. The note,
+    # outside the fold, marks what no open block shows: a number the cache cannot
+    # resolve (D7), or a folded block that has no record (DD3).
+    if vorgang_ids and state == "not_fetched" and (
+        all(vorgang_id in records for vorgang_id in vorgang_ids)
+        or any(vorgang_id not in records for vorgang_id in folded_ids)
+    ):
         blocks.append(f'<p class="vote-context-gap">{html.esc(CONTEXT_NOT_FETCHED)}</p>')
     return (
         '<div class="vote-context">'

@@ -117,6 +117,8 @@ import antrag_text
 import person_registry as registry
 import build_revision
 import release_version
+import sitzungskalender
+import week_radar_feed
 from stable_ids import (
     KEY_VERSION, canonical_dip_person_id, key_prefix, roster_occurrence_id, source_index, speech_occurrence_id,
     speech_rede_id,
@@ -1491,31 +1493,71 @@ def rebuild_database_from_entries(database_path, entries, *, preserve_roster=Tru
         raise DatabaseRebuildError(str(exc)) from exc
 
 
+#: A staged copy is mkstemp's ``<store>.<random>.tmp`` (the random part never
+#: holds a dot), plus SQLite's sidecars of a crashed run.
+def _is_staged_copy(store_name: str, candidate: str) -> bool:
+    return re.fullmatch(re.escape(store_name) + r"\.[^.]+\.tmp(?:-journal|-wal|-shm)?", candidate) is not None
+
+
+def _keep_store_group(temp_path: Path, database_path: Path) -> None:
+    """Give the staged copy the group of the store it will replace: a store
+    chgrp'ed to the web server's group stays readable to it. A first store keeps
+    the group it was created with."""
+    if not database_path.exists():
+        return
+    gid = database_path.stat().st_gid
+    if temp_path.stat().st_gid != gid:
+        try:
+            os.chown(temp_path, -1, gid)
+        except PermissionError as exc:
+            raise DatabaseRebuildError(
+                f"{database_path} belongs to group {gid}, which this user cannot give the rebuilt store; "
+                "add the builder to that group or chgrp the store, then rerun"
+            ) from exc
+
+
 def _staged_store_path(database_path: Path) -> Path:
     """A fresh staged file for a store, under the writer lock: in the store's
     private directory, never in the published tree (registry.private_dir), and on
-    the store's file system so the final rename is atomic."""
-    staging = registry.private_dir(database_path)
+    the store's file system so the final rename is atomic. It already has the
+    store's group, so a group that cannot be kept stops the write before any
+    persisting."""
+    staging = registry.ensure_private_dir(registry.private_dir(database_path))
     if staging.stat().st_dev != database_path.parent.stat().st_dev:
         raise DatabaseRebuildError(
-            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically"
+            f"{staging} is on another file system than {database_path}; the staged store could not replace it atomically "
+            "(OUTPUT's parent must be on the store's file system; an OUTPUT that is a mount point is not supported yet, "
+            "docs/stable-ids.md)"
         )
     # Only the lock holder is here, so a staged copy that is still lying around
     # is from a crashed run; it holds full speech text, so it must not pile up.
-    # (the ``.tmp*`` pattern also takes a crashed build's -journal/-wal/-shm sidecars)
+    # Only this store's own names go: the private directory is shared by every
+    # store in OUTPUT/data/, and a prefix-named sibling's copy or lock is not ours.
     name = database_path.resolve().name
-    for stale in staging.glob(f"{glob.escape(name)}.*.tmp*"):
-        stale.unlink(missing_ok=True)
+    for stale in staging.iterdir():
+        if _is_staged_copy(name, stale.name):
+            stale.unlink(missing_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=staging)
     os.close(fd)
+    try:
+        _keep_store_group(Path(temporary), database_path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
     return Path(temporary)
 
 
 def _replace_store(database_path: Path, temp_path: Path) -> None:
-    """Swap a staged store in; the store keeps the file mode it had (mkstemp
-    makes the staged copy private)."""
-    os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
-    temp_path.replace(database_path)
+    """Swap a staged store in; the store keeps the file mode and group it had
+    (mkstemp makes the staged copy private). A failed swap removes the staged
+    copy."""
+    try:
+        _keep_store_group(temp_path, database_path)
+        os.chmod(temp_path, stat_module.S_IMODE(database_path.stat().st_mode) if database_path.exists() else 0o644)
+        temp_path.replace(database_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 def _rebuild_database_from_entries(
@@ -3558,7 +3600,8 @@ def export_work_dir(exports_dir: Path) -> Path:
 
 @contextlib.contextmanager
 def _export_lock(work_dir: Path):
-    work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    registry.ensure_private_dir(work_dir.parent)
+    registry.ensure_private_dir(work_dir)
     lock_path = work_dir / ".lock"
     fd = None
     for attempt in range(2):
@@ -3647,6 +3690,7 @@ def _write_csv(conn: sqlite3.Connection, table: str, columns: list[dict[str, Any
 
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp")
     tmp_path = Path(tmp_name)
+    os.fchmod(fd, 0o644)  # published files are world-readable; mkstemp makes them 0600
     row_count = 0
     replacements = 0
     try:
@@ -5191,7 +5235,7 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
         {relationships_block}
       </section>
       <footer>
-        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Fragen und Fehler</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
+        Diese Seite ist statisch aus der Verteilkopie der SQLite-Datenbank erzeugt. Sie führt keine SQL-Abfragen im Browser aus. <a href="sources.html">Quellen und Methode</a> · <a href="index.html">Start</a>{f' · <a href="{pulse_html.esc(safe_issues_url(manifest.get("issues_url")))}">Datenfehler melden (GitHub)</a>' if safe_issues_url(manifest.get("issues_url")) else ''}
       </footer>
     </main>
   </div>
@@ -6580,6 +6624,7 @@ def render_front_page(
     today: date | datetime | None = None,
     week: tuple[int, int] | None = None,
     vorgang_cache: dict[str, Any] | None = None,
+    sitzungskalender_cache: dict[str, Any] | None = None,
 ) -> str:
     features = features or publication_selection()
     today = resolve_today(today)
@@ -6654,6 +6699,14 @@ def render_front_page(
             f'<p class="week-note">{pulse_html.format_count(len(undated), "neuere Sitzung", "neuere Sitzungen")} '
             "ohne Datum nicht ber&uuml;cksichtigt</p>"
         )
+    # The planned Sitzungswochen (data/sitzungskalender.json). Without a cache, or with
+    # no planned week from the shown week on, the line, its style and its script are
+    # all empty strings and the page is byte-identical to one built without them.
+    next_sitting_html = sitzungskalender.render_next_sitting(
+        sitzungskalender.page_weeks(sitzungskalender_cache, selected_week), shown_week=selected_week, today=today
+    )
+    next_sitting_css = sitzungskalender.NEXT_SITTING_STYLE if next_sitting_html else ""
+    next_sitting_script = sitzungskalender.NEXT_SITTING_SCRIPT if next_sitting_html else ""
     radar_html = render_radar_section(radar, stats, features, pdf_urls)
     week_compare_html = render_week_comparison_section(
         comparison, weeks, selected_week, current_stats=stats, features=features, returning=returning
@@ -7071,7 +7124,7 @@ def render_front_page(
     }}
     @media print {{
       .page-actions {{ display:none; }}
-    }}
+    }}{next_sitting_css}
   </style>
 </head>
 <body>
@@ -7082,7 +7135,7 @@ def render_front_page(
         <span class="eyebrow">{header["eyebrow"]}</span>
         <h1>{header["h1"]}</h1>{stale_flag}
         <nav class="week-chips" aria-label="Sitzungen dieser Woche">{render_sitting_chips(week_entries)}</nav>
-        <p class="week-facts">{header["facts"]}</p>{undated_note}
+        <p class="week-facts">{header["facts"]}</p>{undated_note}{next_sitting_html}
       </div>
       <nav class="page-actions" aria-label="Seitenaktionen">
         <a href="#wochenvergleich">Wochenvergleich</a>
@@ -7095,7 +7148,7 @@ def render_front_page(
       <span class="session-links"><a href="overview.html">Sitzungen</a><a href="bills/index.html">Gesetzesvorhaben</a><a href="abgeordnete/index.html">Abgeordnete</a><a href="sources.html">Quellen</a></span>
     </footer>
   </div>
-  {pulse_html.page_scripts(features)}
+  {pulse_html.page_scripts(features)}{next_sitting_script}
 </body>
 </html>
     """
@@ -12371,8 +12424,12 @@ def render_site(
         render_front_page(
             entries, database_href=database_href, features=features, today=today, week=week,
             vorgang_cache=vorgang_cache,
+            sitzungskalender_cache=sitzungskalender.load_cache(output_dir),
         ),
         encoding="utf-8",
+    )
+    week_radar_feed.write(
+        output_dir, entries, today=today, week=week, vorgang_cache=vorgang_cache, dossier_href_for=dossier_href
     )
     overview_path.write_text(
         render_overview(
@@ -12745,7 +12802,7 @@ def is_url(value: str) -> bool:
     return bool(re.match(r"^https?://", value))
 
 
-# The "Fragen und Fehler" footer link may come from a --data-manifest that
+# The "Datenfehler melden (GitHub)" footer link may come from a --data-manifest that
 # the operator fetched from elsewhere, so it gets the same scheme discipline
 # as --data-base-url: https://, http://, mailto: or a site-relative path.
 _ISSUES_URL_RE = re.compile(r"^(https?://|mailto:|/)")
@@ -13253,7 +13310,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-issues-url",
         default=None,
-        help="Optional URL for a 'Fragen und Fehler' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only.",
+        help="Optional URL for the 'Datenfehler melden' link on the Daten page (or $BUNDESTAG_PULSE_DATA_ISSUES_URL); https://, http://, mailto: or a leading / only. docs/project-documentation.md gives the GitHub form URL that pre-fills the page.",
     )
     args = parser.parse_args()
     if args.sleep is None:
@@ -14027,6 +14084,8 @@ def main() -> int:
     # site around the dossiers.
     if not args.no_persist and database_path.exists():
         log_politikfelder_summary(database_path, vorgang_cache)
+    if not args.no_persist:
+        sitzungskalender.refresh_if_due(output_dir)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,

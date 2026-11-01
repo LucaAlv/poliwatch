@@ -363,7 +363,7 @@ DENYLIST = {
 
 def validate_public_output(root: Path) -> list[str]:
     """Return presentation-surface findings for a completed ordinary build: the
-    HTML, three presentation JSON files, and the export's DATA.md and datenstand.json."""
+    HTML, the presentation JSON files and week-radar feeds, and the export's DATA.md and datenstand.json."""
     findings: list[str] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():
@@ -373,6 +373,8 @@ def validate_public_output(root: Path) -> list[str]:
             "data/features.json",
             "data/bills.json",
             "data/abgeordnete.json",
+            "feeds/week-radar.json",
+            "feeds/week-radar.xml",
         }
         # The export's authored codebook and manifest are public text too; the
         # CSV and SQLite files are data, not authored prose.
