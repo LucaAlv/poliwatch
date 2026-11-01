@@ -389,11 +389,12 @@ class BackfillSelectionTests(unittest.TestCase):
             write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES))
             write_cached(output_dir, report_for(2))
             catalog = [catalog_protocol("21/2", "pp-2", "2026-06-12"), catalog_protocol("21/1", "pp-1", "2026-06-11")]
-            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir),
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
                     "--backfill-incomplete", "--no-votes"]
             with (
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
                 mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
                 mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
                 mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
@@ -424,11 +425,12 @@ class BackfillSelectionTests(unittest.TestCase):
                 catalog_protocol("21/2", "pp-2", "2026-06-12"),
                 catalog_protocol("21/1", "pp-1", "2026-06-11"),
             ]
-            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir),
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
                     "--backfill-incomplete", "--detail-limit", "1"]
             with (
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
                 mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
                 mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
                 mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
@@ -442,10 +444,11 @@ class BackfillSelectionTests(unittest.TestCase):
         self.assertIn("1 not acquirable yet (DIP has no XML): 21/3", stderr.getvalue())
 
     def run_backfill_main(self, output_dir: Path, catalog: list[dict], *extra: str):
-        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir), *extra]
+        argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir), *extra]
         with (
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(build, "fetch_protocols", return_value=catalog),
+            mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
             mock.patch.object(build, "build_dossiers_with_progress", return_value=[]) as build_dossiers,
             mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
             mock.patch.object(build, "render_site", return_value=output_dir / "index.html"),
@@ -502,11 +505,12 @@ class BackfillSelectionTests(unittest.TestCase):
             for name in ("protocols", "data"):
                 (output_dir / name).mkdir(parents=True)
             write_cached(output_dir, report_for(1, acquisition=COMPLETE_VOTES, day="2026-06-11"))
-            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--no-persist", "--output-dir", str(output_dir),
+            argv = ["build", "--api-key", "k", "--no-abgeordnetenwatch", "--output-dir", str(output_dir),
                     "--backfill-incomplete"]
             with (
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(build, "fetch_protocols", return_value=catalog),
+                mock.patch.object(build, "refresh_vorgang_cache", return_value={}),  # never reach DIP from a test
                 mock.patch.object(build, "write_report_and_page", side_effect=fake_write),
                 mock.patch.object(build, "run_data_pipeline", return_value=(None, None, set(), "data/exports/", False)),
                 mock.patch.object(build, "render_site", return_value=output_dir / "index.html") as render,
@@ -561,6 +565,7 @@ class BackfillSelectionTests(unittest.TestCase):
                     mock.patch.object(build, "collect_abgeordnete", return_value=([], {})),
                     mock.patch.object(build.facts, "open_readonly"),
                     mock.patch.object(build.pulse_store, "require_current_schema"),
+                    mock.patch.object(build, "store_coverage_gap", return_value=None),  # the store is mocked out
                     mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
                     mock.patch.object(sys, "stdout", new_callable=io.StringIO),
                 ):
@@ -794,7 +799,7 @@ class IncompleteReportTests(StoreCase):
         self.assertNotIn("--enrich votes", on)
 
     def test_run_data_pipeline_passes_the_real_scan_setting_not_a_default(self) -> None:
-        args = SimpleNamespace(no_persist=False, vote_scan_pages=0, data_base_url=None, data_manifest=None,
+        args = SimpleNamespace(vote_scan_pages=0, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
         seeded = self.seed(week_specs(3))
         with (
@@ -812,7 +817,7 @@ class IncompleteReportTests(StoreCase):
 
     # Value: protects=a data pipeline handed the staged rebuild's facts report prints that report and does not run the facts engine again, even when the computed report is empty; only no report (None) computes it; fails_when=the hand-over check is dropped so every rebuild computes the facts twice (about 7 s on the reference store), or an empty result reads as "not computed"; why_new=the main()-level test mocks the whole pipeline; handoff 08 made None the only "not computed"; seam=none
     def test_run_data_pipeline_reuses_a_handed_over_facts_report(self) -> None:
-        args = SimpleNamespace(no_persist=False, vote_scan_pages=None, data_base_url=None, data_manifest=None,
+        args = SimpleNamespace(vote_scan_pages=None, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
         seeded = self.seed(week_specs(3))
         computed = {"incomplete_periods": [], "sitting_gaps": {}}
@@ -860,7 +865,7 @@ class IncompleteReportTests(StoreCase):
         report, catalog_protocols = self.report_for_week()
         entries = [{"report": {"protocol": {"dokumentnummer": n}, "validation_summary": {"xml_speech_count": 3},
                                "acquisition": {"votes": COMPLETE_VOTES}}} for n in self.seeded["completeness"]]
-        args = SimpleNamespace(no_persist=False, vote_scan_pages=None, data_base_url=None, data_manifest=None,
+        args = SimpleNamespace(vote_scan_pages=None, data_base_url=None, data_manifest=None,
                                data_license=None, data_issues_url=None, force_export=False)
         stderr = io.StringIO()
         listed = self.seeded["catalog_sittings"] + [{"document_number": "21/50", "date": "2025-02-12"}]
@@ -907,7 +912,7 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
                         "acquisition": {"votes": COMPLETE_VOTES}}}
             for n in seeded["completeness"]
         ]
-        build.write_facts_pages(output_dir, self.path, False, {}, set(seeded["completeness"]), set(), None, entries)
+        build.write_facts_pages(output_dir, self.path, {}, set(seeded["completeness"]), set(), None, entries)
         week = (output_dir / "fakt" / "2025-W07.html").read_text(encoding="utf-8")
         self.assertIn("unvollständig erfasst: Sitzung 21/50 (2025-02-12) fehlt", week)
         archive = (output_dir / "fakt" / "index.html").read_text(encoding="utf-8")
@@ -923,7 +928,7 @@ class WithheldCellNamesTheMissingSittingTests(StoreCase):
         )
         output_dir = Path(self.tmp.name) / "site2"
         output_dir.mkdir()
-        build.write_facts_pages(output_dir, self.path, False, {}, set(seeded["completeness"]), set(), None, [])
+        build.write_facts_pages(output_dir, self.path, {}, set(seeded["completeness"]), set(), None, [])
         week = (output_dir / "fakt" / "2025-W07.html").read_text(encoding="utf-8")
         self.assertIn("kein vollständiger DIP-Katalog zwischengespeichert", week)
 

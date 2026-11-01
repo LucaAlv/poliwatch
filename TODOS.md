@@ -339,6 +339,18 @@ Then decide what each kind is: Sitzungsleitung (excluded, like a nested presidiu
 **Priority:** P3
 **Depends on:** A4 slice 1
 
+### A malformed coverage-exclusions.json ends a build with a traceback
+
+**What:** `load_coverage_exclusions` raises a bare `RuntimeError` ("… has no exclusions list") for a record that is not `{"exclusions": [...]}`. Its callers do not catch it: the offline cached-report load (`without_recorded_exclusions`), `repersist_cached_reports`, the online `listed` set, and the A4 slice 0 coverage check. The build ends with a traceback instead of an error line naming the file and the fix (checklist class 9).
+
+**Why:** The record is hand-editable. A typo there should stop the build with a message, not a stack trace.
+
+**Context:** Found in the A4 slice 0 checklist pass (2026-11-01). It predates slice 0, which added only one more caller. Catch it once in `main` beside the other cached-input errors, or raise `CachedReportError` with a fix.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** none
+
 ## Protokoll-Dossier
 
 ### Dossier header: the "Drucksachen" card counts only XML-tagged Drucksachen, and WP 18 prints an empty "verteilt am"

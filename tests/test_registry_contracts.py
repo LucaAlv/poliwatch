@@ -1000,15 +1000,13 @@ class RegistryContractTests(RegistryFixture, unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertNotIn("Traceback", done.stderr)
         self.assertIn("Incomplete person registry", done.stderr)
-        # Value: protects=--offline on a store that is not a database exits 1 with an error line, and --offline --no-persist renders without reading the store at all; fails_when=the precheck lets sqlite3.Error escape as a traceback or runs although --no-persist never opens the store; why_new=only a damaged registry inside a valid database was tested; seam=none
+        # Value: protects=--offline on a store that is not a database exits 1 with an error line naming it; fails_when=the precheck lets sqlite3.Error escape as a traceback; why_new=only a damaged registry inside a valid database was tested; seam=none
         self.db.write_bytes(b"not a database, " * 64)
         script = [sys.executable, str(_support.ROOT / "scripts/build_dip_pulse_site.py"), "--offline", "--output-dir", str(site)]
         corrupt = subprocess.run(script, capture_output=True, text=True)
         self.assertEqual(corrupt.returncode, 1)
         self.assertNotIn("Traceback", corrupt.stderr)
-        rendered = subprocess.run([*script, "--no-persist"], capture_output=True, text=True)
-        self.assertEqual(rendered.returncode, 1, rendered.stderr)
-        self.assertIn("file is not a database", rendered.stderr)
+        self.assertIn("file is not a database", corrupt.stderr)
 
 
     # Value: protects=a durable alias whose survivor a name guess moved elsewhere still redirects to the current person's page; fails_when=aliases are resolved only through the durable chain so the retired key matches no page and its published file is deleted; why_new=the guess redirect test had no retired key behind the moved survivor; seam=none

@@ -39,7 +39,6 @@ def _pipeline_args(**overrides) -> SimpleNamespace:
         force_export=False,
         data_license=None,
         data_issues_url=None,
-        no_persist=False,
         offline=False,
     )
     base.update(overrides)
@@ -165,15 +164,16 @@ class LoadRemoteManifestTests(unittest.TestCase):
 
 
 class ParseArgsValidationTests(unittest.TestCase):
-    def test_force_export_with_no_persist_is_rejected(self) -> None:
+    # Value: protects=R1 (A4) removed --no-persist, since every page renders from a store; fails_when=the flag comes back and a run skips the store the pages read; seam=none
+    def test_no_persist_is_no_longer_an_option(self) -> None:
         with (
-            mock.patch.object(sys, "argv", ["build", "--force-export", "--no-persist"]),
+            mock.patch.object(sys, "argv", ["build", "--no-persist"]),
             mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
         ):
             with self.assertRaises(SystemExit) as ctx:
                 b.parse_args()
         self.assertEqual(ctx.exception.code, 2)
-        self.assertIn("--force-export cannot be combined with --no-persist", stderr.getvalue())
+        self.assertIn("unrecognized arguments: --no-persist", stderr.getvalue())
 
     # Value: protects=--fetch-xml downloads and exits, so it refuses --offline, --repersist and --backfill-incomplete with a parser error naming it, and alone it parses;
     #   fails_when=parse_args drops one of the three refusals (the run would silently ignore the other flag) or also refuses --fetch-xml alone;
@@ -228,15 +228,6 @@ class ParseArgsValidationTests(unittest.TestCase):
                     b.parse_args()
                 self.assertIn("--data-tag", err.getvalue())
 
-    def test_data_base_url_with_no_persist_warns_but_does_not_exit(self) -> None:
-        with (
-            mock.patch.object(sys, "argv", ["build", "--no-persist", "--data-base-url", "https://cdn.example/"]),
-            mock.patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
-        ):
-            args = b.parse_args()
-        self.assertEqual(args.data_base_url, "https://cdn.example/")
-        self.assertIn("warning: --data-base-url has no effect with --no-persist", stderr.getvalue())
-
 
 class RunDataPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -265,7 +256,7 @@ class RunDataPipelineTests(unittest.TestCase):
             catalog=None,
         )
 
-    def test_exports_when_the_store_exists_and_not_no_persist(self) -> None:
+    def test_exports_when_the_store_exists(self) -> None:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote = self._run()
         self.assertIsNotNone(manifest)
         self.assertIsNone(data_export_error)
@@ -289,32 +280,9 @@ class RunDataPipelineTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_no_persist_leaves_the_store_without_facts_tables(self) -> None:
-        # D3A: --no-persist writes nothing; the pages render whatever the store
-        # already holds, which here is nothing.
-        b.run_data_pipeline(
-            args=_pipeline_args(no_persist=True),
-            output_dir=self.output_dir,
-            database_path=self.database_path,
-            entries=[],
-            protocols=[],
-            abg_mps=self.mps,
-            mp_lookup=self.lookup,
-            catalog=None,
-        )
-        conn = pulse_store.connect(self.database_path)
-        try:
-            self.assertFalse(facts.tables_exist(conn))
-            self.assertEqual(facts.load_facts(conn), [])
-        finally:
-            conn.close()
-
-    def test_skips_export_when_no_persist_or_the_database_is_missing(self) -> None:
+    def test_skips_export_when_the_database_is_missing(self) -> None:
         missing_db = self.output_dir / "data" / "does-not-exist.sqlite"
         cases = {
-            "no_persist": dict(
-                args=_pipeline_args(no_persist=True), database_path=self.database_path
-            ),
             "missing_database": dict(args=_pipeline_args(), database_path=missing_db),
         }
         for label, kwargs in cases.items():
@@ -505,7 +473,6 @@ class RenderSiteUnavailablePageWiringTests(unittest.TestCase):
             b.render_site(
                 output_dir=output_dir,
                 database_path=output_dir / "data" / "bundestag-pulse.sqlite",
-                no_persist=True,
                 protocols=[],
                 entries=[],
                 abg_mps=[],

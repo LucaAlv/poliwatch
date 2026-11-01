@@ -9,7 +9,6 @@ class FactsComponent(BaseComponent):
         return ctx["write_facts_pages"](
             output_dir,
             ctx["database_path"],
-            ctx["no_persist"],
             ctx.get("mp_lookup"),
             ctx.get("document_numbers") or set(),
             ctx.get("bill_slugs") or set(),

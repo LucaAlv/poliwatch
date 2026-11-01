@@ -689,6 +689,58 @@ def without_recorded_exclusions(output_dir: Path, entries: list[dict[str, Any]])
     ]
 
 
+# R2 (A4): until every page reads the store, a build renders from the store and
+# the cached reports side by side, so both must hold the same sittings. An online
+# run writes report JSON before its staged rebuild, so a failed rebuild leaves a
+# report with no store row; require_current_speech_rules only sees sittings the
+# store already holds. Matched on the protocol id, the key persist and the
+# rebuild's missing-evidence check use.
+def store_coverage_gap(
+    store: sqlite3.Connection, entries: list[dict[str, Any]], *, excluded: Collection[str] = (), limit: int = 5
+) -> str | None:
+    """None when ``entries`` (the cached reports minus the ``excluded`` document
+    numbers, the recorded exclusions) and the store's ``protocols`` name the same
+    sittings; otherwise the refusal, naming up to ``limit`` sittings per case and
+    the repair. A stored sitting that is excluded is its own case: its exclusion
+    was recorded by a run whose rebuild then failed, and a repersist drops it."""
+    reported: dict[str, str] = {}
+    for entry in entries:
+        protocol = entry["report"].get("protocol") or {}
+        protocol_id = pulse_store.clean(protocol.get("id")) or ""
+        reported[protocol_id] = normalized_document_number(protocol.get("dokumentnummer")) or protocol_id
+    stored = {protocol_id: document_number for protocol_id, document_number in store.execute("SELECT id, document_number FROM protocols")}
+
+    def named(labels: list[str]) -> str:
+        shown = ", ".join(sorted(labels)[:limit])
+        return shown + (f" and {len(labels) - limit} more" if len(labels) > limit else "")
+
+    excluded_numbers = {normalized_document_number(number) for number in excluded}
+    not_stored = [reported[key] for key in reported.keys() - stored.keys()]
+    extra = [stored[key] for key in stored.keys() - reported.keys()]
+    still_stored = [number for number in extra if normalized_document_number(number) in excluded_numbers]
+    not_reported = [number for number in extra if normalized_document_number(number) not in excluded_numbers]
+    if not not_stored and not extra:
+        return None
+    parts = []
+    if not_stored:
+        parts.append(
+            f"{len(not_stored)} cached report(s) are not in the store ({named(not_stored)}). "
+            "Fix: run --offline --repersist to rebuild the store from the cached reports."
+        )
+    if not_reported:
+        parts.append(
+            f"{len(not_reported)} stored sitting(s) have no cached report ({named(not_reported)}). "
+            "Fix: restore their reports in OUTPUT_DIR/data (or exclude the sittings with --exclude-document-number "
+            "in an online run), then run --offline --repersist."
+        )
+    if still_stored:
+        parts.append(
+            f"{len(still_stored)} sitting(s) recorded as excluded are still in the store ({named(still_stored)}). "
+            "Fix: run --offline --repersist, which drops them from the store."
+        )
+    return "the store and the cached reports cover different sittings. " + " ".join(parts)
+
+
 def update_coverage_exclusions(
     output_dir: Path, excluded: list[dict[str, Any]], stored: list[dict[str, Any]], *, included: set[str] = frozenset()
 ) -> None:
@@ -5202,14 +5254,14 @@ speeches = pd.read_sql("SELECT * FROM speeches", conn)
 """
 
 
-# Fallback for database.html when there is no manifest to render from: either
-# the build ran with --no-persist, or the store exists but export_distribution_data
-# raised DataExportUnavailable (old SQLite) - `reason` carries which.
+# Fallback for database.html when there is no manifest to render from. In a
+# build (main) that means export_distribution_data raised DataExportUnavailable
+# (old SQLite), and `reason` names it; only a direct render_site call with no
+# store and no export reaches the default.
 def render_database_unavailable_page(features: Selection, *, reason: str | None = None) -> str:
-    body = (
-        reason
-        or "Dieser Build wurde mit <code>--no-persist</code> gerendert. Ohne SQLite-Datei stehen Downloads, "
-        "Datenstand und Rezepte in dieser Vorschau nicht zur Verfügung."
+    body = reason or (
+        "Dieser Build hat keine SQLite-Datei exportiert. Downloads, Datenstand und Rezepte "
+        "stehen deshalb nicht zur Verfügung."
     )
     return f"""<!doctype html>
 <html lang="de">
@@ -5237,7 +5289,6 @@ def render_database_unavailable_page(features: Selection, *, reason: str | None 
       <span class="eyebrow">Primärquellen</span>
       <h1>Daten nicht erzeugt</h1>
       <p>{body}</p>
-      <p>Erzeuge die Vorschau ohne <code>--no-persist</code>, um diese Seite zu füllen.</p>
     </main>
   </div>
   {pulse_html.page_scripts(features)}
@@ -10228,7 +10279,6 @@ def _facts_group_by_metric(
 def write_facts_pages(
     output_dir: Path,
     database_path: Path,
-    no_persist: bool,
     mp_lookup: dict[str, str] | None,
     document_numbers: set[str],
     bill_slugs: set[str],
@@ -10237,9 +10287,8 @@ def write_facts_pages(
 ) -> dict[str, Any]:
     """fakt/index.html, fakt/<period_key>.html, fakt/<period_key>-<metric>.svg
     and fakt/methodik.html. Reads the three tables scripts/facts.py persisted;
-    []/no rows when the store or its tables are missing (a fresh
-    --no-persist render - D3A), since facts.load_facts already returns []
-    rather than raising."""
+    []/no rows when the store or its tables are missing (D3A), since
+    facts.load_facts already returns [] rather than raising."""
     features = features or publication_selection()
     facts_dir = output_dir / "fakt"
     facts_dir.mkdir(parents=True, exist_ok=True)
@@ -10247,7 +10296,7 @@ def write_facts_pages(
 
     all_facts: list[dict[str, Any]] = []
     expected = {"index.html", "methodik.html"}
-    read_store = not no_persist and database_path.exists()
+    read_store = database_path.exists()
     coverage: str | None = None
     if read_store:
         conn = facts.open_readonly(database_path)
@@ -10317,8 +10366,8 @@ def write_facts_pages(
     # Only prune stale files when the store was actually read: `expected`
     # otherwise never grows past the two static names, and this loop would
     # delete every previously published page/card left over from a real
-    # build (a --no-persist dev render, or a build before the store exists,
-    # must never touch what an earlier build already published).
+    # build (a render_site call with no store file must never touch what an
+    # earlier build already published).
     if read_store:
         for stale in facts_dir.glob("*"):
             if stale.name not in expected:
@@ -12202,7 +12251,6 @@ def render_site(
     *,
     output_dir: Path,
     database_path: Path,
-    no_persist: bool,
     protocols: list[dict[str, Any]],
     entries: list[dict[str, Any]],
     abg_mps: list[dict[str, Any]],
@@ -12261,8 +12309,7 @@ def render_site(
 
     # The download link on every other page ("SQLite herunterladen") points at
     # the distribution copy named in the manifest, never at the build store
-    # itself - the export step is the only writer of a manifest, and it never
-    # runs under --no-persist.
+    # itself - the export step is the only writer of a manifest.
     database_href = None
     if manifest is not None:
         database_href = generation_file_href(manifest, data_base_url, manifest["files"][0]["name"])
@@ -12307,7 +12354,6 @@ def render_site(
         "write_abgeordnete_pages": write_abgeordnete_pages,
         "write_facts_pages": write_facts_pages,
         "database_path": database_path,
-        "no_persist": no_persist,
         "document_numbers": document_numbers,
         "bill_slugs": bill_slugs or set(),
         "vorgang_cache": vorgang_cache,
@@ -13053,11 +13099,6 @@ def parse_args() -> argparse.Namespace:
         help="SQLite graph store path. Defaults to OUTPUT_DIR/data/bundestag-pulse.sqlite.",
     )
     parser.add_argument(
-        "--no-persist",
-        action="store_true",
-        help="Skip writing the SQLite graph store.",
-    )
-    parser.add_argument(
         "--backfill-incomplete",
         action="store_true",
         help=(
@@ -13261,8 +13302,6 @@ def parse_args() -> argparse.Namespace:
     # The tag ends every export file name and is shown as "Release <tag>".
     if args.data_tag is not None and args.data_tag != "local" and not release_version.is_version(args.data_tag):
         parser.error(f"--data-tag {args.data_tag!r} is neither 'local' nor a release version (YYYY.MM.DD[.N]; scripts/publish_dip_pulse_data.sh --next-version)")
-    if args.force_export and args.no_persist:
-        parser.error("--force-export cannot be combined with --no-persist: there is no store to export")
     if args.vote_scan_pages is not None and args.vote_scan_pages < 0:
         parser.error("--vote-scan-pages must be 0 (off) or a positive number of list pages")
     if args.backfill_incomplete and args.document_number:
@@ -13272,8 +13311,6 @@ def parse_args() -> argparse.Namespace:
             "--repersist re-persists the cached reports and needs --offline; "
             "an online update already rebuilds the store from every cached report"
         )
-    if args.repersist and args.no_persist:
-        parser.error("--repersist writes the SQLite store; it cannot be combined with --no-persist")
     if args.backfill_incomplete and args.offline:
         parser.error("--backfill-incomplete needs the network: an --offline build acquires nothing")
     if args.include_document_number and (args.offline or args.fetch_xml):
@@ -13289,11 +13326,6 @@ def parse_args() -> argparse.Namespace:
         )
     if args.offline and args.data_manifest and is_url(args.data_manifest):
         parser.error(f"--offline cannot fetch --data-manifest {args.data_manifest} over the network; pass a local path")
-    if args.no_persist and args.data_base_url:
-        print(
-            "warning: --data-base-url has no effect with --no-persist (no store, no download links)",
-            file=sys.stderr,
-        )
     return args
 
 
@@ -13307,7 +13339,7 @@ def data_manifest_source(args: argparse.Namespace) -> str | None:
 # The one miss is an export that raises DataExportUnavailable (old SQLite);
 # database.html is then the fallback page, which says exactly that.
 def dossier_database_page_href(args: argparse.Namespace, database_path: Path) -> str | None:
-    if data_manifest_source(args) or (not args.no_persist and database_path.exists()):
+    if data_manifest_source(args) or database_path.exists():
         return "../database.html"
     return None
 
@@ -13394,7 +13426,7 @@ def _write_facts_staged(database_path: Path, snapshot: Mapping[str, list[list[An
         raise
 
 
-# Runs the export step (unless --no-persist, or the store does not exist) and
+# Runs the export step (unless the store does not exist) and
 # resolves which manifest the Daten page renders from: the manifest this build
 # just wrote, or an explicit --data-manifest override (local file or, outside
 # --offline, a URL). Bills are collected once here for the coverage numbers
@@ -13422,7 +13454,7 @@ def run_data_pipeline(
     # export copies and hashes. A rebuild in this build already computed them
     # for the same entries, catalog and date and hands over its report; only
     # ``None`` (no rebuild ran) computes them here.
-    if not args.no_persist and database_path.exists():
+    if database_path.exists():
         if facts_report is None:
             facts_report = run_facts_engine(
                 database_path,
@@ -13445,7 +13477,7 @@ def run_data_pipeline(
     # the export only runs when its result is used or explicitly forced.
     if manifest_raw and not force_export:
         print("export: skipped (--data-manifest overrides the manifest; pass --force-export to export anyway)", file=sys.stderr)
-    elif not args.no_persist and database_path.exists():
+    elif database_path.exists():
         exports_dir = output_dir / "data" / "exports"
         try:
             manifest = export_distribution_data(
@@ -13575,9 +13607,9 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    # Explicit replay upgrades an old schema. Store consumers, including
-    # no-persist rendering, require current persisted rules; an online rebuild
-    # can repair the rules from accepted source inputs.
+    # Explicit replay upgrades an old schema. Store consumers, including the
+    # offline render, require current persisted rules; an online rebuild can
+    # repair the rules from accepted source inputs.
     if not getattr(args, "repersist", False) and database_path.exists():
         previous = None
         try:
@@ -13585,7 +13617,7 @@ def main() -> int:
             # path fails here (or at the first query), not as a traceback.
             previous = facts.open_readonly(database_path)
             pulse_store.require_current_schema(previous)
-            if args.offline or args.no_persist:
+            if args.offline:
                 pulse_store.require_current_speech_rules(previous)
                 # The render applies the corrections file to the pages without a
                 # reconcile, so an applied partition missing from it stops here.
@@ -13651,29 +13683,6 @@ def main() -> int:
                 file=sys.stderr,
             )
 
-        abg_mps: list[dict[str, Any]] = []
-        mp_lookup: dict[str, str] = {}
-        # The MP pages are read out of the existing store; the roster fetch is
-        # skipped because it would need the network.
-        if not args.no_persist and database_path.exists():
-            # Read only: the published store is written by a staged rebuild alone.
-            store = facts.open_readonly(database_path)
-            try:
-                pulse_store.require_current_schema(store)
-                if "mp-pages" in features:
-                    component_context = {
-                        "selection": features,
-                        "collect_abgeordnete": collect_abgeordnete,
-                    }
-                    components["mp-pages"].after_persist(store, component_context)
-                    abg_mps = component_context["abg_mps"]
-                    mp_lookup = component_context["mp_lookup"]
-            finally:
-                store.close()
-
-        # --week must name a week with a cached dossier (the catalog lists every
-        # protocol back to 1949; only dossiers can be rendered). Check it before
-        # any dossier page is regenerated so a typo leaves the output untouched.
         if cached_entries is None:
             try:
                 cached_entries = without_recorded_exclusions(output_dir, load_existing_detail_entries(output_dir, protocols))
@@ -13681,8 +13690,43 @@ def main() -> int:
                 print(f"ERROR [cached input]: {exc}. {cached_report_fix(exc)}", file=sys.stderr)
                 return 1
             warn_unparsed_reports(cached_entries)
+        # --week must name a week with a cached dossier (the catalog lists every
+        # protocol back to 1949; only dossiers can be rendered). Check it before
+        # any dossier page is regenerated so a typo leaves the output untouched.
         if reject_unknown_week(pulse_week, [entry["report"].get("protocol") or {} for entry in cached_entries]):
             return 2
+        # F7 (A4): the pages read the store, so an offline render needs one;
+        # --repersist has just built it. Refused before anything is written.
+        if not database_path.exists():
+            print(
+                f"error: no store at {database_path}; the offline render reads it. "
+                "Fix: run --offline --repersist to build it from the cached reports, or an online update.",
+                file=sys.stderr,
+            )
+            return 1
+
+        abg_mps: list[dict[str, Any]] = []
+        mp_lookup: dict[str, str] = {}
+        # The MP pages are read out of the existing store; the roster fetch is
+        # skipped because it would need the network. Read only: the published
+        # store is written by a staged rebuild alone.
+        store = facts.open_readonly(database_path)
+        try:
+            pulse_store.require_current_schema(store)
+            coverage_gap = store_coverage_gap(store, cached_entries, excluded=recorded_exclusions(output_dir))
+            if coverage_gap:
+                print(f"error: {coverage_gap}", file=sys.stderr)
+                return 1
+            if "mp-pages" in features:
+                component_context = {
+                    "selection": features,
+                    "collect_abgeordnete": collect_abgeordnete,
+                }
+                components["mp-pages"].after_persist(store, component_context)
+                abg_mps = component_context["abg_mps"]
+                mp_lookup = component_context["mp_lookup"]
+        finally:
+            store.close()
 
         try:
             validate_cached_kinds(cached_entries)
@@ -13702,8 +13746,7 @@ def main() -> int:
             database_page_href=dossier_database_page_href(args, database_path),
             vorgang_cache=vorgang_cache,
         )
-        if not args.no_persist and database_path.exists():
-            log_politikfelder_summary(database_path, vorgang_cache)
+        log_politikfelder_summary(database_path, vorgang_cache)
         try:
             manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
                 args=args,
@@ -13727,7 +13770,6 @@ def main() -> int:
         index_path = render_site(
             output_dir=output_dir,
             database_path=database_path,
-            no_persist=args.no_persist,
             protocols=protocols,
             entries=entries,
             abg_mps=abg_mps,
@@ -13929,10 +13971,7 @@ def main() -> int:
             # one from its cached XML, and persist none that is still pre-A1.
             try:
                 reparse_cached_xml(output_dir, unparsed_reports(entries), profiles_from=entries)
-                if args.no_persist:
-                    warn_unparsed_reports(entries)
-                else:
-                    require_parsed_reports(entries)
+                require_parsed_reports(entries)
             except CachedReportError as exc:
                 print(
                     f"ERROR [persist]: {exc}. The previous store is untouched "
@@ -13948,61 +13987,66 @@ def main() -> int:
                 note=" (Dossiers wurden bereits geschrieben, puls.html nicht)",
             ):
                 return 2
-            if not args.no_persist:
-                refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
+            refresh_vorgang_cache(client, entries, vorgang_cache, output_dir)
 
-                roster_wahlperioden = roster_periods(args, protocols)
+            roster_wahlperioden = roster_periods(args, protocols)
 
-                def ingest_roster(staged: sqlite3.Connection) -> None:
-                    stats = ingest_mdb_roster(client, staged, wahlperioden=roster_wahlperioden, profile_resolver=profile_resolver)
-                    print(
-                        f"roster: {stats['mdb']} MdBs of {stats['fetched']} persons "
-                        f"(WP {', '.join(str(n) for n in roster_wahlperioden)}), {stats['enriched']} enriched",
-                        file=sys.stderr,
-                    )
+            def ingest_roster(staged: sqlite3.Connection) -> None:
+                stats = ingest_mdb_roster(client, staged, wahlperioden=roster_wahlperioden, profile_resolver=profile_resolver)
+                print(
+                    f"roster: {stats['mdb']} MdBs of {stats['fetched']} persons "
+                    f"(WP {', '.join(str(n) for n in roster_wahlperioden)}), {stats['enriched']} enriched",
+                    file=sys.stderr,
+                )
 
-                try:
-                    rebuilt_facts = rebuild_database_from_entries(
-                        database_path,
-                        entries,
-                        preserve_roster="mp-roster" not in enrichments,
-                        catalog=catalog,
-                        roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
-                        today=resolve_today(getattr(args, "today", None)),
-                        vorgang_cache=vorgang_cache,
-                        excluded_document_numbers=listed,
-                    ).facts_report
-                except derive.SprechrolleError as exc:
-                    print(exc, file=sys.stderr)
+            try:
+                rebuilt_facts = rebuild_database_from_entries(
+                    database_path,
+                    entries,
+                    preserve_roster="mp-roster" not in enrichments,
+                    catalog=catalog,
+                    roster_ingest=ingest_roster if "mp-roster" in enrichments else None,
+                    today=resolve_today(getattr(args, "today", None)),
+                    vorgang_cache=vorgang_cache,
+                    excluded_document_numbers=listed,
+                ).facts_report
+            except derive.SprechrolleError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            except DatabaseRebuildError as exc:
+                print(
+                    f"ERROR [rebuild]: {exc}. The previous store is untouched and nothing was persisted. "
+                    "Fix: resolve the cause named above (after a roster outage, re-run once the API answers).",
+                    file=sys.stderr,
+                )
+                return 1
+            # Read only: the published store is written by a staged rebuild alone.
+            store = facts.open_readonly(database_path)
+            try:
+                pulse_store.require_current_schema(store)
+                # The rebuild persisted exactly these entries; the check holds
+                # the same invariant the offline render refuses on.
+                coverage_gap = store_coverage_gap(store, entries, excluded=listed)
+                if coverage_gap:
+                    print(f"error: {coverage_gap}", file=sys.stderr)
                     return 1
-                except DatabaseRebuildError as exc:
-                    print(
-                        f"ERROR [rebuild]: {exc}. The previous store is untouched and nothing was persisted. "
-                        "Fix: resolve the cause named above (after a roster outage, re-run once the API answers).",
-                        file=sys.stderr,
-                    )
-                    return 1
-                # Read only: the published store is written by a staged rebuild alone.
-                store = facts.open_readonly(database_path)
-                try:
-                    pulse_store.require_current_schema(store)
-                    if "mp-pages" in features:
-                        abg_mps, mp_lookup = collect_abgeordnete(store)
-                finally:
-                    store.close()
-                database_page_href = dossier_database_page_href(args, database_path)
-                entries = [
-                    write_report_files(
-                        entry["report"],
-                        output_dir,
-                        mp_lookup,
-                        features,
-                        include_dev_view=args.include_dev_view,
-                        database_page_href=database_page_href,
-                        vorgang_cache=vorgang_cache,
-                    )
-                    for entry in entries
-                ]
+                if "mp-pages" in features:
+                    abg_mps, mp_lookup = collect_abgeordnete(store)
+            finally:
+                store.close()
+            database_page_href = dossier_database_page_href(args, database_path)
+            entries = [
+                write_report_files(
+                    entry["report"],
+                    output_dir,
+                    mp_lookup,
+                    features,
+                    include_dev_view=args.include_dev_view,
+                    database_page_href=database_page_href,
+                    vorgang_cache=vorgang_cache,
+                )
+                for entry in entries
+            ]
         # Always flush the profile cache and report resolver statistics, even
         # when the build failed partway through - the cache is what keeps the
         # next run from re-hitting the rate-limited API.
@@ -14025,8 +14069,7 @@ def main() -> int:
     write_classification_diagnostics(output_dir, entries)
     # Step 4: export the Daten distribution files, then render the rest of the
     # site around the dossiers.
-    if not args.no_persist and database_path.exists():
-        log_politikfelder_summary(database_path, vorgang_cache)
+    log_politikfelder_summary(database_path, vorgang_cache)
     try:
         manifest, data_export_error, bill_slugs, data_base_url, is_remote_manifest = run_data_pipeline(
             args=args,
@@ -14045,7 +14088,6 @@ def main() -> int:
     index_path = render_site(
         output_dir=output_dir,
         database_path=database_path,
-        no_persist=args.no_persist,
         protocols=protocols,
         entries=entries,
         abg_mps=abg_mps,

@@ -125,8 +125,8 @@ Sibling TODOs that a slice needs are listed under **Needs**. A slice may not sta
 
 | # | Slice | Needs | Store additions |
 | --- | --- | --- | --- |
-| 0 | Harness, PR 1, behaviour-neutral for pages: `--no-persist` removed (R1), temporary-store fixture for tests and demo, coverage refusal (R2), missing-store refusal (F7) | none | none |
-| 1 | Votes archive (`votes/index.html`), PR 2 | 0, and TODOS "Store loses roll-call member rows in 22 groups of 11 votes" (open, P2) as its own PR before the oracle run | Politikfeld state, `agenda_item_documents.url`, `vote_documents.rank`, `vote_fractions.rank`, missing vote totals as NULL (T1.2) |
+| 0 | Harness, PR 1, behaviour-neutral for pages: `--no-persist` removed (R1), temporary-store fixture for tests (the demo moved to slice 1, see "Slice 0 result"), coverage refusal (R2), missing-store refusal (F7) | none | none |
+| 1 | Votes archive (`votes/index.html`), PR 2 | 0; a demo fixture under the current speech rule (see "Slice 0 result"). The member-row loss is already fixed (#107, v0.21.0.0): 0 of 3,866 groups short on the repersisted A3 clone, 2026-11-01 | Politikfeld state, `agenda_item_documents.url`, `vote_documents.rank`, `vote_fractions.rank`, missing vote totals as NULL (T1.2) |
 | 2 | Catalog table: catalog page, overview, landing, facts' `SittingCatalog`, export `catalog_count`/`dossier_count`, coverage exclusions; extract the shared store reader | 0 | `sittings` (the DIP catalog incl. sittings without a dossier), `coverage_exclusions` |
 | 3 | Acquisition state: dossier vote-panel status copy, profile notice, facts gap notes (drop `completeness_from_entries`), publication manifest and `readiness` | TODOS "Typed completeness gaps", then "Persist per-sitting acquisition state (`protocol_acquisition`)", which this slice implements | `protocol_acquisition`, validation counts and warnings |
 | 4 | Dossier vote panels and the puls votes card; the single online dossier write (T0.3) | 1, 3 | `vote_heading`, member faction as printed |
@@ -184,9 +184,98 @@ PR 1 changes no page. Its own check: render the full site from one repersisted c
 - Write the exact commands into "Verification": the two clones, the repersist of A at the base commit and of B at the branch tip, and the `diff -ru`. Measure one repersist and replace D3's estimate.
 - Reuse the README "Validate a data correction" layout under `.context/`, or `~/agent-runs/a4/` if `.context` is short of space.
 
+## Slice 0 result (2026-11-01)
+
+Built on `claude/a4-todo-plan-3119e1` on top of 40fa3bc.
+
+**What landed**
+- **T0.4:** `--no-persist` is gone, with every `not no_persist` branch: `parse_args`, `run_data_pipeline`, `render_site`, `write_facts_pages`, `FactsComponent`, `main`. Also gone: `facts.compute_and_store(no_persist=)`, which had no caller left.
+  - An online run now always persists. Online `main()` tests patch `refresh_vorgang_cache`, so they never reach DIP, and run the real staged rebuild.
+  - The shared test builder `SittingWeekComparisonTests._entry` now carries a protocol id and `speech_kinds_version`, so a build can persist it.
+  - Docs: `docs/project-documentation.md` and the README, with the one-sitting preview pointing to the scratch-directory recipe.
+  - `database.html`'s fallback copy no longer names the flag. In a build, that fallback is now reached only through `DataExportUnavailable`.
+- **T0.1 / F7:** an `--offline` render with no store exits 1 with `error: no store at …; the offline render reads it`, naming `--offline --repersist`, before any page is written. The check runs after the read-only cached-report load and the `--week` check, so those refusals keep their order.
+  - Tests: a missing store; an offline render that leaves the store byte-identical.
+- **T0.5 / R2:** `store_coverage_gap` compares the cached entries (minus recorded exclusions) with the store's `protocols`.
+  - It matches on the protocol id, through `pulse_store.clean`, the key persist and the rebuild's missing-evidence check use.
+  - It runs offline before any page is written, and online after the staged rebuild.
+  - It names up to 5 sittings in each of three cases, each with its repair:
+    - a cached report the store does not hold: repersist;
+    - a stored sitting without a report: restore the report, or exclude the sitting;
+    - a sitting recorded as excluded that the store still holds: repersist. This is the case where `update_coverage_exclusions` ran and the online rebuild then failed.
+  - Tests: all three cases end to end, unit tests for the label limit and id matching, and a plain offline render with a pre-rule report, which warns and then refuses.
+  - The existing `--detail-limit 1` (`test_online_main_accepts_a_week_held_only_by_preserved_dossiers`) and `--document-number` (`test_backfill` `RetainedScopeTests`) main tests run the real rebuild and the real check, and pass (outside voice O4).
+- **T0.2:** `tests/_site_store_fixture.py` builds a store through `rebuild_database_from_entries`. It refuses an OUTPUT that is the temporary directory itself, so `.OUTPUT.private` cannot leak into `$TMPDIR`.
+  - **Path check:** the same 4 reports gave different results on the two paths, because bare persist does not reconcile persons.
+
+    | Path | `mp_lookup` keys | MPs |
+    | --- | --- | --- |
+    | bare `persist_report` | 18 | 6 |
+    | `rebuild_database_from_entries` | 28 | 3 |
+
+    The fixture therefore uses the rebuild path.
+  - Direct `render_site` tests stay store-less until T1.6. `render_site` does not open the store in slice 0, and with no store file they render exactly as `no_persist=True` did.
+
+**Deviation from R1 (owner to confirm): the demo is not yet built from a store.**
+- `tests/fixtures/demo-report-21-84.json` predates speech rule 6: no `speech_kinds_version`, no per-speech kinds. The rebuild refuses it, correctly.
+- Re-reading it from the real 21/84 XML fails ("agenda item set changed"), because the fixture holds a trimmed subset of TOPs.
+- Stamping the version onto it would publish old-rule counts as current.
+- So `build_demo_site.py` still renders store-less in PR 1, and a demo fixture rebuilt under the current rule is now a **Need** of slice 1. A store-reading archive breaks a store-less demo.
+
+**Measurements**
+
+| Measure | Value |
+| --- | --- |
+| Full suite at 40fa3bc (unloaded) | 151 s |
+| Full suite at the tip (unloaded) | 126 s, 1914 tests |
+| Suite on Python 3.13.12 (uv) | 1914 tests OK |
+| `--offline --repersist` with render and export, clone A (base) | 2,570 s |
+| The same, clone B (tip) | 1,600 s |
+
+Both timings cover repersist, render and export. B's 1,600 s matches the README's recorded 1,650 s for the same steps; A shared the machine with a test run and another session's repersist. They replace D3's 10-minute estimate: a repersist with render and export of the 716-sitting store takes about 27 minutes.
+
+**PR 1 oracle (D3):** two `cp -cR` clones of `~/agent-runs/a3/full`, A repersisted and rendered by 40fa3bc, B by the tip.
+- B passed the R2 check on the real data (716 protocols, the real exclusion record).
+- `diff -rq` shows 5 pages and 2 JSON files differing, plus the export generation directory. After the volatile tokens are normalised, every page and `data/features.json` is identical, except `database.html`'s sha256 and size lines for the export files. Those have the same cause as `datenstand.json` below. The tokens:
+  - the generation name `g-…`;
+  - wall-clock timestamps and the "Stand … MEZ" line;
+  - the build revision, which both sides resolve from this worktree's git, so it names no code.
+- All 37 export files have equal content once timestamps are normalised, except the hashes and byte sizes computed over the timestamped store and CSVs: `datenstand.json`, `DATA.md`'s file inventory, `datenstand-local.csv`.
+- `compare_store_values.py A B`: nothing moved. 0 protocols changed, 0 of 1,908 Fakt values moved, page counts equal.
+- Result: no page changed.
+
+**Recipe** (T0.6), from the repository root:
+
+```bash
+cp -cR ~/agent-runs/a3/full .context/a4/A && cp -cR ~/agent-runs/a3/full .context/a4/B
+mkdir -p .context/a4/src-base .context/a4/src-tip
+git archive <base> | tar -x -C .context/a4/src-base     # the tip: archive HEAD into src-tip, then apply `git diff`
+SOURCE_DATE_EPOCH=1793491200 python3 .context/a4/src-base/scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/a4/A
+SOURCE_DATE_EPOCH=1793491200 python3 .context/a4/src-tip/scripts/build_dip_pulse_site.py --offline --repersist --output-dir .context/a4/B
+diff -rq .context/a4/A .context/a4/B -x '*.sqlite' -x '*.sqlite.gz' -x '*.lock'
+python3 scripts/compare_store_values.py .context/a4/A .context/a4/B
+```
+
+Normalise `g-[0-9a-f]{12}`, ISO timestamps, the "Stand dd.mm.yyyy, hh:mm MEZ" line and the build revision on copies before the content diff. Compare the export CSVs gunzipped, with timestamps normalised. Slice 1 needs the same normalisation: wall-clock values differ between any two builds.
+
+**Review checklist** (`docs/agents/review-checklist.md`, full pass; the diff is over 200 lines):
+
+| Class | Answer |
+| --- | --- |
+| 1 Sibling path | F7 and R2 run on every path that renders from `main`. `--offline` runs both before any page write (B:`main`, after `reject_unknown_week`). `--offline --repersist` builds the store first, then runs the same checks. The online path runs R2 after `rebuild_database_from_entries`; F7 cannot fire there, because the rebuild creates the store. `--fetch-xml` and `--validate-publication` return before rendering. Direct `render_site` calls and `build_demo_site.py` stay store-less by design until slice 1. `scripts/preview_dip_pulse_site.sh` calls `main` and inherits both. |
+| 4 One key | `store_coverage_gap` keys on `pulse_store.clean(protocol.id)`, which `replace_protocol` writes as `protocols.id`. The rebuild's missing-evidence check uses the same key. Exclusions match on `normalized_document_number`, as `without_recorded_exclusions` and the rebuild do. |
+| 5 Absent vs zero | Empty store against no reports passes (unit test). A report with no id is keyed `""`, never matches a stored id, and is named by its document number. |
+| 9 Input shape | A malformed `coverage-exclusions.json` raises an uncaught `RuntimeError`. That predates this diff (`without_recorded_exclusions`, `repersist_cached_reports`, the online `listed` set) and is recorded in TODOS.md. |
+| 10 Interrupted run | No new writes. The fixture's staged stores live under a test's temporary directory. The fixture refuses an OUTPUT that is the temporary directory itself. |
+| 11 Claims | The README rows for both refusals cite `store_coverage_gap` and the F7 block, and say "no page is written" (the tests assert no `puls.html` and an empty `protocols/`). The `docs/project-documentation.md` store row matches `main`. The `database.html` fallback copy matches its only reachable cases. |
+| 13 Last commit | Owed at commit time. |
+| 2, 3, 6, 7, 8, 12 | Not touched: no merge, carry-forward, matcher, scanner, derived column or per-row loop. The coverage check is two set operations over 716 rows. |
+
+**CHANGELOG line for /gstack-ship:** "Removed `--no-persist`: every page renders from the SQLite store. To preview without touching the site you serve, build into a clone copy of the output directory (README 'Try a fetch or a backfill in a scratch directory'). An `--offline` render now refuses when there is no store, or when the store and the cached reports cover different sittings, and names the repair (`--offline --repersist`, or restoring a report). No page changed: the full-site diff against 40fa3bc is empty apart from timestamps."
+
 ## Slice 1: votes archive from the store (PR 2)
 
-Needs PR 1 and the lost member-row fix (its own PR, before the oracle run). `votes/index.html` reads no members except for the Abweichler count, no acquisition state, no committee and no lead.
+Needs PR 1 and a demo fixture under the current speech rule (Slice 0 result). The lost member-row fix is already in (#107); T1.1's count of short groups is expected to be 0. `votes/index.html` reads no members except for the Abweichler count, no acquisition state, no committee and no lead.
 
 **T1.1 Measure first** (one repersisted clone, before any code; record the numbers here):
 - Archive rows whose Politikfelder differ between `politikfelder.report_politikfelder(report, vorgang_cache)` and the stored `vote_politikfelder`.

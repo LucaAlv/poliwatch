@@ -371,14 +371,15 @@ class DatenPageTests(unittest.TestCase):
 
 
 class DatenUnavailablePageTests(unittest.TestCase):
-    def test_no_persist_fallback_mentions_the_flag(self) -> None:
+    def test_default_fallback_says_no_export_ran_and_names_no_removed_flag(self) -> None:
         html = b.render_database_unavailable_page(all_selection())
-        self.assertIn("--no-persist", html)
+        self.assertIn("keine SQLite-Datei exportiert", html)
+        self.assertNotIn("--no-persist", html)
 
     def test_sqlite_too_old_reason_is_shown_instead_of_the_default(self) -> None:
         html = b.render_database_unavailable_page(all_selection(), reason="data export needs SQLite 3.35+ (found 3.30.0)")
         self.assertIn("SQLite 3.35", html)
-        self.assertNotIn("--no-persist</code> gerendert", html)
+        self.assertNotIn("keine SQLite-Datei exportiert", html)
 
 
 class RenderSiteDatenWiringTests(unittest.TestCase):
@@ -393,7 +394,6 @@ class RenderSiteDatenWiringTests(unittest.TestCase):
             b.render_site(
                 output_dir=output_dir,
                 database_path=database_path,
-                no_persist=False,
                 protocols=[],
                 entries=[],
                 abg_mps=[],

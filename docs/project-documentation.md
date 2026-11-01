@@ -142,7 +142,7 @@ It creates these directories under the output directory:
 |-- settings.html
 |-- database.html
 |-- data/
-|   `-- exports/            # distribution SQLite + table/recipe CSVs + DATA.md + datenstand.json, unless --no-persist
+|   `-- exports/            # distribution SQLite + table/recipe CSVs + DATA.md + datenstand.json
 |-- protocols/
 |-- bills/                  # always published; honest empty state without matching data
 |-- votes/                  # votes/index.html: Abstimmungen archive across all built sittings; always published like bills/
@@ -160,7 +160,7 @@ Important generated files:
 | `api-sitzungen.html` | API/session catalog page |
 | `sources.html` | Sources/method page |
 | `settings.html` | Temporary `0.5.x` compatibility page explaining the fixed presentation |
-| `database.html` | "Daten" page: download panel, Datenstand, the executed SQL recipes, schema and foreign-key reference, or a clear `--no-persist`/SQLite-too-old explanation |
+| `database.html` | "Daten" page: download panel, Datenstand, the executed SQL recipes, schema and foreign-key reference, or a clear SQLite-too-old explanation |
 | `data/features.json` | Schema-v2 publication manifest with fixed presentation and acquisition states |
 | `data/plenarprotokoll-catalog.json` | The whole DIP protocol catalog as of the last online build (`{"authoritative": true, "fetched_at": …, "protocols": […]}`); completeness is judged against it, so only an online build writes it. A build fetches it in full (48 DIP requests) when it is missing or its last full fetch (`full_fetched_at`) is more than 7 days old; otherwise the closed Wahlperioden and the Sonderdrucke come from the cache and only the newest Wahlperiode (plus any closed one whose sittings still disagree on having XML) is fetched, and the merge is used only when it adds up to DIP's total count |
 | `data/plenarprotokoll-<slug>.json` | Cached enriched report for one protocol |
@@ -172,7 +172,7 @@ Important generated files:
 | `fakt/methodik.html` | Explains the publication rule: percentile floor, baseline, and why some periods post no fact |
 | `fakt/<period_key>.html` | One page per sitting week (`2026-W37`) or month (`2026-06`) that posted at least one fact |
 | `fakt/<period_key>-<metric_id>.svg` | One downloadable SVG card per publishable fact |
-| `data/bundestag-pulse.sqlite` | SQLite graph store, unless `--no-persist` is used |
+| `data/bundestag-pulse.sqlite` | SQLite graph store; an online update and `--offline --repersist` rebuild it, and every render reads it (an `--offline` render without a store refuses) |
 | `data/exports/datenstand.json` | Manifest the Daten page renders from: file sizes/checksums, Datenstand, coverage, schema data dictionary, executed recipe rows |
 | `data/exports/g-<hash>/` | One export generation's files (distribution `.sqlite.gz`, table `.csv.gz` extracts, six plain recipe `.csv` files and `DATA.md`); the previous generation is deleted only after `datenstand.json` switches to point at the new one |
 | `data/abgeordnetenwatch-cache.json` | Speaker/profile resolution cache |
@@ -268,13 +268,13 @@ SQLite persistence layer. It turns a validation report JSON into a linked entity
 
 MP source records are bound to persons by `person_registry` (`bind` per occurrence, `reconcile` per build): merges that rest on a shared DIP, Redner-ID or abgeordnetenwatch id and reviewed corrections are durable, guarded name+party matches are recomputed on every reconcile; see [stable-ids.md](stable-ids.md). This lets MP detail pages show speeches and roll-call vote participation even when abgeordnetenwatch resolution is disabled or unavailable, while rows with conflicting external IDs remain separate.
 
-It is a library: `build_dip_pulse_site.py` persists every report through its staged rebuild unless `--no-persist` is passed. Run as a script it refuses and names `--offline --repersist`, because a single report written into an existing store bypassed that rebuild.
+It is a library: `build_dip_pulse_site.py` persists every report through its staged rebuild. Run as a script it refuses and names `--offline --repersist`, because a single report written into an existing store bypassed that rebuild.
 
 `require_build_store(conn, db_path)` refuses an exported distribution copy (nonzero `user_version` or a `datenstand` table) as the build store. `connect`, the facts engine (`run_facts_engine`) and the staged rebuild (`_rebuild_database_from_entries`) call it before they compute into, stage from or replace a store.
 
 ### `scripts/facts.py`
 
-"Fakt der Woche": the metric registry (`laengste-rede`, `knappste-abstimmung`, `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden` per sitting week, plus `aktivste-abgeordnete` and `meistdiskutierter-vorgang` per month), the surprise rule as pure functions (percentile against a same-Wahlperiode baseline, falling back to all coverage below `min_history_weeks`), and the persistence engine. `compute_and_store()` runs on every build right before the Daten export, snapshots three tables — `fact_metrics`, `facts`, `fact_sources` — and writes only when they differ from what is already stored (`--no-persist` never writes). `build_dip_pulse_site.py` calls it, then `write_facts_pages()` renders `fakt/index.html`, `fakt/methodik.html`, and one `fakt/<period_key>.html` page plus one `fakt/<period_key>-<metric_id>.svg` card per publishable fact.
+"Fakt der Woche": the metric registry (`laengste-rede`, `knappste-abstimmung`, `laengste-debatte`, `laengste-sitzung`, `meiste-abweichler`, `erste-reden` per sitting week, plus `aktivste-abgeordnete` and `meistdiskutierter-vorgang` per month), the surprise rule as pure functions (percentile against a same-Wahlperiode baseline, falling back to all coverage below `min_history_weeks`), and the persistence engine. `compute_and_store()` runs on every build right before the Daten export, snapshots three tables — `fact_metrics`, `facts`, `fact_sources` — and writes only when they differ from what is already stored. `build_dip_pulse_site.py` calls it, then `write_facts_pages()` renders `fakt/index.html`, `fakt/methodik.html`, and one `fakt/<period_key>.html` page plus one `fakt/<period_key>-<metric_id>.svg` card per publishable fact.
 
 It also has a standalone read-only replay for evaluating the rule against a live store without writing to it, publishing pages, or touching the export:
 
@@ -425,7 +425,6 @@ Common options:
 | `--today YYYY-MM-DD` | `SOURCE_DATE_EPOCH` (UTC) or the current date | Build date: `puls.html` decides running vs. past week from it, states the age of an older week, and prints it as "Auswertung vom"; the homepage uses the same date to label its selected week |
 | `--week YYYY-WW` | newest dated week | ISO sitting week, validated against the archive; refused before any file is written when it is not among the cached dossiers (offline) or the dossiers this run builds or preserves (online); online, a week whose dossiers all fail to build stops the run after the dossiers, before `puls.html`. Both `puls.html` and the homepage use that week |
 | `--database-path PATH` | `OUTPUT_DIR/data/bundestag-pulse.sqlite` | SQLite output path. A downloaded distribution copy (an exported release SQLite, marked by a nonzero `user_version` or a `datenstand` table) is refused as the store before anything is computed, staged or replaced, and the file is left as it was |
-| `--no-persist` | off | Skip SQLite graph-store generation |
 | `--backfill-incomplete` | off | Acquire exactly the sittings the build reports as incomplete (missing, or votes/speeches not fully acquired); ignores `--limit` and `--detail-limit` but keeps `--protocol-wahlperiode`; not combinable with `--document-number`. Judged from the first sitting of Wahlperiode 18 (v1 coverage), prints the judged range and the selected sittings per Wahlperiode before acquiring, and by default waits 2 s between DIP requests and scans up to 200 roll-call pages. Every cached dossier is kept whatever an update acquires |
 | `--exclude-document-number NUM` | none | Keep this sitting out of the build whatever the parser says (repeatable) and record it in `data/coverage-exclusions.json`; add a number only after reading its rejection diagnostic. Any other rejected source still stops the build before the store is replaced |
 | `--include-document-number NUM` | none | Take this sitting off the exclusion record (repeatable; needs an online run) |
@@ -493,8 +492,10 @@ python3 scripts/build_dip_pulse_site.py --document-number 21/87 \
   --refresh-summaries \
   --summary-provider gemini
 
-# Rebuild the site without the SQLite graph store.
-python3 scripts/build_dip_pulse_site.py --document-number 21/87 --no-persist
+# Preview one sitting without touching the site you serve: build into a clone
+# copy of the output directory (README "Try a fetch or a backfill in a scratch directory").
+cp -cR .context/dip-pulse-site .context/scratch
+python3 scripts/build_dip_pulse_site.py --output-dir .context/scratch --document-number 21/87
 ```
 
 ### Validation/Debug Commands
