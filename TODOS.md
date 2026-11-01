@@ -488,6 +488,12 @@ Design doc: `docs/designs/fakt-der-woche.md` (office hours, 2026-09-19). The ses
   - The index links only 8 of them, down from 282.
   - 281 of the 302 are Bundesrat members. So the fix likely goes with "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
+**Re-measured on the merged tree, 2026-11-01** (09b7c5d, A3 plus main v0.26.0.0; complete gate, `all_passed`; "Gate on the merged tree" in the [Phase 4 record](docs/plans/a3-phase4.md)): unchanged.
+- Replayed 1,942 = fresh 1,942 on live bindings, the same fingerprint.
+- The replayed store has 2,244 persons.
+- 302 persons are retired-only, 289 of them with a page, 8 of those linked from the index.
+- 494 retired bindings (307 roster / 187 contribution).
+
 Decide whether retired-only persons render a page. Report persons and pages old/new.
 
 **Why:** 289 pages for persons with no live occurrence, reachable by URL.
@@ -537,6 +543,11 @@ Decide whether retired-only persons render a page. Report persons and pages old/
 **Why:** No page now calls them Abgeordnete (the Personenseite derives "Mitglied des Bundestages laut Plenarprotokoll" from Reden, not from `ever_mdb`), but the evidence says something false about 151 people and feeds identity decisions.
 
 **Context:** A.2 registry territory: needs a registry reviewer. Measure first how many person records carry `ever_mdb` with only Bundesrat funktion evidence on the reference store.
+
+**Measured on the A3 merged-tree gate store, 2026-11-01:**
+- `mps` rows with `is_mdb = 1`: 1,360. The 352 Bundesrat roster rows dropped on repersist.
+- The registry still holds 302 retired-only persons. 281 of them are Bundesrat members ("MdBR" in the display name), and 289 of the 302 render a page with no Reden and no votes. Only 8 are linked from the index.
+- These are the persons this evidence most likely keeps page-eligible. See "The carried-forward registry diverges from a fresh build after A3".
 
 **Effort:** S
 **Priority:** P3
@@ -735,7 +746,7 @@ Done when `grep -rn "steht noch aus"` over the generated site is empty and every
 ### Settle the roll-call source for redistribution
 
 **What:**
-- Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten.
+- Check whether the Plenarprotokoll's „Endgültiges Ergebnis" also lists non-voters, or only Ja/Nein/Enthalten. **Answered 2026-10-31:** 0 of the 232 „Endgültiges Ergebnis" blocks in the cached WP 20/21 protocol XML list non-voters, so only the XLSX roll-call lists carry them.
 - Ask parlamentsdokumentation@bundestag.de whether the roll-call XLSX lists may be redistributed.
 - If the answer is no, or only the XLSX carries the non-voters, source per-member votes from the protocol XML or from abgeordnetenwatch (CC0) instead.
 
@@ -921,7 +932,7 @@ Done when a vote on the archive can be found by topic and its panel answers "wha
 4. Tests: the "Hintergrund oder" row in `test_a_conjunction_glued_to_a_truncated_compound_is_not_quoted` cannot match the pattern (it has a space), so it proves nothing about real words; no boundary row for `_WHOLE_WORD_LENGTH` (4 vs 5 letters) or the other `_WORD_ENDINGS`; `test_engine_refuses_a_distribution_copy_and_leaves_it_untouched` imports shutil inside its loop.
 5. The comment "A word a line-end hyphen leaves standing" now sits above `_WORD_ENDINGS` instead of `_KEEPS_HYPHEN`, and the `_join` docstring has one over-long line.
 
-**P1 gate before the fallback runs on any Drucksache cache larger than the saved corpus (resumed /ship of v0.25.2.0, 2026-10-31).** Three review sources (red team, Codex adversarial, Claude adversarial) independently found inputs that would publish a wrong verbatim quote. All of them are synthetic: none occurs in the saved 91 documents, and the only cache on the machine (`.context/b4-local-20261029-163417/working/data/dip-drucksache-text-cache.json.gz`) holds those documents alone. The extractor widened in v0.25.2.0 exposes items 1-3 to more openings: Codex reproduced items 2 and 3 under the new „zum Schutz der … auf,“ opening, which the base refused. Before a larger cache (WP 21, A3 backfill) is extracted, fix these or measure them on that cache. Each new quote should be checked against `pdftotext -layout`, as in Run 4.
+**P1 gate before the fallback runs on any Drucksache cache larger than the saved corpus (resumed /ship of v0.25.2.0, 2026-10-31).** Three review sources (red team, Codex adversarial, Claude adversarial) independently found inputs that would publish a wrong verbatim quote. All of them are synthetic: none occurs in the saved 91 documents, and the only cache on the machine (`.context/b4-local-20261029-163417/working/data/dip-drucksache-text-cache.json.gz`) holds those documents alone. The extractor widened in v0.25.2.0 exposes items 1-3 to more openings: Codex reproduced items 2 and 3 under the new „zum Schutz der … auf,“ opening, which the base refused. Before a larger cache (WP 21, A3 backfill) is extracted, fix these or measure them on that cache. Each new quote should be checked against `pdftotext -layout`, as in Run 4. The A3 store (merged-tree gate, 2026-11-01) has no Drucksache text cache yet. 114 of its 619 votes are `not_fetched` (WP 19: 15, WP 20: 63, WP 21: 36) and 505 are `not_applicable`; no vote quotes a passage. That fill is the online build this gate guards.
 6. A lowercase line-end hyphen after a part the text never prints elsewhere joins silently (synthetic `türkisch-` + `syrischen` gives „türkischsyrischen“; `deutsch-` + `französischen` gives „deutschfranzösischen“). Absence from the lexicon proves nothing; candidate rule: refuse a 5+ letter adjective-suffix part (-isch, -lich, -ig) without lexicon support, then re-measure coverage.
 7. The dropped-bullet refusal in `_lines` fires only after a line ending in „.“ or „;“. Indented items ending in „,“ or „:“ are flattened into one sentence, and the first dropped bullet after „auf,“ is never caught. Fix: widen the predecessor test, or refuse on two or more indented non-item lines.
 8. Fail-closed coverage loss: a Vorabfassung watermark after a full stop leaves a leading space after `_WATERMARK.sub("\n", …)`. A line starting with NBSP does the same. The new dropped-bullet check then refuses a passage that extractor 7 quoted. Measured: 0 of 112 replayed texts change with the fix, and the cached texts contain no watermark. Fix before any WP 21 advance-copy cache: make the substitution swallow trailing `[ \t]*`.
@@ -1338,7 +1349,7 @@ Done 2026-10-30. The vote panel's lead sentence links "namentliche Abstimmung" t
 
 ### Call only current MdBs "Abgeordnete" on the Personenseiten
 
-Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix keeps its Bundesrat roster rows until the roster is fetched again (`--enrich mp-roster`); no migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
+Done 2026-10-30. The roster ingest decided "MdB" with `"mdb" in funktion.lower()`, which matched "MdBR" and "Stellv. MdBR": the Abgeordnete list held 151 Bundesrat members. `derive.is_mdb_funktion` takes "MdB" as an exact value; on DIP WP 21 (built store, sittings 21/87–21/103, 2026-10-30) the list goes from 740 to 589. A store built before the fix drops its Bundesrat roster rows on the next rebuild (`--offline --repersist` or an online build), because the carried-forward roster re-derives `is_mdb` from the stored function (A3 store, 2026-10-31: 1,712 → 1,360); only a build that does not rewrite the store still shows them. No migration path, per the pre-release rule. DIP has no Mandat end dates, so MdBs who left during the Wahlperiode stay listed; the intro says so instead of claiming "aktuell". A Person with Reden or Beiträge but no roster Mandat is a Redner: the eyebrow names the Sprechrollen of their Reden and Beiträge, and "Mitglied des Bundestages laut Plenarprotokoll" when a Rede or Beitrag counts for a Zusammenschluss (ADR 0001) or they cast a namentliche Abstimmung (not "früheres": MdBs in a government office are not in the roster yet, and a build without the roster has none). The Fraktion stays shown when the protocols record a Mandat; the index lists them under "Weitere Rednerinnen und Redner". A page kept only by registry evidence (no Rede, no Beitrag) reads "Keine Reden erfasst" and claims no Redner role. Left open: "List MdBs in a government office as Abgeordnete" and "Registry `ever_mdb` evidence still marks 151 Bundesrat members as former MdBs".
 
 ### "So arbeitet der Bundestag" explainer page
 

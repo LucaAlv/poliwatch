@@ -383,3 +383,73 @@ What each change does:
 - **Tools:**
   - count script: `~/agent-runs/a3/phase4/registry_counts.py`, read-only; it reproduces the Phase 4 figures 295 and 282 on `full`;
   - logs: `gate-tip-run.log` and `gate-tip-scratch/*.log`.
+
+## Gate on the merged tree, 2026-10-31/11-01 (no DIP, complete)
+
+`origin/main` at 265e407 (v0.26.0.0: #120, #121, #122, #123) was merged into the branch as 09b7c5d.
+- **Owner decisions at the merge:**
+  - recipe r3 groups per person, Wahlperiode and Fraktion;
+  - export format 11 (main's 10 is the codebook layout, 11 adds the recipes' `wahlperiode` column).
+- **Command:** `validate_store_gate.py ~/agent-runs/a3/phase4/gate-merged --receipt … --scratch … --today 2026-10-28`, run by `~/agent-runs/a3/phase4/gate-merged.sh`.
+  - The script is a copy of `gate-tip.sh`. Only the output, scratch, log and receipt names differ.
+  - It ran on a fresh APFS clone of `full`; `full` was not written.
+- **Receipt:** [a3-merged-gate.json](a3-merged-gate.json), with `$HOME` written as `~`.
+- **Result: `all_passed: true`.** All 11 checks pass.
+
+| Step | Result |
+|---|---|
+| `--offline --repersist` | exit 0, 716 reports, store replaced (3,640 s) |
+| integrity / foreign keys | ok / 0 |
+| fresh vs. half-then-full | identical fingerprint `f0c2d7d9…`, 1,942 persons, 523,968 bindings |
+| replayed vs. fresh, on the fresh store's bindings | **passes:** 1,942 = 1,942, the same fingerprint |
+| unchanged replay | exit 0, store kept (same sha256, size, mtime, inode) |
+| link audit | 8,970 pages, 874,930 links, 0 broken |
+| export | `g-b7fae38b7bfa`, format 11, 37 files match; 716 protocols, 619 votes, 425,322 vote members |
+| `--validate-publication` | passes |
+
+- **Timing:** 8,466 s in total (2 h 21 min). Largest process 4.8 GB maxrss.
+- **Disk:** 47 GB free at the start, 30 GB at the end. The watchdog never came near its 4 GB limit.
+
+### Against the tip table
+
+| Figure | Tip (2026-10-31) | Merged tree | |
+|---|---:|---:|---|
+| `replayed_store_groups_like_fresh` | passes: 1,942 = 1,942 | passes: 1,942 = 1,942 | same fingerprint `f0c2d7d9…` |
+| Persons, fresh store | 1,942 | 1,942 | |
+| Persons, replayed store | 2,244 | 2,244 | |
+| Bindings, fresh | 523,968 | 523,968 | |
+| Retired bindings (roster / contribution) | 494 (307 / 187) | 494 (307 / 187) | |
+| Persons holding only retired bindings | 302 | 302 | |
+| … of them with a rendered page | 289 | 289 | |
+| … of them linked from the Abgeordnete index | 8 | 8 | |
+| `mps` rows with `is_mdb = 1` | 1,360 | 1,360 | |
+| Index section "Frühere Abgeordnete" | 771 | 771 | |
+| Index links | 1,653 | 1,653 | |
+| Person pages (non-redirect) | 2,005 | 2,005 | |
+| Votes in the Abstimmungen archive | 619 | 619 | |
+| SQLite integrity / foreign-key violations | ok / 0 | ok / 0 | |
+
+**No tip figure moves.** main's merges from v0.24.1.0 to v0.26.0.0 leave identity, the roster and the vote archive as they were. Köstering/Krampe stays healed: `p-001037` holds 5 records, and the retired `dip:8054` sits alone. `registry_counts.py` reproduces every registry row.
+
+### Figures the tip did not record (against `full`, Phase 4)
+
+The tip gate stopped before the link audit and the export and recorded no Fakten, so these are compared with `full` as Phase 4 measured it.
+
+| Figure | `full` (Phase 4) | Merged tree | Why |
+|---|---:|---:|---|
+| Votes / vote members | 556 / 382,441 | 619 / 425,322 | The 63 roll-call votes that matched no TOP are now kept, through main's merges up to v0.23.7.0 (already at the tip: 619 in the archive). |
+| Documents | 20,557 | 20,596 | +39, all linked only to those 63 votes. |
+| Publishable Fakten | 529 | 530 | Metric version 3 of `meistdiskutierter-vorgang` (v0.24.1.0, in the branch since 7238045): a TOP counts only when it debates exactly one Vorgang. 44 monthly rows change value; 12 become publishable and 11 stop, mostly `below_floor` (e.g. 2025-03: 63 → 4 Reden under the one-Vorgang rule). No other metric moves; 35 more rows change only their percentile. |
+| Pages in the link audit | 6,750 | 8,970 | +2,219 redirect pages under `abgeordnete/` (4,443 against 2,224): every person rule C folded into another keeps its old URL as a redirect. +1 `bundestag.html`, from main. |
+| Export files | 29 | 37 | Format 10/11: 1 SQLite, 29 table CSVs, 6 recipe CSVs and `DATA.md` (#121). |
+| Recipes | pooled | per Wahlperiode | Format 11: every recipe carries `wahlperiode`. With `LIMIT 5` and the newest WP first, r1, r2, r3, r5 and r6 show WP 21; r4 ranks across all WPs, and its top row is 20/209 (348:344). |
+
+**Extractor 9 moves nothing on this store** (the handoff expected the `forderung` passages and the 196/217 description count to move). The A3 store has no Drucksache text cache (`data/dip-drucksache-text-cache.json.gz` is absent from `full`):
+- every `documents.forderung` is empty and `vote_passages` holds 0 rows;
+- `votes.passage_state` is `not_applicable` for 505 votes and `not_fetched` for 114 (WP 19: 15, WP 20: 63, WP 21: 36).
+
+So no vote panel on the A3 site quotes an Antrag passage. Filling the cache is an online B4 stage with DIP requests, and needs the owner's go. The extractor change itself is covered by #122's tests and offline corpus.
+
+### Kept
+
+`~/agent-runs/a3/phase4/gate-merged` (the replayed clone) and `gate-merged-scratch` are kept for the owner's inspection: 5.6 GB and 7.5 GB by `du` (the clone shares unchanged blocks with `full`, so less is actually used). Delete them only with the owner's OK.
